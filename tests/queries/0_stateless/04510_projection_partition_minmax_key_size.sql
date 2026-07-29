@@ -15,7 +15,9 @@ SETTINGS index_granularity = 8192,
          enable_block_offset_column = 1,
          part_minmax_index_columns = 'with_block_number_offset';
 
-INSERT INTO t_04510 SELECT toDate('2020-01-01') + (number % 400), number, number * 2 FROM numbers(5000);
+-- Two partitions are enough to reach the per-partition specialization: one row inside the
+-- BETWEEN range, one just outside it, and one outside the `v < 1000` range.
+INSERT INTO t_04510 VALUES ('2020-01-01', 5, 10), ('2020-01-02', 6, 20), ('2020-02-01', 7, 500), ('2020-02-02', 8, 1500);
 
 SET optimize_use_projections = 1, use_constant_folding_in_index_analysis = 1;
 
@@ -60,18 +62,21 @@ DROP TABLE t_04510_virt;
 -- = -199. Folding the stored value into the modern modulo predicate turned `id % 200 < 0` into
 -- `57 < 0` and over-pruned parts. The count must match the folding-off baseline, and no parts
 -- may be dropped for this whole-partition filter.
+-- Only the ids carrying the divergence are needed: -199 stores in partition 57 and collides
+-- there with 57, so one part mixes a negative and a positive modern modulo value, which is
+-- exactly why folding a single stored value into the predicate cannot be sound.
 
 DROP TABLE IF EXISTS t_04510_mod;
 
 CREATE TABLE t_04510_mod (id Int64) ENGINE = MergeTree PARTITION BY id % 200 ORDER BY id;
-INSERT INTO t_04510_mod SELECT number - 500 FROM numbers(1000) SETTINGS max_partitions_per_insert_block = 0;
+INSERT INTO t_04510_mod VALUES (-199), (57), (-57), (-1), (3);
 
 SELECT '-- modulo partition key, folding off';
 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 0;
 SELECT '-- modulo partition key, folding on';
 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1;
 SELECT '-- no parts over-pruned with folding on';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Parts: 256/256%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_mod WHERE id % 200 < 0 SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Parts: 4/4%';
 
 -- Negative single-point = and IN also route through moduloLegacy. id = -199 stores in the
 -- moduloLegacy(-199, 200) = 57 partition, colliding with id = 57. Folding on must match the
