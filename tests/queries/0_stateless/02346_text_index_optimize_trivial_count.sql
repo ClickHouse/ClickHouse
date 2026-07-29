@@ -4,7 +4,7 @@ SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;
-SET optimize_trivial_count_from_text_index = 1;
+SET query_plan_optimize_count_from_text_index = 1;
 
 CREATE TABLE tab (
 	id UInt64,
@@ -25,12 +25,12 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllToken
 
 SELECT '-- result matches the normal path';
 SELECT count() FROM tab WHERE hasToken(text, 'alpha');
-SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS optimize_trivial_count_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_optimize_count_from_text_index = 0;
 SELECT count() FROM tab WHERE hasToken(text, 'zeta');
 SELECT count() FROM tab WHERE hasToken(text, 'missing');
 
-SELECT '-- disabled by optimize_trivial_count_from_text_index = 0';
-SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS optimize_trivial_count_from_text_index = 0) WHERE explain LIKE '%Trivial count from text index%';
+SELECT '-- disabled by query_plan_optimize_count_from_text_index = 0';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_optimize_count_from_text_index = 0) WHERE explain LIKE '%Trivial count from text index%';
 
 SELECT '-- disabled by the parent optimize_trivial_count_query = 0';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%Trivial count from text index%';
@@ -38,12 +38,12 @@ SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text,
 SELECT '-- fires: multi-token hasAnyTokens (union)';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta'])) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']);
-SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']) SETTINGS optimize_trivial_count_from_text_index = 0;
+SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT '-- does not fire: multi-token hasAllTokens (intersection) uses the reader';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta'])) WHERE explain LIKE '%Trivial count from text index%';
 SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']);
-SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS optimize_trivial_count_from_text_index = 0;
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT '-- does not fire: residual non-text predicate';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND id > 10) WHERE explain LIKE '%Trivial count from text index%';

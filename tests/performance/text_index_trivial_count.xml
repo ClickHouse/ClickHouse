@@ -20,7 +20,7 @@
         FROM numbers(20000000)
     </fill_query>
 
-    <!-- optimize_trivial_count_from_text_index (on by default) answers count() over a text predicate
+    <!-- query_plan_optimize_count_from_text_index (on by default) answers count() over a text predicate
          from posting-list cardinalities instead of reading rows. hasAllTokens (intersection) is not
          benchmarked: it falls back to the reader, whose lazy path is faster for common tokens. -->
     <query>SELECT count() FROM text_index_trivial_count WHERE hasToken(text, 'thecommon')</query>

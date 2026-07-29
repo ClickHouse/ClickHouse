@@ -109,7 +109,7 @@ SEARCH_SETTINGS = {
     # part inserted after the upgrade actually uses the cursor-based reader.
     "text_index_posting_list_apply_mode": "lazy",
     # Keep count() on the index-scan plan (Name: idx), not the count-from-index rewrite.
-    "optimize_trivial_count_from_text_index": 0,
+    "query_plan_optimize_count_from_text_index": 0,
 }
 
 

@@ -45,7 +45,7 @@ namespace Setting
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
-    extern const SettingsBool optimize_trivial_count_from_text_index;
+    extern const SettingsBool query_plan_optimize_count_from_text_index;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
@@ -212,7 +212,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
-    optimize_trivial_count_from_text_index = from[Setting::optimize_trivial_count_from_text_index]
+    query_plan_optimize_count_from_text_index = from[Setting::query_plan_optimize_count_from_text_index]
         && from[Setting::optimize_trivial_count_query]
         && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
