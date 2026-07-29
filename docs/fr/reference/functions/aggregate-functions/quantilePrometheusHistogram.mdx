@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **Arguments**
 
-* `bucket_upper_bound` — Bornes supérieures des buckets de l&#39;histogramme. Le bucket le plus élevé doit avoir une borne supérieure égale à `+Inf`. [`Float64`](/fr/reference/data-types/float)
-* `cumulative_bucket_value` — Valeurs cumulées des buckets de l&#39;histogramme. Les valeurs doivent être monotoniquement croissantes à mesure que la borne supérieure du bucket augmente. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float64`](/fr/reference/data-types/float)
+* `bucket_upper_bound` — Bornes supérieures des buckets de l&#39;histogramme. Le bucket le plus élevé doit avoir une borne supérieure égale à `+Inf`. [`Float*`](/fr/reference/data-types/float)
+* `cumulative_bucket_value` — Valeurs cumulées des buckets de l&#39;histogramme. Les valeurs doivent être monotoniquement croissantes à mesure que la borne supérieure du bucket augmente. [`UInt*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
 
 **Valeur renvoyée**
 
-Renvoie le quantile du niveau spécifié. [`Float64`](/fr/reference/data-types/float)
+Renvoie le quantile du niveau spécifié. Le type à virgule flottante du résultat correspond à celui de `bucket_upper_bound`. [`Float32`](/fr/reference/data-types/float) ou [`Float64`](/fr/reference/data-types/float)
 
 **Exemples**
 

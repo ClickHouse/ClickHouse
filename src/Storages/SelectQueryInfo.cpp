@@ -15,7 +15,7 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    if (query_tree)
+    if (query_tree && !apply_query_level_final_if_no_modifiers)
         return false;
 
     const auto & select = query->as<ASTSelectQuery &>();
