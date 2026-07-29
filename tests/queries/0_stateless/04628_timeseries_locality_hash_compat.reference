@@ -1,0 +1,12 @@
+no locality_hash at all:
+[('__name__','http_requests_count'),('job','web')]	1970-01-01 00:16:50.000	2
+[]	1970-01-01 00:16:50.000	50
+primary key usage without locality_hash:
+Keys:
+id
+timestamp
+samples with locality_hash, tags without:
+1	1
+[('__name__','http_requests_count'),('job','web')]	1970-01-01 00:16:40.000	1
+tags with locality_hash, samples without:
+[('__name__','http_requests_count'),('job','web')]	1970-01-01 00:16:40.000	1

@@ -948,7 +948,11 @@ namespace
         {
             case ViewTarget::Samples:
             {
-                check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
+                /// The `locality_hash` column is optional: tables created before it was introduced don't have it,
+                /// and then the engine doesn't fill or use it. New inner tables always get it
+                /// from normalizeInnerTableColumns().
+                if (target_table_columns.has(TimeSeriesColumnNames::LocalityHash))
+                    check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
@@ -959,16 +963,16 @@ namespace
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_is_string(TimeSeriesColumnNames::MetricName);
-                check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
 
-                /// The queries generated for evaluating PromQL selectors rely on the invariant
+                /// The `locality_hash` column is optional (like in the samples table), but if it exists,
+                /// the queries generated for evaluating PromQL selectors rely on the invariant
                 /// `tags.locality_hash = xxHash64(metric_name)` (see timeSeriesLocalityHash.h), while the write
                 /// paths don't provide this column when inserting into the tags table. So the column must be
                 /// populated by exactly this default expression - any other value wouldn't match the
                 /// `locality_hash` column of the samples table and queries would silently return no data.
+                if (const auto * locality_hash_column = target_table_columns.tryGet(String(TimeSeriesColumnNames::LocalityHash)))
                 {
-                    const auto * locality_hash_column = target_table_columns.tryGet(String(TimeSeriesColumnNames::LocalityHash));
-                    chassert(locality_hash_column); /// check_column_type() above has already checked that the column exists.
+                    check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
                     String expected_expression = makeTimeSeriesLocalityHashAST()->formatWithSecretsOneLine();
                     const auto & default_desc = locality_hash_column->default_desc;
                     if (!default_desc.expression

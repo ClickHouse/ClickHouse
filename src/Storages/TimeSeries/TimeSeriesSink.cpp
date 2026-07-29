@@ -150,16 +150,17 @@ namespace
     }
 
     /// Fills columns locality_hash, id, timestamp, value for the "samples" table.
-    /// `locality_hash_column` is aligned with `id_column` (one row per filtered time series).
+    /// `locality_hash_column` is aligned with `id_column` (one row per filtered time series);
+    /// it is null when the samples table doesn't have the `locality_hash` column.
     void fillSamplesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
-        const IColumn & locality_hash_column,
+        const IColumn * locality_hash_column,
         const IColumn & ts_timestamps,
         const IColumn & ts_values,
         const ColumnArray::Offsets & ts_offsets,
         IColumn & out_id_column,
-        IColumn & out_locality_hash_column,
+        IColumn * out_locality_hash_column,
         IColumn & out_timestamp_column,
         IColumn & out_value_column)
     {
@@ -183,7 +184,8 @@ namespace
             if (num_samples > 0)
             {
                 out_id_column.insertManyFrom(id_column, id_index, num_samples);
-                out_locality_hash_column.insertManyFrom(locality_hash_column, id_index, num_samples);
+                if (out_locality_hash_column)
+                    out_locality_hash_column->insertManyFrom(*locality_hash_column, id_index, num_samples);
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
             }
@@ -608,9 +610,16 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
 
+    /// The `locality_hash` column is filled only if the samples target table has it
+    /// (tables created before that column was introduced don't).
+    auto samples_target = time_series_storage.getTargetTable(ViewTarget::Samples, getContext());
+    auto samples_target_metadata = samples_target->getInMemoryMetadataPtr(getContext(), false);
+    samples_has_locality_hash = samples_target_metadata->columns.has(TimeSeriesColumnNames::LocalityHash);
+
     /// Build source header for samples block.
     Block samples_header;
-    samples_header.insert(ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
+    if (samples_has_locality_hash)
+        samples_header.insert(ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
@@ -769,7 +778,9 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// Calculate locality hashes (one per time series, aligned with `id_column`) from the effective
     /// metric names, i.e. after the `__name__` tag has been merged into the `metric_name` column.
     /// It must be done now because `tags_block` is moved away below.
-    ColumnPtr locality_hash_column = buildTimeSeriesLocalityHashColumn(*tags_block.getByName(TimeSeriesColumnNames::MetricName).column);
+    ColumnPtr locality_hash_column;
+    if (samples_has_locality_hash)
+        locality_hash_column = buildTimeSeriesLocalityHashColumn(*tags_block.getByName(TimeSeriesColumnNames::MetricName).column);
 
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
@@ -787,8 +798,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto samples_id_column = id_type->createColumn();
         samples_id_column->reserve(total_samples);
 
-        auto samples_locality_hash_column = ColumnUInt64::create();
-        samples_locality_hash_column->reserve(total_samples);
+        ColumnUInt64::MutablePtr samples_locality_hash_column;
+        if (samples_has_locality_hash)
+        {
+            samples_locality_hash_column = ColumnUInt64::create();
+            samples_locality_hash_column->reserve(total_samples);
+        }
 
         auto timestamp_column = timestamp_type->createColumn();
         timestamp_column->reserve(total_samples);
@@ -798,12 +813,13 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
         fillSamplesColumns(
             filter,
-            *id_column, *locality_hash_column, ts_timestamps, ts_values, ts_offsets,
-            *samples_id_column, *samples_locality_hash_column, *timestamp_column, *value_column);
+            *id_column, locality_hash_column.get(), ts_timestamps, ts_values, ts_offsets,
+            *samples_id_column, samples_locality_hash_column.get(), *timestamp_column, *value_column);
 
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
-        samples_block.insert(ColumnWithTypeAndName{std::move(samples_locality_hash_column), std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
+        if (samples_has_locality_hash)
+            samples_block.insert(ColumnWithTypeAndName{std::move(samples_locality_hash_column), std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});

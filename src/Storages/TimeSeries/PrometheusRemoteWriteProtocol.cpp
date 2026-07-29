@@ -283,14 +283,15 @@ namespace
     /// Fills the id, locality_hash, timestamp, and value columns for the "samples" table
     /// by iterating over the time series.
     /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
-    /// `locality_hash_column_in_tags_table` is aligned with `id_column_in_tags_table` (one row per time series).
+    /// `locality_hash_column_in_tags_table` is aligned with `id_column_in_tags_table` (one row per time series);
+    /// it is null when the samples table doesn't have the `locality_hash` column.
     template <typename T>
     void fillSamplesColumnsImpl(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         const IColumn & id_column_in_tags_table,
-        const IColumn & locality_hash_column_in_tags_table,
+        const IColumn * locality_hash_column_in_tags_table,
         IColumn & out_id_column,
-        IColumn & out_locality_hash_column,
+        IColumn * out_locality_hash_column,
         UInt32 timestamp_scale, IColumn & out_timestamp_column,
         IColumn & out_value_column)
     {
@@ -301,7 +302,8 @@ namespace
                 continue;
 
             out_id_column.insertManyFrom(id_column_in_tags_table, i, element.samples_size());
-            out_locality_hash_column.insertManyFrom(locality_hash_column_in_tags_table, i, element.samples_size());
+            if (out_locality_hash_column)
+                out_locality_hash_column->insertManyFrom(*locality_hash_column_in_tags_table, i, element.samples_size());
             for (const auto & sample : element.samples())
             {
                 if constexpr (is_decimal<T>)
@@ -318,9 +320,9 @@ namespace
     void fillSamplesColumns(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         const IColumn & id_column_in_tags_table,
-        const IColumn & locality_hash_column_in_tags_table,
+        const IColumn * locality_hash_column_in_tags_table,
         IColumn & out_id_column,
-        IColumn & out_locality_hash_column,
+        IColumn * out_locality_hash_column,
         UInt32 timestamp_scale, IColumn & out_timestamp_column,
         IColumn & out_value_column)
     {
@@ -517,13 +519,20 @@ namespace
         auto id_column_in_data_table = id_type->createColumn();
         id_column_in_data_table->reserve(total_samples);
 
-        /// Column "locality_hash".
+        /// Column "locality_hash" - filled only if the samples table has it
+        /// (tables created before that column was introduced don't).
         /// The hashes are calculated from the effective metric names, i.e. after the `__name__` tag
         /// has been merged into the `metric_name` column of `tags_block`.
-        ColumnPtr locality_hash_column_in_tags_table
-            = buildTimeSeriesLocalityHashColumn(*tags_block.getByName(TimeSeriesColumnNames::MetricName).column);
-        auto locality_hash_column_in_data_table = ColumnUInt64::create();
-        locality_hash_column_in_data_table->reserve(total_samples);
+        const bool samples_has_locality_hash = samples_metadata.columns.has(TimeSeriesColumnNames::LocalityHash);
+        ColumnPtr locality_hash_column_in_tags_table;
+        ColumnUInt64::MutablePtr locality_hash_column_in_data_table;
+        if (samples_has_locality_hash)
+        {
+            locality_hash_column_in_tags_table
+                = buildTimeSeriesLocalityHashColumn(*tags_block.getByName(TimeSeriesColumnNames::MetricName).column);
+            locality_hash_column_in_data_table = ColumnUInt64::create();
+            locality_hash_column_in_data_table->reserve(total_samples);
+        }
 
         /// Column "timestamp".
         auto timestamp_column = timestamp_type->createColumn();
@@ -536,15 +545,16 @@ namespace
 
         /// Prepare a block for inserting to the "samples" table.
         fillSamplesColumns(time_series, *id_column_in_tags_table,
-                           *locality_hash_column_in_tags_table,
+                           locality_hash_column_in_tags_table.get(),
                            *id_column_in_data_table,
-                           *locality_hash_column_in_data_table,
+                           locality_hash_column_in_data_table.get(),
                            timestamp_scale, *timestamp_column,
                            *value_column);
 
         /// Build data block.
         Block samples_block;
-        samples_block.insert(ColumnWithTypeAndName{std::move(locality_hash_column_in_data_table), std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
+        if (samples_has_locality_hash)
+            samples_block.insert(ColumnWithTypeAndName{std::move(locality_hash_column_in_data_table), std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
         samples_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});

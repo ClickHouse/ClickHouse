@@ -793,7 +793,7 @@ The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `locality_hash` | [x] | `UInt64` | `UInt64` | A hash of the metric name, `xxHash64(metric_name)`. It's the first column of the primary key, so samples of the same metric are stored close to each other |
+| `locality_hash` | [ ] | `UInt64` | `UInt64` | A hash of the metric name, `xxHash64(metric_name)`. It's the first column of the primary key, so samples of the same metric are stored close to each other. Newly created tables always have this column; tables created by older versions of ClickHouse don't, and then the engine doesn't fill or use it |
 | `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
@@ -808,7 +808,7 @@ The _tags_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `UUID` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
-| `locality_hash` | [x] | `UInt64` | `UInt64` | A hash of the metric name. It's declared as `MATERIALIZED xxHash64(metric_name)` so queries evaluating PromQL selectors can read it instead of calculating any hashes; it must match the `locality_hash` column of the [samples](#samples-table) table |
+| `locality_hash` | [ ] | `UInt64` | `UInt64` | A hash of the metric name. It's declared as `MATERIALIZED xxHash64(metric_name)` so queries evaluating PromQL selectors can read it instead of calculating any hashes; it must match the `locality_hash` column of the [samples](#samples-table) table. Newly created tables always have this column; tables created by older versions of ClickHouse don't |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of tags excluding the tag `__name__` containing the name of a metric and excluding tags with names enumerated in the [tags_to_columns](#settings) setting |
 | `all_tags` | [ ] | `Map(String, String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Ephemeral column, each row is a map of all the tags excluding only the tag `__name__` containing the name of a metric. The only purpose of that column is to be used while calculating `id` |
@@ -1042,6 +1042,8 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```
 
 The external tables' column types (`locality_hash`, `id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
+
+The `locality_hash` column is optional in external tables: if the samples or the tags table lacks it (for example, tables created before the column was introduced), the `TimeSeries` engine doesn't fill or use it, and queries evaluating PromQL selectors filter the samples table by `id` alone.
 
 An external tags table should declare its `locality_hash` column as `MATERIALIZED xxHash64(metric_name)` because the `TimeSeries` engine doesn't provide that column when it inserts into the tags table. For an external samples table the engine calculates and inserts `locality_hash` itself; however, if you insert into an external samples table directly (bypassing the `TimeSeries` table), you must fill `locality_hash` with `xxHash64(metric_name)` yourself, otherwise queries evaluating PromQL selectors will not find those samples.
 

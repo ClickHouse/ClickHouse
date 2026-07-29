@@ -258,7 +258,8 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        const DataTypePtr & timestamp_data_type)
+        const DataTypePtr & timestamp_data_type,
+        bool use_locality_hash)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -270,7 +271,8 @@ namespace
             /// The locality hash is MATERIALIZED in the tags table (see timeSeriesLocalityHash.h),
             /// so no hashes are calculated here. It must be the first column to match the left side
             /// of the condition `(locality_hash, id) IN (...)` built by makeWhereFilterForDataTable().
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash));
+            if (use_locality_hash)
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash));
 
             ASTs args;
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -326,17 +328,24 @@ namespace
         ASTPtr select_query_from_tags_table,
         DateTime64 min_time,
         DateTime64 max_time,
-        const DataTypePtr & timestamp_data_type)
+        const DataTypePtr & timestamp_data_type,
+        bool use_locality_hash)
     {
         ASTs conditions;
 
         /// (locality_hash, id) IN (select_query_from_tags_table) - the leading locality_hash lets the
         /// primary key index of the samples table (locality_hash, id, timestamp) prune granules.
+        /// Without the locality hash (tables created by older versions) the condition is just
+        /// `id IN (select_query_from_tags_table)`.
         /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        auto in_lhs = makeASTFunction("tuple",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash),
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        ASTPtr in_lhs;
+        if (use_locality_hash)
+            in_lhs = makeASTFunction("tuple",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash),
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        else
+            in_lhs = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID);
         conditions.push_back(makeASTFunction("in", std::move(in_lhs), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
@@ -360,7 +369,8 @@ namespace
                                         DateTime64 max_time,
                                         const DataTypePtr & id_data_type,
                                         const DataTypePtr & timestamp_data_type,
-                                        const DataTypePtr & scalar_data_type)
+                                        const DataTypePtr & scalar_data_type,
+                                        bool use_locality_hash)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -403,7 +413,7 @@ namespace
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT locality_hash, timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
-            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type, use_locality_hash);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -450,8 +460,18 @@ void StorageTimeSeriesSelector::readImpl(
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, context);
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
+    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, context);
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    auto samples_table_id = samples_table->getStorageID();
+    auto tags_table_id = tags_table->getStorageID();
+
+    /// Tables created before the `locality_hash` column was introduced don't have it.
+    /// The column is only used to prune granules by the primary key index of the samples table,
+    /// so if either target table lacks it we simply filter by `id` alone.
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
+    auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(context, false);
+    bool use_locality_hash = samples_table_metadata->columns.has(TimeSeriesColumnNames::LocalityHash)
+        && tags_table_metadata->columns.has(TimeSeriesColumnNames::LocalityHash);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
@@ -465,7 +485,8 @@ void StorageTimeSeriesSelector::readImpl(
     }
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
+        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type,
+        use_locality_hash);
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
@@ -474,7 +495,8 @@ void StorageTimeSeriesSelector::readImpl(
         config.max_time,
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type);
+        config.scalar_data_type,
+        use_locality_hash);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());

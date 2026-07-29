@@ -100,6 +100,10 @@ private:
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 
+    /// True when the samples target table has the `locality_hash` column.
+    /// Tables created before that column was introduced don't have it, and then the sink doesn't fill it.
+    bool samples_has_locality_hash = false;
+
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
