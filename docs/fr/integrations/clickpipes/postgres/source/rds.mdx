@@ -82,7 +82,7 @@ Connectez-vous à votre instance RDS Postgres en tant qu’utilisateur administr
 4. Créez une [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) avec les tables que vous souhaitez répliquer. Nous vous recommandons vivement de n’inclure dans la publication que les tables nécessaires afin d’éviter tout surcoût de performances.
 
 <Warning>
-  Toute table incluse dans la publication doit soit avoir une **clé primaire** définie, *soit* avoir sa **replica identity** configurée sur `FULL`. Consultez la [FAQ Postgres](/fr/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) pour obtenir des conseils sur le périmètre à définir.
+  Toute table incluse dans la publication doit soit avoir une **clé primaire** définie *soit* avoir sa **replica identity** configurée sur `FULL`. Consultez la [FAQ Postgres](/fr/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) pour obtenir des conseils sur le périmètre à définir.
 </Warning>
 
 * Pour créer une publication pour des tables spécifiques :
@@ -97,7 +97,24 @@ Connectez-vous à votre instance RDS Postgres en tant qu’utilisateur administr
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de modification générés par les tables spécifiées et sera ensuite utilisée pour ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous vous déconseillons d’utiliser `FOR ALL TABLES`, sauf si vous comptez répliquer toutes les tables, car inclure des tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
+
+<div id="iam-authentication">
+  ### Utiliser l’authentification IAM (facultatif)
+</div>
+
+Au lieu d’un mot de passe, vous pouvez authentifier l’utilisateur ClickPipes via le contrôle d’accès AWS IAM basé sur les rôles. Créez l’utilisateur comme suit, puis accordez-lui les mêmes privilèges de schéma et de réplication que ceux indiqués ci-dessus :
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+<Note>
+  L&#39;authentification IAM pour la réplication nécessite que le paramètre `rds.iam_auth_for_replication` soit défini sur `1`. Elle est prise en charge à partir de la version 11 de PostgreSQL ; sur les versions antérieures, vous ne pouvez exécuter que des ClickPipes `Initial Load Only`.
+</Note>
+
+Consultez [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/postgres/auth) pour connaître toutes les étapes nécessaires à la configuration du rôle IAM et de la stratégie requis pour que ClickPipes s&#39;authentifie de cette manière.
 
 <div id="configure-network-access">
   ## Configurer l’accès au réseau
@@ -107,7 +124,7 @@ La publication `clickpipes` contiendra l’ensemble des événements de modifica
   ### Contrôle d’accès basé sur l’adresse IP
 </div>
 
-Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux `Inbound rules` du groupe de sécurité de votre instance RDS.
+Si vous souhaitez restreindre le trafic vers votre instance RDS, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips) aux `règles entrantes` du groupe de sécurité de votre instance RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Où trouver le groupe de sécurité dans RDS Postgres ?" size="lg" border />
 

@@ -57,7 +57,7 @@ Les trois premières étapes du traitement sont les mêmes que précédemment :
 
 ③ puis parcourt les entrées de l’index pour identifier quels granules de la colonne `town` peuvent contenir des lignes correspondant au prédicat.
 
-Grâce à la clause PREWHERE, l’étape suivante est différente : au lieu de lire d’emblée toutes les colonnes pertinentes, ClickHouse filtre les données colonne par colonne et ne charge que ce qui est réellement nécessaire. Cela réduit drastiquement les E/S, en particulier pour les tables larges.
+Grâce à la clause PREWHERE, l’étape suivante est différente : au lieu de lire d’emblée toutes les colonnes pertinentes, ClickHouse filtre les données colonne par colonne et ne charge que ce qui est réellement nécessaire. Cela réduit drastiquement les E/S, en particulier pour les tables comportant de nombreuses colonnes.
 
 À chaque étape, il ne charge que les granules qui contiennent au moins une ligne ayant passé — c’est-à-dire correspondant à — au filtre précédent. Par conséquent, le nombre de granules à charger et à évaluer pour chaque filtre diminue de façon monotone :
 
