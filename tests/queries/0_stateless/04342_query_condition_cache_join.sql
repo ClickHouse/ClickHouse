@@ -40,12 +40,14 @@ SELECT count() FROM (
 SYSTEM FLUSH LOGS query_log;
 
 -- One row per execution, ordered in time. Cold run: cache miss, full scan. Warm run: cache hit,
--- the probe side reads 0 rows (all granules pruned). Expected:
+-- the probe side reads 0 rows (every granule pruned). `SelectedRows` is asserted to be exactly 0 on
+-- the warm run rather than merely below the total row count, so an implementation that consults the
+-- cache but still selects marks cannot pass. Expected:
 --   0  1   (cold: no hit, rows were read)
---   1  1   (warm: hit, 0 rows read)
+--   1  1   (warm: hit, exactly 0 rows read)
 SELECT
     ProfileEvents['QueryConditionCacheHits'] > 0,
-    ProfileEvents['SelectedRows'] < 1000000
+    ProfileEvents['SelectedRows'] = 0
 FROM system.query_log
 WHERE event_date >= yesterday()
     AND type = 'QueryFinish'

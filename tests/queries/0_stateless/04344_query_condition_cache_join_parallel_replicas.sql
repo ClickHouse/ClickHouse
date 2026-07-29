@@ -1,7 +1,7 @@
 -- Tags: no-parallel
--- no-parallel: warms the (instance-wide) query condition cache for a uniquely-named table; the
---              cache key is disjoint from other tests, but a warm self-join under parallel replicas
---              is the crash repro so we keep it serialized for clarity.
+-- no-parallel: asserts query condition cache hit counters, and the cache is instance-wide and bounded,
+--              so a concurrent test can evict the warm-up entries between the two runs. The other
+--              query condition cache tests that assert counters are serialized for the same reason.
 
 -- Regression test for the parallel-replicas crash of the issue #104985 follow-up fix.
 --
@@ -45,6 +45,23 @@ SETTINGS
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
     parallel_replicas_min_number_of_rows_per_replica = 10,
-    parallel_replicas_local_plan = 1;
+    parallel_replicas_local_plan = 1,
+    log_comment = 'qcc_join_104985_pr';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Not crashing is not sufficient: the predicate matches no rows, so an ordinary full scan also
+-- returns 0. Assert that the parallel warm run really was served from the query condition cache and
+-- pruned every granule, otherwise a parallel-replicas-specific no-op would still pass. Expected:
+--   1  1   (hit, exactly 0 rows read)
+SELECT
+    ProfileEvents['QueryConditionCacheHits'] > 0,
+    ProfileEvents['SelectedRows'] = 0
+FROM system.query_log
+WHERE event_date >= yesterday()
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment = 'qcc_join_104985_pr'
+ORDER BY event_time_microseconds;
 
 DROP TABLE t_qcc_join_pr;
