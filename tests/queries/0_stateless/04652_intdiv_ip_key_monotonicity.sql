@@ -68,6 +68,7 @@ SELECT 'b i32 ipv6 const', (SELECT count() FROM ti32 WHERE intDiv(a, toIPv6('::1
 SELECT 'b u32 ip const', (SELECT count() FROM tu32 WHERE intDiv(a, toIPv4('0.0.0.10')) > 0) = (SELECT count() FROM mu32 WHERE intDiv(a, toIPv4('0.0.0.10')) > 0);
 SELECT 'b ipv4 key ip const', (SELECT count() FROM t4 WHERE intDiv(a, toIPv4('0.0.0.10')) > 0) = (SELECT count() FROM m4 WHERE intDiv(a, toIPv4('0.0.0.10')) > 0);
 SELECT 'b divide ip const', (SELECT count() FROM ti32 WHERE divide(a, toIPv4('0.0.0.10')) > 0) = (SELECT count() FROM mi32 WHERE divide(a, toIPv4('0.0.0.10')) > 0);
+SELECT 'b divide ipv6 const', (SELECT count() FROM ti32 WHERE divide(a, toIPv6('::10')) > 0) = (SELECT count() FROM mi32 WHERE divide(a, toIPv6('::10')) > 0);
 
 -- (B') The equal-endpoints branch has its own divisor-zero check and returns before the arm above.
 -- With singleton granule ranges control reaches it, so it needs the same normalization.
@@ -77,6 +78,14 @@ SELECT 'b1 single point', (SELECT count() FROM ti32g1 WHERE intDiv(a, toIPv4('0.
 -- An all-zero IP divisor must be recognized AS zero, so the query reaches execution and reports
 -- division by zero instead of failing during key analysis with `BAD_TYPE_OF_FIELD`.
 SELECT count() FROM ti32g1 WHERE intDiv(a, toIPv4('0.0.0.0')) = 0; -- { serverError ILLEGAL_DIVISION }
+
+-- The IP-constant-divisor rows above stay correct under a conservative reject, so they cannot
+-- show that pruning survives. These four do: an IP constant divisor is monotonic once it is
+-- normalized, and a design that refused every IP divisor would read 4/4 here.
+SELECT 'b intdiv ipv4 const prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ti32g1 WHERE intDiv(a, toIPv4('0.0.0.10')) > 0) WHERE explain ILIKE '%Granules: 3/4%';
+SELECT 'b intdiv ipv6 const prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ti32g1 WHERE intDiv(a, toIPv6('::10')) > 0) WHERE explain ILIKE '%Granules: 3/4%';
+SELECT 'b divide ipv4 const prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ti32g1 WHERE divide(a, toIPv4('0.0.0.10')) > 0) WHERE explain ILIKE '%Granules: 3/4%';
+SELECT 'b divide ipv6 const prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ti32g1 WHERE divide(a, toIPv6('::10')) > 0) WHERE explain ILIKE '%Granules: 3/4%';
 
 -- (C) Must-keep-pruning controls. An UNSIGNED constant divisor never reinterprets the dividend, so
 -- these are correct today and must keep pruning; a guard that rejected IP dividends outright would
@@ -96,7 +105,7 @@ INSERT INTO m4p VALUES ('0.0.0.1'), ('0.0.0.2'), ('127.255.255.255'), ('128.0.0.
 SELECT 'c one sided', (SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) = (SELECT count() FROM m4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0'));
 SELECT 'c one sided bound only', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 3/5%';
 SELECT 'c one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 2/5%';
--- The same pair one width up, and the only assertion that reacts to a substituted `IPv6` width
+-- The same pair one width up, and the only pair of assertions that reacts to a substituted `IPv6` width
 -- that is too narrow. Narrowing moves the wrap point from 2^127 down to 2^31, which does not
 -- simply refuse more ranges: a range straddling 2^31 is refused (pruning lost) while a range
 -- lying above 2^31 that straddles the true 2^127 stops being refused, so monotonicity is
