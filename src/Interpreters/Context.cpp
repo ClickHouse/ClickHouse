@@ -503,7 +503,6 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
-    String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -1473,12 +1472,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-String Context::getDictionariesLibPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->dictionaries_lib_path;
-}
-
 String Context::getUserScriptsPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1799,9 +1792,6 @@ void Context::setPath(const String & path)
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
 
-    if (shared->dictionaries_lib_path.empty())
-        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
-
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
@@ -1973,12 +1963,6 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
-}
-
-void Context::setDictionariesLibPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->dictionaries_lib_path = path;
 }
 
 void Context::setUserScriptsPath(const String & path)
