@@ -4,6 +4,7 @@
 -- MergeTree would diverge from the reference
 SET allow_suspicious_low_cardinality_types = 1;
 SET join_use_nulls = 0; -- CI may inject True; the Join engine rejects a mismatched join_use_nulls (StorageJoin.cpp getJoinLocked), and a LEFT-join miss would read NULL instead of 0
+SET enable_analyzer = 1; -- the fix lives in the analyzer's plan path; the old analyzer refuses this shape with TYPE_MISMATCH
 
 -- Drop first: the stress job runs some workers with one shared database for every test
 -- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test

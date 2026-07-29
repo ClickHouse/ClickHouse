@@ -6,6 +6,7 @@
 -- MergeTree would diverge from the reference
 SET join_use_nulls = 0; -- CI may inject True; a LEFT-join miss would then read NULL instead of 0
 SET join_algorithm = 'direct,hash'; -- CI may inject another algorithm; direct is what the DirectKeyValueJoin assertion below is about, hash is the fallback for the narrowing case
+SET enable_analyzer = 1; -- the fix lives in the analyzer's plan path; the old analyzer refuses this shape with TYPE_MISMATCH
 
 -- Drop first: the stress job runs some workers with one shared database for every test
 -- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test
@@ -36,7 +37,7 @@ WHERE explain ILIKE '%accurateCastOrNull%';
 CREATE TABLE l_kv32 (k UInt32) ENGINE = Memory;
 INSERT INTO l_kv32 VALUES (2), (4), (7);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k);
-SELECT count() > 0 FROM (EXPLAIN PLAN description = 1
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1
     SELECT sum(r.jv) FROM l_kv32 AS l ANY LEFT JOIN kv AS r USING (k))
 WHERE explain ILIKE '%DirectKeyValueJoin%';
 

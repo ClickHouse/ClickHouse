@@ -789,7 +789,9 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
     /// A `StorageJoin`'s hash table is keyed on the declared storage key type and cannot be rebuilt at query time,
     /// so widening the right key to the common type would produce a key expression the storage cannot look up
     /// (INCOMPATIBLE_TYPE_OF_JOIN). When the storage key is narrower, carry the conversion on the left key instead
-    /// and leave the right key as the bare storage column.
+    /// and leave the right key as the bare storage column. The conversion is `accurateCastOrNull`, so the left key
+    /// becomes `Nullable` even when the storage key is not: that NULL marks a left value outside the storage key
+    /// domain and never matches, and the join tolerates the difference up to `typesEqualUpToNullability`.
     if (planning_context.is_frozen_storage_join && canNarrowLeftKeyToStorageKey(left_type, right_type, common_type))
     {
         auto target_type = removeNullable(right_type);
