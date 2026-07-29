@@ -9,6 +9,8 @@
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <magic_enum.hpp>
+
 namespace DB
 {
 
@@ -43,6 +45,19 @@ ASTPtr ASTSelectQuery::clone() const
 
 void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// The children carry different roles (SELECT list, WHERE, HAVING, ...) recorded only in
+    /// `positions`. Without hashing the roles, `SELECT a WHERE b` and `SELECT a HAVING b` would
+    /// hash equally. Iterate over all enumerators so that a newly added one is hashed without
+    /// changing this code.
+    for (auto expr : magic_enum::enum_values<Expression>())
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+        {
+            hash_state.update(expr);
+            hash_state.update(it->second);
+        }
+    }
     hash_state.update(recursive_with);
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);

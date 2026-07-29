@@ -423,3 +423,36 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, AliasIsFramedInTheHash)
     EXPECT_TRUE(diffOf(unaliased, aliased).projections_changed);
     EXPECT_FALSE(diffOf(aliased, aliased).projections_changed);
 }
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, NestedQueryShapeIsSignificant)
+{
+    /// A projection expression can contain a nested query. The clause roles of an `ASTSelectQuery`
+    /// live in its `positions` map and the set operation of a union lives in its modes, neither of
+    /// which is a child, so those shapes have to be hashed explicitly.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields nested_where;
+    nested_where.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(10) WHERE number > 1) ORDER BY c)";
+    MetadataFields nested_having;
+    nested_having.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(10) HAVING number > 1) ORDER BY c)";
+    EXPECT_TRUE(diffOf(nested_where, nested_having).projections_changed);
+    EXPECT_FALSE(diffOf(nested_where, nested_where).projections_changed);
+
+    MetadataFields union_all;
+    union_all.projections = "pr (SELECT b WHERE b IN (SELECT 1 UNION ALL SELECT 2) ORDER BY c)";
+    MetadataFields union_distinct;
+    union_distinct.projections = "pr (SELECT b WHERE b IN (SELECT 1 UNION DISTINCT SELECT 2) ORDER BY c)";
+    EXPECT_TRUE(diffOf(union_all, union_distinct).projections_changed);
+
+    MetadataFields except_query;
+    except_query.projections = "pr (SELECT b WHERE b IN (SELECT 1 EXCEPT SELECT 2) ORDER BY c)";
+    MetadataFields intersect_query;
+    intersect_query.projections = "pr (SELECT b WHERE b IN (SELECT 1 INTERSECT SELECT 2) ORDER BY c)";
+    EXPECT_TRUE(diffOf(except_query, intersect_query).projections_changed);
+
+    /// Redundant parentheses inside the nested query still compare equal.
+    MetadataFields nested_where_parens;
+    nested_where_parens.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(10) WHERE (number) > 1) ORDER BY (c))";
+    EXPECT_FALSE(diffOf(nested_where, nested_where_parens).projections_changed);
+}
