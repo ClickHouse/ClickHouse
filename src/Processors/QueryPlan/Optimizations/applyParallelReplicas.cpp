@@ -66,6 +66,37 @@ static std::optional<size_t> coordinatedJoinSideIndex(const QueryPlan::Node * no
     return {};
 }
 
+/// Can this MergeTree read be part of a shipped fragment?
+static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
+{
+    /// A refreshable MaterializedView that swaps its target on each refresh (non-APPEND) must stay
+    /// local: the target read is shipped by name and re-resolved per replica without RefreshTask's
+    /// sync/lock, so a refresh could swap or drop it under the remote read. RefreshSet registers
+    /// exactly these swap targets. An APPEND refreshable MV reads a fixed target (like a regular MV)
+    /// and is safe to distribute.
+    const auto & mergetree_data = read.getMergeTreeData();
+    if (read.getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
+        return false;
+
+    /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
+    return mergetree_data.supportsReplication()
+        || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
+}
+
+/// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
+/// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
+static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        return !mergeTreeReadCanBeShipped(*read);
+    for (const auto * child : node->children)
+        if (subtreeHasUnshippableRead(child))
+            return true;
+    return false;
+}
+
 /// A fragment is cloned and then serialized, so every step in it must be serializable. Checking that
 /// generically (instead of enumerating step types) keeps new non-serializable steps out automatically:
 /// a prepared-lookup join (JoinStepLogicalLookup) and correlated-subquery decorrelation (which buffers a
@@ -144,8 +175,11 @@ public:
         if (!coordinated_index)
             return;
 
-        /// Do not lift a split into a fragment that would contain a non-serializable step
-        if (!subtreeIsShippable(node))
+        /// Do not lift a split into a fragment that would contain a non-serializable step, or a MergeTree
+        /// read which must not be executed on every replica (the broadcast side is never checked by
+        /// collectReadsToDistribute, which only follows the coordinated side). Not lifting keeps the
+        /// coordinated read's split below the join, so that read is still distributed.
+        if (!subtreeIsShippable(node) || subtreeHasUnshippableRead(node))
             return;
 
         auto * coordinated_child = node->children[*coordinated_index];
