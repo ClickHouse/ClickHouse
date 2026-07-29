@@ -304,16 +304,24 @@ SETTINGS join_algorithm = 'hash';
 -- lowest draw while being unreachable without a real flush: bucket construction alone contributes 0,
 -- and keeping everything in the in-memory bucket (grace_hash_join_initial_buckets = 1) also leaves it
 -- at exactly 0. The counters are per query, so the threshold applies to both cells.
+--
+-- currentDatabase() alone does not isolate this execution: with --database the runner reuses one
+-- database for every test, so aggregating the whole log lets an earlier spilling run keep a later
+-- non-spilling one green. Both counters come out of one argMax tuple so they cannot be read from
+-- different executions.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'spilled', log_comment,
-       if(max(ProfileEvents['ExternalJoinWritePart']) >= 1
-              AND max(ProfileEvents['ExternalJoinUncompressedBytes']) >= 2000,
+       if(last.1 >= 1 AND last.2 >= 2000,
           'ok',
-          'fail: write_part=' || toString(max(ProfileEvents['ExternalJoinWritePart']))
-              || ' uncompressed=' || toString(max(ProfileEvents['ExternalJoinUncompressedBytes'])))
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
-GROUP BY log_comment
+          'fail: write_part=' || toString(last.1) || ' uncompressed=' || toString(last.2))
+FROM (
+    SELECT log_comment,
+           argMax((ProfileEvents['ExternalJoinWritePart'], ProfileEvents['ExternalJoinUncompressedBytes']),
+                  event_time_microseconds) AS last
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment LIKE '04505_spill%' AND type = 'QueryFinish'
+    GROUP BY log_comment
+)
 ORDER BY log_comment;
 
 DROP TABLE s_typed;
