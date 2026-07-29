@@ -49,7 +49,9 @@ DROP TABLE t0;
 
 DROP TABLE IF EXISTS t1;
 
--- CREATE with the setting on then write must not abort.
+-- CREATE with the setting on then write must not abort. CREATE analyses the key under the storage
+-- (global) context, so this case also passes on the merge base: it is non-regression coverage, and the
+-- recomputation boundaries below (metadata-only ALTER, mutation) are the discriminating ones.
 SET cast_keep_nullable = 1;
 CREATE TABLE t1 (x Nullable(UInt32)) ENGINE = MergeTree() ORDER BY CAST(x AS UInt32) SETTINGS allow_nullable_key = 1;
 INSERT INTO t1 VALUES (1);

@@ -145,6 +145,19 @@ def test_variant_key_type_follows_compatibility_baseline(started_cluster):
         "CREATE TABLE tv (c UInt8, dec Decimal64(3), f64 Float64) "
         "ENGINE = MergeTree() ORDER BY if(c, dec, f64)"
     )
+    # Same assertion at a key-recomputation boundary carrying a transient override, which is where the
+    # session settings could actually leak in. The key cannot be created at all under this baseline, so
+    # the boundary has to be an ALTER MODIFY ORDER BY on a table that starts with a resolvable key.
+    node_compat.query(
+        "CREATE TABLE tv (c UInt8, dec Decimal64(3), f64 Float64) ENGINE = MergeTree() ORDER BY c"
+    )
+    assert "NO_COMMON_TYPE" in node_compat.query_and_get_error(
+        "ALTER TABLE tv MODIFY ORDER BY (c, if(c, dec, f64)) "
+        "SETTINGS use_variant_as_common_type = 1"
+    )
+    node_compat.query("INSERT INTO tv VALUES (1, 1.5, 2.5)")
+    assert node_compat.query("SELECT count() FROM tv") == "1\n"
+    node_compat.query("DROP TABLE tv SYNC")
 
 
 def test_variant_index_type_follows_compatibility_baseline(started_cluster):
