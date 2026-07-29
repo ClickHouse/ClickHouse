@@ -150,7 +150,12 @@ public:
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
         }
 
-        if (which.isNativeInt() || which.isEnum() || which.isInterval())
+        /// `Interval` is deliberately not accepted: `DataTypeInterval` keeps the unit in the type
+        /// (`IntervalDay`, `IntervalHour`, ...), while `begin_x` and `end_x` arrive here as plain
+        /// numeric parameters with the unit already lost. Bucketing raw tick counts of possibly
+        /// different units against each other would silently produce wrong results, so an interval
+        /// x-axis must be converted to a number explicitly by the query.
+        if (which.isNativeInt() || which.isEnum())
         {
             Int64 tmp = 0;
             const Int64 begin_x = params[n - 2].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 2].safeGet<UInt64>());
@@ -162,7 +167,7 @@ public:
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of the first argument for aggregate function with {} suffix. "
-            "The type must be a native integer, Date, Date32, DateTime, DateTime64, Enum, or Interval",
+            "The type must be a native integer, Date, Date32, DateTime, DateTime64, or Enum",
             arguments[0]->getName(), getName());
     }
 };

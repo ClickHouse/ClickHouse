@@ -416,7 +416,7 @@ Divides data into buckets by the first argument (the x-axis key) and applies an 
 
 **Arguments**
 
-- `x` — The x-axis column used to determine the bucket for each row. Supported types: `UInt8`–`UInt64`, `Int8`–`Int64`, `Date`, `Date32`, `DateTime`, `DateTime64`, `Enum`, `Interval`.
+- `x` — The x-axis column used to determine the bucket for each row. Supported types: `UInt8`–`UInt64`, `Int8`–`Int64`, `Date`, `Date32`, `DateTime`, `DateTime64`, `Enum`. An `Interval` x-axis is not supported, because the interval unit lives in the type while `min_x` and `max_x` arrive as plain numbers: convert the interval to a number explicitly instead.
 - `aggFunction_args` — Arguments forwarded to the nested aggregate function (all arguments except `x`).
 
 **Returned value**
