@@ -2324,7 +2324,7 @@ void InterpreterSystemQuery::syncMerges()
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
     /// Source parts of the merges scheduled so far. Captured before the loop so every wait clause
-    /// (coverage, merge list, fetch) and the final clearScheduledParts() are scoped to exactly these
+    /// (coverage, merge list, fetch) and the final `clearScheduledParts` are scoped to exactly these
     /// parts, even if a concurrent SCHEDULE MERGE adds more meanwhile. Both the infos (for the
     /// coverage predicate) and their names (for the merge list / fetch checks) come from the same
     /// snapshot, so the three clauses can never disagree about which parts are being synced.
@@ -2358,7 +2358,7 @@ void InterpreterSystemQuery::syncMerges()
         /// MergePlainMergeTreeTask::finish, replicated: MergeFromLogEntryTask::finalize), which
         /// happens BEFORE the task writes its part_log row. Returning as soon as the result part
         /// is active would let SYNC MERGES finish before part_log is populated. The merge keeps its
-        /// merge list entry until after write_part_log(), so we additionally wait until no scheduled
+        /// merge list entry until after `write_part_log`, so we additionally wait until no scheduled
         /// merge is left in the merge list. Scoping to the scheduled source parts (and skipping
         /// mutations) keeps this from over-waiting on unrelated in-flight merges/mutations, and
         /// covers both plain and replicated storage that run the Manual selector. The replicated

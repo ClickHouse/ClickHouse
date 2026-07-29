@@ -25,7 +25,7 @@ public:
     static void push(const StorageID & id, const Names & parts_to_merge);
     /// Snapshot of the source parts currently scheduled for a manual merge on `id`. SYSTEM SYNC
     /// MERGES captures this once at entry so every one of its wait clauses (coverage, merge list,
-    /// fetch) and the final clearScheduledParts() are scoped to exactly the same set, and a
+    /// fetch) and the final `clearScheduledParts` are scoped to exactly the same set, and a
     /// concurrent SCHEDULE MERGE that adds more parts meanwhile does not extend the wait.
     static std::vector<MergeTreePartInfo> getScheduledPartInfos(const StorageID & id);
     /// Whether every part in `scheduled_part_infos` is covered by a strictly larger part in
@@ -33,7 +33,7 @@ public:
     /// does NOT drain anything. SYSTEM SYNC MERGES has extra part_log waits after coverage, so it may
     /// loop (or time out / be cancelled) past this point; draining here would let a retry see an
     /// empty set and return before part_log is written. The scheduled set is cleared explicitly via
-    /// clearScheduledParts() only once the whole command succeeds.
+    /// `clearScheduledParts` only once the whole command succeeds.
     static bool isAllScheduledPartsCovered(const std::vector<MergeTreePartInfo> & scheduled_part_infos, const ActiveDataPartSet & active_set);
     /// Drop the scheduled source parts named in `part_names` from `id`. Called by SYSTEM SYNC MERGES
     /// after the command has fully succeeded (all parts covered and their part_log rows queued),
