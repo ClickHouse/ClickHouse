@@ -499,6 +499,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     if (disk->existsFile(server_state_file_name)
         && readAndVerifyStateFile(disk, server_state_file_name, logger) != nullptr)
     {
+        /// The live bytes are complete, but on a retry after a failed sync they may still not be
+        /// durable while the state-OLD about to be replaced is. Make them durable first, so the
+        /// refresh below cannot leave this term with no durable copy at all.
+        syncExistingFile(disk, server_state_file_name);
+
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
         /// crash during the rewrite can always recover the previous state via read_state.

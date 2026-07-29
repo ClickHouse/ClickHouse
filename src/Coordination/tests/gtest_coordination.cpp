@@ -1335,6 +1335,19 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_EQ(after_sync->get_term(), 2);
     ASSERT_EQ(after_sync->get_voted_for(), 3);
 
+    /// Refreshing an existing backup truncates it, so the live file it is about to be replaced
+    /// from must be durable before that happens. Otherwise a retry after a failed sync could
+    /// destroy the one proven copy of the term while the live bytes are still only buffered.
+    /// Both files are present here, which is exactly the state such a retry starts from.
+    std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+    events->clear();
+    state_manager->save_state(*new_state);
+    const auto live_synced_before_backup = indexOf(*events, "sync:state");
+    const auto backup_reopened = indexOf(*events, "open:state-OLD");
+    ASSERT_NE(live_synced_before_backup, std::string::npos);
+    ASSERT_NE(backup_reopened, std::string::npos);
+    ASSERT_LT(live_synced_before_backup, backup_reopened);
+
     /// The next successful save re-establishes the live file and clears the backup.
     state_manager->save_state(*new_state);
     ASSERT_TRUE(std::filesystem::exists("./state"));
