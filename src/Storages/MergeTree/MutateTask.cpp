@@ -2151,7 +2151,7 @@ private:
             else
             {
                 const String index_file_name = index_ptr->getFileName();
-                const auto index_format = index_ptr->getDeserializedFormat(ctx->source_part->checksums, index_file_name, &ctx->source_part->getDataPartStorage());
+                const auto index_format = index_ptr->getDeserializedFormat(ctx->source_part->checksums, index_file_name);
 
                 for (const auto & substream : index_format.substreams)
                 {
