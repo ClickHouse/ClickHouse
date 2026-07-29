@@ -1059,8 +1059,8 @@ void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)
 {
     throw Exception(
         ErrorCodes::CANNOT_RESTORE_TABLE,
-        "Cannot restore the table {} because it already contains some data. You can set structure_only=true or "
-        "allow_non_empty_tables=true to overcome that in the way you want",
+        "Cannot restore the table {} because it already contains some data. You can set structure_only=true, "
+        "restore_table_data=false or allow_non_empty_tables=true to overcome that in the way you want",
         storage_id.getFullTableName());
 }
 }

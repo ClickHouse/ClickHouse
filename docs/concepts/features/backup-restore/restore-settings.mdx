@@ -1,18 +1,16 @@
 ---
 description: 'Settings of the RESTORE query that control which categories of objects are restored from a backup.'
-sidebar_label: 'Restore settings'
-sidebar_position: 71
-slug: /operations/restore-settings
+sidebarTitle: 'Restore settings'
+slug: /operations/backup/restore-settings
 title: 'Restore settings'
-keywords: ['backup', 'restore', 'structure_only']
+keywords: ['backup', 'restore', 'structure_only', 'restore_table_data', 'restore_access_entities', 'restore_functions']
 doc_type: 'reference'
 ---
 
-# Restore settings {#restore-settings}
-
-The `RESTORE` query accepts settings in its `SETTINGS` clause that control which
-categories of objects are read from a backup. This page documents the settings
-that select what is restored: table data, access entities, and user-defined functions.
+The [`RESTORE`](/concepts/features/backup-restore/overview#syntax) query accepts
+settings in its `SETTINGS` clause that control which categories of objects are read
+from a backup. This page documents the settings that select what is restored: table
+data, access entities, and user-defined functions.
 
 ## `structure_only` {#structure-only}
 
