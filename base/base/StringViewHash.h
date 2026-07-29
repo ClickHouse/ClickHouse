@@ -170,8 +170,13 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-inline bool operator== (std::string_view lhs, std::string_view rhs)
+constexpr bool operator== (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        return lhs.compare(rhs) == 0;
+    }
+
     if (lhs.size() != rhs.size())
         return false;
 
@@ -185,7 +190,7 @@ inline bool operator== (std::string_view lhs, std::string_view rhs)
 #endif
 }
 
-inline bool operator!= (std::string_view lhs, std::string_view rhs)
+constexpr bool operator!= (std::string_view lhs, std::string_view rhs)
 {
     return !(lhs == rhs);
 }
