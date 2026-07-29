@@ -158,7 +158,7 @@ echo "${ok_out}" | sed -n 1p
 echo "C_healthy_side_streams_on_disk:"
 side_streams_on_disk "$(echo "${ok_out}" | sed -n 2p)"
 echo "C_check_table:"
-# `hasPhrase` reads the positional substream, so it fails if .pos was dropped, and the
+# `hasPhrase` reads the positional substream, so it fails if `.pos` was dropped, and the
 # index must still PRUNE for it, which a count alone cannot show: a declining index
 # would return the same 100 rows via a full scan.
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1;
