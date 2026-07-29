@@ -12,10 +12,17 @@
 -- branch while the chunks queued on the loaded shards could never drain -> `Pipeline stuck`.
 -- The three low-cardinality keys guarantee the skew that triggers the stuck state.
 --
--- Every query below pins `max_rows_to_group_by = 0`: the stateless profile sets it to 10G
--- (tests/config/users.d/limits.yaml) and `AggregatingStep::canUseShardedAggregation`
--- rejects any nonzero value, so without the pin these queries would silently run normal
--- aggregation and never reach `BufferedShardByHashTransform` at all.
+-- Every query below pins two settings, because the stateless profile would otherwise stop
+-- the sharded transform from being built at all and the test would pass vacuously:
+--   * `max_rows_to_group_by = 0` - the profile sets it to 10G
+--     (tests/config/users.d/limits.yaml) and `AggregatingStep::canUseShardedAggregation`
+--     rejects any nonzero value.
+--   * `enable_parallel_replicas = 0` - the profile turns parallel replicas on for plain
+--     MergeTree tables (tests/config/users.d/enable_parallel_replicas.xml), and the
+--     replica-side plan replaces the local pipeline this test needs. Pinning the setting
+--     rather than tagging `no-parallel-replicas` keeps the test running in every job.
+-- Measured with EXPLAIN PIPELINE: the transform is present twice with both pins, and zero
+-- times if either one is dropped.
 
 DROP TABLE IF EXISTS test_106237;
 CREATE TABLE test_106237 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -40,7 +47,8 @@ FROM (
     GROUP BY a
     ORDER BY a
     SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
-             max_streams_for_union_step = 1, max_rows_to_group_by = 0
+             max_streams_for_union_step = 1, max_rows_to_group_by = 0,
+             enable_parallel_replicas = 0
 );
 
 SELECT a, max(s)
@@ -54,11 +62,26 @@ ORDER BY a
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_streams_for_union_step = 1,
-         max_rows_to_group_by = 0;
+         max_rows_to_group_by = 0,
+         enable_parallel_replicas = 0;
 
 -- Same deadlock via a scalar-subquery-wrapped UNION ALL (found by the AST-fuzzer oracle,
 -- see the issue thread). The stuck state is a property of the sharded transform, not of
 -- where the UNION ALL sits, so wrapping it in a scalar subquery reaches the same code path.
+-- Precondition: this shape shards too, so the assertion below is not vacuous.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT count() FROM (
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+        UNION ALL
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+    )
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
+             max_streams_for_union_step = 1, max_rows_to_group_by = 0,
+             enable_parallel_replicas = 0
+);
+
 SELECT (
     SELECT count() FROM (
         SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
@@ -67,7 +90,8 @@ SELECT (
     ) SETTINGS enable_sharding_aggregator = 1,
               max_threads = 16,
               max_streams_for_union_step = 1,
-              max_rows_to_group_by = 0
+              max_rows_to_group_by = 0,
+              enable_parallel_replicas = 0
 );
 
 -- Cover the soft-cap paths in `BufferedShardByHashTransform::prepare`. The two queries
@@ -94,7 +118,8 @@ SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_streams_for_union_step = 1,
          max_block_size = 100,
-         max_rows_to_group_by = 0;
+         max_rows_to_group_by = 0,
+         enable_parallel_replicas = 0;
 
 -- (b) Cap reached while NO port has an empty queue, which is the only state that reaches
 --     the back-pressure return. Distinct keys spread rows over every shard, so no shard
@@ -111,7 +136,8 @@ FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_block_size = 100,
-         max_rows_to_group_by = 0;
+         max_rows_to_group_by = 0,
+         enable_parallel_replicas = 0;
 
 DROP TABLE test_106237_spread;
 DROP TABLE test_106237_cap;
