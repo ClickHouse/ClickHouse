@@ -115,23 +115,23 @@ INSERT INTO t_04510_sg SELECT number, 'foobar' || toString(number) FROM numbers(
 -- The condition is built at two different call sites depending on
 -- use_skip_indexes_on_data_read, which the test runner randomizes, so pin both explicitly
 -- instead of leaving one of the two paths untested at random.
+-- force_data_skipping_indices asserts index use on the executing query itself, so each route
+-- carries its own assertion. EXPLAIN cannot do this: it resets use_skip_indexes_on_data_read
+-- to false for every non-ANALYZE kind, so an EXPLAIN guard only ever observes the = 0 route.
 SELECT '-- sparseGrams LIKE under parallel per-partition folding, initial analysis';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT '-- sparseGrams LIKE under parallel per-partition folding, data read';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
-SELECT '-- sparseGrams index is used';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Name: idx%';
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 
 DROP TABLE t_04510_sg;
 
@@ -153,20 +153,17 @@ INSERT INTO t_04510_bf SELECT number, 'foobar' || toString(number) FROM numbers(
 
 SELECT '-- sparse_grams bloom filter LIKE under parallel per-partition folding, initial analysis';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx';
 SELECT '-- sparse_grams bloom filter LIKE under parallel per-partition folding, data read';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
-SELECT '-- sparse_grams bloom filter index is used';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Name: idx%';
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1, force_data_skipping_indices = 'idx';
 
 DROP TABLE t_04510_bf;

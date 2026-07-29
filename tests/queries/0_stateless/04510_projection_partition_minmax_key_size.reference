@@ -33,8 +33,6 @@
 64
 64
 64
--- sparseGrams index is used
-1
 -- sparse_grams bloom filter LIKE under parallel per-partition folding, initial analysis
 64
 64
@@ -43,5 +41,3 @@
 64
 64
 64
--- sparse_grams bloom filter index is used
-1
