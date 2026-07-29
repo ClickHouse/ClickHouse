@@ -17,9 +17,12 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <base/sleep.h>
 
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
+#include <azure/core/credentials/credentials.hpp>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -570,11 +573,46 @@ void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::st
     setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
 }
 
+namespace
+{
+    /// getObjectMetadata's GetProperties() runs outside any retry loop, so a transient Azure 403
+    /// (RBAC-propagation window) or a credential AuthenticationException would escape raw. Retry
+    /// both, matching the read/download loops and WriteBufferFromAzureDataLakeStorage.
+    Azure::Storage::Blobs::Models::BlobProperties getBlobPropertiesWithRetry(
+        const Azure::Storage::Blobs::BlobClient & blob_client, size_t max_retries, const String & path, const LoggerPtr & log)
+    {
+        size_t sleep_time_with_backoff_milliseconds = 100;
+        for (size_t i = 0;; ++i)
+        {
+            try
+            {
+                return blob_client.GetProperties().Value;
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (i + 1 >= max_retries || !isRetryableAzureException(e))
+                    throw;
+                LOG_TEST(log, "GetProperties for {} failed at attempt {}, retrying: {}", path, i + 1, e.Message);
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+            catch (const Azure::Core::Credentials::AuthenticationException & e)
+            {
+                if (i + 1 >= max_retries)
+                    throw;
+                LOG_TEST(log, "GetProperties for {} failed at attempt {} (auth), retrying: {}", path, i + 1, e.what());
+                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+                sleep_time_with_backoff_milliseconds *= 2;
+            }
+        }
+    }
+}
+
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
-    auto properties = blob_client.GetProperties().Value;
+    auto properties = getBlobPropertiesWithRetry(blob_client, settings.get()->max_single_download_retries, path, log);
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
     if (client_ptr->IsClientForDisk())
