@@ -154,11 +154,18 @@ echo "B_orphan_after_update:"
 orphan_on_disk t_some
 echo "B_check_table:"
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_result = 1"
-# The surviving text index must still be USABLE, which a file count alone cannot show: a token
-# lookup has to reach its `.dct` and `.pst` substreams. (Its positional substream is not asserted
-# here - see the note on `text_streams_on_disk`.)
-echo "B_text_index_usable:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')"
+# The surviving text index must still be REGISTERED with readable substream sizes, which a file
+# count alone cannot show: `system.data_skipping_indices` reports the index only if the part's
+# checksums attribute its data and mark files to it, so a hardlinked-forward orphan reads 0.
+#
+# This is deliberately not a query-level assertion. Any query that makes this table's text index
+# prune has to open `skp_idx_a.pos.cmrk2`, which the minmax index `a.pos` and the text `.pos`
+# substream both write under `escape_index_filenames` = 0, so it throws `CANNOT_READ_ALL_DATA`
+# already on a pristine part -- the same pre-existing write-time collision `text_streams_on_disk`
+# excludes. A `hasToken` count does not throw only because an `ngrams` tokenizer makes it skip the
+# index entirely, which is what would make such an assertion vacuous.
+echo "B_text_index_registered:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_some' AND name = 'a' AND marks_bytes > 0 AND data_compressed_bytes > 0"
 echo "B_sibling_text_streams_after:"
 text_streams_on_disk t_some
 echo "B_rows:"

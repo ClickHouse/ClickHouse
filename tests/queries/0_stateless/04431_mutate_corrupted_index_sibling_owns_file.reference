@@ -22,8 +22,8 @@ B_orphan_after_update:
 0
 B_check_table:
 1
-B_text_index_usable:
-10
+B_text_index_registered:
+1
 B_sibling_text_streams_after:
 6
 B_rows:
