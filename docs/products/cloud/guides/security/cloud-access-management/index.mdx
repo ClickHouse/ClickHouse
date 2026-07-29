@@ -1,24 +1,56 @@
 ---
 sidebarTitle: 'Overview'
 slug: /cloud/security/cloud_access_management
-title: 'Cloud access management'
-description: 'Learn more about cloud access management'
+title: 'Access management'
+description: 'Understand access levels and find guides for managing accounts, roles, database access, and identity providers in ClickHouse Cloud.'
 doc_type: 'landing-page'
 keywords: ['access management', 'security', 'user management', 'permissions', 'authentication']
 ---
 
-This section contains detailed guides for managing access in ClickHouse Cloud
+ClickHouse Cloud access is controlled at multiple levels. A user may need access at more than one level to complete a task.
 
-| Page                                                   | Description                                           |
-|--------------------------------------------------------|-------------------------------------------------------|
-| [Manage my account](/products/cloud/guides/security/cloud-access-management/manage-my-account) | Describes how to manage your own user account, including passwords, MFA and account recovery |
-| [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) | An administrator's guide to managing user access in the ClickHouse Cloud console |
-| [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) | An administrator's guide to creating and managing custom roles |
-| [Manage SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) | An administrator's guide to managing SQL console users |
-| [Manage database users](/products/cloud/guides/security/cloud-access-management/manage-database-users) | An administrator's guide to managing database users |
-| [Manage database service accounts](/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts) | An administrator's guide to managing database service accounts |
-| [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) | An administrator's guide to configuring and troubleshooting SAML integrations |
-| [SAML SSO removal](/products/cloud/guides/security/saml-sso-removal) | An administrator's guide to removing SAML SSO |
-| [SCIM provisioning with Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) | An administrator's guide to automating user and group lifecycle with SCIM and Okta |
-| [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra) | An administrator's guide to automating user and group lifecycle with SCIM and Microsoft Entra ID |
-| [Common access management queries](/products/cloud/guides/security/cloud-access-management/common-access-management-queries) | Detailed examples of setting up and verifying database permissions |
+## Understand access levels {#understand-access-levels}
+
+| Access level | What it controls | Examples |
+|---|---|---|
+| Organization | Whether a user can access the organization and manage organization-wide resources | Organization settings, users, billing, and API keys |
+| Service and console | Which services and Cloud console features a user can access or manage | Service settings and SQL console |
+| Database | Which SQL operations and data a user can access after connecting to a service | Permissions on databases, tables, columns, and rows |
+
+<Info>
+**Opening a console feature and accessing data are separate permissions**
+
+Service and console permissions determine whether a user can open features such as SQL console. Database permissions determine what the user can query or modify after opening them.
+</Info>
+
+## Accounts and Cloud access {#accounts-and-cloud-access}
+
+| Task | Guide |
+|---|---|
+| Update your password, multi-factor authentication, or personal account | [Manage my account](/products/cloud/guides/security/cloud-access-management/manage-my-account) |
+| Invite users or change their organization and service access | [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) |
+| Create a reusable role with organization, service, or database permissions | [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) |
+| View the permissions included in predefined roles | [Console roles and permissions](/products/cloud/reference/security/console-roles) |
+
+## Database access {#database-access}
+
+| Task | Guide |
+|---|---|
+| Control which databases, tables, columns, or rows a SQL console user can access | [Manage database permissions](/products/cloud/guides/security/cloud-access-management/common-access-management-queries) |
+| Create a database user who signs in with credentials | [Manage database users](/products/cloud/guides/security/cloud-access-management/manage-database-users) |
+| Create a non-human database identity for an application or workload | [Manage database service accounts](/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts) |
+
+## Identity providers {#identity-providers}
+
+| Task | Guide |
+|---|---|
+| Configure single sign-on | [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup) |
+| Provision users and groups from Okta | [SCIM provisioning with Okta](/products/cloud/guides/security/cloud-access-management/scim-setup) |
+| Provision users and groups from Microsoft Entra ID | [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra) |
+| Remove an existing SAML configuration | [SAML SSO removal](/products/cloud/guides/security/saml-sso-removal) |
+
+## Legacy access settings {#legacy-access-settings}
+
+| Task | Guide |
+|---|---|
+| Configure SQL console access for an organization that has not migrated to custom roles | [Legacy SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) |

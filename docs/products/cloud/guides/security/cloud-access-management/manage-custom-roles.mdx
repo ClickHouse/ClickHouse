@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Manage custom roles'
+sidebarTitle: 'Custom roles'
 slug: /cloud/guides/security/manage-custom-roles
 title: 'Manage custom roles'
 description: 'This page describes how administrators can add, modify, and remove custom roles'
@@ -12,6 +12,8 @@ import { Image } from "/snippets/components/Image.jsx";
 This guide is intended for users with the Admin role in ClickHouse Cloud.
 
 ClickHouse Cloud customers may select from pre-defined system roles or create custom roles to assign to users. For more information on system roles and their associated permissions, review [Console roles and permissions](/products/cloud/reference/security/console-roles). This guide provides details for managing custom roles.
+
+Cloud roles determine whether a user can open a console feature. Database roles determine which data the user can access. See [Manage database permissions](/products/cloud/guides/security/cloud-access-management/common-access-management-queries) for database-level access guidance.
 
 ## Create custom roles {#create-custom-role}
 

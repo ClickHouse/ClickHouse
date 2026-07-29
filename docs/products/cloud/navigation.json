@@ -266,26 +266,26 @@
             },
             {
               "expanded": false,
-              "group": "Security",
+              "group": "Access management",
               "pages": [
-                {
-                  "expanded": false,
-                  "group": "Cloud access management",
-                  "pages": [
-                    "products/cloud/guides/security/cloud-access-management/index",
-                    "products/cloud/guides/security/cloud-access-management/manage-my-account",
-                    "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
-                    "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
-                    "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
-                    "products/cloud/guides/security/cloud-access-management/manage-database-users",
-                    "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
-                    "products/cloud/guides/security/cloud-access-management/scim-setup",
-                    "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-                    "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
-                    "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
-                    "products/cloud/guides/security/saml-sso-removal"
-                  ]
-                },
+                "products/cloud/guides/security/cloud-access-management/index",
+                "products/cloud/guides/security/cloud-access-management/manage-my-account",
+                "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                "products/cloud/guides/security/cloud-access-management/manage-database-users",
+                "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
+                "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
+                "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
+                "products/cloud/guides/security/cloud-access-management/scim-setup",
+                "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+                "products/cloud/guides/security/saml-sso-removal",
+                "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Security and compliance",
+              "pages": [
                 {
                   "expanded": false,
                   "group": "Connectivity",

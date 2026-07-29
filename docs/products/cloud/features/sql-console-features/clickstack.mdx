@@ -17,6 +17,16 @@ The ClickStack UI (HyperDX) is a purpose-built frontend for exploring and visual
 
 Managed ClickStack can be launched with a single click and connected to your data, fully integrated into the ClickHouse Cloud authentication system for seamless, secure access to your observability insights.
 
+## Access and permissions {#access-and-permissions}
+
+Managed ClickStack access is controlled at three levels.
+
+| Access level | What it controls | Guide |
+|---|---|---|
+| ClickHouse Cloud | Whether the user can access the service and open Managed ClickStack | [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) |
+| Managed ClickStack | Access to dashboards, sources, searches, and alerts | [ClickStack RBAC](/clickstack/managing/rbac) |
+| ClickHouse database | Access to the underlying data | [Customize SQL console database permissions](/products/cloud/guides/security/cloud-access-management/common-access-management-queries#passwordless-authentication) |
+
 ## Deployment {#main-concepts}
 
 You will find ClickStack available in the main left navigation menu when selecting any service.

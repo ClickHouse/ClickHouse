@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Common access management queries'
-title: 'Common access management queries'
+sidebarTitle: 'Database permissions'
+title: 'Manage database permissions'
 slug: /cloud/security/common-access-management-queries
-description: 'This article shows the basics of defining SQL users and roles and applying those privileges and permissions to databases, tables, rows, and columns.'
-keywords: ['ClickHouse Cloud', 'access management']
+description: 'Define SQL users and roles, customize database permissions for SQL console users, and apply privileges to databases, tables, rows, and columns.'
+keywords: ['ClickHouse Cloud', 'access management', 'database permissions', 'SQL console roles']
 doc_type: 'guide'
 ---
 
@@ -15,7 +15,7 @@ import CommonUserRolesContent from '/snippets/_users-and-roles-common.mdx';
 If you're working with self-managed ClickHouse please see [SQL users and roles](/concepts/features/security/access-rights).
 </Tip>
 
-This article shows the basics of defining SQL users and roles and applying those privileges and permissions to databases, tables, rows, and columns.
+This article shows how to define SQL users and roles, customize database permissions for SQL console users, and apply privileges to databases, tables, rows, and columns.
 
 ## Admin user {#admin-user}
 
@@ -38,7 +38,13 @@ When using the SQL Console, your SQL statements won't be run as the `default` us
 These automatically generated SQL Console users have the `default` role.
 </Note>
 
-## Passwordless authentication {#passwordless-authentication}
+## Customize SQL console database permissions {#passwordless-authentication}
+
+<Note>
+Access to SQL console and access to the underlying ClickHouse data are separate permissions. Cloud roles determine whether a user can open SQL console. Database roles determine which databases, tables, columns, or rows the user can access.
+
+To configure which users can open SQL console, see [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles). To review the permissions included in predefined Cloud roles, see [Console roles and permissions](/products/cloud/reference/security/console-roles).
+</Note>
 
 There are two roles available for SQL console: `sql_console_admin` with identical permissions to `default_role` and `sql_console_read_only` with read-only permissions. 
 
