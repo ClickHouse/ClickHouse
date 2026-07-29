@@ -166,3 +166,38 @@ ${CLICKHOUSE_CLIENT} -q "
       AND table = 'test_async_sel_fallback'
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_fallback"
+
+# Case 7: a Distributed destination must bypass the async gate, even though the SELECT result
+# shape would otherwise be async-eligible.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_dist"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_dist_local"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_dist_local (id UInt32, v String)
+    ENGINE = MergeTree ORDER BY id
+"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_dist AS test_async_sel_dist_local
+    ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), test_async_sel_dist_local, id)
+"
+Q=$(urlencode "INSERT INTO test_async_sel_dist SELECT number::UInt32 AS id, 'd_' || toString(number) AS v FROM numbers(3)")
+${CLICKHOUSE_CURL} -sS -X POST \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&distributed_foreground_insert=1&query=${Q}" -d ""
+# test_cluster_two_shards maps both shards to the same physical node, so a SELECT from the
+# Distributed table itself would read the shared local table once per shard and double every
+# row; read the local table directly instead.
+# distributed_foreground_insert=1 makes StorageDistributed deliver every shard's part before the
+# INSERT returns; without it the shard treated as remote goes through the background send queue,
+# so the row can still be missing from an immediately following SELECT.
+${CLICKHOUSE_CLIENT} -q "SELECT id, v FROM test_async_sel_dist_local ORDER BY id"
+# A Distributed destination must NOT appear in asynchronous_insert_log; it takes the synchronous path.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count()
+    FROM system.asynchronous_insert_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 600
+      AND database = currentDatabase()
+      AND table = 'test_async_sel_dist'
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dist"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dist_local"
