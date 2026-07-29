@@ -5512,7 +5512,20 @@ bool StorageReplicatedMergeTree::fetchPart(
         /// SYNC MERGES wait, even when they cover a scheduled source part. Record the entry's exact
         /// source parts so SYNC MERGES only waits on fetches whose source parts intersect its snapshot.
         if (!to_detached && !merge_source_parts.empty())
-            currently_fetching_merged_parts.emplace(part_name, merge_source_parts);
+        {
+            /// Copying the source set allocates. If it throws, part_name would stay in
+            /// currently_fetching_parts with no scope guard installed yet, and every later fetch of
+            /// this part would report "already fetching right now" until the server restarts.
+            try
+            {
+                currently_fetching_merged_parts.emplace(part_name, merge_source_parts);
+            }
+            catch (...)
+            {
+                currently_fetching_parts.erase(part_name);
+                throw;
+            }
+        }
     }
 
     SCOPE_EXIT_MEMORY
