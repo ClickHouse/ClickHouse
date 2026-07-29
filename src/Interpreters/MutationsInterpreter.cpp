@@ -799,12 +799,17 @@ static void rejectQueryPlanOnlyVirtualColumns(
         rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
-/// Collect the expression aliases defined anywhere in `ast` (`1 AS _table`). An alias is visible
-/// to the whole expression it is defined in, not only to the subtree below it, so these names are
-/// shadowed for the entire walk rather than scoped as the tree is descended.
+/// Collect the expression aliases defined in `ast` (`1 AS _table`). An alias is visible to the
+/// whole expression it is defined in, not only to the subtree below it, so these names are
+/// shadowed for the entire walk rather than scoped as the tree is descended. A subquery is its
+/// own scope, so its aliases must not hide a reference in the enclosing expression, and an alias
+/// does not apply inside the expression that defines it.
 static void collectExpressionAliases(const IAST * ast, NameSet & shadowed)
 {
     if (!ast)
+        return;
+
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
         return;
 
     if (const auto & alias = ast->tryGetAlias(); !alias.empty())

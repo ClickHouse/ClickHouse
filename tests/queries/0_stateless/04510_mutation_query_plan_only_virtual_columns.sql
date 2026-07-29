@@ -58,6 +58,9 @@ SELECT DISTINCT u FROM t_mut_qp_virtuals;
 
 -- A subquery is evaluated as its own SELECT and can materialize these virtuals.
 ALTER TABLE t_mut_qp_virtuals DELETE WHERE c0 IN (SELECT c0 FROM t_mut_qp_virtuals WHERE _sample_factor > 100);
+-- An alias defined inside a subquery belongs to that subquery, so it must not hide the
+-- reference in the enclosing predicate.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE _table != '' AND c0 IN (SELECT 1 AS _table); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 
 -- The value is only available in a SELECT, which keeps working.
 SELECT _sample_factor FROM t_mut_qp_virtuals SAMPLE 0.5 LIMIT 1 FORMAT Null;
