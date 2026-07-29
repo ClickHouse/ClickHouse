@@ -690,8 +690,8 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
-    /// filterPartsByProjection keeps only the parts served by the regular read (best_candidate->parent_parts)
-    /// and drops those served by the projection, mutating parent_reading_select_result in place. We must run
+    /// `filterPartsByProjection` keeps only the parts served by the regular read (`best_candidate->parent_parts`)
+    /// and drops those served by the projection, mutating `parent_reading_select_result` in place. We must run
     /// the header check below BEFORE that (irreversible) mutation, so that skipping the projection on a
     /// structure mismatch leaves the regular read (which shares this analysis result) seeing every part.
     /// Compute whether any such parent parts exist without mutating, for the decisions that need it now.
@@ -738,9 +738,9 @@ std::optional<String> optimizeUseNormalProjections(
 
     /// The rewritten projection stream must keep the same structure as the subplan it replaces:
     /// columns from `required_columns` that `query.dag` does not consume survive as pass-throughs
-    /// (ActionsDAG::updateHeader appends every un-consumed input) and would otherwise widen the
+    /// (`ActionsDAG::updateHeader` appends every un-consumed input) and would otherwise widen the
     /// output header, breaking the parent step's header contract. This protects both replacement
-    /// branches below: the all-parts branch (which splices next_node directly) and the Union branch.
+    /// branches below: the all-parts branch (which splices `next_node` directly) and the `Union` branch.
     /// Materialize constants if needed and require equal structure, else skip (regular read stays correct).
     const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
     const auto * proj_stream = &next_node->step->getOutputHeader();
@@ -756,10 +756,10 @@ std::optional<String> optimizeUseNormalProjections(
     }
 
     /// Skip the projection (keep the correct regular read) when the rewritten stream cannot match the
-    /// structure it replaces. This runs before filterPartsByProjection mutates the analysis result and
+    /// structure it replaces. This runs before `filterPartsByProjection` mutates the analysis result and
     /// before query access info is recorded, so a skipped projection neither drops parts from the
-    /// regular read nor is reported as selected in system.query_log. Rewrite the candidate's stat
-    /// description so EXPLAIN projections = 1 reflects the rejection instead of the earlier "selected".
+    /// regular read nor is reported as selected in `system.query_log`. Rewrite the candidate's stat
+    /// description so `EXPLAIN projections = 1` reflects the rejection instead of the earlier `selected`.
     if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
     {
         if (best_candidate->stat)
