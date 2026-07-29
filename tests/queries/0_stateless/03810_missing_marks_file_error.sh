@@ -33,7 +33,7 @@ remove_all_marks_files() {
 # typed error (NO_FILE_IN_DATA_PART) naming the part and the file, not an opaque
 # std::filesystem "in file_size: No such file" error.
 
-# --- Case 1: query read path (MergeTreeMarksLoader::loadMarksImpl) ---
+# --- Case 1: query read path (`MergeTreeMarksLoader::loadMarksImpl`) ---
 
 # ratio_of_defaults_for_sparse_serialization = 1: keep dense per-column marks. With sparse
 # serialization a column gains a .sparse.idx substream and the missing main marks file is caught
@@ -70,9 +70,9 @@ echo "$err" | grep -qF "is listed in the part's checksums" && echo "is listed in
 # during directory cleanup under the Ordinary engine, which would otherwise reach client stderr.
 $CLICKHOUSE_CLIENT --send_logs_level=none -q "drop table t_missing_marks sync;"
 
-# --- Case 2: index-granularity load path (MergeTreeDataPartWide::loadIndexGranularity) ---
+# --- Case 2: index-granularity load path (`MergeTreeDataPartWide::loadIndexGranularity`) ---
 # Index granularity is loaded directly from the first column's marks file when a part is
-# loaded, before any query reaches MergeTreeMarksLoader. Removing that marks file and
+# loaded, before any query reaches `MergeTreeMarksLoader`. Removing that marks file and
 # reloading the table must produce the same typed diagnostic, surfaced via the broken-part
 # handling that runs on load.
 
@@ -86,7 +86,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_granularity_marks SELECT number, nu
 path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=currentDatabase() and table='t_missing_granularity_marks' and active=1 limit 1")
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
 
-# detach the table so the part is unloaded, then remove the marks files. loadIndexGranularity()
+# detach the table so the part is unloaded, then remove the marks files. `loadIndexGranularity`
 # reads the first column's (a) marks file, which is among those removed.
 $CLICKHOUSE_CLIENT -q "detach table t_missing_granularity_marks"
 
@@ -118,9 +118,9 @@ SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0, max_threads = 1, use_query
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_granularity_marks sync;"
 
-# --- Case 3: index-granularity load path for compact parts (MergeTreeDataPartCompact::loadIndexGranularity) ---
+# --- Case 3: index-granularity load path for compact parts (`MergeTreeDataPartCompact::loadIndexGranularity`) ---
 # A compact part keeps every column's marks in a single "data" marks file, read directly on part
-# load through a different API (readFileIfExists) than the wide path. Removing that file and
+# load through a different API (`readFileIfExists`) than the wide path. Removing that file and
 # reloading the table must produce the same typed diagnostic, not the opaque std::filesystem error.
 
 # large min_*_for_wide_part forces a compact part (the 1000-row insert stays below both thresholds).
