@@ -78,6 +78,8 @@
 
 #include <Core/Settings.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <functional>
 #include <ranges>
 
