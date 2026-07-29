@@ -18,13 +18,32 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BASE_DIR="${USER_FILES_PATH}/t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 rm -rf "${BASE_DIR}"
 mkdir -p "${BASE_DIR}"
-trap 'rm -rf "${BASE_DIR}"' EXIT
 
 # Object names are database-scoped too: the stress job runs part of its threads
 # against one shared database, where a repeat would otherwise hit TABLE_ALREADY_EXISTS.
 PFX="t_${CLICKHOUSE_DATABASE}"
 
 CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --enable_nullable_tuple_type=1"
+
+# The tags of the shapes exercised below, in one place so `cleanup` follows them.
+TAGS="parquet avro depth3 multi array map unnamed"
+
+# Drop the objects before removing their directories (a surviving table is re-attached
+# with its data gone), pinning `ignore_drop_queries_probability` as `roundtrip` does.
+cleanup() {
+    local query="" tag
+    for tag in ${TAGS}; do
+        query="${query} DROP TABLE IF EXISTS mv_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
+    done
+    for tag in ${TAGS}; do
+        query="${query} DROP TABLE IF EXISTS src_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
+        query="${query} DROP TABLE IF EXISTS dst_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
+    done
+    query="${query} DROP TABLE IF EXISTS added_${PFX} SETTINGS ignore_drop_queries_probability = 0;"
+    ${CH} -q "${query}" > /dev/null 2>&1 || true
+    rm -rf "${BASE_DIR}"
+}
+trap cleanup EXIT
 
 # Innermost field name of the deepest struct in the latest metadata version.
 innermost_name() {
