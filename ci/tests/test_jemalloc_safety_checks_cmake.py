@@ -1748,26 +1748,43 @@ def test_platform_header_search_detects_both_directions(
 
 
 def _compiled_flag_value(preamble_text, flag, defines, prologue=""):
-    """Clang's value for `flag`, compiling the initializers extracted from `preamble_text`.
+    """Clang's value for `flag`, compiling `preamble_text` up to and including the initializers.
+
+    The header's own text *preceding* the initializers is compiled too, because the state it
+    establishes decides the gates just as a `-D` does: an active `#define JEMALLOC_DEBUG 1`
+    sitting above them arms both flags in every x86-64 jemalloc build, release included, and
+    nothing else in this PR can see it (the build job's leak probe does not include the
+    preamble - `"jemalloc_preamble" in JEMALLOC_LEAK_PROBE_SOURCE` is False - and the module
+    deliberately keeps no text model of the file). An earlier version extracted only the two
+    initializer blocks and so answered *False* for both flags with that `#define` present,
+    i.e. reported an armed build as unarmed.
+
+    `#include` lines are dropped so the text compiles standalone: the real include chain
+    reaches `configure_file`d and generated headers a `CI Tests` runner does not have.
+    `JEMALLOC_CONFIG_MALLOC_CONF` comes from one of them and is substituted here for the
+    same reason. Everything else - `#define`s, `#undef`s, conditionals, the other
+    `config_*` initializers - is kept verbatim.
 
     `prologue` is emitted immediately before the initializers, which is how a directive
-    reaching them through one of the header's own includes is modelled. It is passed
-    separately rather than spliced into `preamble_text` because only the two initializer
-    blocks are extracted: text placed before them in the header would be dropped on the
-    way to the compiler, and a `#undef` that never reaches the probe would read as "the
-    `#undef` did not disarm the gate".
+    reaching them through one of the dropped `#include`s is modelled.
 
     Returns True/False; raises when the probe is inconclusive, so a header this cannot be
     asked about fails closed rather than passing.
     """
     blocks = _extract_config_flag_blocks(preamble_text)
     source = (
-        # The real preamble gets `bool` from headers it includes first; the initializers
-        # are extracted without them, so declare it here.
+        # The real preamble gets `bool` and `JEMALLOC_CONFIG_MALLOC_CONF` from headers it
+        # includes first, and those includes are dropped below.
         "#include <stdbool.h>\n"
+        '#define JEMALLOC_CONFIG_MALLOC_CONF ""\n'
+        + _header_text_before_the_initializers(preamble_text)
         + prologue
         + "\n".join(blocks[name] for name in sorted(blocks))
         + f'\n_Static_assert({flag}, "{_FLAG_IS_FALSE}");\n'
+        # The header opens with an `#ifndef JEMALLOC_PREAMBLE_H` include guard that its
+        # own `#endif` (past the initializers) closes; the text is cut before that, so
+        # close it here or the probe is inconclusive with `unterminated conditional`.
+        + "#endif\n"
     )
     process = subprocess.run(
         [ToolSet.COMPILER_C, "-fsyntax-only", "-x", "c", "-"]
@@ -1791,6 +1808,30 @@ def _compiled_flag_value(preamble_text, flag, defines, prologue=""):
 # The `_Static_assert` text, matched in stderr so a false flag is told apart from a probe
 # that failed for some unrelated reason.
 _FLAG_IS_FALSE = "the config flag is false"
+
+
+def _header_text_before_the_initializers(preamble_text):
+    """Everything above the first `config_opt_*` initializer, minus the `#include` lines.
+
+    What makes an active `#define`/`#undef` in the header itself visible to the probe. The
+    `#include`s are dropped rather than satisfied because the real chain reaches generated
+    headers; dropping them cannot hide a directive, since a directive arriving *through* an
+    include is what `prologue` models.
+    """
+    text = re.sub(r"/\*.*?\*/", "", preamble_text, flags=re.S)
+    first = _CONFIG_FLAG_BLOCK_RE.search(text)
+    assert first, (
+        f"{JEMALLOC_PREAMBLE_REL}: no `config_opt_*` initializer found, so the text "
+        "preceding them cannot be located. Re-derive this guard against the current header."
+    )
+    return (
+        "\n".join(
+            line
+            for line in text[: first.start()].split("\n")
+            if not re.match(r"\s*#\s*include", line)
+        )
+        + "\n"
+    )
 
 
 def _extract_config_flag_blocks(preamble_text):
@@ -1993,6 +2034,117 @@ def test_directives_before_the_initializer_are_honoured(
     ), (
         f"{label}: with `-DJEMALLOC_OPT_SIZE_CHECKS` and {prologue!r} before the "
         f"initializer, `config_opt_size_checks` must compile to {armed_expected}"
+    )
+
+
+# --- ... and the `#define` direction, in the header's own text ------------------------
+#
+# The mirror image of the rows above, and the asymmetry that used to be the bug: `#undef` was
+# covered here and the platform-defs headers were covered in *both* directions
+# (`test_platform_header_search_detects_both_directions`), while an active `#define` in the
+# compiled preamble was covered nowhere. It arms both gates in every x86-64 jemalloc build,
+# release included, with every other guard green - which is exactly the default-off contract
+# `assert_jemalloc_safety_macros_absent` exists to protect - and the build job's leak probe
+# cannot see it, because that probe does not include the preamble at all.
+#
+# These rows assert the *state the header establishes*, so no `-D` is passed: `defines` is
+# empty and the `#define` under test is the only thing that could arm the flag.
+
+_PREAMBLE_DEFINE_CASES = [
+    ("#define JEMALLOC_DEBUG", DEBUG_MACRO, "config_opt_size_checks", True),
+    ("#define JEMALLOC_DEBUG arms safety too", DEBUG_MACRO, "config_opt_safety_checks", True),
+    ("#define JEMALLOC_OPT_SIZE_CHECKS", REQUIRED_MACROS[1], "config_opt_size_checks", True),
+    (
+        "#define JEMALLOC_OPT_SAFETY_CHECKS",
+        REQUIRED_MACROS[0],
+        "config_opt_safety_checks",
+        True,
+    ),
+    # Cross-terms: each macro must arm only its own gate, or "any text arms it" would
+    # satisfy the rows above.
+    (
+        "the size macro does not arm the safety gate",
+        REQUIRED_MACROS[1],
+        "config_opt_safety_checks",
+        False,
+    ),
+    (
+        "the safety macro does not arm the size gate",
+        REQUIRED_MACROS[0],
+        "config_opt_size_checks",
+        False,
+    ),
+]
+
+
+@pytest.mark.parametrize("label, macro, flag, armed_expected", _PREAMBLE_DEFINE_CASES)
+def test_an_active_define_in_the_real_preamble_arms_the_gate(
+    compiler_probe, label, macro, flag, armed_expected
+):
+    """A `#define` injected into the real header before the initializers must be detected.
+
+    Injected into `JEMALLOC_PREAMBLE`'s own text rather than passed as a prologue, so this is
+    the mutation `#define JEMALLOC_DEBUG 1` / `#define JEMALLOC_OPT_SIZE_CHECKS 1` applied to
+    the real file - which, before the oracle compiled the text preceding the initializers,
+    left the whole suite green while both flags were really armed.
+    """
+    preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
+    anchor = "static const bool config_opt_safety_checks ="
+    assert preamble.count(anchor) == 1, (
+        f"{JEMALLOC_PREAMBLE_REL}: expected exactly one `{anchor}`; the injection point "
+        "moved, so these rows would not be mutating the real text"
+    )
+    mutated = preamble.replace(anchor, f"#define {macro} 1\n{anchor}")
+    assert _compiled_flag_value(mutated, flag, set()) is armed_expected, (
+        f"{label}: with `#define {macro} 1` in the header immediately before the "
+        f"initializers and no `-D` at all, `{flag}` must compile to {armed_expected}. An "
+        "active #define there arms the gate in every x86-64 jemalloc build, release "
+        "included, and no other layer of this guard can see it"
+    )
+
+
+@pytest.mark.parametrize(
+    "label, injected, armed_expected",
+    [
+        ("commented-out #define", "/* #define JEMALLOC_DEBUG 1 */", False),
+        ("a suffixed identifier", "#define JEMALLOC_DEBUG_DISABLED 1", False),
+        ("an unrelated macro", "#define SOMETHING_ELSE 1", False),
+    ],
+)
+def test_inert_text_in_the_real_preamble_does_not_arm_the_gate(
+    compiler_probe, label, injected, armed_expected
+):
+    """The must-not-fire half: compiling more of the header must not arm it by itself.
+
+    Without these, "any injected text arms the flag" would satisfy the `#define` rows just as
+    well as honouring the directive does.
+    """
+    preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
+    anchor = "static const bool config_opt_safety_checks ="
+    mutated = preamble.replace(anchor, f"{injected}\n{anchor}")
+    assert (
+        _compiled_flag_value(mutated, "config_opt_size_checks", set()) is armed_expected
+    ), f"{label}: {injected!r} defines neither gate's macro, so the flag must stay false"
+
+
+def test_the_oracle_compiles_the_text_preceding_the_initializers(compiler_probe):
+    """The property the two tables above rest on, asserted directly.
+
+    An oracle that extracted only the initializer blocks would answer *False* for a header
+    whose own text arms the gate - i.e. report an armed build as unarmed - and every row
+    above would pass. So the text really has to reach the compiler, and this asserts it does
+    by a route no `-D` can fake: a `#define` of an identifier that appears nowhere else.
+    """
+    preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
+    preceding = _header_text_before_the_initializers(preamble)
+    assert "#include" not in preceding, (
+        "the `#include` lines must be dropped, or the probe needs a configured tree's "
+        "generated headers and comes back inconclusive"
+    )
+    assert "config_debug" in preceding, (
+        f"{JEMALLOC_PREAMBLE_REL}: the text preceding the `config_opt_*` initializers no "
+        "longer contains the earlier `config_*` ones, so it is probably not being extracted "
+        "at all. Re-derive this guard against the current header."
     )
 
 
