@@ -826,16 +826,31 @@ def test_row_policy_survives_refresh(module_setup_tables):
     )
     node.query("SYSTEM WAIT VIEW rp_rmv")
 
+    # SYSTEM WAIT VIEW waits on the LOCAL refresh task only (RefreshTask::wait waits on this
+    # replica's condition variable), and the refresh discards the BlockIO of the swap it issues, so
+    # it does not wait for the other replicas to execute that DDL entry either (see the comment in
+    # StorageMaterializedView::prepareRefresh). Synchronize each replica explicitly before asserting
+    # per-node state, otherwise node2 can be read before it has applied the swap.
+    for n in nodes:
+        n.query("SYSTEM SYNC DATABASE REPLICA default")
+        n.query("SYSTEM SYNC REPLICA rp_tgt")
+
     for n in nodes:
         # Read the true row count through system.parts: the default user cannot SELECT from a table
-        # that has row policies none of which apply to it.
-        assert (
-            n.query(
+        # that has row policies none of which apply to it. The data assertion gets a bounded retry
+        # (replicated fetches are asynchronous even after SYNC REPLICA), following the pattern used
+        # elsewhere in this module; the policy binding is asserted exactly and never retried,
+        # because that is the security property under test.
+        rows = ""
+        for _ in range(60):
+            rows = n.query(
                 "SELECT sum(rows) FROM system.parts "
                 "WHERE database = 'default' AND table = 'rp_tgt' AND active"
             )
-            == "2\n"
-        )
+            if rows == "2\n":
+                break
+            time.sleep(0.5)
+        assert rows == "2\n"
         assert (
             n.query("SELECT table FROM system.row_policies WHERE short_name = 'rp'")
             == "rp_tgt\n"

@@ -89,6 +89,59 @@ ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY cp ON ${DB2}.cb"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB2}.cb"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
 
+# An EXCHANGE moves data in BOTH directions, so both re-keys must also rewrite the DATABASE part of
+# the policy name. The same-database exchange case above cannot see a reverse re-key that only fixes
+# the table name, because there the database is unchanged either way.
+echo '-- cross-database EXCHANGE: each policy follows its data across the database boundary'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.xa (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB2}.xb (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.xa VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB2}.xb VALUES (10, 'eng'), (20, 'fin')"
+# Different filters, so a re-key that lost the database part (leaving the policy behind or landing it
+# on the wrong database) changes which rows the user sees rather than staying invisible.
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY xpa ON ${CLICKHOUSE_DATABASE}.xa FOR SELECT USING dept = 'eng' TO ${USER}"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY xpb ON ${DB2}.xb FOR SELECT USING dept = 'fin' TO ${USER}"
+echo 'before: xa {1,2} with eng policy -> 1; xb {10,20} with fin policy -> 20:'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.xa ORDER BY id"
+run_user "SELECT id FROM ${DB2}.xb ORDER BY id"
+run_user "EXCHANGE TABLES ${CLICKHOUSE_DATABASE}.xa AND ${DB2}.xb"
+echo 'after cross-db exchange the policies followed their data: name xa now holds {10,20} guarded by the fin policy -> 20; name xb now holds {1,2} guarded by the eng policy -> 1:'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.xa ORDER BY id"
+run_user "SELECT id FROM ${DB2}.xb ORDER BY id"
+echo 'and both bindings moved to the other database:'
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpa'"
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpb'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xpa ON ${DB2}.xb"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xpb ON ${CLICKHOUSE_DATABASE}.xa"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.xa"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB2}.xb"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
+
+# The destination side of an EXCHANGE needs its own database-wide rejection: the table arriving from
+# the other database would fall under the destination `ON db.*` policy it never had, and the table
+# leaving cannot take that policy with it. Only a DESTINATION-side `ON db.*` (with none on the source)
+# exercises that branch; the source-side rejection tested below cannot reach it.
+echo '-- cross-database EXCHANGE rejected when only the DESTINATION has a database-wide policy'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB2}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.ya (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB2}.yb (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.ya VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB2}.yb VALUES (10, 'eng'), (20, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY yp ON ${DB2}.* FOR SELECT USING dept = 'fin' TO ${USER}"
+run_user "EXCHANGE TABLES ${CLICKHOUSE_DATABASE}.ya AND ${DB2}.yb" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+echo 'after rejected exchange nothing moved: ya still holds its own {1,2} unfiltered (no policy in that database) and yb still holds {10,20} filtered by the db-wide fin policy -> 20:'
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ya ORDER BY id"
+run_user "SELECT id FROM ${DB2}.yb ORDER BY id"
+echo 'and the db-wide policy is still bound to its own database:'
+${CLICKHOUSE_CLIENT} --query "SELECT database FROM system.row_policies WHERE short_name = 'yp'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY yp ON ${DB2}.*"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ya"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB2}.yb"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
+
 echo '-- RENAME DATABASE: database-wide and per-table policies follow'
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB2}"
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_src"

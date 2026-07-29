@@ -21,6 +21,24 @@ after exchange the policies follow their data: name sa holds {10,20} guarded by 
 after cross-db rename (eng only):
 1
 default_2	cb
+-- cross-database EXCHANGE: each policy follows its data across the database boundary
+before: xa {1,2} with eng policy -> 1; xb {10,20} with fin policy -> 20:
+1
+20
+after cross-db exchange the policies followed their data: name xa now holds {10,20} guarded by the fin policy -> 20; name xb now holds {1,2} guarded by the eng policy -> 1:
+20
+1
+and both bindings moved to the other database:
+default_2	xb
+default	xa
+-- cross-database EXCHANGE rejected when only the DESTINATION has a database-wide policy
+NOT_IMPLEMENTED
+after rejected exchange nothing moved: ya still holds its own {1,2} unfiltered (no policy in that database) and yb still holds {10,20} filtered by the db-wide fin policy -> 20:
+1
+2
+20
+and the db-wide policy is still bound to its own database:
+default_2
 -- RENAME DATABASE: database-wide and per-table policies follow
 after database rename (db-wide policy still applies -> eng only):
 1
