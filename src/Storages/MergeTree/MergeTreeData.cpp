@@ -10404,6 +10404,14 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
     /// Key: partition_id (or empty string if no GROUP BY)
     std::unordered_map<String, std::pair<Row, std::unordered_map<String, std::pair<Field, Field>>>> partition_minmax;
 
+    /// Lambda to detect NaN field values (StatisticsBasic::build can produce NaN
+    /// bounds for parts whose column is entirely NaN, and NaN comparisons break
+    /// the merge loop below since any comparison with NaN is false).
+    auto isNanField = [](const Field & f) -> bool
+    {
+        return f.getType() == Field::Types::Float64 && std::isnan(f.safeGet<Float64>());
+    };
+
     for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
     {
         if (pruning_result.part_name_column)
@@ -10454,6 +10462,13 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
             const Field & part_min = *est_it->second.estimated_min;
             const Field & part_max = *est_it->second.estimated_max;
 
+            /// If either per-part bound is NaN, fall back to a normal aggregation.
+            if (isNanField(part_min) || isNanField(part_max))
+            {
+                LOG_TRACE(log, "Column statistics aggregation: part '{}' column '{}' has NaN bounds, falling back", part->name, arg_col_name);
+                return {};
+            }
+
             auto & [cur_min, cur_max] = col_minmax[agg_col.col_name];
             if (cur_min.isNull() || accurateLess(part_min, cur_min))
                 cur_min = part_min;
@@ -10491,9 +10506,9 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
                 return {};
             }
             const Field & value = agg_col.is_min ? minmax_it->second.first : minmax_it->second.second;
-            if (value.isNull() || value.isPositiveInfinity())
+            if (value.isNull() || value.isPositiveInfinity() || isNanField(value))
             {
-                LOG_TRACE(log, "Column statistics aggregation: NULL/infinity bound for column '{}', falling back", agg_col.col_name);
+                LOG_TRACE(log, "Column statistics aggregation: NULL/infinity/NaN bound for column '{}', falling back", agg_col.col_name);
                 return {};
             }
             insertAggValue(assert_cast<ColumnAggregateFunction &>(*agg_col.column), value);
