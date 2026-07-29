@@ -241,4 +241,21 @@ const BigQueryField * findBigQueryField(const BigQueryFields & fields, const Str
     return nullptr;
 }
 
+bool bigQueryFieldsIdentical(const BigQueryField & lhs, const BigQueryField & rhs)
+{
+    /// The mapped ClickHouse type is deliberately not compared: it is a function of the fields below, and
+    /// it is not a unique fingerprint of the wire schema - `STRING` and `BYTES` both map to `String`, and
+    /// `REQUIRED GEOGRAPHY` and `NULLABLE GEOGRAPHY` both map to `Geometry`, while the read and write paths
+    /// encode and decode them differently, driven by `BigQueryField` rather than by the ClickHouse type.
+    if (lhs.name != rhs.name || lhs.type != rhs.type || lhs.repeated != rhs.repeated || lhs.required != rhs.required
+        || lhs.precision != rhs.precision || lhs.scale != rhs.scale || lhs.children.size() != rhs.children.size())
+        return false;
+
+    /// A RECORD's children are positional in the response, so their order matters as well.
+    for (size_t i = 0; i < lhs.children.size(); ++i)
+        if (!bigQueryFieldsIdentical(lhs.children[i], rhs.children[i]))
+            return false;
+    return true;
+}
+
 }

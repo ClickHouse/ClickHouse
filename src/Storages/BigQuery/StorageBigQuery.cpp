@@ -532,10 +532,14 @@ Pipe StorageBigQuery::read(
         if (requested.contains(field.name))
             current_selected.push_back(field);
 
+    /// The comparison is over the BigQuery schema nodes themselves (type, mode, precision and scale, and
+    /// the RECORD children, recursively), not over the mapped ClickHouse types: distinct BigQuery types map
+    /// to the same ClickHouse type (`STRING` and `BYTES` both map to `String`, `REQUIRED GEOGRAPHY` and
+    /// `NULLABLE GEOGRAPHY` both map to `Geometry`), while `BigQuerySource` decodes the wire payload from
+    /// the `BigQueryField` metadata, so a same-mapped-type drift would still be decoded with the wrong rules.
     bool schema_changed = current_selected.size() != selected.size();
     for (size_t i = 0; !schema_changed && i < selected.size(); ++i)
-        schema_changed = current_selected[i].name != selected[i].name
-            || !current_selected[i].data_type->equals(*selected[i].data_type);
+        schema_changed = !bigQueryFieldsIdentical(current_selected[i], selected[i]);
     if (schema_changed)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -580,10 +584,13 @@ SinkToStoragePtr StorageBigQuery::write(
         /// The declared column must match the *live* remote type, not just the analyzed one.
         checkColumnMatchesSchema(NameAndTypePair{column.name, column.type}, current_fields);
 
+        /// As on the read side, the analyzed and the live field are compared as BigQuery schema nodes
+        /// (recursively, including the RECORD children), because `bigQueryJSONValue` encodes a value from
+        /// that metadata: a `STRUCT<name STRING>` that became a `STRUCT<name BYTES>` keeps mapping to the
+        /// same `Tuple(name String)` while the child would now be base64-encoded on the wire.
         const auto & field = *findBigQueryField(current_fields, column.name);
         const auto * analyzed_field = findBigQueryField(analyzed_fields, column.name);
-        if (!analyzed_field || analyzed_field->type != field.type || analyzed_field->repeated != field.repeated
-            || analyzed_field->required != field.required || !analyzed_field->data_type->equals(*field.data_type))
+        if (!analyzed_field || !bigQueryFieldsIdentical(*analyzed_field, field))
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "The schema of the BigQuery table `{}.{}` changed since it was analyzed: column '{}' no longer "

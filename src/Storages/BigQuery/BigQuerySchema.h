@@ -55,4 +55,10 @@ ColumnsDescription columnsDescriptionFromBigQuerySchema(const BigQueryFields & f
 
 const BigQueryField * findBigQueryField(const BigQueryFields & fields, const String & name);
 
+/// Whether two fields describe exactly the same BigQuery schema node: the same name, type, mode,
+/// precision and scale, and, recursively, the same children in the same order. This is the fingerprint
+/// the read and write paths are compiled against, and it is strictly finer-grained than the mapped
+/// ClickHouse type, which several distinct BigQuery types share.
+bool bigQueryFieldsIdentical(const BigQueryField & lhs, const BigQueryField & rhs);
+
 }

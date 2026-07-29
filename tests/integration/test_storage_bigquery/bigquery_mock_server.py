@@ -290,6 +290,21 @@ REORDER_ROWS = [
     row("a1", "b1"),
 ]
 
+# A fixture for the schema-drift checks. Every field maps to a ClickHouse type that another BigQuery
+# type maps to as well (`STRING` and `BYTES` both map to `String`), including the child of the RECORD,
+# so a drift of any of them is invisible to a comparison of the mapped ClickHouse types alone and can
+# only be caught by comparing the BigQuery schema nodes. The RECORD is REQUIRED so that the table maps
+# to a plain `Tuple(...)` and needs no `enable_nullable_tuple_type`.
+DRIFT_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("s", "STRING"),
+    f("rec", "RECORD", "REQUIRED", fields=[f("name", "STRING")]),
+]
+
+DRIFT_ROWS = [
+    row("1", "s0", {"f": [v("n0")]}),
+]
+
 TABLES = {}
 
 
@@ -353,6 +368,11 @@ def reset_tables():
             "schema": REORDER_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in REORDER_ROWS],
         },
+        "test_drift": {
+            "type": "TABLE",
+            "schema": json.loads(json.dumps(DRIFT_SCHEMA)),
+            "rows": [json.loads(json.dumps(r)) for r in DRIFT_ROWS],
+        },
     }
 
 
@@ -383,7 +403,8 @@ LONG_PAGE_TOKEN = [None]
 # cells. SCHEMA_GET_COUNT tracks how many schema requests have been served per table.
 SWAP_SCHEMA_AFTER_FIRST_GET = {}
 SCHEMA_GET_COUNT = {}
-# Maps a table name to a pair (column name, new BigQuery type) applied to EVERY subsequent `tables.get`.
+# Maps a table name to a pair (column path, new BigQuery type) applied to EVERY subsequent `tables.get`.
+# The path is dot-separated, so a child of a RECORD can be retyped as well (`rec.name`).
 # This simulates a concurrent BigQuery-side type change of an existing column that lands after a schema
 # snapshot was taken but before an `INSERT`, so the writer must reject the write instead of streaming rows
 # whose JSON representation the new type happens to accept as well. The change is not tied to a get count,
@@ -608,10 +629,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             retype = RETYPE_SCHEMA.get(table_name)
             if retype is not None:
                 # Simulate a concurrent BigQuery-side type change of one column, served from now on.
-                fields = [dict(field) for field in fields]
-                column, new_type = retype
-                for field in fields:
-                    if field["name"] == column:
+                # The column is addressed by a dot-separated path, so a RECORD child can be retyped too.
+                fields = json.loads(json.dumps(fields))
+                path, new_type = retype
+                level = fields
+                for name in path.split(".")[:-1]:
+                    level = next(f_ for f_ in level if f_["name"] == name)["fields"]
+                for field in level:
+                    if field["name"] == path.split(".")[-1]:
                         field["type"] = new_type
             self.send_json(
                 200,

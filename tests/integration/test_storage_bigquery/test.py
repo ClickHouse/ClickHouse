@@ -468,6 +468,61 @@ def test_read_schema_reorder_rejected():
     assert mock_stats()["data_requests"] == []
 
 
+def test_same_clickhouse_type_schema_drift_rejected():
+    # Both drift checks compare the BigQuery schema nodes themselves - type, mode, precision and scale,
+    # and the RECORD children, recursively - not the ClickHouse types they map to. Several BigQuery types
+    # share a ClickHouse type (`STRING` and `BYTES` both map to `String`), while the wire encoding is
+    # driven by the BigQuery type, so a drift that keeps the mapped type would otherwise pass the guard
+    # and be decoded (or encoded) with the wrong rules: a `BYTES` payload is base64-encoded.
+    #
+    # A `BigQuery` engine table pins the analyzed snapshot: the schema is inferred once, when the table
+    # is created, and cached for the lifetime of the storage. The remote type is changed only afterwards.
+    def create_engine_table():
+        node.query("DROP TABLE IF EXISTS bq_same_type_drift")
+        node.query(
+            f"CREATE TABLE bq_same_type_drift ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_drift', "
+            f"base_url = '{BASE_URL}', access_token = '{ACCESS_TOKEN}')"
+        )
+
+    # A top-level STRING -> BYTES drift on the read path.
+    mock_reset()
+    create_engine_table()
+    mock_ctl("/__retype_schema__?table=test_drift&column=s&type=BYTES")
+    error = node.query_and_get_error("SELECT i, s FROM bq_same_type_drift")
+    assert "changed between query analysis and execution" in error
+    # The read was rejected before any data request was issued.
+    assert mock_stats()["data_requests"] == []
+
+    # The same drift inside a RECORD child, which collapses into the same `Tuple(name String)`.
+    mock_reset()
+    create_engine_table()
+    mock_ctl("/__retype_schema__?table=test_drift&column=rec.name&type=BYTES")
+    error = node.query_and_get_error("SELECT i, rec FROM bq_same_type_drift")
+    assert "changed between query analysis and execution" in error
+    assert mock_stats()["data_requests"] == []
+
+    # The write path uses the same comparison, so a RECORD child drift is rejected there as well:
+    # `bigQueryJSONValue` would start base64-encoding the child while the local type is still `String`.
+    mock_reset()
+    create_engine_table()
+    mock_ctl("/__retype_schema__?table=test_drift&column=rec.name&type=BYTES")
+    error = node.query_and_get_error(
+        "INSERT INTO bq_same_type_drift VALUES (2, 's1', tuple('n1'))"
+    )
+    assert "changed since it was analyzed" in error
+    assert mock_stats()["insert_requests"] == []
+
+    # Without drift the same statements work, and the nested STRING round-trips as a string.
+    mock_reset()
+    create_engine_table()
+    node.query("INSERT INTO bq_same_type_drift VALUES (2, 's1', tuple('n1'))")
+    assert (
+        node.query("SELECT i, s, rec.1 FROM bq_same_type_drift ORDER BY i FORMAT TSV")
+        == "1\ts0\tn0\n2\ts1\tn1\n"
+    )
+    node.query("DROP TABLE bq_same_type_drift")
+
+
 def test_write_schema_drift_rejected():
     # The write path re-fetches the live schema before streaming any row, and rejects the INSERT if the
     # touched columns no longer match the analyzed snapshot. Without that check the rows would be sent
