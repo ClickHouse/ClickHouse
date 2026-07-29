@@ -82,6 +82,9 @@ INSERT INTO tab_scann_cos
     SELECT 12 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
     FROM numbers(1988);
 OPTIMIZE TABLE tab_scann_cos FINAL;
+-- Reload the persisted index to cover `ScannConfig`, residual AH, and SOAR restoration.
+DETACH TABLE tab_scann_cos SYNC;
+ATTACH TABLE tab_scann_cos;
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, cosineDistance(vec, reference_vec) AS dist
 FROM tab_scann_cos

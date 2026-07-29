@@ -71,6 +71,7 @@ extern const int INCORRECT_DATA;
 extern const int ILLEGAL_COLUMN;
 extern const int LOGICAL_ERROR;
 extern const int INVALID_SETTING_VALUE;
+extern const int FORMAT_VERSION_TOO_OLD;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +321,7 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
     /// tracked separately.
     total += soar_hashed_data.size();
 
+    total += serialized_config_proto.capacity();
     total += serialized_partitioner_proto.size();
     total += serialized_codebook_proto.size();
     for (const auto & token : datapoints_by_token)
@@ -332,6 +334,7 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 
 void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & ostr) const
 {
+    writeIntBinary(FILE_FORMAT_VERSION, ostr);
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
 
@@ -344,6 +347,9 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     if (index_built || have_quantized)
         precision_tag = (params.precision == "bf16") ? 1 : (params.precision == "i8" ? 2 : 0);
     writeIntBinary(precision_tag, ostr);
+
+    writeIntBinary(static_cast<UInt64>(serialized_config_proto.size()), ostr);
+    ostr.write(serialized_config_proto.data(), serialized_config_proto.size());
 
     if (precision_tag == 0)
     {
@@ -469,6 +475,16 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
 
 void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    UInt64 file_version = 0;
+    readIntBinary(file_version, istr);
+    if (file_version != FILE_FORMAT_VERSION)
+        throw Exception(
+            ErrorCodes::FORMAT_VERSION_TOO_OLD,
+            "ScaNN vector similarity index could not be loaded because its version is too old "
+            "(current version: {}, persisted version: {}). Please drop the index and create it again.",
+            FILE_FORMAT_VERSION,
+            file_version);
+
     UInt64 n = 0;
     UInt64 pd = 0;
     readIntBinary(n, istr);
@@ -480,6 +496,18 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     /// how the artifacts were quantized), so set params.precision from it.
     UInt8 precision_tag = 0;
     readIntBinary(precision_tag, istr);
+
+    UInt64 config_len = 0;
+    readIntBinary(config_len, istr);
+    serialized_config_proto.resize(config_len);
+    if (config_len > 0)
+        istr.readStrict(serialized_config_proto.data(), config_len);
+
+    research_scann::ScannConfig config;
+    if (!serialized_config_proto.empty() && !config.ParseFromString(serialized_config_proto))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: could not parse persisted ScaNN config");
+
     if (precision_tag == 0)
     {
         params.precision = "f32";
@@ -563,7 +591,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
                 count * sizeof(UInt32));
     }
 
-    buildIndexFromSerialized();
+    buildIndexFromSerialized(config);
 }
 
 void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
@@ -670,6 +698,10 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: unknown exception");
     }
 
+    if (!config.SerializeToString(&serialized_config_proto))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index build failed: could not serialize ScaNN config");
+
     LOG_DEBUG(log, "ScaNN index built successfully for {} vectors", num_vectors);
 
     /// Extract pre-trained artifacts so serializeBinary can persist them
@@ -767,12 +799,22 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         datapoints_by_token.size());
 }
 
-void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
+void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized(const research_scann::ScannConfig & config)
 {
     if (num_vectors == 0)
         return;
 
     constexpr size_t MIN_VECTORS = 1000;
+    if (serialized_config_proto.empty())
+    {
+        if (num_vectors < MIN_VECTORS)
+            return;
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: persisted ScaNN config is missing for {} vectors. "
+            "Drop and recreate the index.",
+            num_vectors);
+    }
+
     if (serialized_partitioner_proto.empty() || serialized_codebook_proto.empty())
     {
         /// buildIndex skips index construction for granules with fewer than MIN_VECTORS
@@ -855,37 +897,6 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
         restored_searcher_owned_memory_bytes += estimateTreeAHSearcherMemoryBytes(*dbt, hashed_dim);
         opts.datapoints_by_token = std::move(dbt);
     }
-
-    /// Reconstruct the same ScaNN config that was used during buildIndex().
-    std::string scann_distance_measure;
-    bool use_residual = false;
-    if (params.distance_name == "L2Distance")
-    {
-        scann_distance_measure = "SquaredL2Distance";
-    }
-    else
-    {
-        scann_distance_measure = "DotProductDistance";
-        use_residual = true;
-    }
-
-    const size_t num_leaves = params.num_leaves != 0
-        ? static_cast<size_t>(params.num_leaves)
-        : std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
-    const size_t num_leaves_to_search = std::max(size_t(1),
-        static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
-    const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
-    const size_t min_cluster_size = std::max(size_t(1), std::min(size_t(50), (num_vectors / num_leaves) / 2));
-    const size_t num_blocks = std::max(size_t(1), padded_dim / 2);
-
-    const std::string config_str = buildScannConfigString(
-        scann_distance_measure, num_leaves, num_leaves_to_search,
-        training_sample_size, min_cluster_size, num_blocks, use_residual, params.precision);
-
-    research_scann::ScannConfig config;
-    if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ScaNN index restore failed: could not parse ScaNN config string");
 
     /// Reorder dataset at the stored precision. For f32 the float vectors are the reordering
     /// dataset; for bf16/i8 the quantized dataset is supplied via opts and no float dataset is

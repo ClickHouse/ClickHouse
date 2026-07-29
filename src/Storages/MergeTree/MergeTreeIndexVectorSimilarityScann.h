@@ -9,6 +9,7 @@
 
 namespace research_scann
 {
+class ScannConfig;
 template <typename T>
 class SingleMachineSearcherBase;
 }
@@ -48,10 +49,8 @@ public:
     /// serializeBinary can persist them.
     void buildIndex();
 
-    /// Reconstruct the ScaNN index from pre-trained artifacts read by
-    /// deserializeBinary.  Falls back to buildIndex if any artifact is missing
-    /// or cannot be parsed.
-    void buildIndexFromSerialized();
+    /// Reconstruct the ScaNN index from the persisted config and pre-trained artifacts.
+    void buildIndexFromSerialized(const research_scann::ScannConfig & config);
 
     ScannIndexParams params;
     std::vector<float> vectors;       /// flat: num_vectors × padded_dim (normalized for cosine)
@@ -72,6 +71,7 @@ public:
     /// Pre-trained artifacts extracted after buildIndex() and persisted by
     /// serializeBinary.  All empty when the index was not built (too few
     /// vectors) or when artifacts could not be extracted.
+    std::string serialized_config_proto;        /// ScannConfig binary proto
     std::string serialized_partitioner_proto;   /// SerializedPartitioner binary proto
     std::string serialized_codebook_proto;      /// CentersForAllSubspaces binary proto
     std::vector<uint8_t> hashed_data;           /// flat AH codes: num_vectors × hashed_dim
@@ -80,6 +80,10 @@ public:
     std::vector<std::vector<uint32_t>> datapoints_by_token; /// IVF inverted lists
 
 private:
+    /// The version of the persistence format of the ScaNN index. Increment whenever
+    /// the serialized layout or the contract for restoring trained artifacts changes.
+    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+
     LoggerPtr log;
 };
 
