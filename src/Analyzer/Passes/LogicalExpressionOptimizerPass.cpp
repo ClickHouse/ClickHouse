@@ -14,8 +14,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -1048,9 +1052,22 @@ static void convertNotEqualsChainToNotIn(
             continue;
         }
 
+        /// `notIn` rejects arguments with a dynamic structure outright, and resolving the function is
+        /// what would throw, so this must be checked before building it.
+        if (expression.node->getResultType()->hasDynamicStructure())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
+        const auto expr_type = removeLowCardinality(expression.node->getResultType());
+
         size_t min_index = not_equals_entries.front().first;
         Tuple args;
         args.reserve(not_equals_entries.size());
+        DataTypes tuple_element_types;
+        tuple_element_types.reserve(not_equals_entries.size());
+        bool all_constants_convert_losslessly = true;
         for (auto & [idx, not_equals] : not_equals_entries)
         {
             min_index = std::min(min_index, idx);
@@ -1058,17 +1075,32 @@ static void convertNotEqualsChainToNotIn(
             chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
             const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
-            if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
-                args.push_back(rhs_literal->getValue());
-            else
+            const auto * literal = not_equals_arguments[1]->as<ConstantNode>();
+            if (!literal)
             {
-                const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                chassert(lhs_literal);
-                args.push_back(lhs_literal->getValue());
+                literal = not_equals_arguments[0]->as<ConstantNode>();
+                chassert(literal);
             }
+
+            args.push_back(literal->getValue());
+            tuple_element_types.push_back(literal->getResultType());
+
+            /// The set converts each element to the expression's type, while the comparison it
+            /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
+            if (!tryConvertToColumnType(literal, expr_type))
+                all_constants_convert_losslessly = false;
         }
 
-        auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+        if (!all_constants_convert_losslessly)
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
+        /// Carry the resolved constant types over: deriving them from the `Field` values instead
+        /// would collapse `DateTime` to `UInt32`, an Enum to its underlying integer and so on, and
+        /// the resulting `notIn` would compare different values than the notEquals it replaces.
+        auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
         auto not_in_function = std::make_shared<FunctionNode>("notIn");
         not_in_function->markAsOperator();
@@ -1080,6 +1112,15 @@ static void convertNotEqualsChainToNotIn(
 
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
         not_in_function->resolveAsFunction(not_in_function_resolver);
+
+        /// `notIn` may be nullable where the notEquals it replaces was not (a Variant expression
+        /// resolves through the variant adaptor to Nullable(UInt8)). Ancestors already captured the
+        /// old type, so keep the original notEquals chain instead of changing it.
+        if (removeLowCardinality(not_in_function->getResultType())->isNullable())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
 
         output.emplace_back(min_index, std::move(not_in_function));
     }
@@ -2104,6 +2145,40 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
+    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
+    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    {
+        const auto * lhs_constant = lhs->as<ConstantNode>();
+        const auto * rhs_constant = rhs->as<ConstantNode>();
+        if (static_cast<bool>(lhs_constant) == static_cast<bool>(rhs_constant))
+            return {};
+
+        auto & constant_side = lhs_constant ? lhs : rhs;
+        const auto & other_side = lhs_constant ? rhs : lhs;
+        const auto constant_type = removeLowCardinality(constant_side->getResultType());
+        const auto other_type = removeLowCardinality(other_side->getResultType());
+        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+            return {};
+
+        const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
+        auto converted = tryConvertFieldToType(
+            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        if (converted.isNull())
+            return {};
+
+        auto typed_constant = std::make_shared<ConstantNode>(std::move(converted), other_type);
+        const auto typed_comparison = std::make_shared<FunctionNode>(function_name);
+        typed_comparison->markAsOperator();
+        typed_comparison->getArguments().getNodes().push_back(other_side);
+        typed_comparison->getArguments().getNodes().push_back(typed_constant);
+        typed_comparison->resolveAsFunction(FunctionFactory::instance().get(function_name, getContext()));
+        const auto domain = typed_comparison->getFunctionOrThrow()->getComparisonOrderDomain();
+        if (domain.isValid())
+            constant_side = std::move(typed_constant);
+        return domain;
+    }
+
     void tryOptimizeAndCompareChain(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
@@ -2143,14 +2218,15 @@ private:
         QueryTreeNodePtrWithHashSet greater_constants;
         QueryTreeNodePtrWithHashSet less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
-        struct ComparePairEntry
+        struct ComparisonEdge
         {
             QueryTreeNodePtr node;
             CompareType type;
+            ComparisonOrderDomain domain;
             /// The two sides come from different table expressions (see the append site).
             bool crosses_source;
         };
-        using QueryTreeNodeWithEquals = std::vector<ComparePairEntry>;
+        using QueryTreeNodeWithEquals = std::vector<ComparisonEdge>;
         using ComparePairs = QueryTreeNodePtrWithHashMap<QueryTreeNodeWithEquals>;
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
@@ -2186,8 +2262,8 @@ private:
 
             const auto function_name = argument_function->getFunctionName();
             const auto & function_arguments = argument_function->getArguments().getNodes();
-            const auto & lhs = function_arguments[0];
-            const auto & rhs = function_arguments[1];
+            auto lhs = function_arguments[0];
+            auto rhs = function_arguments[1];
 
             /// Conservatively skip comparisons whose operands contain a non-deterministic function.
             /// Common subexpression elimination makes structurally identical occurrences (e.g. two
@@ -2220,72 +2296,82 @@ private:
                 crosses_source = !lhs_ok || !rhs_ok || !lhs_source || !rhs_source || !lhs_source->isEqual(*rhs_source);
             }
 
+            /// Only comparisons within one order domain join transitive chains; the seeding above
+            /// is domain-agnostic (it converts constants to the expression's own type).
+            auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
+            /// A const string compares after a one-time conversion to the other side's type (see
+            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            if (!comparison_domain.isValid())
+                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
+            if (!comparison_domain.isValid())
+                continue;
+
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::less, crosses_source});
+                greater_pairs[rhs].push_back({lhs, CompareType::less, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greater, crosses_source});
+                less_pairs[lhs].push_back({rhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::less, crosses_source});
+                greater_pairs[lhs].push_back({rhs, CompareType::less, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greater, crosses_source});
+                less_pairs[rhs].push_back({lhs, CompareType::greater, comparison_domain, crosses_source});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals, crosses_source});
+                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals, crosses_source});
+                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals, crosses_source});
+                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals, comparison_domain, crosses_source});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals, crosses_source});
+                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals, comparison_domain, crosses_source});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
                     greater_constants.insert(rhs);
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                     less_constants.insert(rhs);
-                    less_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
                     greater_constants.insert(lhs);
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
                     less_constants.insert(lhs);
-                    less_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
                 }
                 else
                 {
                     /// Bidirection, needs to record visited
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
-                    less_pairs[lhs].push_back({rhs, CompareType::equals, crosses_source});
-                    less_pairs[rhs].push_back({lhs, CompareType::equals, crosses_source});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain, crosses_source});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain, crosses_source});
                 }
             }
         }
 
         /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5,
         /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
-        QueryTreeNodePtrWithHashSet visited;
+        QueryTreeNodePtrWithHashMap<std::vector<ComparisonOrderDomain>> visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
@@ -2313,8 +2399,12 @@ private:
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> find_pairs
-            = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType, ComparisonOrderDomain)> find_pairs
+            = [&](const ComparePairs & pairs,
+                  QueryTreeNodePtr current,
+                  const ConstantNode * constant,
+                  CompareType type,
+                  ComparisonOrderDomain domain)
         {
             if (auto it = pairs.find(current); it != pairs.end())
             {
@@ -2322,9 +2412,15 @@ private:
                 {
                     if (andCompareChainHashBudgetExceeded())
                         return;
-                    if (visited.contains(left.node))
+
+                    if (domain.isValid() && domain != left.domain)
                         continue;
-                    visited.insert(left.node);
+
+                    const auto path_domain = domain.isValid() ? domain : left.domain;
+                    auto & visited_domains = visited[left.node];
+                    if (std::find(visited_domains.begin(), visited_domains.end(), path_domain) != visited_domains.end())
+                        continue;
+                    visited_domains.push_back(path_domain);
 
                     CompareType compare_type = std::min(type, left.type);
 
@@ -2350,6 +2446,12 @@ private:
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
+                        const auto inferred_domain = and_node->getFunctionOrThrow()->getComparisonOrderDomain();
+                        if (inferred_domain != path_domain)
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Inferred comparison {} has an inconsistent order domain",
+                                compare_function_name);
                         if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node)))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
@@ -2392,7 +2494,7 @@ private:
                     /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
                     /// which is strictly weaker than the existing `x < 3`.
                     if (!left.node->as<ConstantNode>())
-                        find_pairs(pairs, left.node, constant ? constant : current->as<ConstantNode>(), compare_type);
+                        find_pairs(pairs, left.node, constant ? constant : current->as<ConstantNode>(), compare_type, path_domain);
                 }
             }
         };
@@ -2401,14 +2503,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
@@ -2472,7 +2574,18 @@ private:
                 continue;
             }
 
+            /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
+            /// OR chain into an error. Keep the original comparisons.
+            if (expression.node->getResultType()->hasDynamicStructure())
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
+            const auto expr_type = removeLowCardinality(expression.node->getResultType());
+
             bool is_any_nullable = false;
+            bool all_constants_convert_losslessly = true;
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2485,18 +2598,27 @@ private:
                 chassert(equals_function && equals_function->getFunctionName() == "equals");
 
                 const auto & equals_arguments = equals_function->getArguments().getNodes();
-                if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
+                const auto * literal = equals_arguments[1]->as<ConstantNode>();
+                if (!literal)
                 {
-                    args.push_back(rhs_literal->getValue());
-                    tuple_element_types.push_back(rhs_literal->getResultType());
+                    literal = equals_arguments[0]->as<ConstantNode>();
+                    chassert(literal);
                 }
-                else
-                {
-                    const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
-                    chassert(lhs_literal);
-                    args.push_back(lhs_literal->getValue());
-                    tuple_element_types.push_back(lhs_literal->getResultType());
-                }
+
+                args.push_back(literal->getValue());
+                tuple_element_types.push_back(literal->getResultType());
+
+                /// The set converts each element to the expression's type, while the comparison it
+                /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
+                /// A NULL constant is excluded above, so it never reaches this check.
+                if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+            }
+
+            if (!all_constants_convert_losslessly)
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
             }
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
@@ -2516,6 +2638,15 @@ private:
             const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
             if (type_low_cardinality)
                 result_type = type_low_cardinality->getDictionaryType();
+            /// The replacement must not be more nullable than the equals it replaces: for a Variant
+            /// expression `in` resolves through the variant adaptor to Nullable(UInt8) while the
+            /// original equals resolved to UInt8. Ancestors already captured the OR's result type, so
+            /// keep the original chain rather than change it.
+            if (result_type->isNullable() && !is_any_nullable)
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
               * is replaced with `k IN (1, NULL)` with result type UInt8.
               * Convert it back to Nullable(UInt8).

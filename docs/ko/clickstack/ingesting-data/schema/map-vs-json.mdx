@@ -7,7 +7,7 @@ doc_type: '참고'
 keywords: ['clickstack', 'json', 'map', '속성', '스키마', '관측성']
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 ClickStack의 [기본 스키마](/ko/clickstack/ingesting-data/schemas)는 리소스, 스코프, 로그, 스팬 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장합니다. ClickHouse는 엄격한 타입의 [`JSON` 타입](/ko/reference/formats/JSON/JSON)도 지원하며, ClickStack은 `Map` 대신 이를 사용할 수 있도록 베타로 지원합니다.
 
