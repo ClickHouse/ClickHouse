@@ -231,14 +231,9 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
     if (!storage_set)
         return nullptr;
 
-    /// Consuming the target as a prepared set replaces reading the alias chain, so it must require
-    /// what reading that chain requires: SELECT on every alias and on the target it resolves to.
-    /// The whole set is consumed, so the check is on all of the target's columns, which lets a
-    /// column-level grant covering them all suffice, exactly as it does for an ordinary alias.
-    ///
-    /// Only the aliases add a check. A set-backed table named directly on the right of `IN` has never
-    /// required SELECT on it, and that is left as it is. Without a context (a caller that only asks
-    /// whether this is a set-backed table without consuming it) there is nothing to check either.
+    /// Same grants that reading the chain needs: `SELECT` on every alias and on the target, over all
+    /// of its columns because the whole set is consumed. A directly named set-backed table has never
+    /// required a grant, so the aliases alone add a check.
     if (context && !alias_ids.empty())
     {
         const auto metadata = storage_set->getInMemoryMetadataPtr(context, false);

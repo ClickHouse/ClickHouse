@@ -1318,17 +1318,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// If table is already prepared set, we do not replace it with subquery.
             /// If table is not a StorageSet, we'll create plan to build set in the Planner.
+            /// `getSetStorageFromTable` also matches a derived set storage and one reached through a
+            /// `StorageAlias`, which the planner detects the same way. Such a table cannot be read,
+            /// so it must not be rewritten into a subquery; its `Array` elements are the set rows.
             ///
-            /// A `StorageSet` (including the Cloud-only `StorageSharedSet` derived from it, and one
-            /// reached through a `StorageAlias`) is consumed natively as a prepared set (see
-            /// `Planner/CollectSets`), and cannot be read, so it must not be rewritten into a
-            /// `SELECT column FROM table` subquery. Its `Array` elements are the set rows and are
-            /// matched by the native path. `getSetStorageFromTable` recognizes set-backed tables
-            /// through any alias wrapping, matching the detection in the planner.
-            ///
-            /// For any other table, if its single column is an `Array` one dimension deeper than the
-            /// left argument, interpret it as the set of the array's elements, exactly like an array
-            /// subquery, an array literal, or an array-returning function on the right side of `IN`.
+            /// Any other table with a single `Array` column one dimension deeper than the left
+            /// argument is flattened to the set of that array's elements.
             if (!getSetStorageFromTable(table_node->getStorage()))
                 flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
         }

@@ -97,15 +97,10 @@ private:
     size_t getSize(ContextPtr) const override;
 };
 
-/// Returns the underlying `StorageSet` if `storage` is a `StorageSet` (including derived set storages
-/// such as the Cloud-only `StorageSharedSet`), or resolves to one through a chain of `StorageAlias`
-/// wrappers. Returns nullptr otherwise, including a broken alias whose target cannot be resolved.
-/// A set-backed table is consumed natively as a prepared set on the right of `IN` and cannot be read,
-/// so every path that prepares such a set must recognize it through any alias wrapping.
-/// The result shares ownership: through an alias the caller holds only the wrapper, not the target.
-/// With a `context`, resolving through an alias requires `SELECT` on the alias and on the target,
-/// like reading through the alias does. Pass no context only to ask whether this is a set-backed
-/// table without consuming it.
+/// Returns the underlying `StorageSet`, resolving a chain of `StorageAlias` wrappers, or nullptr.
+/// Shares ownership: through an alias the caller holds only the wrapper, not the target.
+/// A `context` means the set is about to be consumed and requires `SELECT` on every alias and on the
+/// target; pass none only to ask whether this is a set-backed table.
 std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context = nullptr);
 
 }
