@@ -3,13 +3,12 @@
 -- assertion below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old
 -- one; the old-analyzer variant also forbids changing enable_analyzer inside a subquery.
 --
--- Regression test for issue #101567: OOB in splitExpressionStep during
--- optimizeLazyMaterialization2. A multi-column SELECT (url, extra1, extra2) over a projection
--- routes through splitExpressionStep with more than one required output, which is the shape
--- the issue flagged. The predicate is absorbed into the projection PREWHERE here, so
--- splitFilterStep (the other helper named in the issue) is not reached by this query.
--- The EXPLAIN assertion fails if the lazy split path or the projection is not produced,
--- so the test cannot pass as a no-op.
+-- Regression test for issue #101567: OOB in splitExpressionStep and splitFilterStep during
+-- optimizeLazyMaterialization2. Both are covered, one query each, since a single query
+-- reaches only one of them: the projection query below absorbs its predicate into PREWHERE
+-- so no FilterStep survives to split. Each query selects several columns, so the split runs
+-- with more than one required output, which is the shape the issue flagged. The EXPLAIN
+-- assertions fail if the lazy split path is not produced, so neither can pass as a no-op.
 
 DROP TABLE IF EXISTS test_split_oob4;
 CREATE TABLE test_split_oob4
@@ -26,6 +25,7 @@ INSERT INTO test_split_oob4 (id, url, region) VALUES (2, 'page2', 'us_west');
 
 OPTIMIZE TABLE test_split_oob4 FINAL;
 
+-- splitExpressionStep half.
 -- Plan check: the lazy-materialization split path over the projection must be present.
 -- query_plan_max_limit_for_lazy_materialization must be >= the LIMIT or the optimization
 -- is skipped (the CI randomizer can set it to 1, which would drop the lazy steps).
@@ -50,3 +50,30 @@ SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_ste
     query_plan_max_limit_for_lazy_materialization = 1000;
 
 DROP TABLE test_split_oob4;
+
+-- splitFilterStep half: a FilterStep only survives into the split region when the predicate
+-- cannot be moved to PREWHERE, so both prewhere optimizations are disabled here. There are
+-- two independent ones and either being off is enough to keep the filter, so pin both.
+DROP TABLE IF EXISTS test_split_oob4_filter;
+CREATE TABLE test_split_oob4_filter (id UInt64, a String, b String, c String)
+ENGINE = MergeTree ORDER BY (id)
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO test_split_oob4_filter
+SELECT number, 'a' || toString(number), 'b' || toString(number), 'c' || toString(number)
+FROM numbers(20);
+
+SELECT trimLeft(explain) AS s FROM (
+    EXPLAIN actions = 0, pretty = 0
+    SELECT a, b, c FROM test_split_oob4_filter WHERE id > 2 ORDER BY a LIMIT 5
+    SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+        query_plan_optimize_lazy_materialization = 1,
+        query_plan_max_limit_for_lazy_materialization = 1000
+) WHERE s IN ('JoinLazyColumnsStep', 'LazilyReadFromMergeTree', 'Filter') ORDER BY s;
+
+SELECT a, b, c FROM test_split_oob4_filter WHERE id > 2 ORDER BY a LIMIT 5
+SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+    query_plan_optimize_lazy_materialization = 1,
+    query_plan_max_limit_for_lazy_materialization = 1000;
+
+DROP TABLE test_split_oob4_filter;
