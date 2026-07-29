@@ -441,3 +441,16 @@ attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8) declines	1
 attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8)	1
 attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8) declines	1
 attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)	1
+--- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---
+null-elem NOT IN stays exact	1
+null-elem NOT IN	1
+null-elem NOT IN transform_null_in declines	1
+null-elem NOT IN transform_null_in	1
+null-elem NOT has declines	1
+null-elem NOT has	1
+null-elem LC NOT IN transform_null_in declines	1
+null-elem LC NOT IN transform_null_in	1
+null-elem LC NOT has declines	1
+null-elem LC NOT has	1
+null-elem identity keeps pruning	1
+null-elem identity	1	1

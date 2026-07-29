@@ -2,6 +2,13 @@
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_use_implicit_projections = 0;
+-- A randomized `compatibility` below 25.12 reverts this setting to false, and the `Time64` cells then
+-- fail to create their column. A session `SET` survives that: the compatibility pass skips settings
+-- already changed manually.
+SET enable_time_time64_type = 1;
+-- The set elements below that spell `DateTime` without a zone take it from the session, which the test
+-- runner randomizes; pin it so the no-zone/zone pair stays the discriminator by construction.
+SET session_timezone = 'UTC';
 
 -- A set-index atom may only be treated as an exact image of the predicate when the conversion
 -- preserves equality in BOTH directions: index preparation casts the set values into the key type,
@@ -1818,3 +1825,55 @@ SELECT 'attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8) declines', count() = 0 FROM (E
 SELECT 'attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)',
     (SELECT count() FROM at_tu WHERE t IN (SELECT tuple(CAST(1, 'Bool'), toUInt8(1)))) = (SELECT count() FROM ao_tu WHERE t IN (SELECT tuple(CAST(1, 'Bool'), toUInt8(1))));
 DROP TABLE at_tu; DROP TABLE ao_tu;
+
+SELECT '--- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---';
+
+-- The three `Nullable` controls above all pass a NON-NULL value through a `Nullable` wrapper, so none
+-- of them exercises this: `castColumnAccurateOrNull` maps a source NULL to the nested default without
+-- setting its own null map, so the prepared set holds `0` where the predicate's set holds NULL. `IN` is
+-- only weakened by that, but `NOT IN`/`NOT has` are STRENGTHENED, and an atom claimed to be exact then
+-- prunes a partition that still matches. Only the identity case may be exact for a nullable element.
+DROP TABLE IF EXISTS nn_t; DROP TABLE IF EXISTS nn_o;
+CREATE TABLE nn_t (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE nn_o (k UInt64) ENGINE = Memory;
+INSERT INTO nn_t VALUES (0), (1), (2);
+INSERT INTO nn_o VALUES (0), (1), (2);
+
+-- Control, NOT a carrier: at the default `transform_null_in = 0` the set itself strips nullability and
+-- drops the NULL row (`Set::setHeader`), so the element type reaching the index is a plain `UInt8`, the
+-- set is empty and the atom is legitimately exact. It must keep saying `0-element set`.
+SELECT 'null-elem NOT IN stays exact', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'))) WHERE explain ILIKE '%0-element set%';
+SELECT 'null-elem NOT IN',
+    (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'))) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')));
+
+SELECT 'null-elem NOT IN transform_null_in declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'null-elem NOT IN transform_null_in',
+    (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
+
+SELECT 'null-elem NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) WHERE explain ILIKE '%element set%';
+SELECT 'null-elem NOT has',
+    (SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) = (SELECT count() FROM nn_o WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k));
+
+-- `LowCardinality(Nullable(T))` takes the same null-stripping branch, so it is a carrier too even
+-- though `IDataType::isNullable` is false for it.
+SELECT 'null-elem LC NOT IN transform_null_in declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1) WHERE explain ILIKE '%element set%';
+SELECT 'null-elem LC NOT IN transform_null_in',
+    (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1);
+
+SELECT 'null-elem LC NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1) WHERE explain ILIKE '%element set%';
+SELECT 'null-elem LC NOT has',
+    (SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1) = (SELECT count() FROM nn_o WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1);
+DROP TABLE nn_t; DROP TABLE nn_o;
+
+-- Keep-pruning control: the identity arm must be untouched, so a `Nullable(UInt8)` key against a
+-- `Nullable(UInt8)` element still prunes even though the element may hold NULL.
+DROP TABLE IF EXISTS nk_t; DROP TABLE IF EXISTS nk_o;
+CREATE TABLE nk_t (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, allow_nullable_key = 1;
+CREATE TABLE nk_o (k Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO nk_t VALUES (0), (1), (2);
+INSERT INTO nk_o VALUES (0), (1), (2);
+SELECT 'null-elem identity keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nk_t WHERE k IN (SELECT CAST(1, 'Nullable(UInt8)'))) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'null-elem identity',
+    (SELECT count() FROM nk_t WHERE k IN (SELECT CAST(1, 'Nullable(UInt8)'))) = (SELECT count() FROM nk_o WHERE k IN (SELECT CAST(1, 'Nullable(UInt8)'))),
+    (SELECT count() FROM nk_t WHERE k NOT IN (SELECT CAST(1, 'Nullable(UInt8)'))) = (SELECT count() FROM nk_o WHERE k NOT IN (SELECT CAST(1, 'Nullable(UInt8)')));
+DROP TABLE nk_t; DROP TABLE nk_o;

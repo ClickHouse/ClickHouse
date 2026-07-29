@@ -2693,7 +2693,7 @@ static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataT
 /// `forEachChild` walk order corresponds between two `equals`-equal types for every container
 /// except `DataTypeObject`, whose `equals` matches `typed_paths` by lookup while its `forEachChild`
 /// iterates an `unordered_map`. Fail closed on it rather than comparing signatures out of order.
-/// (`JSON`/`Object` cannot currently reach a key expression at all - `MergeTreeData` rejects it with
+/// (`JSON`/`Object` cannot currently reach a key expression at all - `KeyDescription` rejects it with
 /// `DATA_TYPE_CANNOT_BE_USED_IN_KEY` - so this is a guard against the assumption silently breaking,
 /// not a live path.)
 static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
@@ -2729,7 +2729,13 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
 /// argument does not extend to values whose equality differs between the two engines that have to
 /// agree (signed zeros, NaN payloads). A cross-type composite is exact only under the identity case,
 /// because the composite runtime cast can throw where the preparation cast merely returns NULL.
-static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+///
+/// `set_element_may_contain_null` restricts the result to the identity case: a source NULL is rewritten
+/// to the nested default by the cross-type cast below, so the prepared set holds a value the predicate's
+/// set does not. The identity case cannot hit that, because `castColumn` returns an `equals`-equal
+/// argument unchanged.
+static bool setIndexConversionPreservesEquality(
+    const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool set_element_may_contain_null = false)
 {
     /// Apply both unwrappings here rather than relying on the caller: `LowCardinality` also has to be
     /// stripped from nested types, otherwise an identical composite type compares unequal.
@@ -2747,7 +2753,7 @@ static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, co
     /// A custom name over an integer (`Bool`) installs a cast wrapper that clamps every nonzero value
     /// to 1, so the conversion is not injective. `Enum` carries its own type index and therefore never
     /// reaches this point.
-    return both_integers && !key->hasCustomName() && !set->hasCustomName();
+    return both_integers && !set_element_may_contain_null && !key->hasCustomName() && !set->hasCustomName();
 }
 
 static bool tryPrepareSetColumnsForIndex(
@@ -2835,7 +2841,12 @@ static bool tryPrepareSetColumnsForIndex(
             set_element_type = transformed_set_type;
         }
 
-        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type))
+        /// A nullable element reaches the cross-type cast below with its NULLs rewritten to the nested
+        /// default, so only the identity case may be treated as exact for it. Test the same predicate the
+        /// null-stripping branch below uses: `isNullable` alone is false for `LowCardinality(Nullable(T))`,
+        /// which takes that branch and is a carrier too.
+        if (!setIndexConversionPreservesEquality(
+                key_column_type, set_element_type, isNullableOrLowCardinalityNullable(set_element_type)))
             return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
