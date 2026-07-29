@@ -202,6 +202,38 @@ DROP TABLE rem_outer;
 DROP TABLE rem_inner;
 DROP TABLE rem_leaf;
 
+-- `Distributed` is the one storage whose `supportsPrewhere()` (true) and
+-- `canMoveConditionsToPrewhere()` (false) disagree, and a `Merge` over one inherits the
+-- disagreement. `readImpl` hands the analyzed query straight to the target, so a view must
+-- forward the target's refusal to auto-move instead of falling back to the
+-- `IStorage::canMoveConditionsToPrewhere == supportsPrewhere` default.
+CREATE TABLE cm_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO cm_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE cm_dist (x UInt64, y UInt64) ENGINE = Remote('127.0.0.1', currentDatabase(), cm_leaf);
+CREATE TABLE cm_merge (x UInt64, y UInt64) ENGINE = Merge(currentDatabase(), '^cm_dist$');
+CREATE TABLE cm_src (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW cm_mv_dist TO cm_dist AS SELECT x, y FROM cm_src;
+CREATE MATERIALIZED VIEW cm_mv_merge TO cm_merge AS SELECT x, y FROM cm_src;
+
+SELECT '-- a view over a target that refuses the auto-move still answers correctly --';
+SELECT count() FROM cm_mv_dist WHERE x != 0 SETTINGS optimize_move_to_prewhere = 1;
+SELECT x, y FROM cm_mv_dist WHERE x != 0 ORDER BY x LIMIT 3 SETTINGS optimize_move_to_prewhere = 1;
+
+SELECT '-- and so does a view over a Merge that inherits the refusal --';
+SELECT count() FROM cm_mv_merge WHERE x != 0 SETTINGS optimize_move_to_prewhere = 1;
+SELECT x, y FROM cm_mv_merge WHERE x != 0 ORDER BY x LIMIT 3 SETTINGS optimize_move_to_prewhere = 1;
+
+SELECT '-- an explicit PREWHERE through both views keeps working --';
+SELECT count() FROM cm_mv_dist PREWHERE y != 0;
+SELECT count() FROM cm_mv_merge PREWHERE y != 0;
+
+DROP TABLE cm_mv_merge;
+DROP TABLE cm_mv_dist;
+DROP TABLE cm_src;
+DROP TABLE cm_merge;
+DROP TABLE cm_dist;
+DROP TABLE cm_leaf;
+
 -- With `lazy_load_tables = 1`, a re-attached table is a `StorageTableProxy` wrapping the real
 -- storage. `StorageProxy` forwards `supportsPrewhere()` but did not forward `supportedPrewhereColumns()`
 -- (default: `std::nullopt`, meaning "everything supported") nor `canMoveConditionsToPrewhere()`, so a

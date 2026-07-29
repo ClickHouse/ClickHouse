@@ -72,6 +72,19 @@
 1	2
 2	3
 3	4
+-- a view over a target that refuses the auto-move still answers correctly --
+9
+1	2
+2	3
+3	4
+-- and so does a view over a Merge that inherits the refusal --
+9
+1	2
+2	3
+3	4
+-- an explicit PREWHERE through both views keeps working --
+10
+10
 -- re-attached tables are lazy proxies --
 lazy_inner	TableProxy
 lazy_leaf	TableProxy
