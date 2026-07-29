@@ -15,12 +15,12 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Le plan de contrôle ClickHouse Cloud maintient plusieurs types de connexions pour faire fonctionner et prendre en charge votre déploiement BYOC :
 
-| Objectif                                                | Type de connexion                                 | Remarques                                                                                                                                                                                                                                               |
-| ------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Opérations quotidiennes — serveur d’API Kubernetes**  | Public avec filtrage IP (par défaut) ou Tailscale | Les services de gestion communiquent avec le serveur d’API EKS via le réseau public, avec un accès restreint par des listes d’autorisation IP. Après le déploiement initial, vous pouvez, si vous le souhaitez, passer à Tailscale pour un accès privé. |
-| **Opérations quotidiennes — API AWS**                   | VPC ClickHouse → AWS                              | Les services de gestion appellent les API AWS (par ex. EKS, EC2) depuis le VPC propre à ClickHouse Cloud vers AWS. Cela n’implique ni votre VPC ni Tailscale.                                                                                           |
-| **Dépannage — service ClickHouse**                      | Tailscale                                         | Les ingénieurs ClickHouse accèdent au service ClickHouse (par ex. aux tables système) à des fins de diagnostic via Tailscale.                                                                                                                           |
-| **Dépannage — serveur d’API Kubernetes**                | Tailscale                                         | Les ingénieurs ClickHouse accèdent au serveur d’API EKS pour diagnostiquer le cluster via Tailscale.                                                                                                                                                    |
+| Objectif                                               | Type de connexion                                                               | Remarques                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Opérations quotidiennes — serveur d’API Kubernetes** | Public avec filtrage IP (par défaut), ou privé via Tailscale ou AWS VPC Lattice | Les services de gestion communiquent avec le serveur d’API EKS via le réseau public, avec un accès restreint par des listes d’autorisation IP. Après le déploiement initial, vous pouvez, si vous le souhaitez, passer à un accès privé via Tailscale ou, sur AWS, VPC Lattice. |
+| **Opérations quotidiennes — API AWS**                  | VPC ClickHouse → AWS                                                            | Les services de gestion appellent les API AWS (par ex. EKS, EC2) depuis le VPC propre à ClickHouse Cloud vers AWS. Cela n’implique ni votre VPC ni Tailscale.                                                                                                                   |
+| **Dépannage — service ClickHouse**                     | Tailscale                                                                       | Les ingénieurs ClickHouse accèdent au service ClickHouse (par ex. aux tables système) à des fins de diagnostic via Tailscale.                                                                                                                                                   |
+| **Dépannage — serveur d’API Kubernetes**               | Tailscale                                                                       | Les ingénieurs ClickHouse accèdent au serveur d’API EKS pour diagnostiquer le cluster via Tailscale.                                                                                                                                                                            |
 
 La section suivante décrit comment le réseau privé **Tailscale** est utilisé pour le dépannage et pour un accès de gestion en option.
 
@@ -50,13 +50,13 @@ Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle 
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
 
-Pour chaque service ou point de terminaison devant être accessible via Tailscale, ClickHouse BYOC déploie :
+Pour chaque service ou point de terminaison qui doit être accessible via Tailscale, ClickHouse BYOC déploie :
 
 1. **Enregistrement de l’adresse tailnet** : chaque point de terminaison enregistre une adresse tailnet unique (par ex., `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` pour le serveur d’API Kubernetes)
 
 2. **Conteneur d’agent Tailscale** : un conteneur d’agent Tailscale s’exécute dans votre cluster EKS et se charge de :
    * Se connecter au serveur de coordination Tailscale
-   * Enregistrer les services afin qu’ils puissent être découverts
+   * Enregistrer les services afin de les rendre détectables
    * Coordonner la configuration réseau avec les pods Nginx
 
 3. **Pod Nginx** : un pod Nginx qui :
@@ -105,12 +105,12 @@ Pour la politique complète d’accès aux données — ce que les ingénieurs p
   ### Accès aux services de gestion
 </div>
 
-Par défaut, les services de gestion de ClickHouse accèdent à votre cluster Kubernetes BYOC via l’adresse IP publique du serveur API EKS, restreinte aux seules adresses IP de la NAT gateway de ClickHouse.
+Par défaut, les services de gestion de ClickHouse accèdent à votre cluster Kubernetes BYOC via l’adresse IP publique du serveur d’API EKS, restreinte aux seules adresses IP de la NAT gateway de ClickHouse.
 
 **Configuration facultative d’un point de terminaison privé** :
 
-* Vous pouvez configurer le serveur API EKS pour qu’il utilise uniquement un point de terminaison privé
-* Dans ce cas, les services de gestion accèdent au serveur API via Tailscale (de la même manière que pour l’accès de dépannage des intervenants humains)
+* Vous pouvez configurer le serveur d’API EKS pour qu’il utilise uniquement un point de terminaison privé
+* Dans ce cas, les services de gestion accèdent au serveur API via Tailscale (de la même manière que pour l’accès de dépannage des intervenants humains) ou, sur AWS, via VPC Lattice (voir [Connexion privée à l’API Kubernetes](/fr/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
 * L’accès public est conservé comme mécanisme de secours pour les besoins d’investigation d’urgence et de support
 
 <div id="tailscale-traffic-flow">

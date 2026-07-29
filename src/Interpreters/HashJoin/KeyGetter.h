@@ -12,25 +12,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-template <typename Mapped>
-class KeyGetterEmpty
-{
-public:
-    struct MappedType
-    {
-        using mapped_type = Mapped;
-    };
-
-    using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    KeyGetterEmpty() = default;
-
-    size_t getKeyHolder(size_t, Arena &) const { return 0; }
-
-    FindResult findKey(MappedType, size_t, const Arena &) { return FindResult(); }
-};
 
 template <HashJoin::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
