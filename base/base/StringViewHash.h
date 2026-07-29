@@ -196,14 +196,24 @@ constexpr bool operator!= (std::string_view lhs, std::string_view rhs)
     return !(lhs == rhs);
 }
 
-inline bool operator< (std::string_view lhs, std::string_view rhs)
+constexpr bool operator< (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        return lhs.compare(rhs) < 0;
+    }
+
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp < 0 || (cmp == 0 && lhs.size() < rhs.size());
 }
 
-inline bool operator> (std::string_view lhs, std::string_view rhs)
+constexpr bool operator> (std::string_view lhs, std::string_view rhs)
 {
+    if consteval
+    {
+        return lhs.compare(rhs) > 0;
+    }
+
     int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
     return cmp > 0 || (cmp == 0 && lhs.size() > rhs.size());
 }
