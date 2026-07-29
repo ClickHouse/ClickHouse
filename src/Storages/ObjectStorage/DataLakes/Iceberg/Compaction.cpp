@@ -920,6 +920,12 @@ static bool writeConsolidatedManifestFile(
 namespace
 {
 
+[[nodiscard]] bool isEmptySnapshot(const Plan & plan, const IcebergHistoryRecord & rec)
+{
+    auto it = plan.manifest_list_to_manifest_files.find(rec.manifest_list_path);
+    return it == plan.manifest_list_to_manifest_files.end() || it->second.empty();
+}
+
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
 {
     if (!history_record.snapshot_summary)
@@ -992,7 +998,32 @@ static void writeMetadataFiles(
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
-            new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
+            /// Empty snapshots (e.g. TRUNCATE) leave the table empty at this point in history.
+            /// The original id, parent, and timestamp are preserved so later snapshots' `parent-snapshot-id`
+            /// still resolves and history / time-travel stays intact after compaction.
+            if (isEmptySnapshot(plan, history_record))
+            {
+                auto new_snapshot = metadata_generator.generateNextMetadata(
+                    plan.generator,
+                    generated_metadata_info.path,
+                    history_record.parent_id,
+                    /*added_files=*/0,
+                    /*added_records=*/0,
+                    /*added_files_size=*/0,
+                    /*num_partitions=*/0,
+                    /*added_delete_files=*/0,
+                    /*num_deleted_rows=*/0,
+                    history_record.snapshot_id,
+                    history_record.made_current_at.value,
+                    /*is_truncate=*/true);
+
+                new_snapshots.push_back(new_snapshot);
+                snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
+            }
+            else
+            {
+                new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
+            }
             continue;
         }
 
@@ -1133,7 +1164,32 @@ static void writeMetadataFiles(
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
         if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
+        {
+            /// Empty snapshots (e.g. TRUNCATE) are preserved by the snapshot-generation loop
+            /// as an empty snapshot so later snapshots' `parent-snapshot-id` still resolves
+            if (isEmptySnapshot(plan, plan.history[i]) && new_snapshots[i].snapshot)
+            {
+                auto buffer_empty_manifest_list = object_storage->writeObject(
+                    StoredObject(path_resolver.resolve(new_snapshots[i].manifest_list_path)),
+                    WriteMode::Rewrite,
+                    std::nullopt,
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    context->getWriteSettings());
+                generateManifestList(
+                    path_resolver,
+                    metadata_object,
+                    object_storage,
+                    context,
+                    {},
+                    new_snapshots[i].snapshot,
+                    {},
+                    *buffer_empty_manifest_list,
+                    Iceberg::FileContentType::DATA,
+                    false);
+                buffer_empty_manifest_list->finalize();
+            }
             continue;
+        }
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
         auto initial_manifest_entries = plan.manifest_list_to_manifest_files[initial_manifest_list_name];
