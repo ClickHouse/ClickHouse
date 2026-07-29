@@ -434,6 +434,15 @@ void ReaderExecutor::seek(size_t new_position)
     prefetch();
 }
 
+void ReaderExecutor::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)
+{
+    request_map = {};
+    for (const auto & [offset, size] : ranges)
+        if (size)
+            request_map.add(ByteRange{offset, size});
+    request_map_set = !ranges.empty();
+}
+
 void ReaderExecutor::setReadBound(std::optional<size_t> logical_end)
 {
     /// Monotone-max: an advance never invalidates an in-flight read-ahead - one

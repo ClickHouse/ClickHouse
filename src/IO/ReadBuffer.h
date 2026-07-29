@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
@@ -243,6 +245,13 @@ public:
     /// still serve reads beyond it (the edge bounds prefetch, not service).
     /// Purely advisory; default no-op.
     virtual void setPlannedReadEnd(size_t /* position */) {}
+
+    /// Advisory REQUEST MAP: the exact byte ranges (offset, size; sorted,
+    /// disjoint) the caller's whole assignment will read from this file.
+    /// Bounds read-ahead and fill sizing, never service; absent = the whole
+    /// file. A caller whose assignment changes (task switch) re-announces;
+    /// the new map REPLACES the old. Default: ignore.
+    virtual void setRequestMap(std::vector<std::pair<size_t, size_t>> /* ranges */) {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

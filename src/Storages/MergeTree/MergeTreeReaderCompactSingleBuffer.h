@@ -35,6 +35,13 @@ private:
         if (stream)
             stream->updatePlannedLastMark(planned_last_mark);
     }
+
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges) override
+    {
+        settings.planned_mark_ranges = mark_ranges;
+        if (stream)
+            stream->updateRequestMap(std::move(mark_ranges));
+    }
     void init();
 
     bool initialized = false;

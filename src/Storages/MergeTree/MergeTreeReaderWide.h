@@ -44,6 +44,7 @@ public:
     void prefetchBeginOfRange(Priority priority) override;
 
     void updatePlannedLastMark(size_t planned_last_mark) override;
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges) override;
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 

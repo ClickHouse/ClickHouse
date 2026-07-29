@@ -386,7 +386,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     std::vector<MarkRanges> patches_ranges,
     MergeTreeReadTask * previous_task,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t planned_last_mark) const
+    std::vector<std::pair<size_t, size_t>> planned_ranges) const
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
@@ -414,21 +414,27 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
     if (!previous_task)
     {
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, planned_last_mark);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, std::move(planned_ranges));
     }
     else if (get_part_name(previous_task->getInfo()) != get_part_name(*read_info))
     {
         extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
-        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, planned_last_mark);
+        task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges, std::move(planned_ranges));
     }
     else
     {
         /// The reused readers' task series moved to this task's stripe:
-        /// re-announce its planned end (a same-stripe continuation is a
-        /// no-op; a stolen stripe moves it).
+        /// re-announce its planned end and request map (a same-stripe
+        /// continuation is a no-op; a stolen stripe moves them).
+        size_t planned_last_mark = 0;
+        for (const auto & [begin_mark, end_mark] : planned_ranges)
+            planned_last_mark = std::max(planned_last_mark, end_mark);
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges);
         task_readers.updatePlannedLastMark(planned_last_mark ? planned_last_mark : read_info->planned_last_mark);
+        /// Unconditional: an empty map WITHDRAWS the previous stripe's map
+        /// (the whole file is assumed again).
+        task_readers.updateRequestMap(std::move(planned_ranges));
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
@@ -439,10 +445,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MarkRanges ranges,
     MergeTreeReadTask * previous_task,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t planned_last_mark) const
+    std::vector<std::pair<size_t, size_t>> planned_ranges) const
 {
     auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges);
-    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater, planned_last_mark);
+    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater, std::move(planned_ranges));
 }
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const

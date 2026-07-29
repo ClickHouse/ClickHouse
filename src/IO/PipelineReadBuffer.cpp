@@ -149,6 +149,11 @@ void PipelineReadBuffer::setPlannedReadEnd(size_t position)
     executor->setReadBound(position);
 }
 
+void PipelineReadBuffer::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)
+{
+    executor->setRequestMap(std::move(ranges));
+}
+
 bool PipelineReadBuffer::supportsReadAt()
 {
     /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source

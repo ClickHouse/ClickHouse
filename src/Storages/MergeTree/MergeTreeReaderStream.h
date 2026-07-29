@@ -41,6 +41,11 @@ public:
     /// stripe) is absorbed there.
     void updatePlannedLastMark(size_t planned_last_mark_);
 
+    /// Re-announce the REQUEST MAP (in marks) when a reused reader's task
+    /// series moves to a different stripe. The new map REPLACES the old one
+    /// downstream.
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges);
+
     /// Returns true if the mark file has at most `max_transitions` distinct
     /// consecutive (offset_in_compressed_file, offset_in_decompressed_block)
     /// positions. Loads marks from cache if available.
@@ -67,6 +72,10 @@ public:
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
+    /// File offset where `mark`'s data STARTS in this stream. nullopt = the
+    /// stream cannot resolve it (multi-column interleaved layouts) - request
+    /// maps are then not announced for it.
+    virtual std::optional<size_t> getLeftOffset(size_t /*mark*/) { return std::nullopt; }
 
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
     /// and total amount of bytes to read in all mark ranges.
@@ -99,6 +108,15 @@ protected:
     /// value the reader was created with; a reused reader updates it per task
     /// (`updatePlannedLastMark`) when the task series changes its stripe.
     size_t planned_last_mark = settings.planned_last_mark;
+    /// The REQUEST MAP in marks (see `MergeTreeReaderSettings::
+    /// planned_mark_ranges`); converted to this stream's file offsets and
+    /// announced by `announceRequestMap`. Empty = whole part.
+    std::vector<std::pair<size_t, size_t>> planned_mark_ranges = settings.planned_mark_ranges;
+
+    /// Convert `planned_mark_ranges` to file offsets and advertise them.
+    /// No-op when the map is empty or the stream cannot resolve left offsets
+    /// (`getLeftOffset` returns nullopt) - the whole file stays assumed.
+    void announceRequestMap();
     const size_t marks_count;
     const size_t file_size;
 
@@ -118,6 +136,7 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };

@@ -222,6 +222,12 @@ void MergeTreeReaderTextIndex::updatePlannedLastMark(size_t planned_last_mark)
         fallback_reader->updatePlannedLastMark(planned_last_mark);
 }
 
+void MergeTreeReaderTextIndex::updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges)
+{
+    if (fallback_reader)
+        fallback_reader->updateRequestMap(std::move(mark_ranges));
+}
+
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);

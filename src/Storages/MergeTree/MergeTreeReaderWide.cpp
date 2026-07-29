@@ -322,6 +322,13 @@ void MergeTreeReaderWide::updatePlannedLastMark(size_t planned_last_mark)
         stream->updatePlannedLastMark(planned_last_mark);
 }
 
+void MergeTreeReaderWide::updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges)
+{
+    settings.planned_mark_ranges = mark_ranges;
+    for (auto & [_, stream] : streams)
+        stream->updateRequestMap(mark_ranges);
+}
+
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();

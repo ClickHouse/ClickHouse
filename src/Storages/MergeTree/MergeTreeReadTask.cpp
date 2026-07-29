@@ -77,6 +77,14 @@ void MergeTreeReadTask::Readers::updatePlannedLastMark(size_t planned_last_mark)
         reader->updatePlannedLastMark(planned_last_mark);
 }
 
+void MergeTreeReadTask::Readers::updateRequestMap(std::vector<std::pair<size_t, size_t>> planned_mark_ranges)
+{
+    main->updateRequestMap(planned_mark_ranges);
+
+    for (auto & reader : prewhere)
+        reader->updateRequestMap(planned_mark_ranges);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -165,12 +173,17 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const Extras & extras,
     const MarkRanges & ranges,
     const std::vector<MarkRanges> & patches_ranges,
-    size_t planned_last_mark)
+    std::vector<std::pair<size_t, size_t>> planned_ranges)
 {
     Readers new_readers;
 
+    size_t planned_last_mark = 0;
+    for (const auto & [begin_mark, end_mark] : planned_ranges)
+        planned_last_mark = std::max(planned_last_mark, end_mark);
+
     auto reader_settings = extras.reader_settings;
     reader_settings.planned_last_mark = planned_last_mark ? planned_last_mark : read_info->planned_last_mark;
+    reader_settings.planned_mark_ranges = std::move(planned_ranges);
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {

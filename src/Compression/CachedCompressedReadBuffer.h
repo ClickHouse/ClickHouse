@@ -77,6 +77,12 @@ public:
         initInput();
         file_in->setPlannedReadEnd(position);
     }
+
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override
+    {
+        initInput();
+        file_in->setRequestMap(std::move(ranges));
+    }
 };
 
 }

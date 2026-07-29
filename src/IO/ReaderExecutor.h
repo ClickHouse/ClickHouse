@@ -212,6 +212,12 @@ public:
     /// not here.
     void setReadBound(std::optional<size_t> logical_end);
 
+    /// The REQUEST MAP (LOGICAL, advisory): the exact ranges the caller's whole
+    /// assignment will read. Empty/absent = the whole file. REPLACES the stored
+    /// map (a task switch re-announces the new assignment). Inert for now:
+    /// stored knowledge for demand-aware fill sizing and speculation.
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges);
+
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
 
     /// A fresh executor for `[start_position, start_position + read_size)`,
@@ -910,6 +916,11 @@ private:
     /// `makeTransientForReadAt`. Gates long-connection opens (the
     /// `reader_executor_use_long_connections` setting).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
+
+    /// The stored request map (LOGICAL intervals; empty = absent = whole file).
+    /// See `setRequestMap`.
+    IntervalSet request_map;
+    bool request_map_set = false;
 
     /// FETCH-trajectory estimator, fed each plan's predicted source reads and every
     /// seek. Constructed with `bridgeable_gap == min_bytes_for_seek` so a bridged gap

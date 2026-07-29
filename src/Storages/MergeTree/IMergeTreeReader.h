@@ -100,6 +100,10 @@ public:
     /// readers whose streams never announce a planned end.
     virtual void updatePlannedLastMark(size_t /*planned_last_mark*/) {}
 
+    /// The REQUEST MAP counterpart of `updatePlannedLastMark`: the reused
+    /// reader's new assignment ranges (in marks). Same override rule.
+    virtual void updateRequestMap(std::vector<std::pair<size_t, size_t>> /*mark_ranges*/) {}
+
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
 protected:

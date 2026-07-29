@@ -29,6 +29,7 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
     void setPlannedReadEnd(size_t position) override;
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override;
 
     /// Parquet's prefetcher takes a fast `RandomRead` path when both are true,
     /// fan-out via `readBigAt` with no shared mutex. Without these overrides
