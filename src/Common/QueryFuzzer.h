@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -245,6 +246,8 @@ private:
     DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
     /// Every registered geo alias name, read out of Geometry's Variant storage.
     static const std::unordered_set<String> & geoAliasNames();
+    /// Interchangeable aggregate names by arity, shared with the data-type fuzzing unit.
+    static const std::map<size_t, Strings> & swapAggregateNames();
     /// Swap an aggregate's name for a compatible candidate of the same arity.
     bool fuzzAggregateName(String & name, size_t nargs);
     /// Fuzz an aggregate's literal parameters in place. Returns true if changed.
