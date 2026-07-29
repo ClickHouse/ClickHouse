@@ -80,10 +80,12 @@ trap cleanup EXIT
 # T/D/B/C/W/V are the defined globals and i is an IFUNC (glibc resolves ceil,
 # rint, trunc, ... this way); undefined (U) and local (lowercase) are excluded.
 defined_globals() {
+    # Ignore synthetic/compiler helper symbols that may be reported as globals but must not be localized.
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
         | grep -E '^[0-9a-f]+ [TDBCWVi] ' \
         | awk '{print $3}' \
-        | sed 's/@.*//'
+        | sed 's/@.*//' \
+        | grep -v -E '^(DW\.ref\.|__clang_call_terminate$)'
 }
 
 # Defined globals from our own reference libraries: the set we are allowed to
