@@ -577,13 +577,22 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
             Int64 origin_units = 0;
             if (common::mulOverflow(*origin, scale_diff, origin_units))
                 throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            return t_units
-                - static_cast<Int64>((static_cast<UInt64>(t_units) - static_cast<UInt64>(origin_units)) % static_cast<UInt64>(num_units));
+            const Int64 remainder = static_cast<Int64>(
+                (static_cast<UInt64>(t_units) - static_cast<UInt64>(origin_units)) % static_cast<UInt64>(num_units));
+            Int64 result = 0;
+            if (common::subOverflow(t_units, remainder, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
         }
         if (t >= 0) [[likely]]
             return t_units / num_units * num_units;
         else
-            return ((t_units + 1) / num_units - 1) * num_units;
+        {
+            Int64 result = 0;
+            if (common::mulOverflow((t_units + 1) / num_units - 1, num_units, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
+        }
     }
     else if (scale_multiplier > unit_scale)
     {
@@ -596,8 +605,11 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
             /// The exact interval start in the scale of t. It is not always a whole number of units (the origin
             /// can have a sub-unit part), so the conversion to the unit scale must floor it, never round it
             /// towards zero, otherwise the result would be greater than t for negative interval starts.
-            const Int64 interval_start
-                = t - static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units_scaled));
+            const Int64 remainder = static_cast<Int64>(
+                (static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units_scaled));
+            Int64 interval_start = 0;
+            if (common::subOverflow(t, remainder, interval_start))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
             if (interval_start >= 0) [[likely]]
                 return interval_start / scale_diff;
             else
@@ -616,11 +628,23 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
     else
     {
         if (origin.has_value())
-            return t - static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units));
+        {
+            const Int64 remainder
+                = static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units));
+            Int64 result = 0;
+            if (common::subOverflow(t, remainder, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
+        }
         if (t >= 0) [[likely]]
             return t / num_units * num_units;
         else
-            return ((t + 1) / num_units - 1) * num_units;
+        {
+            Int64 result = 0;
+            if (common::mulOverflow((t + 1) / num_units - 1, num_units, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
+        }
     }
 }
 

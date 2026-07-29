@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -54,6 +55,7 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
+        const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         const std::string & zookeeper_name_,
         LoggerPtr log_,
         ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_ = {});
@@ -168,6 +170,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
+        const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         LoggerPtr log_,
         const std::string & zookeeper_name_,
         ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_ = {});
@@ -180,6 +183,13 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
+    /// Time since the bucket lock node was created or last refreshed.
+    double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
+
+    /// Update mtime of the bucket lock node, so that it is not removed as abandoned by
+    /// the TTL cleanup. Throws a logical error on lost ownership, marking the holder released.
+    void refresh();
+
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
     std::optional<std::string> getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
@@ -187,6 +197,11 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
 private:
     BucketInfoPtr bucket_info;
+    Stopwatch age_watch;
+    int32_t bucket_lock_version = 0;
+    /// A reference, not a snapshot: the setting is changeable at runtime,
+    /// and release must use the same TTL as the cleanup.
+    const std::atomic<size_t> & persistent_processing_node_ttl_seconds;
     ObjectStorageQueueLocalActiveNodesPtr local_active_nodes;
     bool released = false;
     bool finished = false;
