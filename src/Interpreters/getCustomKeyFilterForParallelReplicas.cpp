@@ -214,20 +214,30 @@ bool containsHash(const std::vector<IASTHash> & hashes, const IASTHash & hash)
 /// value is fully determined by the group's key values. This is exactly what the no-merge fast path
 /// needs: replica assignment is positiveModulo(custom_key, n) (or a range over custom_key), so every
 /// row that shares a GROUP BY key must map to the same replica.
-///
-/// A subexpression is determined by the keys when it either equals one of the GROUP BY key expressions
-/// (matched by tree hash, so expression keys like `mod(number, 3)` are handled, not only bare columns),
-/// is a constant, or is a deterministic non-stateful function whose arguments are all determined by the
-/// keys. Non-deterministic (`rand()`) or stateful functions are rejected even when they reference only
-/// GROUP BY columns, because they scatter rows of the same group across replicas.
-///
-/// The check is conservative: it operates on the unresolved custom-key AST and compares against the
-/// GROUP BY expressions as ASTs, so if a function alias is spelled differently on the two sides the
-/// fast path is simply not taken (correct, just an unused optimization) rather than taken unsafely.
+
+/// Safe means the function maps a group's key values to the same replica offset on every replica. None of
+/// the four flags implies another: `timeSeriesStoreTags` is deterministic but stateful, and `__getScalar`
+/// is neither non-deterministic nor stateful yet is resolved per server.
+template <typename FunctionOrResolver>
+bool isSafeCustomKeyFunction(const FunctionOrResolver & function)
+{
+    return function.isDeterministic() && function.isDeterministicInScopeOfQuery() && !function.isStateful()
+        && !function.isServerConstant();
+}
+
+/// Matching is by tree hash, so expression keys like `mod(number, 3)` are handled and not only bare
+/// columns. Comparing unresolved ASTs is conservative: a differently spelled alias on the two sides means
+/// the fast path is not taken, never that it is taken unsafely.
+bool containsUnsafeFunctionAST(const ASTPtr & node, const Context & context);
+
 bool isDeterministicFunctionOfKeys(const ASTPtr & node, const std::vector<IASTHash> & key_hashes, const Context & context)
 {
+    /// Equality with a GROUP BY key is not on its own sufficient: the replica filter and the grouping are
+    /// evaluated independently on each replica, so grouping by an unsafe expression does not make that
+    /// expression safe to partition on (`GROUP BY getMacro('replica')` with the same custom key still
+    /// spreads one group over several replicas).
     if (containsHash(key_hashes, node->getTreeHash(/*ignore_aliases=*/true)))
-        return true;
+        return !containsUnsafeFunctionAST(node, context);
 
     if (node->as<ASTLiteral>())
         return true;
@@ -238,7 +248,7 @@ bool isDeterministicFunctionOfKeys(const ASTPtr & node, const std::vector<IASTHa
         const auto resolver = FunctionFactory::instance().tryGet(function->name, context.shared_from_this());
         if (!resolver)
             return false;
-        if (!resolver->isDeterministicInScopeOfQuery() || resolver->isStateful())
+        if (!isSafeCustomKeyFunction(*resolver))
             return false;
 
         if (!function->arguments || function->arguments->children.empty())
@@ -256,23 +266,42 @@ bool isDeterministicFunctionOfKeys(const ASTPtr & node, const std::vector<IASTHa
     return false;
 }
 
-/// Returns true if the resolved expression tree contains any stateful function. `isExpressionFunctionOfKeys`
-/// only rejects non-deterministic functions (isDeterministicInScopeOfQuery() == false); a stateful function
-/// such as `timeSeriesTagsToGroup` is marked deterministic-in-scope yet its result depends on a per-query,
-/// per-replica collector, so two replicas can assign different custom-key values to the same group. Such a
-/// key must not take the no-merge fast path.
-bool containsStatefulFunction(const QueryTreeNodePtr & node)
+/// Returns true if the AST contains any function that is not safe for the no-merge fast path, including
+/// unknown functions (which cannot be proven safe).
+bool containsUnsafeFunctionAST(const ASTPtr & node, const Context & context)
+{
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context.shared_from_this());
+        if (!resolver || !isSafeCustomKeyFunction(*resolver))
+            return true;
+    }
+
+    for (const auto & child : node->children)
+    {
+        if (child && containsUnsafeFunctionAST(child, context))
+            return true;
+    }
+
+    return false;
+}
+
+/// `isExpressionFunctionOfKeys` rejects only isDeterministicInScopeOfQuery() == false, which lets through
+/// stateful functions and server constants, so apply the same predicate the AST path uses.
+bool containsUnsafeFunction(const QueryTreeNodePtr & node)
 {
     if (const auto * function = node->as<FunctionNode>())
     {
+        /// Aggregate and window function nodes hold no ordinary function, and such a custom key is
+        /// rejected anyway because it is not a function of the keys.
         const auto function_base = function->getFunction();
-        if (function_base && function_base->isStateful())
+        if (!function_base || !isSafeCustomKeyFunction(*function_base))
             return true;
     }
 
     for (const auto & child : node->getChildren())
     {
-        if (child && containsStatefulFunction(child))
+        if (child && containsUnsafeFunction(child))
             return true;
     }
 
@@ -318,8 +347,8 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
     /// Resolve the custom key against the query's join tree so its column references and function
     /// names are canonicalized exactly like the resolved GROUP BY expressions. This lets expression
     /// GROUP BY keys (e.g. `GROUP BY mod(number, 3)` with a custom key over `mod(number, 3)`) match,
-    /// while `isExpressionFunctionOfKeys` rejects non-deterministic/stateful custom keys (e.g.
-    /// `y + rand()`) because their value is not determined by the group's keys.
+    /// while a custom key whose value is not determined by the group's keys (e.g. `y + rand()`) is
+    /// rejected below.
     QueryTreeNodePtr custom_key_tree;
     try
     {
@@ -338,9 +367,10 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
     if (key_set.empty())
         return false;
 
-    /// `isExpressionFunctionOfKeys` rejects non-deterministic functions but not stateful ones (e.g.
-    /// `timeSeriesTagsToGroup`), which produce replica-local values for the same group. Reject them here.
-    if (containsStatefulFunction(custom_key_tree))
+    /// `isExpressionFunctionOfKeys` only rejects functions with isDeterministicInScopeOfQuery() == false,
+    /// so stateful functions (`timeSeriesTagsToGroup`) and server constants (`getMacro()`) would still be
+    /// accepted even though their value differs per replica for the same group. Reject them here.
+    if (containsUnsafeFunction(custom_key_tree))
         return false;
 
     /// The custom key itself may be one of the GROUP BY keys (bare column custom key), or a
