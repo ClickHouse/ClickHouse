@@ -3063,9 +3063,7 @@ size_t ReaderExecutor::prefetchAllowance(size_t phys_from) const
     /// (a launch frontier or the cursor). Bounded by what exists (the file end) and by the
     /// READ BOUND - the caller's declared boundary (the planned end of the whole
     /// assignment when it knows it, else the advancing read-until): everything below it is
-    /// legitimate to fetch, nothing above it is worth speculating on. This replaced the
-    /// consumption estimator that used to EARN extent-crossing prefetch from the observed
-    /// run - with the true end declared, there is nothing to guess. Deliberately NOT
+    /// legitimate to fetch, nothing above it is worth speculating on. Deliberately NOT
     /// capped at the serving horizon - the caller applies it; the consumer's ceiling is
     /// `readCeiling`.
     size_t bound = std::numeric_limits<size_t>::max();

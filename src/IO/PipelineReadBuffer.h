@@ -22,10 +22,10 @@ public:
     off_t getPosition() override;
     std::optional<size_t> tryGetFileSize() override;
 
-    /// Advertise the read boundary to the executor. `MergeTreeReaderStream`
-    /// drives this per mark range (`adjustRightMark`); the executor serves and
-    /// EOFs at it, while its producer may fetch past it by the consumed run's
-    /// earned reach (see `ReaderExecutor::setReadExtent`).
+    /// The buffer owns the per-range boundary: it clamps what it EXPOSES at
+    /// `read_until` and reports EOF there (a later advance resumes from the
+    /// retained chain). The value is also fed to the executor, where it joins
+    /// the single read bound (see `ReaderExecutor::setReadExtent`).
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
     void setPlannedReadEnd(size_t position) override;

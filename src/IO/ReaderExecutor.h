@@ -201,19 +201,18 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
-    /// Advertise the read extent (from `ReadBuffer::setReadUntilPosition`,
-    /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`). The
-    /// extent is the CONSUMER's serve/EOF bound; the producer may fetch past it
-    /// by the consumed run's earned reach (`prefetchAllowance`). `nullopt` clears
-    /// it. A backward shrink cancels the in-flight machine; an advance or a
-    /// clear keeps it running.
+    /// Feed the per-range read boundary (from `ReadBuffer::setReadUntilPosition`,
+    /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`) into
+    /// the single READ BOUND: monotone-max with the declared planned end.
+    /// `nullopt` (read-to-EOF) lifts the bound to the file end. Per-range EOF
+    /// presentation lives in `PipelineReadBuffer::read_until`, not here.
     void setReadExtent(std::optional<size_t> logical_end);
 
     /// The caller's TRUE final read boundary (LOGICAL): the end of the last
     /// mark range this reader will ever be assigned, known to MergeTree up
-    /// front while the extent advances per range. Caps the producer's earned
-    /// bound - prefetch never speculates past it; serving up to a later
-    /// advanced extent still works. Advisory, monotone-max across the
+    /// front while the extent advances per range. Sets the READ BOUND -
+    /// prefetch and connection sizing never speculate past it; serving up to a
+    /// later advanced extent still works. Advisory, monotone-max across the
     /// reader's streams (it merges into the single `read_bound`).
     void setPlannedReadEnd(size_t logical_end);
 
