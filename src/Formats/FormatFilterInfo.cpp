@@ -142,7 +142,7 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
             {
                 /// Store the original as an immutable template that is only ever read
                 /// (copied), and hand this caller a private copy too. Otherwise this
-                /// thread would keep mutating the stored object (via addMessage() up the
+                /// thread would keep mutating the stored object (via `addMessage` up the
                 /// stack) while a concurrent caller copies it here - a data race.
                 init_exception = std::current_exception();
                 std::rethrow_exception(copyMutableException(init_exception));
