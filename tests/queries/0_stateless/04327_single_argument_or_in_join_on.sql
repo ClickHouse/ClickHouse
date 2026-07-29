@@ -12,9 +12,8 @@ CREATE TABLE t1 (c0 Int) ENGINE = Memory;
 -- `or(...)` of it resolves to a single-argument `or` (the `Nothing` short-circuit skips the
 -- arity check). The common-expression extraction pass used to assert >= 2 arguments and abort.
 SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 LEFT JOIN t1 ON or(a0 = t1.c0);
--- `optimize_or_like_chain=0`: with the rewrite on, the nested or is folded to a constant and the
--- `JOIN ON` is rejected (`INVALID_JOIN_ON_EXPRESSION`) before reaching the pass this test exercises.
-SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 LEFT JOIN t1 ON or(or(a0 = t1.c0)) SETTINGS optimize_or_like_chain = 0;
+-- A nested single-argument `or` reaches the pass the same way.
+SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 LEFT JOIN t1 ON or(or(a0 = t1.c0));
 -- A single-argument `or` wrapping a `Nothing`-typed `and` also falls through the pass gracefully;
 -- the analyzer accepts the `Nothing`-typed `ON` and the query returns an empty result (t1 is empty).
 SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 LEFT JOIN t1 ON or(and(a0 = t1.c0, a0 = tx.c0));
