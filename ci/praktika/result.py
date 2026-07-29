@@ -399,6 +399,41 @@ class Result(MetaClasses.Serializable):
     def file_name_static(cls, name):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
+    def dump(self) -> "Result":
+        """Write the result file atomically.
+
+        The inherited implementation opens the target with mode "w", which truncates
+        it to zero bytes before the first byte of the new payload is written, so a
+        writer that dies inside that window leaves no readable result at all - not
+        even the previously persisted one.
+
+        The temp file must be a sibling of the target: os.replace is atomic only
+        within a single filesystem and raises OSError(EXDEV) across devices.
+        """
+        path = Path(self.file_name())
+        tmp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+        try:
+            # O_NOFOLLOW: the temp path is derived from the result path and this pid, so a
+            # job sharing the worktree could pre-create it as a symlink; refuse to write
+            # through one. Not O_EXCL: a leftover temp from a previously killed dump must
+            # stay reusable, or the very crash this method exists to survive would become
+            # a hard failure.
+            fd = os.open(
+                tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o666
+            )
+            with os.fdopen(fd, "w", encoding="utf8") as f:
+                json.dump(self.to_dict(self), f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return self
+
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []

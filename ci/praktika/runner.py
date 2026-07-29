@@ -487,7 +487,7 @@ class Runner:
                 chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
                 Shell.run(chown_cmd)
 
-            result = Result.from_fs(job.name)
+            result = self._read_job_result_or_running(job)
             if exit_code != 0:
                 if not result.is_completed():
                     if process.timeout_exceeded:
@@ -514,12 +514,55 @@ class Runner:
 
         return exit_code
 
+    # Marks a Result synthesized because the job result file was unreadable, as opposed to
+    # one a job legitimately left non-completed. Only the synthesized kind may fail a local
+    # run: a plain RUNNING/PENDING result reaching the end of a local run exits 0 both
+    # before and after this change, so keying on is_completed() alone would be a
+    # regression of its own.
+    READ_FAILED_EXT_KEY = "job_result_read_failed"
+
+    @staticmethod
+    def _read_job_result_or_running(job) -> Result:
+        """Read the job result file, degrading to a RUNNING result if it is unreadable.
+
+        An infra event (docker daemon death, a failed from-root chown leaving the file
+        root-owned, ENOSPC) can leave the result file empty, truncated or unopenable.
+        Letting the exception out kills the runner before anything is reported, so the
+        job ends up as a red node with no information at all.
+
+        The fallback status must be RUNNING, not ERROR: is_completed() is
+        "status not in (PENDING, RUNNING)", so an ERROR result is already completed and
+        skips the caller's `if not result.is_completed():` branch - the one that records
+        why the job died and attaches the log tail. RUNNING is also what the process
+        actually was, since _pre_run persisted exactly that before the job started.
+        """
+        try:
+            return Result.from_fs(job.name)
+        except Exception as e:  # json.decoder.JSONDecodeError, OSError
+            print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
+            # Set `info` through the constructor rather than a setter: the setters dump
+            # the result when a file already exists, and the file being unreadable is
+            # exactly the case where writing it may fail too.
+            return Result(
+                name=job.name,
+                status=Result.Status.RUNNING,
+                start_time=Utils.timestamp(),
+                duration=None,
+                info=f"Failed to read Result json, ex: [{e}]",
+            ).add_ext_key_value(Runner.READ_FAILED_EXT_KEY, True)
+
     def _get_result_object(
-        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
+        self,
+        job,
+        setup_env_exit_code,
+        prerun_exit_code,
+        run_exit_code,
+        promote_incomplete_result=True,
     ) -> Result:
         result_exist = Result.exist(job.name)
 
-        if setup_env_exit_code != 0:
+        if setup_env_exit_code is not None and setup_env_exit_code != 0:
             print(f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}")
             Result(
                 name=job.name,
@@ -527,7 +570,7 @@ class Runner:
                 start_time=Utils.timestamp(),
                 duration=0.0,
             ).add_error(ResultInfo.SETUP_ENV_JOB_FAILED).dump()
-        elif prerun_exit_code != 0:
+        elif prerun_exit_code is not None and prerun_exit_code != 0:
             print(f"ERROR: {ResultInfo.PRE_JOB_FAILED}")
             Result(
                 name=job.name,
@@ -544,17 +587,23 @@ class Runner:
                 status=Result.Status.ERROR,
             ).add_error(ResultInfo.NOT_FOUND_IMPOSSIBLE).dump()
 
-        try:
-            result = Result.from_fs(job.name)
-        except Exception as e:  # json.decoder.JSONDecodeError
-            print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
-            traceback.print_exc()
-            result = Result.create_from(
-                status=Result.Status.ERROR,
-                info=f"Failed to read Result json, ex: [{e}]",
-            ).dump()
+        result = self._read_job_result_or_running(job)
 
-        if not result.is_completed():
+        if run_exit_code is not None and run_exit_code != 0 and result.is_ok():
+            result.set_status(Result.Status.ERROR).set_info(
+                f"Job got terminated with an error, exit code [{run_exit_code}]"
+            ).dump()
+        elif run_exit_code == 0 and result.ext.get(self.READ_FAILED_EXT_KEY):
+            info = f"Job exited [{run_exit_code}] but left no readable result"
+            print(f"ERROR: {info}")
+            result.add_error(info).set_status(Result.Status.ERROR).dump()
+
+        should_promote_incomplete_result = (
+            promote_incomplete_result
+            or run_exit_code is None
+            or run_exit_code != 0
+        )
+        if not result.is_completed() and should_promote_incomplete_result:
             print(f"ERROR: {ResultInfo.KILLED}")
             result.add_error(ResultInfo.KILLED).set_status(Result.Status.ERROR).dump()
 
@@ -995,14 +1044,15 @@ class Runner:
         self._load_local_env()
 
         res = True
-        setup_env_code = -10
-        prerun_code = -10
-        run_code = -10
+        setup_env_code = None
+        prerun_code = None
+        run_code = None
 
         if res and not local_run:
             print(
                 f"\n\n=== Setup env script [{job.name}], workflow [{workflow.name}] ==="
             )
+            setup_env_code = -10
             try:
                 setup_env_code = self._setup_env(workflow, job)
                 # Source the bash script and capture the environment variables
@@ -1035,6 +1085,7 @@ class Runner:
         if res and (not local_run or ((pr or branch) and sha)):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
+            prerun_code = -10
             try:
                 prerun_code = self._pre_run(workflow, job, local_run=local_run)
                 res = prerun_code == 0
@@ -1066,7 +1117,7 @@ class Runner:
 
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
-            run_code = None
+            run_code = -10
             try:
                 run_code = self._run(
                     workflow,
@@ -1090,19 +1141,19 @@ class Runner:
                 Info().store_traceback()
                 res = False
 
-            result = Result.from_fs(job.name)
-            if not res and result.is_ok():
-                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
-                result.set_status(Result.Status.ERROR).set_info(
-                    f"Job got terminated with an error, exit code [{run_code}]"
-                ).dump()
-
             print("=== Run script finished ===\n\n")
 
+        result = self._get_result_object(
+            job,
+            setup_env_code,
+            prerun_code,
+            run_code,
+            promote_incomplete_result=run_hooks,
+        )
+        if not run_hooks and res and result.ext.get(self.READ_FAILED_EXT_KEY):
+            res = False
+
         if run_hooks:
-            result = self._get_result_object(
-                job, setup_env_code, prerun_code, run_code
-            )
             if prehook_result:
                 result.results.append(prehook_result)
             if job.post_hooks:
@@ -1133,7 +1184,7 @@ class Runner:
                 res = res and post_res
                 print("=== Post run script finished ===")
 
-            result.dump()
+        result.dump()
 
         if not res and not job.force_success:
             sys.exit(1)

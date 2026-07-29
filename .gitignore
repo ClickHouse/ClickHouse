@@ -23,6 +23,8 @@ ci/local.env
 .env
 /tests/integration/.env
 /ci/tmp
+/ci/tmp_result
+/ci/tmp_backup
 /tests/venv
 /obj-x86_64-linux-gnu/
 
