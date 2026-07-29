@@ -63,6 +63,18 @@ ALTER TABLE t_mut_qp_alias DELETE WHERE a_real > 1 AND c0 < 3;
 SELECT count() FROM t_mut_qp_alias;
 DROP TABLE t_mut_qp_alias;
 
+-- A Tuple subcolumn whose name collides with an ALIAS column is a real column access: it is
+-- neither the virtual nor the alias, so following the alias must not reject it.
+DROP TABLE IF EXISTS t_mut_qp_alias_subcol;
+CREATE TABLE t_mut_qp_alias_subcol (c0 UInt32, tup Tuple(a_tbl String), a_tbl String ALIAS _table)
+ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_mut_qp_alias_subcol SELECT number, tuple('v') FROM numbers(4);
+ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE tup.a_tbl = 'missing' AND c0 < 2;
+SELECT count() FROM t_mut_qp_alias_subcol;
+-- The alias itself is still rejected on the same table.
+ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE a_tbl != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP TABLE t_mut_qp_alias_subcol;
+
 -- A lambda formal parameter that merely shares the name is not a reference to the virtual
 -- column and must be allowed (matching the raw identifier name would falsely reject it).
 ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_table -> _table + 1, arr) WHERE c0 > 0;

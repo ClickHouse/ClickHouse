@@ -688,29 +688,29 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 }
 
 /// Throw if a mutation expression references a virtual column whose value is only produced
-/// by the query plan (isQueryPlanOnlyVirtualColumn: `_sample_factor`, `_table`, `_database`).
-/// ReadFromMergeTree fills these into shared_virtual_fields, so they only exist inside a
-/// SELECT plan; the mutation read path (MergeTreeSequentialSource) cannot materialize them.
+/// by the query plan (`isQueryPlanOnlyVirtualColumn`: `_sample_factor`, `_table`, `_database`).
+/// `ReadFromMergeTree` fills these into `shared_virtual_fields`, so they only exist inside a
+/// `SELECT` plan; the mutation read path (`MergeTreeSequentialSource`) cannot materialize them.
 /// A mutation referencing one would otherwise pass analysis, start, then fail mid-execution
-/// with "Unexpected const virtual column". Reject it up front instead.
+/// with `Unexpected const virtual column`. Reject it up front instead.
 ///
-/// A raw ASTIdentifier name match is wrong in both directions: it would falsely reject a
-/// lambda formal parameter that merely shares the name (a plain ASTIdentifier too), and it
-/// would miss a qualified reference like `t._sample_factor` whose name() is the compound
+/// A raw `ASTIdentifier` name match is wrong in both directions: it would falsely reject a
+/// lambda formal parameter that merely shares the name (a plain `ASTIdentifier` too), and it
+/// would miss a qualified reference like `t._sample_factor` whose `name` is the compound
 /// identifier. So this walk mirrors what resolution would conclude about source-column usage:
 ///   - it keys on the identifier's short (last) name, so `t._sample_factor` is recognized;
 ///   - a reference is treated as a real column/subcolumn only if some qualifier-stripped
-///     suffix of the compound resolves to one: the whole name (`tuple_col._table`, a Tuple
+///     suffix of the compound resolves to one: the whole name (`tuple_col._table`, a `Tuple`
 ///     subcolumn), the name after dropping a table/database qualifier the resolvers would
 ///     remove (`t.tuple_col._table` -> `tuple_col._table`), or the short name alone (a
 ///     physical column that shadows the virtual). Checking only that the first part names a
 ///     column is insufficient: when the table name collides with a column (table `t` with a
 ///     column `t`), `t._table` has a leading real column yet still resolves to the virtual;
 ///   - lambda formal parameters are shadowed for the body of the lambda and never counted;
-///   - an ALIAS column is followed into its defining expression, because that expression is
-///     substituted after this check (QueryAnalyzer expands ColumnDefaultKind::Alias), so an
+///   - an `ALIAS` column is followed into its defining expression, because that expression is
+///     substituted after this check (`QueryAnalyzer` expands `ColumnDefaultKind::Alias`), so an
 ///     alias over one of these virtuals would otherwise reach the read path unnoticed;
-///   - subqueries are not descended into: their own read path is a SELECT that can
+///   - subqueries are not descended into: their own read path is a `SELECT` that can
 ///     materialize these virtuals.
 static void rejectQueryPlanOnlyVirtualColumns(
     const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
@@ -755,7 +755,29 @@ static void rejectQueryPlanOnlyVirtualColumns(
         if (shadowed.contains(short_name))
             return;
 
-        /// An ALIAS column is replaced by its defining expression after this check, so follow
+        /// A compound reference may be a genuine real-column access rather than a reference to
+        /// the short name on its own: a Tuple subcolumn (`tuple_col._table`, `tuple_col.a`),
+        /// possibly table/database-qualified (`t.tuple_col._table`). Such a reference is
+        /// neither a virtual column nor the ALIAS column that happens to share the short name,
+        /// so it is left alone. Only exempt it if some qualifier-stripped suffix of the
+        /// compound resolves to a real column or subcolumn: checking merely that the first
+        /// part names a column is insufficient, because when the table name collides with a
+        /// column (table `t` with a column `t`), `t._table` has a leading real column yet the
+        /// resolvers strip the qualifier and bind it to the virtual `_table`.
+        if (identifier->compound())
+        {
+            const auto & parts = identifier->name_parts;
+            for (size_t i = 0; i + 1 < parts.size(); ++i)
+            {
+                String suffix = parts[i];
+                for (size_t j = i + 1; j < parts.size(); ++j)
+                    suffix += '.' + parts[j];
+                if (columns.hasColumnOrSubcolumn(GetColumnsOptions::All, suffix))
+                    return;
+            }
+        }
+
+        /// An `ALIAS` column is replaced by its defining expression after this check, so follow
         /// that expression here: `a String ALIAS _table` used in a mutation is a reference to
         /// `_table`. Track names being expanded so a self-referential alias cannot loop.
         if (!isQueryPlanOnlyVirtualColumn(short_name) && !aliases_in_progress.contains(short_name))
@@ -773,27 +795,6 @@ static void rejectQueryPlanOnlyVirtualColumns(
         /// overridden by a physical column of the same short name.
         if (!isQueryPlanOnlyVirtualColumn(short_name) || columns.has(short_name))
             return;
-
-        /// The short name is a query-plan-only virtual. A compound reference may still be a
-        /// genuine real-column access rather than the virtual: a Tuple subcolumn
-        /// (`tuple_col._table`), possibly table/database-qualified (`t.tuple_col._table`).
-        /// Only exempt it if some qualifier-stripped suffix of the compound resolves to a
-        /// real column or subcolumn. Checking merely that the first part names a column is
-        /// insufficient: when the table name collides with a column (table `t` with column
-        /// `t`), `t._table` has a leading real column yet the resolvers strip the qualifier
-        /// and bind it to the virtual `_table`.
-        if (identifier->compound())
-        {
-            const auto & parts = identifier->name_parts;
-            for (size_t i = 0; i + 1 < parts.size(); ++i)
-            {
-                String suffix = parts[i];
-                for (size_t j = i + 1; j < parts.size(); ++j)
-                    suffix += '.' + parts[j];
-                if (columns.hasColumnOrSubcolumn(GetColumnsOptions::All, suffix))
-                    return;
-            }
-        }
 
         throw Exception(
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
