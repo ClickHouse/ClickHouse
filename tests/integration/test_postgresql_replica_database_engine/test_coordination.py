@@ -1,3 +1,4 @@
+import shlex
 import threading
 import time
 
@@ -22,7 +23,11 @@ instance = cluster.add_instance(
     with_postgres=True,
     with_zookeeper=True,
     stay_alive=True,
-    macros={"shard": "1", "replica": "coord_instance1"},
+    # `coord_replica` duplicates the value of `replica`, but is used only by the coordination settings of the
+    # tests that change a macro in the configuration and restart the server. `replica` itself must not be
+    # changed: some CI configurations put the database metadata on a remote disk whose endpoint contains
+    # {replica}, so renaming it would relocate (and thereby lose) all databases of the instance.
+    macros={"shard": "1", "replica": "coord_instance1", "coord_replica": "coord_instance1"},
 )
 
 instance2 = cluster.add_instance(
@@ -32,7 +37,7 @@ instance2 = cluster.add_instance(
     with_postgres=True,
     with_zookeeper=True,
     stay_alive=True,
-    macros={"shard": "1", "replica": "coord_instance2"},
+    macros={"shard": "1", "replica": "coord_instance2", "coord_replica": "coord_instance2"},
 )
 
 # A replica with no Keeper/ZooKeeper configured. Coordination needs Keeper, so a coordinated CREATE
@@ -213,6 +218,22 @@ def wait_for_marker(node, timeout=90):
     raise AssertionError("snapshot_completed marker did not appear")
 
 
+def count_in_all_logs(node, message):
+    # `ClickHouseInstance.count_in_log` only greps the current log file, so a log rotation between the
+    # baseline and the check makes the count go *down* and a wait against that baseline never succeeds.
+    # Count over the rotated (and compressed) files as well, which is monotonic.
+    return int(
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"zcat -f /var/log/clickhouse-server/clickhouse-server.log* 2>/dev/null "
+                f"| grep -a -c -F {shlex.quote(message)} || true",
+            ]
+        ).strip()
+    )
+
+
 def wait_for_new_log_occurrence(node, message, baseline, timeout=60):
     # `wait_for_log_line` tails the log from the moment the tail process attaches, so a line that is
     # logged only once, milliseconds after the triggering query returns, can be missed entirely (the
@@ -220,7 +241,7 @@ def wait_for_new_log_occurrence(node, message, baseline, timeout=60):
     # count against a baseline taken before the trigger instead.
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if int(node.count_in_log(message)) > baseline:
+        if count_in_all_logs(node, message) > baseline:
             return
         time.sleep(0.5)
     raise AssertionError(f"'{message}' did not appear in the log within {timeout} seconds")
@@ -2019,7 +2040,7 @@ def test_plain_drop_database_quiesces_retrying_startup_task(started_cluster):
             "SYSTEM ENABLE FAILPOINT materialized_postgresql_pause_after_stop_replication"
         )
         pause_line = "Pausing after stopping replication"
-        pause_baseline = int(instance.count_in_log(pause_line))
+        pause_baseline = count_in_all_logs(instance, pause_line)
         drop_thread = threading.Thread(target=run_drop)
         drop_thread.start()
         # The line is logged only once and possibly before a log tail could attach, so count
@@ -2073,7 +2094,7 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
         "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
     )
     success_line = "Successfully loaded tables from PostgreSQL and started replication"
-    success_baseline = int(instance.count_in_log(success_line))
+    success_baseline = count_in_all_logs(instance, success_line)
     try:
         error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
         assert "Injected failure while dropping a nested table" in error, error
@@ -2118,8 +2139,8 @@ def test_registration_is_fenced_against_concurrent_teardown_token(started_cluste
     zk = started_cluster.get_kazoo_client("zoo1")
     pause_line = "Pausing before registering the replica"
     refused_line = "has concurrently begun being torn down"
-    pause_baseline = int(instance.count_in_log(pause_line))
-    refused_baseline = int(instance.count_in_log(refused_line))
+    pause_baseline = count_in_all_logs(instance, pause_line)
+    refused_baseline = count_in_all_logs(instance, refused_line)
     try:
         instance.query(
             "SYSTEM ENABLE FAILPOINT materialized_postgresql_pause_before_register_replica"
@@ -2190,7 +2211,7 @@ def test_alter_mutable_setting_on_demoted_leader(started_cluster):
 
     # Demote the leader by cutting it off from Keeper until its session expires; the standby takes over.
     demotion_line = "Keeper session expired, releasing replication leadership"
-    demotion_baseline = int(leader_node.count_in_log(demotion_line))
+    demotion_baseline = count_in_all_logs(leader_node, demotion_line)
     pm = PartitionManager()
     try:
         pm.drop_instance_zk_connections(leader_node)
@@ -2236,7 +2257,7 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
     identity_settings = [
         "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
         "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/identity_test'",
-        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_replica_name = '{coord_replica}'",
         "materialized_postgresql_tables_list = 'test_table'",
     ]
     # The macros of an integration-test instance are generated into conf.d, not config.d.
@@ -2255,12 +2276,17 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
         )
         check_tables_are_synchronized(instance, "test_table")
 
-        rejection_baseline = int(instance.count_in_log(rejection_line))
+        rejection_baseline = count_in_all_logs(instance, rejection_line)
 
         # Rename this replica in the server configuration only, and restart. The database metadata is
-        # unchanged, so `{replica}` now expands to a name this setup has never been registered under.
+        # unchanged, so `{coord_replica}` now expands to a name this setup has never been registered
+        # under. Only the dedicated coordination macro is changed: `{replica}` itself is part of the
+        # database-disk endpoint in some CI configurations, so renaming it would relocate the metadata of
+        # every database on the instance instead of exercising this check.
         instance.replace_in_config(
-            macros_config, "coord_instance1", "coord_instance1_renamed"
+            macros_config,
+            "<coord_replica>coord_instance1</coord_replica>",
+            "<coord_replica>coord_instance1_renamed</coord_replica>",
         )
         instance.restart_clickhouse()
 
@@ -2281,7 +2307,9 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
         # Restoring the configuration makes the retrying startup succeed and replication resume - the
         # refusal keeps the setup intact rather than breaking it.
         instance.replace_in_config(
-            macros_config, "coord_instance1_renamed", "coord_instance1"
+            macros_config,
+            "<coord_replica>coord_instance1_renamed</coord_replica>",
+            "<coord_replica>coord_instance1</coord_replica>",
         )
         instance.restart_clickhouse()
 
@@ -2293,7 +2321,9 @@ def test_coordination_identity_must_stay_stable_across_restart(started_cluster):
     finally:
         # Never leave the renamed macro behind: every other test on this node depends on it.
         instance.replace_in_config(
-            macros_config, "coord_instance1_renamed", "coord_instance1"
+            macros_config,
+            "<coord_replica>coord_instance1_renamed</coord_replica>",
+            "<coord_replica>coord_instance1</coord_replica>",
         )
         if not instance.get_process_pid("clickhouse"):
             instance.start_clickhouse()
@@ -2316,6 +2346,20 @@ def coordination_path_exists(node, path):
     )
 
 
+def assert_coordination_state_removed(node, path):
+    # Everything the coordination protocol keeps under the keeper path must be gone after the last replica
+    # was torn down. The keeper path node itself may survive as an empty leftover: the nested replicated
+    # tables remove their own subtrees under <keeper_path>/tables asynchronously, so the teardown can only
+    # remove the (then still not empty) parents on a best-effort basis - correctness over tidiness. What must
+    # never survive is the state a recreate would act on.
+    if not coordination_path_exists(node, path):
+        return
+    children = node.query(
+        f"SELECT name FROM system.zookeeper WHERE path = '{path}' ORDER BY name"
+    ).split()
+    assert set(children) <= {"tables"}, children
+
+
 @pytest.mark.parametrize("macro_change", ["rename", "remove"])
 def test_drop_after_coordination_identity_change_tears_down_original_identity(
     started_cluster, macro_change
@@ -2327,23 +2371,27 @@ def test_drop_after_coordination_identity_change_tears_down_original_identity(
     # new identity, orphaning the original /replicas subtree together with the shared replication slot,
     # publication and snapshot_completed marker forever.
     #
-    # "rename" changes the value of the {replica} macro; "remove" takes the macro away entirely, so the
+    # "rename" changes the value of the {coord_replica} macro; "remove" renames the macro itself, so the
     # settings cannot be expanded at all - a case in which the handler must still be constructible, or the
-    # database could never be dropped.
+    # database could never be dropped. The tests use a coordination-only macro because {replica} is part of
+    # the database-disk endpoint in some CI configurations, where changing it would relocate the metadata of
+    # every database on the instance.
     keeper_path_resolved = "/clickhouse/mat_pg/1/identity_drop_test"
     identity_settings = [
         "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
         "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/identity_drop_test'",
-        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_replica_name = '{coord_replica}'",
         "materialized_postgresql_tables_list = 'test_table'",
     ]
     macros_config = "/etc/clickhouse-server/conf.d/macros.xml"
     if macro_change == "rename":
-        # Change the value of the {replica} macro.
-        original, changed = "coord_instance1", "coord_instance1_renamed"
+        # Change the value of the {coord_replica} macro.
+        original = "<coord_replica>coord_instance1</coord_replica>"
+        changed = "<coord_replica>coord_instance1_renamed</coord_replica>"
     else:
-        # Rename the macro itself, so {replica} cannot be expanded at all any more.
-        original, changed = "replica>", "replica_gone>"
+        # Rename the macro itself, so {coord_replica} cannot be expanded at all any more.
+        original = "<coord_replica>coord_instance1</coord_replica>"
+        changed = "<coord_replica_gone>coord_instance1</coord_replica_gone>"
 
     pg_manager.create_postgres_table("test_table")
     instance.query(
@@ -2371,7 +2419,7 @@ def test_drop_after_coordination_identity_change_tears_down_original_identity(
         # PostgreSQL objects - this replica was the only one, so it is the last replica of the setup that
         # the nested tables belong to.
         instance.query("DROP DATABASE test_database SYNC")
-        assert not coordination_path_exists(instance, keeper_path_resolved)
+        assert_coordination_state_removed(instance, keeper_path_resolved)
         assert not replication_slot_exists()
         assert not publication_exists()
     finally:
@@ -2389,9 +2437,9 @@ def test_drop_after_coordination_identity_change_tears_down_original_identity(
 def test_single_table_drop_after_coordination_identity_change_tears_down_original_identity(
     started_cluster,
 ):
-    # Same for the coordinated single-table engine: after a configuration-only change of the {replica} macro
-    # its DROP TABLE must unregister and make its last-replica decision under the identity persisted in its
-    # nested table, not under the one the changed configuration expands to.
+    # Same for the coordinated single-table engine: after a configuration-only change of the macro its
+    # coordination settings expand through, its DROP TABLE must unregister and make its last-replica decision
+    # under the identity persisted in its nested table, not under the one the changed configuration expands to.
     keeper_path_resolved = "/clickhouse/mat_pg/1/single_table_identity"
     macros_config = "/etc/clickhouse-server/conf.d/macros.xml"
 
@@ -2406,7 +2454,7 @@ def test_single_table_drop_after_coordination_identity_change_tears_down_origina
         f"PRIMARY KEY key "
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/single_table_identity', "
-        f"materialized_postgresql_replica_name = '{{replica}}'",
+        f"materialized_postgresql_replica_name = '{{coord_replica}}'",
         settings={"allow_experimental_materialized_postgresql_table": 1},
     )
     try:
@@ -2421,17 +2469,21 @@ def test_single_table_drop_after_coordination_identity_change_tears_down_origina
             raise AssertionError("test_single_table did not reach 100 rows")
 
         instance.replace_in_config(
-            macros_config, "coord_instance1", "coord_instance1_renamed"
+            macros_config,
+            "<coord_replica>coord_instance1</coord_replica>",
+            "<coord_replica>coord_instance1_renamed</coord_replica>",
         )
         instance.restart_clickhouse()
 
         instance.query("DROP TABLE test_single_table SYNC")
-        assert not coordination_path_exists(instance, keeper_path_resolved)
+        assert_coordination_state_removed(instance, keeper_path_resolved)
         assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
         assert not publication_exists()
     finally:
         instance.replace_in_config(
-            macros_config, "coord_instance1_renamed", "coord_instance1"
+            macros_config,
+            "<coord_replica>coord_instance1_renamed</coord_replica>",
+            "<coord_replica>coord_instance1</coord_replica>",
         )
         if not instance.get_process_pid("clickhouse"):
             instance.start_clickhouse()
