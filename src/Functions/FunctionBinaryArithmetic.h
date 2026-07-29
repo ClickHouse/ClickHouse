@@ -3556,7 +3556,7 @@ public:
                     // monotonicity only when an endpoint keeps the range on one side of it.
                     if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                     {
-                        // Only one endpoint is null here; the other can still be an IP-tagged `Field`.
+                        // At least one endpoint is null here; either one that is not can still be an IP-tagged `Field`.
                         if (intDivRangeCrossesSignedWrap(
                                 arg_type, substituteIPField(left_point), substituteIPField(right_point)))
                             return {false, true, false, false};

@@ -96,9 +96,11 @@ INSERT INTO m4p VALUES ('0.0.0.1'), ('0.0.0.2'), ('127.255.255.255'), ('128.0.0.
 SELECT 'c one sided', (SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) = (SELECT count() FROM m4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0'));
 SELECT 'c one sided bound only', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 3/5%';
 SELECT 'c one sided prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t4p WHERE intDiv(a, toInt8(10)) > 0 AND a < toIPv4('128.0.0.0')) WHERE explain ILIKE '%Granules: 2/5%';
--- The same pair one width up. It is the only assertion that reacts to a substituted `IPv6` width
--- that is too narrow: that moves the wrap point down to 2^31, monotonicity is then refused for
--- every range here, and pruning silently disappears while the answers stay correct.
+-- The same pair one width up, and the only assertion that reacts to a substituted `IPv6` width
+-- that is too narrow. Narrowing moves the wrap point from 2^127 down to 2^31, which does not
+-- simply refuse more ranges: a range straddling 2^31 is refused (pruning lost) while a range
+-- lying above 2^31 that straddles the true 2^127 stops being refused, so monotonicity is
+-- falsely claimed, `intDiv` inverts the endpoints and rows are dropped. Both rows below react.
 CREATE TABLE IF NOT EXISTS t6p (a IPv6) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE IF NOT EXISTS m6p (a IPv6) ENGINE = Memory;
 INSERT INTO t6p VALUES ('::1'), ('::2'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('ffff::');
