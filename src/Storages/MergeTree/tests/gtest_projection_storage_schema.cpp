@@ -10,12 +10,8 @@
 
 using namespace DB;
 
-/// A LOGICAL_ERROR aborts in debug/sanitizer builds but is thrown as an ordinary exception in
-/// release builds - including the coverage build - because handle_error_code (Common/Exception.cpp)
-/// only aborts when debug_or_sanitizer_build is set (nothing sets abort_on_logical_error in the unit
-/// test binary). A single assertion type therefore cannot cover both, so branch on the build type
-/// exactly as the runtime does. This keeps the check meaningful everywhere instead of passing in one
-/// build family and failing in the other.
+/// LOGICAL_ERROR aborts in debug/sanitizer builds but throws in release (handle_error_code only aborts
+/// when debug_or_sanitizer_build is set); branch the assertion on build type to match the runtime.
 #ifdef DEBUG_OR_SANITIZER_BUILD
 #    define EXPECT_LOGICAL_ERROR(statement) EXPECT_DEATH(statement, ".*")
 #else

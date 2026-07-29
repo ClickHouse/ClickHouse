@@ -1516,7 +1516,6 @@ void IMergeTreeDataPart::loadProjections(
 
     for (const auto & projection : metadata_snapshot->projections)
     {
-        /// Skip a projection whose block-number/offset system column was invalidated.
         if (projection.with_block_number && isSystemColumnInvalidated(BlockNumberColumn::name))
             continue;
 
@@ -2060,7 +2059,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         auto result = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
         checksums = std::move(result.computed_checksums);
 
-        /// if some projection parts had missing checksums.txt as well - those would've been returned from checkDataPart and now it's time to write them
+        /// Persist checksums for projection parts whose checksums.txt was also missing (recomputed by checkDataPart).
         if (!result.computed_projections_checksums.empty())
         {
             auto metadata_snapshot = getMetadataSnapshot();

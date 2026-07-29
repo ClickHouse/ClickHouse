@@ -5986,8 +5986,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
 
-            /// Storage-level rename supplies sibling enumeration (from disk truth), the stale-destination sweep and the commit-last
-            /// ordering.
+            /// Rename via part storage so the FLAT projection siblings move with the part (sweeps a stale destination, commits the part dir last).
             auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
                 std::make_shared<SingleDiskVolume>("volume_" + old_dir, disk, 0), full_path, old_dir);
             part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));

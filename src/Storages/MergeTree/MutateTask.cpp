@@ -2311,7 +2311,7 @@ private:
             }
         }
 
-        /// Hardlink unchanged projections. getProjections() is the owned set (layout-independent), so residue siblings of an unrelated
+        /// getProjections() is the owned set (layout-independent), so residue siblings of an unrelated
         /// same-named part are not carried into the new part.
         for (const auto & [projection_dir, projection] : ctx->source_part->getDataPartStorage().getProjections())
         {
@@ -2627,7 +2627,7 @@ private:
             }
         }
 
-        /// Hardlink unchanged projections from the owned set. No checksums.has() filter here: legacy parts own metadata-declared
+        /// No checksums.has() filter here: legacy parts own metadata-declared
         /// projections that checksums.txt does not reference.
         for (const auto & [projection_dir, projection] : ctx->source_part->getDataPartStorage().getProjections())
         {
@@ -3601,7 +3601,7 @@ bool MutateTask::prepare()
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
     /// The mutation tmp dir name repeats across retries; the leftover of a failed same-named attempt
-    /// must go before the part storage is constructed (see reclaimStaleTemporaryDirectory).
+    /// must be removed before the part storage is constructed (see reclaimStaleTemporaryDirectory).
     ctx->data->reclaimStaleTemporaryDirectory(ctx->disk, fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name);
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());

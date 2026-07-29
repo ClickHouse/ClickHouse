@@ -352,7 +352,7 @@ static CheckDataPartResult checkDataPart(
     std::vector<std::pair<String, IMergeTreeDataPart::Checksums>> computed_projections_checksums;
     std::string broken_projections_message;
 
-    /// now checking projections of all storage types
+    /// Check each declared projection, whatever its on-disk storage format.
     NameSet remaining_projections_on_disk;
     if (!data_part->isProjectionPart())
         for (const auto & [projection_dir, projection] : data_part_storage.detectProjections())

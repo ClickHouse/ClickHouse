@@ -681,7 +681,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (!params.keep_metadata_version)
         remove_file_if_exists(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
 
-    /// Record which system columns the frozen copy no longer carries (invalidated-system-columns feature).
     if (params.external_transaction)
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     else
@@ -1021,7 +1020,7 @@ Projections DataPartStorageOnDiskBase::detectProjections(const ProjectionScan & 
         return probed;
     }
 
-    /// Full discovery across both layouts. Reuse the caller's parts-root listing when given, else list the parts root here.
+    /// Full discovery across both layouts.
     Strings root_dir_entries;
     if (scan.root_listing)
         root_dir_entries = *scan.root_listing;

@@ -96,8 +96,6 @@ struct HardlinkedFiles
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contain read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
-///  Commit-last invariant for FLAT projection siblings: materializing writes projections first and the main part dir last (its presence
-/// marks completeness); dismantling removes it first.
 class IDataPartStorage : public boost::noncopyable
 {
 public:
@@ -105,11 +103,9 @@ public:
 
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
-    /// Placement of one projection sub-part under its parent storage: paths derive from the parent live (survives renames), the location
-    /// may not exist on disk, must not outlive the parent.
     struct Projection
     {
-        /// Naming vocabulary for projection dirs; every scanner classifies names through it, nothing else spells the pattern.
+        /// A projection directory's status, classified from its name.
         enum class Status : uint8_t
         {
             None,
@@ -167,27 +163,14 @@ public:
     /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
-    /// Projection directory lifecycle -- strict contract:
-    ///   createProjection(dir, ...)             : the ONLY creator. mkdir + register ownership + set layout. New projections only.
-    ///   getProjectionStorageForWrite(placement): writable handle; THROWS unless already owned (create it first).
-    ///   getProjectionStorage(dir)              : READ handle for an existing OR broken/missing projection; never creates.
-    ///   getProjection(dir) / tryGetProjection  : owned-descriptor lookup (getProjection THROWS if absent; tryGet returns nullopt).
-    ///   getProjections() / setProjections()    : the owned-set CACHE -- the runtime source of truth.
-    ///   detectProjections(scan)                : DISK scan across both layouts -- cleanup / consistency ONLY (the cache-bypass exception).
-
-    /// The owned projection set, seeded by the logical layer and kept true by the dir-mutating verbs. Throws LOGICAL_ERROR if never seeded:
-    /// a disk scan could adopt residue of a same-named part.
+    /// The owned projection set. Throws LOGICAL_ERROR if never seeded (won't silently disk-scan a same-named part's residue).
     virtual Projections getProjections() const = 0;
 
     /// Atomically replace the owned set (entries are re-parented to this storage); {} is a valid set.
     virtual void setProjections(Projections projections) = 0;
 
-    /// Disk scan of the on-disk projection dirs across both layouts, residue included; does not touch the owned set. Disk-truth paths
-    /// only (checksums reconstruction, part consistency checks). Both narrowings default to empty:
-    ///   - candidates: probe only these dirName() entries by direct stat (O(candidates), no listing) -- manifest-driven paths, where
-    ///     checksums+metadata name every adoptable dir, so probing loses nothing;
-    ///   - root_listing: reuse a parts-root listing the caller already took (an op processing many parts lists the root once); used
-    ///     only for full discovery (ignored when candidates is set).
+    /// Disk scan of on-disk projection dirs across both layouts (residue included); does not touch the owned set. Disk-truth paths only.
+    /// candidates: stat just these dirName()s; else root_listing reuses a caller's parts-root listing for full discovery.
     struct ProjectionScan
     {
         std::optional<Strings> candidates = std::nullopt;
@@ -212,8 +195,8 @@ public:
     virtual std::pair<std::string, std::string> getProjectionRootAndDir(const std::string & dir_name, ProjectionStorageFormat format) const = 0;
     virtual bool existsProjectionDir(const std::string & dir_name, ProjectionStorageFormat format) const = 0;
 
-    /// Whether the table runs zero-copy replication, i.e. blobs may be shared cross-replica invisibly to the
-    /// local refcount. Default true = fail-safe: residue sweeps then keep remote blobs. Seeded by the part builder.
+    /// Whether the table runs zero-copy replication (blobs may be shared cross-replica, invisible to the local refcount).
+    /// Default true is fail-safe: residue sweeps keep remote blobs.
     virtual void setZeroCopyReplicationEnabled(bool value) = 0;
 
     /// Sub-part storage bound to the projection's directory.
@@ -406,8 +389,8 @@ public:
     /// copies a whole archive.
     virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
 
-    /// Materializes a copy of the part at 'to/dir_path' (FLAT projection siblings first, main dir last). `dst_disk` == nullptr means the
-    /// part's own disk; a different disk cannot hardlink, so it always copies.
+    /// Materializes a copy of the part at 'to/dir_path'. `dst_disk` == nullptr means the part's own disk;
+    /// a different disk cannot hardlink, so it always copies.
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
@@ -434,7 +417,7 @@ public:
 
     virtual void createDirectories() = 0;
 
-    /// The only three operations that mutate projection directories; each keeps the owned set true.
+    /// The verbs that mutate the owned projection set; each keeps it true.
 
     /// Creates the on-disk directory for a projection sub-part in the given layout and records it in the owned set. Sweeps a stale
     /// leftover directory at the target first (tmp part names repeat across attempts).
@@ -496,8 +479,7 @@ public:
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
-    /// FLAT projection siblings move with the part dir; rename picks the parent/sibling order from the destination (parent last when
-    /// entering the live namespace, first when leaving it).
+    /// FLAT projection siblings move with the part dir.
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,

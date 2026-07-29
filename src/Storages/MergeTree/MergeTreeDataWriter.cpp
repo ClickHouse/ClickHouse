@@ -899,7 +899,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     /// The part dir name is non-unique across retries; the leftover of a failed same-named attempt
-    /// must go before the part storage is constructed (see reclaimStaleTemporaryDirectory).
+    /// must be removed before the part storage is constructed (see reclaimStaleTemporaryDirectory).
     if (may_exist)
         data.reclaimStaleTemporaryDirectory(data_part_volume->getDisk(), fs::path(data.getRelativeDataPath()) / part_dir);
 
