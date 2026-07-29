@@ -1445,6 +1445,17 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+/// Is this one of the implicit minmax indices created over a virtual column by
+/// `add_minmax_index_for_block_{number,offset}_column`? Those - and only those - have to be
+/// resolved with the virtual columns in scope. Implicit indices over ordinary and `ALIAS`
+/// columns keep the underlying columns of the expression in `column_names`, so a virtual name
+/// there identifies the virtual-column case, exactly as in
+/// `StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns`.
+static bool isImplicitIndexOverVirtualColumn(const IndexDescription & index, const StorageInMemoryMetadata & metadata)
+{
+    return index.isImplicitlyCreated() && index.column_names.size() == 1 && metadata.isVirtualColumn(index.column_names.front());
+}
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
@@ -1495,13 +1506,16 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            /// Implicitly created indices may reference virtual columns (e.g. `_block_number`),
-            /// but explicit indices cannot: CREATE and ADD INDEX resolve them against ordinary
-            /// columns only, and virtual columns must not leak into the re-expansion of column
-            /// matchers inside referenced `ALIAS` column bodies.
+            /// Only the implicit indices over virtual columns (`add_minmax_index_for_block_number_column`
+            /// and `add_minmax_index_for_block_offset_column`) need the virtual columns in scope. Every
+            /// other index - explicit, or implicit over an ordinary/`ALIAS` column - is created against
+            /// ordinary columns only, so it must be re-resolved the same way: otherwise virtual columns
+            /// would leak into the re-expansion of column matchers inside referenced `ALIAS` bodies and
+            /// the expression would silently differ from the one the index was built from.
+            const bool over_virtual_column = isImplicitIndexOverVirtualColumn(index, metadata_copy);
             index = IndexDescription::getIndexFromAST(
                 index.definition_ast,
-                index.isImplicitlyCreated() ? columns_with_virtuals : metadata_copy.columns,
+                over_virtual_column ? columns_with_virtuals : metadata_copy.columns,
                 index.isImplicitlyCreated(),
                 index.escape_filenames,
                 context);
@@ -2283,10 +2297,37 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedE
             renames.emplace_back(command.column_name, command.rename_to);
     }
 
+    /// Only needed for the implicit indices over virtual columns, which are rare, so build it lazily.
+    std::optional<ColumnsDescription> new_columns_with_virtuals;
+
     std::vector<std::pair<String, String>> res;
     for (const auto & index : old_metadata.secondary_indices)
     {
-        if (index.isImplicitlyCreated() || dropped_indices.contains(index.name))
+        if (dropped_indices.contains(index.name))
+            continue;
+
+        /// Implicitly created indices are named after their column, so `RENAME COLUMN` renames the
+        /// index along with it (see `AlterCommand::apply`), and the post-ALTER metadata - which the
+        /// rebuild mutation runs against - knows the index only under its new name.
+        String new_index_name = index.name;
+        if (index.isImplicitlyCreated())
+        {
+            for (const auto & [from, to] : renames)
+            {
+                if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + from)
+                {
+                    new_index_name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + to;
+                    break;
+                }
+            }
+        }
+
+        /// An index that no longer exists after the ALTER leaves no stale files behind: it either
+        /// has files removed with the column, or is rebuilt from scratch when it comes back.
+        /// Implicit indices disappear without a `DROP INDEX` command, e.g. when their column is
+        /// dropped or its type stops being indexable
+        /// (`StorageInMemoryMetadata::dropImplicitIndicesForColumn`).
+        if (!new_metadata.secondary_indices.has(new_index_name))
             continue;
 
         /// Renaming a column does not invalidate index files but does change identifiers in
@@ -2306,12 +2347,25 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedE
         /// by the persisted definition are re-resolved against the new alias bodies and matchers
         /// inside those bodies are re-expanded, so this catches changes no command mentions
         /// explicitly, e.g. `ADD COLUMN` extending a matcher inside a referenced alias body.
-        /// Explicit indices are resolved against ordinary columns, without virtuals (see `apply`).
+        /// The implicit minmax indices created for numeric, string and temporal columns are
+        /// compared as well: `StorageInMemoryMetadata::addImplicitIndicesForColumn` creates them
+        /// over `ALIAS` columns with a non-trivial body too, so matcher re-expansion inside that
+        /// body makes them schema-sensitive in exactly the same way. The columns the definition is
+        /// resolved against must match what `apply` uses, or the comparison would report a
+        /// difference of its own making.
+        const bool over_virtual_column = isImplicitIndexOverVirtualColumn(index, old_metadata);
+        if (over_virtual_column && !new_columns_with_virtuals)
+            new_columns_with_virtuals = new_metadata.getColumnsWithVirtuals();
+
         IndexDescription new_index;
         try
         {
             new_index = IndexDescription::getIndexFromAST(
-                old_definition, new_metadata.columns, /*is_implicitly_created=*/ false, index.escape_filenames, context);
+                old_definition,
+                over_virtual_column ? *new_columns_with_virtuals : new_metadata.columns,
+                index.isImplicitlyCreated(),
+                index.escape_filenames,
+                context);
         }
         catch (const Exception & exception)
         {
@@ -2321,7 +2375,7 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedE
         String old_formatted = old_expression_list->formatWithSecretsOneLine();
         String new_formatted = new_index.expression_list_ast->formatWithSecretsOneLine();
         if (old_formatted != new_formatted)
-            res.emplace_back(index.name, fmt::format("from '{}' to '{}'", old_formatted, new_formatted));
+            res.emplace_back(new_index_name, fmt::format("from '{}' to '{}'", old_formatted, new_formatted));
     }
     return res;
 }
