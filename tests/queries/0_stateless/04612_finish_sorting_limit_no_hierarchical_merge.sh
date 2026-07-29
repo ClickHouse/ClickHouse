@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_finish_sorting_limit"
 # flaky check with bigger parts). The stream count depends on the number of parts, not
 # on their size, so the hierarchy decision is unaffected.
 $CLICKHOUSE_CLIENT -q "
-    $(for i in $(seq 1 20); do echo "INSERT INTO t_finish_sorting_limit SELECT number, number FROM numbers(10000);"; done)"
+    $(for _ in $(seq 1 20); do echo "INSERT INTO t_finish_sorting_limit SELECT number, number FROM numbers(10000);"; done)"
 
 FS_SETTINGS="optimize_read_in_order = 1, read_in_order_two_level_merge_threshold = 1,
     max_threads = 32, max_threads_min_free_memory_per_thread = 0, max_rows_to_read = 0"
