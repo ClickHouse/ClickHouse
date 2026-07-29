@@ -114,6 +114,10 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
 
     if (!result)
     {
+        /// The wait may have expired in the same slice in which the query was cancelled; report the
+        /// cancellation rather than a source timeout.
+        CurrentThread::checkIfNotCancelled();
+
         throw DB::Exception(
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Dictionary {} source seems unavailable, because {} ms timeout exceeded.",

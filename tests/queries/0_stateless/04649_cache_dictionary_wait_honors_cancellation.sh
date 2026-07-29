@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # Tag no-fasttest: needs a local HTTP listener
+# Tag long: the uncancelled arm deliberately waits out the full 30s dictionary budget
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,7 +10,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A query that misses a cache-layout dictionary blocks in
 # CacheDictionaryUpdateQueue::waitForCurrentUpdateFinish for up to
 # QUERY_WAIT_TIMEOUT_MILLISECONDS. That wait must observe cancellation of the query
-# (KILL QUERY, max_execution_time) instead of deferring it until the timeout expires.
+# (KILL QUERY, and max_execution_time with the default timeout_overflow_mode = 'throw')
+# instead of deferring it until the timeout expires. In 'break' mode the cancellation
+# checker deliberately does not mark the query, so the wait still ends at its own timeout.
 # The listener accepts the connection and never answers, so the update never finishes.
 
 PORT=$(python3 -c "
@@ -51,13 +54,15 @@ done
 # 30s wait budget: long enough that an unfixed build blows the limit below, short enough
 # that the timeout arm of the test does not take a full minute.
 WAIT_MS=30000
-# A cancelled query must return in well under WAIT_MS. Generous, so a loaded CI host does
-# not make this timing-fragile, while still failing an unfixed build (which waits 30s).
+# Bound for the max_execution_time arm only (the KILL arm has its own, narrower one below). The
+# server arms that timeout for the query itself, so this measures the whole client invocation: a
+# cancelled query must return in well under WAIT_MS. Generous, so a loaded CI host does not make
+# it timing-fragile, while still failing an unfixed build (which waits 30s).
 LIMIT_MS=15000
 
 # http_max_tries = 1 keeps the abandoned update in the queue's worker short: the update the
 # cancelled query walks away from keeps running there, and DROP DICTIONARY below joins that
-# worker (CacheDictionaryUpdateQueue::stopAndWait -> update_pool.wait()).
+# worker (CacheDictionaryUpdateQueue::stopAndWait -> update_pool.wait).
 ${CLICKHOUSE_CLIENT} --query "
     DROP DICTIONARY IF EXISTS dict_04649;
     CREATE DICTIONARY dict_04649 (key UInt64, value String)
@@ -78,25 +83,50 @@ if [ "$ELAPSED_MS" -lt "$LIMIT_MS" ]; then echo "stopped early"; else echo "wait
 
 echo "--- KILL QUERY ---"
 QUERY_ID="04649_kill_${CLICKHOUSE_DATABASE}"
-START=$(date +%s%N)
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID" --query "
     SELECT dictGetString('dict_04649', 'value', toUInt64(2)) SETTINGS max_execution_time = 0
 " > /dev/null 2> "${CLICKHOUSE_TMP}/04649_kill_err.txt" &
 CLIENT_PID=$!
 
-# Wait until the query is actually blocked in the dictionary update wait, so the
-# cancellation lands on that wait rather than before it.
-for _ in $(seq 1 200); do
-    FOUND=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID'")
-    if [ "${FOUND:-0}" -ge 1 ]; then break; fi
+# Wait until the query has been executing for a bounded interval, so it is actually parked in
+# the dictionary wait and the cancellation lands there. Gating only on the query being visible
+# in system.processes is not enough: ProcessList::insert publishes it before the pipeline
+# executor is attached, so if KILL QUERY won that race the cancellation would be thrown from
+# QueryStatus::addPipelineExecutor instead, and this arm would pass without the fix. The wait
+# budget is 30s, so a 1s floor still leaves the bound below ample margin.
+KILL_ELAPSED=
+for _ in $(seq 1 600); do
+    KILL_ELAPSED=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT max(elapsed) FROM system.processes WHERE query_id = '$QUERY_ID'")
+    if [ -n "$KILL_ELAPSED" ] && awk "BEGIN{exit !($KILL_ELAPSED > 1)}"; then break; fi
     sleep 0.1
 done
-${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC" > /dev/null
-wait $CLIENT_PID 2>/dev/null ||:
-ELAPSED_MS=$(( ($(date +%s%N) - START) / 1000000 ))
-grep -o -m1 -e QUERY_WAS_CANCELLED -e "source seems unavailable" "${CLICKHOUSE_TMP}/04649_kill_err.txt"
-if [ "$ELAPSED_MS" -lt "$LIMIT_MS" ]; then echo "stopped early"; else echo "waited out the timeout: ${ELAPSED_MS} ms"; fi
+
+if [ -z "$KILL_ELAPSED" ] || ! awk "BEGIN{exit !($KILL_ELAPSED > 1)}" 2>/dev/null; then
+    # Not in .reference on purpose: never reaching the wait means the arm measured nothing, so
+    # the test must fail with a readable diff instead of falling through to the KILL.
+    echo "query did not reach the dictionary wait"
+    cat "${CLICKHOUSE_TMP}/04649_kill_err.txt"
+    # No KILL was issued on this path, so terminate the background client here to keep the rest
+    # of the test bounded.
+    kill $CLIENT_PID 2>/dev/null ||:
+    wait $CLIENT_PID 2>/dev/null ||:
+else
+    # The timer covers only the KILL and the cancelled client's exit, so the bound has to
+    # separate "returns" from "waits out the remaining dictionary budget". KILL QUERY SYNC polls
+    # every 100ms until the query leaves the process list: with the fix that costs one
+    # clickhouse-client startup (~8s worst case on a loaded sanitizer host, as measured in
+    # 04410_primes_source_cancellation.sh) plus the 100ms wait slice plus the 100ms SYNC
+    # granularity; without it the query stays listed for the ~29s left of its 30s budget. 15s
+    # separates the two with margin on both sides, so do not re-tighten it.
+    KILL_LIMIT_MS=15000
+    KILL_START=$(date +%s%N)
+    ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC" > /dev/null
+    wait $CLIENT_PID 2>/dev/null ||:
+    KILL_MS=$(( ($(date +%s%N) - KILL_START) / 1000000 ))
+    grep -o -m1 -e QUERY_WAS_CANCELLED -e "source seems unavailable" "${CLICKHOUSE_TMP}/04649_kill_err.txt"
+    if [ "$KILL_MS" -lt "$KILL_LIMIT_MS" ]; then echo "stopped early"; else echo "waited out the timeout: ${KILL_MS} ms"; fi
+fi
 
 # Not cancelled: the configured wait budget must still be honoured, i.e. the slice loop
 # must not extend (or shorten) the total deadline.
@@ -118,4 +148,6 @@ rm -f "${CLICKHOUSE_TMP}/04649_kill_err.txt"
 # inside the read the cancelled query abandoned. With the listener gone that read fails at once.
 kill $LISTENER_PID 2>/dev/null ||:
 wait $LISTENER_PID 2>/dev/null ||:
-${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY dict_04649"
+# ignore_drop_queries_probability = 0: under the stress runner the ignore branch rewrites this
+# DROP into a TRUNCATE, which a dictionary rejects with SYNTAX_ERROR on stderr.
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY dict_04649 SETTINGS ignore_drop_queries_probability = 0"
