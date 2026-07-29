@@ -72,6 +72,10 @@ namespace S3RequestSetting
 
 namespace
 {
+    /// S3 accepts `x-amz-copy-source-range` only if the source object is greater than 5 MB, and answers
+    /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
+    constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
+
     class UploadHelper
     {
     public:
@@ -613,6 +617,7 @@ namespace
             const String & src_key_,
             size_t src_offset_,
             size_t src_size_,
+            size_t src_object_size_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -635,6 +640,7 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
+            , src_object_size(src_object_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
@@ -647,11 +653,13 @@ namespace
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
 
             /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
-            /// the single-operation path -- doing so would copy the entire source object. Force multipart
-            /// UploadPartCopy (which sets a CopySourceRange per part); if that is unavailable, fall back to
-            /// the buffered ranged read, which reads exactly [offset, offset + size).
+            /// the single-operation path -- doing so would copy the entire source object. It can only use
+            /// UploadPartCopy (which sets a CopySourceRange per part), and only when both multipart copy is
+            /// available and the source is large enough for S3 to accept a byte-range copy source; otherwise
+            /// it falls back to the buffered ranged read, which reads exactly [offset, offset + size).
             bool multipart_copy_available = supports_multipart_copy && request_settings[S3RequestSetting::allow_multipart_copy];
-            if (is_ranged_copy && !multipart_copy_available)
+            bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
+            if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
                 fallback_method();
                 return;
@@ -677,6 +685,7 @@ namespace
         const String & src_key;
         size_t offset;
         size_t size;
+        size_t src_object_size;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
@@ -894,6 +903,7 @@ namespace
         const String & src_key,
         size_t src_offset,
         size_t src_size,
+        size_t src_object_size,
         std::shared_ptr<const S3::Client> dest_s3_client,
         const String & dest_bucket,
         const String & dest_key,
@@ -936,6 +946,7 @@ namespace
             src_key,
             src_offset,
             src_size,
+            src_object_size,
             dest_bucket,
             dest_key,
             settings,
@@ -970,6 +981,7 @@ void copyS3File(
         src_key,
         /* src_offset= */ 0,
         src_size,
+        /* src_object_size= */ src_size,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,
@@ -988,6 +1000,7 @@ void copyS3FileRange(
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    size_t src_object_size,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1004,6 +1017,7 @@ void copyS3FileRange(
         src_key,
         src_offset,
         src_size,
+        src_object_size,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,

@@ -435,19 +435,21 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    copyToDiskImpl(path_in_backup, /* offset= */ 0, file_size, /* is_range= */ false, encrypted_in_backup,
+    copyToDiskImpl(path_in_backup, /* offset= */ 0, file_size, file_size, /* is_range= */ false, encrypted_in_backup,
                    destination_disk, destination_path, write_mode);
 }
 
-void BackupReaderS3::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
-                                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
+void BackupReaderS3::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                         WriteMode write_mode)
 {
-    copyToDiskImpl(path_in_backup, offset, size, /* is_range= */ true, encrypted_in_backup,
+    copyToDiskImpl(path_in_backup, offset, size, file_size, /* is_range= */ true, encrypted_in_backup,
                    destination_disk, destination_path, write_mode);
 }
 
-void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, bool is_range, bool encrypted_in_backup,
-                                    DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
+void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
+                                    bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                    WriteMode write_mode)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
@@ -471,7 +473,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 
             if (is_range)
                 copyS3FileRange(
-                    client, s3_uri.bucket, src_key, offset, size,
+                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
             else
@@ -489,7 +491,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 
     /// Fallback to copy through buffers.
     if (is_range)
-        BackupReaderDefault::copyFileRangeToDisk(path_in_backup, offset, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+        BackupReaderDefault::copyFileRangeToDisk(path_in_backup, offset, size, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
     else
         BackupReaderDefault::copyFileToDisk(path_in_backup, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
@@ -593,6 +595,7 @@ void BackupWriterS3::copyFileFromDisk(
             else
                 copyS3FileRange(
                     src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
+                    /* src_object_size= */ source_size,
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);

@@ -36,8 +36,9 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
-                                              DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
+void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t /* file_size */,
+                                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                              WriteMode write_mode)
 {
     LOG_TRACE(log, "Copying a range of file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
 

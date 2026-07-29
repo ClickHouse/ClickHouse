@@ -36,11 +36,13 @@ public:
     virtual void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                 DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
 
-    /// Copies exactly `[offset, offset + size)` of `path_in_backup`, which holds more bytes than that.
+    /// Copies exactly `[offset, offset + size)` of `path_in_backup`, whose full size is `file_size`.
     /// Separate from copyFileToDisk() because the whole-object fast paths (a server-side copy, fs::copy) carry
-    /// no byte range and would copy the entire file.
-    virtual void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
-                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
+    /// no byte range and would copy the entire file. `file_size` lets an implementation choose a route the
+    /// storage allows for that source (see copyS3FileRange) without an extra metadata request.
+    virtual void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                     bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                     WriteMode write_mode) = 0;
 
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;

@@ -53,18 +53,19 @@ void copyS3File(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
-/// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object.
+/// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
 /// Separate from copyS3File() rather than an extra offset argument, because the two cannot share a route:
-/// `CopyObject` carries no byte range and would copy the entire source. A ranged copy therefore always goes
-/// through multipart `UploadPartCopy` (which sets a `CopySourceRange` per part), or through the buffered
-/// ranged read when multipart copy is unavailable.
+/// `CopyObject` carries no byte range and would copy the entire source. A ranged copy uses multipart
+/// `UploadPartCopy` (a `CopySourceRange` per part), but S3 accepts a byte-range copy source only if the source
+/// object is greater than 5 MB, so a smaller source (or no multipart copy) reads the range through buffers.
 void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
+    size_t src_object_size,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
