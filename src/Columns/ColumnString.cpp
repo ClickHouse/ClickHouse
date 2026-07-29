@@ -837,12 +837,6 @@ void ColumnString::updateHashBatch(size_t begin, size_t n, SipHash * hashes) con
         updateHashWithValue(begin + i, hashes[i]);
 }
 
-void ColumnString::updateHashBatch(const UInt64 * rows, size_t n, SipHash * hashes) const
-{
-    for (size_t i = 0; i < n; ++i)
-        updateHashWithValue(rows[i], hashes[i]);
-}
-
 void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
 {
     size_t string_size = sizeAt(n);

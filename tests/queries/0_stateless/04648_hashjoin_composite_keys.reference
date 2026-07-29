@@ -6,9 +6,9 @@
 20000	1990000
 -- RIGHT JOIN, two String keys, parallel_hash
 6000	1000	18450
--- Nullable key in composite
+-- Nullable key in composite, parallel_hash
 6666	660222
--- LowCardinality String in composite
+-- LowCardinality String in composite, parallel_hash
 6700	661650
 -- ASOF with mixed equality prefix
 1901	528300

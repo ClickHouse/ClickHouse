@@ -30,19 +30,19 @@ RIGHT JOIN (SELECT toString(number) AS s1, toString(number) AS s2 FROM numbers(2
     ON l.s1 = r.s1 AND l.s2 = r.s2
 SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1;
 
-SELECT '-- Nullable key in composite';
+SELECT '-- Nullable key in composite, parallel_hash';
 SELECT count(), sum(r.i)
 FROM (SELECT nullIf(number % 300, 42) AS i, toString(number % 300) AS s FROM numbers(10000)) AS l
 INNER JOIN (SELECT toNullable(number) AS i, toString(number) AS s FROM numbers(200)) AS r
     ON l.i = r.i AND l.s = r.s
-SETTINGS join_algorithm = 'hash';
+SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1;
 
-SELECT '-- LowCardinality String in composite';
+SELECT '-- LowCardinality String in composite, parallel_hash';
 SELECT count(), sum(r.i)
 FROM (SELECT number % 300 AS i, toLowCardinality(toString(number % 300)) AS s FROM numbers(10000)) AS l
 INNER JOIN (SELECT number AS i, toLowCardinality(toString(number)) AS s FROM numbers(200)) AS r
     ON l.i = r.i AND l.s = r.s
-SETTINGS join_algorithm = 'hash';
+SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1;
 
 SELECT '-- ASOF with mixed equality prefix';
 SELECT count(), sum(r.t)

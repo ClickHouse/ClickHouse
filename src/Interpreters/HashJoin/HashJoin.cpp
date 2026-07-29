@@ -637,13 +637,16 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     auto materialized = materializeColumnsFromRightBlock(source_block);
-    return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), check_limits);
+    return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), nullptr, check_limits);
 }
 
-bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, ColumnsHashing::HashedKeysPtr precomputed_keys, bool check_limits)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
+
+    /// The keys are the SipHashs of one set of key columns, so they cannot apply to more than one join clause.
+    chassert(!precomputed_keys || table_join->oneDisjunct());
 
     /// RowRef::row_no is UInt32 (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
@@ -803,6 +806,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                         key_sizes[onexpr_idx],
                         stored_columns->block_no,
                         stored_columns->selector,
+                        precomputed_keys,
                         null_map,
                         join_mask_col,
                         data->pool,

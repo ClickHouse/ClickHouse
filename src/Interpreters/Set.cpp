@@ -89,7 +89,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 {
     typename Method::State state(key_columns, key_sizes, nullptr);
     if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
-        state.precomputeRange(0, rows);
+        state.precomputeKeys(0, rows);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -590,7 +590,7 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
     if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
-        state.precomputeRange(0, rows);
+        state.precomputeKeys(0, rows);
 
     /// NOTE Optimization is not used for consecutive identical strings.
 

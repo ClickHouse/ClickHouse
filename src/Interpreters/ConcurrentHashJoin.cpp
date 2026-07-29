@@ -331,8 +331,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     hash_join->space_was_preallocated = true;
                 }
 
-                auto [block, selector] = std::move(dispatched_block).detachData();
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
+                auto [block, selector, precomputed_keys] = std::move(dispatched_block).detachDataWithPrecomputedKeys();
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), std::move(precomputed_keys), check_limits);
 
                 std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
 
@@ -566,18 +566,26 @@ static IColumn::Selector hashToSelector(const HashTable & hash_table, const Bloc
     return selector;
 }
 
+using ColumnsHashing::HashedKeysPtr;
+
+/// The hash table hash of every row, used to scatter the block between the partitions. For the
+/// `Hashed` method the row keys returned too, so that the individual builders do not hash again.
 template <typename KeyGetter, typename HashTable>
-BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+std::pair<BlockHashes, HashedKeysPtr> calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
     const size_t num_rows = key_columns[0]->size();
     Arena pool;
     auto key_getter = KeyGetter(key_columns, key_sizes, nullptr);
+    HashedKeysPtr precomputed_keys;
     if constexpr (ColumnsHashing::uses_precomputed_keys<KeyGetter>)
-        key_getter.precomputeRange(0, num_rows);
+    {
+        key_getter.precomputeKeys(0, num_rows);
+        precomputed_keys = key_getter.precomputed_keys;
+    }
     BlockHashes hash(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
         hash[i] = key_getter.getHash(hash_table, i, pool);
-    return hash;
+    return {std::move(hash), std::move(precomputed_keys)};
 }
 
 /// Shape of the equality-key prefix used when computing the per-partition
@@ -617,7 +625,8 @@ static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_
     return shape;
 }
 
-static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
+static std::pair<IColumn::Selector, HashedKeysPtr>
+selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
     const auto shape = getDispatchKeyShape(join, key_columns_names.size());
 
@@ -634,17 +643,15 @@ static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_s
     ConstNullMapPtr null_map{};
     extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    auto calculate_selector = [&](auto & maps)
+    auto calculate_selector = [&](auto & maps) -> std::pair<IColumn::Selector, HashedKeysPtr>
     {
-        BlockHashes hash;
-
         switch (join.getJoinedData()->type)
         {
         #define M(TYPE)                                                                                                                       \
-            case HashJoin::Type::TYPE:                                                                                                        \
-        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            case HashJoin::Type::TYPE: {                                                                                                      \
+        auto [hash, keys] = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                     *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
-        return hashToSelector(*maps.TYPE, hash, num_shards);
+        return {hashToSelector(*maps.TYPE, hash, num_shards), std::move(keys)}; }
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -681,7 +688,7 @@ static ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::
     return result;
 }
 
-static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block, const HashedKeysPtr & precomputed_keys)
 {
     std::vector<ScatteredBlock::IndexesPtr> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -697,7 +704,7 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
     ScatteredBlocks result;
     result.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-        result.emplace_back(from_block, std::move(selectors[i]));
+        result.emplace_back(from_block, std::move(selectors[i]), precomputed_keys);
     return result;
 }
 
@@ -711,7 +718,7 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         return res;
     }
 
-    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
+    auto [selector, precomputed_keys] = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
     /// This is not beneficial when the whole set of columns is e.g. a single small column.
@@ -726,7 +733,7 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
               { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
         > threshold;
 
-    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block)
+    return use_zero_copy_approach ? scatterBlocksWithSelector(num_shards, selector, from_block, precomputed_keys)
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 

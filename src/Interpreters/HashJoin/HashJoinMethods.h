@@ -80,6 +80,7 @@ public:
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const ScatteredBlock::Selector & selector,
+        ColumnsHashing::HashedKeysPtr precomputed_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
@@ -105,7 +106,11 @@ public:
 private:
     template <typename KeyGetter, bool is_asof_join, typename Selector>
     static KeyGetter createKeyGetter(
-        const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const Selector & selector, HashJoin::RightTableData::KeyRange key_range = {});
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        const Selector & selector,
+        ColumnsHashing::HashedKeysPtr precomputed_keys = nullptr,
+        HashJoin::RightTableData::KeyRange key_range = {});
 
     template <typename KeyGetter, typename HashMap, typename Selector>
     static void insertFromBlockImplTypeCase(
@@ -115,6 +120,7 @@ private:
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         const Selector & selector,
+        ColumnsHashing::HashedKeysPtr precomputed_keys,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,

@@ -141,7 +141,7 @@ public:
     using IJoin::addBlockToJoin;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, ColumnsHashing::HashedKeysPtr precomputed_keys, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 

@@ -393,9 +393,6 @@ public:
     /// per column and keep the per-row loop inlinable.
     virtual void updateHashBatch(size_t begin, size_t n, SipHash * hashes) const;
 
-    /// Same, over an explicit row list: hashes[i] absorbs the value at row rows[i].
-    virtual void updateHashBatch(const UInt64 * rows, size_t n, SipHash * hashes) const;
-
     /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
     /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
     /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter

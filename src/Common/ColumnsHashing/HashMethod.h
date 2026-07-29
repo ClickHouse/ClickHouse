@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/ColumnsHashing/HashedKeys.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <bit>
@@ -589,7 +590,7 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
-    PaddedPODArray<UInt128> precomputed_keys;
+    HashedKeysPtr precomputed_keys;
 
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
@@ -598,33 +599,22 @@ struct HashMethodHashed
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
-        if (!precomputed_keys.empty())
-            return precomputed_keys[row];
+        if (precomputed_keys)
+            return (*precomputed_keys)[row];
         return hash128(row, key_columns.size(), key_columns);
     }
 
-    void precomputeRange(size_t begin, size_t count)
+    void precomputeKeys(size_t begin, size_t count)
     {
         if (count == 0)
             return;
-        precomputed_keys.resize(begin + count);
+        auto keys = std::make_shared<PaddedPODArray<UInt128>>(begin + count);
         std::vector<SipHash> states(count);
         for (const auto * column : key_columns)
             column->updateHashBatch(begin, count, states.data());
         for (size_t i = 0; i < count; ++i)
-            precomputed_keys[begin + i] = states[i].get128();
-    }
-
-    void precomputeRows(const UInt64 * rows, size_t count)
-    {
-        if (count == 0)
-            return;
-        precomputed_keys.resize(key_columns.front()->size());
-        std::vector<SipHash> states(count);
-        for (const auto * column : key_columns)
-            column->updateHashBatch(rows, count, states.data());
-        for (size_t i = 0; i < count; ++i)
-            precomputed_keys[rows[i]] = states[i].get128();
+            (*keys)[begin + i] = states[i].get128();
+        precomputed_keys = std::move(keys);
     }
 };
 

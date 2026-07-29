@@ -112,12 +112,6 @@ void IColumn::updateHashBatch(size_t begin, size_t n, SipHash * hashes) const
         updateHashWithValue(begin + i, hashes[i]);
 }
 
-void IColumn::updateHashBatch(const UInt64 * rows, size_t n, SipHash * hashes) const
-{
-    for (size_t i = 0; i < n; ++i)
-        updateHashWithValue(rows[i], hashes[i]);
-}
-
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
