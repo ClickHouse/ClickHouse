@@ -235,31 +235,31 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
 
                 /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
-                if (is_exact)
+                if (prefix.is_exact)
                 {
                     out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix);
+                    out.range = Range(prefix.prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.empty())
+                if (prefix.prefix.empty())
                     return false;
 
-                if (!is_perfect)
+                if (!prefix.is_perfect)
                     out.relaxed = true;
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
 
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                    ? Range(prefix.prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix.prefix, true);
 
                 return true;
             }
@@ -271,30 +271,30 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
 
                 /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
-                if (is_exact)
+                if (prefix.is_exact)
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(prefix);
+                    out.range = Range(prefix.prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.empty())
+                if (prefix.prefix.empty())
                     return false;
 
-                chassert(is_perfect);
+                chassert(prefix.is_perfect);
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
 
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                    ? Range(prefix.prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix.prefix, true);
 
                 return true;
             }
