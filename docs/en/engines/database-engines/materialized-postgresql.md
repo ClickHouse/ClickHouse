@@ -79,6 +79,8 @@ It is possible to remove specific tables from replication:
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
+`RENAME TABLE` and `EXCHANGE TABLES` are not supported for a `MaterializedPostgreSQL` database: the name of a replicated table mirrors the name of the PostgreSQL table it replicates, and renaming only the local table would leave the replication state (including the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list)) pointing at the original name. A database-wide truncate (`TRUNCATE DATABASE` / `TRUNCATE ALL TABLES FROM`) is not supported either: it would delete the local copy of the replicated data while replication continues from the current position in PostgreSQL, so the deleted rows would never be reloaded. Recreate the database to reload it from a fresh snapshot instead.
+
 ## PostgreSQL schema {#schema}
 
 PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be configured in 3 ways (starting from version 21.12).

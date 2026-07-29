@@ -693,18 +693,26 @@ void DatabaseMaterializedPostgreSQL::renameTable(
     ContextPtr local_context, const String & table_name, IDatabase & to_database,
     const String & to_table_name, bool exchange, bool dictionary)
 {
-    /// Reject RENAME / EXCHANGE TABLE in coordinated mode. The base `DatabaseAtomic::renameTable` would rename
-    /// only this replica's local nested table, while the shared publication, the `materialized_postgresql_tables_list`
-    /// setting, the cached `materialized_tables` wrappers and every peer replica all keep the old name - silently
-    /// diverging the coordinated setup, and breaking even this replica (SHOW TABLES follows the renamed nested
-    /// metadata, but `tryGetTable` still serves the wrapper under the old key). There is no cross-replica rename
-    /// coordination, so refuse it up front. Only genuine (non-internal) user queries are refused; internal
-    /// cleanup must still be able to move nested tables.
-    if (isCoordinated() && !local_context->isInternalQuery())
+    /// Reject RENAME / EXCHANGE TABLE. The base `DatabaseAtomic::renameTable` would rename only the local nested
+    /// table, while the replication state keeps the PostgreSQL table name: the cached `materialized_tables`
+    /// wrappers (so `tryGetTable` still serves the old key), the handler's `materialized_storages`, the persisted
+    /// `materialized_postgresql_tables_list` and - in coordinated mode - the shared publication and every peer
+    /// replica. `SHOW TABLES` would follow the renamed nested metadata while reads and the replication startup
+    /// still look for the original name, and a coordinated setup would silently diverge from its peers. Renaming
+    /// a replicated table is not meaningful anyway: the name mirrors the PostgreSQL table it replicates. Only
+    /// genuine (non-internal) user queries are refused; internal cleanup must still be able to move nested tables.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "RENAME / EXCHANGE TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "RENAME / EXCHANGE TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
-            "(materialized_postgresql_keeper_path is set). "
-            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+            "RENAME / EXCHANGE TABLE is not supported for a MaterializedPostgreSQL database: the name of a "
+            "replicated table mirrors the name of the PostgreSQL table it replicates");
+    }
 
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
 }
@@ -712,20 +720,31 @@ void DatabaseMaterializedPostgreSQL::renameTable(
 
 void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_context)
 {
-    /// Reject a database-wide TRUNCATE in coordinated mode. Both `TRUNCATE DATABASE db` (which drops each nested
-    /// table) and `TRUNCATE ALL TABLES FROM db` (which truncates each one) are executed by walking the nested
-    /// tables through an internal context (see `InterpreterDropQuery::executeToDatabaseImpl`), so they operate on
-    /// the local `ReplicatedReplacingMergeTree` / `SharedReplacingMergeTree` storages directly and never reach the
-    /// per-table `StorageMaterializedPostgreSQL::checkTableCanBeDropped` guard. Without this check one replica
-    /// could wipe all of its local copy of the shared data while the shared slot/publication/`snapshot_completed`
-    /// marker (and the live consumer) survive - the divergence the per-table guards exist to prevent. There is no
-    /// coordinated cross-replica truncate path, so refuse it up front. Only genuine (non-internal) user queries
-    /// are refused; internal cleanup must still be able to remove nested tables.
-    if (isCoordinated() && !local_context->isInternalQuery())
+    /// Reject a database-wide TRUNCATE. Both `TRUNCATE DATABASE db` (which drops each nested table) and
+    /// `TRUNCATE ALL TABLES FROM db` (which truncates each one) are executed by walking the nested tables through
+    /// an internal context (see `InterpreterDropQuery::executeToDatabaseImpl`, which also deliberately skips
+    /// `stopReplication` for a truncate), so they operate on the local nested storages directly and never reach
+    /// the per-table `StorageMaterializedPostgreSQL::checkTableCanBeDropped` guard. The replication handler stays
+    /// live with its slot and publication, so the local copy is wiped while replication keeps advancing from the
+    /// current `confirmed_flush_lsn`: the truncated rows are never reloaded and the database stops reflecting
+    /// PostgreSQL. In coordinated mode this additionally wipes one replica's copy of the shared replicated data
+    /// while the shared slot/publication/`snapshot_completed` marker survive. There is no stop/drop/resnapshot
+    /// path behind a truncate, so refuse it up front. Only genuine (non-internal) user queries are refused;
+    /// internal cleanup must still be able to remove nested tables.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a coordinated MaterializedPostgreSQL "
+                "setup (materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a coordinated MaterializedPostgreSQL setup "
-            "(materialized_postgresql_keeper_path is set). "
-            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+            "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a MaterializedPostgreSQL database: "
+            "it would delete the local copy of the replicated data while replication continues from the current "
+            "position in PostgreSQL, so the deleted rows would never be reloaded. "
+            "Recreate the database to reload it from a fresh snapshot instead");
+    }
 }
 
 

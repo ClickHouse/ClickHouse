@@ -546,6 +546,88 @@ def test_merge_table_over_materialized_postgresql(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
+def test_rename_and_exchange_table_are_rejected(started_cluster):
+    # The names of the tables of a MaterializedPostgreSQL database mirror the PostgreSQL tables they
+    # replicate. A generic RENAME / EXCHANGE would rename only the local nested table, while the wrapper
+    # map, the replication handler and the persisted `materialized_postgresql_tables_list` keep the old
+    # PostgreSQL name: SHOW TABLES would follow the renamed nested metadata while reads and the replication
+    # startup still look for the original name. It must be refused instead.
+    table_name = "postgresql_replica_rename"
+    other_table_name = "postgresql_replica_rename_other"
+    for name in (table_name, other_table_name):
+        pg_manager.create_postgres_table(name)
+        instance.query(
+            f"INSERT INTO postgres_database.{name} SELECT number, number FROM numbers(50)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name},{other_table_name}'"
+        ],
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+
+    error = instance.query_and_get_error(
+        f"RENAME TABLE test_database.{table_name} TO test_database.renamed"
+    )
+    assert "not supported for a MaterializedPostgreSQL database" in error
+
+    # EXCHANGE goes through the same database method.
+    error = instance.query_and_get_error(
+        f"EXCHANGE TABLES test_database.{table_name} AND test_database.{other_table_name}"
+    )
+    assert "not supported for a MaterializedPostgreSQL database" in error
+
+    # The refusal leaves the database intact and replicating.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    pg_manager.drop_materialized_db()
+
+
+def test_database_wide_truncate_is_rejected(started_cluster):
+    # `TRUNCATE DATABASE` drops every nested table and `TRUNCATE ALL TABLES FROM` truncates every one of
+    # them, both through an internal context that never reaches the per-table guards, and both while the
+    # replication handler keeps its slot and publication (the drop interpreter deliberately skips
+    # `stopReplication` for a truncate). The local copy would be wiped while replication continues from the
+    # current position in PostgreSQL, so the deleted rows would never be reloaded. Refuse it instead.
+    table_name = "postgresql_replica_truncate"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    for query in [
+        "TRUNCATE DATABASE test_database",
+        "TRUNCATE ALL TABLES FROM test_database",
+    ]:
+        error = instance.query_and_get_error(query)
+        assert "not supported for a MaterializedPostgreSQL database" in error
+
+    # Nothing was truncated, and replication keeps working.
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 50
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
