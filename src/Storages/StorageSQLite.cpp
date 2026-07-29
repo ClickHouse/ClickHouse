@@ -371,8 +371,15 @@ public:
         /// insertable). ClickHouse still computes a placeholder for them and includes them in the block
         /// reaching the sink, so collect their names to omit automatically added placeholders from the SQLite
         /// INSERT while retaining explicitly inserted columns for SQLite to reject.
-        for (const auto & column : metadata_snapshot_->getColumns().getMaterialized())
-            generated_columns.insert(column.name);
+        ///
+        /// Only the synthetic columns count: they are the expressionless `MATERIALIZED` columns produced by
+        /// `fetchSQLiteTableStructure` / `markRemoteGeneratedColumns` from the remote schema. A `MATERIALIZED`
+        /// column the user declared with an expression (`b Int32 MATERIALIZED a + 1`) is an ordinary column on
+        /// the SQLite side whose value ClickHouse computes, so it must be written through, like in the `MySQL`
+        /// and `PostgreSQL` sinks.
+        for (const auto & column : metadata_snapshot_->getColumns())
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && !column.default_desc.expression)
+                generated_columns.insert(column.name);
     }
 
     String getName() const override { return "SQLiteSink"; }

@@ -1,0 +1,7 @@
+A local MATERIALIZED expression is written to SQLite:
+5	6
+A remote generated column is computed by SQLite:
+7	70
+The same values as seen by SQLite itself:
+5|6
+7|70
