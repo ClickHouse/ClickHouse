@@ -71,7 +71,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- `trace` 字段包含采样时刻的调用栈信息。
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:              2019-11-19
@@ -91,16 +91,16 @@ SELECT addressToLine(94784076370703) \G;
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
-**将该函数应用于整个调用栈跟踪**
+**将该函数应用于整个调用栈**
 
 ```sql title=Query
--- 本示例中，arrayMap 函数对 trace 数组的每个元素调用 addressToLine 函数进行处理。
--- 处理结果显示在输出的 trace_source_code_lines 列中。
+-- The arrayMap function in this example processing each individual element of the trace array by the addressToLine function.
+-- The result of this processing is seen in the trace_source_code_lines column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
