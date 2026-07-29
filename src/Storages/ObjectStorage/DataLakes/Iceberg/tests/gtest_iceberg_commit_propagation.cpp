@@ -39,8 +39,15 @@ public:
         WriteMode,
         std::optional<ObjectAttributes>,
         size_t,
-        const WriteSettings &) override
+        const WriteSettings & write_settings) override
     {
+        /// The commit must ask for the metadata file to be created exclusively: without the
+        /// condition the write is a plain overwrite and one of two concurrent writers is lost. Only
+        /// the metadata write reaches this stub, because both tests leave the commit before the
+        /// version-hint write. `EXPECT_*` keeps the throw below reachable.
+        EXPECT_EQ(write_settings.object_storage_write_if_none_match, "*");
+        EXPECT_TRUE(write_settings.object_storage_write_if_match.empty());
+
         throw Exception(write_error_code, "Write of {} failed in the test stub", object.remote_path);
     }
 
