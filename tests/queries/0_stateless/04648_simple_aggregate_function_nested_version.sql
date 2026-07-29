@@ -78,21 +78,23 @@ SELECT sumMapMerge(CAST(mapKeys(v)[1], 'AggregateFunction(sumMap, Array(UInt64),
 -- renderer emits it raw: an unquoted `x.y` does not parse back as one identifier.
 CREATE TABLE sl_named_tuple_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
 INSERT INTO sl_named_tuple_value SELECT 1, CAST(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])), 'SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))');
-SELECT sumMapMerge(CAST(v.`x.y`, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_named_tuple_value;
+SELECT sumMapMerge(CAST(tupleElement(v, 'x.y'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_named_tuple_value;
 SELECT toTypeName(v) FROM sl_named_tuple_value;
 -- Reading a written `Native` file back through `file()` takes the type from the header rather than from any
 -- stored declaration, so this is where a header that lost the element name becomes observable: the
 -- element would come back positional and the accessor on x.y would no longer resolve.
+-- The accessor is spelled `tupleElement`, which resolves by name under both analyzers; the dotted
+-- subcolumn spelling resolves under the new analyzer only.
 INSERT INTO FUNCTION file(concat(currentDatabase(), '_04648_named_tuple.native'), Native) SELECT v FROM sl_named_tuple_value SETTINGS engine_file_truncate_on_insert = 1;
 SELECT toTypeName(v) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
-SELECT sumMapMerge(CAST(v.`x.y`, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
+SELECT sumMapMerge(CAST(tupleElement(v, 'x.y'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
 
 -- An `AggregateFunction` cannot sit directly inside a `Nullable`, but a `Tuple` can, so a `Nullable` can still
 -- appear on the path down to the versioned leaf. The version walker descends through it, so the header
 -- renderer has to as well.
 CREATE TABLE sl_nullable_value (k UInt8, v SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))))) ENGINE = StripeLog SETTINGS enable_nullable_tuple_type = 1;
 INSERT INTO sl_nullable_value SELECT 1, CAST(tuple(tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))), 'SimpleAggregateFunction(anyLast, Tuple(n Nullable(Tuple(x AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))))') SETTINGS enable_nullable_tuple_type = 1;
-SELECT sumMapMerge(CAST(v.n.x, 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_nullable_value SETTINGS enable_nullable_tuple_type = 1;
+SELECT sumMapMerge(CAST(tupleElement(tupleElement(v, 'n'), 'x'), 'AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))')) FROM sl_nullable_value SETTINGS enable_nullable_tuple_type = 1;
 
 -- A second versioned function, whose versions differ by a leading `init` byte rather than by a value
 -- width: `groupBitmapAnd` v1 prepends that byte and v0 does not, so a header advertising 1 over a
