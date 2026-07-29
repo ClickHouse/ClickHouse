@@ -78,6 +78,12 @@ SELECT CAST(toDecimal64(4294967296, 0) AS DateTime64(0)) IN (SELECT toDateTime(4
 SELECT CAST(toDecimal64(-1, 0) AS DateTime64(0)) IN (SELECT toDateTime(0));
 SELECT CAST(toDecimal64(4294967295, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
 
+-- Cross-family probes are exact when the target scale fits; only digits below the target scale are lossy.
+SELECT CAST('14:45:40.123' AS Time64(3)) IN (SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC'));
+SELECT CAST('14:45:40.123' AS Time64(3)) IN (SELECT toDateTime64('1970-01-01 14:45:40.1', 1, 'UTC'));
+SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC') IN (SELECT CAST('14:45:40.123' AS Time64(3)));
+SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC') IN (SELECT toDateTime64('1970-01-01 14:45:40.1', 1, 'UTC'));
+
 -- Composite probes: lossy Time64/DateTime64 values nested in Array/Tuple/Map must not match either.
 SELECT [CAST('01:02:03.5' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);
 SELECT [CAST('01:02:03.0' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);

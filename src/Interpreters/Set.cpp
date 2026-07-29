@@ -310,30 +310,52 @@ Columns Set::getSetElements() const
 }
 
 template <typename DataTypeWithSubSeconds>
-static void fillLossySubSecondFlags(const DataTypeWithSubSeconds & from_type, const IColumn & column, PaddedPODArray<UInt8> & lossy_flags)
+static void fillLossySubSecondFlags(const DataTypeWithSubSeconds & from_type, const IColumn & column, const IDataType & to_type, PaddedPODArray<UInt8> & lossy_flags)
 {
     using FieldType = typename DataTypeWithSubSeconds::FieldType;
+    constexpr bool from_time64 = std::is_same_v<DataTypeWithSubSeconds, DataTypeTime64>;
+
+    WhichDataType which_to(to_type);
+    /// Rescaling within the same family truncates, exactly like the Field conversion, so it is not lossy here.
+    if ((from_time64 && which_to.isTime64()) || (!from_time64 && which_to.isDateTime64()))
+        return;
+
+    UInt32 source_scale = from_type.getScale();
+    UInt32 target_scale = 0;
+    if (const auto * to_datetime64 = typeid_cast<const DataTypeDateTime64 *>(&to_type))
+        target_scale = to_datetime64->getScale();
+    else if (const auto * to_time64 = typeid_cast<const DataTypeTime64 *>(&to_type))
+        target_scale = to_time64->getScale();
+
+    /// Sub-second digits that do not fit the target scale are dropped by the cast.
+    const Int64 fraction_multiplier = source_scale > target_scale ? common::exp10_i32(source_scale - target_scale) : 1;
+
+    /// Whole seconds are clamped/saturated only by these targets; other casts preserve the value,
+    /// project it (seconds of day) or throw on overflow.
+    const bool check_range = which_to.isDateTime() || (from_time64 && which_to.isTime());
+    const Int64 min_whole_seconds = which_to.isDateTime() ? 0 : -3599999;                 /// epoch / -999:59:59
+    const Int64 max_whole_seconds = which_to.isDateTime() ? Int64(0xFFFFFFFF) : 3599999;  /// == MAX_DATETIME_TIMESTAMP / MAX_TIME_TIMESTAMP
+
+    if (fraction_multiplier == 1 && !check_range)
+        return;
 
     const auto * decimal_column = typeid_cast<const ColumnDecimal<FieldType> *>(&column);
     if (!decimal_column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for {}", from_type.getName());
 
-    constexpr bool is_time64 = std::is_same_v<DataTypeWithSubSeconds, DataTypeTime64>;
-    /// Whole seconds outside the target range are clamped/saturated by the cast, which is lossy too.
-    constexpr Int64 min_whole_seconds = is_time64 ? -3599999 : 0;          /// -999:59:59 for Time, epoch for DateTime
-    constexpr Int64 max_whole_seconds = is_time64 ? 3599999 : 0xFFFFFFFF;  /// == MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP
-
     const auto & data = decimal_column->getData();
-    const auto scale = from_type.getScale();
-    const Int64 scale_multiplier = scale >= 1 ? common::exp10_i32(scale) : 1;
+    const Int64 scale_multiplier = source_scale >= 1 ? common::exp10_i32(source_scale) : 1;
     for (size_t i = 0; i < data.size(); ++i)
     {
         Int64 value = data[i];
-        bool lossy = (value % scale_multiplier) != 0;
-        Int64 whole = value / scale_multiplier;
-        if (value < 0 && lossy)
-            --whole;
-        lossy = lossy || whole < min_whole_seconds || whole > max_whole_seconds;
+        bool lossy = fraction_multiplier > 1 && (value % fraction_multiplier) != 0;
+        if (check_range)
+        {
+            Int64 whole = value / scale_multiplier;
+            if (value < 0 && (value % scale_multiplier) != 0)
+                --whole;
+            lossy = lossy || whole < min_whole_seconds || whole > max_whole_seconds;
+        }
         if (lossy)
             lossy_flags[i] = 1;
     }
@@ -350,13 +372,13 @@ static void markLossyProbeValues(const DataTypePtr & from_type_wrapped, const IC
         column = &nullable_column->getNestedColumn();
 
     WhichDataType which(from_type);
-    if (which.isDateTime64() && !isDateTime64(to_type))
+    if (which.isDateTime64())
     {
-        fillLossySubSecondFlags(assert_cast<const DataTypeDateTime64 &>(*from_type), *column, lossy_flags);
+        fillLossySubSecondFlags(assert_cast<const DataTypeDateTime64 &>(*from_type), *column, *to_type, lossy_flags);
     }
-    else if (which.isTime64() && !isTime64(to_type))
+    else if (which.isTime64())
     {
-        fillLossySubSecondFlags(assert_cast<const DataTypeTime64 &>(*from_type), *column, lossy_flags);
+        fillLossySubSecondFlags(assert_cast<const DataTypeTime64 &>(*from_type), *column, *to_type, lossy_flags);
     }
     else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get()))
     {
