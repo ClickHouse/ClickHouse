@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 1259,
+  "settings": 1264,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -83,6 +83,7 @@
     "allow_introspection_functions": "/reference/settings/session-settings/allow",
     "allow_key_condition_coalesce_rewrite": "/reference/settings/session-settings/allow",
     "allow_limit_by_partitions_independently": "/reference/settings/session-settings/allow",
+    "allow_lossy_numeric_supertype": "/reference/settings/session-settings/allow",
     "allow_materialized_view_with_bad_select": "/reference/settings/session-settings/allow",
     "allow_minmax_index_for_json": "/reference/settings/session-settings/allow",
     "allow_named_collection_override_by_default": "/reference/settings/session-settings/allow",
@@ -120,6 +121,7 @@
     "analyze_index_with_space_filling_curves": "/reference/settings/session-settings/other",
     "analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested": "/reference/settings/session-settings/analyzer-compatibility",
     "analyzer_compatibility_allow_non_aggregate_in_having": "/reference/settings/session-settings/analyzer-compatibility",
+    "analyzer_compatibility_apply_final_to_all_joined_tables": "/reference/settings/session-settings/analyzer-compatibility",
     "analyzer_compatibility_join_using_top_level_identifier": "/reference/settings/session-settings/analyzer-compatibility",
     "analyzer_compatibility_prefer_alias_over_subcolumn": "/reference/settings/session-settings/analyzer-compatibility",
     "analyzer_inline_views": "/reference/settings/session-settings/other",
@@ -583,6 +585,7 @@
     "join_runtime_filter_blocks_to_skip_before_reenabling": "/reference/settings/session-settings/join-runtime",
     "join_runtime_filter_exact_values_limit": "/reference/settings/session-settings/join-runtime",
     "join_runtime_filter_from_fixed_hash_table": "/reference/settings/session-settings/join-runtime",
+    "join_runtime_filter_min_probe_rows": "/reference/settings/session-settings/join-runtime",
     "join_runtime_filter_pass_ratio_threshold_for_disabling": "/reference/settings/session-settings/join-runtime",
     "join_runtime_filter_size_from_hash_table_stats": "/reference/settings/session-settings/join-runtime",
     "join_to_sort_maximum_table_rows": "/reference/settings/session-settings/join-to",
@@ -1024,6 +1027,7 @@
     "query_plan_remove_redundant_sorting": "/reference/settings/session-settings/query-plan",
     "query_plan_remove_unused_columns": "/reference/settings/session-settings/query-plan",
     "query_plan_reuse_storage_ordering_for_window_functions": "/reference/settings/session-settings/query-plan",
+    "query_plan_short_circuit_constant_false_join": "/reference/settings/session-settings/query-plan",
     "query_plan_split_filter": "/reference/settings/session-settings/query-plan",
     "query_plan_text_index_add_hint": "/reference/settings/session-settings/query-plan",
     "query_plan_top_k_through_join": "/reference/settings/session-settings/query-plan",
@@ -1195,7 +1199,8 @@
     "transform_null_in": "/reference/settings/session-settings/other",
     "traverse_shadow_remote_data_paths": "/reference/settings/session-settings/other",
     "union_default_mode": "/reference/settings/session-settings/other",
-    "unique_key_max_encoded_size": "/reference/settings/session-settings/other",
+    "unique_key_max_encoded_size": "/reference/settings/session-settings/unique-key",
+    "unique_key_probe_implementation": "/reference/settings/session-settings/unique-key",
     "unknown_packet_in_send_data": "/reference/settings/session-settings/other",
     "update_parallel_mode": "/reference/settings/session-settings/update",
     "update_sequential_consistency": "/reference/settings/session-settings/update",
@@ -2088,6 +2093,11 @@
       "target": "/reference/settings/session-settings/text-index"
     },
     {
+      "prefix": "unique_key",
+      "mode": "token",
+      "target": "/reference/settings/session-settings/unique-key"
+    },
+    {
       "prefix": "use_paimon",
       "mode": "token",
       "target": "/reference/settings/session-settings/use-paimon"
@@ -2787,6 +2797,7 @@
     "/reference/settings/session-settings/timeout-overflow-mode",
     "/reference/settings/session-settings/totals",
     "/reference/settings/session-settings/trace-profile-events",
+    "/reference/settings/session-settings/unique-key",
     "/reference/settings/session-settings/update",
     "/reference/settings/session-settings/url",
     "/reference/settings/session-settings/use",
@@ -2836,8 +2847,8 @@
     {
       "path": "/reference/settings/session-settings/allow",
       "label": "allow_*",
-      "settings": 34,
-      "characters": 18708
+      "settings": 35,
+      "characters": 20082
     },
     {
       "path": "/reference/settings/session-settings/allow-deprecated",
@@ -2890,8 +2901,8 @@
     {
       "path": "/reference/settings/session-settings/analyzer-compatibility",
       "label": "analyzer_compatibility_*",
-      "settings": 4,
-      "characters": 2873
+      "settings": 5,
+      "characters": 4543
     },
     {
       "path": "/reference/settings/session-settings/apply",
@@ -3412,8 +3423,8 @@
     {
       "path": "/reference/settings/session-settings/join-runtime",
       "label": "join_runtime_*",
-      "settings": 8,
-      "characters": 3639
+      "settings": 9,
+      "characters": 4380
     },
     {
       "path": "/reference/settings/session-settings/join-to",
@@ -3593,7 +3604,7 @@
       "path": "/reference/settings/session-settings/max-rand",
       "label": "max_rand_*",
       "settings": 2,
-      "characters": 1103
+      "characters": 1479
     },
     {
       "path": "/reference/settings/session-settings/max-read-buffer-size",
@@ -3749,7 +3760,7 @@
       "path": "/reference/settings/session-settings/mysql",
       "label": "mysql_*",
       "settings": 2,
-      "characters": 2250
+      "characters": 2234
     },
     {
       "path": "/reference/settings/session-settings/mysql-map",
@@ -3952,8 +3963,8 @@
     {
       "path": "/reference/settings/session-settings/query-plan",
       "label": "query_plan_*",
-      "settings": 44,
-      "characters": 25711
+      "settings": 45,
+      "characters": 26549
     },
     {
       "path": "/reference/settings/session-settings/query-profiler",
@@ -4202,6 +4213,12 @@
       "characters": 1138
     },
     {
+      "path": "/reference/settings/session-settings/unique-key",
+      "label": "unique_key_*",
+      "settings": 2,
+      "characters": 1168
+    },
+    {
       "path": "/reference/settings/session-settings/update",
       "label": "update_*",
       "settings": 2,
@@ -4324,8 +4341,8 @@
     {
       "path": "/reference/settings/session-settings/other",
       "label": "Other",
-      "settings": 121,
-      "characters": 63238
+      "settings": 120,
+      "characters": 62969
     }
   ]
 }
