@@ -433,9 +433,9 @@ public:
         ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
         CurrentlyExecutingPtr currently_executing_holder;
         /// For a MUTATE_PART entry that only hardlinks: the small reservation, taken here rather than
-        /// when the entry is executed, because failing to reserve while executing makes the entry fetch
-        /// the result part instead of waiting, and fetching a whole part to avoid a hardlink is worse
-        /// than postponing. Held until the mutation runs, like currently_executing_holder.
+        /// when the entry is executed, because failing to reserve here only postpones the entry, while
+        /// the reservation the execution would otherwise take throws and fails the mutation attempt.
+        /// Held until the mutation runs, like currently_executing_holder.
         ReservationSharedPtr hardlink_only_reservation;
 
         SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_,

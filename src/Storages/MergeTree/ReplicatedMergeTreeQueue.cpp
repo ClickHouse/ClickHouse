@@ -2176,9 +2176,8 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         {
             /// A mutation that only hardlinks was admitted on the strength of needing almost no space,
             /// so reserve that little space now, on the source part's own disk. Reserving here rather
-            /// than when the entry runs matters: a reservation that fails while the entry is being
-            /// prepared makes it fetch the result part instead, and fetching a whole part to avoid a
-            /// hardlink is worse than simply waiting for space.
+            /// than when the entry runs matters: failing here only postpones the entry, whereas the
+            /// reservation prepare() would otherwise make throws and fails the mutation attempt.
             if (decision.hardlink_only)
             {
                 hardlink_only_reservation = MergeTreeData::tryReserveSpace(0, decision.mutation_source_part->getDataPartStorage());
