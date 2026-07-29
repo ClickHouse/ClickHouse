@@ -112,12 +112,61 @@ ENGINE = MergeTree PARTITION BY id ORDER BY id SETTINGS index_granularity = 1;
 
 INSERT INTO t_04510_sg SELECT number, 'foobar' || toString(number) FROM numbers(64);
 
-SELECT '-- sparseGrams LIKE under parallel per-partition folding';
+-- The condition is built at two different call sites depending on
+-- use_skip_indexes_on_data_read, which the test runner randomizes, so pin both explicitly
+-- instead of leaving one of the two paths untested at random.
+SELECT '-- sparseGrams LIKE under parallel per-partition folding, initial analysis';
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
-    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16;
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+SELECT '-- sparseGrams LIKE under parallel per-partition folding, data read';
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT '-- sparseGrams index is used';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_sg WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Name: idx%';
 
 DROP TABLE t_04510_sg;
+
+-- The legacy bloom-filter text index reaches the same stateful tokenizer through a separate
+-- consumer (MergeTreeConditionBloomFilterText), so it needs its own coverage: the `sparse_grams`
+-- index type is the only way to select that tokenizer there.
+
+DROP TABLE IF EXISTS t_04510_bf;
+
+CREATE TABLE t_04510_bf
+(
+    id UInt32,
+    s String,
+    INDEX idx s TYPE sparse_grams(3, 20, 256, 2, 0) GRANULARITY 1
+)
+ENGINE = MergeTree PARTITION BY id ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_04510_bf SELECT number, 'foobar' || toString(number) FROM numbers(64);
+
+SELECT '-- sparse_grams bloom filter LIKE under parallel per-partition folding, initial analysis';
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 0;
+SELECT '-- sparse_grams bloom filter LIKE under parallel per-partition folding, data read';
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1, max_threads = 16, use_skip_indexes_on_data_read = 1;
+SELECT '-- sparse_grams bloom filter index is used';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04510_bf WHERE s LIKE '%a%'
+    SETTINGS use_constant_folding_in_index_analysis = 1) WHERE explain ILIKE '%Name: idx%';
+
+DROP TABLE t_04510_bf;
