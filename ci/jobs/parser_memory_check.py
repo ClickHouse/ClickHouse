@@ -1011,6 +1011,15 @@ def load_queries(queries_file: str) -> list:
         ]
 
 
+def cleanup_heap_profiles(profiles_dir: str) -> None:
+    """Remove temporary heap profile files."""
+    for file_path in glob.glob(f"{profiles_dir}/*.heap*"):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+
+
 def main():
     stop_watch = Utils.Stopwatch()
     results = []
@@ -1129,6 +1138,9 @@ def main():
         results.append(
             Result(name="Batch symbolization", status=Result.Status.FAIL, info="See logs")
         )
+        cleanup_heap_profiles(profiles_dir)
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
 
     # =========================================================================
     # Phase 3: Analyze symbolized profiles and build results
@@ -1257,11 +1269,7 @@ def main():
         })
 
     # Clean up heap profile files to save disk
-    for f in glob.glob(f"{profiles_dir}/*.heap*"):
-        try:
-            os.remove(f)
-        except OSError:
-            pass
+    cleanup_heap_profiles(profiles_dir)
 
     # Generate standalone HTML report
     html_report_path = f"{TEMP_DIR}/parser_memory_report.html"

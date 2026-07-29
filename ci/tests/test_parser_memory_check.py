@@ -93,3 +93,62 @@ def test_batch_symbolize_uses_clickhouse_examples_multicall(monkeypatch):
         "before.heap",
         "after.heap",
     ]
+
+
+def test_main_stops_after_batch_symbolization_failure(tmp_path, monkeypatch):
+    (tmp_path / "clickhouse-examples").touch()
+    completed_results = []
+
+    monkeypatch.setattr(parser_memory_check, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr(parser_memory_check, "load_queries", lambda _: ["SELECT 1"])
+    monkeypatch.setattr(
+        parser_memory_check, "get_merge_base_profiler_url", lambda: "master-url"
+    )
+    monkeypatch.setattr(
+        parser_memory_check, "download_master_binary", lambda *_: ""
+    )
+    monkeypatch.setattr(parser_memory_check.Shell, "check", lambda _: True)
+    monkeypatch.setattr(
+        parser_memory_check,
+        "run_profiler_collect_heap",
+        lambda *_: {
+            "error": None,
+            "heap_before": str(tmp_path / "before.heap"),
+            "heap_after": str(tmp_path / "after.heap"),
+        },
+    )
+    monkeypatch.setattr(parser_memory_check, "batch_symbolize", lambda *_: False)
+
+    def unexpected_call(*_args, **_kwargs):
+        raise AssertionError("analysis and report generation must not run")
+
+    monkeypatch.setattr(
+        parser_memory_check,
+        "analyze_heap_profiles",
+        unexpected_call,
+    )
+    monkeypatch.setattr(
+        parser_memory_check,
+        "generate_html_report",
+        unexpected_call,
+    )
+
+    class CompletedResult:
+        def complete_job(self):
+            return None
+
+    def fake_create_from(**kwargs):
+        completed_results.append(kwargs["results"])
+        return CompletedResult()
+
+    monkeypatch.setattr(
+        parser_memory_check.Result,
+        "create_from",
+        staticmethod(fake_create_from),
+    )
+
+    parser_memory_check.main()
+
+    assert len(completed_results) == 1
+    assert completed_results[0][-1].name == "Batch symbolization"
+    assert completed_results[0][-1].status == parser_memory_check.Result.Status.FAIL
