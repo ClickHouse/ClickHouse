@@ -1,10 +1,16 @@
 #include <memory>
 #include <optional>
+#include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/StorageID.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -14,18 +20,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/StorageID.h>
-#include <Interpreters/TableJoin.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Core/Settings.h>
+#include <Common/logger_useful.h>
 
 #include <unordered_set>
 
@@ -33,7 +34,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
 
 namespace QueryPlanOptimizations
@@ -65,18 +66,24 @@ static std::optional<size_t> coordinatedJoinSideIndex(const QueryPlan::Node * no
     return {};
 }
 
-/// A prepared-lookup join (right side is a Join-engine table, dictionary or key-value storage) is a
-/// JoinStepLogicalLookup, which is neither cloneable nor serializable. Distributing a join whose subtree
-/// contains one would pull it into the shipped fragment and throw on clone, so keep such joins local.
-static bool subtreeHasLookupJoin(const QueryPlan::Node * node)
+/// A fragment is cloned and then serialized, so every step in it must be serializable. Checking that
+/// generically (instead of enumerating step types) keeps new non-serializable steps out automatically:
+/// a prepared-lookup join (JoinStepLogicalLookup) and correlated-subquery decorrelation (which buffers a
+/// subplan through an in-process ChunkBuffer) are both rejected this way. Split markers are exempt: they
+/// are consumed when the fragment is built (see ConvertToDistributedVisitor) and never get serialized.
+static bool subtreeIsShippable(const QueryPlan::Node * node)
 {
-    if (!node)
-        return false;
-    if (typeid_cast<const JoinStepLogicalLookup *>(node->step.get()))
+    const auto ignore_split_marker
+        = [](const IQueryPlanStep & step) { return typeid_cast<const ParallelReplicasSplitStep *>(&step) != nullptr; };
+
+    const auto * offending = findNonSerializableStep(node, ignore_split_marker);
+    if (!offending)
         return true;
-    for (const auto * child : node->children)
-        if (subtreeHasLookupJoin(child))
-            return true;
+
+    LOG_DEBUG(
+        getLogger("ApplyParallelReplicas"),
+        "Keeping the plan fragment local: step '{}' is not serializable for remote execution",
+        offending->step->getName());
     return false;
 }
 
@@ -137,9 +144,8 @@ public:
         if (!coordinated_index)
             return;
 
-        /// Never lift a split into a fragment that would contain a (non-serializable) lookup join.
-        /// collectReadsToDistribute already keeps such joins local, so this is defensive.
-        if (subtreeHasLookupJoin(node))
+        /// Do not lift a split into a fragment that would contain a non-serializable step
+        if (!subtreeIsShippable(node))
             return;
 
         auto * coordinated_child = node->children[*coordinated_index];
@@ -341,9 +347,10 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (typeid_cast<const JoinStepLogical *>(node->step.get()))
     {
-        /// A prepared-lookup join is not serializable and cannot ship in a fragment; keep it local.
-        if (subtreeHasLookupJoin(node))
+        /// A join whose subtree has a non-serializable step cannot ship in a fragment; keep it local.
+        if (!subtreeIsShippable(node))
             return {};
+
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
         /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
         /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
