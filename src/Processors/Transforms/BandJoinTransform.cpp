@@ -357,13 +357,13 @@ void BandJoinProbeTransform::resetChunkState()
     in_walk = false;
 }
 
-bool BandJoinProbeTransform::lowerAdmits(const BandJoinIndex::Block & block, size_t row, size_t point_row) const
+bool BandJoinProbeTransform::lowerAdmits(const BandJoinIndex::IndexBlock & block, size_t row, size_t point_row) const
 {
     int cmp = block.lo_key->compareAt(row, point_row, *point_keys[0], /* nan_direction_hint */ 1);
     return lower_strict ? cmp < 0 : cmp <= 0;
 }
 
-bool BandJoinProbeTransform::upperAdmits(const BandJoinIndex::Block & block, size_t row, size_t point_row) const
+bool BandJoinProbeTransform::upperAdmits(const BandJoinIndex::IndexBlock & block, size_t row, size_t point_row) const
 {
     int cmp = block.hi_key->compareAt(row, point_row, *point_keys[1], /* nan_direction_hint */ 1);
     return upper_strict ? cmp > 0 : cmp >= 0;
@@ -774,7 +774,7 @@ void BandJoinProbeTransform::finishRow(size_t point_row)
         emitUnmatched(point_row);
 }
 
-bool BandJoinProbeTransform::checkEmittedPair(size_t point_row, const BandJoinIndex::Block & block, size_t row) const
+bool BandJoinProbeTransform::checkEmittedPair(size_t point_row, const BandJoinIndex::IndexBlock & block, size_t row) const
 {
     int lower_cmp = point_keys[0]->compareAt(point_row, row, *block.lo_key, /* nan_direction_hint */ 1);
     bool lower_holds = lower_strict ? lower_cmp > 0 : lower_cmp >= 0;

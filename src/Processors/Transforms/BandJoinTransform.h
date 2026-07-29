@@ -53,7 +53,7 @@ const char * toString(BandJoinKind kind);
 /// interval-side unmatched rows, so the exclusion is complete).
 struct BandJoinIndex
 {
-    struct Block
+    struct IndexBlock
     {
         /// The columns as delivered (full, non-sparse; invalid rows filtered out).
         Columns columns;
@@ -80,7 +80,7 @@ struct BandJoinIndex
         UInt32 row = 0;
     };
 
-    std::deque<Block> blocks;
+    std::deque<IndexBlock> blocks;
 
     /// Block directory, one entry per block, in `lo` order. The three `hi` maxima split the
     /// walk's stop decision: the within-block prefix-max stops the scan inside a block, the
@@ -186,8 +186,8 @@ protected:
 private:
     /// Whether the interval row's `lo` / `hi` admits the point row under the bound's
     /// strictness (generic path; the reference the encoded comparisons must reproduce).
-    bool lowerAdmits(const BandJoinIndex::Block & block, size_t row, size_t point_row) const;
-    bool upperAdmits(const BandJoinIndex::Block & block, size_t row, size_t point_row) const;
+    bool lowerAdmits(const BandJoinIndex::IndexBlock & block, size_t row, size_t point_row) const;
+    bool upperAdmits(const BandJoinIndex::IndexBlock & block, size_t row, size_t point_row) const;
     bool lowerAdmitsEncoded(UInt64 encoded_lo, size_t point_row) const;
     bool upperAdmitsEncoded(UInt64 encoded_hi, size_t point_row) const;
 
@@ -225,7 +225,7 @@ private:
     void resetChunkState();
 
     /// Re-verify an emitted pair against both bounds by direct evaluation (debug builds).
-    bool checkEmittedPair(size_t point_row, const BandJoinIndex::Block & block, size_t row) const;
+    bool checkEmittedPair(size_t point_row, const BandJoinIndex::IndexBlock & block, size_t row) const;
 
     BandJoinConditions conditions;
     BandJoinKind kind;
