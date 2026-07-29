@@ -244,21 +244,40 @@ run_sibling_owns_file_case () {
     ALTER TABLE ${tbl} ADD INDEX \`${sib}\` w TYPE minmax GRANULARITY 1;
     ALTER TABLE ${tbl} MATERIALIZE INDEX \`${sib}\` SETTINGS mutations_sync = 2"
 
-    # Re-inject the text index's files, never overwriting one the healthy sibling wrote.
     local cor f bn
     cor=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+
+    # Measured BEFORE reinjection, so it discriminates: only the colliding name makes the sibling
+    # write the contested `skp_idx_a.pst.cmrk2` (0 for the control, 1 for the collision). After
+    # reinjection the text fixture supplies that name in either case, so the same check there
+    # would read 1 for both arms and prove nothing.
+    echo "${label}_sibling_owns_contested_name:"
+    if [ -e "${cor}skp_idx_a.pst.cmrk2" ]; then echo 1; else echo 0; fi
+    # The sibling must be materialized and registered, else its file is not in `checksums.txt`,
+    # the collision never arises, and the final `CHECK TABLE` passes for the wrong reason.
+    echo "${label}_sibling_registered_and_prunes:"
+    ${CLICKHOUSE_CLIENT} -q "
+    SELECT count() FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = '${tbl}' AND name = '${sib}' AND marks_bytes > 0;
+    SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE w = 42)
+    WHERE explain ILIKE '%Granules: 1/5%'"
+
+    # Re-inject the text index's files, never overwriting one the healthy sibling wrote.
     for f in "${dp}/saved_${tbl}/"skp_idx_a.*; do
         bn=$(basename "${f}")
         if [ -e "${cor}${bn}" ]; then continue; fi
         cp "${f}" "${cor}"
     done
 
-    # The sibling's file must be present and registered before the drop, else the collision the
-    # case is about never arises and the assertion below is vacuous.
-    echo "${label}_sibling_file_registered_before:"
-    if [ -e "${cor}skp_idx_a.pst.cmrk2" ]; then echo 1; else echo 0; fi
+    local new_part
+    new_part=$(${CLICKHOUSE_CLIENT} -q "
+    ALTER TABLE ${tbl} DROP INDEX \`${sib}\` SETTINGS mutations_sync = 2;
+    SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
 
-    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`${sib}\` SETTINGS mutations_sync = 2"
+    # The corrupted text index's own orphans must still be cleaned up, so a green `CHECK TABLE`
+    # cannot come from the repair silently doing nothing. Its base pair is never contested.
+    echo "${label}_text_orphans_removed:"
+    if [ -e "${new_part}skp_idx_a.idx" ] || [ -e "${new_part}skp_idx_a.dct.idx" ]; then echo 1; else echo 0; fi
     echo "${label}_check_table:"
     ${CLICKHOUSE_CLIENT} -q "CHECK TABLE ${tbl} SETTINGS check_query_single_value_result = 1;
         DROP TABLE ${tbl} SYNC"
