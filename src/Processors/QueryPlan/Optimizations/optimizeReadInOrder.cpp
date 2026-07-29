@@ -1277,7 +1277,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order->direction);
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1373,7 +1373,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order->direction);
             if (!can_read)
                 return {};
         }
@@ -1518,7 +1518,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder())
+        if (!object_storage_step->requestReadingInOrder(order_info.input_order->direction))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)

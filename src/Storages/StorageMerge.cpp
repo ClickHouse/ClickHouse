@@ -1766,12 +1766,13 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     };
 
     /// `ReadFromObjectStorageStep::requestReadingInOrder` validates that the data really is sorted by
-    /// the sorting key (for `Iceberg`, that every data file carries the table's sort order id). The
-    /// direct read path relies on that check, so reading through a `Merge` table must not skip it:
-    /// otherwise the outer step would advertise an order the child reader cannot deliver.
-    auto request_read_in_order_object_storage = [](ReadFromObjectStorageStep & read_from_object_storage)
+    /// the sorting key (for `Iceberg`, that every data file carries the table's sort order id) and that
+    /// the requested direction is the natural one. The direct read path relies on that check, so
+    /// reading through a `Merge` table must not skip it: otherwise the outer step would advertise an
+    /// order the child reader cannot deliver.
+    auto request_read_in_order_object_storage = [order_info_](ReadFromObjectStorageStep & read_from_object_storage)
     {
-        return read_from_object_storage.requestReadingInOrder();
+        return read_from_object_storage.requestReadingInOrder(order_info_->direction);
     };
 
     bool ok = true;

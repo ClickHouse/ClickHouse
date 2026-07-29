@@ -268,3 +268,67 @@ def test_read_in_order_with_complex_truncate(started_cluster_iceberg_with_spark,
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY icebergTruncate(16, id);"
         )
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, storage_type):
+    # Reading a sorted Iceberg table through a `Merge` table has to go through
+    # `ReadFromObjectStorageStep::requestReadingInOrder` just like the direct
+    # path: that is what validates the sortedness, and it only ever promises the
+    # natural order - there is no reverse file walk and no `ReverseTransform`.
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_read_in_order_merge_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(f"""
+        CREATE TABLE {TABLE_NAME} (
+            id BIGINT,
+            data STRING
+        )
+        USING iceberg
+    """)
+    spark.sql(f"""
+        ALTER TABLE {TABLE_NAME}
+        WRITE ORDERED BY id
+    """)
+
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
+
+    patch_metadata(TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    merge_source = f"merge(currentDatabase(), '^{TABLE_NAME}$')"
+
+    # The order request reaches the object storage reader, which accepts it, so
+    # the sorting step is replaced by a merge of the already sorted streams.
+    assert get_array(instance.query(f"SELECT id FROM {merge_source} ORDER BY id")) == [1, 2, 3, 4]
+    assert "PartialSortingTransform" not in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id")
+    )
+
+    # The reverse direction is not supported by the reader, so it must be
+    # rejected and the sorting step kept - otherwise ascending chunks would be
+    # announced as descending.
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id DESC"
+    ).strip().split("\n") == ["4", "3", "2", "1"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id DESC")
+    )
+
+    # Same for the direct path.
+    assert instance.query(
+        f"SELECT id FROM {TABLE_NAME} ORDER BY id DESC"
+    ).strip().split("\n") == ["4", "3", "2", "1"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {TABLE_NAME} ORDER BY id DESC")
+    )

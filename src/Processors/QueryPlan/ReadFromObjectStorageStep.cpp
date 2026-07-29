@@ -182,8 +182,11 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder() const
+bool ReadFromObjectStorageStep::requestReadingInOrder(int direction) const
 {
+    if (direction != 1)
+        return false;
+
     return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
