@@ -1958,6 +1958,40 @@ TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedNodesThrowsWhenDisab
     EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
 }
 
+/// A snapshot that contains nodes but lost the root node `/` is catastrophically corrupted: every
+/// node in it looks orphaned. Loading it must always throw, even with orphan removal enabled,
+/// instead of wiping the whole data tree and silently starting with an empty database.
+TEST_P(CoordinationTestWithCompression, TestSnapshotMissingRootAlwaysThrows)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+    addNode(storage, "/hello1/child", "data");
+
+    /// Drop the root node to emulate a snapshot that lost it
+    mem_storage.container.erase("/");
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Even with removal fully allowed, a root-less snapshot must be rejected
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/true), DB::Exception);
+}
+
 /// Test that ephemeral tracking is cleaned up when orphaned ephemeral nodes are removed.
 TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedEphemeralCleanup)
 {
