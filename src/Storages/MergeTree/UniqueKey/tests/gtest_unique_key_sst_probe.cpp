@@ -579,7 +579,7 @@ TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
 {
     /// Descending keys: second Put violates the strictly-increasing invariant.
     auto cols = makeUInt64Columns({10, 5});
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, encoded);
     ASSERT_EQ(encoded.size(), 2u);
 
