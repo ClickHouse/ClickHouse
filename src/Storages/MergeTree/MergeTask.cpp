@@ -719,7 +719,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet renamed_column_targets;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context);
+            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
             for (const auto & rename : conversions->getRenameMap())
             {
                 if ((columns_present_in_parts.contains(rename.rename_from)
