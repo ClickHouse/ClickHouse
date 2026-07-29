@@ -195,7 +195,7 @@ DROP TABLE t_smallest_column_projection;
 -- for none of the current physical columns (it predates the current schema). Such a part is
 -- built by detaching it, evolving the schema so all of its columns are dropped, then
 -- re-attaching. The all-pruned read must degrade gracefully (the part is unreadable, like any
--- column read on it) instead of crashing the server.
+-- column read on it) instead of throwing a LOGICAL_ERROR exception.
 DROP TABLE IF EXISTS t_evolved_pruned;
 
 CREATE TABLE t_evolved_pruned (a UInt64, b UInt64)

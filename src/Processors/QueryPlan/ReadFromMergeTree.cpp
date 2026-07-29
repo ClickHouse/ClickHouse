@@ -2819,17 +2819,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
-    ///
-    /// They also return before partition/PK pruning, so the no-columns carrier
-    /// can only be chosen over the pre-pruned parts here. If there are only
-    /// virtual columns in the query, you must request at least one non-virtual one.
     if (query_info_.isStream())
     {
         if (metadata_snapshot->hasUniqueKey())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Streaming reads (FROM ... STREAM) are not supported on tables with UNIQUE KEY.");
+        /// If there are only virtual columns in the query, you must request at least one
+        /// non-virtual one. Not worth ranking by on-disk size here: the streaming source is
+        /// built from all_column_names and reads through its own snapshot, so it never looks
+        /// at column_names_to_read, and a carrier chosen here would only be dead work.
         if (needs_no_columns_carrier)
-            result.column_names_to_read.push_back(chooseColumnToReadForNoColumnsQuery(parts, metadata_snapshot));
+            result.column_names_to_read.push_back(
+                ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()).name);
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
