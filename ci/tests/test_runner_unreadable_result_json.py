@@ -190,30 +190,52 @@ def test_no_unguarded_job_result_read_remains_in_run_or__run():
         )
 
 
-def test_status_reconciliation_stays_on_the_unconditional_run_path():
-    """`if not res and result.is_ok(): set_status(ERROR)` is the only conversion of a
-    completed OK result into ERROR when the run failed.
+def test_status_reconciliation_is_centralized_in_get_result_object():
+    """A completed OK result must still become ERROR when the process failed.
 
-    Deleting it reports a green job while the runner exits 1. Moving it into
-    `_get_result_object` loses it for local runs, since that method is called under
-    `if run_hooks:`.
+    The conversion belongs in `_get_result_object`, and `Runner.run` must call that
+    method outside the `run_hooks` gate so local hook-less runs keep the same
+    normalization.
     """
     tree, _ = _runner_ast()
     run_fn = _function(tree, "run")
+    get_result_fn = _function(tree, "_get_result_object")
 
     reconciliations = [
+        node
+        for node in ast.walk(get_result_fn)
+        if isinstance(node, ast.If)
+        and "run_exit_code" in ast.unparse(node.test)
+        and "result.is_ok()" in ast.unparse(node.test)
+        and "Status.ERROR" in ast.unparse(node)
+    ]
+    assert len(reconciliations) == 1, (
+        "expected exactly one completed-OK -> ERROR reconciliation in "
+        "`_get_result_object`"
+    )
+
+    run_reconciliations = [
         node
         for node in ast.walk(run_fn)
         if isinstance(node, ast.If)
         and "result.is_ok()" in ast.unparse(node.test)
         and "Status.ERROR" in ast.unparse(node)
     ]
-    assert len(reconciliations) == 1, (
-        "expected exactly one completed-OK -> ERROR reconciliation in Runner.run"
+    assert not run_reconciliations, (
+        "Runner.run should not duplicate completed-OK -> ERROR reconciliation"
     )
-    node = reconciliations[0]
 
-    # It must not sit under an `if run_hooks:` (or any run_hooks-gated) block.
+    calls = [
+        n
+        for n in ast.walk(run_fn)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "_get_result_object"
+    ]
+    assert len(calls) == 1, "expected one `_get_result_object` call in Runner.run"
+    call = calls[0]
+
+    # It must not sit under an `if run_hooks:` block.
     for parent in ast.walk(run_fn):
         if isinstance(parent, ast.If) and "run_hooks" in ast.unparse(parent.test):
             body_lines = {
@@ -222,22 +244,10 @@ def test_status_reconciliation_stays_on_the_unconditional_run_path():
                 for n in ast.walk(stmt)
                 if hasattr(n, "lineno")
             }
-            assert node.lineno not in body_lines, (
-                "the reconciliation moved under `if run_hooks:` - local runs would lose it"
+            assert call.lineno not in body_lines, (
+                "`_get_result_object` moved under `if run_hooks:` - local runs would "
+                "lose result normalization"
             )
-
-    # And it must run before the on_error_hook is consulted in _get_result_object.
-    calls = [
-        n.lineno
-        for n in ast.walk(run_fn)
-        if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Attribute)
-        and n.func.attr == "_get_result_object"
-    ]
-    assert calls, "_get_result_object call not found in Runner.run"
-    assert node.lineno < min(calls), (
-        "the reconciliation must precede _get_result_object, which runs the on_error_hook"
-    )
 
 
 def test_helper_is_defined_and_documented():
@@ -351,10 +361,9 @@ def test_run_survives_an_unreadable_result_at_the_second_read(in_tmp_cwd, monkey
 # --- the local (no-hooks) path must not report success on an unreadable result ---------
 #
 # `python3 -m ci.praktika run` calls run() with local_run=True and run_hooks=False
-# (__main__.py:396-398), so `if run_hooks:` is skipped and _get_result_object - the only
-# place that promotes a non-completed result to ERROR - never runs. Degrading the read
-# without compensating here would exit 0 on a job that left no readable result, which
-# master does not do (it exits 1 via the unhandled JSONDecodeError).
+# (__main__.py:396-398). `_get_result_object` promotes the unreadable result to ERROR,
+# and the hook-less path must also mirror that into the command's exit code. Otherwise a
+# local run would persist an ERROR result yet return 0.
 
 
 def _run_local_no_hooks(job_exit_code, leaves=None):
@@ -395,7 +404,7 @@ def test_local_run_fails_when_job_exited_zero_but_left_an_unreadable_result(
     persisted = Result.from_fs(JOB_NAME)
     assert persisted.status == Result.Status.ERROR
     assert persisted.is_completed() is True
-    # The reason the read failed stays in `info`; the compensation's own reason is an
+    # The reason the read failed stays in `info`; the result-finalization reason is an
     # error entry, the same shape _run uses for "Job killed, exit code [N]".
     assert "Failed to read Result json" in persisted.info
     assert any(
@@ -423,7 +432,7 @@ def test_local_run_still_succeeds_when_the_job_result_is_readable(
 
 
 def test_local_run_does_not_fail_a_merely_non_completed_result(in_tmp_cwd, monkeypatch):
-    """⭐ The control that keeps the compensation narrow.
+    """⭐ The control that keeps the hook-less exit-code branch narrow.
 
     A local run whose job writes no result at all leaves the RUNNING/PENDING result that
     the pre-run dump persisted, and exits 0 - on master too. So the new failure must key
@@ -446,19 +455,19 @@ def test_local_run_does_not_fail_a_merely_non_completed_result(in_tmp_cwd, monke
 
 
 def test_hook_path_promotion_is_left_to_get_result_object(in_tmp_cwd, monkeypatch):
-    """⭐ The scope control for the compensation.
+    """⭐ The scope control for hook-less exit-code synchronization.
 
     When the hooks run, `_get_result_object` already promotes a non-completed result to
-    ERROR (ResultInfo.KILLED) and owns the exit code. Compensating here as well would
-    change that path's behaviour - it flipped a run that previously exited 0 to exit 1 -
-    so the branch is gated on `not run_hooks` and this pins that the hook path is
-    untouched.
+    ERROR. Mirroring that status into `res` here as well would change that path's
+    behaviour - it flipped a run that previously exited 0 to exit 1 - so the
+    `READ_FAILED_EXT_KEY` branch is gated on `not run_hooks` and this pins that the hook
+    path is untouched.
     """
     workflow, job, fake_run = _run_local_no_hooks(0)
     monkeypatch.setattr(Runner, "_run", fake_run)
 
-    # Capture the state the hooks are handed. Stubbing _get_result_object also keeps the
-    # rest of the hook machinery (S3, GH) out of a unit test.
+    # Capture the state `_get_result_object` is handed. Stubbing it also keeps the rest
+    # of the hook machinery (S3, GH) out of a unit test.
     seen = {}
 
     def _capture(self, job, *args, **kwargs):
@@ -472,18 +481,18 @@ def test_hook_path_promotion_is_left_to_get_result_object(in_tmp_cwd, monkeypatc
 
     Runner().run(workflow=workflow, job=job, local_run=True, run_hooks=True)
 
-    # ⭐ Load-bearing: the compensation must not have touched the result before the hooks
-    # saw it, so the promotion stays _get_result_object's single responsibility.
+    # ⭐ Load-bearing: the hook-less exit-code branch must not have touched the result
+    # before `_get_result_object` saw it, so promotion stays its single responsibility.
     assert seen["status"] == Result.Status.RUNNING
     assert not any("left no readable result" in m for m in seen["errors"]), (
-        "the compensation fired on the hook path, which _get_result_object owns"
+        "the hook-less exit-code branch fired on the hook path"
     )
 
 
 def test_a_failed_job_keeps_the_run_recovery_reason_and_log_tail(in_tmp_cwd, monkeypatch):
     """A job that FAILED and left an unreadable result is already fully reported by `_run`
-    (ERROR + "Job killed" + the log tail). The compensation must not fire there and
-    overwrite that with its own, less informative reason - hence the `res` guard.
+    (ERROR + "Job killed" + the log tail). The result finalization must not overwrite
+    that with its own, less informative reason.
     """
     workflow = types.SimpleNamespace(name="W", dockers=[], event="push")
     job = Job.Config(name=JOB_NAME, runs_on=["x"], command="true", run_in_docker="")
@@ -512,7 +521,7 @@ def test_a_failed_job_keeps_the_run_recovery_reason_and_log_tail(in_tmp_cwd, mon
     messages = [e["message"] for e in persisted.ext.get("errors", [])]
     assert "Job killed, exit code [125]" in messages
     assert not any("left no readable result" in m for m in messages), (
-        "the compensation fired on the already-reported failure path"
+        "result finalization overwrote the already-reported failure path"
     )
 
 
@@ -534,44 +543,51 @@ def test_synthesized_result_is_marked_and_a_genuine_one_is_not(in_tmp_cwd):
 
 def test_marker_survives_the_dump_round_trip(in_tmp_cwd):
     """`_run` dumps the synthesized result, and `run` reads it back from disk - so the
-    marker has to round-trip through JSON or the compensation silently never fires."""
+    marker has to round-trip through JSON or the hook-less exit-code synchronization
+    silently never fires."""
     _write_result_file("")
     Runner._read_job_result_or_running(_Job()).dump()
     assert Result.from_fs(JOB_NAME).ext.get(Runner.READ_FAILED_EXT_KEY) is True
 
 
-def test_ci_path_promotion_is_not_duplicated_by_the_local_compensation():
-    """The compensation must stay in the `res and ...` branch of the run-script block.
+def test_unreadable_marker_only_controls_hookless_exit_code_in_run():
+    """`Runner.run` must not duplicate result-status finalization.
 
-    Moving it under `if run_hooks:`, or dropping the `res` guard, would either lose it for
-    local runs or double-report on the CI path where _get_result_object already promotes.
+    `_get_result_object` owns the status mutation. The only remaining use of
+    `READ_FAILED_EXT_KEY` in `Runner.run` is to turn the hook-less local command into a
+    failing process when finalization found an unreadable result.
     """
     tree, _ = _runner_ast()
     run_fn = _function(tree, "run")
 
-    compensations = [
+    marker_branches = [
         node
         for node in ast.walk(run_fn)
         if isinstance(node, ast.If)
         and "READ_FAILED_EXT_KEY" in ast.unparse(node.test)
     ]
-    assert len(compensations) == 1, (
-        "expected exactly one unreadable-result compensation in Runner.run"
+    assert len(marker_branches) == 1, (
+        "expected exactly one unreadable-result exit-code branch in Runner.run"
     )
-    node = compensations[0]
+    node = marker_branches[0]
+    node_src = ast.unparse(node)
     # It must be scoped to the hook-less run: with the hooks on, _get_result_object does
-    # the promotion and owns the exit code.
+    # the promotion while preserving the existing process exit behaviour.
     assert "run_hooks" in ast.unparse(node.test), (
-        "the compensation must be gated on `not run_hooks` - otherwise it also changes "
-        "the hook path, where _get_result_object already promotes the result"
+        "the exit-code branch must be gated on `not run_hooks` - otherwise it also "
+        "changes the hook path"
     )
     # Must be the `res` *name*, not the "res" inside "result": the guard is what keeps the
-    # compensation off the already-failed path, which _run has already reported on.
+    # exit-code branch off the already-failed path, which _run has already reported on.
     assert any(
         isinstance(n, ast.Name) and n.id == "res" for n in ast.walk(node.test)
     ), (
-        "the compensation must not fire when the job already failed - that path is "
+        "the exit-code branch must not fire when the job already failed - that path is "
         "handled by the is_ok() reconciliation above it"
+    )
+    assert "set_status" not in node_src and "add_error" not in node_src, (
+        "Runner.run should only update `res`; result mutation belongs to "
+        "`_get_result_object`"
     )
     for parent in ast.walk(run_fn):
         if isinstance(parent, ast.If) and "run_hooks" in ast.unparse(parent.test):
@@ -582,5 +598,6 @@ def test_ci_path_promotion_is_not_duplicated_by_the_local_compensation():
                 if hasattr(n, "lineno")
             }
             assert node.lineno not in body_lines, (
-                "the compensation moved under `if run_hooks:` - local runs would lose it"
+                "the exit-code branch moved under `if run_hooks:` - local runs would "
+                "lose it"
             )

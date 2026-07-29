@@ -553,11 +553,16 @@ class Runner:
             ).add_ext_key_value(Runner.READ_FAILED_EXT_KEY, True)
 
     def _get_result_object(
-        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
+        self,
+        job,
+        setup_env_exit_code,
+        prerun_exit_code,
+        run_exit_code,
+        promote_incomplete_result=True,
     ) -> Result:
         result_exist = Result.exist(job.name)
 
-        if setup_env_exit_code != 0:
+        if setup_env_exit_code is not None and setup_env_exit_code != 0:
             print(f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}")
             Result(
                 name=job.name,
@@ -565,7 +570,7 @@ class Runner:
                 start_time=Utils.timestamp(),
                 duration=0.0,
             ).add_error(ResultInfo.SETUP_ENV_JOB_FAILED).dump()
-        elif prerun_exit_code != 0:
+        elif prerun_exit_code is not None and prerun_exit_code != 0:
             print(f"ERROR: {ResultInfo.PRE_JOB_FAILED}")
             Result(
                 name=job.name,
@@ -582,17 +587,23 @@ class Runner:
                 status=Result.Status.ERROR,
             ).add_error(ResultInfo.NOT_FOUND_IMPOSSIBLE).dump()
 
-        try:
-            result = Result.from_fs(job.name)
-        except Exception as e:  # json.decoder.JSONDecodeError
-            print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
-            traceback.print_exc()
-            result = Result.create_from(
-                status=Result.Status.ERROR,
-                info=f"Failed to read Result json, ex: [{e}]",
-            ).dump()
+        result = self._read_job_result_or_running(job)
 
-        if not result.is_completed():
+        if run_exit_code is not None and run_exit_code != 0 and result.is_ok():
+            result.set_status(Result.Status.ERROR).set_info(
+                f"Job got terminated with an error, exit code [{run_exit_code}]"
+            ).dump()
+        elif run_exit_code == 0 and result.ext.get(self.READ_FAILED_EXT_KEY):
+            info = f"Job exited [{run_exit_code}] but left no readable result"
+            print(f"ERROR: {info}")
+            result.add_error(info).set_status(Result.Status.ERROR).dump()
+
+        should_promote_incomplete_result = (
+            promote_incomplete_result
+            or run_exit_code is None
+            or run_exit_code != 0
+        )
+        if not result.is_completed() and should_promote_incomplete_result:
             print(f"ERROR: {ResultInfo.KILLED}")
             result.add_error(ResultInfo.KILLED).set_status(Result.Status.ERROR).dump()
 
@@ -1033,14 +1044,15 @@ class Runner:
         self._load_local_env()
 
         res = True
-        setup_env_code = -10
-        prerun_code = -10
-        run_code = -10
+        setup_env_code = None
+        prerun_code = None
+        run_code = None
 
         if res and not local_run:
             print(
                 f"\n\n=== Setup env script [{job.name}], workflow [{workflow.name}] ==="
             )
+            setup_env_code = -10
             try:
                 setup_env_code = self._setup_env(workflow, job)
                 # Source the bash script and capture the environment variables
@@ -1073,6 +1085,7 @@ class Runner:
         if res and (not local_run or ((pr or branch) and sha)):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
+            prerun_code = -10
             try:
                 prerun_code = self._pre_run(workflow, job, local_run=local_run)
                 res = prerun_code == 0
@@ -1104,7 +1117,7 @@ class Runner:
 
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
-            run_code = None
+            run_code = -10
             try:
                 run_code = self._run(
                     workflow,
@@ -1128,33 +1141,19 @@ class Runner:
                 Info().store_traceback()
                 res = False
 
-            # Must stay on the unconditional path: this is the only place that converts a
-            # completed OK result into ERROR when the run itself failed
-            # (_get_result_object only promotes results that are not completed, and it runs
-            # under `if run_hooks:` below, so a local run would lose the normalization).
-            result = self._read_job_result_or_running(job)
-            if not res and result.is_ok():
-                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
-                result.set_status(Result.Status.ERROR).set_info(
-                    f"Job got terminated with an error, exit code [{run_code}]"
-                ).dump()
-            elif not run_hooks and res and result.ext.get(self.READ_FAILED_EXT_KEY):
-                # The job exited 0 but its result is unreadable, so there is no evidence it
-                # succeeded. `_get_result_object` promotes exactly this to ERROR, but it
-                # runs under `if run_hooks:` below - so only a run that skips the hooks
-                # needs the promotion here, and gating on `not run_hooks` keeps the hook
-                # path's reporting and exit code untouched.
-                info = f"Job exited [{run_code}] but left no readable result"
-                print(f"ERROR: {info}")
-                result.add_error(info).set_status(Result.Status.ERROR).dump()
-                res = False
-
             print("=== Run script finished ===\n\n")
 
+        result = self._get_result_object(
+            job,
+            setup_env_code,
+            prerun_code,
+            run_code,
+            promote_incomplete_result=run_hooks,
+        )
+        if not run_hooks and res and result.ext.get(self.READ_FAILED_EXT_KEY):
+            res = False
+
         if run_hooks:
-            result = self._get_result_object(
-                job, setup_env_code, prerun_code, run_code
-            )
             if prehook_result:
                 result.results.append(prehook_result)
             if job.post_hooks:
@@ -1185,7 +1184,7 @@ class Runner:
                 res = res and post_res
                 print("=== Post run script finished ===")
 
-            result.dump()
+        result.dump()
 
         if not res and not job.force_success:
             sys.exit(1)
