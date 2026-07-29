@@ -230,7 +230,7 @@ The position of `ie_join` in the list sets its priority. Listed after other algo
 
 IEJoin accumulates both inputs in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode). The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
-An input carrying totals, that is a subquery with `WITH TOTALS`, is not supported: such a query fails with `NOT_IMPLEMENTED`, as it does with the `full_sorting_merge` algorithm.
+An input carrying totals, that is a subquery with `WITH TOTALS`, is not supported: such a query fails with `NOT_IMPLEMENTED`.
 
 **Example**
 
