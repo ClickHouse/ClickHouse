@@ -55,9 +55,9 @@ UNION ALL
 SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ORDER BY i;
 
--- EXCEPT ALL variant. The right branch keeps i = 3, which the left branch does not produce, so both
--- i = 4 rows survive. Like INTERSECT this runs through IntersectOrExceptStep, and it aborted the
--- server the same way before the fix.
+-- `EXCEPT ALL` variant. The right branch keeps i = 3, which the left branch does not produce, so both
+-- i = 4 rows survive. Like `INTERSECT` this runs through `IntersectOrExceptStep`, and it raised the
+-- same logical error before the fix.
 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
   SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
            correlated_subqueries_default_join_kind = 'left'
