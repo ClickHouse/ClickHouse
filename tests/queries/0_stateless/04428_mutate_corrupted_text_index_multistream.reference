@@ -42,3 +42,11 @@ E_check_table:
 38
 E_rebuilt_index_prunes:
 1
+F_control_sibling_file_registered_before:
+1
+F_control_check_table:
+1
+F_collide_sibling_file_registered_before:
+1
+F_collide_check_table:
+1

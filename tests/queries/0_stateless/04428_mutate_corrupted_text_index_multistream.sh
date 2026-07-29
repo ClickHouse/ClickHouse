@@ -197,3 +197,72 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side_full SETTINGS check_query_single_val
 echo "E_rebuilt_index_prunes:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_side_full WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_side_full SYNC"
+
+# --- Path F: a sibling index registers a file the corrupted text index also addresses ---
+# With `escape_index_filenames` = 0 an index NAME may equal a text substream name, so a minmax
+# index called `a.pst` and the `.pst` substream of a text index `a` both address
+# `skp_idx_a.pst.cmrk2`. Only the minmax writes it, and it is in `checksums.txt`. Resolving
+# orphan candidates against storage alone claims that file for the corrupted text index, so it
+# is skipped while its checksum entry survives -> `CHECK TABLE` fails with NO_FILE_IN_DATA_PART.
+# The registered owner here is dropped by the very mutation under test, so it cannot be found
+# in the (already post-drop) metadata; only checksum membership identifies the file.
+# The sibling name is the only variable: `b` is the control, `a.pst` collides.
+run_sibling_owns_file_case () {
+    local label="$1" sib="$2"
+    local tbl="t_own_${label}"
+
+    ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS ${tbl} SYNC;
+    CREATE TABLE ${tbl}
+    (
+        k UInt64,
+        s String,
+        w UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
+             columns_and_secondary_indices_sizes_lazy_calculation = 0,
+             allow_experimental_text_index_phrase_search = 1;
+    INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(500)"
+
+    local dp act
+    dp=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}'")
+    act=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    rm -rf "${dp}/saved_${tbl}"
+    mkdir -p "${dp}/saved_${tbl}"
+    cp "${act}"skp_idx_a.* "${dp}/saved_${tbl}/"
+
+    # Corrupt the text index while NO sibling exists, so nothing inherits a checksum entry for
+    # its files, then add the healthy sibling. Order matters: adding the sibling first would let
+    # it register a name the text index also addresses before the entries are stripped.
+    ${CLICKHOUSE_CLIENT} -q "
+    ALTER TABLE ${tbl} DROP INDEX a SETTINGS mutations_sync = 2;
+    ALTER TABLE ${tbl} ADD INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1;
+    ALTER TABLE ${tbl} ADD INDEX \`${sib}\` w TYPE minmax GRANULARITY 1;
+    ALTER TABLE ${tbl} MATERIALIZE INDEX \`${sib}\` SETTINGS mutations_sync = 2"
+
+    # Re-inject the text index's files, never overwriting one the healthy sibling wrote.
+    local cor f bn
+    cor=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    for f in "${dp}/saved_${tbl}/"skp_idx_a.*; do
+        bn=$(basename "${f}")
+        if [ -e "${cor}${bn}" ]; then continue; fi
+        cp "${f}" "${cor}"
+    done
+
+    # The sibling's file must be present and registered before the drop, else the collision the
+    # case is about never arises and the assertion below is vacuous.
+    echo "${label}_sibling_file_registered_before:"
+    if [ -e "${cor}skp_idx_a.pst.cmrk2" ]; then echo 1; else echo 0; fi
+
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`${sib}\` SETTINGS mutations_sync = 2"
+    echo "${label}_check_table:"
+    ${CLICKHOUSE_CLIENT} -q "CHECK TABLE ${tbl} SETTINGS check_query_single_value_result = 1;
+        DROP TABLE ${tbl} SYNC"
+}
+
+run_sibling_owns_file_case F_control b
+run_sibling_owns_file_case F_collide a.pst
