@@ -251,10 +251,11 @@ private:
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 
 /// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
-/// `join_algorithm` and the ON expression has two inequality conditions suitable for it.
-/// A cheap shape check for optimization passes that would otherwise claim the join for a
-/// hash-family algorithm (e.g. runtime filters); the conversion to the physical step
-/// re-checks the shape in full and may still decline in favor of the other algorithms.
+/// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
+/// For optimization passes that would otherwise claim the join for a hash-family algorithm
+/// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
+/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// prepared `Join` storage (which those passes exclude on their own).
 bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 

@@ -865,6 +865,31 @@ static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
     return result;
 }
 
+/// An inequality between the two tables that the IEJoin operator can use as one of its two key
+/// conditions, or std::nullopt when the condition has a different shape or compares operands the
+/// operator cannot handle. Pure: the caller commits the condition by casting its operands.
+static std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
+tryGetIEJoinKeyCondition(const JoinActionRef & condition)
+{
+    auto inequality = tryGetInequalityBetweenTables(condition);
+    if (!inequality)
+        return {};
+
+    /// The commit in `tryExtractIEJoinDescription` casts both sides of the condition to a common
+    /// type; probe that here, so that a combination `predicateOperandsToCommonType` cannot handle
+    /// makes the caller fall back to the generic handling (which compares such operands in a
+    /// filter) instead of throwing.
+    const auto & [predicate_op, lhs, rhs] = *inequality;
+    const auto & lhs_type = lhs.getType();
+    const auto & rhs_type = rhs.getType();
+    if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
+        return {};
+    if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
+        return {};
+
+    return inequality;
+}
+
 /// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape.
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
@@ -886,35 +911,13 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     if (planning_context.is_storage_join)
         return {};
 
-    auto try_get_inequality_condition = [&](const JoinActionRef & condition)
-        -> std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
-    {
-        auto inequality = tryGetInequalityBetweenTables(condition);
-        if (!inequality)
-            return {};
-
-        /// The commit below casts both sides of the condition to a common type; probe that
-        /// here, so that a combination `predicateOperandsToCommonType` cannot handle makes the
-        /// caller fall back to the generic handling (which compares such operands in a filter)
-        /// instead of throwing.
-        const auto & [predicate_op, lhs, rhs] = *inequality;
-        const auto & lhs_type = lhs.getType();
-        const auto & rhs_type = rhs.getType();
-        if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
-            return {};
-        if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
-            return {};
-
-        return inequality;
-    };
-
     /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
     /// of freedom; fixed to the first two for now.
     std::vector<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
     std::vector<JoinActionRef> residual_conditions;
     for (const auto & condition : join_expression)
     {
-        auto inequality = keys.size() < 2 ? try_get_inequality_condition(condition) : std::nullopt;
+        auto inequality = keys.size() < 2 ? tryGetIEJoinKeyCondition(condition) : std::nullopt;
         if (inequality)
             keys.push_back(std::move(*inequality));
         else
@@ -955,7 +958,7 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
     size_t inequality_conditions = 0;
     for (const auto & condition : join_operator.expression)
     {
-        if (tryGetInequalityBetweenTables(condition))
+        if (tryGetIEJoinKeyCondition(condition))
             ++inequality_conditions;
     }
     return inequality_conditions >= 2;
@@ -1284,10 +1287,15 @@ static void constructIEJoinStep(
         conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
     }
 
+    /// `max_joined_block_size_rows = 0` means the result block size is bound by `max_block_size` alone.
+    size_t max_block_size = join_settings.max_joined_block_size_rows
+        ? std::min<size_t>(join_settings.max_block_size, join_settings.max_joined_block_size_rows)
+        : join_settings.max_block_size;
+
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<IEJoinStep>(
         left_header, right_header, conditions, std::move(residual_condition), kind, strictness,
-        /*inputs_sorted_by_first_key=*/ true, size_limits, join_settings.max_block_size);
+        /*inputs_sorted_by_first_key=*/ true, size_limits, max_block_size, join_settings.max_joined_block_size_bytes);
 
     node.children = {join_left_node, join_right_node};
 

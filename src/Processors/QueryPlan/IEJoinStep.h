@@ -25,7 +25,8 @@ public:
         JoinStrictness strictness_,
         bool inputs_sorted_by_first_key_,
         const SizeLimits & size_limits_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_block_bytes_);
 
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
@@ -60,7 +61,10 @@ private:
     bool inputs_sorted_by_first_key;
     /// Limits on the materialized input, from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
+    /// Limits on a result block, from `max_block_size` / `max_joined_block_size_rows` and
+    /// `max_joined_block_size_bytes`.
     size_t max_block_size;
+    size_t max_block_bytes;
 };
 
 }

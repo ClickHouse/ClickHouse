@@ -65,11 +65,13 @@ IEJoinStep::IEJoinStep(
     JoinStrictness strictness_,
     bool inputs_sorted_by_first_key_,
     const SizeLimits & size_limits_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t max_block_bytes_)
     : conditions(conditions_)
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
     , size_limits(size_limits_)
     , max_block_size(max_block_size_)
+    , max_block_bytes(max_block_bytes_)
 {
     auto ie_kind = toIEJoinKind(kind_, strictness_);
     if (!ie_kind)
@@ -142,7 +144,8 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
             source.side = 1 - source.side;
     }
     auto joining = std::make_shared<IEJoinTransform>(
-        kind, executed_conditions, std::move(executed_residual), inputs_sorted_by_first_key, inputs, concatHeaders(inputs), size_limits, max_block_size);
+        kind, executed_conditions, std::move(executed_residual), inputs_sorted_by_first_key, inputs, concatHeaders(inputs),
+        size_limits, max_block_size, max_block_bytes);
     auto pipeline = QueryPipelineBuilder::joinPipelinesPaired(std::move(pipelines[0]), std::move(pipelines[1]), std::move(joining), &processors);
 
     if (swap_inputs)
