@@ -28,9 +28,7 @@ doc_type: 'guide'
 다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행하여 필요한 라이브러리를 설치하십시오.
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로, Anthropic API Key를 입력해야 합니다:
 
     ```python
@@ -61,9 +57,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## MCP 서버 초기화
-
+  <Step title="MCP 서버 초기화" id="initialize-mcp-and-agent">
     이제 ClickHouse MCP 서버가 ClickHouse SQL playground를 사용하도록 구성합니다.
     앞서 만든 Python 함수를 Llama Index 도구로 변환해야 합니다:
 
@@ -95,9 +89,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 에이전트 생성
-
+  <Step title="에이전트 생성" id="create-agent">
     이제 앞서 언급한 도구에 접근할 수 있는 agent를 생성할 준비가 되었습니다. 한 번의 실행에서 도구를 호출할 수 있는 최대
     횟수를 10으로 설정하십시오. 필요하면 이 매개변수를 수정할 수 있습니다:
 
@@ -112,9 +104,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## LLM 초기화
-
+  <Step title="LLM 초기화" id="initialize-llm">
     다음 코드를 사용해 Claude Sonnet 4.0 모델을 초기화합니다:
 
     ```python
@@ -123,9 +113,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## agent 실행
-
+  <Step title="에이전트 실행" id="run-agent">
     마지막으로, agent에게 질문할 수 있습니다:
 
     ```python

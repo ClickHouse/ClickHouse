@@ -282,6 +282,8 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
         return *this;
 
     BackupInfo res = *this;
+    /// The resolved snapshot contains the original overrides and cannot be kept after redacting them.
+    res.frozen_named_collection.reset();
 
     /// S3('url', 'access_key_id', 'secret_access_key') -> S3('url')
     if (res.id_arg.empty() && res.args.size() == 3)
@@ -355,6 +357,12 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     if (id_arg.empty())
         return nullptr;
 
+    if (frozen_named_collection)
+    {
+        context->checkAccess(AccessType::NAMED_COLLECTION, id_arg);
+        return frozen_named_collection;
+    }
+
     /// Load named collections (both from config and SQL-defined)
     NamedCollectionFactory::instance().loadIfNot();
 
@@ -386,6 +394,18 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     }
 
     return collection;
+}
+
+BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
+{
+    if (id_arg.empty() || frozen_named_collection)
+        return *this;
+
+    BackupInfo res = *this;
+    auto collection = getNamedCollection(context);
+    /// `getNamedCollection` already returns a private copy when overrides are present.
+    res.frozen_named_collection = kv_args.empty() ? collection->duplicate() : std::move(collection);
+    return res;
 }
 
 }

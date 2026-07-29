@@ -253,12 +253,12 @@ void ThreadStatus::flushUntrackedMemory()
     /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
     per_cpu_memory.release(per_cpu_untracked_memory);
 
-    if (untracked_memory == 0)
+    Int64 current_untracked_memory = untracked_memory.load();
+    if (current_untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = untracked_memory;
-    untracked_memory = 0;
+    untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
