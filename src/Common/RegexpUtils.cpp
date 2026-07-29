@@ -193,18 +193,18 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
     return common_prefix;
 }
 
-/// Extracts {fixed_prefix, is_perfect_prefix, is_exact} without looking at `requires_perfect_prefix`.
-std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
+/// Extracts the prefix and its flags without looking at `requires_perfect_prefix`.
+RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
 {
     /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
     if (regexp.size() <= 1 || regexp[0] != '^')
-        return {"", /* perfect = */ false, /* exact = */ false};
+        return {};
 
     /// The scan below stops at '|' and '(', so alternations are analyzed separately.
     /// Their prefix is never perfect: strings starting with the common prefix of all branches
     /// do not necessarily match one of the branches.
     if (expressionHasUnescapedAlternation(regexp))
-        return {extractCommonPrefixFromAlternationBranches(regexp), /* perfect = */ false, /* exact = */ false};
+        return {.prefix = extractCommonPrefixFromAlternationBranches(regexp)};
 
     String fixed_prefix;
     fixed_prefix.reserve(regexp.size());
@@ -222,7 +222,7 @@ std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
                 /// A trailing escape is an invalid pattern which the matcher rejects,
                 /// so never report it as exact.
                 if (pos == end || !isLiteralEscape(*pos))
-                    return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+                    return {.prefix = fixed_prefix};
 
                 fixed_prefix += *pos;
                 ++pos;
@@ -233,20 +233,20 @@ std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
                 /// '$' means "must end at the end of the string", so "^abc$" matches only "abc".
                 /// A '$' in the middle constrains the rest of the pattern, which we don't analyze.
                 if (pos + 1 == end)
-                    return {fixed_prefix, /* perfect = */ false, /* exact = */ true};
-                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+                    return {.prefix = fixed_prefix, .is_exact = true};
+                return {.prefix = fixed_prefix};
 
             case '.':
                 /// A trailing ".*" allows any continuation.
                 /// A trailing ".*$" also allows any continuation because of
                 /// flag OptimizedRegularExpression::RE_DOT_NL (see `Regexps::createRegexp`).
                 if ((end - pos == 2 || (end - pos == 3 && *(pos + 2) == '$')) && *(pos + 1) == '*')
-                    return {fixed_prefix, /* perfect = */ true, /* exact = */ false};
-                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+                    return {.prefix = fixed_prefix, .is_perfect = true};
+                return {.prefix = fixed_prefix};
 
             /// An unescaped '|' is handled by the alternation path above, so this is unreachable.
             case '|':
-                return {"", /* perfect = */ false, /* exact = */ false};
+                return {};
 
             /// None of these gives another fixed character.
             case '\0':
@@ -254,7 +254,7 @@ std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
             case '[':
             case '^':
             case '+':
-                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+                return {.prefix = fixed_prefix};
 
             /// Quantifiers that allow a zero number of occurrences make the previous character optional.
             case '{':
@@ -262,7 +262,7 @@ std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
             case '*':
                 if (!fixed_prefix.empty())
                     fixed_prefix.pop_back();
-                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+                return {.prefix = fixed_prefix};
 
             default:
                 fixed_prefix += *pos;
@@ -273,22 +273,21 @@ std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
 
     /// The whole pattern is a literal string and nothing constrains the end of the matched string,
     /// so "^abc" matches every string starting with "abc".
-    return {fixed_prefix, /* perfect = */ true, /* exact = */ false};
+    return {.prefix = fixed_prefix, .is_perfect = true};
 }
 
 }
 
 
-std::tuple<String, bool, bool> extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix)
+RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix)
 {
-    auto [fixed_prefix, is_perfect_prefix, is_exact] = extractFixedPrefix(regexp);
+    RegexpFixedPrefix result = extractFixedPrefix(regexp);
 
-    /// An exact prefix is not a perfect one, but it is returned anyway: it describes the set of
-    /// matching strings even more precisely, so a caller which needs a perfect prefix can use it too.
-    if (requires_perfect_prefix && !is_perfect_prefix && !is_exact)
-        return {"", /* perfect = */ false, /* exact = */ false};
+    /// An exact prefix is returned even though it is not perfect, see the comment for `is_exact`.
+    if (requires_perfect_prefix && !result.is_perfect && !result.is_exact)
+        return {};
 
-    return {fixed_prefix, is_perfect_prefix, is_exact};
+    return result;
 }
 
 }

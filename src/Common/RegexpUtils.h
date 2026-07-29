@@ -3,14 +3,26 @@
 #include <base/types.h>
 
 #include <string_view>
-#include <tuple>
 
 
 namespace DB
 {
 
+/// A fixed literal prefix extracted from a regular expression: every matching string starts with `prefix`.
+struct RegexpFixedPrefix
+{
+    String prefix;
+
+    /// The regular expression matches every string starting with `prefix`, so it is equivalent to
+    /// `startsWith(haystack, prefix)`, e.g. "^abc" or "^abc.*".
+    bool is_perfect = false;
+
+    /// The regular expression matches `prefix` and nothing else, so it is equivalent to an exact match,
+    /// e.g. "^abc$". Such a prefix is not perfect, but it describes the matching strings even more precisely.
+    bool is_exact = false;
+};
+
 /// Extracts a conservative fixed literal prefix from a ^-anchored regular expression.
-/// Returns {fixed_prefix, is_perfect_prefix, is_exact}.
 ///
 /// In regex, '^' means "must start at the beginning of the string".
 /// This function walks the pattern after '^' and collects characters that
@@ -21,10 +33,6 @@ namespace DB
 /// complicated to do so. The result is a prefix that is common to all possible
 /// matching strings.
 ///
-/// `is_perfect_prefix` is true when the pattern matches every string starting with `fixed_prefix`,
-/// so the pattern is equivalent to `startsWith(haystack, fixed_prefix)`, e.g. "^abc" or "^abc.*".
-/// `is_exact` is true when the pattern matches only `fixed_prefix` itself, so it is equivalent to
-/// an exact match, e.g. "^abc$"; in that case the prefix is always returned.
 /// When `requires_perfect_prefix` is true and the prefix is neither perfect nor exact,
 /// an empty prefix is returned even if a shorter non-perfect prefix could be extracted.
 ///
@@ -81,6 +89,6 @@ namespace DB
 /// is complex and error-prone. The only supported group is a top-level
 /// alternation of plain literals, "^(branch1|branch2|...)$?", which is
 /// handled separately.
-std::tuple<String, bool, bool> extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix);
+RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix);
 
 }
