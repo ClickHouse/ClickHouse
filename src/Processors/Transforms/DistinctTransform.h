@@ -90,6 +90,10 @@ private:
 
     /// BloomFilter Pre DISTINCT optimization
     size_t total_passed_bf = 0;
+    /// Rows forwarded by the `check_only` mode. Such rows are not recorded anywhere (neither in the
+    /// hash set nor in the bloom filter), so the same key is forwarded on every occurrence and this
+    /// counter is not a count of distinct keys - it must not be compared against `limit_hint`.
+    size_t total_passed_check_only = 0;
     bool use_bf = false;
     bool try_init_bf;
     UInt64 set_limit_for_enabling_bloom_filter = 1000000;

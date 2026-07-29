@@ -473,6 +473,7 @@ void DistinctTransform::transform(Chunk & chunk)
 
     const auto old_set_size = data.getTotalRowCount();
     const auto old_bf_size = total_passed_bf;
+    const auto old_check_only_size = total_passed_check_only;
 
     if (try_init_bf && old_set_size > set_limit_for_enabling_bloom_filter)
     {
@@ -525,7 +526,7 @@ void DistinctTransform::transform(Chunk & chunk)
             else if (!is_pre_distinct) \
                 build(); \
             else if (check_only) \
-                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_check_only); \
             else if (use_bf) \
                 buildCombinedFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
             else \
@@ -541,7 +542,8 @@ void DistinctTransform::transform(Chunk & chunk)
     size_t new_bf_size = total_passed_bf;
     size_t new_set_size = data.getTotalRowCount();
 
-    size_t rows_passed = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
+    size_t rows_passed
+        = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size) + (total_passed_check_only - old_check_only_size));
 
     /// Just go to the next chunk if there isn't any new record in the current one.
     if (!rows_passed)
@@ -566,7 +568,12 @@ void DistinctTransform::transform(Chunk & chunk)
 
     chunk.setColumns(std::move(columns), rows_passed);
 
-    /// Stop reading if we already reach the limit
+    /// Stop reading if we already reach the limit.
+    /// Only keys that were actually recorded (in the hash set or in the bloom filter) may be counted
+    /// here: each of them is emitted exactly once, so reaching `limit_hint` of them means this stream
+    /// alone can satisfy the `LIMIT`. Rows forwarded by the `check_only` mode are deliberately not
+    /// counted - they are not recorded anywhere, so one key repeated `limit_hint` times would stop the
+    /// stream before it emitted `limit_hint` distinct values, losing later distinct values from it.
     if (limit_hint && (new_set_size >= limit_hint || new_bf_size >= limit_hint))
     {
         stopReading();
