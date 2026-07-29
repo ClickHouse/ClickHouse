@@ -75,14 +75,17 @@ SELECT a, b, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_s
 GROUP BY GROUPING SETS ((a), (b)) ORDER BY a, b;
 
 -- Distributed ROLLUP / CUBE / WITH TOTALS / plain GROUP BY must keep working on that path too.
+-- They keep the in-order sort description, which `AggregatingStep::serialize` refuses, so pin
+-- serialize_query_plan off: the CI `distributed plan` job turns it on globally. The GROUPING SETS
+-- rows above must stay unpinned, they are the ones proving the fix.
 SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
-GROUP BY a WITH ROLLUP ORDER BY a;
+GROUP BY a WITH ROLLUP ORDER BY a SETTINGS serialize_query_plan = 0;
 SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
-GROUP BY a WITH CUBE ORDER BY a;
+GROUP BY a WITH CUBE ORDER BY a SETTINGS serialize_query_plan = 0;
 SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
-GROUP BY a WITH TOTALS ORDER BY a;
+GROUP BY a WITH TOTALS ORDER BY a SETTINGS serialize_query_plan = 0;
 SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
-GROUP BY a ORDER BY a;
+GROUP BY a ORDER BY a SETTINGS serialize_query_plan = 0;
 
 -- Pin the mechanism on the analyzer path as well. Memory-bound merging stays enabled for the
 -- sibling GROUP BY modifiers (only GROUPING SETS cannot support it), so a guard that keyed on
