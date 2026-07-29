@@ -8,6 +8,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -48,33 +49,49 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the type is, or contains at any depth, a Decimal, Variant or Dynamic type. Comparisons
-/// recurse into wrappers (tuple equality executes element equality), so a nested Decimal can still
-/// raise DECIMAL_OVERFLOW and a nested Variant/Dynamic can still throw on the alternative a row
-/// carries. forEachChild already visits descendants recursively, so inspect each child once.
-static bool typeIsOrContainsThrowingType(const IDataType & type)
+/// True if a value of this type can be compared without any risk of throwing. Only unwrapped scalars
+/// qualify. Decimal raises DECIMAL_OVERFLOW on a scale mismatch, Variant/Dynamic depend on the
+/// alternative a row carries, and a zero-sized Tuple is not comparable at all (NOT_IMPLEMENTED), so
+/// containers are rejected wholesale rather than walked.
+static bool typeIsTotallyComparable(const DataTypePtr & type)
 {
-    auto is_throwing = [](const IDataType & t)
+    WhichDataType which(removeNullable(removeLowCardinality(type)));
+    return which.isNativeInt() || which.isNativeUInt() || which.isFloat() || which.isEnum()
+        || which.isDate() || which.isDate32() || which.isDateTime() || which.isString()
+        || which.isFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6()
+        || which.isNothing();
+}
+
+/// True if comparing these argument types cannot throw. Equal types compare directly, but mixed types
+/// are converted first, and converting a String to Date or Enum throws on a value that does not parse
+/// (CANNOT_PARSE_DATE, UNKNOWN_ELEMENT_OF_ENUM). Native numbers convert between each other without
+/// throwing, so that is the only mixing allowed.
+static bool comparisonIsTotal(const DataTypes & argument_types)
+{
+    for (const auto & type : argument_types)
+        if (!typeIsTotallyComparable(type))
+            return false;
+
+    auto is_number = [](const DataTypePtr & t)
     {
-        WhichDataType which(t);
-        return which.isDecimal() || which.isVariant() || which.isDynamic();
+        WhichDataType which(removeNullable(removeLowCardinality(t)));
+        return which.isNativeInt() || which.isNativeUInt() || which.isFloat();
     };
 
-    if (is_throwing(type))
-        return true;
-
-    bool found = false;
-    type.forEachChild([&](const IDataType & child)
+    auto first = removeNullable(removeLowCardinality(argument_types.front()));
+    for (const auto & type : argument_types)
     {
-        found |= is_throwing(child);
-    });
-    return found;
+        auto inner = removeNullable(removeLowCardinality(type));
+        if (!inner->equals(*first) && !(is_number(inner) && is_number(first)))
+            return false;
+    }
+    return true;
 }
 
 /// There is no sound per-function "cannot throw" oracle: IExecutableFunction::canThrow defaults to true
 /// and its only override forwards to isSuitableForShortCircuitArgumentsExecution, which misses
 /// value-dependent throwers such as decimal-arithmetic overflow. So whitelist operations that are total
-/// for every input value instead, and reject Decimal arguments separately.
+/// for every input value instead, and check the argument types of the comparisons separately.
 static bool functionIsProvenTotal(const std::string & name)
 {
     static const NameSet total_functions
@@ -86,6 +103,15 @@ static bool functionIsProvenTotal(const std::string & name)
     return total_functions.contains(name);
 }
 
+static bool isComparison(const std::string & name)
+{
+    static const NameSet comparisons
+    {
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+    };
+    return comparisons.contains(name);
+}
+
 static bool filterMayThrow(const FilterStep & filter)
 {
     for (const auto & node : filter.getExpression().getNodes())
@@ -93,20 +119,25 @@ static bool filterMayThrow(const FilterStep & filter)
         if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
             continue;
 
-        if (!functionIsProvenTotal(node.function_base->getName()))
+        const auto & name = node.function_base->getName();
+        if (!functionIsProvenTotal(name))
             return true;
 
-        /// Whitelisted comparisons still throw DECIMAL_OVERFLOW on a decimal scale mismatch
-        /// (Core/DecimalComparison.h), and a Variant/Dynamic argument can throw depending on the
-        /// alternative a row carries. Only function arguments are checked: such a column merely
-        /// projected to the output is never evaluated, so it must not block the pushdown.
+        /// Only comparison arguments are inspected. A column merely projected to the output is never
+        /// evaluated before the set operation, so it must not block the pushdown.
+        if (!isComparison(name))
+            continue;
+
+        DataTypes argument_types;
         for (const auto & child : node.children)
         {
             if (!child->result_type)
-                continue;
-            if (typeIsOrContainsThrowingType(*child->result_type))
                 return true;
+            argument_types.push_back(child->result_type);
         }
+
+        if (argument_types.empty() || !comparisonIsTotal(argument_types))
+            return true;
     }
     return false;
 }

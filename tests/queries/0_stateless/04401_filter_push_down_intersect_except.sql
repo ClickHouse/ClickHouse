@@ -43,13 +43,15 @@ SELECT 'top filter EXCEPT ALL off', countIf(explain LIKE 'Filter%') FROM
 -- actually prune down to a single granule, which is the point of the optimization.
 DROP TABLE IF EXISTS t_intex_g_l;
 DROP TABLE IF EXISTS t_intex_g_r;
-CREATE TABLE t_intex_g_l (a UInt64) ENGINE = MergeTree ORDER BY a;
-CREATE TABLE t_intex_g_r (a UInt64) ENGINE = MergeTree ORDER BY a;
+-- The granularity settings are pinned because the runner randomizes them, and the assertions below
+-- name exact granule counts.
+CREATE TABLE t_intex_g_l (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+CREATE TABLE t_intex_g_r (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 INSERT INTO t_intex_g_l SELECT number FROM numbers(100000);
 INSERT INTO t_intex_g_r SELECT number FROM numbers(100000);
-SELECT 'granules on', countIf(explain LIKE '%Granules: 1/12%') FROM
+SELECT 'granules on', countIf(explain LIKE '%Granules: 1/13%') FROM
 (EXPLAIN indexes = 1 SELECT a FROM (SELECT a FROM t_intex_g_l EXCEPT ALL SELECT a FROM t_intex_g_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 1);
-SELECT 'granules off', countIf(explain LIKE '%Granules: 12/12%') FROM
+SELECT 'granules off', countIf(explain LIKE '%Granules: 13/13%') FROM
 (EXPLAIN indexes = 1 SELECT a FROM (SELECT a FROM t_intex_g_l EXCEPT ALL SELECT a FROM t_intex_g_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 0);
 DROP TABLE t_intex_g_l;
 DROP TABLE t_intex_g_r;
@@ -134,19 +136,61 @@ DROP TABLE t_intex_dec_l;
 DROP TABLE t_intex_dec_r;
 
 -- A whitelisted comparison recurses into wrappers, so a Decimal nested in a Tuple can still raise
--- DECIMAL_OVERFLOW on a scale mismatch and must be rejected like a top-level Decimal.
+-- DECIMAL_OVERFLOW on a scale mismatch and must be rejected like a top-level Decimal. This case and
+-- the three below must select the set-key column: with a count() parent the set-key guard rejects the
+-- pushdown first and the type check is never reached.
 DROP TABLE IF EXISTS t_intex_tdec_l;
 DROP TABLE IF EXISTS t_intex_tdec_r;
 CREATE TABLE t_intex_tdec_l (a Tuple(Decimal64(0))) ENGINE = Memory;
 CREATE TABLE t_intex_tdec_r (a Tuple(Decimal64(0))) ENGINE = Memory;
 INSERT INTO t_intex_tdec_l VALUES (tuple(toDecimal64(1, 0))), (tuple(toDecimal64(9000000000000000000, 0)));
 INSERT INTO t_intex_tdec_r VALUES (tuple(toDecimal64(9000000000000000000, 0)));
--- The parent must select the set-key column, or the set-key guard rejects the pushdown first and
--- this case stops exercising the type check.
 SELECT 'tuple dec on', a FROM (SELECT a FROM t_intex_tdec_l EXCEPT ALL SELECT a FROM t_intex_tdec_r) AS t0 WHERE t0.a = tuple(toDecimal64(1, 4)) SETTINGS query_plan_filter_push_down = 1;
 SELECT 'tuple dec off', a FROM (SELECT a FROM t_intex_tdec_l EXCEPT ALL SELECT a FROM t_intex_tdec_r) AS t0 WHERE t0.a = tuple(toDecimal64(1, 4)) SETTINGS query_plan_filter_push_down = 0;
 DROP TABLE t_intex_tdec_l;
 DROP TABLE t_intex_tdec_r;
+
+-- A comparison between mixed types converts first, and converting a String to Date or Enum throws on
+-- a value that does not parse, so such a comparison must not be pushed either. These cases select the
+-- set-key column (a count() parent hits the set-key guard first) and match no row, so a broken guard
+-- shows up as the conversion exception replacing the trailing marker line.
+DROP TABLE IF EXISTS t_intex_dat_l;
+DROP TABLE IF EXISTS t_intex_dat_r;
+CREATE TABLE t_intex_dat_l (a Nullable(Date)) ENGINE = Memory;
+CREATE TABLE t_intex_dat_r (a Nullable(Date)) ENGINE = Memory;
+INSERT INTO t_intex_dat_l VALUES ('2026-01-01');
+INSERT INTO t_intex_dat_r VALUES ('2026-01-01');
+SELECT a FROM (SELECT a FROM t_intex_dat_l EXCEPT ALL SELECT a FROM t_intex_dat_r) AS t0 WHERE t0.a = 'bad' SETTINGS query_plan_filter_push_down = 1;
+SELECT a FROM (SELECT a FROM t_intex_dat_l EXCEPT ALL SELECT a FROM t_intex_dat_r) AS t0 WHERE t0.a = 'bad' SETTINGS query_plan_filter_push_down = 0;
+SELECT 'date str ok';
+DROP TABLE t_intex_dat_l;
+DROP TABLE t_intex_dat_r;
+
+DROP TABLE IF EXISTS t_intex_enum_l;
+DROP TABLE IF EXISTS t_intex_enum_r;
+CREATE TABLE t_intex_enum_l (a Nullable(Enum8('x' = 1))) ENGINE = Memory;
+CREATE TABLE t_intex_enum_r (a Nullable(Enum8('x' = 1))) ENGINE = Memory;
+INSERT INTO t_intex_enum_l VALUES ('x');
+INSERT INTO t_intex_enum_r VALUES ('x');
+SELECT a FROM (SELECT a FROM t_intex_enum_l EXCEPT ALL SELECT a FROM t_intex_enum_r) AS t0 WHERE t0.a = 'bad' SETTINGS validate_enum_literals_in_operators = 1, query_plan_filter_push_down = 1;
+SELECT a FROM (SELECT a FROM t_intex_enum_l EXCEPT ALL SELECT a FROM t_intex_enum_r) AS t0 WHERE t0.a = 'bad' SETTINGS validate_enum_literals_in_operators = 1, query_plan_filter_push_down = 0;
+SELECT 'enum str ok';
+DROP TABLE t_intex_enum_l;
+DROP TABLE t_intex_enum_r;
+
+-- A zero-sized Tuple cannot be compared at all, so its comparison must stay above the set operation
+-- where the eliminated rows never reach it.
+DROP TABLE IF EXISTS t_intex_et_l;
+DROP TABLE IF EXISTS t_intex_et_r;
+CREATE TABLE t_intex_et_l (a Nullable(Tuple()), b Nullable(Tuple())) ENGINE = Memory SETTINGS enable_nullable_tuple_type = 1;
+CREATE TABLE t_intex_et_r (a Nullable(Tuple()), b Nullable(Tuple())) ENGINE = Memory SETTINGS enable_nullable_tuple_type = 1;
+INSERT INTO t_intex_et_l VALUES (tuple(), tuple());
+INSERT INTO t_intex_et_r VALUES (tuple(), tuple());
+SELECT a, b FROM (SELECT a, b FROM t_intex_et_l EXCEPT ALL SELECT a, b FROM t_intex_et_r) AS t0 WHERE t0.a = t0.b SETTINGS query_plan_filter_push_down = 1;
+SELECT a, b FROM (SELECT a, b FROM t_intex_et_l EXCEPT ALL SELECT a, b FROM t_intex_et_r) AS t0 WHERE t0.a = t0.b SETTINGS query_plan_filter_push_down = 0;
+SELECT 'empty tuple ok';
+DROP TABLE t_intex_et_l;
+DROP TABLE t_intex_et_r;
 
 -- A parent reusing the predicate column leaves a filter output of a single same-typed UInt8, so
 -- pushing it would feed x > 0 into the set instead of x.

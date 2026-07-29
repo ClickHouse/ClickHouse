@@ -24,6 +24,9 @@ dec except on	1
 dec except off	1
 tuple dec on	(1)
 tuple dec off	(1)
+date str ok
+enum str ok
+empty tuple ok
 reuse on	3
 reuse off	3
 block mismatch	0
