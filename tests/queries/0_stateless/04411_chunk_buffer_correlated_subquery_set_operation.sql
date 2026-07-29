@@ -15,13 +15,14 @@ SET allow_experimental_correlated_subqueries = 1;
 -- Parallel replicas change the decorrelation execution path and row distribution; pin it off so the
 -- per-part _part_offset row counts are deterministic (same as the sibling decorrelation test 03734).
 SET enable_parallel_replicas = 0;
--- Both settings the buffer decision reads changed defaults in 26.1, so a randomized `compatibility`
--- below that version would build no buffer at all and the plan assertions at the end would see none.
--- A manually changed setting is not overwritten by `compatibility`, so pin them for this test.
+-- The stress runner injects a randomized `compatibility`, and every setting the buffer decision reads
+-- has an older default that would build no buffer at all, leaving the plan assertions at the end with
+-- nothing to see. A manually changed setting is not overwritten by `compatibility`, so pin all three:
+-- the buffer default became true in 26.1, the join kind became `right` in 25.10, and the older
+-- `join_algorithm` default (a single `default` entry, up to 24.12) cannot serve these decorrelation
+-- joins at all.
 SET correlated_subqueries_use_in_memory_buffer = 1;
 SET correlated_subqueries_default_join_kind = 'right';
--- The join algorithm list also changed defaults; the pre-24.3 value is the single `default` entry,
--- which cannot serve these decorrelation joins, so pin the list the decorrelated plan needs.
 SET join_algorithm = 'direct,parallel_hash,hash';
 
 DROP TABLE IF EXISTS t_chunk_buffer_set_op;
@@ -171,5 +172,24 @@ SELECT count() FROM (
 ) WHERE explain ILIKE '%ReadFromCommonBuffer%';
 
 SET correlated_subqueries_use_in_memory_buffer = 1;
+
+-- The reader counts prove which cases are buffered, but the fix is the forced join layout, so assert
+-- the layout too: with a buffer both decorrelation joins must be RIGHT even though the branch asked
+-- for 'left', and none may be LEFT.
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%Type: RIGHT%';
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%Type: LEFT%';
 
 DROP TABLE t_chunk_buffer_set_op;
