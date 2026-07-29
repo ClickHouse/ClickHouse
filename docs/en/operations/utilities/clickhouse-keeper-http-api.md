@@ -75,6 +75,16 @@ Query parameters:
 - `command` - The command to execute
 - `cwd` - Current working directory for path-based commands (default: `/`)
 
+Response (CLI commands):
+```json
+{
+  "result": "",
+  "cwd": "/clickhouse"
+}
+```
+
+`cwd` is the working directory after the command runs (so clients can track `cd` without reimplementing path checks). Four-letter-word commands do not include `cwd`.
+
 Examples:
 ```bash
 # Four-Letter Word command
@@ -82,6 +92,9 @@ curl http://localhost:9182/api/v1/commands/stat
 
 # ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+
+# Change directory and read returned cwd
+curl "http://localhost:9182/api/v1/commands?command=cd%20/clickhouse&cwd=/"
 ```
 
 ### Storage API {#storage-api}

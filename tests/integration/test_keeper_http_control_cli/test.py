@@ -77,6 +77,7 @@ def test_http_commands_cli_response(started_cluster):
         )
     )
     assert response.status_code == 200
+    assert response.json()["cwd"] == "/"
 
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
@@ -84,6 +85,54 @@ def test_http_commands_cli_response(started_cluster):
         assert client.get("foo") == "bar"
         client.rm("foo")
 
+
+def test_http_commands_cd_returns_cwd(started_cluster):
+    leader: ClickHouseInstance = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    prefix = str(uuid.uuid4())
+    dirname = f"{prefix}_dir"
+    spaced = f"{prefix} space node"
+
+    create_dir = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": f"create '{dirname}' _", "cwd": "/"},
+    )
+    assert create_dir.status_code == 200
+
+    create_spaced = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": f"create '/{dirname}/{spaced}' _", "cwd": "/"},
+    )
+    assert create_spaced.status_code == 200
+
+    cd_ok = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": f"cd '{dirname}'", "cwd": "/"},
+    )
+    assert cd_ok.status_code == 200
+    assert cd_ok.json()["cwd"] == f"/{dirname}"
+    assert cd_ok.json()["result"] == ""
+
+    # Quoted path with a space — parsed by backend parseKeeperArg
+    cd_space = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": f"cd '/{dirname}/{spaced}'", "cwd": "/"},
+    )
+    assert cd_space.status_code == 200
+    assert cd_space.json()["cwd"] == f"/{dirname}/{spaced}"
+
+    cd_missing = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": "cd /does_not_exist_cd_cwd", "cwd": f"/{dirname}"},
+    )
+    assert cd_missing.status_code == 200
+    body = cd_missing.json()
+    assert body["cwd"] == f"/{dirname}"  # unchanged on failure
+    assert "does not exist" in body["result"]
+
+    with keeper_utils.KeeperClient.from_cluster(
+        cluster, keeper_ip=leader.ip_address, port=9181
+    ) as client:
+        client.rmr(dirname)
 
 def test_http_commands_list(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])

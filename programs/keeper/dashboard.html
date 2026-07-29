@@ -438,6 +438,15 @@
             background-color: var(--input-background-color);
         }
 
+        /* Hidden while waiting for y/n on "Display all N possibilities?".
+           Keep the textarea in the DOM (and focused) so keydown still receives y/n. */
+        .command-prompt.pending-completion {
+            opacity: 0;
+            height: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
         .command-prompt-symbol {
             padding-left: 0.25rem;
             padding-right: 0.25rem;
@@ -1434,6 +1443,25 @@
 
     const COMPLETION_DISPLAY_LIMIT = 100;
     let pending_completion_display = null;
+    /// Signature of the last match list already printed — used to avoid stacking
+    /// duplicate column listings on repeated Tab.
+    let last_listed_completion_signature = null;
+    /// Full signature (prefix + matches) waiting behind "Display all? (y/n)".
+    let pending_completion_signature = null;
+
+    function completionSignature(matches) {
+        if (!matches || matches.length === 0)
+            return "";
+        return matches.length + "\0" + matches[0] + "\0" + matches[matches.length - 1];
+    }
+
+    function setPendingCompletionDisplay(matches, signature = null) {
+        pending_completion_display = matches;
+        pending_completion_signature = matches ? signature : null;
+        const prompt = document.querySelector(".command-prompt");
+        if (prompt)
+            prompt.classList.toggle("pending-completion", matches !== null);
+    }
 
     function resolvePath(path) {
         let abs = path.startsWith("/") ? path : (cli_cwd === "/" ? "/" + path : cli_cwd + "/" + path);
@@ -1584,11 +1612,20 @@
 
     function showCompletionMatches(inputValue, matches) {
         const container = document.getElementById("command-scrolling-container");
-        appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
+        const signature = completionSignature(matches);
+        if (signature !== "" && signature === last_listed_completion_signature) {
+            /// Same match set already printed — do not stack another copy.
+            container.scrollTop = container.scrollHeight;
+            return;
+        }
         if (matches.length > COMPLETION_DISPLAY_LIMIT) {
-            pending_completion_display = matches;
+            /// Echo the line being completed, then hide the live prompt until y/n/Tab.
+            appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
+            setPendingCompletionDisplay(matches, signature);
             appendToOutput(`Display all ${matches.length} possibilities? (y/n) `);
         } else {
+            /// Do not echo another ➜ prompt line — the live prompt already shows it.
+            last_listed_completion_signature = signature;
             appendToOutput(formatColumns(matches));
         }
         container.scrollTop = container.scrollHeight;
@@ -1683,6 +1720,7 @@
 
     function clearCommandOutput() {
         document.querySelector("#command-output").innerHTML = "";
+        last_listed_completion_signature = null;
     }
 
     function appendToOutput(text) {
@@ -1700,39 +1738,6 @@
         executeCommand(command);
     }
 
-    async function handleCdCommand(command) {
-        const trimmed = command.trim();
-        if (!trimmed.startsWith("cd ") && trimmed !== "cd") return false;
-
-        let newPath = trimmed === "cd" ? "/" : trimmed.substring(3).trim();
-        /// Tab completion / CLI typing emit escaped forms (e.g. /space\\ node,
-        /// /root/'dq"node'). Unescape with the same rules as parseKeeperArg
-        /// before HEAD lookup so the real znode path is checked.
-        const unescapedPath = unescapeKeeperArg(newPath);
-        if (unescapedPath === null) {
-            appendToOutput("Syntax error: invalid path argument\n");
-            return true;
-        }
-        const targetPath = resolvePath(unescapedPath);
-
-        try {
-            const check_url = new URL(window.location);
-            check_url.pathname = `/api/v1/storage${targetPath}`;
-            const res = await fetch(check_url.toString(), { method: "HEAD" });
-            if (!res.ok) {
-                appendToOutput(`Path does not exist: ${targetPath}\n`);
-                return true;
-            }
-        } catch (e) {
-            appendToOutput(`Failed to verify path: ${targetPath}\n`);
-            return true;
-        }
-
-        cli_cwd = targetPath;
-        updateCwdDisplay();
-        return true;
-    }
-
     async function executeCommand(command) {
         let command_input = document.querySelector("#command");
         let command_output = document.querySelector("#command-output");
@@ -1744,16 +1749,10 @@
             cli_history.push(command);
         }
         cli_history_index = cli_history.length;
+        last_listed_completion_signature = null;
 
         appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         command_container.scrollTop = command_container.scrollHeight;
-
-        if (await handleCdCommand(command)) {
-            // Error/output may have been appended after the earlier scroll; keep the prompt in view.
-            command_container.scrollTop = command_container.scrollHeight;
-            command_input.focus();
-            return;
-        }
 
         command_input.disabled = true;
 
@@ -1766,6 +1765,12 @@
         }).toString())
             .then(response => response.json())
             .then(data => {
+                /// Backend returns cwd after CLI commands (including `cd`) so the
+                /// dashboard does not reimplement path parsing / existence checks.
+                if (typeof data.cwd === "string" && data.cwd !== "") {
+                    cli_cwd = data.cwd;
+                    updateCwdDisplay();
+                }
                 if (data.result !== undefined) {
                     appendToOutput(data.result);
                 } else if (data.message !== undefined) {
@@ -1805,22 +1810,29 @@
 
         command_input.addEventListener("keydown", function (event) {
             if (pending_completion_display !== null) {
-                if (event.key === "y" || event.key === "Y") {
+                /// Tab / y → show all. n → decline. Other keys cancel the prompt.
+                /// Previously Tab fell through: it cleared the question then re-asked,
+                /// which looked like the completion hints "disappeared".
+                if (event.key === "y" || event.key === "Y" || event.code === "Tab") {
                     event.preventDefault();
-                    appendToOutput("y\n" + formatColumns(pending_completion_display));
-                    pending_completion_display = null;
+                    const answer = (event.code === "Tab") ? "" : "y";
+                    last_listed_completion_signature = pending_completion_signature;
+                    appendToOutput(answer + "\n" + formatColumns(pending_completion_display));
+                    setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
                 }
                 if (event.key === "n" || event.key === "N") {
                     event.preventDefault();
                     appendToOutput("n\n");
-                    pending_completion_display = null;
+                    last_listed_completion_signature = null;
+                    setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
                 }
                 appendToOutput("\n");
-                pending_completion_display = null;
+                last_listed_completion_signature = null;
+                setPendingCompletionDisplay(null);
                 command_container.scrollTop = command_container.scrollHeight;
             }
             if (event.code === "Tab") {

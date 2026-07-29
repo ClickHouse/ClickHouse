@@ -419,6 +419,9 @@ try
 
         client.processQueryText(command);
         response_json.set("result", stream.str());
+        /// Return cwd after execution so clients (e.g. the dashboard) can track
+        /// `cd` without reimplementing path parsing / existence checks.
+        response_json.set("cwd", client.cwd.string());
     }
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
