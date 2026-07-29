@@ -313,6 +313,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
+            /// Not formatted at all: the type is taken from the query text as written, so
+            /// `defaultValueOfTypeName` parses back exactly what the user wrote. This also subsumes
+            /// master's move away from `formatForLogging`, which hid secrets a data type does not
+            /// have and ran the server's `query_masking_rules` over the result.
             /// Reached only when a type was parsed above, which is what fills in `type_text`.
             chassert(!type_text.empty());
             default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(astText(*type, type_text)));
