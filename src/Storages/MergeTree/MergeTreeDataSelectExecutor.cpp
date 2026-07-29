@@ -115,6 +115,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -847,7 +848,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     {
         try
         {
-            auto estimates = part.data_part->getEstimates(candidate_columns);
+            auto estimates = part.data_part->getEstimates(candidate_columns, settings[Setting::use_statistics_cache]);
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {
                 LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
