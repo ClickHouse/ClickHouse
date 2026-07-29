@@ -279,14 +279,14 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
 
 bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
 {
-    std::lock_guard lock(exclusiveProcessingPathsMutex);
-    return exclusiveProcessingPaths.insert(getMetadataCacheKey(path)).second;
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
 }
 
 void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
 {
-    std::lock_guard lock(exclusiveProcessingPathsMutex);
-    exclusiveProcessingPaths.erase(getMetadataCacheKey(path));
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const

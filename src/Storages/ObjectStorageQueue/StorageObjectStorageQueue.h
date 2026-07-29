@@ -221,12 +221,9 @@ private:
         int error_code = 0) const;
     /// Commit processed files for EXCLUSIVE mode
     void commitExclusive(
-        bool insert_succeeded,
-        size_t inserted_rows,
+        const StoredObjects& successful_objects,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        time_t transaction_start_time,
-        const std::string & exception_message,
-        int error_code) const;
+        time_t transaction_start_time) const;
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;

@@ -43,24 +43,15 @@ ObjectStorageQueueExclusiveFileMetadata::prepareProcessingRequestsImpl(
 void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordination::Requests & /*requests*/, bool retriable)
 {
     if (retriable)
+    {
         file_status->retries.fetch_add(1, std::memory_order_relaxed);
-    else
-        file_status->retries = max_loading_retries ? max_loading_retries : 1;
+    }
     // Nothing is changed in zookeeper.
     LOG_TRACE(log, "Prepare {} failed request", path);
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
 {
-    const auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed && file_status->retries && file_status->retries >= max_loading_retries))
-    {
-        LOG_TEST(
-            log, "File {} has non-processable state `{}` (retries: {}/{})", path, state, file_status->retries.load(), max_loading_retries);
-        return std::pair{false, state};
-    }
-
     if (!metadata.tryAcquireExclusiveProcessing(path))
         return std::pair{false, ObjectStorageQueueIFileMetadata::FileStatus::State::Processing};
 
@@ -99,16 +90,11 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
 {
     const auto state = file_status->state.load();
 
-    switch (state) {
-
-    case FileStatus::State::Processed:
-        return PathState::Processed;
-
-    case FileStatus::State::Failed:
-        return PathState::Failed;
-
-    default:
-        return PathState::Unknown;
+    switch (state)
+    {
+        case FileStatus::State::Processed: return PathState::Processed;
+        case FileStatus::State::Failed:    return PathState::Failed;
+        default:                           return PathState::Unknown;
     }
 }
 
