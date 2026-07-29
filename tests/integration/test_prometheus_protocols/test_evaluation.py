@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -470,6 +471,49 @@ def start_cluster():
         cluster.shutdown()
 
 
+# Compares two Prometheus matrix-result JSON strings, allowing the value at one specific grid-point
+# `timestamp` to differ by up to `eps`; every other timestamp (and every other field) must match
+# exactly. This exists for grid points where real Prometheus' own computation is not portable
+# bit-for-bit across CPU architectures (see the `stdvar_over_time` case in `test_function_over_time`)
+# - it is deliberately narrower than `http_api_response_close_to`, which applies `eps` to every value.
+def matrix_result_close_to_at_timestamp(actual, expected, timestamp, eps):
+    if actual == expected:
+        return True
+
+    actual_json = json.loads(actual)
+    expected_json = json.loads(expected)
+
+    if actual_json["resultType"] != "matrix" or expected_json["resultType"] != "matrix":
+        return False
+
+    actual_result = actual_json["result"]
+    expected_result = expected_json["result"]
+    if len(actual_result) != len(expected_result):
+        return False
+
+    for actual_series, expected_series in zip(actual_result, expected_result):
+        if actual_series["metric"] != expected_series["metric"]:
+            return False
+
+        actual_values = actual_series["values"]
+        expected_values = expected_series["values"]
+        if len(actual_values) != len(expected_values):
+            return False
+
+        for (actual_t, actual_v), (expected_t, expected_v) in zip(
+            actual_values, expected_values
+        ):
+            if actual_t != expected_t:
+                return False
+            if actual_t == timestamp:
+                if abs(float(actual_v) - float(expected_v)) > eps:
+                    return False
+            elif actual_v != expected_v:
+                return False
+
+    return True
+
+
 # Evaluates the same query in Prometheus and in ClickHouse and compare the results.
 def do_query_test(
     query,
@@ -478,8 +522,18 @@ def do_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
+    prometheus_result_eps_at_timestamp=None,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_result_from_prometheus = execute_query_in_prometheus(query, timestamp)
+    if prometheus_result_eps_at_timestamp is None:
+        assert actual_result_from_prometheus == result
+    else:
+        assert matrix_result_close_to_at_timestamp(
+            actual_result_from_prometheus,
+            result,
+            prometheus_result_eps_at_timestamp,
+            eps,
+        ), f"actual result from Prometheus: {actual_result_from_prometheus}, expected: {result}"
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -847,12 +901,15 @@ def test_function_over_time():
         eps=1e-9,
     )
 
-    # The `150` grid point's expected value is `1.6875000000000002`, not the mathematically exact `1.6875`,
-    # because real Prometheus' own single-pass Kahan/Welford `varianceOverTime` (promql/functions.go) is itself
-    # not portable bit-for-bit across architectures for this window: on amd64 (what CI's integration tests run
-    # on) it rounds the last operation to `1.6875000000000002`, confirmed by running the actual upstream
-    # `prometheus-3.5.0.darwin-amd64` binary against this exact series - on arm64 the same binary and query
-    # yield the exact `1.6875`. This is Prometheus' ground truth here, not a ClickHouse discrepancy.
+    # The `150` grid point's value is not portable bit-for-bit across CPU architectures: real
+    # Prometheus' own single-pass Kahan/Welford `varianceOverTime` (promql/functions.go) rounds the
+    # last operation to `1.6875000000000002` on amd64, but to the mathematically exact `1.6875` on
+    # arm64, confirmed by running the actual upstream `prometheus-3.5.0` binary against this exact
+    # series on both architectures. This is Prometheus' own ground truth diverging by CPU
+    # architecture, not a ClickHouse discrepancy, and no single hardcoded literal can equal
+    # Prometheus' live output on every architecture - so `prometheus_result_eps_at_timestamp`
+    # tolerates a tiny difference at just this one grid point while every other grid point (here and
+    # in every other test case) still requires an exact match.
     do_query_test(
         "stdvar_over_time(test[45s])[120s:15s]",
         210,
@@ -864,6 +921,7 @@ def test_function_over_time():
             ]
         ],
         eps=1e-9,
+        prometheus_result_eps_at_timestamp=150,
     )
 
     # Single-sample-window: staleness window (5s) narrower than the step (10s) between
