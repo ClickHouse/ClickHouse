@@ -165,6 +165,11 @@ OTHER_CC = "/ClickHouse/contrib/orc/c++/src/Adaptor.cc"
 OTHER_C = "/ClickHouse/contrib/zlib-ng/adler32.c"
 SAFETY, SIZE = (f"-D{macro}" for macro in REQUIRED_MACROS)
 BOTH = f"{SAFETY} {SIZE}"
+# Not one of the macros the option passes, but the preamble's two initializers each accept it
+# as an alternative (`:191` `#elif defined(JEMALLOC_DEBUG)`, `:208`
+# `|| defined(JEMALLOC_DEBUG)`), so it arms both gates on its own - which makes it the shape
+# that separates "our macro is present" from "the gate is armed".
+DEBUG_MACRO = "JEMALLOC_DEBUG"
 SPLIT_SAFETY, SPLIT_SIZE = (f"-D {macro}" for macro in REQUIRED_MACROS)
 
 _CONFIG_FLAG_BLOCK_RE = re.compile(
@@ -172,15 +177,20 @@ _CONFIG_FLAG_BLOCK_RE = re.compile(
 )
 
 
-def _probe_include_root(tmp_path: Path) -> Path:
+def _probe_include_root(tmp_path: Path, prologue: str = "") -> Path:
     """A minimal include tree whose `jemalloc_preamble.h` is the real one's two gates.
 
-    The build job's probe includes `jemalloc/internal/jemalloc_preamble.h` and
-    `_Static_assert`s both `config_opt_*` booleans. Compiling the real header needs a
-    configured tree (its include chain reaches `configure_file`d and generated headers),
-    which the `CI Tests` job does not have, so these cases stand up a header carrying the
-    two initializers *copied out of the real file* - not hand-written, so a reshaped
-    initializer cannot leave them exercising a stale shape.
+    Both probes include `jemalloc/internal/jemalloc_preamble.h` and `_Static_assert` both
+    `config_opt_*` booleans. Compiling the real header needs a configured tree (its include
+    chain reaches `configure_file`d and generated headers), which the `CI Tests` job does not
+    have, so these cases stand up a header carrying the two initializers *copied out of the
+    real file* - not hand-written, so a reshaped initializer cannot leave them exercising a
+    stale shape.
+
+    `prologue` is spliced in *above* the initializers, which is where the real preamble's own
+    four includes sit (`:4`, `:5`, `:40`, `:54`): a directive arriving from there decides the
+    gates just as a `-D` does, and it is the route a probe that does not include the header
+    cannot see.
     """
     text = re.sub(
         r"/\*.*?\*/", "", JEMALLOC_PREAMBLE.read_text(encoding="utf-8"), flags=re.S
@@ -198,6 +208,7 @@ def _probe_include_root(tmp_path: Path) -> Path:
         # The real preamble gets `bool` from the headers it includes first; the
         # initializers are copied without them, so declare it here.
         "#include <stdbool.h>\n"
+        + prologue
         + "\n".join(blocks[flag] for flag in sorted(blocks))
         + "\n",
         encoding="utf-8",
@@ -1145,8 +1156,15 @@ _NON_DEFINING_FORMS = [
 ]
 
 
-def _absent_verdict(tmp_path, flags):
-    """`assert_jemalloc_safety_macros_absent`'s verdict for one jemalloc entry."""
+def _absent_verdict(tmp_path, flags, preamble_defines=""):
+    """`assert_jemalloc_safety_macros_absent`'s verdict for one jemalloc entry.
+
+    The entry gets the minimal include tree, because this direction's probe models a real
+    jemalloc translation unit and so includes `jemalloc_preamble.h`. `preamble_defines` is
+    text spliced into the header *above* the gate initializers, standing in for a definition
+    arriving through one of the four headers the real preamble includes there.
+    """
+    root = _probe_include_root(tmp_path, prologue=preamble_defines)
     path = tmp_path / "compile_commands.json"
     path.write_text(
         json.dumps(
@@ -1154,7 +1172,7 @@ def _absent_verdict(tmp_path, flags):
                 {
                     "directory": str(tmp_path),
                     "file": JE,
-                    "command": f"{ToolSet.COMPILER_C} {flags} -o out.o -c {JE}",
+                    "command": f"{ToolSet.COMPILER_C} -I{root} {flags} -o out.o -c {JE}",
                 }
             ]
         ),
@@ -1236,6 +1254,122 @@ def test_the_absent_check_rejects_an_inconclusive_probe(compiler_probe, tmp_path
     )
 
 
+def test_the_absent_check_sees_a_definition_from_a_pre_included_header(
+    compiler_probe, tmp_path
+):
+    """A macro can arrive with no macro name on the compile line at all.
+
+    `-include <hdr>` is the route with no `-D` anywhere, so it is the one a probe that only
+    tests the command line still catches - the premise is asserted first, so the case cannot
+    go vacuous if clang stops honouring the flag.
+    """
+    header = tmp_path / "predefine.h"
+    header.write_text(f"#define {REQUIRED_MACROS[0]} 1\n", encoding="utf-8")
+    flags = f"-include {header}"
+    assert _compiler_defines(tmp_path, flags, REQUIRED_MACROS[0]), (
+        f"the compiler does not actually define {REQUIRED_MACROS[0]} with {flags!r}, so "
+        "this case asserts nothing; re-derive it"
+    )
+    verdict = _absent_verdict(tmp_path, flags)
+    assert verdict is not None and "did not request" in verdict, (
+        "a macro pre-included into the translation unit is still defined for it; got "
+        f"{verdict}"
+    )
+
+
+def test_the_absent_check_sees_a_definition_arriving_through_the_preamble(
+    compiler_probe, tmp_path
+):
+    """The route only a probe that includes `jemalloc_preamble.h` can see.
+
+    The real preamble `#include`s four headers above the gate initializers (`:4`, `:5`,
+    `:40`, `:54`), so a `#define` in any of them reaches a jemalloc translation unit with
+    nothing on the compile line to show it. The probe therefore has to model the translation
+    unit, not the command line: with the two bare `#ifdef`s and no include it used to
+    compile clean and print a default-off verdict over a build whose gate was armed.
+
+    The fixture splices the `#define` into the header above the initializers, exactly where
+    those includes sit; the include-order property is pinned separately below.
+    """
+    verdict = _absent_verdict(
+        tmp_path, "", preamble_defines=f"#define {REQUIRED_MACROS[1]} 1\n"
+    )
+    assert verdict is not None, (
+        "a macro defined inside the preamble above the initializers is in effect for the "
+        "translation unit, so the absent check must reject it"
+    )
+    assert REQUIRED_MACROS[1] in verdict, (
+        f"the failure must name {REQUIRED_MACROS[1]}; got:\n{verdict}"
+    )
+
+
+def test_the_absent_probe_tests_the_macros_after_including_the_preamble():
+    """Order is the property: testing before the include tests the command line instead.
+
+    This is what `test_..._arriving_through_the_preamble` above depends on, pinned directly
+    so the two cannot drift: the include has to come first, or a directive arriving through
+    one of the preamble's own includes is evaluated before it happens.
+    """
+    source = build_job.JEMALLOC_ABSENT_PROBE_SOURCE
+    include_at = source.index("jemalloc_preamble.h")
+    for macro in REQUIRED_MACROS:
+        assert include_at < source.index(f"#ifdef {macro}"), (
+            f"the `#ifdef {macro}` must follow the preamble include, or a definition "
+            "arriving through one of the headers it includes is tested before it happens"
+        )
+    for flag in build_job.JEMALLOC_CONFIG_FLAGS:
+        assert include_at < source.index(flag), (
+            f"the `_Static_assert` on {flag} must follow the preamble include; the boolean "
+            "does not exist before it"
+        )
+
+
+def test_the_absent_check_reports_an_armed_gate_as_its_own_finding(
+    compiler_probe, tmp_path
+):
+    """Three outcomes, three messages: carried, armed, inconclusive.
+
+    A gate can be armed by something that is not one of our two macros - the preamble
+    accepts `JEMALLOC_DEBUG` for both (`:191`, `:208`) - and jemalloc's detector sites read
+    the booleans, not the macros. That is a real finding, so it must not be reported as an
+    inconclusive probe, and it must be distinguishable from a macro of ours being present.
+    """
+    armed = _absent_verdict(tmp_path, f"-D{DEBUG_MACRO}")
+    carried = _absent_verdict(tmp_path, SAFETY)
+    inconclusive = _absent_verdict(tmp_path, "--nonexistent-flag")
+    assert armed is not None and "is armed for" in armed, (
+        f"a gate armed without either of our macros must be reported as armed; got:\n"
+        f"{armed}"
+    )
+    assert "inconclusive" not in armed, (
+        f"an armed gate is an answer, not a probe that could not answer; got:\n{armed}"
+    )
+    assert carried is not None and "is defined for" in carried, carried
+    assert inconclusive is not None and "inconclusive" in inconclusive, inconclusive
+    assert len({armed, carried, inconclusive}) == 3, (
+        "the three outcomes must be distinguishable, so a failure says which one it is"
+    )
+
+
+def test_the_leak_probe_deliberately_does_not_include_the_preamble():
+    """The scope correction, pinned: only the absent direction models a jemalloc TU.
+
+    `assert_jemalloc_macros_stay_private` asks whether a macro reaches a **non**-jemalloc
+    translation unit, and those do not include `jemalloc_preamble.h` - its include chain is
+    not even on their include path, so adding the include there would turn every one of them
+    inconclusive while testing a question none of them faces.
+    """
+    assert "jemalloc_preamble" not in build_job.JEMALLOC_LEAK_PROBE_SOURCE, (
+        "the leak probe must not include the preamble: non-jemalloc translation units do "
+        "not include it, so the probe would answer a question none of them faces and fail "
+        "for want of the header's include chain"
+    )
+    assert "jemalloc_preamble" in build_job.JEMALLOC_ABSENT_PROBE_SOURCE, (
+        "the absent probe must include the preamble: it models a jemalloc translation unit, "
+        "which does"
+    )
+
+
 def test_the_absent_check_probes_a_cxx_entry_as_cxx(compiler_probe, tmp_path):
     """The probe's language must follow the entry, or a C++ entry reads as inconclusive.
 
@@ -1249,6 +1383,7 @@ def test_the_absent_check_probes_a_cxx_entry_as_cxx(compiler_probe, tmp_path):
     Driven with C++-only flags, so a C compile cannot pass: `-std=c++20` is rejected by
     the C frontend.
     """
+    root = _probe_include_root(tmp_path)
     path = tmp_path / "compile_commands.json"
     cxx = "/ClickHouse/contrib/jemalloc/src/jemalloc_cpp.cpp"
     path.write_text(
@@ -1257,7 +1392,8 @@ def test_the_absent_check_probes_a_cxx_entry_as_cxx(compiler_probe, tmp_path):
                 {
                     "directory": str(tmp_path),
                     "file": cxx,
-                    "command": f"{ToolSet.COMPILER_C} -std=c++20 -o out.o -c {cxx}",
+                    "command": f"{ToolSet.COMPILER_C} -I{root} -std=c++20 -o out.o "
+                    f"-c {cxx}",
                 }
             ]
         ),
@@ -1275,8 +1411,8 @@ def test_the_absent_check_probes_a_cxx_entry_as_cxx(compiler_probe, tmp_path):
                 {
                     "directory": str(tmp_path),
                     "file": cxx,
-                    "command": f"{ToolSet.COMPILER_C} -std=c++20 {SAFETY} -o out.o "
-                    f"-c {cxx}",
+                    "command": f"{ToolSet.COMPILER_C} -I{root} -std=c++20 {SAFETY} "
+                    f"-o out.o -c {cxx}",
                 }
             ]
         ),
@@ -1295,6 +1431,7 @@ def test_the_absent_check_probes_one_entry_per_distinct_flag_set(
     makes asking the compiler affordable here. The count is printed, so a future per-file
     divergence is visible rather than silently unprobed.
     """
+    root = _probe_include_root(tmp_path)
     path = tmp_path / "compile_commands.json"
     path.write_text(
         json.dumps(
@@ -1302,7 +1439,8 @@ def test_the_absent_check_probes_one_entry_per_distinct_flag_set(
                 {
                     "directory": str(tmp_path),
                     "file": f"/ClickHouse/contrib/jemalloc/src/unit{index}.c",
-                    "command": f"{ToolSet.COMPILER_C} -DSHARED=1 -o out{index}.o "
+                    "command": f"{ToolSet.COMPILER_C} -I{root} -DSHARED=1 "
+                    f"-o out{index}.o "
                     f"-c /ClickHouse/contrib/jemalloc/src/unit{index}.c",
                 }
                 for index in range(5)
@@ -1385,6 +1523,7 @@ MARKER_MISSED = "the source marker matched nothing"
 
 def _macros_absent(tmp_path, entries) -> str | None:
     """The absent checker's verdict for these `(file, flags)` pairs, `None` if accepted."""
+    root = _probe_include_root(tmp_path)
     path = tmp_path / "compile_commands.json"
     path.write_text(
         json.dumps(
@@ -1392,7 +1531,7 @@ def _macros_absent(tmp_path, entries) -> str | None:
                 {
                     "directory": str(tmp_path),
                     "file": file,
-                    "command": f"clang-21 {flags} -o out.o -c {file}",
+                    "command": f"clang-21 -I{root} {flags} -o out.o -c {file}",
                 }
                 for file, flags in entries
             ]
@@ -1738,11 +1877,6 @@ def test_the_build_job_asserts_nothing_about_jemalloc_elsewhere(build_job_run, b
     )
 
 
-# `JEMALLOC_DEBUG` is not one of the macros the option passes, but the preamble's two
-# initializers each accept it as an alternative (`:191` `#elif defined(JEMALLOC_DEBUG)`,
-# `:208` `|| defined(JEMALLOC_DEBUG)`), so a platform header defining it would arm both
-# gates on its own. It belongs in this search for the same reason the two `-D` macros do.
-DEBUG_MACRO = "JEMALLOC_DEBUG"
 _PLATFORM_HEADER_MACROS = REQUIRED_MACROS + (DEBUG_MACRO,)
 _PLATFORM_DIRECTIVE_RE_TEMPLATE = r"^\s*#\s*(?:undef|define)\s+{macro}\b.*$"
 

@@ -294,6 +294,45 @@ JEMALLOC_LEAK_PROBE_SOURCE = "".join(
     for macro in JEMALLOC_SAFETY_MACROS
 ) + "int jemalloc_leak_probe_ok;\n"
 
+# The two booleans jemalloc's detector sites read. `jemalloc_preamble.h` is the sole place
+# each `-D` becomes one of them.
+JEMALLOC_CONFIG_FLAGS = ("config_opt_safety_checks", "config_opt_size_checks")
+
+# The absent probe's third outcome, kept textually distinct from the `#error` marker above so
+# the caller can tell the two apart: a gate is armed although neither of *our* macros is on
+# the line, which the preamble does for `JEMALLOC_DEBUG` alone (`:191`, `:208`) and would also
+# do for a rewritten condition.
+JEMALLOC_GATE_ARMED_MARKER = "{flag} is in effect in this translation unit"
+
+# The absent direction's probe. Unlike the leak probe it models a real jemalloc translation
+# unit: it `#include`s `jemalloc_preamble.h` first, so a definition arriving through one of
+# the four headers that file includes above the gate initializers (`:4`, `:5`, `:40`, `:54`)
+# is seen, rather than only a definition spelled on the command line. The leak probe cannot
+# do this - see `assert_jemalloc_macros_stay_private` - because non-jemalloc translation
+# units do not include the preamble at all.
+#
+# Two layers, answering two different questions, exactly as the arming probe's do. The
+# `#ifdef` pair asks whether *our* macro reaches the unit; it reuses `JEMALLOC_LEAK_MARKER`
+# so the caller's carried-vs-inconclusive split needs no new parsing. The `_Static_assert`
+# pair asks whether the gate is armed at all, which catches the case our macros cannot
+# express: the preamble arming a boolean from something else. Measured on a configured
+# `amd_debug` tree (`-DCMAKE_BUILD_TYPE=Debug -DSANITIZE=`), both booleans are false and
+# `JEMALLOC_DEBUG` is undefined for jemalloc's own translation units - the cmake files never
+# define it and the configured `jemalloc_internal_defs.h` leaves it `#undef` - so the
+# assertions hold there and only fire on a real change of state.
+JEMALLOC_ABSENT_PROBE_SOURCE = (
+    '#include "jemalloc/internal/jemalloc_preamble.h"\n'
+    + "".join(
+        f'#ifdef {macro}\n#error "{JEMALLOC_LEAK_MARKER.format(macro=macro)}"\n#endif\n'
+        for macro in JEMALLOC_SAFETY_MACROS
+    )
+    + "".join(
+        f'_Static_assert(!{flag}, "{JEMALLOC_GATE_ARMED_MARKER.format(flag=flag)}");\n'
+        for flag in JEMALLOC_CONFIG_FLAGS
+    )
+    + "int jemalloc_absent_probe_ok;\n"
+)
+
 # The extensions clang compiles as C++. Everything else is probed as C; the language has to
 # match the entry, because a C probe compiled with C++ flags fails for reasons of its own
 # and would read as an inconclusive probe on a perfectly clean compile line.
@@ -315,7 +354,9 @@ def _cannot_define_by_construction(flags):
     return os.path.basename(flags[0]) in NON_PREPROCESSING_COMPILERS if flags else False
 
 
-def run_jemalloc_leak_probe(flags, directory, language):
+def run_jemalloc_leak_probe(
+    flags, directory, language, source=JEMALLOC_LEAK_PROBE_SOURCE
+):
     """Ask the compiler whether either safety macro is defined on this compile line.
 
     Returns `(leaked_macros, stderr)`: the macros whose `#error` fired, and the compiler's
@@ -325,12 +366,16 @@ def run_jemalloc_leak_probe(flags, directory, language):
     missing generated header, an unrelated diagnostic under `-Werror` or an assembler that
     does not understand `-fsyntax-only` all land here. The caller must not pass such a
     probe, and must not report it as a leak either - hence the two return channels.
+
+    `source` selects which probe is compiled, because the two callers model different
+    translation units: the leak sweep asks about a non-jemalloc unit, which does not include
+    `jemalloc_preamble.h`, and the absent check asks about a jemalloc one, which does.
     """
     try:
         process = subprocess.run(
             flags + ["-fsyntax-only", "-x", language, "-"],
             cwd=directory,
-            input=JEMALLOC_LEAK_PROBE_SOURCE,
+            input=source,
             capture_output=True,
             text=True,
             check=False,
@@ -514,8 +559,16 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     thought of, and each driver flag that forwards its operands to the preprocessor is
     another spelling (`-Wp,-DX`, `-Xpreprocessor -D -Xpreprocessor X`,
     `-Xclang -D -Xclang X`, a `-D` inside an `@response` file or a pre-included header).
-    `JEMALLOC_LEAK_PROBE_SOURCE` already `#error`s exactly when a macro is defined, which
-    is precisely this check's failure condition, so it needs no probe source of its own.
+
+    The probe is `JEMALLOC_ABSENT_PROBE_SOURCE`, which models a real jemalloc translation
+    unit: it includes `jemalloc_preamble.h` before testing anything, so a definition
+    arriving through one of that header's own includes counts, and it `_Static_assert`s both
+    `config_opt_*` booleans so a gate armed from something other than our macros is caught
+    too. That is three outcomes, kept distinguishable: **carried** (one of our macros
+    reaches the unit), **armed** (a gate is on without them) and **inconclusive** (the probe
+    could not answer). The leak sweep keeps `JEMALLOC_LEAK_PROBE_SOURCE`, which deliberately
+    does not include the preamble - non-jemalloc translation units do not include it either,
+    and its include chain is not on their include path.
 
     Cost is one compile: the flags are per-target, so probing one entry per **distinct**
     flag set covers them all, exactly as the arming half does (a non-safety build has ~67
@@ -571,8 +624,27 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     for flags, entry in probed.items():
         language = "c++" if entry["file"].endswith(CXX_SOURCE_EXTENSIONS) else "c"
         macros, stderr = run_jemalloc_leak_probe(
-            list(flags), entry["directory"], language
+            list(flags),
+            entry["directory"],
+            language,
+            source=JEMALLOC_ABSENT_PROBE_SOURCE,
         )
+        # A gate armed with neither of our macros present is a real finding of its own, so
+        # it gets its own message rather than reading as an inconclusive probe.
+        armed = [
+            flag
+            for flag in JEMALLOC_CONFIG_FLAGS
+            if JEMALLOC_GATE_ARMED_MARKER.format(flag=flag) in stderr
+        ]
+        if armed and not macros:
+            raise AssertionError(
+                f"{', '.join(armed)} is armed for {entry['file']} although neither "
+                f"{' nor '.join(JEMALLOC_SAFETY_MACROS)} reaches it, in a build that did "
+                "not request ENABLE_JEMALLOC_SAFETY_CHECKS. jemalloc's detector sites read "
+                "these booleans, so the gates are on while the compile line looks clean - "
+                "jemalloc_preamble.h arms both of them for JEMALLOC_DEBUG alone (:191, "
+                f":208).\ndirectory: {entry['directory']}\n{stderr}"
+            )
         if stderr and not macros:
             raise AssertionError(
                 "the jemalloc safety-macro probe is inconclusive for "
