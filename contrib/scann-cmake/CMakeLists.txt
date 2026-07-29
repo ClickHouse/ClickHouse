@@ -134,14 +134,6 @@ file(GLOB_RECURSE SCANN_EXCLUDE_SOURCES
 )
 list(REMOVE_ITEM SCANN_SOURCES ${SCANN_EXCLUDE_SOURCES})
 
-# kmeans_tree_partitioner.cc calls std::shared_ptr::unique() which was removed in C++20.
-# Reverting to -std=c++17 restores the method (deprecated but present in C++17).
-# Note: CXX_STANDARD is a target-level property; COMPILE_OPTIONS must be used for per-file overrides.
-set_source_files_properties(
-    "${SCANN_SOURCE_DIR}/scann/partitioning/kmeans_tree_partitioner.cc"
-    PROPERTIES COMPILE_OPTIONS "-std=c++17"
-)
-
 # one_to_many_asymmetric.cc and the *_sse4.cc distance implementations use SSE3,
 # SSSE3, or SSE4.1 always_inline intrinsics.  On SSE2-only builds (amd_compat) the
 # compiler rejects calls to intrinsics that require target features not enabled
@@ -503,6 +495,11 @@ add_library(_scann
     ${SCANN_PROTO_SRCS}
 )
 
+# ScaNN uses C++17 APIs such as `std::shared_ptr::unique`. Abseil is also built as
+# C++17 in ClickHouse; using the same standard keeps its configurable types, such
+# as `absl::SourceLocation`, ABI-compatible between ScaNN and the Abseil libraries.
+set_target_properties(_scann PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
 target_include_directories(_scann SYSTEM PUBLIC
     # The build directory is listed first so patched headers (e.g. avx512.h on
     # macOS) and generated .pb.h files take precedence over the ScaNN sources.
@@ -551,6 +548,8 @@ target_compile_options(_scann PRIVATE -w)
 
 target_link_libraries(_scann PUBLIC
     ch_contrib::abseil_swiss_tables
+    absl::status
+    absl::statusor
     ch_contrib::protobuf
     ch_contrib::highway
     ch_contrib::eigen
