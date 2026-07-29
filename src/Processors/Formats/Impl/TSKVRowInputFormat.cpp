@@ -3,9 +3,8 @@
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -272,19 +271,9 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         String name = String(name_ref);
         if (has_value)
         {
-            const size_t bytes_before = in.count();
-            readEscapedString(value, in);
-            /// This reader decodes escape sequences while the value path parses the original bytes, so a
-            /// field whose escapes were decoded must not infer a number: the number readers would stop at
-            /// the backslash. A decoded escape always changes the byte count, and the one escape branch
-            /// that does not keeps the backslash in the value, which never infers a number.
-            const bool had_escape = (in.count() - bytes_before) != value.size();
-
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
-            if (had_escape && type && isNumber(removeNullable(recursiveRemoveLowCardinality(type))))
-                type = std::make_shared<DataTypeString>();
-
-            names_and_types.emplace_back(std::move(name), std::move(type));
+            /// Read without decoding escape sequences, because the value path parses the original bytes.
+            readTSVField(value, in);
+            names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
@@ -299,6 +288,11 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     assertChar('\n', in);
 
     return names_and_types;
+}
+
+void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatTSKV(FormatFactory & factory);

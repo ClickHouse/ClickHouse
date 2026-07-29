@@ -63,6 +63,7 @@ public:
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool first_row = true;
 };
