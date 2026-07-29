@@ -60,6 +60,8 @@ FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path
 
 FileCacheRocksDBIndex::~FileCacheRocksDBIndex()
 {
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheRocksDBIndexElements, tracked_elements.exchange(0));
+
     if (db)
     {
         auto status = db->Close();
@@ -163,7 +165,10 @@ void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 s
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to write to RocksDB index: {}", status.ToString());
 
     if (is_new_entry)
+    {
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
+        ++tracked_elements;
+    }
 }
 
 void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
@@ -178,6 +183,7 @@ void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to delete from RocksDB index: {}", status.ToString());
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
+    --tracked_elements;
 }
 
 bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset) const
@@ -240,6 +246,7 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
     auto entries = loadAll();
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
+    tracked_elements += static_cast<Int64>(entries.size());
 
     /// The number of loaded entries is logged by the caller (`FileCache::loadMetadata`)
     /// together with the load duration, so it is not logged here to avoid a duplicate message.

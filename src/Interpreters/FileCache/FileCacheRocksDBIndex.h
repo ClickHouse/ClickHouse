@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -66,6 +67,9 @@ private:
     std::unique_ptr<rocksdb::DB> db;
     LoggerPtr log;
     bool initialized = false;
+    /// How much this instance contributed to the global `FilesystemCacheRocksDBIndexElements` metric.
+    /// The metric is process-wide, so the destructor gives back exactly what was added here.
+    std::atomic<Int64> tracked_elements = 0;
 
     static std::string serializeKey(const FileCacheKey & key, size_t offset);
     static void deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset);
