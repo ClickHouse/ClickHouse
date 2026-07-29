@@ -91,3 +91,10 @@
 1
 1
 1
+-- 23. an absent PHYSICAL column whose name splits onto a custom-serialized neighbour refuses
+1
+64
+64
+1
+1
+1

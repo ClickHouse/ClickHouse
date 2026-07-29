@@ -204,29 +204,42 @@ DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const NameAndType
     return nullptr;
 }
 
-/// Is a subcolumn of @name_in_storage produced by the metadata-side parent's custom SERIALIZATION
-/// rather than by its declared type? A Quantized codec attaches one to expose `<col>.quantized`
-/// (ColumnsDescription::attachQuantizeSerializationIfNeeded), and columns.txt round-trips only the
-/// bare type name (IMergeTreeReader.cpp), so a part's own list cannot describe such a subcolumn at
-/// all. Its silence is then an unrepresentable fact, not a type difference.
+/// Is @subcolumn_name of @name_in_storage produced by the metadata-side parent's custom
+/// SERIALIZATION rather than by its declared type? A Quantized codec attaches one to expose
+/// `<col>.quantized` (ColumnsDescription::attachQuantizeSerializationIfNeeded), and columns.txt
+/// round-trips only the bare type name (IMergeTreeReader.cpp), so a part's own list cannot describe
+/// such a subcolumn at all. Its silence is then an unrepresentable fact, not a type difference.
+///
+/// Both clauses are load-bearing. A custom serialization alone does not mean THIS suffix comes from
+/// it: Bool carries one (DataTypeDomainBool.cpp) while defining no subcolumn whatsoever, so without
+/// the second clause an unrelated parent would wave through a required column the part genuinely
+/// lacks. tryGetSubcolumnType() is the right primitive because IDataType builds its SubstreamData
+/// from getDefaultSerialization(), which returns the custom one when attached.
 ///
 /// A subcolumn of the DECLARED type is unaffected: a Tuple element or a JSON typed path is compared
 /// by the parent's equals() as usual, so a stale hint is still caught.
-bool hasSerializationDefinedSubcolumns(const ColumnsDescription & metadata_columns, const String & name_in_storage)
+bool hasSerializationDefinedSubcolumns(
+    const ColumnsDescription & metadata_columns, const String & name_in_storage, const String & subcolumn_name)
 {
     const auto * parent = metadata_columns.tryGet(name_in_storage);
-    return parent && parent->type->getCustomSerialization() != nullptr;
+    return parent && parent->type->getCustomSerialization() != nullptr
+        && parent->type->tryGetSubcolumnType(subcolumn_name) != nullptr;
 }
 
 /// The same question for a name that has not been split yet, which also answers "is it a subcolumn
-/// at all": a name with no separator yields no pair and so no parent. `a.b.c` is ambiguous between
-/// `a` + `b.c` and `a.b` + `c`, so take the first split whose parent resolves, exactly as
-/// Nested::tryGetColumnNameInStorage does.
+/// at all": a physical column of that exact name is not one, and a name with no separator yields no
+/// pair and so no parent. `a.b.c` is ambiguous between `a` + `b.c` and `a.b` + `c`, so try the exact
+/// name first and then each split in turn, exactly as Nested::tryGetColumnNameInStorage does - a
+/// split whose parent does not define the suffix must keep looking, since `a` may resolve before
+/// `a.b` does.
 bool isSerializationDefinedSubcolumn(const ColumnsDescription & metadata_columns, const String & column)
 {
-    for (const auto & [name_in_storage, _] : Nested::getAllColumnAndSubcolumnPairs(column))
-        if (const auto * parent = metadata_columns.tryGet(String(name_in_storage)))
-            return parent->type->getCustomSerialization() != nullptr;
+    if (metadata_columns.tryGet(column))
+        return false;
+
+    for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column))
+        if (hasSerializationDefinedSubcolumns(metadata_columns, String(name_in_storage), String(subcolumn_name)))
+            return true;
 
     return false;
 }
@@ -272,7 +285,8 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
                 /// IDataType::equals() compares custom_serialization, so tryGetColumn() succeeds
                 /// while the part's OWN parent still cannot offer the subcolumn. Which branch fires
                 /// depends on part load order, so both ask the same question.
-                if (hasSerializationDefinedSubcolumns(metadata_columns, part_column->getNameInStorage()))
+                if (hasSerializationDefinedSubcolumns(
+                        metadata_columns, part_column->getNameInStorage(), part_column->getSubcolumnName()))
                     continue;
                 return false;
             }

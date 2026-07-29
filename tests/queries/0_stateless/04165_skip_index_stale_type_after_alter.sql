@@ -466,6 +466,45 @@ KILL MUTATION WHERE table = 't_absent_sub' AND database = currentDatabase() FORM
 SELECT count() FROM t_absent_sub WHERE p.x = 150;
 SELECT count() FROM t_absent_sub WHERE p.x = 150 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 23. an absent PHYSICAL column whose name splits onto a custom-serialized neighbour refuses';
+-- `b.x` is a real physical column, and its name also splits onto the physical `b`, which carries a
+-- custom serialization (Bool) that defines no `x` subcolumn at all. Reading that neighbour as `b.x`'s
+-- parent would answer "the part list cannot express this" for a column the part is simply missing,
+-- skipping the type check exactly where case 22 requires it. So the escape hatch has to consider the
+-- exact name first, and has to require the resolved parent to actually offer the suffix.
+DROP TABLE IF EXISTS t_absent_bool_prefix;
+CREATE TABLE t_absent_bool_prefix (k UInt64, b Bool) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_absent_bool_prefix SELECT number, number % 2 FROM numbers(64);
+ALTER TABLE t_absent_bool_prefix ADD COLUMN `b.x` UInt8 DEFAULT 1 SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_absent_bool_prefix ADD INDEX idx toString(`b.x`) TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_absent_bool_prefix MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent_bool_prefix' AND active AND column = 'b.x';
+SYSTEM STOP MERGES t_absent_bool_prefix;
+ALTER TABLE t_absent_bool_prefix MODIFY COLUMN `b.x` Bool;
+KILL MUTATION WHERE table = 't_absent_bool_prefix' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'true';
+SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'true' SETTINGS use_skip_indexes = 0;
+
+-- The suffix requirement carries this shape on its own: `a.b`.x is not a physical column at all, and
+-- its SHORTEST split resolves to a custom-serialized `a Bool` offering no `b.x`, while the true parent
+-- `a.b` is a longer split with no custom serialization. So the walk must reject the short split on the
+-- suffix it does not offer, keep looking, and then refuse - a Tuple element is representable in
+-- columns.txt, so the part's silence about `a.b` is a genuinely absent column.
+DROP TABLE IF EXISTS t_absent_bool_dotted;
+CREATE TABLE t_absent_bool_dotted (k UInt64, a Bool) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_absent_bool_dotted SELECT number, number % 2 FROM numbers(64);
+ALTER TABLE t_absent_bool_dotted ADD COLUMN `a.b` Tuple(x UInt64) DEFAULT tuple(k * 3) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_absent_bool_dotted ADD INDEX idx `a.b`.x TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_absent_bool_dotted MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent_bool_dotted' AND active AND column = 'a.b';
+SYSTEM STOP MERGES t_absent_bool_dotted;
+ALTER TABLE t_absent_bool_dotted MODIFY COLUMN `a.b` Tuple(x Nullable(UInt64));
+KILL MUTATION WHERE table = 't_absent_bool_dotted' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150;
+SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -504,3 +543,5 @@ DROP TABLE t_keep_quant_src;
 DROP TABLE t_keep_quant_dst;
 DROP TABLE t_keep_quant_dotted;
 DROP TABLE t_absent_sub;
+DROP TABLE t_absent_bool_prefix;
+DROP TABLE t_absent_bool_dotted;
