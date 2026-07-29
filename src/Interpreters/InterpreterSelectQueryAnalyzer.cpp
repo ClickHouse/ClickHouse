@@ -39,8 +39,6 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
-#include <fmt/ranges.h>
-
 namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
@@ -63,13 +61,6 @@ extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
-extern const SettingsBool make_distributed_plan;
-extern const SettingsBool rewrite_in_to_join;
-extern const SettingsBool allow_experimental_correlated_subqueries;
-extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
-extern const SettingsBool use_skip_indexes_on_data_read;
-extern const SettingsBool compile_expressions;
-extern const SettingsBool query_plan_direct_read_from_text_index;
 }
 
 namespace
@@ -144,57 +135,6 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     const auto & settings = result_context->getSettingsRef();
-
-    if (settings[Setting::make_distributed_plan])
-    {
-        /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override
-        /// once distributed plans support the corresponding feature (and remove the counterpart
-        /// in doExecuteTask() in DistributedPlanExecutor.cpp).
-        Strings adjusted;
-
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
-        {
-            result_context->setSetting("enable_parallel_replicas", Field(0));
-            adjusted.emplace_back("enable_parallel_replicas = 0");
-        }
-        if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-        {
-            result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
-            adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
-        }
-        if (!settings[Setting::rewrite_in_to_join] && settings[Setting::allow_experimental_correlated_subqueries])
-        {
-            result_context->setSetting("rewrite_in_to_join", true);
-            adjusted.emplace_back("rewrite_in_to_join = 1");
-        }
-        if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
-        {
-            result_context->setSetting("correlated_subqueries_use_in_memory_buffer", false);
-            adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
-        }
-        if (settings[Setting::use_skip_indexes_on_data_read])
-        {
-            result_context->setSetting("use_skip_indexes_on_data_read", false);
-            adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
-        }
-        if (settings[Setting::compile_expressions])
-        {
-            result_context->setSetting("compile_expressions", false);
-            adjusted.emplace_back("compile_expressions = 0");
-        }
-        if (settings[Setting::query_plan_direct_read_from_text_index])
-        {
-            result_context->setSetting("query_plan_direct_read_from_text_index", false);
-            adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
-        }
-
-        if (!adjusted.empty())
-            LOG_DEBUG(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "Adjusted settings not supported by distributed query plans (make_distributed_plan is enabled): {}",
-                fmt::join(adjusted, ", "));
-    }
-
     if (settings[Setting::automatic_parallel_replicas_mode] != 0)
     {
         // If `automatic_parallel_replicas_mode` is not zero, it means that the heuristic for automatic parallel replicas is enabled.

@@ -21,6 +21,15 @@ SELECT 'the automatic parallel replicas heuristic no longer throws';
 SELECT count(), sum(v) FROM t_dp_pr
     SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1;
 
+-- A per-query SETTINGS clause is re-applied onto the query's own context during query tree
+-- building, so the auto-switch must hold for it too. Without that, this combination planned a
+-- parallel-replicas local read and failed on `QueryPlanOptimizationSettings` construction.
+SELECT 'parallel replicas over a plain MergeTree with a cluster no longer throws';
+SELECT count(), sum(v) FROM t_dp_pr
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+        cluster_for_parallel_replicas = 'parallel_replicas',
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
+
 SELECT 'the query still distributes';
 -- sum() and not a bare count() so the trivial-count optimization cannot fold the plan away.
 SELECT 'distributes'

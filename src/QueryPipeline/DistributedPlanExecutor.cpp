@@ -628,18 +628,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// data for the same fragment.
     context->setSetting("use_query_condition_cache", false);
 
-    /// TODO: This is a temporary workaround, the counterpart of the make_distributed_plan
-    /// auto-switch in InterpreterSelectQueryAnalyzer::buildContext() (issues #109476, #109329).
-    /// Remove each override once distributed plans support the corresponding feature - e.g. for
-    /// the text index direct read, let the worker re-run the rewrite over its pinned part list
-    /// instead of disabling it.
-    context->setSetting("use_skip_indexes_on_data_read", false);
-    context->setSetting("compile_expressions", false);
-    context->setSetting("query_plan_direct_read_from_text_index", false);
-    context->setSetting("correlated_subqueries_use_in_memory_buffer", false);
-    context->setSetting("enable_parallel_replicas", Field(0));
-    context->setSetting("automatic_parallel_replicas_mode", Field(0));
-
     Strings input_exchange_streams;
     for (const auto & stream_id : task.input_exchange_streams)
         input_exchange_streams.push_back(stream_id.toString());
