@@ -54,7 +54,7 @@ SELECT 'RIGHT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 A
 SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a))
                   = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
--- The restored columns must not leak into the output header.
+-- The restored columns must not reach the declared output header.
 SELECT 'output header';
 DESCRIBE (SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
