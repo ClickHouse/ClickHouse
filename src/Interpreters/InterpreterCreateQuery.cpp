@@ -1074,7 +1074,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         /// metadata is marked `attach_short_syntax` and is not re-checked. Only the ungated checks apply,
         /// so the suspicious type policy stays a CREATE-only matter.
         DataTypeValidationSettings integrity_checks_only;
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        for (const auto & name_and_type_pair : properties.columns.getAll())
             validateDataType(name_and_type_pair.type, integrity_checks_only);
     }
 }
@@ -1992,7 +1992,12 @@ namespace
 {
 
 void checkForUnsupportedColumns(
-    IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary, bool columns_were_inferred)
+    IStorage & storage,
+    LoadingStrictnessLevel mode,
+    ContextPtr context,
+    bool is_temporary,
+    bool columns_were_inferred,
+    bool definition_is_fresh)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
 
@@ -2006,10 +2011,13 @@ void checkForUnsupportedColumns(
     /// type which cannot be read back is refused here as well. Only the checks that are not gated by a
     /// setting apply: the suspicious type policy has never covered inferred columns. A column list
     /// spelled out in the query was already checked before the storage was built.
-    if (mode <= LoadingStrictnessLevel::CREATE && columns_were_inferred)
+    /// The predicate is freshness of the definition rather than `mode`: an ATTACH which carries a whole
+    /// definition is fresh input even though its strictness level is ATTACH, while a definition read
+    /// back from stored metadata is marked `attach_short_syntax` and keeps its columns as they are.
+    if (definition_is_fresh && columns_were_inferred)
     {
         DataTypeValidationSettings integrity_checks_only;
-        for (const auto & name_and_type_pair : metadata_snapshot->getColumns().getAllPhysical())
+        for (const auto & name_and_type_pair : metadata_snapshot->getColumns().getAll())
             validateDataType(name_and_type_pair.type, integrity_checks_only);
     }
 
@@ -2049,11 +2057,16 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
 }
 
 void validateStorage(
-    IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary, bool columns_were_inferred = false)
+    IStorage & storage,
+    LoadingStrictnessLevel mode,
+    ContextPtr context,
+    bool is_temporary,
+    bool columns_were_inferred = false,
+    bool definition_is_fresh = true)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context, is_temporary, columns_were_inferred);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary, columns_were_inferred, definition_is_fresh);
 }
 catch (...)
 {
@@ -2296,7 +2309,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary(), columns_were_inferred);
+    validateStorage(*res, mode, getContext(), create.isTemporary(), columns_were_inferred, !create.attach_short_syntax);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {

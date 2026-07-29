@@ -7,6 +7,7 @@
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS t_alter_add;
+DROP TABLE IF EXISTS t_alter_add_alias;
 DROP TABLE IF EXISTS t_alter_modify;
 DROP TABLE IF EXISTS t_control;
 
@@ -63,7 +64,13 @@ CREATE TABLE t_alter_add (k UInt8) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE t_alter_add ADD COLUMN v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))); -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_alter_modify (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE t_alter_modify MODIFY COLUMN v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))); -- { serverError ILLEGAL_COLUMN }
+-- ALTER validates the type it is given directly rather than through the set of physical columns, so a
+-- column with no physical storage is already covered there. Its own table again, so that a build which
+-- still accepts it reports this case rather than a duplicate column name.
+CREATE TABLE t_alter_add_alias (k UInt8) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_alter_add_alias ADD COLUMN v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) ALIAS NULL; -- { serverError ILLEGAL_COLUMN }
 SELECT 'alter_add', count() FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_add' AND name = 'v';
+SELECT 'alter_add_alias', count() FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_add_alias' AND name = 'v';
 SELECT 'alter_modify', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_modify' AND name = 'v';
 
 -- A CAST to such a type is refused as well: it yields a value whose type cannot be persisted.
@@ -138,6 +145,25 @@ SELECT 'c12', type FROM system.columns WHERE database = currentDatabase() AND ta
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+-- Such an ATTACH is fresh input whatever kind its columns have, and a column with no physical storage
+-- carries its type into the persisted definition just like any other, so those kinds are covered too.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_alias (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) ALIAS NULL) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_ephemeral (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) EPHEMERAL NULL) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+-- An ATTACH whose columns the engine infers has no column list at all, so nothing checked them before
+-- the storage was built, and its strictness level is ATTACH even though the definition is fresh. The
+-- colliding payload is the same one the inference cases below use.
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE:String}, 'RawBLOB') SELECT unhex('010101762a0225010673756d4d617000021e041e0425000673756d4d617000021e041e040000000000000000ff') SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_1:String}, 'RawBLOB') SELECT unhex('010101762a0225010673756d4d617000021e041e04010000000000000000ff') SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_2:String}, 'RawBLOB') SELECT unhex('010101762a020a0100000000000000000101') SETTINGS engine_file_truncate_on_insert = 1;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_inferred ENGINE = File(Native, {CLICKHOUSE_DATABASE:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT 'attached_inferred_refused', count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't_attached_inferred';
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_inferred_ok ENGINE = File(Native, {CLICKHOUSE_DATABASE_1:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1;
+SELECT 'attached_inferred_ok', type FROM system.columns WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_attached_inferred_ok' AND name = 'v';
+-- The suspicious type policy has never applied to inferred columns on this path either.
+SET allow_suspicious_variant_types = 0;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_inferred_susp ENGINE = File(Native, {CLICKHOUSE_DATABASE_2:String}) SETTINGS input_format_native_decode_types_in_binary_format = 1;
+SET allow_suspicious_variant_types = 1;
+SELECT 'attached_inferred_susp', type FROM system.columns WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_attached_inferred_susp' AND name = 'v';
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- The column list of a fresh materialized view is persisted verbatim and parsed back on reload just
@@ -145,10 +171,19 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- is the spelling that creates no inner table, and the colliding type is carried only by that column
 -- list: nothing in the SELECT produces it.
 CREATE MATERIALIZED VIEW mv_collision TO mv_tgt (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))) AS SELECT k, 1 AS v FROM mv_src; -- { serverError ILLEGAL_COLUMN }
+-- The kind of the column does not change what is persisted: a column with no physical storage still has
+-- its type written into that list, so it is refused as well.
+CREATE MATERIALIZED VIEW mv_collision_alias TO mv_tgt (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) ALIAS NULL) AS SELECT k FROM mv_src; -- { serverError ILLEGAL_COLUMN }
+CREATE MATERIALIZED VIEW mv_collision_ephemeral TO mv_tgt (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) EPHEMERAL NULL) AS SELECT k FROM mv_src; -- { serverError ILLEGAL_COLUMN }
 
 -- A materialized view whose element names stay distinct is created, and so is one with an inner table.
 CREATE MATERIALIZED VIEW mv_ok TO mv_tgt (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8)) AS SELECT k, 1 AS v FROM mv_src;
 SELECT 'mv_ok', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_ok' AND name = 'v';
+-- Those kinds are not rejected as such: the same view with distinct element names is created.
+CREATE MATERIALIZED VIEW mv_ok_alias TO mv_tgt (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8) ALIAS NULL) AS SELECT k FROM mv_src;
+SELECT 'mv_ok_alias', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_ok_alias' AND name = 'v';
+CREATE MATERIALIZED VIEW mv_ok_ephemeral TO mv_tgt (k UInt8, v Variant(AggregateFunction(1, minMap, Array(UInt64), Array(UInt64)), UInt8) EPHEMERAL NULL) AS SELECT k FROM mv_src;
+SELECT 'mv_ok_ephemeral', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_ok_ephemeral' AND name = 'v';
 CREATE MATERIALIZED VIEW mv_inner ENGINE = MergeTree ORDER BY k AS SELECT k FROM mv_src;
 SELECT 'mv_inner', count() FROM system.columns WHERE database = currentDatabase() AND table = 'mv_inner';
 
@@ -192,11 +227,14 @@ SELECT 'reattached', type FROM system.columns WHERE database = currentDatabase()
 DROP TABLE t_reattached;
 
 DROP TABLE mv_ok;
+DROP TABLE mv_ok_alias;
+DROP TABLE mv_ok_ephemeral;
 DROP TABLE mv_inner;
 DROP TABLE mv_gated;
 DROP TABLE mv_src;
 DROP TABLE mv_tgt;
 DROP TABLE t_alter_add;
+DROP TABLE t_alter_add_alias;
 DROP TABLE t_alter_modify;
 DROP TABLE t_control;
 
@@ -215,4 +253,6 @@ DROP TABLE IF EXISTS t_collision_10;
 DROP TABLE IF EXISTS t_collision_11;
 DROP TABLE IF EXISTS t_collision_12;
 DROP TABLE IF EXISTS mv_collision;
+DROP TABLE IF EXISTS mv_collision_alias;
+DROP TABLE IF EXISTS mv_collision_ephemeral;
 DROP TABLE IF EXISTS t_inferred_collision;
