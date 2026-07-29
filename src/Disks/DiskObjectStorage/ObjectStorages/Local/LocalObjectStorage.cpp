@@ -100,8 +100,12 @@ std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_p
 {
     struct stat file_stat{};
     if (0 != ::stat(resolved_path.c_str(), &file_stat))
-        throw fs::filesystem_error(
-            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
+    {
+        std::error_code error(errno, std::generic_category());
+        if (isVanishedEntryError(error))
+            return {};
+        throw fs::filesystem_error("Got unexpected error while getting file metadata", resolved_path, error);
+    }
 
     return makeObjectMetadata(file_stat);
 }
