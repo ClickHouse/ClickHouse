@@ -207,11 +207,23 @@ ColumnPtr convertColumnToTypeOrThrow(
     ColumnPtr result = convertColumnToTypeOrNull(value, from, to, format_settings, /*strict=*/false, convert_inexact_floats);
 
     if (!value.isNullAt(0) && !result)
+    {
+        /// Reproduce `convertFieldToTypeOrThrow`'s diagnostic (which names the offending value and the
+        /// types) instead of a generic message - materializing a `Field` only on this exceptional path;
+        /// the happy path in `convertColumnToTypeOrNull` stays `Field`-free.
+        Field field;
+        value.convertToFullColumnIfConst()->get(0, field);
+        retagBoolInField(field, from);
+        convertFieldToTypeOrThrow(field, *to, from.get(), format_settings, convert_inexact_floats);
+
+        /// `convertFieldToTypeOrThrow` must have thrown for a value that `convertColumnToTypeOrNull`
+        /// reported as not representable; guard in case the two ever disagree.
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Value in column of type {} cannot be represented as {}",
             from->getName(),
             to->getName());
+    }
 
     return result;
 }
