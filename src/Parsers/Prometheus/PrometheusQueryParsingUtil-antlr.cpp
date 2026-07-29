@@ -97,9 +97,9 @@ namespace
                     }
                 }
             }
-            auto line = promql_query.substr(char_index);
+            auto line_suffix = promql_query.substr(char_index);
             return char_index + UTF8::computeBytesBeforeCodePoint(
-                reinterpret_cast<const UInt8 *>(line.data()), line.size(), position_in_line);
+                reinterpret_cast<const UInt8 *>(line_suffix.data()), line_suffix.size(), position_in_line);
         }
 
     private:
