@@ -825,7 +825,14 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Use Mintlify's configured Paper Mono face throughout code blocks. */
+/* Match the monospace stack used by the server's built-in documentation. */
+[data-component-part="code-block-root"] pre.shiki,
+[data-component-part="code-block-root"] code,
+[data-component-part="code-block-root"] .line,
+[data-component-part="code-block-root"] .line span {
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "MonoLisa", "Consolas", monospace !important;
+}
+
 [data-component-part="code-block-root"] .font-mono {
     font-variant-ligatures: none !important;
     font-feature-settings: "kern" 0 !important;
