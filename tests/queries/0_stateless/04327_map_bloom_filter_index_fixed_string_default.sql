@@ -18,9 +18,15 @@ SELECT count() FROM t_map_bf_fixed_string WHERE map[''] = '';
 
 SELECT 'Present key with FixedString constant still uses the index';
 SELECT count() FROM t_map_bf_fixed_string WHERE map['K0'] = toFixedString('V0', 2) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_bf_fixed_string WHERE map['K0'] = toFixedString('V0', 2))
+    WHERE explain LIKE '%Granules: %/%'
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 SELECT 'Absent key with non-default FixedString constant is still pruned';
 SELECT count() FROM t_map_bf_fixed_string WHERE map['K2'] = toFixedString('V2', 2) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_bf_fixed_string WHERE map['K2'] = toFixedString('V2', 2))
+    WHERE explain LIKE '%Granules: %/%'
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 DROP TABLE t_map_bf_fixed_string;
 
@@ -43,6 +49,9 @@ SELECT count() FROM t_map_bf_int_default WHERE map['K2'] = toInt8(0) SETTINGS fo
 
 SELECT 'Absent key compared with non-default integer is still pruned';
 SELECT count() FROM t_map_bf_int_default WHERE map['K2'] = toInt8(5) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_bf_int_default WHERE map['K2'] = toInt8(5))
+    WHERE explain LIKE '%Granules: %/%'
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 DROP TABLE t_map_bf_int_default;
 
@@ -67,10 +76,11 @@ SELECT 'mapValues: String constant still uses the index';
 SELECT count() FROM t_map_values_bf WHERE map['K0'] = 'V0' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf WHERE map['K0'] = 'V0')
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 SELECT 'mapValues: present key with non-matching FixedString constant returns nothing';
 SELECT count() FROM t_map_values_bf WHERE map['K0'] = toFixedString('VX', 3);
+SELECT count() FROM t_map_values_bf WHERE map['K0'] = toFixedString('VX', 3) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_map_values_bf;
 
@@ -92,6 +102,7 @@ INSERT INTO t_map_values_bf_dup VALUES (0, {'K':'V0'}), (1, {'K':'V0\0'});
 SELECT 'mapValues: two distinct stored values both matching one FixedString constant are both kept';
 SELECT count() FROM t_map_values_bf_dup WHERE map['K'] = toFixedString('V0', 3);
 SELECT count() FROM t_map_values_bf_dup WHERE map['K'] = toFixedString('V0', 3) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_map_values_bf_dup WHERE map['K'] = toFixedString('V0', 3) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_map_values_bf_dup;
 
@@ -111,7 +122,7 @@ SELECT 'mapValues over FixedString index: same-width FixedString constant still 
 SELECT count() FROM t_map_values_bf_fs WHERE map['K0'] = toFixedString('V0', 3) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_fs WHERE map['K0'] = toFixedString('V0', 3))
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 SELECT 'mapValues over FixedString index: different-width FixedString constant is not over-pruned';
 SELECT count() FROM t_map_values_bf_fs WHERE map['K0'] = toFixedString('V0', 5);
@@ -141,14 +152,14 @@ SELECT count() FROM t_map_values_bf_num WHERE map['K'] = 1.0;
 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = 1.0 SETTINGS use_skip_indexes = 0;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = 1.0)
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 SELECT 'mapValues over UInt64 index: Int128 constant prunes';
 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toInt128(2);
 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toInt128(2) SETTINGS use_skip_indexes = 0;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toInt128(2))
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 -- A Decimal constant against an integer index is not convertible, so the index is declined. The
 -- answer must still be correct, which is what previously failed with BAD_GET.
@@ -167,7 +178,13 @@ SELECT count() FROM t_map_values_bf_num WHERE map['K'] = 1.5 SETTINGS force_data
 
 SELECT 'mapValues over UInt64 index: heterogeneous integer constants still use the index';
 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toInt64(2) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toInt64(2))
+    WHERE explain LIKE '%Granules: %/%'
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toUInt8(2) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_num WHERE map['K'] = toUInt8(2))
+    WHERE explain LIKE '%Granules: %/%'
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 DROP TABLE t_map_values_bf_num;
 
@@ -188,7 +205,7 @@ SELECT count() FROM t_map_values_bf_enum WHERE map['K'] = 'two';
 SELECT count() FROM t_map_values_bf_enum WHERE map['K'] = 'two' SETTINGS use_skip_indexes = 0;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_enum WHERE map['K'] = 'two')
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 -- A numeric constant that is not a declared member of the enum is simply never equal. The index has
 -- to decline instead of surfacing the conversion failure as a query error.
@@ -223,7 +240,7 @@ SELECT count() FROM t_map_values_bf_date WHERE map['K'] = '2021-01-01';
 SELECT count() FROM t_map_values_bf_date WHERE map['K'] = '2021-01-01' SETTINGS use_skip_indexes = 0;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_date WHERE map['K'] = '2021-01-01')
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 
 DROP TABLE t_map_values_bf_date;
 
@@ -239,14 +256,14 @@ ENGINE = MergeTree ORDER BY row_id SETTINGS index_granularity = 1;
 
 INSERT INTO t_map_values_bf_lc VALUES (0, {'K':'V0'}), (1, {'K':'V1'}), (2, {'K':'V2'});
 
--- Only a constant that is itself String or FixedString can be many-to-one against the indexed
--- values, so a constant of any other type has to stay usable. `toLowCardinality` is folded to a
--- plain String before index analysis, so it is covered by the String case rather than by a wrapper.
+-- The index stays usable exactly when the constant's primitive type equals the indexed one, so a
+-- String constant keeps it whatever produced the String. `toLowCardinality` is folded to a plain
+-- String before index analysis, so it is covered here rather than by the wrapper cases below.
 SELECT 'mapValues over String index: String constant of a different origin still uses the index';
 SELECT count() FROM t_map_values_bf_lc WHERE map['K'] = toLowCardinality('V1') SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_lc WHERE map['K'] = toLowCardinality('V1'))
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 SELECT count() FROM t_map_values_bf_lc WHERE map['K'] = toLowCardinality('V1') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_map_values_bf_lc;
@@ -304,7 +321,7 @@ SELECT 'mapValues over String index: LowCardinality(String) constant keeps the i
 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS optimize_functions_to_subcolumns = 1)
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS use_skip_indexes = 0, optimize_functions_to_subcolumns = 1;
 
 -- A wrapper does not change what the constant stores, so the decision has to look through it: a
@@ -326,7 +343,7 @@ SELECT 'mapValues over String index: LowCardinality(String) constant keeps the i
 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS optimize_functions_to_subcolumns = 0)
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 SELECT count() FROM t_map_values_bf_wrapped WHERE map['K'] = toLowCardinality('V1') SETTINGS use_skip_indexes = 0, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_map_values_bf_wrapped;
@@ -349,7 +366,7 @@ SELECT 'mapKeys over Nullable value type: absent key cannot match, index stays u
 SELECT count() FROM t_map_keys_bf_nullable WHERE map['K1'] = 'V1' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() > 0 AS prunes FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_keys_bf_nullable WHERE map['K1'] = 'V1')
     WHERE explain LIKE '%Granules: %/%'
-      AND toUInt64(extract(explain, 'Granules: (\\d+)/')) < toUInt64(extract(explain, 'Granules: \\d+/(\\d+)'));
+      AND toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'));
 SELECT count() FROM t_map_keys_bf_nullable WHERE map['K1'] = 'V1' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_map_keys_bf_nullable;

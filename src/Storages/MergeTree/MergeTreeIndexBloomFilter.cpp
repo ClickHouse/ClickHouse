@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int CANNOT_PTHREAD_ATTR;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -804,7 +805,7 @@ static bool indexDecisionErrorMustPropagate(int code)
 {
     return code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY || code == ErrorCodes::TOO_DEEP_RECURSION
-        || code == ErrorCodes::QUERY_WAS_CANCELLED;
+        || code == ErrorCodes::CANNOT_PTHREAD_ATTR || code == ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
 

@@ -4,13 +4,16 @@ Absent key compared with FixedString default (matches String default at runtime)
 2
 Present key with FixedString constant still uses the index
 1
+1
 Absent key with non-default FixedString constant is still pruned
 0
+1
 Absent key compared with integer default 0 via different integer type
 2
 2
 Absent key compared with non-default integer is still pruned
 0
+1
 mapValues: present key matched by FixedString constant is not over-pruned
 1
 1
@@ -43,6 +46,8 @@ mapValues over UInt64 index: constant with no exact representation declines the 
 0
 0
 mapValues over UInt64 index: heterogeneous integer constants still use the index
+1
+1
 1
 1
 mapValues over Enum8 index: String constant prunes
