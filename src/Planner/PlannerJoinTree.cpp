@@ -2102,7 +2102,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_expression->formatASTForErrorMessage());
     }
 
-    if (till_stage == QueryProcessingStage::FetchColumns)
+    /// `ignore_rename_columns` is honoured whatever stage the storage reported: its caller matches the
+    /// produced header by source column name, and a storage asked for FetchColumns may still report a
+    /// higher stage (StorageMerge folds its children's stages, Distributed reports Complete for one node).
+    if (till_stage == QueryProcessingStage::FetchColumns || select_query_options.ignore_rename_columns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
