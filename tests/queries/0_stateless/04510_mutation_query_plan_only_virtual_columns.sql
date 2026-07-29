@@ -45,6 +45,24 @@ ALTER TABLE t_mut_qp_subcol UPDATE v = toUInt32(tup._sample_factor) WHERE c0 > 1
 SELECT count() FROM t_mut_qp_subcol;
 DROP TABLE t_mut_qp_subcol;
 
+-- An ALIAS column is substituted by its defining expression after the mutation is analysed,
+-- so an alias over one of these virtuals reaches the read path unless the check follows the
+-- alias. Only `_table` and `_database` can be aliased at all: aliasing any part-derived
+-- virtual (`_part`, `_sample_factor`, ...) is already rejected when the table is created.
+DROP TABLE IF EXISTS t_mut_qp_alias;
+CREATE TABLE t_mut_qp_alias (c0 UInt32, v UInt32, a_tbl String ALIAS _table, a_db String ALIAS _database, a_chain String ALIAS a_tbl, a_real UInt32 ALIAS c0 + 1)
+ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_mut_qp_alias SELECT number, 0 FROM numbers(4);
+ALTER TABLE t_mut_qp_alias DELETE WHERE a_tbl != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+ALTER TABLE t_mut_qp_alias DELETE WHERE a_db != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- Also through a chain of aliases, and on the right-hand side of an UPDATE assignment.
+ALTER TABLE t_mut_qp_alias DELETE WHERE a_chain != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+ALTER TABLE t_mut_qp_alias UPDATE v = length(a_tbl) WHERE c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- An alias over a real column keeps working (a_real = c0 + 1, so this deletes c0 = 1 and 2).
+ALTER TABLE t_mut_qp_alias DELETE WHERE a_real > 1 AND c0 < 3;
+SELECT count() FROM t_mut_qp_alias;
+DROP TABLE t_mut_qp_alias;
+
 -- A lambda formal parameter that merely shares the name is not a reference to the virtual
 -- column and must be allowed (matching the raw identifier name would falsely reject it).
 ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_table -> _table + 1, arr) WHERE c0 > 0;

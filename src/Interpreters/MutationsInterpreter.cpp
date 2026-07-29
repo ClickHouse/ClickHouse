@@ -707,10 +707,13 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 ///     column is insufficient: when the table name collides with a column (table `t` with a
 ///     column `t`), `t._table` has a leading real column yet still resolves to the virtual;
 ///   - lambda formal parameters are shadowed for the body of the lambda and never counted;
+///   - an ALIAS column is followed into its defining expression, because that expression is
+///     substituted after this check (QueryAnalyzer expands ColumnDefaultKind::Alias), so an
+///     alias over one of these virtuals would otherwise reach the read path unnoticed;
 ///   - subqueries are not descended into: their own read path is a SELECT that can
 ///     materialize these virtuals.
 static void rejectQueryPlanOnlyVirtualColumns(
-    const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed)
+    const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
 {
     if (!ast)
         return;
@@ -738,7 +741,7 @@ static void rejectQueryPlanOnlyVirtualColumns(
             if (shadowed.insert(param).second)
                 newly_shadowed.push_back(param);
 
-        rejectQueryPlanOnlyVirtualColumns(function->arguments->children[1].get(), columns, shadowed);
+        rejectQueryPlanOnlyVirtualColumns(function->arguments->children[1].get(), columns, shadowed, aliases_in_progress);
 
         for (const auto & param : newly_shadowed)
             shadowed.erase(param);
@@ -749,10 +752,26 @@ static void rejectQueryPlanOnlyVirtualColumns(
     {
         const auto & short_name = identifier->shortName();
 
+        if (shadowed.contains(short_name))
+            return;
+
+        /// An ALIAS column is replaced by its defining expression after this check, so follow
+        /// that expression here: `a String ALIAS _table` used in a mutation is a reference to
+        /// `_table`. Track names being expanded so a self-referential alias cannot loop.
+        if (!isQueryPlanOnlyVirtualColumn(short_name) && !aliases_in_progress.contains(short_name))
+        {
+            if (auto column_default = columns.getDefault(short_name);
+                column_default && column_default->kind == ColumnDefaultKind::Alias && column_default->expression)
+            {
+                aliases_in_progress.insert(short_name);
+                rejectQueryPlanOnlyVirtualColumns(column_default->expression.get(), columns, shadowed, aliases_in_progress);
+                aliases_in_progress.erase(short_name);
+            }
+        }
+
         /// Only the query-plan-only virtuals matter here, and only when the name is not
-        /// shadowed by a lambda parameter and not overridden by a physical column of the
-        /// same short name.
-        if (!isQueryPlanOnlyVirtualColumn(short_name) || shadowed.contains(short_name) || columns.has(short_name))
+        /// overridden by a physical column of the same short name.
+        if (!isQueryPlanOnlyVirtualColumn(short_name) || columns.has(short_name))
             return;
 
         /// The short name is a query-plan-only virtual. A compound reference may still be a
@@ -784,7 +803,7 @@ static void rejectQueryPlanOnlyVirtualColumns(
     }
 
     for (const auto & child : ast->children)
-        rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed);
+        rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
 /// Reject query-plan-only virtual columns referenced by a mutation command's expressions:
@@ -794,13 +813,14 @@ static void rejectQueryPlanOnlyVirtualColumns(
 static void rejectQueryPlanOnlyVirtualColumns(const ASTAlterCommand & alter, const ColumnsDescription & columns)
 {
     NameSet shadowed;
+    NameSet aliases_in_progress;
     if (alter.predicate)
-        rejectQueryPlanOnlyVirtualColumns(alter.predicate, columns, shadowed);
+        rejectQueryPlanOnlyVirtualColumns(alter.predicate, columns, shadowed, aliases_in_progress);
 
     if (alter.update_assignments)
         for (const auto & child : alter.update_assignments->children)
             if (const auto * assignment = child->as<ASTAssignment>())
-                rejectQueryPlanOnlyVirtualColumns(assignment->expression().get(), columns, shadowed);
+                rejectQueryPlanOnlyVirtualColumns(assignment->expression().get(), columns, shadowed, aliases_in_progress);
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
