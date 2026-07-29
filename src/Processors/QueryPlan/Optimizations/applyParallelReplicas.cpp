@@ -175,15 +175,16 @@ public:
         if (!coordinated_index)
             return;
 
+        auto * coordinated_child = node->children[*coordinated_index];
+        if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
+            return;
+
         /// Do not lift a split into a fragment that would contain a non-serializable step, or a MergeTree
         /// read which must not be executed on every replica (the broadcast side is never checked by
         /// collectReadsToDistribute, which only follows the coordinated side). Not lifting keeps the
         /// coordinated read's split below the join, so that read is still distributed.
+        /// These walk the whole subtree, so they run last: a join with nothing to lift never pays for them.
         if (!subtreeIsShippable(node) || subtreeHasUnshippableRead(node))
-            return;
-
-        auto * coordinated_child = node->children[*coordinated_index];
-        if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
             return;
 
         auto & join_node = nodes.emplace_back();
@@ -343,16 +344,7 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
-        /// A refreshable MaterializedView that swaps its target on each refresh (non-APPEND) must stay
-        /// local: the target read is shipped by name and re-resolved per replica without RefreshTask's
-        /// sync/lock, so a refresh could swap or drop it under the remote read. RefreshSet registers
-        /// exactly these swap targets. An APPEND refreshable MV reads a fixed target (like a regular MV)
-        /// and is safe to distribute.
-        const auto & mergetree_data = read->getMergeTreeData();
-        if (read->getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
-            return {};
-        if (!mergetree_data.supportsReplication()
-            && !read->getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
+        if (!mergeTreeReadCanBeShipped(*read))
             return {};
         return {node};
     }
@@ -381,16 +373,19 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (typeid_cast<const JoinStepLogical *>(node->step.get()))
     {
-        /// A join whose subtree has a non-serializable step cannot ship in a fragment; keep it local.
-        if (!subtreeIsShippable(node))
-            return {};
-
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
         /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
         /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
-        if (const auto coordinated_index = coordinatedJoinSideIndex(node))
-            return collectReadsToDistribute(node->children.at(*coordinated_index));
-        return {};
+        const auto coordinated_index = coordinatedJoinSideIndex(node);
+        if (!coordinated_index)
+            return {};
+
+        /// A join whose subtree has a non-serializable step cannot ship in a fragment; keep it local. The
+        /// check walks the whole subtree, so it runs after the cheap join-kind test above.
+        if (!subtreeIsShippable(node))
+            return {};
+
+        return collectReadsToDistribute(node->children.at(*coordinated_index));
     }
 
     /// Non-join single-input step (Expression/Filter/Sorting/...): follow the only input.
