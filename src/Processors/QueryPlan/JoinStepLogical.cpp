@@ -1516,10 +1516,26 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return {};
 
     auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side))
-        return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
-    return {};
+    auto belongs_to_side = [side](const JoinActionRef & condition)
+    {
+        return side == JoinTableSide::Left ? condition.fromLeft() || condition.fromNone() : condition.fromRight();
+    };
+
+    auto conditions = std::ranges::to<std::vector>(join_expression | std::views::filter(belongs_to_side));
+    if (conditions.empty())
+        return {};
+
+    auto condition = conditions.size() == 1
+        ? toBoolIfNeeded(conditions.front())
+        : toBoolIfNeeded(JoinActionRef::transform(conditions, JoinActionRef::AddFunction(JoinConditionOperator::And)));
+
+    auto filter_actions = ActionsDAG::createActionsForConjunction({condition.getNode()}, stream_header->getColumnsWithTypeAndName());
+    if (!filter_actions)
+        return {};
+
+    std::erase_if(join_expression, belongs_to_side);
+    return filter_actions;
 }
 
 static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
