@@ -12,7 +12,9 @@
 # orphan standalone files were hardlinked into the new part unchanged and
 # `CHECK TABLE` kept failing. The fix drops the dead orphan files on both paths,
 # leaving the part consistent (the index is simply absent from this part -- a
-# later `MATERIALIZE INDEX` / full rewrite repopulates it).
+# later `MATERIALIZE INDEX` repopulates it; a full rewrite does not, because once
+# the orphans are gone the index is no longer present on disk and so is not
+# selected for recalculation).
 #
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
