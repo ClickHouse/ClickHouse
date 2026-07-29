@@ -157,8 +157,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     if (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
-            "HDFS does not support conditional writes (If-None-Match / If-Match), so the requested "
-            "compare-and-swap on {} cannot be performed atomically",
+            "HDFSObjectStorage does not support conditional writes (If-None-Match / If-Match), so the "
+            "requested compare-and-swap on {} cannot be performed atomically",
             object.remote_path);
 
     initializeHDFSFS();

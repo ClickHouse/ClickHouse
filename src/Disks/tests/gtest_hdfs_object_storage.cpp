@@ -82,9 +82,9 @@ std::unique_ptr<HDFSObjectStorage> makeUnreachableStorage()
 
 }
 
-/// A conditional write is a compare-and-swap request. HDFS cannot express it, and performing the
-/// write anyway would downgrade the CAS to a plain overwrite, losing one of two concurrent writers.
-/// These tests pin the refusal.
+/// A conditional write is a compare-and-swap request. `HDFSObjectStorage` refuses it because only the
+/// `If-None-Match` half is expressible on HDFS, and honouring one half would leave the other silently
+/// degraded (see the guard's comment for the derivation). These tests pin the refusal.
 
 TEST(HDFSObjectStorageConditionalWrite, RefusesIfNoneMatch)
 {
