@@ -45,9 +45,14 @@ SELECT '-- controls: an alias or no qualifier always worked';
 SELECT p.host_id FROM pv(tenants = ['t1']) AS p;
 SELECT host_id FROM pv(tenants = ['t1']);
 
-SELECT '-- controls: a real table function must not gain a bindable name';
+SELECT '-- controls: a regular table function and an ordinary view must not gain a bindable name';
 SELECT numbers.number FROM numbers(3); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count() FROM local_data JOIN numbers(3) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
+SELECT view.dummy FROM view(SELECT 1 AS dummy); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() FROM local_data JOIN view(SELECT 1 AS dummy) ON 1 = 1; -- { serverError ALIAS_REQUIRED }
+-- `tenant_id` collides with `local_data`'s, so the matcher must decide whether to qualify it;
+-- an ordinary view contributes no qualification parts, so the second one stays bare.
+DESCRIBE (SELECT * FROM local_data, view(SELECT 't1' AS tenant_id)) SETTINGS joined_subquery_requires_alias = 0;
 
 DROP VIEW pv2;
 DROP VIEW pv;
@@ -56,6 +61,7 @@ DROP TABLE local_data;
 -- The view also binds by its own name when it lives outside the session's current database.
 -- The call itself stays unqualified: a query parameter is not accepted in the database
 -- position of a table function, and a literal database name would not be parallel-safe.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TABLE local_data (tenant_id String, host_id UInt64) ENGINE = MergeTree ORDER BY tenant_id;

@@ -27,7 +27,10 @@ number	UInt64
 -- controls: an alias or no qualifier always worked
 1
 1
--- controls: a real table function must not gain a bindable name
+-- controls: a regular table function and an ordinary view must not gain a bindable name
+tenant_id	String					
+host_id	UInt64					
+tenant_id	String					
 -- a view in another database binds by the view name too
 1
 1
