@@ -29,13 +29,8 @@ QueryPlan makeSourcePlan()
 
 }
 
-/// `max_threads` and `concurrency_control` are plan-level, not part of the node tree, so every
-/// boundary that derives a plan from another one has to carry them over explicitly. They are
-/// invisible in query results (they only shape pipeline scheduling), so assert them directly.
-///
-/// Without the carry-over the derived plan runs with the default thread fan-out and no
-/// concurrency control: `buildQueryPipeline` applies `max_threads` only when it is non-zero
-/// (`limitMaxThreads`) and then forwards `concurrency_control` to the pipeline verbatim.
+/// `max_threads` and `concurrency_control` are plan-level, not part of the node tree, so they are
+/// invisible in query results and have to be asserted directly.
 
 TEST(QueryPlanExecutionLimits, ClonePreservesLimitsAndResources)
 {
