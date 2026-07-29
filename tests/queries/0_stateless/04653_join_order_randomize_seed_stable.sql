@@ -50,6 +50,26 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
             SELECT query_id FROM system.query_log
             WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a' AND is_initial_query));
 
+-- The seed must be the DERIVED value, not merely one value: a constant seed would also be unique within a
+-- query and across replicas.
+SELECT 'cell A seed equals hash of initial query id', (
+    SELECT groupUniqArray(extract(message, 'seed (\\d+)'))
+    FROM system.text_log
+    WHERE logger_name = 'QueryPlanOptimizationSettings'
+      AND message LIKE '%random seed%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04653_cell_a' AND type != 'QueryStart'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a' AND is_initial_query))
+) = (
+    SELECT [toString(greatest(sipHash64(query_id), 2))]
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a'
+      AND is_initial_query AND type != 'QueryStart'
+    LIMIT 1);
+
 -- Cell A must be non-vacuous: the query really did construct more than one plan.
 SELECT 'cell A saw several plan constructions', count() > 1
 FROM system.text_log
@@ -138,6 +158,26 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
         AND initial_query_id IN (
             SELECT query_id FROM system.query_log
             WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
+
+-- The replicas must have agreed on the DERIVED value, not merely on some value. Each replica has its own
+-- `query_id`, so hashing the initial one is what makes them agree.
+SELECT 'cell C seed equals hash of initial query id', (
+    SELECT groupUniqArray(extract(message, 'seed (\\d+)'))
+    FROM system.text_log
+    WHERE logger_name = 'QueryPlanOptimizationSettings'
+      AND message LIKE '%random seed%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04653_cell_c' AND type != 'QueryStart'
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query))
+) = (
+    SELECT [toString(greatest(sipHash64(query_id), 2))]
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+      AND is_initial_query AND type != 'QueryStart'
+    LIMIT 1);
 
 -- Cell C must be non-vacuous: the query really did fan out to several replicas, each re-planning.
 SELECT 'cell C fanned out to several replicas', uniqExact(query_id) > 1
