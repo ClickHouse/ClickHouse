@@ -307,12 +307,9 @@ SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
 {
 }
 
-bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+bool SplitByRegexpTokenizer::nextInStringImpl(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
 {
-    /// Scratch reused by `OptimizedRegularExpression::match`. A local keeps this method const and reentrant;
-    /// `nextRegexpMatch` accepts it as a parameter so a future caller can hoist it out of the token loop.
-    OptimizedRegularExpression::MatchVec matches;
-
     while (pos <= length)
     {
         const size_t token_begin = pos;
@@ -345,6 +342,16 @@ bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size
     }
 
     return false;
+}
+
+bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
+    /// inefficient) `stringToTokens` / `stringToBloomFilter` paths. The hot path - `forEachToken`, used by
+    /// index build, search and the `tokens` function - goes through `forEachTokenImpl`, which reuses a single
+    /// scratch buffer across all tokens of a string.
+    OptimizedRegularExpression::MatchVec matches;
+    return nextInStringImpl(data, length, pos, token_start, token_length, matches);
 }
 
 bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const

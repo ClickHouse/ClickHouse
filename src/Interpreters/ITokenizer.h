@@ -340,7 +340,28 @@ struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpToken
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
+    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
+    /// It reuses a single `MatchVec` across all tokens of the string, so - unlike a per-call `nextInString` -
+    /// it does not heap-allocate the RE2 match scratch for every emitted token. The buffer is a local, so the
+    /// method stays `const` and reentrant.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * data, size_t length, Callback && callback) const
+    {
+        OptimizedRegularExpression::MatchVec matches;
+        size_t pos = 0;
+        size_t token_start = 0;
+        size_t token_length = 0;
+
+        while (pos < length && nextInStringImpl(data, length, pos, token_start, token_length, matches))
+            if (callback(data + token_start, token_length))
+                return;
+    }
+
 private:
+    /// Single split step, taking caller-owned RE2 match scratch so the hot path can reuse one buffer.
+    bool nextInStringImpl(
+        const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
+
     String regexp_str;
     /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
     /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
@@ -516,7 +537,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SplitByRegexp:
         {
             const auto & split_by_regexp_tokenizer = assert_cast<const SplitByRegexpTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(split_by_regexp_tokenizer, data, length, callback);
+            split_by_regexp_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::Array:
