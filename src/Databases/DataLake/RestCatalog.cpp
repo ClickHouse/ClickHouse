@@ -1394,7 +1394,7 @@ bool RestCatalog::getTableMetadataImpl(
             = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(context_, allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, context_, log);
-        auto schema = schema_processor.getClickhouseTableSchemaById(id);
+        auto schema = schema_processor.getClickhouseTableSchemaById(id, context_);
         result.setSchema(*schema);
     }
 

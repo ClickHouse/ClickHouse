@@ -511,7 +511,7 @@ static bool writeConsolidatedManifestFile(
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {
             auto fields_characteristics
-                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
+                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids, context);
             /// A short result means this schema does not define every partition source column.
             if (fields_characteristics.size() != source_ids.size())
                 return std::nullopt;

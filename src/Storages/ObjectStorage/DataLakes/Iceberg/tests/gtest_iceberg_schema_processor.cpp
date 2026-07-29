@@ -386,10 +386,9 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)", getContext().context), DB::Exception);
 }
 
-/// Persistent IcebergSchemaProcessor instances cache ClickHouse types by schema-id. Re-adding the same
-/// Iceberg schema under a different iceberg_timezone_for_timestamptz must rematerialize DateTime64
-/// timezones (and drop timezone-sensitive transform DAGs), otherwise the first query/prefetch pins UTC.
-TEST(IcebergSchemaProcessor, RematerializeTimestamptzTimezoneOnSettingChange)
+/// Persistent IcebergSchemaProcessor instances cache ClickHouse types by (schema-id, timezone).
+/// Different iceberg_timezone_for_timestamptz values must coexist so concurrent queries do not overwrite each other.
+TEST(IcebergSchemaProcessor, TimestamptzTimezoneKeyedCacheCoexistence)
 {
     auto schema = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
@@ -398,24 +397,24 @@ TEST(IcebergSchemaProcessor, RematerializeTimestamptzTimezoneOnSettingChange)
     auto utc_context = DB::Context::createCopy(getContext().context);
     utc_context->setSetting("iceberg_timezone_for_timestamptz", String("UTC"));
     processor.addIcebergTableSchema(schema, utc_context);
-    auto utc_schema = processor.getClickhouseTableSchemaById(0);
+    auto utc_schema = processor.getClickhouseTableSchemaById(0, utc_context);
     ASSERT_EQ(utc_schema->size(), 1u);
     EXPECT_EQ(utc_schema->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 
     auto berlin_context = DB::Context::createCopy(getContext().context);
     berlin_context->setSetting("iceberg_timezone_for_timestamptz", String("Europe/Berlin"));
     processor.addIcebergTableSchema(schema, berlin_context);
-    auto berlin_schema = processor.getClickhouseTableSchemaById(0);
+    auto berlin_schema = processor.getClickhouseTableSchemaById(0, berlin_context);
     ASSERT_EQ(berlin_schema->size(), 1u);
     EXPECT_EQ(berlin_schema->front().type->getName(), "Nullable(DateTime64(6, 'Europe/Berlin'))");
-    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'Europe/Berlin'))");
 
-    /// Same setting again must be a no-op (still Berlin).
-    processor.addIcebergTableSchema(schema, berlin_context);
-    EXPECT_EQ(processor.getClickhouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'Europe/Berlin'))");
+    /// UTC entry must still be intact after Berlin materialization.
+    EXPECT_EQ(processor.getClickhouseTableSchemaById(0, utc_context)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1, utc_context).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1, berlin_context).type->getName(), "Nullable(DateTime64(6, 'Europe/Berlin'))");
 }
 
-TEST(IcebergSchemaProcessor, RematerializeTimestamptzTimezoneInvalidatesTransformDag)
+TEST(IcebergSchemaProcessor, TimestamptzTimezoneKeyedTransformDag)
 {
     auto old_schema = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
@@ -435,7 +434,6 @@ TEST(IcebergSchemaProcessor, RematerializeTimestamptzTimezoneInvalidatesTransfor
 
     auto berlin_context = DB::Context::createCopy(getContext().context);
     berlin_context->setSetting("iceberg_timezone_for_timestamptz", String("Europe/Berlin"));
-    /// Re-adding under a new timezone must invalidate the cached DAG so the next build uses Berlin.
     processor.addIcebergTableSchema(old_schema, berlin_context);
     processor.addIcebergTableSchema(new_schema, berlin_context);
 
@@ -443,4 +441,9 @@ TEST(IcebergSchemaProcessor, RematerializeTimestamptzTimezoneInvalidatesTransfor
     ASSERT_TRUE(berlin_dag);
     ASSERT_EQ(berlin_dag->getOutputs().size(), 1u);
     EXPECT_EQ(berlin_dag->getOutputs()[0]->result_type->getName(), "Nullable(DateTime64(6, 'Europe/Berlin'))");
+
+    /// Previously cached UTC DAG must remain available.
+    auto utc_dag_again = processor.getSchemaTransformationDagByIds(utc_context, 0, 1);
+    ASSERT_TRUE(utc_dag_again);
+    EXPECT_EQ(utc_dag_again->getOutputs()[0]->result_type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }

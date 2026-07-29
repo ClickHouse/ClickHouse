@@ -39,6 +39,7 @@ private:
     const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
+    DB::ContextPtr context;
     const DB::KeyDescription * partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
 

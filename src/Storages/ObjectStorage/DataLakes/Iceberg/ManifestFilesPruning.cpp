@@ -70,7 +70,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     ActionsDAG dag_with_renames;
     for (const auto column_id : used_columns_in_filter)
     {
-        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
+        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id, context);
 
         /// Columns which we dropped and don't exist in current schema
         /// cannot be queried in WHERE expression.
@@ -78,7 +78,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, context);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -99,10 +99,11 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const ManifestFileIterator & manifest_file,
-    DB::ContextPtr context)
+    DB::ContextPtr context_)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
+    , context(context_)
 {
     if (filter_dag == nullptr)
     {
@@ -124,7 +125,7 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     for (Int32 used_column_id : used_columns_in_filter)
     {
-        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id, context);
         if (!name_and_type.has_value())
             continue;
 
@@ -167,7 +168,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
+        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, context);
 
         /// There is no such column in this manifest file
         if (!name_and_type.has_value())

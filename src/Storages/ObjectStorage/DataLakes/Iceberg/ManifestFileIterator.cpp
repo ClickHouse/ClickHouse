@@ -298,7 +298,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
         std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
-            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
+            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id, context_);
         if (!manifest_file_column_characteristics.has_value())
             continue;
         auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
@@ -470,7 +470,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         {
             for (const auto & [column_id, bounds] : parsed_entry->value_bounds)
             {
-                auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id);
+                auto field_characteristics = schema_processor_ptr->tryGetFieldCharacteristics(resolved_schema_id, column_id, context);
                 /// If we don't have column characteristics, bounds don't have any sense.
                 /// This happens if the subfield is inside map or array, because we don't support
                 /// name generation for such subfields (we support names of nested subfields in structs only).
