@@ -2,9 +2,9 @@
 1
 === an OPTIONS request to a handler endpoint gets the generic preflight response (204) ===
 1
-=== a lengthless non-chunked PUT to a mutating handler is rejected with 411 ===
+=== a lengthless non-chunked PUT to a body-consuming handler is rejected with 411 ===
 1
-=== a lengthless non-chunked DELETE to a mutating handler is rejected with 411 ===
+=== a lengthless non-chunked DELETE to a body-consuming handler is rejected with 411 ===
 1
 === CREATE TEMPORARY TABLE is allowed over a read-only (GET) handler method ===
 temp table handler created

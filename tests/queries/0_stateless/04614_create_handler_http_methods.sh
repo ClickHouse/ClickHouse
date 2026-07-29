@@ -36,13 +36,15 @@ ${CLICKHOUSE_CURL} -sS --head "${BASE}${P}/get" | grep -c '200 OK'
 echo "=== an OPTIONS request to a handler endpoint gets the generic preflight response (204) ==="
 ${CLICKHOUSE_CURL} -sS -X OPTIONS -I "${BASE}${P}/get" | grep -c '204 No Content'
 
-echo "=== a lengthless non-chunked PUT to a mutating handler is rejected with 411 ==="
+echo "=== a lengthless non-chunked PUT to a body-consuming handler is rejected with 411 ==="
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t (x UInt32) ENGINE = Memory; CREATE HANDLER \`$HPUT\` URL '${P}/put' METHODS (PUT) AS INSERT INTO ${DB}.t FORMAT TSV"
 # `-X PUT -I` sends a PUT with neither Content-Length nor chunked Transfer-Encoding: without the guard
-# the body would be read until EOF and a dropped connection accepted as a partial INSERT.
+# the body would be read until EOF and a dropped connection accepted as a partial INSERT. The guard applies
+# because the handler's query consumes the body; a handler that does not is checked in
+# `04655_handler_bodyless_put_delete`.
 ${CLICKHOUSE_CURL} -sS -X PUT -I "${BASE}${P}/put" | grep -c '411 Length Required'
 
-echo "=== a lengthless non-chunked DELETE to a mutating handler is rejected with 411 ==="
+echo "=== a lengthless non-chunked DELETE to a body-consuming handler is rejected with 411 ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDEL\` URL '${P}/del' METHODS (DELETE) AS INSERT INTO ${DB}.t FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS -X DELETE -I "${BASE}${P}/del" | grep -c '411 Length Required'
 
