@@ -394,9 +394,6 @@ QueryPlanStepPtr makeCountSource(UInt64 count, const String & count_column)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
-    if (!settings.query_plan_optimize_count_from_text_index)
-        return false;
-
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return false;
