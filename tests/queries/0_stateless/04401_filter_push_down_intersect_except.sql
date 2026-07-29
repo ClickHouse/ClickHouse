@@ -44,9 +44,10 @@ SELECT 'top filter EXCEPT ALL off', countIf(explain LIKE 'Filter%') FROM
 DROP TABLE IF EXISTS t_intex_g_l;
 DROP TABLE IF EXISTS t_intex_g_r;
 -- The granularity settings are pinned because the runner randomizes them, and the assertions below
--- name exact granule counts.
-CREATE TABLE t_intex_g_l (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
-CREATE TABLE t_intex_g_r (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+-- name exact granule counts. The wide-part thresholds must be 0 as well: with adaptive granularity
+-- off a non-zero threshold is ignored, and the server logs a <Warning> that fails the test.
+CREATE TABLE t_intex_g_l (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_intex_g_r (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_intex_g_l SELECT number FROM numbers(100000);
 INSERT INTO t_intex_g_r SELECT number FROM numbers(100000);
 SELECT 'granules on', countIf(explain LIKE '%Granules: 1/13%') FROM
