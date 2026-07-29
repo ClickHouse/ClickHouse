@@ -9,7 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS test;
 
-    CREATE TABLE test (key UInt64, val UInt64) engine = MergeTree Order by key PARTITION BY key >= 128;
+    -- max_bytes_to_merge_at_max_space_in_pool = 1 disables background merges, so the table has
+    -- one part per inserted block until OPTIMIZE FINAL below merges them. Merges started by
+    -- OPTIMIZE FINAL ignore this setting.
+    CREATE TABLE test (key UInt64, val UInt64) engine = MergeTree Order by key PARTITION BY key >= 128
+        SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
     SET max_block_size = 64, max_insert_block_size = 64, min_insert_block_size_rows = 64;
     INSERT INTO test SELECT number AS key, sipHash64(number) AS val FROM numbers(512);
 "
@@ -31,8 +35,10 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE test FINAL;"
 
-# OPTIMIZE may return before the MergeParts entries are added to the system.part_log table.
-# Retry SYSTEM FLUSH LOGS until all entries are fully flushed.
+# OPTIMIZE FINAL runs one foreground merge per partition, and the table has two partitions
+# (PARTITION BY key >= 128), so it produces exactly two MergeParts entries.
+# OPTIMIZE may return before those entries are added to the system.part_log table:
+# retry SYSTEM FLUSH LOGS until both are flushed.
 for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
     res=$(${CLICKHOUSE_CLIENT} --query "
@@ -41,7 +47,7 @@ for _ in {1..10}; do
             AND database == currentDatabase() AND table == 'test'
             AND event_type == 'MergeParts';"
     )
-    if [[ $res -gt 2 ]]; then
+    if [[ $res -eq 2 ]]; then
         break
     fi
 
@@ -50,8 +56,8 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        if(count() > 2, 'Ok', 'Error: ' || toString(count())),
-        if(SUM(ProfileEvents['MergedRows']) >= 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows'])))
+        if(count() == 2, 'Ok', 'Error: ' || toString(count())),
+        if(SUM(ProfileEvents['MergedRows']) == 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows'])))
     FROM system.part_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
         AND database == currentDatabase() AND table == 'test'
