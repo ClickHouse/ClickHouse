@@ -118,4 +118,58 @@ SELECT count() = (SELECT countIf(has(['1', '2', '3'], CAST(CAST(s, 'LowCardinali
     FROM t_04612_part WHERE has(['1', '2', '3'], CAST(CAST(s, 'LowCardinality(String)'), 'String'));
 SELECT count() FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') IN ('1', '2', '3');
 
+-- The set-index path must still prune parts, not merely return the right count: a chain whose types
+-- disagree makes MergeTreeSetIndex decline silently and scan everything, which count equality alone
+-- cannot detect.
+SELECT max(toUInt32(extract(g, '^(\d+)')) < toUInt32(extract(g, '/(\d+)$'))) AS pruning_fired
+FROM (
+    SELECT extract(trimLeft(explain), 'Parts: (\d+/\d+)') AS g
+    FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') IN ('1', '2', '3')
+        SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+    )
+    WHERE explain ILIKE '%Parts: %/%'
+);
+SELECT max(toUInt32(extract(g, '^(\d+)')) < toUInt32(extract(g, '/(\d+)$'))) AS pruning_fired
+FROM (
+    SELECT extract(trimLeft(explain), 'Parts: (\d+/\d+)') AS g
+    FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_04612_part WHERE has(['1', '2', '3'], CAST(CAST(s, 'LowCardinality(String)'), 'String'))
+        SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+    )
+    WHERE explain ILIKE '%Parts: %/%'
+);
+
 DROP TABLE t_04612_part;
+
+-- A comparison whose constant needs a supertype cast appended after the chain. `extractAtomFromTree`
+-- strips LowCardinality from the key type to pick that supertype, but the chain's last function still
+-- returns LowCardinality, so the appended cast must declare the type it is actually given. Declaring
+-- the stripped type instead made this fail with "Illegal column LowCardinality(Int32) of first
+-- argument of function toDateTime64" (ILLEGAL_COLUMN). A LowCardinality PARTITION key routes this
+-- through applyFunctionForField, the explicit-Field path.
+DROP TABLE IF EXISTS t_04612_super;
+CREATE TABLE t_04612_super (d LowCardinality(Date), v UInt32)
+    ENGINE = MergeTree ORDER BY tuple() PARTITION BY d
+    SETTINGS index_granularity = 8;
+INSERT INTO t_04612_super SELECT toDate('2020-01-01') + number, number FROM numbers(4);
+
+SELECT count() = (SELECT countIf(CAST(d, 'LowCardinality(Date32)') < toDateTime('2020-01-03 00:00:00')) FROM t_04612_super)
+    FROM t_04612_super WHERE CAST(d, 'LowCardinality(Date32)') < toDateTime('2020-01-03 00:00:00');
+SELECT count() FROM t_04612_super WHERE CAST(d, 'LowCardinality(Date32)') < toDateTime('2020-01-03 00:00:00');
+
+-- Partition pruning must still fire for that predicate.
+SELECT max(toUInt32(extract(g, '^(\d+)')) < toUInt32(extract(g, '/(\d+)$'))) AS pruning_fired
+FROM (
+    SELECT extract(trimLeft(explain), 'Parts: (\d+/\d+)') AS g
+    FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_04612_super WHERE CAST(d, 'LowCardinality(Date32)') < toDateTime('2020-01-03 00:00:00')
+        SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+    )
+    WHERE explain ILIKE '%Parts: %/%'
+);
+
+DROP TABLE t_04612_super;
