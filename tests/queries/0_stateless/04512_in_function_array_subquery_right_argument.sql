@@ -163,5 +163,12 @@ DROP TABLE IF EXISTS t_04512_set_alias;
 CREATE TABLE t_04512_set_alias ENGINE = Alias('t_04512_set');
 SELECT [1, 2, 3] IN t_04512_set_alias AS alias_row_present, [9, 9] IN t_04512_set_alias AS alias_row_absent;
 SELECT 2 IN t_04512_set_alias; -- { serverError TYPE_MISMATCH }
+
+-- The legacy `IN` implementation resolves the table itself, so it needs the same unwrapping: with
+-- `enable_analyzer = 0` the alias used to reach `StorageSet::read`. Both spellings must agree.
+SELECT [1, 2, 3] IN t_04512_set_alias AS alias_row_present, [9, 9] IN t_04512_set_alias AS alias_row_absent SETTINGS enable_analyzer = 0;
+SELECT 2 IN t_04512_set_alias SETTINGS enable_analyzer = 0; -- { serverError TYPE_MISMATCH }
+SELECT [1, 2, 3] IN t_04512_set AS row_present, [9, 9] IN t_04512_set AS row_absent SETTINGS enable_analyzer = 0;
+
 DROP TABLE t_04512_set_alias;
 DROP TABLE t_04512_set;
