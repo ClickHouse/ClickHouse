@@ -106,4 +106,33 @@ SELECT 'memory-bound merging not used for distributed GROUPING SETS',
 FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force) GROUP BY GROUPING SETS ((), (a)))
 WHERE explain ILIKE '%FinishAggregatingInOrderTransform%';
 
+-- The reported query was a mutation subquery, and that carrier reaches the old-analyzer branch even
+-- with `enable_analyzer = 1`: `replaceNonDeterministicToScalars` runs `ExecuteScalarSubqueriesVisitor`,
+-- which builds an `InterpreterSelectWithUnionQuery` directly. `numbers` keeps the subquery result
+-- independent of the mutation, so the value is stable however often the mutation is applied.
+DROP TABLE IF EXISTS t_grouping_sets_force_mut;
+CREATE TABLE t_grouping_sets_force_mut (c0 Int32, c1 Int32) ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_grouping_sets_force_mut VALUES (1, 2), (3, 5);
+
+ALTER TABLE t_grouping_sets_force_mut
+UPDATE c1 = (SELECT sum(number) FROM numbers(4) GROUP BY GROUPING SETS ((number), ()) ORDER BY 1 DESC LIMIT 1)
+WHERE TRUE
+SETTINGS enable_analyzer = 0, mutations_execute_subqueries_on_initiator = 1, mutations_sync = 2;
+
+SELECT 'mutation subquery, old analyzer', c0, c1 FROM t_grouping_sets_force_mut ORDER BY c0;
+
+-- `numbers(5)` rather than `numbers(4)`, so this mutation lands a different value than the one
+-- above and its execution is observable instead of being implied by an identical assignment.
+ALTER TABLE t_grouping_sets_force_mut
+UPDATE c1 = (SELECT sum(number) FROM numbers(5) GROUP BY GROUPING SETS ((number), ()) ORDER BY 1 DESC LIMIT 1)
+WHERE TRUE
+SETTINGS enable_analyzer = 1, mutations_execute_subqueries_on_initiator = 1, mutations_sync = 2;
+
+SELECT 'mutation subquery, analyzer', c0, c1 FROM t_grouping_sets_force_mut ORDER BY c0;
+
+SELECT 'scalar subquery, old analyzer',
+    (SELECT sum(number) FROM numbers(4) GROUP BY GROUPING SETS ((number), ()) ORDER BY 1 DESC LIMIT 1)
+SETTINGS enable_analyzer = 0;
+
+DROP TABLE t_grouping_sets_force_mut;
 DROP TABLE t_grouping_sets_force;
