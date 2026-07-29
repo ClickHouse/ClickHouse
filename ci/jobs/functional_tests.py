@@ -742,6 +742,11 @@ def main():
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
     )
+    # `run_stateless_test` runs `clickhouse-test` without changing directory, so
+    # clients it spawns inherit the repository root and dump their cores there.
+    # Declaring it lets `prepare_logs` retain the core of a client that died on a
+    # fatal signal; without it such a crash leaves no core and no stack anywhere.
+    CH.client_core_path = Utils.cwd()
 
     job_info = ""
 

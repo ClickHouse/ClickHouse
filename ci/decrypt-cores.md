@@ -23,14 +23,23 @@ maintainers and is required for decryption.
 
 When a job collects core dumps, it attaches the following files to the run:
 
-- `aes.key.rsa` — the RSA-OAEP-wrapped AES key for that job.
-- One or more `core.<pid>.zst.enc` files — at most three, taken from
-  `ci/tmp/run_r*/core.*`.
+- `aes.key.rsa` - the RSA-OAEP-wrapped AES key. There is exactly one per job, and
+  it decrypts every core that job attached.
+- One or more `<origin>.core.<comm>.<pid>.zst.enc` files. `<origin>` says where the
+  core came from: `run_r0`/`run_r1`/`run_r2` for a server replica, `client` for a
+  `clickhouse-client` or `clickhouse-local` process that a test spawned. At most
+  three cores are taken per origin.
+
+Client cores are collected only for jobs that declare the directory their
+`clickhouse-test` runs from (`ClickHouseProc.client_core_path`). A relative
+`kernel.core_pattern`, which is what CI runners use, writes a core into the
+working directory of the dumping process, and that directory differs between jobs.
 
 You will also need the matching `clickhouse` binary (download it from the build
 job for the same commit) to actually analyze the core in `gdb`. That binary is
 self-extracting; to get the inner ELF with symbols, see "Loading the Core in
-gdb" below.
+gdb" below. A job that runs several build types, such as bugfix validation,
+replaces the binary between runs, so pick the build the core came from.
 
 ## Prerequisites
 
