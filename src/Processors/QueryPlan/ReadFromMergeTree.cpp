@@ -158,11 +158,16 @@ String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, cons
     /// distributed bucket read (filterMarkRangesForBucket) trims a part to a subset of its mark ranges
     /// per worker; the whole-part size then says nothing about which column is cheapest in the marks
     /// this worker actually reads, and scaling it by the selected/total mark fraction is a per-part
-    /// constant that cannot reorder columns within a part. So when any selected part is range-trimmed,
-    /// distrust the on-disk numbers and fall back to the in-memory heuristic below, which does not
-    /// depend on how many marks are read. A true no-columns query has no predicate, so a non-distributed
-    /// read is never trimmed and keeps the on-disk ranking; only bucketed/parallel-replicas reads fall
-    /// back.
+    /// constant that cannot reorder columns within a part. So when any selected part is already
+    /// range-trimmed here, distrust the on-disk numbers and fall back to the in-memory heuristic
+    /// below, which does not depend on how many marks are read. A true no-columns query has no
+    /// predicate, so a non-distributed read is never trimmed and keeps the on-disk ranking; the
+    /// distributed bucket filter runs before this and is therefore visible. Parallel replicas are
+    /// NOT: the coordinator assigns and cuts mark ranges later, in
+    /// MergeTreeReadPoolParallelReplicas::getTask, so `parts` still holds the full announced ranges
+    /// and this check cannot see it. Such a read keeps the whole-part ranking, which is the best
+    /// estimate available at plan time; the carrier only has to supply the row count, so any
+    /// candidate is correct and a per-replica mis-rank costs bytes, never correctness.
     bool any_part_range_trimmed = false;
     for (const auto & part : parts)
         if (part.ranges.getNumberOfMarks() < part.data_part->index_granularity->getMarksCountWithoutFinal())
