@@ -8,7 +8,7 @@ keywords: ['数据湖', '湖仓', '数据目录', 'glue', 'unity', 'rest', 'lake
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在[上一节](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)中，你通过直接传入存储路径来查询开放表格式。实际使用中，大多数组织都会通过**数据目录**管理表元数据——也就是一个集中式注册中心，用于跟踪表的位置、schema 和分区。当你使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎将 ClickHouse 连接到某个目录时，整个目录都会作为一个 ClickHouse 数据库对外暴露。目录中的每张表都会自动显示出来，并且都可以使用完整的 ClickHouse SQL 进行查询——无需知道各个表的具体路径，也无需为每张表单独管理凭证。
 
