@@ -3132,14 +3132,14 @@ class TestCase:
         # trim over the untrimmed dumps - the window this code has always had, rather than one
         # such window per artifact.
         debug_log = ""
-        expect_log = ""
-        bash_log = ""
+        expect_body = ""
+        bash_body = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
-                expect_log = self.testcase_args.debug_log_file + ":\n"
-                expect_log += str(stream.read(), errors="replace", encoding="utf-8")
-                expect_log += "\n"
-            debug_log += trim_for_log(expect_log)
+                expect_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(
+                self.testcase_args.debug_log_file + ":\n" + expect_body + "\n"
+            )
         # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
         # this file the moment it is sourced and only writes once a traced command runs, so a
         # zero-length one carries no diagnostics - and reporting its name would add a bare header
@@ -3147,21 +3147,27 @@ class TestCase:
         bash_tracing_file = self.testcase_args.bash_tracing_file
         if os.path.exists(bash_tracing_file) and os.path.getsize(bash_tracing_file) > 0:
             with open(bash_tracing_file, "rb") as stream:
-                bash_log = bash_tracing_file + ":\n"
-                bash_log += str(stream.read(), errors="replace", encoding="utf-8")
-                bash_log += "\n"
-            debug_log += trim_for_log(bash_log, 100)
+                bash_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(bash_tracing_file + ":\n" + bash_body + "\n", 100)
         # Read by `run` through `retry_matcher_input`: the reported dumps are replaced by this
         # single historically-bounded trim before the description reaches the retry matcher.
         #
-        # The xtrace goes FIRST here, opposite to the report order above, because that is the
-        # order the one shared file used to hold: bash owns fd 3 from the moment `shell_config.sh`
-        # is sourced and writes while the test runs, whereas expect's trace is dominated by the
-        # verdict lines it emits once the spawned program has produced its output. Concatenating
-        # in report order instead puts the xtrace behind however long the expect trace is, which
-        # pushes an early xtrace line out of this window's visible head and drops a retry the
-        # single-file code would have made.
-        debug_log_for_retry = trim_for_log(bash_log + expect_log, 100)
+        # Assembled to be line-for-line what the one shared file used to hold, because that file
+        # is what set this window's contract. So the raw BODIES are joined under a single
+        # header and trailer - decorating each dump first would add a header and a trailer per
+        # artifact, and those extra lines shift the window's own boundary, hiding markers near it
+        # that the pre-split shape kept.
+        #
+        # And the xtrace body goes FIRST, opposite to the report order above: bash owns fd 3 from
+        # the moment `shell_config.sh` is sourced and writes while the test runs, whereas expect's
+        # trace is dominated by the verdict lines it emits once the spawned program has produced
+        # its output. Joining in report order instead puts the xtrace behind however long the
+        # expect trace is, which pushes an early xtrace line out of this window's visible head.
+        # Either departure silently drops retries the single-file code would have made.
+        retry_header = bash_tracing_file if bash_body else self.testcase_args.debug_log_file
+        debug_log_for_retry = trim_for_log(
+            retry_header + ":\n" + bash_body + expect_body + "\n", 100
+        )
         self.debug_log_retry_substitution = (
             (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
         )

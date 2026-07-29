@@ -912,6 +912,22 @@ def test_the_wider_report_does_not_widen_retry_matching(tmp_path):
     )
     assert described.need_retry
 
+    # And the window's own BOUNDARY has to be where the single shared file put it, which means the
+    # matcher's payload carries ONE header and trailer rather than one per artifact. Two extra
+    # decoration lines push the boundary two lines earlier, so this cell - a one-line xtrace and
+    # 96 expect lines, with the marker just inside the kept head - retries under the single-file
+    # shape and does not once each dump is decorated before being joined.
+    boundary_expect = [f"expect line {i}\n" for i in range(96)]
+    boundary_expect[46] = f"expect: got {marker} while matching\n"
+    described, retry_input = verdict(
+        "boundary", "".join(boundary_expect), "+ one traced command\n"
+    )
+    assert marker in retry_input, (
+        "a marker just inside the historical window's head no longer reaches the matcher, so the "
+        "payload is carrying per-artifact headers and trailers and its boundary has moved"
+    )
+    assert described.need_retry
+
 
 def test_run_matches_retries_against_the_narrowed_description():
     """Every ``check_if_need_retry`` call in ``run`` must pass the NARROWED text.
@@ -985,55 +1001,87 @@ def test_run_matches_retries_against_the_narrowed_description():
 
 
 def test_the_two_report_blocks_are_trimmed_independently():
+    """Three ``trim_for_log`` calls, each with its own bound and its own payload.
+
+    Read from the AST rather than from the text: every call now takes a built-up expression
+    rather than a bare name, so a line-oriented check could neither tell the three apart nor
+    see the operand ORDER inside the matcher's payload.
+    """
     source = inspect.getsource(ClickHouseTestCase.process_result_impl)
-
-    def limits(argname):
-        # The argument has to be that name and nothing else: the matcher's own call passes a
-        # CONCATENATION of the two dumps, so a prefix match would count it as a per-dump trim.
-        pattern = re.compile(rf"trim_for_log\({argname}\s*[,)]")
-        return [
-            _trim_limit(line.strip(), argname)
-            for line in source.splitlines()
-            if pattern.search(line)
-        ]
-
-    expect_limits = limits("expect_log")
-    bash_limits = limits("bash_log")
-    assert len(expect_limits) == 1, expect_limits
-    assert len(bash_limits) == 1, bash_limits
-
-    # The xtrace keeps the historical 100-line bound; the expect trace must NOT, or the
-    # middle of its verdict sequence - the part that names the statement that blocked - is
-    # dropped, since one progress-table redraw is one very long line.
-    assert bash_limits == [100], bash_limits
-    assert expect_limits == [_TRIM_DEFAULT_LIMIT], expect_limits
-
-    # The retry matcher's copy is ONE trim, at the historical bound, over the two RAW dumps
-    # concatenated - so its window is the one this code has always had rather than one such window
-    # per artifact, and the dumps enter it in the order the single shared file used to hold them:
-    # the xtrace first. Read from the AST rather than from the text, so neither the operand order
-    # nor the limit can drift behind a rename.
     tree = ast.parse(textwrap.dedent(source))
-    retry_trims = [
+
+    def limit_of(call):
+        """The bound a call passes, as a number, taking the declared default when omitted."""
+        if len(call.args) > 1:
+            return call.args[1].value
+        return _TRIM_DEFAULT_LIMIT
+
+    def names_in(call):
+        return {
+            node.id for node in ast.walk(call.args[0]) if isinstance(node, ast.Name)
+        }
+
+    # Only the debuglog trims, selected by the dump bodies they read: the function also trims
+    # stdout and stderr, and those bounds are none of this test's business.
+    trims = [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "trim_for_log"
-        and isinstance(node.args[0], ast.BinOp)
-        and isinstance(node.args[0].op, ast.Add)
+        and node.args
+        and {name for name in names_in(node) if name.endswith("_body")}
     ]
-    assert len(retry_trims) == 1, [ast.unparse(n) for n in retry_trims]
-    concatenation, *rest = retry_trims[0].args
-    assert [arg.value for arg in rest] == [100], ast.unparse(retry_trims[0])
-    operands = (concatenation.left, concatenation.right)
-    assert all(isinstance(operand, ast.Name) for operand in operands), ast.unparse(
-        concatenation
+    assert len(trims) == 3, [ast.unparse(node) for node in trims]
+
+    # The matcher's payload is the one built from BOTH dump bodies; the two report blocks each
+    # carry exactly one. Classified by that, so no call is identified by a variable name.
+    def bodies_in(call):
+        # Ordered by source position, not by `ast.walk` order: a left-nested `+` chain is walked
+        # breadth-first, so walk order reports the operands in the wrong sequence and an
+        # order assertion built on it would be reversed.
+        return [
+            node.id
+            for node in sorted(
+                (
+                    node
+                    for node in ast.walk(call.args[0])
+                    if isinstance(node, ast.Name) and node.id.endswith("_body")
+                ),
+                key=lambda node: (node.lineno, node.col_offset),
+            )
+        ]
+
+    reports = [call for call in trims if len(bodies_in(call)) == 1]
+    matchers = [call for call in trims if len(bodies_in(call)) > 1]
+    assert len(matchers) == 1, [ast.unparse(node) for node in matchers]
+    assert len(reports) == 2, [ast.unparse(node) for node in reports]
+
+    # The xtrace keeps the historical 100-line bound; the expect trace must NOT, or the
+    # middle of its verdict sequence - the part that names the statement that blocked - is
+    # dropped, since one progress-table redraw is one very long line.
+    assert sorted(limit_of(call) for call in reports) == [100, _TRIM_DEFAULT_LIMIT], [
+        ast.unparse(node) for node in reports
+    ]
+    # And the matcher's window is the historical one, not the wide report bound.
+    assert limit_of(matchers[0]) == 100, ast.unparse(matchers[0])
+
+    # Its payload must be line-for-line what the single shared file held, so the two RAW bodies
+    # are joined under ONE header and trailer, xtrace body first. Decorating each dump before
+    # joining would add a header and a trailer per artifact and shift the window's boundary;
+    # joining in report order would push an early xtrace line out of the window's visible head.
+    payload = [
+        node for node in ast.walk(matchers[0].args[0]) if isinstance(node, ast.Name)
+    ]
+    assert bodies_in(matchers[0]) == ["bash_body", "expect_body"], (
+        "the matcher's payload is no longer the two raw bodies with the xtrace first, so its "
+        f"window has drifted from the one the shared file set: {ast.unparse(matchers[0])}"
     )
-    assert [operand.id for operand in operands] == ["bash_log", "expect_log"], (
-        "the matcher's copy no longer puts the xtrace first, so an early xtrace line falls "
-        f"behind the whole expect trace and out of the window: {ast.unparse(concatenation)}"
+    # Exactly one header, and no trimmed report block feeding back in.
+    assert sum(1 for node in payload if node.id == "retry_header") == 1, ast.unparse(
+        matchers[0]
     )
+    assert "debug_log" not in {node.id for node in payload}, ast.unparse(matchers[0])
 
 
 def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
@@ -1072,11 +1120,11 @@ def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
         for node in guarded
         if isinstance(node, ast.Assign)
         and any(
-            isinstance(target, ast.Name) and target.id == "bash_log"
+            isinstance(target, ast.Name) and target.id == "bash_body"
             for target in node.targets
         )
     ]
-    assert len(assignments) == 1, "bash_log is not assigned inside the guard body"
+    assert len(assignments) == 1, "bash_body is not read inside the guard body"
     appends = [
         node
         for node in guarded
@@ -1084,8 +1132,12 @@ def test_an_empty_bash_xtrace_file_produces_no_block(tmp_path):
         and isinstance(node.func, ast.Name)
         and node.func.id == "trim_for_log"
         and node.args
-        and isinstance(node.args[0], ast.Name)
-        and node.args[0].id == "bash_log"
+        and "bash_body"
+        in {
+            inner.id
+            for inner in ast.walk(node.args[0])
+            if isinstance(inner, ast.Name)
+        }
     ]
     assert len(appends) == 1, (
         "the xtrace report block is not assembled inside the guard body"
