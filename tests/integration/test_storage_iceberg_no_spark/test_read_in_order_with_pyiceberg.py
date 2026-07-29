@@ -246,3 +246,71 @@ def test_sort_order_transform_special_char_column_name(started_cluster_iceberg_n
         ).strip()
         == "100"
     )
+
+
+def test_sort_order_through_merge_table(started_cluster_iceberg_no_spark):
+    # Regression test for reading an Iceberg table through a `Merge` table.
+    # An Iceberg table is only sorted by its sorting key when every data file
+    # carries the table's sort order id, which is what
+    # `ReadFromObjectStorageStep::requestReadingInOrder` verifies. `pyiceberg`
+    # declares a sort order but writes the data unsorted, so the read-in-order
+    # optimization has to be rejected. `ReadFromMerge::requestReadingInOrder`
+    # used to ignore object storage children and advertise the order of the
+    # declared sorting key on its own, which dropped the sorting step and
+    # returned unsorted rows.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="string_col", field_type=StringType(), required=False
+        ),
+        NestedField(field_id=2, name="long_col", field_type=LongType(), required=False),
+    )
+
+    partition_spec = PartitionSpec()
+    # NOTE pyiceberg ignores the sort order when writing data, so the data is unsorted.
+    sort_order = SortOrder(SortField(source_id=1, transform=IdentityTransform()))
+    table = create_table(
+        catalog, root_namespace, "test_merge", schema, partition_spec, sort_order
+    )
+
+    data = []
+    for _ in range(100):
+        data.append(
+            {
+                "string_col": f"User{random.randint(1, 1000)}",
+                "long_col": random.randint(1000, 10000),
+            }
+        )
+
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(
+        started_cluster_iceberg_no_spark, instance, CATALOG_NAME
+    )
+
+    merge_source = f"merge('{CATALOG_NAME}', '^{root_namespace}\\\\.test_merge$')"
+
+    assert (
+        instance.query(f"SELECT count() FROM {merge_source}").strip() == "100"
+    )
+
+    # The order request must be rejected for the object storage child, so the
+    # sorting step stays in the pipeline and the result is sorted by it.
+    assert "PartialSortingTransform" in instance.query(
+        f"EXPLAIN PIPELINE SELECT string_col FROM {merge_source} "
+        f"ORDER BY string_col SETTINGS optimize_read_in_order = 1"
+    )
+
+    result = (
+        instance.query(
+            f"SELECT string_col FROM {merge_source} "
+            f"ORDER BY string_col SETTINGS optimize_read_in_order = 1"
+        )
+        .strip()
+        .split("\n")
+    )
+    assert result == list(sorted(result))

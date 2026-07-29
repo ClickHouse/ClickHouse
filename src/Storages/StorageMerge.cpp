@@ -44,6 +44,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -1218,11 +1219,12 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 static bool recursivelyApplyToReadingSteps(
     QueryPlan::Node * node,
     const std::function<bool(ReadFromMergeTree &)> & func,
-    const std::function<bool(ReadFromMerge &)> & merge_func)
+    const std::function<bool(ReadFromMerge &)> & merge_func,
+    const std::function<bool(ReadFromObjectStorageStep &)> & object_storage_func)
 {
     bool ok = true;
     for (auto * child : node->children)
-        ok &= recursivelyApplyToReadingSteps(child, func, merge_func);
+        ok &= recursivelyApplyToReadingSteps(child, func, merge_func, object_storage_func);
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
     // In this case it is ok if one child will read in order and other will not (though I don't know when it is possible),
@@ -1237,6 +1239,11 @@ static bool recursivelyApplyToReadingSteps(
     /// can only be reached through the nested step itself.
     else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get()))
         ok &= merge_func(*read_from_merge);
+    /// A child table can also be an object storage table (a data lake such as `Iceberg`). Unlike a
+    /// `MergeTree` part, an object storage table is only sorted by its sorting key when the data
+    /// files say so, so the reader has to be asked - a declared sorting key alone means nothing.
+    else if (auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(node->step.get()))
+        ok &= object_storage_func(*read_from_object_storage);
 
     return ok;
 }
@@ -1758,10 +1765,23 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
         return nested_read_from_merge.requestReadingInOrder(order_info_, query_limit);
     };
 
+    /// `ReadFromObjectStorageStep::requestReadingInOrder` validates that the data really is sorted by
+    /// the sorting key (for `Iceberg`, that every data file carries the table's sort order id). The
+    /// direct read path relies on that check, so reading through a `Merge` table must not skip it:
+    /// otherwise the outer step would advertise an order the child reader cannot deliver.
+    auto request_read_in_order_object_storage = [](ReadFromObjectStorageStep & read_from_object_storage)
+    {
+        return read_from_object_storage.requestReadingInOrder();
+    };
+
     bool ok = true;
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            ok &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), request_read_in_order, request_read_in_order_nested);
+            ok &= recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                request_read_in_order,
+                request_read_in_order_nested,
+                request_read_in_order_object_storage);
 
     if (!ok)
         return false;
@@ -1787,9 +1807,17 @@ void ReadFromMerge::setPreferMultipleStreams()
         return true;
     };
 
+    /// Per-part prefetching is a `MergeTree` reading mode, so there is nothing to disable for an
+    /// object storage reader.
+    auto prefer_multiple_streams_object_storage = [](ReadFromObjectStorageStep &) { return true; };
+
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams, prefer_multiple_streams_nested);
+            recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                prefer_multiple_streams,
+                prefer_multiple_streams_nested,
+                prefer_multiple_streams_object_storage);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
