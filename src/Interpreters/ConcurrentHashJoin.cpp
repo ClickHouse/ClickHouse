@@ -805,6 +805,26 @@ HashJoin::ReleasedJoinedBlocks ConcurrentHashJoin::releaseSlotBlocks(size_t slot
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
+size_t ConcurrentHashJoin::compressStoredBlocks()
+{
+    for (auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        if (!hash_join->data || !hash_join->data->getJoinedData())
+            continue;
+
+        size_t slot_total_bytes = hash_join->data->getTotalByteCount();
+        hash_join->data->shrinkStoredBlocksToFit(slot_total_bytes, /*force_optimize=*/true);
+        /// The forced pass does not arm insert-time compaction itself, so the blocks added after it
+        /// would be stored uncompressed and the next threshold crossing would spill with the tail of
+        /// the build side uncompacted - the same latch the plain `hash` path sets once its own
+        /// threshold fires.
+        hash_join->data->armCompactionForFurtherBlocks();
+        updateTotalRowsAndBytesUnlocked(hash_join);
+    }
+    return global_total_bytes.load(std::memory_order_relaxed);
+}
+
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
     if (hash_joins[0]->data->twoLevelMapIsUsed())

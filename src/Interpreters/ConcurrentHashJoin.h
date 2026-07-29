@@ -73,6 +73,11 @@ public:
     /// The slot's HashJoin data is reset afterwards.
     HashJoin::ReleasedJoinedBlocks releaseSlotBlocks(size_t slot_idx);
 
+    /// Run one forced `shrinkStoredBlocksToFit` pass over every slot, latch insert-time compaction for
+    /// the blocks added later, and return the resulting total size. Used by `SpillingHashJoin` as the
+    /// last chance for `enable_join_in_memory_compression` before it gives up on the in-memory join.
+    size_t compressStoredBlocks();
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
