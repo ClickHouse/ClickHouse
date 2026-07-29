@@ -14,8 +14,14 @@ ${CLICKHOUSE_CURL} -sS -I -H "Accept-Encoding: identity" "${BASE_URL}/play" | gr
 echo "--- test 2: unsupported Accept-Encoding still advertises Vary ---"
 ${CLICKHOUSE_CURL} -sS -I -H "Accept-Encoding: identity" "${BASE_URL}/play" | grep -oF 'Vary: Accept-Encoding'
 
-echo "--- test 3: unknown coding (compress) -> no Content-Encoding ---"
+echo "--- test 3: unknown coding (compress) -> HTTP 200 ---"
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' -H "Accept-Encoding: compress" "${BASE_URL}/play"
+
+echo "--- test 4: unknown coding (compress) -> no Content-Encoding ---"
 ${CLICKHOUSE_CURL} -sS -I -H "Accept-Encoding: compress" "${BASE_URL}/play" | grep -oF 'Content-Encoding:' || echo "no Content-Encoding (expected)"
 
-echo "--- test 4: body is valid uncompressed HTML ---"
+echo "--- test 5: unknown coding (compress) body is valid uncompressed HTML ---"
+${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: compress" "${BASE_URL}/play" | grep -o -F 'clickhouse.com'
+
+echo "--- test 6: body is valid uncompressed HTML (identity) ---"
 ${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: identity" "${BASE_URL}/play" | grep -o -F 'clickhouse.com'
