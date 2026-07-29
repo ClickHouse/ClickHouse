@@ -5,6 +5,13 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Common/Exception.h>
+#include <Poco/Util/MapConfiguration.h>
+
+namespace DB::ErrorCodes
+{
+extern const int UNSUPPORTED_METHOD;
+}
 
 using DB::HDFSObjectStorage;
 
@@ -34,6 +41,105 @@ TEST(HDFSObjectStorageMetadata, SizeAndModificationTimeArePreserved)
     auto metadata = HDFSObjectStorage::makeObjectMetadata(/*last_modified=*/ 1700000000, /*size=*/ 42);
     EXPECT_EQ(metadata.size_bytes, 42u);
     EXPECT_EQ(metadata.last_modified.epochTime(), 1700000000);
+}
+
+namespace
+{
+
+/// `lazy_initialize = true` defers `initializeHDFSFS()`, so the storage is constructible against an
+/// unreachable NameNode. The conditional-write refusal is checked before that initialisation, which
+/// is what makes it observable here; reaching any later statement requires a live NameNode.
+std::unique_ptr<HDFSObjectStorage> makeUnreachableStorage()
+{
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration());
+    /// Only the negative control reaches the NameNode, and it is expected to fail. Cap the connect
+    /// retries (libhdfs3 default is 10, ~20s) so that expected failure is quick; `_` becomes `.` in
+    /// `HDFSBuilderWrapper::loadFromConfig`.
+    config->setString("hdfs.rpc_client_connect_retry", "1");
+    return std::make_unique<HDFSObjectStorage>(
+        "hdfs://localhost:1/data/",
+        std::make_unique<DB::HDFSObjectStorageSettings>(/*min_bytes_for_seek_=*/ 1024, /*replication_=*/ 1),
+        *config,
+        /*lazy_initialize=*/ true);
+}
+
+}
+
+/// A conditional write is a compare-and-swap request. HDFS cannot express it, and performing the
+/// write anyway would downgrade the CAS to a plain overwrite, losing one of two concurrent writers.
+/// These tests pin the refusal.
+
+TEST(HDFSObjectStorageConditionalWrite, RefusesIfNoneMatch)
+{
+    auto object_storage = makeUnreachableStorage();
+    DB::WriteSettings write_settings;
+    write_settings.object_storage_write_if_none_match = "*";
+
+    try
+    {
+        object_storage->writeObject(
+            DB::StoredObject("hdfs://localhost:1/data/metadata/v2.metadata.json"),
+            DB::WriteMode::Rewrite,
+            /*attributes=*/ {},
+            DB::DBMS_DEFAULT_BUFFER_SIZE,
+            write_settings);
+        FAIL() << "Expected the conditional write to be refused";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+        /// The message names the object, so an operator can tell which commit was refused.
+        EXPECT_NE(e.message().find("v2.metadata.json"), std::string::npos) << e.message();
+    }
+}
+
+TEST(HDFSObjectStorageConditionalWrite, RefusesIfMatch)
+{
+    auto object_storage = makeUnreachableStorage();
+    DB::WriteSettings write_settings;
+    write_settings.object_storage_write_if_match = "some-etag";
+
+    try
+    {
+        object_storage->writeObject(
+            DB::StoredObject("hdfs://localhost:1/data/metadata/version-hint.text"),
+            DB::WriteMode::Rewrite,
+            /*attributes=*/ {},
+            DB::DBMS_DEFAULT_BUFFER_SIZE,
+            write_settings);
+        FAIL() << "Expected the conditional write to be refused";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+        EXPECT_NE(e.message().find("version-hint.text"), std::string::npos) << e.message();
+    }
+}
+
+TEST(HDFSObjectStorageConditionalWrite, DoesNotRefuseUnconditionalWrite)
+{
+    /// Negative control: with no condition there is nothing to refuse, so the write proceeds past the
+    /// guard and then fails reaching the unreachable NameNode. That failure must NOT be
+    /// `UNSUPPORTED_METHOD`, otherwise the two tests above would also pass against a guard that
+    /// rejects every HDFS write -- which is what makes them meaningful.
+    auto object_storage = makeUnreachableStorage();
+    DB::WriteSettings write_settings;
+    ASSERT_TRUE(write_settings.object_storage_write_if_none_match.empty());
+    ASSERT_TRUE(write_settings.object_storage_write_if_match.empty());
+
+    try
+    {
+        object_storage->writeObject(
+            DB::StoredObject("hdfs://localhost:1/data/metadata/v2.metadata.json"),
+            DB::WriteMode::Rewrite,
+            /*attributes=*/ {},
+            DB::DBMS_DEFAULT_BUFFER_SIZE,
+            write_settings);
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_NE(e.code(), DB::ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+    }
 }
 
 #endif
