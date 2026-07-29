@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -13,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -54,7 +56,7 @@ String testEncodeRow(const Columns & cols, size_t row, size_t max_size = 4096)
     row_cols.reserve(cols.size());
     for (const auto & c : cols)
         row_cols.push_back(c->cut(row, 1));
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     UniqueKeyEncoding::encodeBlock(row_cols, /*permutation=*/nullptr, max_size, out);
     return out.at(0);
 }
@@ -483,7 +485,7 @@ void expectBlockEncodesAs(const std::vector<String> & inputs)
     for (const auto & s : inputs)
         col->insert(Field(s));
     Columns cols{std::move(col)};
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/4096, encoded);
     ASSERT_EQ(encoded.size(), inputs.size());
     for (size_t r = 0; r < inputs.size(); ++r)
@@ -591,7 +593,7 @@ TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
     col->insertData("\x00""1234567", N);
     Columns cols{std::move(col)};
 
-    std::vector<String> got;
+    VectorWithMemoryTracking<String> got;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/4096, got);
     ASSERT_EQ(got.size(), 4u);
 
@@ -718,6 +720,68 @@ TEST(UniqueKeyEncoding, Decimal64Ordering)
 }
 
 /// ---------------------------------------------------------------------------
+/// Wide signed integers (Int128 / Int256) — exercise the multi-limb sign-flip
+/// path in ColumnVector::appendUniqueKeyEncodedValue where the high byte is
+/// XOR'd with 0x80 after big-endian transform.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, Int128Ordering)
+{
+    auto col = ColumnInt128::create();
+    col->insert(Field(Int128(std::numeric_limits<Int64>::min())));
+    col->insert(Field(Int128(-1)));
+    col->insert(Field(Int128(0)));
+    col->insert(Field(Int128(1)));
+    col->insert(Field(Int128(std::numeric_limits<Int64>::max())));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Int128 adjacent pair " << i;
+    /// Cross-check extremes.
+    EXPECT_TRUE(agrees(cols, 0, cols[0]->size() - 1));
+}
+
+TEST(UniqueKeyEncoding, Int256Ordering)
+{
+    auto col = ColumnInt256::create();
+    col->insert(Field(Int256(std::numeric_limits<Int64>::min())));
+    col->insert(Field(Int256(-1)));
+    col->insert(Field(Int256(0)));
+    col->insert(Field(Int256(1)));
+    col->insert(Field(Int256(std::numeric_limits<Int64>::max())));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Int256 adjacent pair " << i;
+    EXPECT_TRUE(agrees(cols, 0, cols[0]->size() - 1));
+}
+
+/// ---------------------------------------------------------------------------
+/// Wide decimals (Decimal128 / Decimal256) — same sign-flip pattern applied
+/// via ColumnDecimal. Verify negative-to-positive ordering is preserved.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, Decimal128Ordering)
+{
+    auto col = ColumnDecimal<Decimal128>::create(0, /*scale=*/4);
+    for (Int64 raw : {Int64(-1000000), Int64(-1), Int64(0), Int64(1), Int64(1000000)})
+        col->insert(DecimalField<Decimal128>(Decimal128(raw), 4));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Decimal128 adjacent pair " << i;
+}
+
+TEST(UniqueKeyEncoding, Decimal256Ordering)
+{
+    auto col = ColumnDecimal<Decimal256>::create(0, /*scale=*/4);
+    for (Int64 raw : {Int64(-1000000), Int64(-1), Int64(0), Int64(1), Int64(1000000)})
+        col->insert(DecimalField<Decimal256>(Decimal256(raw), 4));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Decimal256 adjacent pair " << i;
+}
+
+/// ---------------------------------------------------------------------------
 /// Date / Date32 / DateTime / DateTime64.
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, DateVariants)
@@ -784,6 +848,87 @@ TEST(UniqueKeyEncoding, NullableOrdering)
     EXPECT_TRUE(agrees(cols, 0, 1));
     EXPECT_TRUE(agrees(cols, 1, 2));
     EXPECT_TRUE(agrees(cols, 0, 2));
+}
+
+/// ---------------------------------------------------------------------------
+/// Nullable batch path (ColumnNullable::batchSerializeAsComparable delegating to
+/// the nested column's batch). Encode a multi-row block with interleaved NULL /
+/// non-NULL rows and assert the batch-encoded memcmp order agrees with compareAt
+/// across all pairs. Pins the nested-batch delegation so it does not regress to
+/// a per-row virtual in the hot loop.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableBatchMultiRowOrdering)
+{
+    auto nested = ColumnUInt64::create();
+    nested->insert(Field(UInt64(0)));     /// 0 non-null 0
+    nested->insert(Field(UInt64(0)));     /// 1 null (placeholder)
+    nested->insert(Field(UInt64(50)));    /// 2 non-null 50
+    nested->insert(Field(UInt64(0)));     /// 3 null (placeholder)
+    nested->insert(Field(UInt64(100)));   /// 4 non-null 100
+
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols{std::move(col)};
+
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 4096, encoded);
+    ASSERT_EQ(encoded.size(), 5u);
+
+    for (size_t a = 0; a < encoded.size(); ++a)
+        for (size_t b = 0; b < encoded.size(); ++b)
+        {
+            int mem = std::memcmp(encoded[a].data(), encoded[b].data(),
+                                  std::min(encoded[a].size(), encoded[b].size()));
+            if (mem == 0 && encoded[a].size() != encoded[b].size())
+                mem = encoded[a].size() > encoded[b].size() ? 1 : -1;
+            int expected = columnCompareRows(cols, a, b);
+            int expected_sign = (expected > 0) - (expected < 0);
+            int actual_sign = (mem > 0) - (mem < 0);
+            EXPECT_EQ(expected_sign, actual_sign)
+                << "nullable batch pair a=" << a << " b=" << b;
+        }
+}
+
+/// Nullable batch + permutation. The NULL flag and the nested encoding must stay
+/// aligned to the same permuted source row. Encoded output row r must equal the
+/// single-row encoding of source row permutation[r].
+TEST(UniqueKeyEncoding, NullableBatchPermutationAlignsFlagAndNested)
+{
+    auto nested = ColumnUInt64::create();
+    nested->insert(Field(UInt64(0)));     /// 0 non-null
+    nested->insert(Field(UInt64(0)));     /// 1 null
+    nested->insert(Field(UInt64(50)));    /// 2 non-null
+    nested->insert(Field(UInt64(0)));     /// 3 null
+    nested->insert(Field(UInt64(100)));   /// 4 non-null
+
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols{std::move(col)};
+
+    IColumn::Permutation perm{4, 0, 3, 1, 2};
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, &perm, 4096, encoded);
+    ASSERT_EQ(encoded.size(), perm.size());
+
+    for (size_t r = 0; r < perm.size(); ++r)
+    {
+        String expected = testEncodeRow(cols, perm[r], 4096);
+        EXPECT_EQ(encoded[r], expected)
+            << "permuted batch row " << r << " (src=" << perm[r]
+            << ") must equal single-row encoding of source row";
+    }
 }
 
 /// ---------------------------------------------------------------------------
@@ -872,7 +1017,7 @@ TEST(UniqueKeyEncoding, EncodeBlockBasic)
     col->insert(Field(UInt64(3)));
 
     Columns cols{std::move(col)};
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 4096, encoded);
 
     ASSERT_EQ(encoded.size(), 3u);
@@ -889,7 +1034,7 @@ TEST(UniqueKeyEncoding, EncodeBlockSizeLimitRejection)
 
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 100, out), DB::Exception);
 
     /// Sufficient limit — both rows should encode successfully.
@@ -907,9 +1052,42 @@ TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
     Columns cols{std::move(col)};
 
     IColumn::Permutation perm{2, 0, 1};
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     EXPECT_NO_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out));
     ASSERT_EQ(out.size(), 3u);
+}
+
+/// ColumnConst must be accepted directly by encodeBlock (no NOT_IMPLEMENTED,
+/// no external materialization) and produce the same encoding as the equivalent
+/// full column. Pins the ColumnConst::serializeAsComparable /
+/// batchSerializeAsComparable delegates.
+TEST(UniqueKeyEncoding, ColumnConstEncodeBlockMatchesFullColumn)
+{
+    auto data = ColumnUInt64::create();
+    data->insert(Field(UInt64(42)));
+    auto const_col = ColumnConst::create(std::move(data), 4);
+
+    auto full = ColumnUInt64::create();
+    for (int i = 0; i < 4; ++i)
+        full->insert(Field(UInt64(42)));
+
+    Columns const_cols{std::move(const_col)};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> const_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(const_cols, /*permutation=*/nullptr, 4096, const_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(const_out.size(), 4u);
+    ASSERT_EQ(full_out.size(), 4u);
+    for (size_t r = 0; r < 4u; ++r)
+    {
+        EXPECT_EQ(const_out[r], full_out[r])
+            << "ColumnConst row " << r << " must match full-column encoding";
+        EXPECT_EQ(const_out[r], const_out[0])
+            << "ColumnConst row " << r << " must be identical across rows";
+    }
 }
 
 /// Empty-block: must produce an empty output vector without touching max_size.
@@ -918,7 +1096,7 @@ TEST(UniqueKeyEncoding, EncodeBlockEmptyBlock)
     auto col = ColumnUInt64::create();
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     EXPECT_TRUE(out.empty());
 }
@@ -936,7 +1114,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchUInt641M)
         col->insert(Field(rng()));
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -960,7 +1138,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchString321M)
     }
     Columns cols{std::move(col)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -986,7 +1164,7 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
     }
     Columns cols{std::move(col_u), std::move(col_s)};
 
-    std::vector<String> out;
+    VectorWithMemoryTracking<String> out;
     auto t0 = std::chrono::steady_clock::now();
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out);
     auto dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1060,4 +1238,62 @@ TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
     Columns cols;
     cols.push_back(std::move(col));
     expectEncodeRowThrowsNotImplemented(cols, "LowCardinality(String)");
+}
+
+/// ---------------------------------------------------------------------------
+/// Nullable wrapping an unsupported type with all-NULL rows. Without eager
+/// validation in ColumnNullable::serializeAsComparable, a NULL row would skip
+/// the nested column's serializeAsComparable entirely, silently accepting
+/// unsupported nested types. This regression pins that the validation catches
+/// them via the batch/encodeBlock path.
+///
+/// The nested type must be one that ColumnNullable can actually hold
+/// (canBeInsideNullable() == true) yet serializeAsComparable does not support.
+/// Tuple fits: it can be inside Nullable but has no comparable encoding.
+/// LowCardinality and Array cannot be inside Nullable at all, so they can
+/// never reach this code path.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableTupleAllNullThrowsNotImplemented)
+{
+    DataTypes inner{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
+    auto type_tup = std::make_shared<DataTypeTuple>(inner);
+    auto nested = type_tup->createColumn();
+    nested->insertDefault();
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(1)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols;
+    cols.push_back(std::move(col));
+    expectEncodeRowThrowsNotImplemented(cols, "Nullable(Tuple(UInt64,UInt64)) all-NULL");
+}
+
+/// ---------------------------------------------------------------------------
+/// Direct single-row serializeAsComparable on a NULL row of an unsupported
+/// nullable column. The NULL branch must still validate the nested type, so an
+/// unsupported nullable schema is rejected on every row, not only once a
+/// non-NULL value is hit.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableUnsupportedNullRowDirectSerializeThrowsNotImplemented)
+{
+    DataTypes inner{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
+    auto type_tup = std::make_shared<DataTypeTuple>(inner);
+    auto nested = type_tup->createColumn();
+    nested->insertDefault();
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(1)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+
+    try
+    {
+        String out;
+        col->serializeAsComparable(0, out);
+        FAIL() << "serializeAsComparable on NULL row of Nullable(Tuple(UInt64,UInt64)) did not throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED)
+            << "should throw NOT_IMPLEMENTED, got " << e.code() << ": " << e.message();
+    }
 }
