@@ -9,9 +9,9 @@ keywords: ['ClickStack', 'Event deltas', '热力图', '属性分布', 'trace 分
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-Event deltas 将延迟热力图与自动 attribute 分析结合起来，让你无需编写查询，就能看清 trace 数据的形态，并找出慢 span 有何不同。它有三种使用方式：
+Event deltas 将延迟热力图与自动 属性 分析结合起来，让你无需编写查询，就能看清 trace 数据的形态，并找出慢 span 有何不同。它有三种使用方式：
 
-* **分布模式 (always on)**：当热力图中没有任何选区时，会显示当前 span 集合中每个 attribute 的值分布。适合用来发现占主导地位或异常稀少的值 (基数离群值) 。
+* **分布模式 (always on)**：当热力图中没有任何选区时，会显示当前 span 集合中每个 属性 的值分布。适合用来发现占主导地位或异常稀少的值 (基数离群值) 。
 * **比较模式**：在热力图上拖出一个矩形，将其中的 spans (Selection) 与其余所有 spans (Background) 进行比较。适合用于定位偏差。
 * **迭代式下钻**：点击任意条形即可按该值进行过滤 (或排除) 。热力图会基于过滤后的 span 集合重新渲染，因此你可以不断缩小范围，直到原因一目了然。
 
@@ -100,13 +100,13 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
   ## 迭代式下钻
 </div>
 
-比较模式和分布模式串联使用时效果最强。点击任意条形，即可打开一个包含三项操作的弹出框：
+比较模式和分布模式串联使用时效果最强。点击任意条形，即可打开一个包含三项操作的弹出菜单：
 
 * **过滤**：仅保留具有该值的 span
 * **排除**：移除具有该值的 span
 * **复制**：将该值复制到剪贴板
 
-<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="点击 ScopeVersion 条形上的弹出框，显示 Selection 与 Background 的百分比，以及过滤、排除、复制操作" size="lg" />
+<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="点击 ScopeVersion 条形上的弹出菜单，显示 Selection 与 Background 的百分比，以及过滤、排除、复制操作" size="lg" />
 
 应用过滤或排除后，热力图中的选择会被清除，热力图会基于新的数据集重新渲染，分布模式也会继续针对这个过滤后的集合进行分析。注意观察热力图的变化：成功的过滤会明显去掉慢速带、让双峰分裂收敛，或抹平向上漂移。然后重复这一过程：找出下一个可疑值，进行过滤，查看新的热力图，再查看新的分布。通常经过几轮迭代，就能将回归问题缩小到一两个属性上。
 

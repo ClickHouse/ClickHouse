@@ -1,0 +1,13 @@
+before MATERIALIZE COLUMN
+10
+10
+10
+during MATERIALIZE COLUMN
+10
+10
+Tuple subcolumn of a column with DEFAULT
+100	200
+101	202
+102	204
+103	206
+104	208

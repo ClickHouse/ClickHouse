@@ -274,10 +274,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data-types/tuple.md) — A tuple of two numbers.
-- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data-types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data-types/tuple.md) — A tuple of two numbers, or a [Point](../../data-types/geo.md/#point).
+- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data-types/array.md) or [Ring](../../data-types/geo.md/#ring). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3.
 - The function supports polygon with holes (cut-out sections). Data type — [Polygon](../../data-types/geo.md/#polygon). Either pass the entire `Polygon` as the second argument, or pass the outer ring first and then each hole as separate additional arguments.
 - The function also supports multipolygon. Data type — [MultiPolygon](../../data-types/geo.md/#multipolygon). Either pass the entire `MultiPolygon` as the second argument, or list each component polygon as its own argument.
+- The polygon argument can also be a [Geometry](../../data-types/geo.md/#geometry) column holding polygon-shaped values (`Ring`, `Polygon`, or `MultiPolygon`).
+
+The polygon-shaped types ([Ring](../../data-types/geo.md/#ring), [Polygon](../../data-types/geo.md/#polygon), [MultiPolygon](../../data-types/geo.md/#multipolygon) and [Geometry](../../data-types/geo.md/#geometry)) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
 
 **Returned values**
 
@@ -294,6 +297,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+The polygon can also be given using the named geometric data types, including as a table column:
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **Note**  

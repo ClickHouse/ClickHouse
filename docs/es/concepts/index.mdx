@@ -4,14 +4,21 @@ slug: /concepts
 description: 'Página principal de conceptos'
 keywords: ['conceptos', 'OLAP', 'rápido']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-En esta sección de la documentación, profundizaremos en los conceptos que hacen que ClickHouse sea tan rápido y eficiente.
+En esta sección de la documentación profundizaremos en los conceptos que hacen que ClickHouse sea tan rápido y eficiente.
 
-| Página                                                                             | Descripción                                                                                          |
-| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [¿Por qué ClickHouse es tan rápido?](/es/get-started/about/why-clickhouse-is-so-fast) | Descubre qué hace que ClickHouse sea tan rápido.                                                     |
-| [¿Qué es OLAP?](/concepts/olap)                                                         | Descubre qué es Online Analytical Processing.                                                        |
-| [¿Por qué ClickHouse es único?](/es/get-started/about/distinctive-features)           | Descubre qué hace que ClickHouse sea único.                                                          |
-| [Glosario](/es/concepts/core-concepts/glossary)                                       | Esta página contiene un glosario de términos que encontrarás habitualmente en toda la documentación. |
-| [FAQ](/es/resources/support-center/knowledge-base/general-faqs/faq-index)             | Una recopilación de las preguntas más frecuentes que recibimos sobre ClickHouse.                     |
+<CardGroup cols={2}>
+  <Card title="Fundamentos" icon="cubes" href="/es/concepts/core-concepts/index">
+    Aprende los conceptos fundamentales de cómo funciona ClickHouse, incluidas las partes de tabla, las particiones, las fusiones y los índices primarios.
+  </Card>
+
+  <Card title="Conceptos de ClickHouse" icon="lightbulb" href="/es/concepts/features/index">
+    Explora los conceptos de ClickHouse, incluidas las vistas materializadas, los diccionarios, la optimización del rendimiento, las operaciones, la configuración y la seguridad.
+  </Card>
+
+  <Card title="Buenas prácticas" icon="list-check" href="/es/concepts/best-practices/index">
+    Buenas prácticas que debes seguir al usar ClickHouse.
+  </Card>
+</CardGroup>
