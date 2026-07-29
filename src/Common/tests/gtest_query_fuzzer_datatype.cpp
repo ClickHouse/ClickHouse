@@ -327,8 +327,13 @@ TEST(QueryFuzzer, AggregateParameterKeepsNameReconstructible)
         const String name = fuzzed->getName();
         EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(name)) << "seed=" << seed << " emitted " << name;
 
+        /// Credit the parameter mutator only for a rebuild of THIS aggregate with THIS argument list whose
+        /// parameters changed. Testing "parameters differ" alone also credits the generic replacement tail,
+        /// which can hand back an unrelated argument-less aggregate whose empty parameters trivially differ -
+        /// so the flag stayed set even with fuzzAggregateParameters removed.
         const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
-        if (aggr && aggr->getParameters() != numeric_parameters)
+        if (aggr && aggr->getFunctionName() == source_type->getFunctionName()
+            && aggr->getArgumentsDataTypes() == arg_types && aggr->getParameters() != numeric_parameters)
             saw_parameter_change = true;
     }
     /// Guard against the loop passing vacuously: the parameter mutator must have fired at least once.
@@ -625,31 +630,45 @@ TEST(QueryFuzzer, CustomNamedLeafAliasIsStillFuzzed)
 
 /// A deleted structured arm makes its type fall through to the wrapping/replacement tail, which still returns a
 /// valid type - so parseability alone cannot tell a live arm from a dead one. Each arm needs a witness the
-/// REPLACEMENT path cannot fabricate. `getRandomType` can mint DateTime, DateTime64, JSON, QBit and
-/// AggregateFunction from scratch, so for those the root family is not a witness; Nested and
-/// SimpleAggregateFunction are absent from it, and the JSON arm is the only producer of a JSON type that still
-/// carries the source SKIP list. Arms without such a witness (DateTime, DateTime64, QBit, AggregateFunction
-/// parameters) are covered by their own dedicated tests instead.
+/// REPLACEMENT path cannot fabricate.
+///
+/// For `SimpleAggregateFunction`, `Nested` and `JSON` the witness is exact: the first two are absent from
+/// `getRandomType`, and the JSON arm is the only producer of a JSON type that still carries the source SKIP
+/// list. `DateTime`, `DateTime64` and `QBit` are value-indistinguishable, because `getRandomType` builds them
+/// with the very same helpers - but their RATE separates cleanly: the arm fires on 3 of 4 seeds, while the
+/// replacement tail lands on the same family only by chance (measured: ~3000/4000 with the arm, 6-18/4000
+/// without it). `min_rate` encodes that, far below the live rate and far above the incidental one.
 TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
 {
     tryRegisterAggregateFunctions();
 
-    /// (source type, predicate identifying a mutation only this type's own arm can produce)
-    using Witness = std::function<bool(const String &)>;
-    const std::vector<std::pair<String, Witness>> arms = {
+    /// (source type, predicate for a mutation attributable to this type's own arm, minimum count over 4000 seeds)
+    struct Arm
+    {
+        String type_name;
+        std::function<bool(const String &)> is_own_arm_mutation;
+        size_t min_rate;
+    };
+    const std::vector<Arm> arms = {
         /// Not reachable from getRandomType, so any returned SimpleAggregateFunction came from its arm.
-        {"SimpleAggregateFunction(sum, UInt64)",
-         [](const String & name) { return name.starts_with("SimpleAggregateFunction"); }},
+        {"SimpleAggregateFunction(sum, UInt64)", [](const String & name) { return name.starts_with("SimpleAggregateFunction"); }, 1},
         /// Likewise for Nested, which the fuzzer can only rebuild, never invent.
-        {"Nested(a UInt32, b Array(Nullable(Int64)))", [](const String & name) { return name.starts_with("Nested"); }},
+        {"Nested(a UInt32, b Array(Nullable(Int64)))", [](const String & name) { return name.starts_with("Nested"); }, 1},
         /// A random JSON has no SKIP list; only the arm rebuilds one while keeping the source's.
         {"JSON(max_dynamic_paths=8, p1 UInt32, SKIP s)",
-         [](const String & name) { return name.starts_with("JSON") && name.find("SKIP s") != String::npos; }},
+         [](const String & name) { return name.starts_with("JSON") && name.find("SKIP s") != String::npos; },
+         1},
+        /// Rate-separated: DateTime must not be credited for becoming a DateTime64.
+        {"DateTime('Asia/Istanbul')",
+         [](const String & name) { return name.starts_with("DateTime") && !name.starts_with("DateTime64"); },
+         1000},
+        {"DateTime64(3, 'UTC')", [](const String & name) { return name.starts_with("DateTime64"); }, 1000},
+        {"QBit(Float32, 16)", [](const String & name) { return name.starts_with("QBit"); }, 1000},
     };
 
-    for (const auto & [type_name, is_own_arm_mutation] : arms)
+    for (const auto & arm : arms)
     {
-        const auto source = DataTypeFactory::instance().get(type_name);
+        const auto source = DataTypeFactory::instance().get(arm.type_name);
         size_t witnessed = 0;
         for (UInt64 seed = 0; seed < 4000; ++seed)
         {
@@ -666,13 +685,15 @@ TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
             }
 
             const String fuzzed_name = fuzzed->getName();
-            if (fuzzed_name == type_name || !is_own_arm_mutation(fuzzed_name))
+            if (fuzzed_name == arm.type_name || !arm.is_own_arm_mutation(fuzzed_name))
                 continue;
             ++witnessed;
 
             /// The mutated type is fed back through ParserDataType by the fuzzer, so it must reconstruct.
-            EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(fuzzed_name)) << type_name << " -> " << fuzzed_name;
+            EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(fuzzed_name)) << arm.type_name << " -> " << fuzzed_name;
         }
-        EXPECT_GT(witnessed, 0u) << "no mutation of " << type_name << " attributable to its own arm - the arm may be dead";
+        EXPECT_GE(witnessed, arm.min_rate)
+            << "only " << witnessed << " mutations of " << arm.type_name
+            << " attributable to its own arm (expected at least " << arm.min_rate << ") - the arm may be dead";
     }
 }
