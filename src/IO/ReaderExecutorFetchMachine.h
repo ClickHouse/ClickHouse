@@ -51,7 +51,7 @@ struct ReaderExecutorFetchMachine : MachineBase
     MemoryPressureLevel pressure_snapshot{};
     /// Whether a read extent was advertised at launch: the worker reads THIS,
     /// never the live `read_bound` member - a soft-cancelled machine must
-    /// not race `setReadExtent`. Only the bit matters: it lets a one-shot read
+    /// not race `setReadBound`. Only the bit matters: it lets a one-shot read
     /// on an unknown-size source be bounded (`readFromSource`); the serve is
     /// bounded by the live extent separately (`clampToExtent`).
     bool bound_advertised = false;

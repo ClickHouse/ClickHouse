@@ -25,7 +25,7 @@ public:
     /// The buffer owns the per-range boundary: it clamps what it EXPOSES at
     /// `read_until` and reports EOF there (a later advance resumes from the
     /// retained chain). The value is also fed to the executor, where it joins
-    /// the single read bound (see `ReaderExecutor::setReadExtent`).
+    /// the single read bound (see `ReaderExecutor::setReadBound`).
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
     void setPlannedReadEnd(size_t position) override;

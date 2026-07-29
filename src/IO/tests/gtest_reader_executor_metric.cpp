@@ -395,13 +395,13 @@ public:
             /// per part (`setPlannedReadEnd`); the per-window extents below only
             /// mirror the mark-range cadence. Long connections and prefetch size
             /// off the bound, not the stepping extents.
-            executor.setPlannedReadEnd(end);
+            executor.setReadBound(end);
             size_t got = 0;
             while (got < want)
             {
                 /// Advance the right boundary one window at a time, mirroring MergeTree's
                 /// per-mark-range `setReadUntilPosition`.
-                executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
+                executor.setReadBound(std::min(end, executor.getPosition() + WINDOW));
                 auto chain = executor.readNextWindow();
                 if (chain.empty())
                     break;

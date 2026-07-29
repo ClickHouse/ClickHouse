@@ -131,7 +131,7 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
     /// the read extent to bound its long connection.
     chassert(!read_until || position >= *read_until);
     read_until = position;
-    executor->setReadExtent(position);
+    executor->setReadBound(position);
 }
 
 void PipelineReadBuffer::setReadUntilEnd()
@@ -139,12 +139,14 @@ void PipelineReadBuffer::setReadUntilEnd()
     /// Read to the file end: clear the boundary. A read that runs to EOF drains
     /// its connection naturally, so no explicit bound is needed.
     read_until.reset();
-    executor->setReadExtent(std::nullopt);
+    executor->setReadBound(std::nullopt);
 }
 
 void PipelineReadBuffer::setPlannedReadEnd(size_t position)
 {
-    executor->setPlannedReadEnd(position);
+    /// Advisory: joins the executor's read bound but never moves this buffer's
+    /// own `read_until` (per-range EOF keeps advancing beneath it).
+    executor->setReadBound(position);
 }
 
 bool PipelineReadBuffer::supportsReadAt()

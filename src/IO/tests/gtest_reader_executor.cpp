@@ -946,12 +946,12 @@ TEST(ReaderExecutor, PlannedReadEndCapsPrefetchButNotService)
     executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
-    executor.setPlannedReadEnd(512u << 10);
+    executor.setReadBound(512u << 10);
 
     String got;
     auto consume_to = [&](size_t extent)
     {
-        executor.setReadExtent(extent);
+        executor.setReadBound(extent);
         while (got.size() < extent)
         {
             auto chain = executor.readNextWindow();
@@ -2759,7 +2759,7 @@ TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
     executor_options.window_size = 64u << 10;
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.setReadExtent(extent);
+    executor.setReadBound(extent);
 
     size_t total = 0;
     while (true)
@@ -5440,8 +5440,8 @@ TEST(ReaderExecutor, ScheduleDrivenBackwardSeekTail)
     EXPECT_EQ(out, expected) << "post-backward-seek tail must be the contiguous, byte-correct [4K, end)";
 }
 
-/// The per-mark-range setReadExtent cadence (advance the extent one window ahead before
-/// each read) must not strand a stale machine handle: setReadExtent cancels the in-flight
+/// The per-mark-range setReadBound cadence (advance the extent one window ahead before
+/// each read) must not strand a stale machine handle: setReadBound cancels the in-flight
 /// prefetch, and a later serve must not collect the cancelled machine. A full byte-correct
 /// read (and no crash) confirms the cancelled job's machine handle is cleared.
 TEST(ReaderExecutor, ScheduleDrivenSetReadExtentCadence)
@@ -5461,14 +5461,14 @@ TEST(ReaderExecutor, ScheduleDrivenSetReadExtentCadence)
     String out;
     while (true)
     {
-        executor.setReadExtent(std::min(file, executor.getPosition() + block * 2));  // advance ahead of the cursor
+        executor.setReadBound(std::min(file, executor.getPosition() + block * 2));  // advance ahead of the cursor
         auto r = executor.readNextWindow();
         if (r.empty())
             break;
         for (const auto & node : r.getNodes())
             out.append(node.data(), node.size);
     }
-    EXPECT_EQ(out, String(file, 'S')) << "per-window setReadExtent cadence must read the file byte-correctly";
+    EXPECT_EQ(out, String(file, 'S')) << "per-window setReadBound cadence must read the file byte-correctly";
 }
 
 /// Schedule-driven fill, seek mid-coarse-segment: seeking to 64K lands inside
@@ -6401,7 +6401,7 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     String got;
     auto read_to = [&](size_t extent)
     {
-        ex.setReadExtent(extent);                  /// the executor side of setReadUntilPosition
+        ex.setReadBound(extent);                  /// the executor side of setReadUntilPosition
         while (ex.getPosition() < extent)
         {
             auto w = ex.readNextWindow();
@@ -6412,7 +6412,7 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     };
 
     /// The true final boundary of the whole assignment, known at pool build.
-    ex.setPlannedReadEnd(5 * window);
+    ex.setReadBound(5 * window);
 
     /// Advance the extent one window at a time, mirroring MergeTree's per-mark-range
     /// `setReadUntilPosition`. The bound-capped long connection spans the advances and

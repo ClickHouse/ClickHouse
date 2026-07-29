@@ -201,20 +201,16 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
-    /// Feed the per-range read boundary (from `ReadBuffer::setReadUntilPosition`,
-    /// driven per mark range by `MergeTreeReaderStream::adjustRightMark`) into
-    /// the single READ BOUND: monotone-max with the declared planned end.
-    /// `nullopt` (read-to-EOF) lifts the bound to the file end. Per-range EOF
-    /// presentation lives in `PipelineReadBuffer::read_until`, not here.
-    void setReadExtent(std::optional<size_t> logical_end);
-
-    /// The caller's TRUE final read boundary (LOGICAL): the end of the last
-    /// mark range this reader will ever be assigned, known to MergeTree up
-    /// front while the extent advances per range. Sets the READ BOUND -
-    /// prefetch and connection sizing never speculate past it; serving up to a
-    /// later advanced extent still works. Advisory, monotone-max across the
-    /// reader's streams (it merges into the single `read_bound`).
-    void setPlannedReadEnd(size_t logical_end);
+    /// Feed the single READ BOUND (LOGICAL, monotone-max): every declaration of
+    /// how far the read goes lands here - the per-range read-until (advanced per
+    /// mark range by `MergeTreeReaderStream::adjustRightMark`) and the announced
+    /// planned end (the last mark this reader will ever be assigned) alike.
+    /// Prefetch and connection sizing never speculate past the bound; serving is
+    /// never capped by it. `nullopt` (read-to-EOF) lifts the bound to the file
+    /// end - the widest declaration wins, so it also forgets a planned end.
+    /// Per-range EOF presentation lives in `PipelineReadBuffer::read_until`,
+    /// not here.
+    void setReadBound(std::optional<size_t> logical_end);
 
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
 
@@ -871,7 +867,7 @@ private:
     bool reached_eof = false;
     /// THE single read bound (LOGICAL): monotone max of the declared planned
     /// end (`setPlannedReadEnd` - the true end of the whole assignment), the
-    /// advancing per-range extent (`setReadExtent`), and a transient's request
+    /// advancing per-range extent (`setReadBound`), and a transient's request
     /// end. Caps sizing, prefetch and the long connection; never gates
     /// service (per-range EOF lives in `PipelineReadBuffer::read_until`).
     /// `nullopt` = read to the file end.

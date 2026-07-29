@@ -269,11 +269,11 @@ public:
             if (static_cast<size_t>(executor.getPosition()) != offset)
                 executor.seek(offset);
             const size_t end = offset + want;
-            executor.setPlannedReadEnd(end);
+            executor.setReadBound(end);
             size_t got = 0;
             while (got < want)
             {
-                executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
+                executor.setReadBound(std::min(end, executor.getPosition() + WINDOW));
                 auto chain = executor.readNextWindow();
                 if (chain.empty())
                     break;
@@ -366,7 +366,7 @@ public:
         ReaderExecutor executor(src, objects, std::move(executor_caches), makeOptions());
         if (start != 0)
             executor.seek(start);
-        executor.setReadExtent(FILE_SIZE);
+        executor.setReadBound(FILE_SIZE);
         auto chain = executor.readNextWindow();
         ASSERT_FALSE(chain.empty()) << label;
 
@@ -525,11 +525,11 @@ TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
     ReaderExecutor executor(src, objects, std::move(caches), makeOptions());
     executor.seek(start);
 
-    executor.setPlannedReadEnd(start + want);
+    executor.setReadBound(start + want);
     String served;
     while (served.size() < want)
     {
-        executor.setReadExtent(std::min(start + want, executor.getPosition() + WINDOW));
+        executor.setReadBound(std::min(start + want, executor.getPosition() + WINDOW));
         auto chain = executor.readNextWindow();
         if (chain.empty())
             break;
@@ -577,7 +577,7 @@ TEST_F(ResidencyEquivalence, InPlanSeeksReusePlan)
 
     auto src = std::make_shared<MemBoundedSource>(data);
     ReaderExecutor executor(src, objects, std::move(caches), std::move(options));
-    executor.setReadExtent(FILE_SIZE);
+    executor.setReadBound(FILE_SIZE);
 
     /// Two interleaved streams inside one plan span [0, PLAN_WINDOW).
     const size_t stream_b = PLAN_WINDOW / 2;
@@ -637,7 +637,7 @@ TEST_F(ResidencyEquivalence, CachelessInterleavedStreamsServeFromPublishedResidu
             String & got = b ? got_b : got_a;
             if (static_cast<size_t>(executor.getPosition()) != pos)
                 executor.seek(pos);
-            executor.setReadExtent(pos + chunk);
+            executor.setReadBound(pos + chunk);
             size_t need = chunk;
             while (need > 0)
             {
@@ -655,7 +655,7 @@ TEST_F(ResidencyEquivalence, CachelessInterleavedStreamsServeFromPublishedResidu
                 }
             }
         }
-        executor.setReadExtent(FILE_SIZE);
+        executor.setReadBound(FILE_SIZE);
     }
     /// Each stream's consumed chunks are contiguous per stream but interleaved
     /// between them; verify byte identity chunk by chunk.

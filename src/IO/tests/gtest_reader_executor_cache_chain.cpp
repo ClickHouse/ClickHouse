@@ -469,7 +469,7 @@ TEST_F(ReaderExecutorCacheChain, PlanReusedAcrossExtentAdvances)
         String out;
         for (size_t extent = mark;; extent = std::min(extent + mark, file_size))
         {
-            ex.setReadExtent(extent);
+            ex.setReadBound(extent);
             while (out.size() < extent)
             {
                 auto chain = ex.readNextWindow();

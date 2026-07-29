@@ -434,15 +434,12 @@ void ReaderExecutor::seek(size_t new_position)
     prefetch();
 }
 
-void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
+void ReaderExecutor::setReadBound(std::optional<size_t> logical_end)
 {
-    /// The extent joins the single READ BOUND: monotone-max with the declared
-    /// planned end (which dominates while the per-range extent catches up), so
-    /// an advance never invalidates an in-flight read-ahead - one GET keeps
-    /// spanning the mark ranges. Clearing (read-to-EOF) lifts the bound to the
-    /// file end. Per-range EOF presentation lives in
-    /// `PipelineReadBuffer::read_until`, not here; a backward value is
-    /// absorbed by the max (the bound reflects the true end already).
+    /// Monotone-max: an advance never invalidates an in-flight read-ahead - one
+    /// GET keeps spanning the mark ranges - and a backward value is absorbed
+    /// (the bound reflects the true end already). Clearing (read-to-EOF) lifts
+    /// the bound to the file end.
     if (!logical_end)
         read_bound.reset();
     else if (!read_bound || *read_bound < *logical_end)
@@ -2909,7 +2906,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         return;
     /// The global `machine` was just moved out above, so `machineFor` reports no machine for
     /// this retrieve from here on; the bank stays valid - the cursor has not moved
-    /// (`setReadExtent`), or a seek re-plans and rebuilds it (see `seek`).
+    /// (`setReadBound`), or a seek re-plans and rebuilds it (see `seek`).
 
     LOG_TRACE(log, "Prefetch: discarding (physical [{}, {}))",
         m->physical_window.offset, m->physical_window.end());
@@ -3072,14 +3069,6 @@ size_t ReaderExecutor::prefetchAllowance(size_t phys_from) const
     if (read_bound)
         bound = std::min(bound, toPhys(*read_bound));
     return bound > phys_from ? bound - phys_from : 0;
-}
-
-void ReaderExecutor::setPlannedReadEnd(size_t logical_end)
-{
-    /// Advisory and monotone: streams of the same reader may announce their
-    /// per-file edges in any order; the widest one wins.
-    if (!read_bound || *read_bound < logical_end)
-        read_bound = logical_end;
 }
 
 }
