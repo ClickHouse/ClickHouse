@@ -43,6 +43,10 @@ SETTINGS
     -- Mode 2 throws instead of silently falling back to a local read, so the query failing to use
     -- parallel replicas is a test failure rather than a silent downgrade to the non-parallel path.
     allow_experimental_parallel_reading_from_replicas = 2,
+    -- The runner randomizes `automatic_parallel_replicas_mode` to 2 on a quarter of the runs, and
+    -- `Context::canUseTaskBasedParallelReplicas` requires it to be 0, so leaving it injected would
+    -- downgrade this query to a local read on those runs and make the assertion below flaky.
+    automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,

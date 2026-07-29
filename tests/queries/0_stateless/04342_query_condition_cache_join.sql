@@ -43,7 +43,7 @@ SYSTEM FLUSH LOGS query_log;
 -- the probe side reads 0 rows (every granule pruned). `SelectedRows` is asserted to be exactly 0 on
 -- the warm run rather than merely below the total row count, so an implementation that consults the
 -- cache but still selects marks cannot pass. Expected:
---   0  1   (cold: no hit, rows were read)
+--   0  0   (cold: no hit, rows were read)
 --   1  1   (warm: hit, exactly 0 rows read)
 SELECT
     ProfileEvents['QueryConditionCacheHits'] > 0,
