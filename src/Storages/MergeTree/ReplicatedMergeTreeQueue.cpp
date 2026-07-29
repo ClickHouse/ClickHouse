@@ -1915,6 +1915,30 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
+    /// A part carries its own metadata version on disk and keeps it when it is fetched from another
+    /// replica, while this replica's table metadata version only advances when it executes its own
+    /// ALTER_METADATA entry. So a fetched part can be ahead of the table, and mutating it against a
+    /// snapshot that does not know its columns yet is not a state the mutation code can represent.
+    /// Wait until the pending ALTER_METADATA is applied, which is what resolves the mismatch.
+    /// This mirrors MergeFromLogEntryTask::prepare, which already refuses to merge in this state.
+    if (entry.type == LogEntry::MUTATE_PART && !entry.source_parts.empty())
+    {
+        if (auto part = data.getPartIfExists(entry.source_parts[0], {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated}))
+        {
+            const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            int32_t part_metadata_version = part->getMetadataVersion();
+            int32_t table_metadata_version = metadata_snapshot->getMetadataVersion();
+            if (part_metadata_version > table_metadata_version)
+            {
+                constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because source part {} metadata version {} "
+                                            "is newer than the table metadata version {}. ALTER_METADATA is still in progress.";
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(),
+                          entry.new_part_name, part->name, part_metadata_version, table_metadata_version);
+                return false;
+            }
+        }
+    }
+
     /// DROP_RANGE, DROP_PART and REPLACE_RANGE entries remove other entries, which produce parts in the range.
     /// If such part producing operations are currently executing, then DROP/REPLACE RANGE wait them to finish.
     /// Deadlock is possible if multiple DROP/REPLACE RANGE entries are executing in parallel and wait each other.
