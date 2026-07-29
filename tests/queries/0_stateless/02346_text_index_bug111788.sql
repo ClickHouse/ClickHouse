@@ -3,10 +3,6 @@
 -- So a text index whose expression compares to an empty string was never matched by name.
 
 SET enable_analyzer = 1; -- `optimize_empty_string_comparisons` is an analyzer pass
-SET use_skip_indexes = 1;
-SET use_skip_indexes_on_data_read = 0;
-SET use_query_condition_cache = 0;
-SET query_plan_direct_read_from_text_index = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
@@ -16,7 +12,7 @@ SELECT 'Index on an expression comparing to an empty string';
 CREATE TABLE tab
 (
     s String,
-    INDEX idx if(s = '', 'abc', 'def') TYPE text(tokenizer = splitByNonAlpha)
+    INDEX idx if(s = '', 'abc', s) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
@@ -24,18 +20,18 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (''), ('x'), ('y'), ('z');
 
-SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', 'def'), ['abc']) SETTINGS optimize_empty_string_comparisons = 1;
-SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', 'def'), ['abc']) SETTINGS optimize_empty_string_comparisons = 0;
+SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', s), ['abc']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', s), ['abc']) SETTINGS optimize_empty_string_comparisons = 0;
 
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', 'def'), ['abc'])
+    SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', s), ['abc'])
     SETTINGS optimize_empty_string_comparisons = 1
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', 'def'), ['abc'])
+    SELECT count() FROM tab WHERE hasAllTokens(if(s = '', 'abc', s), ['abc'])
     SETTINGS optimize_empty_string_comparisons = 0
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
@@ -46,7 +42,7 @@ SELECT 'Index on an expression already written with empty';
 CREATE TABLE tab
 (
     s String,
-    INDEX idx if(empty(s), 'abc', 'def') TYPE text(tokenizer = splitByNonAlpha)
+    INDEX idx if(empty(s), 'abc', s) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
@@ -54,12 +50,12 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (''), ('x'), ('y'), ('z');
 
-SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', 'def'), ['abc']) SETTINGS optimize_empty_string_comparisons = 1;
-SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', 'def'), ['abc']) SETTINGS optimize_empty_string_comparisons = 0;
+SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', s), ['abc']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', s), ['abc']) SETTINGS optimize_empty_string_comparisons = 0;
 
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', 'def'), ['abc'])
+    SELECT count() FROM tab WHERE hasAllTokens(if(empty(s), 'abc', s), ['abc'])
     SETTINGS optimize_empty_string_comparisons = 1
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
@@ -70,7 +66,7 @@ SELECT 'Index on an alias column comparing to an empty string';
 CREATE TABLE tab
 (
     s String,
-    a String ALIAS if(s = '', 'abc', 'def'),
+    a String ALIAS if(s = '', 'abc', s),
     INDEX idx a TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
