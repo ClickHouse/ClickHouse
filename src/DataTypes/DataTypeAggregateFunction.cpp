@@ -340,13 +340,20 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
     auto callback = [revision, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-        if (aggregate_function_type && aggregate_function_type->isVersioned())
-        {
-            if (revision)
-                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
-            else
-                aggregate_function_type->setVersion(0, if_empty);
-        }
+        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
+            return;
+
+        if (if_empty && aggregate_function_type->hasExplicitVersion())
+            return;
+
+        const auto function = aggregate_function_type->getFunction();
+        const size_t new_version = revision ? function->getVersionFromRevision(*revision) : 0;
+
+        if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
+            return;
+
+        column_type = std::make_shared<DataTypeAggregateFunction>(
+            function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
     };
 
     callOnNestedSimpleTypes(type, callback);

@@ -175,8 +175,14 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
+        /// The state version of a versioned aggregate function on the wire is derived from the
+        /// negotiated revision, and the receiver derives it the same way. It must not be taken from a
+        /// version pinned on the local type - a table attached from metadata that predates versioning
+        /// has its columns pinned to version 0, and version 0 is not printed in the type name, so the
+        /// receiver would see no version at all and read the payload with its own, higher version.
+        /// Re-serializing loses nothing: the states are kept in memory in a version-independent form.
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        setVersionToAggregateFunctions(column.type, /* if_empty= */ false, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)

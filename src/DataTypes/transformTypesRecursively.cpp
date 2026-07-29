@@ -188,7 +188,20 @@ void transformTypesRecursively(
 void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
 {
     DataTypes types = {type};
-    transformTypesRecursively(types, [callback](auto & data_types, TypeIndexesSet &){ callback(data_types[0]); }, {});
+    bool replaced = false;
+    transformTypesRecursively(types, [&](auto & data_types, TypeIndexesSet &)
+    {
+        DataTypePtr before = data_types[0];
+        callback(data_types[0]);
+        if (data_types[0] != before)
+            replaced = true;
+    }, {});
+
+    /// The callback may replace a nested type instead of modifying it in place, and only then is the
+    /// rebuilt type worth taking: `transformTypesRecursively` reconstructs the enclosing containers,
+    /// which loses custom names such as `Point` or `Nested`.
+    if (replaced)
+        type = types[0];
 }
 
 }
