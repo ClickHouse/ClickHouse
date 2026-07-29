@@ -1,0 +1,23 @@
+name: Request docs team review
+
+on:
+  pull_request_target:
+    types: [opened, labeled, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  request_docs_team_review:
+    if: contains(github.event.pull_request.labels.*.name, 'pr-documentation')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request review from the docs team
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --method POST \
+            "repos/${GH_REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
+            --field 'team_reviewers[]=docs'
