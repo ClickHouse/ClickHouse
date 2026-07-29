@@ -67,8 +67,12 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// Set by SQL-defined handlers whose query can consume the request body (see `SQLDefinedHandler`).
+    void setConsumesRequestBody(bool value) { consumes_request_body = value; }
+
 private:
     String introspection_handler_name;
+    bool consumes_request_body = false;
 
     struct Output
     {

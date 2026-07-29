@@ -52,6 +52,13 @@ struct SQLDefinedHandler
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;
 
+    /// Whether a request to this handler can consume the HTTP request body: an `INSERT` takes the body as its
+    /// data, and a query using the `_request_body` parameter reads it explicitly. Only for such handlers must a
+    /// non-chunked request declare `Content-Length` up front, otherwise the body would be read until EOF and a
+    /// dropped connection would be accepted as a complete request (see `HTTPHandler::handleRequest`). A handler
+    /// that never looks at the body must not impose that requirement on ordinary clients.
+    bool consumes_request_body = false;
+
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
     bool matchesURL(const String & path) const;
 

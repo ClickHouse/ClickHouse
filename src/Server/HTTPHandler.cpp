@@ -92,6 +92,16 @@ namespace ErrorCodes
 
 namespace
 {
+/// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
+/// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
+/// "external data for query processing". Such a body must come with a length on a non-chunked request.
+bool requestDeclaresFormBody(const HTTPServerRequest & request)
+{
+    const auto & content_type = request.getContentType();
+    return startsWith(content_type, "application/x-www-form-urlencoded")
+        || startsWith(content_type, "multipart/form-data");
+}
+
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (!config.has("http_options_response"))
@@ -806,10 +816,15 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
         /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
         /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        ///
+        /// But require it only when the body is actually consumed - either by the handler's query
+        /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
+        /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
+        /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
         const auto & method = request.getMethod();
         const bool method_requires_content_length = method == HTTPRequest::HTTP_POST
-            || (!introspection_handler_name.empty()
-                && (method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE));
+            || ((method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE)
+                && (consumes_request_body || requestDeclaresFormBody(request)));
         if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
@@ -1033,6 +1048,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
         std::nullopt)
 {
     setIntrospectionHandlerName(handler.name);
+    setConsumesRequestBody(handler.consumes_request_body);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)

@@ -167,6 +167,13 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// apply the default parser depth/backtrack limits and could reject a query the user's parser settings accepted.
     handler->receive_params = analyzeReceiveQueryParams(create.query);
 
+    /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
+    /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
+    /// `INSERT ... SELECT` does not read the body, but keep the check conservative: guessing wrong in the other
+    /// direction would silently accept a truncated body.
+    handler->consumes_request_body = create.query->getQueryKind() == IAST::QueryKind::Insert
+        || handler->receive_params.contains("_request_body");
+
     /// Build a normalized, complete CREATE HANDLER statement for persistence and introspection.
     auto normalized = create.clone();
     auto & normalized_create = normalized->as<ASTCreateHandlerQuery &>();
