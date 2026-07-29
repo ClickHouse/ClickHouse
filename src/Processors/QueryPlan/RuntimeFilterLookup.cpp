@@ -57,6 +57,26 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
 }
 }
 
+bool runtimeFilterTypeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    /// isFloat() also covers BFloat16, unlike isNativeFloat().
+    if (WhichDataType(*type).isFloat())
+        return true;
+
+    /// forEachChild walks the whole type tree, not only the immediate children, so a float nested at any
+    /// depth is found here: Array(Tuple(Float64, Int64)), Map(String, Float64), LowCardinality(Float32), ...
+    bool contains_float = false;
+    type->forEachChild([&contains_float](const IDataType & child)
+    {
+        if (!contains_float && WhichDataType(child).isFloat())
+            contains_float = true;
+    });
+    return contains_float;
+}
+
 IRuntimeFilter::IRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,

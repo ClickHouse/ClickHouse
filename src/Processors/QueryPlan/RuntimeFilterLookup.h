@@ -25,6 +25,9 @@ extern const int LOGICAL_ERROR;
 
 }
 
+/// True if `type` is a float or contains one at any nesting depth.
+bool runtimeFilterTypeContainsFloat(const DataTypePtr & type);
+
 class IRuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<IRuntimeFilter>;
@@ -168,7 +171,10 @@ public:
 
         /// If only 1 element in the set then use " == const" instead of set lookup
         /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
-        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
+        /// Floats are excluded for the same reason: the JOIN compares keys bitwise (HashTable.h bitEquals),
+        /// so "==" and "!=" disagree with it on NaN and on signed zero, while the Set path matches the JOIN.
+        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls
+            && !runtimeFilterTypeContainsFloat(filter_column_target_type))
         {
             values_count = ValuesCount::ONE;
             single_element_column = exact_values->getSetElements().front();

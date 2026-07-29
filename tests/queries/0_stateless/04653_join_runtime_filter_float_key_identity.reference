@@ -1,0 +1,23 @@
+f64 inner nan	1
+f32 inner nan	1
+bf16 inner nan	1
+lc f64 inner nan	1
+mixed f32 f64 inner nan	1
+f64 anti negzero	1
+f32 anti negzero	1
+bf16 anti negzero	1
+tuple anti negzero	1
+multikey inner nan	1
+array anti negzero	1
+map anti negzero	1
+array tuple anti negzero	1
+control array inner nan	1
+control map inner nan	1
+alg parallel_hash	1
+alg grace_hash	1
+control nullable inner nan	1
+control decimal inner	1
+control int inner	1
+control negzero inner	0
+control nan anti	0
+has-filter	1
