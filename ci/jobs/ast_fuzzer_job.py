@@ -147,10 +147,15 @@ def assert_jemalloc_safety_checks_armed(clickhouse_binary: Path) -> None:
     has no mallctl (it appears in neither `ctl.c` nor `stats.c`), and exposing one
     would mean patching the `contrib/jemalloc` submodule. That second macro is
     load-bearing too - it is the sole gate on `maybe_check_alloc_ctx`, the
-    "mismatch in slab bit" check - so it is asserted at build-configuration level
-    instead, by `ci/tests/test_jemalloc_safety_checks_cmake.py`, which pins that
-    both macros are still defined together in
-    `contrib/jemalloc-cmake/CMakeLists.txt`.
+    "mismatch in slab bit" check - so it is covered at build-configuration level
+    instead, in two places. `assert_jemalloc_safety_macros_armed` in
+    `ci/jobs/build_clickhouse.py` compiles a probe with a real jemalloc translation
+    unit's own flags and `_Static_assert`s `config_opt_size_checks`, which catches a
+    lost `-D` however it was lost, against a configured tree. And
+    `ci/tests/test_jemalloc_safety_checks_cmake.py` compiles the preamble to pin that
+    the macro still yields that boolean at all. Neither models the *text* of
+    `contrib/jemalloc-cmake/CMakeLists.txt` - deliberately - so a cmake-level
+    regression is caught by the build job's probe, not by `ci/tests`.
     """
     command = f'{clickhouse_binary} local --query "{JEMALLOC_SAFETY_STATS_QUERY}"'
     exit_code, stdout, stderr = Shell.get_res_stdout_stderr(command, verbose=True)

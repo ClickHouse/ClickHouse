@@ -444,7 +444,8 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
     if not os.path.isfile(compile_commands_path):
         raise AssertionError(
             f"{compile_commands_path} is missing, so the jemalloc safety macros "
-            "cannot be verified; CMakeLists.txt:50 sets CMAKE_EXPORT_COMPILE_COMMANDS "
+            "cannot be verified; the root CMakeLists.txt:50 sets "
+            "CMAKE_EXPORT_COMPILE_COMMANDS "
             "unconditionally, so a configured tree always has it"
         )
     with open(compile_commands_path, "r", encoding="utf-8") as file:
@@ -534,7 +535,8 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
 
     A **missing** `compile_commands.json` is a different thing and fails closed, exactly as
     in the positive check. All three of this guard's premises say the file is there:
-    `CMakeLists.txt:50` sets `CMAKE_EXPORT_COMPILE_COMMANDS` unconditionally, the build job
+    the root `CMakeLists.txt:50` sets `CMAKE_EXPORT_COMPILE_COMMANDS` unconditionally, the
+    build job
     calls this only after a successful cmake configure, and a configured tree therefore
     always has it. So its absence says the question could not be asked - which is not the
     same as an answer of "neither macro is defined", and reading it as one would let a
@@ -543,7 +545,8 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     if not os.path.isfile(compile_commands_path):
         raise AssertionError(
             f"{compile_commands_path} is missing, so it cannot be verified that this "
-            "build carries neither jemalloc safety macro; CMakeLists.txt:50 sets "
+            "build carries neither jemalloc safety macro; the root CMakeLists.txt:50 "
+            "sets "
             "CMAKE_EXPORT_COMPILE_COMMANDS unconditionally and this check runs only "
             "after a successful cmake configure, so a missing file is inconclusive "
             "rather than evidence that the macros are absent"

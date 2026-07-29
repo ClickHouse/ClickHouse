@@ -140,7 +140,7 @@ def _reachable_defs_headers() -> list[Path]:
 # wrapped (`-Wp,-U`, `-Xpreprocessor -U`), and an `#undef` can arrive through one of the
 # headers `jemalloc_preamble.h:4-54` includes before the `config_opt_*` booleans. So the
 # build job compiles a probe with a real jemalloc entry's own flags and lets clang answer.
-# `CMakeLists.txt:50` exports `compile_commands.json` unconditionally, so a configured
+# The root `CMakeLists.txt:50` exports `compile_commands.json` unconditionally, so a configured
 # tree always supplies those flags.
 #
 # The cmake text itself is deliberately not scanned: a regex model of it false-fails on
@@ -1450,7 +1450,7 @@ def test_a_build_that_did_not_request_the_option_carries_neither_macro(
 def test_a_build_without_exported_compile_commands_fails_closed(tmp_path):
     """A missing `compile_commands.json` is inconclusive, not an answer of "absent".
 
-    All three of this guard's premises say the file is there: `CMakeLists.txt:50` sets
+    All three of this guard's premises say the file is there: the root `CMakeLists.txt:50` sets
     `CMAKE_EXPORT_COMPILE_COMMANDS` unconditionally, the build job calls this only inside
     `if res:` after a successful cmake configure, and a configured tree therefore always
     has it. So its absence means the question could not be asked - and reading that as
