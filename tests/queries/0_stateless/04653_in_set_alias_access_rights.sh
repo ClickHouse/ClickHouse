@@ -39,7 +39,9 @@ run_all_paths()
             "SELECT (1, 2) IN t_set_alias SETTINGS enable_analyzer = ${analyzer}" 2>&1 \
             | grep -oE "ACCESS_DENIED|^[01]$" | uniq
     done
-    # The plan is serialized to the shards, so the set is rebuilt from its table name there.
+    # The plan is serialized to the shards, so the set is rebuilt from its table name there. Both
+    # ends check, and the initiator checks first, so this asserts the outcome rather than which end
+    # produced it: a single-node test cannot give the two ends different grants.
     echo "  serialized plan"
     ${CLICKHOUSE_CLIENT} --user="${user}" --query \
         "SELECT count() FROM cluster('test_cluster_two_shards', currentDatabase(), t_src)
