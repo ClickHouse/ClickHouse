@@ -2628,7 +2628,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
- 
+
             // save join positions for later check
             if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
                 first_join_pos = static_cast<int>(i);
