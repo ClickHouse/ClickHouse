@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-ordinary-database
 
 set -o pipefail
 
@@ -8,7 +9,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS src_04329; DROP VIEW IF EXISTS vw_04329; DROP TABLE IF EXISTS mv_04329;"
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE src_04329 (x Int64) ENGINE=MergeTree ORDER BY x;"
+# The source table is pinned to the local disk: StorageMergeTree only supports transactions on
+# disks that can append, so on an object storage policy the transactional insert below would fail
+# on the source table instead of reaching the check for the view target.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE src_04329 (x Int64) ENGINE=MergeTree ORDER BY x SETTINGS storage_policy = 'default';"
 ${CLICKHOUSE_CLIENT} --query "CREATE VIEW vw_04329 AS SELECT x FROM src_04329 WHERE x > 10;"
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW mv_04329 TO vw_04329 AS SELECT x FROM src_04329;"
 
@@ -39,6 +43,14 @@ run_and_report --async_insert=0 --query "INSERT INTO src_04329 VALUES (100);"
 # The same insert inside a transaction fails earlier, in the transaction support check,
 # and must name the materialized view as well.
 run_and_report --async_insert=0 --implicit_transaction=1 --query "INSERT INTO src_04329 VALUES (101);"
+
+# A direct INSERT into the materialized view goes through the same target, so it is named too.
+run_and_report --async_insert=0 --query "INSERT INTO mv_04329 VALUES (102);"
+
+# Inside a transaction the same insert is rejected earlier, by InterpreterInsertQuery, on the
+# materialized view itself rather than on its target, so it names only the view. That path is
+# outside this change; the line below pins the current message so a later fix has to update it.
+run_and_report --async_insert=0 --implicit_transaction=1 --query "INSERT INTO mv_04329 VALUES (103);"
 
 # A direct INSERT into a View keeps the plain message, with no materialized view context appended.
 run_and_report --async_insert=0 --query "INSERT INTO vw_04329 VALUES (100);"
