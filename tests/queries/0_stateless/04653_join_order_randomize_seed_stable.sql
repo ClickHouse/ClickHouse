@@ -179,8 +179,8 @@ SELECT 'cell C seed equals hash of initial query id', (
       AND is_initial_query AND type != 'QueryStart'
     LIMIT 1);
 
--- Cell C must be non-vacuous: the query really did fan out to several replicas, each re-planning.
-SELECT 'cell C fanned out to several replicas', uniqExact(query_id) > 1
+-- Cell C must be non-vacuous: the query really did construct more than one plan.
+SELECT 'cell C saw several plan constructions', uniqExact(query_id) > 1
 FROM system.text_log
 WHERE logger_name = 'QueryPlanOptimizationSettings'
   AND message LIKE '%random seed%'
@@ -190,6 +190,16 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
         AND initial_query_id IN (
             SELECT query_id FROM system.query_log
             WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
+
+-- The configured fan-out really happened, read from the initiator's own accumulated counters so the assertion
+-- does not depend on when the replicas' own `query_log` rows become visible. `ParallelReplicasAvailableCount` is
+-- incremented once per replica that actually joined the query.
+SELECT 'cell C fanned out to three replicas', ProfileEvents['ParallelReplicasAvailableCount'] = 3
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+  AND is_initial_query AND type = 'QueryFinish'
+LIMIT 1
+SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE t1_04653;
 DROP TABLE t2_04653;
