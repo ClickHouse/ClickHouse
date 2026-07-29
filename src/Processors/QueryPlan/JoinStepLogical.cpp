@@ -860,16 +860,16 @@ static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
     bool result = false;
     auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
     check(*type);
-    type->forEachChild(check);
+    if (!result)
+        type->forEachChild(check);
     return result;
 }
 
 /// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
-/// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
-/// so that the caller falls back to the generic handling (a CROSS join with a filter).
+/// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape.
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
 /// to common types and registered in `used_expressions`. Extra conjuncts (including equalities)
-/// are left in `join_expression`; the caller applies them as a filter over the join result when
+/// are left in `join_expression`; the caller has to apply them as a filter over the join result when
 /// that is equivalent (ALL INNER), and as a residual condition inside the operator otherwise
 /// (the ON conditions of the other kinds affect matching: unmatched rows are emitted padded,
 /// not dropped).

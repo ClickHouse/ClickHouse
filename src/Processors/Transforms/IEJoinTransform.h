@@ -215,8 +215,8 @@ private:
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
     bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
-    /// Check that the bit array is exactly {right-side entries whose L2 key qualifies
-    /// against the current left entry} (debug builds, small inputs only).
+    /// Check that the bit array is exactly the set of right-side entries whose L2 key qualifies
+    /// against the current left entry (debug builds, small inputs only).
     void checkFrontierInvariant() const;
     /// Check at the end of emission that every filtered row of each post-phase side ended up
     /// exactly one of matched/unmatched (debug builds).

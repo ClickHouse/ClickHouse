@@ -80,8 +80,7 @@ IEJoinStep::IEJoinStep(
     if (residual_condition_)
     {
         const auto & sample = residual_condition_->getSampleBlock();
-        if (sample.columns() != 1
-            || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
+        if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
                 sample.dumpStructure());
 
