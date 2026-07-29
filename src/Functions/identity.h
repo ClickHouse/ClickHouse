@@ -43,6 +43,11 @@ public:
     /// aborts during serialization (e.g. WITH TOTALS const key). Keep the type identical to the column.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Same reason: the Variant adaptor decomposes the function per alternative and reassembles the
+    /// declared type (stripping nested LowCardinality, and collapsing to Nullable(T) when all
+    /// alternatives agree), while the passthrough column stays the original Variant.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front();
