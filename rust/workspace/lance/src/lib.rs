@@ -6,7 +6,7 @@ use futures::Stream;
 use futures::StreamExt;
 use lance::dataset::builder::DatasetBuilder;
 use lance::dataset::ReadParams;
-use lance::io::ObjectStoreParams;
+use lance::io::{ObjectStoreParams, RecordBatchStream};
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::{ClientOptions, DynObjectStore, RetryConfig};
@@ -22,9 +22,10 @@ use std::pin::Pin;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::task::JoinHandle;
 use url::Url;
 
 #[cfg(not(panic = "unwind"))]
@@ -119,6 +120,7 @@ enum ChLanceErrorKind {
     Internal = 9,
     Cancelled = 10,
     SnapshotMismatch = 11,
+    MemoryLimit = 12,
 }
 
 #[repr(u32)]
@@ -196,6 +198,10 @@ pub struct ch_lance_scan_options {
     /// null or size==0 → all fragments; else restrict with Scanner::with_fragments.
     fragment_ids: *const u64,
     fragment_ids_size: usize,
+    /// 0 = bounded automatic default.
+    queue_capacity: u64,
+    /// 0 = bounded automatic default.
+    queue_bytes: u64,
 }
 
 #[repr(C)]
@@ -218,6 +224,26 @@ pub struct ch_lance_runtime_stats {
     plan_scan_calls: u64,
     next_batch_calls: u64,
     runtime_initialized: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ch_lance_scan_stats {
+    producer_tasks: u64,
+    schema_exports: u64,
+    queue_push_batches: u64,
+    queue_pop_batches: u64,
+    queue_push_wait_microseconds: u64,
+    consumer_pop_wait_microseconds: u64,
+    queue_peak_batches: u64,
+    queue_peak_bytes: u64,
+    queued_batches: u64,
+    queued_bytes: u64,
+    in_flight_batches: u64,
+    in_flight_bytes: u64,
+    producer_eof: u64,
+    producer_error: u64,
+    producer_cancel: u64,
 }
 
 #[repr(C)]
@@ -278,18 +304,356 @@ unsafe fn optional_cancel_from_ptr(ptr: *mut ch_lance_cancel_handle) -> Option<A
 
 type LanceBatchStream = Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>;
 
+const DEFAULT_QUEUE_CAPACITY: usize = 2;
+const DEFAULT_QUEUE_BYTES: u64 = 64 * 1024 * 1024;
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScanState {
+    Running = 0,
+    Ended = 1,
+    Failed = 2,
+    Cancelled = 3,
+    Closed = 4,
+}
+
+struct BatchEnvelope {
+    batch: arrow_array::RecordBatch,
+    bytes: u64,
+    batch_permit: OwnedSemaphorePermit,
+}
+
+enum ScanMessage {
+    Batch(BatchEnvelope),
+    Error(FfiError),
+    End,
+}
+
+#[derive(Default)]
+struct ScanRuntimeStats {
+    producer_tasks: AtomicU64,
+    schema_exports: AtomicU64,
+    queue_push_batches: AtomicU64,
+    queue_pop_batches: AtomicU64,
+    queue_push_wait_microseconds: AtomicU64,
+    consumer_pop_wait_microseconds: AtomicU64,
+    queue_peak_batches: AtomicU64,
+    queue_peak_bytes: AtomicU64,
+    queued_batches: AtomicU64,
+    queued_bytes: AtomicU64,
+    in_flight_batches: AtomicU64,
+    in_flight_bytes: AtomicU64,
+    producer_eof: AtomicU64,
+    producer_error: AtomicU64,
+    producer_cancel: AtomicU64,
+}
+
+impl ScanRuntimeStats {
+    fn snapshot(&self) -> ch_lance_scan_stats {
+        ch_lance_scan_stats {
+            producer_tasks: self.producer_tasks.load(Ordering::Relaxed),
+            schema_exports: self.schema_exports.load(Ordering::Relaxed),
+            queue_push_batches: self.queue_push_batches.load(Ordering::Relaxed),
+            queue_pop_batches: self.queue_pop_batches.load(Ordering::Relaxed),
+            queue_push_wait_microseconds: self.queue_push_wait_microseconds.load(Ordering::Relaxed),
+            consumer_pop_wait_microseconds: self
+                .consumer_pop_wait_microseconds
+                .load(Ordering::Relaxed),
+            queue_peak_batches: self.queue_peak_batches.load(Ordering::Relaxed),
+            queue_peak_bytes: self.queue_peak_bytes.load(Ordering::Relaxed),
+            queued_batches: self.queued_batches.load(Ordering::Relaxed),
+            queued_bytes: self.queued_bytes.load(Ordering::Relaxed),
+            in_flight_batches: self.in_flight_batches.load(Ordering::Relaxed),
+            in_flight_bytes: self.in_flight_bytes.load(Ordering::Relaxed),
+            producer_eof: self.producer_eof.load(Ordering::Relaxed),
+            producer_error: self.producer_error.load(Ordering::Relaxed),
+            producer_cancel: self.producer_cancel.load(Ordering::Relaxed),
+        }
+    }
+}
+
+fn update_peak(peak: &AtomicU64, value: u64) {
+    let mut current = peak.load(Ordering::Relaxed);
+    while value > current {
+        match peak.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+struct QueueByteBudget {
+    limit: u64,
+    queued: Mutex<u64>,
+    available: Notify,
+}
+
+impl QueueByteBudget {
+    fn new(limit: u64) -> Self {
+        Self {
+            limit,
+            queued: Mutex::new(0),
+            available: Notify::new(),
+        }
+    }
+
+    async fn reserve(&self, bytes: u64, cancel: &ScanCancel) -> FfiResult<()> {
+        if bytes > self.limit {
+            return Err(FfiError::new(
+                ChLanceErrorKind::MemoryLimit,
+                ChLanceErrorOrigin::Unknown,
+                format!(
+                    "Lance record batch estimated size {} exceeds queue byte limit {}",
+                    bytes, self.limit
+                ),
+            ));
+        }
+
+        loop {
+            if cancel.is_cancelled() {
+                return Err(FfiError::cancelled());
+            }
+
+            let notified = self.available.notified();
+            tokio::pin!(notified);
+            {
+                let mut queued = self
+                    .queued
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if *queued <= self.limit - bytes {
+                    *queued += bytes;
+                    return Ok(());
+                }
+            }
+
+            let cancelled = cancel.notify.notified();
+            tokio::pin!(cancelled);
+            if cancel.is_cancelled() {
+                return Err(FfiError::cancelled());
+            }
+            tokio::select! {
+                biased;
+                _ = &mut cancelled => {}
+                _ = &mut notified => {}
+            }
+        }
+    }
+
+    fn release(&self, bytes: u64) {
+        let mut queued = self
+            .queued
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *queued = queued.saturating_sub(bytes);
+        drop(queued);
+        self.available.notify_waiters();
+    }
+}
+
+fn duration_microseconds(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
+}
+
+async fn send_message(
+    sender: &mpsc::Sender<ScanMessage>,
+    message: ScanMessage,
+    cancel: &ScanCancel,
+) -> FfiResult<()> {
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+    let cancelled = cancel.notify.notified();
+    tokio::pin!(cancelled);
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+    let send = sender.send(message);
+    tokio::pin!(send);
+    tokio::select! {
+        biased;
+        _ = &mut cancelled => Err(FfiError::cancelled()),
+        result = &mut send => result.map_err(|_| {
+            FfiError::cancelled()
+        }),
+    }
+}
+
+async fn receive_message(
+    receiver: &mut mpsc::Receiver<ScanMessage>,
+    cancel: &ScanCancel,
+) -> FfiResult<Option<ScanMessage>> {
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+    let cancelled = cancel.notify.notified();
+    tokio::pin!(cancelled);
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+    tokio::select! {
+        biased;
+        _ = &mut cancelled => Err(FfiError::cancelled()),
+        message = receiver.recv() => Ok(message),
+    }
+}
+
+async fn run_scan_producer(
+    mut stream: LanceBatchStream,
+    schema: Arc<Schema>,
+    sender: mpsc::Sender<ScanMessage>,
+    batch_budget: Arc<Semaphore>,
+    byte_budget: Arc<QueueByteBudget>,
+    cancel: Arc<ScanCancel>,
+    stats: Arc<ScanRuntimeStats>,
+    state: Arc<AtomicU32>,
+    origin: ChLanceErrorOrigin,
+) {
+    stats.producer_tasks.fetch_add(1, Ordering::Relaxed);
+    loop {
+        let next = match next_batch_or_cancel(&mut stream, cancel.as_ref()).await {
+            Ok(next) => next,
+            Err(error) => {
+                if cancel.is_cancelled() {
+                    stats.producer_cancel.fetch_add(1, Ordering::Relaxed);
+                    state.store(ScanState::Cancelled as u32, Ordering::Release);
+                } else {
+                    stats.producer_error.fetch_add(1, Ordering::Relaxed);
+                    state.store(ScanState::Failed as u32, Ordering::Release);
+                    let _ = send_message(&sender, ScanMessage::Error(error), cancel.as_ref()).await;
+                }
+                return;
+            }
+        };
+
+        let Some(next) = next else {
+            stats.producer_eof.fetch_add(1, Ordering::Relaxed);
+            state.store(ScanState::Ended as u32, Ordering::Release);
+            let _ = send_message(&sender, ScanMessage::End, cancel.as_ref()).await;
+            return;
+        };
+
+        let batch = match next {
+            Ok(batch) => batch,
+            Err(error) => {
+                stats.producer_error.fetch_add(1, Ordering::Relaxed);
+                state.store(ScanState::Failed as u32, Ordering::Release);
+                let error = FfiError::from_lance(LanceOperation::NextBatch, origin, error);
+                let _ = send_message(&sender, ScanMessage::Error(error), cancel.as_ref()).await;
+                return;
+            }
+        };
+        if batch.schema().as_ref() != schema.as_ref() {
+            stats.producer_error.fetch_add(1, Ordering::Relaxed);
+            state.store(ScanState::Failed as u32, Ordering::Release);
+            let _ = send_message(
+                &sender,
+                ScanMessage::Error(FfiError::new(
+                    ChLanceErrorKind::CorruptData,
+                    origin,
+                    "Lance record batch schema differs from the planned scan schema",
+                )),
+                cancel.as_ref(),
+            )
+            .await;
+            return;
+        }
+
+        let bytes = u64::try_from(batch.get_array_memory_size()).unwrap_or(u64::MAX);
+        let wait_started = Instant::now();
+        if let Err(error) = byte_budget.reserve(bytes, cancel.as_ref()).await {
+            if cancel.is_cancelled() {
+                stats.producer_cancel.fetch_add(1, Ordering::Relaxed);
+                state.store(ScanState::Cancelled as u32, Ordering::Release);
+            } else {
+                stats.producer_error.fetch_add(1, Ordering::Relaxed);
+                state.store(ScanState::Failed as u32, Ordering::Release);
+                let _ = send_message(
+                    &sender,
+                    ScanMessage::Error(error.with_origin(origin)),
+                    cancel.as_ref(),
+                )
+                .await;
+            }
+            return;
+        }
+        stats.queue_push_wait_microseconds.fetch_add(
+            duration_microseconds(wait_started.elapsed()),
+            Ordering::Relaxed,
+        );
+
+        let send_started = Instant::now();
+        let cancelled = cancel.notify.notified();
+        tokio::pin!(cancelled);
+        let acquire_batch = Arc::clone(&batch_budget).acquire_owned();
+        tokio::pin!(acquire_batch);
+        let batch_permit = if cancel.is_cancelled() {
+            None
+        } else {
+            tokio::select! {
+                biased;
+                _ = &mut cancelled => None,
+                result = &mut acquire_batch => result.ok(),
+            }
+        };
+        let Some(batch_permit) = batch_permit else {
+            byte_budget.release(bytes);
+            stats.producer_cancel.fetch_add(1, Ordering::Relaxed);
+            state.store(ScanState::Cancelled as u32, Ordering::Release);
+            return;
+        };
+
+        let cancelled = cancel.notify.notified();
+        tokio::pin!(cancelled);
+        let reserve = sender.reserve();
+        tokio::pin!(reserve);
+        let permit = if cancel.is_cancelled() {
+            None
+        } else {
+            tokio::select! {
+                biased;
+                _ = &mut cancelled => None,
+                result = &mut reserve => result.ok(),
+            }
+        };
+        stats.queue_push_wait_microseconds.fetch_add(
+            duration_microseconds(send_started.elapsed()),
+            Ordering::Relaxed,
+        );
+        let Some(permit) = permit else {
+            byte_budget.release(bytes);
+            drop(batch_permit);
+            stats.producer_cancel.fetch_add(1, Ordering::Relaxed);
+            state.store(ScanState::Cancelled as u32, Ordering::Release);
+            return;
+        };
+
+        let envelope = BatchEnvelope {
+            batch,
+            bytes,
+            batch_permit,
+        };
+        let queued_batches = stats.queued_batches.fetch_add(1, Ordering::Relaxed) + 1;
+        let queued_bytes = stats.queued_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        stats.queue_push_batches.fetch_add(1, Ordering::Relaxed);
+        update_peak(&stats.queue_peak_batches, queued_batches);
+        update_peak(&stats.queue_peak_bytes, queued_bytes);
+        permit.send(ScanMessage::Batch(envelope));
+    }
+}
+
 /// Opaque to C; only ever manipulated via FFI entry points.
-///
-/// `stream` is behind a mutex so `ch_lance_cancel_scan` may run concurrently with
-/// `ch_lance_next_batch` without taking an exclusive borrow of the whole struct.
-/// Cancel only touches `cancel` (Arc atomics + Notify); stream drop on cancel happens
-/// inside `next_batch` (or `free_scan`) while the mutex is held.
 #[allow(non_camel_case_types)]
 pub struct ch_lance_scan {
-    /// Taken (set to None) when cancelled or fully consumed so drop cancels Lance I/O queue.
-    stream: Mutex<Option<LanceBatchStream>>,
+    receiver: Mutex<mpsc::Receiver<ScanMessage>>,
+    producer: Mutex<Option<JoinHandle<()>>>,
     origin: ChLanceErrorOrigin,
     cancel: Arc<ScanCancel>,
+    schema: Arc<Schema>,
+    schema_exported: AtomicBool,
+    byte_budget: Arc<QueueByteBudget>,
+    stats: Arc<ScanRuntimeStats>,
+    state: Arc<AtomicU32>,
 }
 
 /// Race a one-shot future against cooperative cancellation.
@@ -1269,7 +1633,6 @@ fn validate_data_type(
 fn write_record_batch(
     batch: arrow_array::RecordBatch,
     array: *mut FFI_ArrowArray,
-    schema: *mut FFI_ArrowSchema,
     origin: ChLanceErrorOrigin,
 ) -> FfiResult<()> {
     if array.is_null() {
@@ -1277,28 +1640,13 @@ fn write_record_batch(
             FfiError::invalid_argument("ArrowArray output pointer is null").with_origin(origin),
         );
     }
-    if schema.is_null() {
-        return Err(
-            FfiError::invalid_argument("ArrowSchema output pointer is null").with_origin(origin),
-        );
-    }
 
     validate_schema(batch.schema().as_ref(), origin)?;
-    let ffi_schema = FFI_ArrowSchema::try_from(batch.schema().as_ref()).map_err(|err| {
-        FfiError::internal(
-            origin,
-            format!(
-                "Cannot export Lance record batch schema through Arrow C Data Interface: {}",
-                err
-            ),
-        )
-    })?;
     let struct_array = StructArray::from(batch);
     let ffi_array = FFI_ArrowArray::new(&struct_array.to_data());
 
     unsafe {
         std::ptr::write_unaligned(array, ffi_array);
-        std::ptr::write_unaligned(schema, ffi_schema);
     }
     Ok(())
 }
@@ -1759,6 +2107,25 @@ unsafe fn ch_lance_plan_scan_impl(
                 return std::ptr::null_mut();
             }
         };
+    let queue_capacity = if (*options).queue_capacity == 0 {
+        DEFAULT_QUEUE_CAPACITY
+    } else {
+        match usize::try_from((*options).queue_capacity) {
+            Ok(value) if value > 0 => value,
+            _ => {
+                set_error(
+                    error,
+                    FfiError::invalid_argument("Lance queue capacity is too large"),
+                );
+                return std::ptr::null_mut();
+            }
+        }
+    };
+    let queue_bytes = if (*options).queue_bytes == 0 {
+        DEFAULT_QUEUE_BYTES
+    } else {
+        (*options).queue_bytes
+    };
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
     let cancel = cancel_arc_from_ptr((*options).cancel);
@@ -1829,11 +2196,48 @@ unsafe fn ch_lance_plan_scan_impl(
     }));
 
     match stream_result {
-        Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
-            stream: Mutex::new(Some(Box::pin(stream))),
-            origin,
-            cancel,
-        })),
+        Ok(Ok(stream)) => {
+            let schema = stream.schema();
+            if let Err(ffi_error) = validate_schema(schema.as_ref(), origin) {
+                set_error(error, ffi_error);
+                return std::ptr::null_mut();
+            }
+
+            let (sender, receiver) = mpsc::channel(queue_capacity);
+            let batch_budget = Arc::new(Semaphore::new(queue_capacity));
+            let byte_budget = Arc::new(QueueByteBudget::new(queue_bytes));
+            let stats = Arc::new(ScanRuntimeStats::default());
+            let state = Arc::new(AtomicU32::new(ScanState::Running as u32));
+            let runtime = match ensure_lance_runtime() {
+                Ok(runtime) => runtime,
+                Err(ffi_error) => {
+                    set_error(error, ffi_error);
+                    return std::ptr::null_mut();
+                }
+            };
+            let producer = runtime.spawn(run_scan_producer(
+                Box::pin(stream),
+                Arc::clone(&schema),
+                sender,
+                batch_budget,
+                Arc::clone(&byte_budget),
+                Arc::clone(&cancel),
+                Arc::clone(&stats),
+                Arc::clone(&state),
+                origin,
+            ));
+            Box::into_raw(Box::new(ch_lance_scan {
+                receiver: Mutex::new(receiver),
+                producer: Mutex::new(Some(producer)),
+                origin,
+                cancel,
+                schema,
+                schema_exported: AtomicBool::new(false),
+                byte_budget,
+                stats,
+                state,
+            }))
+        }
         Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
             std::ptr::null_mut()
@@ -1841,98 +2245,154 @@ unsafe fn ch_lance_plan_scan_impl(
     }
 }
 
+unsafe fn ch_lance_export_scan_schema_impl(
+    scan: *mut ch_lance_scan,
+    schema: *mut FFI_ArrowSchema,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if scan.is_null() {
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance scan pointer is null"),
+        );
+        return false;
+    }
+    let scan = &*scan;
+    if scan
+        .schema_exported
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance scan schema was already exported"),
+        );
+        return false;
+    }
+    match write_schema(scan.schema.as_ref().clone(), schema, scan.origin) {
+        Ok(()) => {
+            scan.stats.schema_exports.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+        Err(ffi_error) => {
+            scan.schema_exported.store(false, Ordering::Release);
+            set_error(error, ffi_error);
+            false
+        }
+    }
+}
+
 unsafe fn ch_lance_next_batch_impl(
     scan: *mut ch_lance_scan,
     array: *mut FFI_ArrowArray,
-    schema: *mut FFI_ArrowSchema,
+    batch_rows: *mut u64,
+    batch_bytes: *mut u64,
     has_batch: *mut bool,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
-    if scan.is_null() || has_batch.is_null() {
+    if scan.is_null() || batch_rows.is_null() || batch_bytes.is_null() || has_batch.is_null() {
         set_error(
             error,
-            FfiError::invalid_argument("Lance scan or has_batch pointer is null"),
+            FfiError::invalid_argument("Lance scan or batch output pointer is null"),
         );
         return false;
     }
     *has_batch = false;
+    *batch_rows = 0;
+    *batch_bytes = 0;
 
-    // Shared borrow only: concurrent ch_lance_cancel_scan only touches Arc cancel state.
     let scan = &*scan;
     LANCE_NEXT_BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
 
-    let mut stream_guard = match scan.stream.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
     if scan.cancel.is_cancelled() {
-        // Drop stream so Lance ScanScheduler cancels queued I/O.
-        let _ = stream_guard.take();
         set_error(error, FfiError::cancelled());
         return false;
     }
 
-    if stream_guard.is_none() {
-        // Already cancelled / EOF'd: surface cancel if requested, else EOF.
-        if scan.cancel.is_cancelled() {
-            set_error(error, FfiError::cancelled());
-            return false;
-        }
-        return true;
-    }
-
+    let mut receiver = match scan.receiver.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     let cancel = Arc::clone(&scan.cancel);
-    let stream = stream_guard.as_mut().expect("stream checked above");
-    // Hold the mutex across block_on: only one next_batch at a time (pipeline serial),
-    // and cancel_scan never acquires this mutex.
-    let next = match block_on_lance(next_batch_or_cancel(stream, cancel.as_ref())) {
+    let wait_started = Instant::now();
+    let next = match block_on_lance(receive_message(&mut receiver, cancel.as_ref())) {
         Ok(result) => result,
         Err(ffi_error) => {
             set_error(error, ffi_error);
             return false;
         }
     };
+    scan.stats.consumer_pop_wait_microseconds.fetch_add(
+        duration_microseconds(wait_started.elapsed()),
+        Ordering::Relaxed,
+    );
+    drop(receiver);
 
     let next = match next {
         Ok(item) => item,
         Err(ffi_error) => {
-            // Cancelled while waiting: drop stream under the mutex.
-            let _ = stream_guard.take();
             set_error(error, ffi_error);
             return false;
         }
     };
 
     match next {
-        None => {
-            // EOF: drop stream to release scheduler resources promptly.
-            let _ = stream_guard.take();
-            true
+        None | Some(ScanMessage::End) => true,
+        Some(ScanMessage::Error(ffi_error)) => {
+            set_error(error, ffi_error);
+            false
         }
-        Some(Ok(batch)) => {
-            // Release the stream mutex before Arrow export (CPU work).
-            drop(stream_guard);
-            match write_record_batch(batch, array, schema, scan.origin) {
+        Some(ScanMessage::Batch(envelope)) => {
+            scan.stats.queued_batches.fetch_sub(1, Ordering::Relaxed);
+            scan.stats
+                .queued_bytes
+                .fetch_sub(envelope.bytes, Ordering::Relaxed);
+            scan.stats.queue_pop_batches.fetch_add(1, Ordering::Relaxed);
+            scan.byte_budget.release(envelope.bytes);
+            drop(envelope.batch_permit);
+            scan.stats.in_flight_batches.fetch_add(1, Ordering::Relaxed);
+            scan.stats
+                .in_flight_bytes
+                .fetch_add(envelope.bytes, Ordering::Relaxed);
+            let rows = u64::try_from(envelope.batch.num_rows()).unwrap_or(u64::MAX);
+            match write_record_batch(envelope.batch, array, scan.origin) {
                 Ok(()) => {
+                    *batch_rows = rows;
+                    *batch_bytes = envelope.bytes;
                     *has_batch = true;
                     true
                 }
                 Err(ffi_error) => {
+                    scan.stats.in_flight_batches.fetch_sub(1, Ordering::Relaxed);
+                    scan.stats
+                        .in_flight_bytes
+                        .fetch_sub(envelope.bytes, Ordering::Relaxed);
                     set_error(error, ffi_error);
                     false
                 }
             }
         }
-        Some(Err(err)) => {
-            set_error(
-                error,
-                FfiError::from_lance(LanceOperation::NextBatch, scan.origin, err),
-            );
-            false
-        }
     }
+}
+
+unsafe fn ch_lance_release_batch_impl(scan: *mut ch_lance_scan, batch_bytes: u64) {
+    if scan.is_null() {
+        return;
+    }
+    let scan = &*scan;
+    scan.stats.in_flight_batches.fetch_sub(1, Ordering::Relaxed);
+    scan.stats
+        .in_flight_bytes
+        .fetch_sub(batch_bytes, Ordering::Relaxed);
+}
+
+unsafe fn ch_lance_get_scan_stats_impl(scan: *const ch_lance_scan, out: *mut ch_lance_scan_stats) {
+    if scan.is_null() || out.is_null() {
+        return;
+    }
+    ptr::write(out, (*scan).stats.snapshot());
 }
 
 /// Request cooperative cancellation. Thread-safe w.r.t. ch_lance_next_batch.
@@ -1941,15 +2401,38 @@ unsafe fn ch_lance_cancel_scan_impl(scan: *mut ch_lance_scan) {
     if scan.is_null() {
         return;
     }
-    // Shared borrow: only signals Arc cancel state; does not touch the stream mutex.
-    (*scan).cancel.cancel();
+    let scan = &*scan;
+    scan.state
+        .compare_exchange(
+            ScanState::Running as u32,
+            ScanState::Cancelled as u32,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .ok();
+    scan.cancel.cancel();
+    scan.byte_budget.available.notify_waiters();
 }
 
 unsafe fn ch_lance_free_scan_impl(scan: *mut ch_lance_scan) {
     if !scan.is_null() {
-        // Dropping the box drops the stream (if still present), which cancels queued I/O.
-        // Caller must ensure no concurrent next_batch (ClickHouse Scan lifetime).
-        drop(Box::from_raw(scan));
+        let boxed = Box::from_raw(scan);
+        boxed.cancel.cancel();
+        boxed.byte_budget.available.notify_waiters();
+        let producer = boxed
+            .producer
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        if let Some(producer) = producer {
+            let _ = block_on_lance(async move {
+                let _ = producer.await;
+            });
+        }
+        boxed
+            .state
+            .store(ScanState::Closed as u32, Ordering::Release);
+        drop(boxed);
     }
 }
 
@@ -2264,10 +2747,30 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_export_scan_schema(
+    scan: *mut ch_lance_scan,
+    schema: *mut FFI_ArrowSchema,
+    error: *mut ch_lance_error,
+) -> bool {
+    let reset = || {
+        if !schema.is_null() {
+            ptr::write(schema, FFI_ArrowSchema::empty());
+        }
+    };
+    reset();
+    ffi_bool_guard(
+        error,
+        || ch_lance_export_scan_schema_impl(scan, schema, error),
+        reset,
+    )
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_next_batch(
     scan: *mut ch_lance_scan,
     array: *mut FFI_ArrowArray,
-    schema: *mut FFI_ArrowSchema,
+    batch_rows: *mut u64,
+    batch_bytes: *mut u64,
     has_batch: *mut bool,
     error: *mut ch_lance_error,
 ) -> bool {
@@ -2275,8 +2778,11 @@ pub unsafe extern "C" fn ch_lance_next_batch(
         if !array.is_null() {
             ptr::write(array, FFI_ArrowArray::empty());
         }
-        if !schema.is_null() {
-            ptr::write(schema, FFI_ArrowSchema::empty());
+        if !batch_rows.is_null() {
+            *batch_rows = 0;
+        }
+        if !batch_bytes.is_null() {
+            *batch_bytes = 0;
         }
         if !has_batch.is_null() {
             *has_batch = false;
@@ -2285,9 +2791,22 @@ pub unsafe extern "C" fn ch_lance_next_batch(
     reset();
     ffi_bool_guard(
         error,
-        || ch_lance_next_batch_impl(scan, array, schema, has_batch, error),
+        || ch_lance_next_batch_impl(scan, array, batch_rows, batch_bytes, has_batch, error),
         reset,
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_release_batch(scan: *mut ch_lance_scan, batch_bytes: u64) {
+    ffi_void_guard(|| ch_lance_release_batch_impl(scan, batch_bytes));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_get_scan_stats(
+    scan: *const ch_lance_scan,
+    out: *mut ch_lance_scan_stats,
+) {
+    ffi_void_guard(|| ch_lance_get_scan_stats_impl(scan, out));
 }
 
 #[no_mangle]
@@ -2313,13 +2832,15 @@ mod tests {
     use super::*;
     use arrow_array::ffi::from_ffi;
     use arrow_array::ffi::FFI_ArrowArray;
+    use arrow_array::types::Int32Type;
     use arrow_array::{
-        make_array, Date32Array, Float64Array, Int32Array, RecordBatch, RecordBatchIterator,
-        StringArray, TimestampMillisecondArray,
+        make_array, Date32Array, Float64Array, Int32Array, ListArray, RecordBatch,
+        RecordBatchIterator, StringArray, TimestampMillisecondArray,
     };
     use arrow_schema::{DataType, Field, Schema};
     use std::ptr::addr_of_mut;
-    use std::sync::Arc;
+    use std::sync::{Arc, Barrier};
+    use std::task::{Context, Poll};
 
     fn dataset_options(uri: &CString) -> ch_lance_dataset_options {
         ch_lance_dataset_options {
@@ -2366,6 +2887,570 @@ mod tests {
         )])
         .unwrap();
         batch
+    }
+
+    fn test_scan_from_stream(
+        stream: LanceBatchStream,
+        schema: Arc<Schema>,
+        queue_capacity: usize,
+        queue_bytes: u64,
+    ) -> *mut ch_lance_scan {
+        let (sender, receiver) = mpsc::channel(queue_capacity);
+        let batch_budget = Arc::new(Semaphore::new(queue_capacity));
+        let byte_budget = Arc::new(QueueByteBudget::new(queue_bytes));
+        let stats = Arc::new(ScanRuntimeStats::default());
+        let state = Arc::new(AtomicU32::new(ScanState::Running as u32));
+        let cancel = Arc::new(ScanCancel::new());
+        let producer = ensure_lance_runtime().unwrap().spawn(run_scan_producer(
+            stream,
+            Arc::clone(&schema),
+            sender,
+            batch_budget,
+            Arc::clone(&byte_budget),
+            Arc::clone(&cancel),
+            Arc::clone(&stats),
+            Arc::clone(&state),
+            ChLanceErrorOrigin::Local,
+        ));
+        Box::into_raw(Box::new(ch_lance_scan {
+            receiver: Mutex::new(receiver),
+            producer: Mutex::new(Some(producer)),
+            origin: ChLanceErrorOrigin::Local,
+            cancel,
+            schema,
+            schema_exported: AtomicBool::new(false),
+            byte_budget,
+            stats,
+            state,
+        }))
+    }
+
+    fn test_scan_from_batches(
+        batches: Vec<lance::Result<RecordBatch>>,
+        schema: Arc<Schema>,
+        queue_capacity: usize,
+        queue_bytes: u64,
+    ) -> *mut ch_lance_scan {
+        test_scan_from_stream(
+            Box::pin(futures::stream::iter(batches)),
+            schema,
+            queue_capacity,
+            queue_bytes,
+        )
+    }
+
+    struct DropTrackedPendingStream {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Stream for DropTrackedPendingStream {
+        type Item = lance::Result<RecordBatch>;
+
+        fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl Drop for DropTrackedPendingStream {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::Release);
+        }
+    }
+
+    #[test]
+    fn producer_reaches_eof_in_order_with_bounded_batch_queue() {
+        let batches = (0..8)
+            .map(|value| Ok(make_batch(vec![value])))
+            .collect::<Vec<_>>();
+        let schema = batches[0].as_ref().unwrap().schema();
+        let scan = test_scan_from_batches(batches, schema, 1, DEFAULT_QUEUE_BYTES);
+        let mut error = empty_error();
+        let mut ffi_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(ffi_schema), addr_of_mut!(error))
+        });
+
+        let mut values = Vec::new();
+        loop {
+            let mut array = FFI_ArrowArray::empty();
+            let mut batch_rows = 0;
+            let mut batch_bytes = 0;
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(batch_rows),
+                    addr_of_mut!(batch_bytes),
+                    addr_of_mut!(has_batch),
+                    addr_of_mut!(error),
+                )
+            });
+            if !has_batch {
+                break;
+            }
+
+            assert_eq!(batch_rows, 1);
+            let data = unsafe { from_ffi(array, &ffi_schema) }.unwrap();
+            let batch = StructArray::from(make_array(data).to_data());
+            values.push(
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .value(0),
+            );
+            drop(batch);
+            unsafe {
+                ch_lance_release_batch(scan, batch_bytes);
+            }
+        }
+
+        assert_eq!(values, (0..8).collect::<Vec<_>>());
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.producer_tasks, 1);
+        assert_eq!(stats.producer_eof, 1);
+        assert_eq!(stats.producer_error, 0);
+        assert_eq!(stats.queue_push_batches, 8);
+        assert_eq!(stats.queue_pop_batches, 8);
+        assert_eq!(stats.queue_peak_batches, 1);
+        assert_eq!(stats.queued_batches, 0);
+        assert_eq!(stats.in_flight_batches, 0);
+
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+    }
+
+    #[test]
+    fn producer_reports_only_the_first_immediate_stream_error() {
+        let schema = make_batch(vec![1]).schema();
+        let scan = test_scan_from_batches(
+            vec![Err(lance::Error::Stop), Err(lance::Error::Stop)],
+            schema,
+            2,
+            DEFAULT_QUEUE_BYTES,
+        );
+        let mut error = empty_error();
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
+        let mut has_batch = false;
+        assert!(!unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert_ne!(error.kind, ChLanceErrorKind::None as u32);
+        assert!(error_message(&error).contains("Cannot read Lance record batch"));
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_batch);
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.producer_error, 1);
+        assert_eq!(stats.producer_eof, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+    }
+
+    #[test]
+    fn producer_rejects_batch_schema_mismatch_before_queueing() {
+        let planned_schema = make_batch(vec![1]).schema();
+        let mismatched_batch = RecordBatch::try_from_iter(vec![(
+            "other",
+            Arc::new(Int32Array::from(vec![2])) as arrow_array::ArrayRef,
+        )])
+        .unwrap();
+        let scan = test_scan_from_batches(
+            vec![Ok(mismatched_batch)],
+            planned_schema,
+            2,
+            DEFAULT_QUEUE_BYTES,
+        );
+        let mut error = empty_error();
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
+        let mut has_batch = false;
+        assert!(!unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_batch);
+        assert_eq!(error.kind, ChLanceErrorKind::CorruptData as u32);
+        assert!(error_message(&error).contains("differs from the planned scan schema"));
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.producer_error, 1);
+        assert_eq!(stats.queue_push_batches, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+    }
+
+    #[test]
+    fn queue_byte_capacity_is_hard_and_tracks_nested_string_batches() {
+        let nested = ListArray::from_iter_primitive::<Int32Type, _, _>([
+            Some(vec![Some(1), Some(2), Some(3)]),
+            None,
+            Some(vec![Some(4)]),
+        ]);
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "name",
+                Arc::new(StringArray::from(vec![
+                    Some("wide-string-value"),
+                    None,
+                    Some("tail"),
+                ])) as arrow_array::ArrayRef,
+            ),
+            ("nested", Arc::new(nested) as arrow_array::ArrayRef),
+        ])
+        .unwrap();
+        let expected_bytes = u64::try_from(batch.get_array_memory_size()).unwrap();
+        assert!(expected_bytes > 0);
+        let schema = batch.schema();
+        let scan = test_scan_from_batches(
+            vec![Ok(batch.clone()), Ok(batch)],
+            schema,
+            4,
+            expected_bytes,
+        );
+        let mut error = empty_error();
+        let mut ffi_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(ffi_schema), addr_of_mut!(error))
+        });
+
+        for _ in 0..2 {
+            let mut array = FFI_ArrowArray::empty();
+            let mut batch_rows = 0;
+            let mut batch_bytes = 0;
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(batch_rows),
+                    addr_of_mut!(batch_bytes),
+                    addr_of_mut!(has_batch),
+                    addr_of_mut!(error),
+                )
+            });
+            assert!(has_batch);
+            assert_eq!(batch_rows, 3);
+            assert_eq!(batch_bytes, expected_bytes);
+            drop(unsafe { from_ffi(array, &ffi_schema) }.unwrap());
+            unsafe {
+                ch_lance_release_batch(scan, batch_bytes);
+            }
+        }
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
+        let mut has_batch = false;
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_batch);
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.queue_peak_bytes, expected_bytes);
+        assert_eq!(stats.queued_bytes, 0);
+        assert_eq!(stats.in_flight_bytes, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+
+        let oversized = make_batch(vec![1, 2, 3]);
+        let oversized_bytes = u64::try_from(oversized.get_array_memory_size()).unwrap();
+        let oversized_scan = test_scan_from_batches(
+            vec![Ok(oversized.clone())],
+            oversized.schema(),
+            1,
+            oversized_bytes - 1,
+        );
+        assert!(!unsafe {
+            ch_lance_next_batch(
+                oversized_scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(error_message(&error).contains("exceeds queue byte limit"));
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(oversized_scan);
+        }
+    }
+
+    #[test]
+    fn cancelling_a_full_queue_wakes_the_producer() {
+        let yielded = Arc::new(AtomicU64::new(0));
+        let yielded_notify = Arc::new(Notify::new());
+        let yielded_for_stream = Arc::clone(&yielded);
+        let notify_for_stream = Arc::clone(&yielded_notify);
+        let stream = futures::stream::iter(vec![
+            Ok(make_batch(vec![1])),
+            Ok(make_batch(vec![2])),
+            Ok(make_batch(vec![3])),
+        ])
+        .inspect(move |_| {
+            yielded_for_stream.fetch_add(1, Ordering::Release);
+            notify_for_stream.notify_waiters();
+        });
+        let schema = make_batch(vec![0]).schema();
+        let scan = test_scan_from_stream(Box::pin(stream), schema, 1, DEFAULT_QUEUE_BYTES);
+        let stats = unsafe { Arc::clone(&(*scan).stats) };
+
+        block_on_lance(async {
+            loop {
+                let notified = yielded_notify.notified();
+                if yielded.load(Ordering::Acquire) >= 2 {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .unwrap();
+        unsafe {
+            ch_lance_cancel_scan(scan);
+            ch_lance_free_scan(scan);
+        }
+        assert_eq!(stats.producer_cancel.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn cancelling_wakes_a_waiting_receiver_without_sleep() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        let cancel = Arc::new(ScanCancel::new());
+        let ready = Arc::new(Notify::new());
+        block_on_lance(async {
+            let cancel_for_task = Arc::clone(&cancel);
+            let ready_for_task = Arc::clone(&ready);
+            let task = tokio::spawn(async move {
+                ready_for_task.notify_one();
+                receive_message(&mut receiver, cancel_for_task.as_ref()).await
+            });
+            ready.notified().await;
+            cancel.cancel();
+            match task.await.unwrap() {
+                Err(error) => assert_eq!(error.kind, ChLanceErrorKind::Cancelled),
+                Ok(_) => panic!("waiting receiver unexpectedly completed without cancellation"),
+            }
+        })
+        .unwrap();
+        drop(sender);
+    }
+
+    #[test]
+    fn freeing_scan_stops_and_drops_pending_producer() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let stream = DropTrackedPendingStream {
+            dropped: Arc::clone(&dropped),
+        };
+        let scan = test_scan_from_stream(
+            Box::pin(stream),
+            make_batch(vec![0]).schema(),
+            1,
+            DEFAULT_QUEUE_BYTES,
+        );
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+        assert!(dropped.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn batch_ownership_and_schema_export_are_accounted_once() {
+        let batch = make_batch(vec![1, 2, 3]);
+        let scan = test_scan_from_batches(
+            vec![Ok(batch.clone())],
+            batch.schema(),
+            1,
+            DEFAULT_QUEUE_BYTES,
+        );
+        let mut error = empty_error();
+        let mut ffi_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(ffi_schema), addr_of_mut!(error))
+        });
+        let mut duplicate_schema = FFI_ArrowSchema::empty();
+        assert!(!unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(duplicate_schema), addr_of_mut!(error))
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
+        let mut has_batch = false;
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_batch);
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.schema_exports, 1);
+        assert_eq!(stats.in_flight_batches, 1);
+        assert_eq!(stats.in_flight_bytes, batch_bytes);
+
+        drop(unsafe { from_ffi(array, &ffi_schema) }.unwrap());
+        unsafe {
+            ch_lance_release_batch(scan, batch_bytes);
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.in_flight_batches, 0);
+        assert_eq!(stats.in_flight_bytes, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+    }
+
+    #[test]
+    fn concurrent_consumers_never_duplicate_batches() {
+        const BATCHES: i32 = 64;
+        const CONSUMERS: usize = 4;
+        let batches = (0..BATCHES)
+            .map(|value| Ok(make_batch(vec![value])))
+            .collect::<Vec<_>>();
+        let schema = batches[0].as_ref().unwrap().schema();
+        let scan = test_scan_from_batches(batches, schema, 4, DEFAULT_QUEUE_BYTES);
+        let mut error = empty_error();
+        let mut ffi_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(ffi_schema), addr_of_mut!(error))
+        });
+
+        let barrier = Arc::new(Barrier::new(CONSUMERS));
+        let scan_address = scan as usize;
+        let schema_address = addr_of_mut!(ffi_schema) as usize;
+        let threads = (0..CONSUMERS)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    let scan = scan_address as *mut ch_lance_scan;
+                    let schema = schema_address as *const FFI_ArrowSchema;
+                    let mut error = empty_error();
+                    let mut values = Vec::new();
+                    barrier.wait();
+                    loop {
+                        let mut array = FFI_ArrowArray::empty();
+                        let mut batch_rows = 0;
+                        let mut batch_bytes = 0;
+                        let mut has_batch = false;
+                        let ok = unsafe {
+                            ch_lance_next_batch(
+                                scan,
+                                addr_of_mut!(array),
+                                addr_of_mut!(batch_rows),
+                                addr_of_mut!(batch_bytes),
+                                addr_of_mut!(has_batch),
+                                addr_of_mut!(error),
+                            )
+                        };
+                        assert!(ok, "{}", error_message(&error));
+                        if !has_batch {
+                            break;
+                        }
+                        assert_eq!(batch_rows, 1);
+                        let data = unsafe { from_ffi(array, &*schema) }.unwrap();
+                        let batch = StructArray::from(make_array(data).to_data());
+                        values.push(
+                            batch
+                                .column(0)
+                                .as_any()
+                                .downcast_ref::<Int32Array>()
+                                .unwrap()
+                                .value(0),
+                        );
+                        drop(batch);
+                        unsafe {
+                            ch_lance_release_batch(scan, batch_bytes);
+                        }
+                    }
+                    values
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut values = threads
+            .into_iter()
+            .flat_map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        assert_eq!(values, (0..BATCHES).collect::<Vec<_>>());
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.queue_pop_batches, BATCHES as u64);
+        assert_eq!(stats.in_flight_batches, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
     }
 
     fn write_test_dataset() -> tempfile::TempDir {
@@ -2472,20 +3557,26 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
 
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(unsafe { ch_lance_export_scan_schema(scan, addr_of_mut!(schema), error) });
         let mut rows = 0;
         loop {
             let mut array = FFI_ArrowArray::empty();
-            let mut schema = FFI_ArrowSchema::empty();
+            let mut batch_rows = 0;
+            let mut batch_bytes = 0;
             let mut has_batch = false;
             assert!(unsafe {
                 ch_lance_next_batch(
                     scan,
                     addr_of_mut!(array),
-                    addr_of_mut!(schema),
+                    addr_of_mut!(batch_rows),
+                    addr_of_mut!(batch_bytes),
                     addr_of_mut!(has_batch),
                     error,
                 )
@@ -2494,7 +3585,13 @@ mod tests {
                 break;
             }
             let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
-            rows += StructArray::from(make_array(struct_data).to_data()).len();
+            let batch = StructArray::from(make_array(struct_data).to_data());
+            assert_eq!(batch_rows as usize, batch.len());
+            rows += batch.len();
+            drop(batch);
+            unsafe {
+                ch_lance_release_batch(scan, batch_bytes);
+            }
         }
         unsafe {
             ch_lance_free_scan(scan);
@@ -2530,19 +3627,25 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: fragment_ids.map(|ids| ids.as_ptr()).unwrap_or(ptr::null()),
             fragment_ids_size: fragment_ids.map(|ids| ids.len()).unwrap_or(0),
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null(), "plan_scan failed");
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(unsafe { ch_lance_export_scan_schema(scan, addr_of_mut!(schema), error) });
         let mut rows = 0;
         loop {
             let mut array = FFI_ArrowArray::empty();
-            let mut schema = FFI_ArrowSchema::empty();
+            let mut batch_rows = 0;
+            let mut batch_bytes = 0;
             let mut has_batch = false;
             assert!(unsafe {
                 ch_lance_next_batch(
                     scan,
                     addr_of_mut!(array),
-                    addr_of_mut!(schema),
+                    addr_of_mut!(batch_rows),
+                    addr_of_mut!(batch_bytes),
                     addr_of_mut!(has_batch),
                     error,
                 )
@@ -2551,7 +3654,13 @@ mod tests {
                 break;
             }
             let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
-            rows += StructArray::from(make_array(struct_data).to_data()).len();
+            let batch = StructArray::from(make_array(struct_data).to_data());
+            assert_eq!(batch_rows as usize, batch.len());
+            rows += batch.len();
+            drop(batch);
+            unsafe {
+                ch_lance_release_batch(scan, batch_bytes);
+            }
         }
         unsafe {
             ch_lance_free_scan(scan);
@@ -2737,6 +3846,8 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: missing.as_ptr(),
             fragment_ids_size: missing.len(),
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let bad_scan = unsafe { ch_lance_plan_scan(dataset, &bad_options, addr_of_mut!(error)) };
         assert!(bad_scan.is_null());
@@ -2848,18 +3959,26 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
 
-        let mut array = FFI_ArrowArray::empty();
         let mut batch_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(batch_schema), addr_of_mut!(error))
+        });
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
         let mut has_batch = false;
         assert!(unsafe {
             ch_lance_next_batch(
                 scan,
                 addr_of_mut!(array),
-                addr_of_mut!(batch_schema),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
                 addr_of_mut!(has_batch),
                 addr_of_mut!(error),
             )
@@ -2869,8 +3988,11 @@ mod tests {
         let struct_data = unsafe { from_ffi(array, &batch_schema) }.unwrap();
         let struct_array = StructArray::from(make_array(struct_data).to_data());
         assert_eq!(struct_array.len(), 1);
+        assert_eq!(batch_rows, 1);
+        drop(struct_array);
 
         unsafe {
+            ch_lance_release_batch(scan, batch_bytes);
             ch_lance_free_scan(scan);
             ch_lance_free_dataset(dataset);
         }
@@ -2900,6 +4022,8 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -2924,13 +4048,15 @@ mod tests {
         unsafe { ch_lance_cancel_scan(scan) };
 
         let mut array = FFI_ArrowArray::empty();
-        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
         let mut has_batch = false;
         let ok = unsafe {
             ch_lance_next_batch(
                 scan,
                 addr_of_mut!(array),
-                addr_of_mut!(batch_schema),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
                 addr_of_mut!(has_batch),
                 addr_of_mut!(error),
             )
@@ -2961,14 +4087,20 @@ mod tests {
 
         let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
 
-        let mut array = FFI_ArrowArray::empty();
         let mut batch_schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(batch_schema), addr_of_mut!(error))
+        });
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
         let mut has_batch = false;
         assert!(unsafe {
             ch_lance_next_batch(
                 scan,
                 addr_of_mut!(array),
-                addr_of_mut!(batch_schema),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
                 addr_of_mut!(has_batch),
                 addr_of_mut!(error),
             )
@@ -2976,17 +4108,22 @@ mod tests {
         assert!(has_batch);
         // Release the imported batch so free is clean if any.
         drop(unsafe { from_ffi(array, &batch_schema) }.unwrap());
+        unsafe {
+            ch_lance_release_batch(scan, batch_bytes);
+        }
 
         unsafe { ch_lance_cancel_scan(scan) };
 
         let mut array2 = FFI_ArrowArray::empty();
-        let mut batch_schema2 = FFI_ArrowSchema::empty();
+        let mut batch_rows2 = 0;
+        let mut batch_bytes2 = 0;
         let mut has_batch2 = false;
         let ok = unsafe {
             ch_lance_next_batch(
                 scan,
                 addr_of_mut!(array2),
-                addr_of_mut!(batch_schema2),
+                addr_of_mut!(batch_rows2),
+                addr_of_mut!(batch_bytes2),
                 addr_of_mut!(has_batch2),
                 addr_of_mut!(error),
             )
@@ -3082,6 +4219,8 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(scan.is_null());
@@ -3107,19 +4246,23 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan2 = unsafe { ch_lance_plan_scan(dataset, &scan_options2, addr_of_mut!(error)) };
         assert!(!scan2.is_null());
 
         unsafe { ch_lance_cancel_handle_cancel(cancel2) };
         let mut array = FFI_ArrowArray::empty();
-        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
         let mut has_batch = false;
         let ok = unsafe {
             ch_lance_next_batch(
                 scan2,
                 addr_of_mut!(array),
-                addr_of_mut!(batch_schema),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
                 addr_of_mut!(has_batch),
                 addr_of_mut!(error),
             )
@@ -3553,6 +4696,8 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         assert!(
             unsafe { ch_lance_plan_scan(replacement, &scan_options, addr_of_mut!(error)) }
@@ -3714,6 +4859,8 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(scan.is_null());
@@ -4083,6 +5230,9 @@ mod tests {
         assert_eq!(ChLanceErrorKind::VersionNotFound as u32, 7);
         assert_eq!(ChLanceErrorKind::Storage as u32, 8);
         assert_eq!(ChLanceErrorKind::Internal as u32, 9);
+        assert_eq!(ChLanceErrorKind::Cancelled as u32, 10);
+        assert_eq!(ChLanceErrorKind::SnapshotMismatch as u32, 11);
+        assert_eq!(ChLanceErrorKind::MemoryLimit as u32, 12);
         assert_eq!(ChLanceErrorOrigin::Unknown as u32, 0);
         assert_eq!(ChLanceErrorOrigin::Local as u32, 1);
         assert_eq!(ChLanceErrorOrigin::S3 as u32, 2);
@@ -4289,19 +5439,27 @@ mod tests {
             io_buffer_size: 0,
             fragment_ids: ptr::null(),
             fragment_ids_size: 0,
+            queue_capacity: 0,
+            queue_bytes: 0,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(unsafe {
+            ch_lance_export_scan_schema(scan, addr_of_mut!(schema), addr_of_mut!(error))
+        });
         let mut ffi_rows = 0;
         loop {
             let mut array = FFI_ArrowArray::empty();
-            let mut schema = FFI_ArrowSchema::empty();
+            let mut batch_rows = 0;
+            let mut batch_bytes = 0;
             let mut has_batch = false;
             assert!(unsafe {
                 ch_lance_next_batch(
                     scan,
                     addr_of_mut!(array),
-                    addr_of_mut!(schema),
+                    addr_of_mut!(batch_rows),
+                    addr_of_mut!(batch_bytes),
                     addr_of_mut!(has_batch),
                     addr_of_mut!(error),
                 )
@@ -4310,7 +5468,13 @@ mod tests {
                 break;
             }
             let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
-            ffi_rows += StructArray::from(make_array(struct_data).to_data()).len();
+            let batch = StructArray::from(make_array(struct_data).to_data());
+            assert_eq!(batch_rows as usize, batch.len());
+            ffi_rows += batch.len();
+            drop(batch);
+            unsafe {
+                ch_lance_release_batch(scan, batch_bytes);
+            }
         }
         assert_eq!(ffi_rows, 3);
         unsafe {

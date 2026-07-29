@@ -22,6 +22,7 @@ struct FormatSettings;
 namespace arrow
 {
 class RecordBatch;
+class Schema;
 }
 
 struct ch_lance_dataset;
@@ -151,6 +152,13 @@ private:
 class Scan
 {
 public:
+    struct Batch
+    {
+        std::shared_ptr<arrow::RecordBatch> record_batch;
+        UInt64 rows = 0;
+        UInt64 bytes = 0;
+    };
+
     Scan(const Scan &) = delete;
     Scan & operator=(const Scan &) = delete;
     Scan(Scan && other) noexcept;
@@ -160,7 +168,30 @@ public:
     /// Thread-safe cooperative cancel. Wakes a pending nextBatch; does not free the scan.
     void requestCancel() noexcept;
 
-    std::shared_ptr<arrow::RecordBatch> nextBatch() const;
+    std::optional<Batch> nextBatch() const;
+    void releaseBatch(UInt64 bytes) const noexcept;
+    const std::shared_ptr<arrow::Schema> & schema() const { return projected_schema; }
+
+    struct Stats
+    {
+        UInt64 producer_tasks = 0;
+        UInt64 schema_exports = 0;
+        UInt64 queue_push_batches = 0;
+        UInt64 queue_pop_batches = 0;
+        UInt64 queue_push_wait_microseconds = 0;
+        UInt64 consumer_pop_wait_microseconds = 0;
+        UInt64 queue_peak_batches = 0;
+        UInt64 queue_peak_bytes = 0;
+        UInt64 queued_batches = 0;
+        UInt64 queued_bytes = 0;
+        UInt64 in_flight_batches = 0;
+        UInt64 in_flight_bytes = 0;
+        UInt64 producer_eof = 0;
+        UInt64 producer_error = 0;
+        UInt64 producer_cancel = 0;
+    };
+
+    Stats stats() const noexcept;
 
 private:
     /// Holds the dataset alive for the stream lifetime (scan must outlive free of dataset).
@@ -169,6 +200,7 @@ private:
 
     DatasetHandle dataset;
     ch_lance_scan * scan = nullptr;
+    std::shared_ptr<arrow::Schema> projected_schema;
 };
 
 void ensureRuntime(UInt32 worker_threads = 0);

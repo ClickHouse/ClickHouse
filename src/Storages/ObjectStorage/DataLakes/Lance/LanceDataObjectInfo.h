@@ -40,8 +40,8 @@ private:
 namespace DB
 {
 
-/// Synthetic ObjectInfo for a Lance dataset (or one fragment pack).
-/// Path is not a real object key; it is only a stable task identifier for scheduling.
+/// Task ObjectInfo for a Lance dataset (or one coarse fragment group).
+/// Every task retains the user-visible dataset path; task identity is carried separately.
 struct LanceDatasetObjectInfo final : public ObjectInfo
 {
     LanceDatasetObjectInfo(
@@ -57,6 +57,9 @@ struct LanceDatasetObjectInfo final : public ObjectInfo
 
     Lance::LanceObjectSerializableInfo toSerializableInfo() const;
 
+    std::optional<std::string> getPathForVirtualColumns() const override { return dataset_path; }
+    std::optional<std::string> getFileNameForVirtualColumns() const override;
+
     const Lance::TableStateSnapshot snapshot;
     /// Empty handle is valid on workers after cluster deserialization; open via session/snapshot.
     const Lance::DatasetHandle dataset;
@@ -64,6 +67,7 @@ struct LanceDatasetObjectInfo final : public ObjectInfo
     const std::vector<UInt64> fragment_ids;
     const size_t pack_index = 0;
     const size_t pack_count = 1;
+    const String dataset_path;
 
 private:
     static ObjectMetadata createDatasetObjectMetadata();

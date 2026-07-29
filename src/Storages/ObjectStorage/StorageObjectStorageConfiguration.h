@@ -182,6 +182,24 @@ public:
         return std::nullopt;
     }
 
+    virtual std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr &,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        size_t,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t>,
+        bool) const
+    {
+        return std::nullopt;
+    }
+
+    /// Optional cap for concurrent outer readers of custom per-object pipelines.
+    virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
+
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual void addDeleteTransformers(

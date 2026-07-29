@@ -277,6 +277,38 @@ public:
             limit);
     }
 
+    std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr & storage_snapshot,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit,
+        bool distributed_processing) const override
+    {
+        assertInitialized();
+        return current_metadata->readDataset(
+            storage_snapshot,
+            read_from_format_info,
+            format_settings,
+            local_context,
+            max_block_size,
+            num_streams,
+            std::move(format_filter_info),
+            need_only_count,
+            limit,
+            distributed_processing);
+    }
+
+    std::optional<size_t> getMaxCustomReadThreads(bool distributed_processing) const override
+    {
+        assertInitialized();
+        return current_metadata->getMaxCustomReadThreads(distributed_processing);
+    }
+
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
         assertInitialized();

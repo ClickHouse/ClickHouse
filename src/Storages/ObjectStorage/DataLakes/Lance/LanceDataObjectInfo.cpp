@@ -8,6 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <filesystem>
 #include <utility>
 
 namespace DB::ErrorCodes
@@ -87,6 +88,17 @@ void LanceObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuff
 namespace DB
 {
 
+namespace
+{
+
+String datasetPathFromTaskPath(const String & task_path)
+{
+    const auto suffix = task_path.rfind("#v");
+    return suffix == String::npos ? task_path : task_path.substr(0, suffix);
+}
+
+}
+
 ObjectMetadata LanceDatasetObjectInfo::createDatasetObjectMetadata()
 {
     ObjectMetadata metadata;
@@ -107,6 +119,7 @@ LanceDatasetObjectInfo::LanceDatasetObjectInfo(
     , fragment_ids(std::move(fragment_ids_))
     , pack_index(pack_index_)
     , pack_count(pack_count_)
+    , dataset_path(datasetPathFromTaskPath(relative_path_with_metadata.relative_path))
 {
 }
 
@@ -117,8 +130,14 @@ LanceDatasetObjectInfo::LanceDatasetObjectInfo(const RelativePathWithMetadata & 
     , fragment_ids(info_.fragment_ids)
     , pack_index(info_.pack_index)
     , pack_count(info_.pack_count)
+    , dataset_path(datasetPathFromTaskPath(path_.relative_path))
 {
     relative_path_with_metadata.read_source_index = path_.read_source_index;
+}
+
+std::optional<std::string> LanceDatasetObjectInfo::getFileNameForVirtualColumns() const
+{
+    return std::filesystem::path(dataset_path).filename().string();
 }
 
 Lance::LanceObjectSerializableInfo LanceDatasetObjectInfo::toSerializableInfo() const

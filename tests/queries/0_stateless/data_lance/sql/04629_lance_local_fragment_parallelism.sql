@@ -1,12 +1,12 @@
 -- ProfileEvents are selected by a unique log comment, so this test can run in parallel.
--- Multi-fragment Lance packs: correctness vs single-pack and ProfileEvents.
+-- Legacy fragment-pack settings no longer split a local dataset into scanners.
 
 DROP TABLE IF EXISTS lance_local_fragment_parallelism;
 
 CREATE TABLE lance_local_fragment_parallelism
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/multi_frag.lance');
 
--- Parallel on/off must agree on aggregates (streams are unordered).
+-- Legacy fragment settings must not change local aggregate results.
 SELECT count(), sum(id), sum(cityHash64(name))
 FROM lance_local_fragment_parallelism
 SETTINGS
@@ -35,7 +35,7 @@ SETTINGS
     lance_enable_fragment_parallelism = 1,
     max_threads = 4;
 
--- LIMIT row count is correct (forces single pack).
+-- `LIMIT` row count remains correct without forcing a fragment pack.
 SELECT count()
 FROM
 (
@@ -57,7 +57,7 @@ SETTINGS
     max_threads = 4,
     log_comment = 'lance_frag_multi_pack';
 
-SELECT count()
+SELECT sum(id)
 FROM lance_local_fragment_parallelism
 FORMAT Null
 SETTINGS
@@ -72,9 +72,9 @@ SETTINGS log_comment = 'lance_frag_count_fast';
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    ProfileEvents['LanceFragmentsListed'] >= 8,
-    ProfileEvents['LanceFragmentPacks'] > 1,
-    ProfileEvents['LancePlanScan'] > 1
+    ProfileEvents['LanceFragmentsListed'] = 0,
+    ProfileEvents['LanceFragmentPacks'] = 0,
+    ProfileEvents['LancePlanScan'] = 1
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
@@ -84,8 +84,8 @@ LIMIT 1
 SETTINGS enable_parallel_replicas = 0;
 
 SELECT
-    ProfileEvents['LanceFragmentPacks'] = 1,
-    ProfileEvents['LanceFragmentParallelismDisabled'] > 0
+    ProfileEvents['LanceFragmentPacks'] = 0,
+    ProfileEvents['LancePlanScan'] = 1
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
@@ -97,7 +97,7 @@ SETTINGS enable_parallel_replicas = 0;
 -- count() fast path (or full scan) must account for all rows.
 SELECT
     ProfileEvents['LanceCountRows'] > 0 OR ProfileEvents['LanceRowsRead'] > 0,
-    ProfileEvents['LanceFragmentParallelismDisabled'] > 0 OR ProfileEvents['LanceFragmentPacks'] = 1
+    ProfileEvents['LanceProducerTasks'] = 0
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()

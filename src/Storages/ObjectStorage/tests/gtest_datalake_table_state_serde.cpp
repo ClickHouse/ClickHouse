@@ -273,6 +273,8 @@ TEST(DatalakeStateSerde, LanceDatasetObjectInfoFromSerializableInfo)
     ASSERT_FALSE(static_cast<bool>(object->dataset));
     ASSERT_EQ(object->pack_index, 1u);
     ASSERT_EQ(object->pack_count, 3u);
+    ASSERT_EQ(object->getPathForVirtualColumns(), "s3://b/ds.lance");
+    ASSERT_EQ(object->getFileNameForVirtualColumns(), "ds.lance");
 
     auto round_trip = object->toSerializableInfo();
     ASSERT_EQ(round_trip.snapshot, info.snapshot);

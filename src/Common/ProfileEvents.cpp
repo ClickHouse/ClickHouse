@@ -463,9 +463,27 @@
     M(LanceLimitPushdown, "Number of Lance scans that received a row limit on the Lance scanner.", ValueType::Number) \
     M(LanceProjectedColumns, "Total number of physical columns requested across Lance scan projections.", ValueType::Number) \
     M(LanceScanUnordered, "Number of Lance scans planned with lance_scan_in_order=0 (unordered batches, higher internal fragment concurrency).", ValueType::Number) \
+    M(LanceListFragmentsCalls, "Number of calls to list fragments for Lance datasets.", ValueType::Number) \
     M(LanceFragmentsListed, "Number of Lance fragments returned by list_fragments for a query (summed if listed more than once).", ValueType::Number) \
     M(LanceFragmentPacks, "Number of Lance fragment packs produced for multi-stream reads.", ValueType::Number) \
     M(LanceFragmentParallelismDisabled, "Number of times Lance fragment packing was forced to a single pack (settings or semantic guards).", ValueType::Number) \
+    M(LanceProducerTasks, "Number of Rust producer tasks created for Lance scans.", ValueType::Number) \
+    M(LanceScanSchemaExports, "Number of projected Arrow schema exports for Lance scans.", ValueType::Number) \
+    M(LanceBatchSources, "Number of ClickHouse conversion Sources created for Lance scans.", ValueType::Number) \
+    M(LanceBatchSourcesActive, "Number of Lance conversion Sources that consumed at least one batch.", ValueType::Number) \
+    M(LanceCountSources, "Number of ClickHouse row-count Sources created for Lance reads.", ValueType::Number) \
+    M(LanceArrowFieldMappingsBuilt, "Number of cached Arrow RecordBatch field mappings built by Lance conversion Sources.", ValueType::Number) \
+    M(LanceQueuePushBatches, "Number of Arrow batches pushed into Lance bounded queues.", ValueType::Number) \
+    M(LanceQueuePopBatches, "Number of Arrow batches popped from Lance bounded queues.", ValueType::Number) \
+    M(LanceQueuePushWaitMicroseconds, "Time Lance producers waited for queue batch or byte capacity.", ValueType::Microseconds) \
+    M(LanceQueuePopWaitMicroseconds, "Time Lance consumers waited for a queued batch.", ValueType::Microseconds) \
+    M(LanceQueuePeakBatches, "Sum of per-scan peak queued Lance batch counts.", ValueType::Number) \
+    M(LanceQueuePeakBytes, "Sum of per-scan peak queued Lance Arrow bytes.", ValueType::Bytes) \
+    M(LanceProducerEOF, "Number of Lance producers that reached EOF.", ValueType::Number) \
+    M(LanceProducerErrors, "Number of Lance producers that ended with an error.", ValueType::Number) \
+    M(LanceProducerCancels, "Number of Lance producers stopped by cancellation.", ValueType::Number) \
+    M(LanceGlobalLimitTruncatedRows, "Number of Lance batch rows discarded by a local global LIMIT quota.", ValueType::Number) \
+    M(LanceScansCancelledByLimit, "Number of Lance scans cancelled after satisfying a local global LIMIT quota.", ValueType::Number) \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
