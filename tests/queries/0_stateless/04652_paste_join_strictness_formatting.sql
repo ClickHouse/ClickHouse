@@ -20,6 +20,15 @@ SELECT 'A3', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PA
 SET enable_analyzer = 1;
 SELECT 'A4', count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1, run_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
 
+-- A7/A8: the other value join_default_strictness accepts. Both normalizers map Unspecified to
+-- Any for a Paste kind as well, so the formatter must not print `ANY PASTE JOIN` either.
+SET join_default_strictness = 'ANY';
+SELECT 'A7', count() FROM (EXPLAIN SYNTAX oneline = 1, run_query_tree_passes = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
+SET enable_analyzer = 0;
+SELECT 'A8', count() FROM (EXPLAIN SYNTAX oneline = 1 SELECT * FROM t_paste_l PASTE JOIN t_paste_r) WHERE explain ILIKE '%ALL PASTE%' OR explain ILIKE '%ANY PASTE%';
+SET enable_analyzer = 1;
+SET join_default_strictness = 'ALL';
+
 -- A5/A6: the formatted text is what a shipped query carries, so a PASTE JOIN with a remote
 -- table in the leftmost slot fails on the remote server with SYNTAX_ERROR without the fix.
 SELECT 'A5', * FROM remote('127.0.0.2', currentDatabase(), t_paste_l) AS x PASTE JOIN t_paste_r AS y ORDER BY a;
