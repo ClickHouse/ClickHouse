@@ -15,10 +15,15 @@ SETTINGS="max_block_size = 60000, max_threads = 1"
 BOX="materialize(0.0), materialize(0.0), 0.0000106, 0.0000053, toUInt8(12)"
 BOX_F32="materialize(toFloat32(0.0)), materialize(toFloat32(0.0)), toFloat32(0.0000106), toFloat32(0.0000053), toUInt8(12)"
 
-# A degenerate box yields documented empty arrays, so those rows are cheap and 150M fit in one block.
-# The precision is materialized rather than a coordinate to keep the block one byte per row, and two
-# fixed limits from `limits.yaml` are lifted: `max_rows_to_read` (20M) and `max_result_bytes` (1G).
-ROWS_DEGENERATE=150000000
+# A degenerate box yields documented empty arrays, so those rows are cheap and fit in one block. 60M
+# is the smallest count whose ratio below still separates from the unfixed one: cancelling costs a
+# fixed ~100ms while the uncancelled cost is proportional to the block, so a smaller block only
+# shrinks the denominator. Loaded, 60M measures 0.121 against 0.660 unfixed, where 10M is 0.556
+# against 0.550. It also holds peak memory to 1.25GiB rather than 4.26GiB, which would be 91% of the
+# limit set below. The precision is materialized rather than a coordinate to keep the block one byte
+# per row, and two fixed limits from `limits.yaml` are lifted: `max_rows_to_read` (20M) and
+# `max_result_bytes` (1G).
+ROWS_DEGENERATE=60000000
 BOX_DEGENERATE="1.0, 1.0, 0.0, 0.0, materialize(toUInt8(12))"
 BOX_NAN="nan, 1.0, 0.0, 0.0, materialize(toUInt8(12))"
 SETTINGS_DEGENERATE="max_block_size = $ROWS_DEGENERATE, max_threads = 1, max_memory_usage = 5000000000, max_rows_to_read = 0, max_result_bytes = 0"
