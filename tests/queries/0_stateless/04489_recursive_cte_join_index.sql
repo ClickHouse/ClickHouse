@@ -784,10 +784,11 @@ SELECT sum(n) FROM mixed_branch_pr_throw; -- { serverError SUPPORT_IS_DISABLED }
 
 -- The rejection must be no broader than the planner's own storage-level eligibility rule
 -- (`canUseTableForParallelReplicas`). A plain, non-replicated local `MergeTree` table with
--- the default `parallel_replicas_for_non_replicated_merge_tree = 0` is not eligible: the
--- planner would never engage parallel replicas for it, so the forcing mode has nothing to
--- fail on and the query must keep running. Every throwing case above therefore has to set
+-- `parallel_replicas_for_non_replicated_merge_tree = 0` is not eligible: the planner would
+-- never engage parallel replicas for it, so the forcing mode has nothing to fail on and the
+-- query must keep running. Every throwing case above therefore has to set
 -- `parallel_replicas_for_non_replicated_merge_tree = 1` explicitly; this is the converse.
+-- The setting is spelled out here as well, because the test harness randomizes it to `1`.
 WITH RECURSIVE joined_pr_non_replicated AS
 (
     SELECT 1 AS n
@@ -796,7 +797,7 @@ WITH RECURSIVE joined_pr_non_replicated AS
 )
 SELECT sum(n) FROM joined_pr_non_replicated
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
 -- The same for a view over a `MergeTree` table: it is eligible only while
 -- `parallel_replicas_allow_view_over_mergetree` is on, so with the view support turned off
