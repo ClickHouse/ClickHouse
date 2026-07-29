@@ -240,7 +240,7 @@ Entra ID syncs on a recurring cycle (roughly every 40 minutes), so routine chang
 
 <AccordionGroup>
 
-<Accordion title='"Test connection" fails in Entra ID'>
+<Accordion title='"Test connection" fails in Entra ID' id="test-credentials-fails">
 
 - Confirm SCIM is **enabled** in the ClickHouse Cloud Console.
 - Confirm the **Tenant URL** in Entra ID exactly matches the SCIM endpoint URL shown in the Cloud Console — the organization id must be correct.
@@ -249,7 +249,7 @@ Entra ID syncs on a recurring cycle (roughly every 40 minutes), so routine chang
 
 </Accordion>
 
-<Accordion title="Users get created but have no permissions">
+<Accordion title="Users get created but have no permissions" id="users-no-permissions">
 
 - Check that you've added a row under **Map roles in "Users and roles"** for the role you expect.
 - Check that the Entra ID group name **exactly** matches the SCIM group name in the mapping, including capitalisation and hyphens.
@@ -257,7 +257,7 @@ Entra ID syncs on a recurring cycle (roughly every 40 minutes), so routine chang
 
 </Accordion>
 
-<Accordion title="Users or groups aren't provisioning at all">
+<Accordion title="Users or groups aren't provisioning at all" id="nothing-provisioning">
 
 - Confirm **Provisioning Status** is `On`.
 - Confirm **Scope** is set to `Sync only assigned users and groups` and that the users/groups are actually assigned to the application under **Users and groups**.
@@ -266,31 +266,31 @@ Entra ID syncs on a recurring cycle (roughly every 40 minutes), so routine chang
 
 </Accordion>
 
-<Accordion title="Duplicate user in the member list">
+<Accordion title="Duplicate user in the member list" id="duplicate-user">
 
 Usually caused by inconsistent email casing between Entra ID and an earlier manual invite. Remove the duplicate from the Members list, then unassign and reassign the user in Entra ID (or re-run **Provision on demand**) to provision fresh.
 
 </Accordion>
 
-<Accordion title="Group provisioning fails with a name mismatch">
+<Accordion title="Group provisioning fails with a name mismatch" id="group-display-name">
 
 The group display name in Entra ID doesn't match a configured mapping in ClickHouse Cloud. Either rename the Entra ID group or add a mapping under **Map roles in "Users and roles"** from the SCIM Configuration panel (or via **Users and roles → Roles**).
 
 </Accordion>
 
-<Accordion title="Deactivated users still show as members">
+<Accordion title="Deactivated users still show as members" id="deactivated-users-remaining">
 
 Deactivation propagates on the next provisioning cycle. To force it immediately, use **Provision on demand** for that user. If the user is still a member afterwards, check **Provisioning → View provisioning logs** for an error on the disable operation.
 
 </Accordion>
 
-<Accordion title="I rotated the SCIM token and now Entra ID is failing">
+<Accordion title="I rotated the SCIM token and now Entra ID is failing" id="token-rotation-issue">
 
 Check that you updated the **Secret Token** on the correct enterprise application in Entra ID, in the form `<scim-key>:<scim-secret>`. After updating, click `Test Connection` to confirm. Once provisioning is back to healthy, revoke the old token in the ClickHouse Cloud Console.
 
 </Accordion>
 
-<Accordion title="I lost the SCIM token">
+<Accordion title="I lost the SCIM token" id="lost-token">
 
 Tokens can't be recovered. In **Organization settings → SAML and SCIM settings → SCIM Configuration** in the ClickHouse Cloud Console, revoke the lost token and generate a new one, then update the **Secret Token** in Entra ID.
 
