@@ -376,9 +376,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     /// Force map key to be non-nullable because clickhouse Map doesn't support nullable map key.
     else if (!options.schema_inference_force_not_nullable && node.schema_context != SchemaContext::MapKey)
     {
-        if (levels.back().is_array == false)
+        if (levels.back().is_array == false
+            && (!nullable_tuple_group_def || levels.back().def > *nullable_tuple_group_def))
         {
-            /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
+            /// This schema element is `OPTIONAL` or inside an `OPTIONAL` descendant group
             output_nullable = true;
         }
         else if (options.schema_inference_force_nullable)
@@ -434,10 +435,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     primitive.name = node.name;
     primitive.levels = levels;
     primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
-    /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map is
-    /// the group null map. Keep that null map (don't throw on the group-null rows) and fill defaults
-    /// there; the group null map wraps the ColumnTuple in Reader::formOutputColumn.
-    primitive.group_nullable = nullable_tuple_group_depth > 0;
+    primitive.nullable_group_def = nullable_tuple_group_def;
     primitive.decoder = std::move(decoder);
     primitive.decoded_type = decoded_type;
     for (const auto & level : levels)
@@ -623,12 +621,8 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     return true;
 }
 
-/// Whether the subtree rooted at `schema[root_idx]` (a group) contains only REQUIRED, non-repeated
-/// elements below the root. If so, none of its descendants add a definition level, so every leaf's
-/// definition-level null map is exactly the root group's null map. This lets us reconstruct the
-/// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
-/// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
-static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
+/// Optional descendants add splittable definition levels, repeated descendants change cardinality
+static bool tupleSubtreeHasNoRepeated(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
 {
     /// schema is a flattened pre-order tree; num_children counts direct children, laid out
     /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
@@ -649,7 +643,7 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
             return false; // malformed schema; caller handles elsewhere
         stack.back() -= 1;
         const parq::SchemaElement & elem = schema.at(idx);
-        if (elem.repetition_type != parq::FieldRepetitionType::REQUIRED)
+        if (elem.repetition_type == parq::FieldRepetitionType::REPEATED)
             return false;
         idx += 1;
         if (elem.__isset.num_children && elem.num_children > 0)
@@ -675,10 +669,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// processRepDefLevelsForArray and never reach the inner tuple null-map.
     ///  1. REQUIRED group: always defined, so the outer Nullable is always-non-null. Restored via
     ///     outer_type_hint (needs_cast) as an all-non-null wrapper.
-    ///  2. OPTIONAL group with an all-REQUIRED, non-array subtree: physically nullable struct. No
-    ///     descendant adds a definition level, so every leaf's def-level null map equals the group
-    ///     null map. We mark the leaves and the output so the assembled ColumnTuple is wrapped in
-    ///     ColumnNullable using that reconstructed null map (see OutputColumnInfo::nullable_group).
+    ///  2. OPTIONAL group without repeated descendants: physically nullable struct. Group and
+    ///     nullable-descendant null maps are split using their definition-level thresholds.
     /// Otherwise keep the hint wrapped and let the check below reject it with TYPE_MISMATCH rather
     /// than lose nulls. For an OPTIONAL group, processSubtree has already pushed this group's own
     /// (non-array) level as levels.back(); exclude it when scanning for an ancestor.
@@ -696,16 +688,24 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         if (node.element->repetition_type == parq::FieldRepetitionType::REQUIRED)
             node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
-        else if (group_is_optional && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1))
+        else if (group_is_optional && tupleSubtreeHasNoRepeated(file_metadata.schema, schema_idx - 1))
         {
             node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
             nullable_group = true;
         }
     }
+    /// Infer case 2 as `Nullable(Tuple(...))` when enabled
+    else if (!sample_block && options.format.schema_inference_allow_nullable_tuple_type
+        && !options.schema_inference_force_not_nullable && !has_optional_ancestor
+        && group_is_optional && tupleSubtreeHasNoRepeated(file_metadata.schema, schema_idx - 1))
+    {
+        nullable_group = true;
+    }
 
-    /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
-    nullable_tuple_group_depth += nullable_group ? 1 : 0;
-    SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
+    const auto previous_nullable_tuple_group_def = nullable_tuple_group_def;
+    if (nullable_group)
+        nullable_tuple_group_def = levels.back().def;
+    SCOPE_EXIT({ nullable_tuple_group_def = previous_nullable_tuple_group_def; });
 
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
@@ -849,19 +849,17 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         output_type = std::make_shared<DataTypeTuple>(types, names);
     }
 
-    /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
-    /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
-    /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
-    /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
-    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
-    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
-    /// than fabricate an all-non-null map that silently drops the struct nulls.
+    /// `formOutputColumn` wraps assembled tuple using group null map from physical leaf
     if (nullable_group && primitive_start == primitive_columns.size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
-            "physical elements to read (all requested elements are missing), so its null map cannot be "
-            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+    {
+        if (node.type_hint)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
+                "physical elements to read (all requested elements are missing), so its null map cannot be "
+                "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+        /// Infer plain `Tuple` when unsupported elements remove every physical leaf
+        nullable_group = false;
+    }
     if (nullable_group)
         output_type = makeNullable(output_type);
 

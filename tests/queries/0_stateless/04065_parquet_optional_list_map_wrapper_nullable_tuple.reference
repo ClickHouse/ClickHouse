@@ -5,5 +5,7 @@
 {'k1':(1),'k2':(2)}	Map(String, Nullable(Tuple(x UInt32)))
 -- optional element group with all-REQUIRED subtree under a list: struct nulls reconstructed losslessly, accepted
 [((1)),NULL,((3))]	Array(Nullable(Tuple(inner Tuple(x UInt32))))
--- optional element group with a NULLABLE leaf under a list: leaf null map != struct null map, still rejected
-TYPE_MISMATCH
+-- optional element group with a NULLABLE leaf under a list: split struct and leaf null maps
+[((1)),NULL,((NULL))]	Array(Nullable(Tuple(inner Tuple(x Nullable(UInt32)))))
+-- optional element group with a NULLABLE leaf requested as non-nullable: reject leaf null
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN

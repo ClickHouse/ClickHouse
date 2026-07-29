@@ -14,11 +14,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the inner tuple null-map, so an always-defined REQUIRED element/value read as Nullable(Tuple)
 # is lossless and must be accepted (issue #109605 follow-up).
 #
-# An OPTIONAL element/struct group whose own subtree is all-REQUIRED carries genuine struct-level
-# nulls, but every leaf's definition-level null map then equals the group null map, so it can be
-# reconstructed and the tuple wrapped in Nullable losslessly (#109898) -- accepted. Only when the
-# subtree adds another definition level (e.g. a nullable leaf) is the group null map no longer
-# recoverable from a leaf, so that case must still be rejected.
+# Split struct and nullable-leaf null maps at their definition levels. Repeated descendants remain
+# unsupported because their null maps have different cardinality.
 
 DATA="$CURDIR/data_parquet"
 
@@ -33,5 +30,8 @@ $CLICKHOUSE_LOCAL $opts -q "SELECT m, toTypeName(m) FROM file('$DATA/04065_optio
 echo "-- optional element group with all-REQUIRED subtree under a list: struct nulls reconstructed losslessly, accepted"
 $CLICKHOUSE_LOCAL $opts -q "SELECT a, toTypeName(a) FROM file('$DATA/04065_optional_struct_under_list.parquet', 'Parquet', 'a Array(Nullable(Tuple(inner Tuple(x UInt32))))')"
 
-echo "-- optional element group with a NULLABLE leaf under a list: leaf null map != struct null map, still rejected"
-$CLICKHOUSE_LOCAL $opts -q "SELECT a FROM file('$DATA/04065_optional_struct_nullable_leaf_under_list.parquet', 'Parquet', 'a Array(Nullable(Tuple(inner Tuple(x UInt32))))')" 2>&1 | grep -o "TYPE_MISMATCH" | head -1
+echo "-- optional element group with a NULLABLE leaf under a list: split struct and leaf null maps"
+$CLICKHOUSE_LOCAL $opts -q "SELECT a, toTypeName(a) FROM file('$DATA/04065_optional_struct_nullable_leaf_under_list.parquet', 'Parquet', 'a Array(Nullable(Tuple(inner Tuple(x Nullable(UInt32)))))')"
+
+echo "-- optional element group with a NULLABLE leaf requested as non-nullable: reject leaf null"
+$CLICKHOUSE_LOCAL $opts -q "SELECT a FROM file('$DATA/04065_optional_struct_nullable_leaf_under_list.parquet', 'Parquet', 'a Array(Nullable(Tuple(inner Tuple(x UInt32))))')" 2>&1 | grep -o "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN" | head -1
