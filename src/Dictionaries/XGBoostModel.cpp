@@ -72,8 +72,9 @@ void XGBoostModel::throwIfTypeIsInvalid(const ColumnWithTypeAndName & col)
     }
 }
 
-void XGBoostModel::setSchema(const Block & header, const String & target_column_)
+void XGBoostModel::startTraining(const Block & header, const String & target_column_)
 {
+    /// Record the training schema: `target_column_` is the label, every other column of `header` a feature.
     if (!header.has(target_column_))
         throw Exception(ErrorCodes::XGBOOST_ERROR, "Target column '{}' is not present in the training data", target_column_);
 
@@ -88,40 +89,6 @@ void XGBoostModel::setSchema(const Block & header, const String & target_column_
         throw Exception(ErrorCodes::XGBOOST_ERROR, "No feature columns for training (target column is '{}')", target_column);
 
     n_features = feature_columns.size();
-}
-
-void XGBoostModel::startTraining(const Block & header, const String & target_column_)
-{
-    setSchema(header, target_column_);
-}
-
-void XGBoostModel::loadFromFile(const Block & header, const String & target_column_, const String & path)
-{
-    setSchema(header, target_column_);
-
-    /// An empty booster to load the persisted model into.
-    throwOnError(XGBoosterCreate(nullptr, 0, &booster));
-    throwOnError(XGBoosterLoadModel(booster, path.c_str()));
-
-    /// The declared feature key must match the model that was trained: otherwise prediction would silently
-    /// bind the wrong columns.
-    bst_ulong loaded_features = 0;
-    throwOnError(XGBoosterGetNumFeature(booster, &loaded_features));
-    if (loaded_features != n_features)
-        throw Exception(
-            ErrorCodes::XGBOOST_ERROR,
-            "Loaded XGBoost model from '{}' expects {} feature(s), but the dictionary declares {}",
-            path,
-            loaded_features,
-            n_features);
-}
-
-void XGBoostModel::saveToFile(const String & path) const
-{
-    if (!booster)
-        throw Exception(ErrorCodes::XGBOOST_ERROR, "Cannot save an XGBoost model that has not been trained");
-
-    throwOnError(XGBoosterSaveModel(booster, path.c_str()));
 }
 
 void XGBoostModel::addTrainingData(const Block & batch)

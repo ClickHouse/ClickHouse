@@ -48,15 +48,6 @@ public:
     /// Build/train the model. After this the model is ready to predict.
     void finalizeTraining();
 
-    /// Load a previously trained model from `path` (as written by `saveToFile`), skipping training.
-    /// `header`/`target_column` describe the expected schema exactly as in `startTraining`; the loaded
-    /// model's feature count is validated against it. After this the model is ready to predict.
-    void loadFromFile(const Block & header, const String & target_column, const String & path);
-
-    /// Persist the trained model to `path` in XGBoost's native format. Must be called
-    /// after `finalizeTraining`.
-    void saveToFile(const String & path) const;
-
     /// Predict on a batch of feature rows. Returns a Float64 column of predictions with one element per
     /// row of `batch`.
     ColumnPtr predict(const Block & batch, const PredictParameters & params);
@@ -66,10 +57,6 @@ public:
     const VectorWithMemoryTracking<String> & getFeatureNames() const { return feature_columns; }
 
 private:
-    /// Record the training schema: `target_column` is the label, every other column of `header` a feature.
-    /// Shared by `startTraining` and `loadFromFile`.
-    void setSchema(const Block & header, const String & target_column);
-
     void throwIfTypeIsInvalid(const ColumnWithTypeAndName & col);
 
     UnorderedMapWithMemoryTracking<String, String> sanitizeTrainingParams(const HyperParameters & params);

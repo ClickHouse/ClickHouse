@@ -89,22 +89,19 @@ SELECT dictGet('model', 'y', (1.0, 2.0)) AS prediction;
 
 **Predicting (at query time).** To predict, the model takes the feature vector — in the same order as the key columns were declared — and runs it through the trained booster, returning a `Float64`.
 
-**Persisting the trained model.** The trained model is persisted automatically. On the first load the model is trained and written to a file that ClickHouse names after the dictionary's own identity, in a server-owned directory; every later load — including after a server restart — reuses that file and skips training. The path is not configurable: because the file name is unique to the dictionary, a dictionary can only ever reuse a model it trained itself and can never load one trained by a different dictionary.
+**The model is not persisted.** It lives only in memory, for as long as the dictionary is loaded, and is trained again from the source on every load — including after a server restart. Training cost is therefore paid on each load, which matters for a large source table.
 
-**Retraining the model.** Because reuse is keyed to the dictionary's identity, `SYSTEM RELOAD DICTIONARY` reuses the persisted model rather than retraining. To retrain after the training data changes, drop and recreate the dictionary — a recreated dictionary has a fresh identity, so it trains from the current source:
+**Retraining the model.** Because every load trains from scratch, `SYSTEM RELOAD DICTIONARY` retrains the model against the current contents of the source table:
 
 ```sql
 INSERT INTO training_data VALUES (5, 10, 40);
-DROP DICTIONARY model;
-CREATE DICTIONARY model (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2)
-SOURCE(CLICKHOUSE(TABLE 'training_data'))
-LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 100 max_depth 6))
-LIFETIME(0);
+SYSTEM RELOAD DICTIONARY model;
 ```
 
-:::note
-`LIFETIME` does not cause retraining. A lifetime-triggered reload reuses the persisted model just like `SYSTEM RELOAD DICTIONARY`, even if the source table has changed, so a non-zero `LIFETIME` will not refresh the model as the training data grows. Use `LIFETIME(0)` and retrain by dropping and recreating the dictionary.
+A non-zero `LIFETIME` also retrains, since a lifetime-triggered reload is an ordinary load. Use it to refresh the model periodically as the training data grows.
+
+:::warning
+Every load trains on the whole source table, and nothing about a trained model survives it. A restart, a `SYSTEM RELOAD DICTIONARY`, or each expiry of a non-zero `LIFETIME` pays the full training cost again, and on a large source table that cost is not small: `LIFETIME(3600)` on a table that takes ten minutes to train means retraining for ten minutes of every hour, indefinitely. Choose `LIFETIME` from how long training actually takes, not from how often the data changes, and prefer `LIFETIME(0)` with an explicit `SYSTEM RELOAD DICTIONARY` when you want to control when that cost is paid.
 :::
 
 ## Dictionary structure {#dictionary-structure}
@@ -158,7 +155,7 @@ LAYOUT(XGBOOST(
     max_depth 6
     eta 0.3
 ))
-LIFETIME(3600);
+LIFETIME(0);
 ```
 
 ## Prediction parameters {#prediction-parameters}

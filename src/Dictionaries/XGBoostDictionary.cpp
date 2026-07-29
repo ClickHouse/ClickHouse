@@ -7,17 +7,13 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/XGBoostModel.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
-#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include <filesystem>
 
 
 namespace DB
@@ -58,21 +54,6 @@ void XGBoostDictionary::loadData()
 
     model = std::make_unique<XGBoostModel>(configuration.hyper_parameters);
 
-    /// The model is persisted at an auto-generated, per-dictionary path (see `registerDictionaryXGBoost`).
-    /// When a model already exists there, it was trained by this dictionary, so reuse it and skip
-    /// training entirely
-    if (std::filesystem::exists(configuration.model_path))
-    {
-        model->loadFromFile(header, configuration.target_name, configuration.model_path);
-
-        LOG_INFO(
-            log,
-            "Loaded XGBoost dictionary with {} feature(s) from model file {}",
-            model->getFeatureNames().size(),
-            configuration.model_path);
-        return;
-    }
-
     model->startTraining(header, configuration.target_name);
 
     BlockIO io = source_ptr->loadAll();
@@ -89,12 +70,6 @@ void XGBoostDictionary::loadData()
         });
 
     model->finalizeTraining();
-
-    /// Persist the trained model so the next load can reuse it. The parent directory is
-    /// server-owned and may not exist yet on a first-ever save.
-    std::filesystem::create_directories(std::filesystem::path(configuration.model_path).parent_path());
-    model->saveToFile(configuration.model_path);
-    LOG_INFO(log, "Saved trained XGBoost model to {}", configuration.model_path);
 
     LOG_INFO(log, "Loaded XGBoost dictionary trained on {} feature(s)", model->getFeatureNames().size());
 }
@@ -172,17 +147,6 @@ Pipe XGBoostDictionary::read(const Names &, size_t, size_t) const
 }
 
 
-void XGBoostDictionary::removePersistentFilesOnDrop() const
-{
-    /// The model file is auto-generated and owned solely by this dictionary, so it is safe to delete on
-    /// drop. Removing a missing file is a silent no-op; never throw from the drop path.
-    std::error_code ec;
-    if (std::filesystem::remove(configuration.model_path, ec))
-        LOG_INFO(log, "Removed persisted XGBoost model file {}", configuration.model_path);
-    else if (ec)
-        LOG_WARNING(log, "Could not remove persisted XGBoost model file {}: {}", configuration.model_path, ec.message());
-}
-
 #endif
 
 
@@ -250,14 +214,9 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
-        const String model_file = dict_id.hasUUID() ? toString(dict_id.uuid) : sipHash128String(dict_id.getFullNameNotQuoted());
-        const std::filesystem::path model_path
-            = std::filesystem::path(global_context->getPath()) / "xgboost_models" / (model_file + ".ubj");
-
         XGBoostDictionary::Configuration cfg{
             .target_name = target_attribute.name,
             .hyper_parameters = std::move(hyper_parameters),
-            .model_path = model_path.string(),
             .dict_lifetime = dict_lifetime,
         };
 

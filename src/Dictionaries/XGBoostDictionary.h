@@ -32,8 +32,6 @@ public:
         String target_name;
         /// Hyperparameters as a JSON string, consumed by the XGBoost backend (see XGBoostModel).
         HyperParameters hyper_parameters;
-        /// Filesystem path used to persist the trained model.
-        String model_path;
         DictionaryLifetime dict_lifetime;
     };
 
@@ -90,10 +88,6 @@ public:
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
-
-    /// Deletes the auto-generated model file this dictionary persisted, so dropping the dictionary does not
-    /// leave the file orphaned. Only called on `DROP`, never on a reload or server shutdown.
-    void removePersistentFilesOnDrop() const override;
 
     /// Names of the feature columns in training order (the key columns, in declaration order). Used by
     /// `predictXGBoost` to bind its positional feature arguments to the columns the model expects.
