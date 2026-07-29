@@ -2785,21 +2785,25 @@ const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
 DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
 {
     ++container_rebuild_count;
-    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
-    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    last_container_rebuild = [&]() -> DataTypePtr
     {
-        DataTypes elements = type_tuple->getElements();
-        fuzzDataTypes(elements);
-        return std::make_shared<DataTypeTuple>(elements);
-    }
-    if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
-    {
-        DataTypes variants = type_variant->getVariants();
-        fuzzDataTypes(variants);
-        return std::make_shared<DataTypeVariant>(variants);
-    }
-    return nullptr;
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            DataTypes elements = type_tuple->getElements();
+            fuzzDataTypes(elements);
+            return std::make_shared<DataTypeTuple>(elements);
+        }
+        if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get()))
+        {
+            DataTypes variants = type_variant->getVariants();
+            fuzzDataTypes(variants);
+            return std::make_shared<DataTypeVariant>(variants);
+        }
+        return nullptr;
+    }();
+    return last_container_rebuild;
 }
 
 bool QueryFuzzer::fuzzAggregateName(String & name, size_t nargs)

@@ -5,6 +5,8 @@
 #include <Common/QueryFuzzer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNested.h>
@@ -430,11 +432,11 @@ TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
 
         EXPECT_TRUE(saw_child_mutation) << "fuzzContainerChildren never fuzzed a child of " << alias;
 
-        /// And the production dispatch must route the alias there. No property of a single output identifies the
-        /// rebuild - getRandomType can return another geo alias of the same kind, and even an exact name match
-        /// with a replayed rebuild happens by coincidence - so observe the branch itself, then require that at
-        /// least one dispatched result actually carries a child mutation. Kind plus absent custom name alone
-        /// would still pass if the arm rebuilt the container around the ORIGINAL children, dropping the mutation.
+        /// And the production dispatch must route the alias there AND hand the helper's result back. No property
+        /// of the output can establish that: the wrapping/replacement tail independently reproduces the storage
+        /// kind, the absent custom name, and a name differing from the unmutated storage (it can return
+        /// Array(MultiPoint) where the discarded rebuild was based on Array(Point)). So compare against the
+        /// helper's recorded return value by POINTER identity, which only the arm returning it can satisfy.
         bool saw_dispatch = false;
         bool saw_production_mutation = false;
         for (UInt64 seed = 0; seed < 4000 && !saw_production_mutation; ++seed)
@@ -454,14 +456,16 @@ TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
                 continue;
             saw_dispatch = true;
 
-            /// Entering the helper is not enough: the arm must RETURN its result. A rebuild's output carries no
-            /// custom name and keeps the storage's kind, so a returned alias means the value was discarded.
-            EXPECT_EQ(plain->getTypeId(), fuzzed->getTypeId()) << alias << " seed=" << seed;
-            EXPECT_FALSE(fuzzed->hasCustomName()) << alias << " -> " << fuzzed->getName() << " seed=" << seed;
+            /// Entering the helper is not enough: fuzzDataType must return exactly the object it produced.
+            const auto rebuilt = fuzzer.getLastContainerRebuild();
+            ASSERT_NE(nullptr, rebuilt) << alias << " seed=" << seed;
+            EXPECT_EQ(rebuilt.get(), fuzzed.get())
+                << alias << " seed=" << seed << ": dispatched but returned " << fuzzed->getName()
+                << " instead of the rebuild " << rebuilt->getName();
 
             /// A result equal to the unmutated storage only means every child mutation was a no-op for this
             /// seed; keep looking. One differing result proves the production path preserves them.
-            if (fuzzed->getName() != unmutated)
+            if (fuzzed.get() == rebuilt.get() && fuzzed->getName() != unmutated)
                 saw_production_mutation = true;
         }
         EXPECT_TRUE(saw_dispatch) << "fuzzDataType never dispatched " << alias << " to the container rebuild";
@@ -728,11 +732,32 @@ TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
         /// DateTime / DateTime64 / QBit are value-indistinguishable: getRandomType builds them with the very
         /// same helpers. Their RATE separates instead - the arm fires on 3 of 4 seeds, the replacement tail
         /// lands on the family only by chance (measured: ~3000/4000 with the arm, 6-18/4000 without it).
-        {"DateTime('Asia/Istanbul')", "timezone/default",
+        /// Both timezone branches of makeRandomDateTime / makeRandomDateTime64 must stay reachable: a build that
+        /// only ever emitted timezone-less values would still clear a family-and-rate check.
+        {"DateTime('Asia/Istanbul')", "explicit timezone",
          [](const DataTypePtr & t)
-         { const String n = t->getName(); return n.starts_with("DateTime") && !n.starts_with("DateTime64"); }, 1000},
-        {"DateTime64(3, 'UTC')", "scale/timezone",
-         [](const DataTypePtr & t) { return t->getName().starts_with("DateTime64"); }, 1000},
+         {
+             const auto * d = typeid_cast<const DataTypeDateTime *>(t.get());
+             return d && d->hasExplicitTimeZone();
+         }, 200},
+        {"DateTime('Asia/Istanbul')", "default timezone",
+         [](const DataTypePtr & t)
+         {
+             const auto * d = typeid_cast<const DataTypeDateTime *>(t.get());
+             return d && !d->hasExplicitTimeZone();
+         }, 200},
+        {"DateTime64(3, 'UTC')", "explicit timezone",
+         [](const DataTypePtr & t)
+         {
+             const auto * d = typeid_cast<const DataTypeDateTime64 *>(t.get());
+             return d && d->hasExplicitTimeZone();
+         }, 200},
+        {"DateTime64(3, 'UTC')", "scale",
+         [](const DataTypePtr & t)
+         {
+             const auto * d = typeid_cast<const DataTypeDateTime64 *>(t.get());
+             return d && d->getScale() != 3;
+         }, 200},
         {"QBit(Float32, 16)", "element type/dimension",
          [](const DataTypePtr & t) { return typeid_cast<const DataTypeQBit *>(t.get()) != nullptr; }, 1000},
     };

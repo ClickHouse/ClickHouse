@@ -184,6 +184,7 @@ private:
     UInt64 seed;
     pcg64 fuzz_rand;
     size_t container_rebuild_count = 0;
+    DataTypePtr last_container_rebuild;
 
     std::ostream * out_stream = nullptr;
     std::ostream * debug_stream = nullptr;
@@ -262,6 +263,10 @@ private:
     /// How many times fuzzContainerChildren has been entered; lets a test observe the dispatch branch itself
     /// rather than inferring it from the output, which other paths can coincidentally reproduce.
     size_t getContainerRebuildCount() const { return container_rebuild_count; }
+    /// The type fuzzContainerChildren last returned. Entry alone does not prove the arm RETURNED that value,
+    /// and no property of the output identifies it - the wrapping/replacement tail can reproduce the kind, the
+    /// absent custom name and a differing name. A test compares this against what fuzzDataType handed back.
+    DataTypePtr getLastContainerRebuild() const { return last_container_rebuild; }
     /// Wrap or replace a type without touching its children; safe for a custom-named leaf alias.
     DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
     /// Every registered geo alias name, read out of Geometry's Variant storage.
