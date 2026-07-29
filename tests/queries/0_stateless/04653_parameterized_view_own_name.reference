@@ -28,6 +28,7 @@ number	UInt64
 1
 1
 -- controls: a real table function must not gain a bindable name
--- a database-qualified call binds by the view name too
+-- a view in another database binds by the view name too
 1
 1
+-- control: qualifying with a database that does not hold the view does not bind

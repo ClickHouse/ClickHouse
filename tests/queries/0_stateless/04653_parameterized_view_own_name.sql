@@ -53,17 +53,20 @@ DROP VIEW pv2;
 DROP VIEW pv;
 DROP TABLE local_data;
 
--- A call qualified with an explicit database name binds by the view name too.
--- The database must be spelled literally: a query parameter is not accepted in the
--- database position of any table function (a pre-existing parser limitation).
-DROP DATABASE IF EXISTS test_04653;
-CREATE DATABASE test_04653;
-CREATE TABLE test_04653.local_data (tenant_id String, host_id UInt64) ENGINE = MergeTree ORDER BY tenant_id;
-INSERT INTO test_04653.local_data SELECT 't1', 1;
-CREATE VIEW test_04653.pv AS SELECT tenant_id, host_id FROM test_04653.local_data WHERE tenant_id IN ({tenants:Array(String)});
+-- The view also binds by its own name when it lives outside the session's current database.
+-- The call itself stays unqualified: a query parameter is not accepted in the database
+-- position of a table function, and a literal database name would not be parallel-safe.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE local_data (tenant_id String, host_id UInt64) ENGINE = MergeTree ORDER BY tenant_id;
+INSERT INTO local_data SELECT 't1', 1;
+CREATE VIEW pv AS SELECT tenant_id, host_id FROM local_data WHERE tenant_id IN ({tenants:Array(String)});
 
-SELECT '-- a database-qualified call binds by the view name too';
-SELECT pv.host_id FROM test_04653.pv(tenants = ['t1']);
-SELECT test_04653.pv.host_id FROM test_04653.pv(tenants = ['t1']);
+SELECT '-- a view in another database binds by the view name too';
+SELECT pv.host_id FROM pv(tenants = ['t1']);
+SELECT {CLICKHOUSE_DATABASE_1:Identifier}.pv.host_id FROM pv(tenants = ['t1']);
 
-DROP DATABASE test_04653;
+SELECT '-- control: qualifying with a database that does not hold the view does not bind';
+SELECT {CLICKHOUSE_DATABASE:Identifier}.pv.host_id FROM pv(tenants = ['t1']); -- { serverError UNKNOWN_IDENTIFIER }
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
