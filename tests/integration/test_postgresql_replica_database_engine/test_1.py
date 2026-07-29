@@ -438,6 +438,65 @@ def test_user_managed_slots(started_cluster):
     replication_connection.close()
 
 
+def test_bool_and_bool_array(started_cluster):
+    """Test for https://github.com/ClickHouse/ClickHouse/issues/62544
+    A PostgreSQL `boolean[]` column failed to replicate through
+    MaterializedPostgreSQL because the array parser did not understand
+    PostgreSQL's 't'/'f' boolean text format. This checks both the initial
+    snapshot and the streaming replication path (INSERT and UPDATE), including
+    NULL scalars, NULL array elements and NULL arrays. Rows are written directly
+    in PostgreSQL so the values arrive over the wire exactly as '{t,f,...}'.
+    """
+    table_name = "test_bool_array"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    cursor.execute(
+        f'CREATE TABLE "{table_name}" '
+        "(key integer PRIMARY KEY, b boolean, arr boolean[])"
+    )
+    cursor.execute(
+        f'INSERT INTO "{table_name}" VALUES '
+        "(1, 't', '{t,t,t,f,f,f,t,t}'), "
+        "(2, 'f', '{f,f}'), "
+        "(3, NULL, '{t,NULL,f}'), "
+        "(4, 't', NULL)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+
+    # Initial snapshot.
+    check_tables_are_synchronized(instance, table_name)
+    assert (
+        instance.query(f"SELECT * FROM test_database.{table_name} ORDER BY key")
+        == "1\t1\t[1,1,1,0,0,0,1,1]\n"
+        "2\t0\t[0,0]\n"
+        "3\t\\N\t[1,NULL,0]\n"
+        "4\t1\t[]\n"
+    )
+
+    # Streaming replication: INSERT and UPDATE performed directly in PostgreSQL.
+    cursor.execute(f"""INSERT INTO "{table_name}" VALUES (5, 'f', '{{f,NULL,t,f}}')""")
+    cursor.execute(
+        f"""UPDATE "{table_name}" SET b = 'f', arr = '{{t,t,t}}' WHERE key = 1"""
+    )
+
+    check_tables_are_synchronized(instance, table_name)
+    assert (
+        instance.query(f"SELECT * FROM test_database.{table_name} ORDER BY key")
+        == "1\t0\t[1,1,1]\n"
+        "2\t0\t[0,0]\n"
+        "3\t\\N\t[1,NULL,0]\n"
+        "4\t1\t[]\n"
+        "5\t0\t[0,NULL,1,0]\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_merge_table_over_materialized_postgresql(started_cluster):
     """
     Reading a MaterializedPostgreSQL table through Merge forces FINAL on the child read

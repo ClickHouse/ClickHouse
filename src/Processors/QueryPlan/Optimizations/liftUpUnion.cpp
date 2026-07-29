@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Core/Block.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -42,6 +43,14 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     auto * union_step = typeid_cast<UnionStep *>(child.get());
     if (!union_step)
         return 0;
+
+    /// Both rewrites below assume the union forwards each branch unchanged. Skip them when
+    /// the union normalizes a branch (output differs from some input header), e.g. it drops
+    /// a Const that diverged across branches.
+    const auto & union_output = *union_step->getOutputHeader();
+    for (const auto & input_header : union_step->getInputHeaders())
+        if (!blocksHaveEqualStructure(*input_header, union_output))
+            return 0;
 
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))
     {

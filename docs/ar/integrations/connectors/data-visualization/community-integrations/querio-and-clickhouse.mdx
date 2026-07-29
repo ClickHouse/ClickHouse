@@ -10,7 +10,7 @@ integration:
   - category: 'data_visualization'
 ---
 
-import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,9 +21,7 @@ Querio هي مساحة عمل للتحليلات وذكاء الأعمال مد�
 </div>
 
 <Steps>
-  <Step>
-    ### إنشاء مستخدم مخصّص
-
+  <Step title="إنشاء مستخدم مخصّص" id="create-dedicated-user">
     اتباعًا لأفضل ممارسات الأمان، أنشئ حساب مستخدم مخصّصًا لـ Querio فقط بأقل الامتيازات المطلوبة:
 
     ```sql
@@ -35,9 +33,7 @@ Querio هي مساحة عمل للتحليلات وذكاء الأعمال مد�
     </Tip>
   </Step>
 
-  <Step>
-    ### منح حق الوصول للقراءة فقط إلى قاعدة البيانات
-
+  <Step title="منح حق الوصول للقراءة فقط إلى قاعدة البيانات" id="grant-read-only-access">
     احصر أذونات Querio في قواعد البيانات والجداول التي يحتاج إلى الاستعلام عنها فقط:
 
     ```sql
@@ -53,14 +49,12 @@ Querio هي مساحة عمل للتحليلات وذكاء الأعمال مد�
     كرّر هذه العملية لكل قاعدة بيانات يحتاج Querio إلى الوصول إليها.
   </Step>
 
-  <Step>
-    ### جمع تفاصيل الاتصال
-
+  <Step title="جمع تفاصيل الاتصال" id="gather-connection-details">
     لتوصيل Querio بـ ClickHouse، ستحتاج إلى معلومات الاتصال التالية:
 
     | المعلَمة   | الوصف                                                                      |
     | ---------- | -------------------------------------------------------------------------- |
-    | `HOST`     | عنوان خادم ClickHouse أو الـ تجمّع الخاص بك                              |
+    | `HOST`     | عنوان خادم ClickHouse أو الـ تجمّع الخاص بك                                |
     | `PORT`     | المنفذ 9440 (الافتراضي للبروتوكول الأصلي الآمن) أو المنفذ الذي قمت بتكوينه |
     | `DATABASE` | قاعدة البيانات التي تريد أن يستعلم منها Querio                             |
     | `USERNAME` | `querio_user` (أو اسم المستخدم الذي اخترته)                                |
@@ -98,5 +92,5 @@ Querio هي مساحة عمل للتحليلات وذكاء الأعمال مد�
   ## موارد إضافية
 </div>
 
-* [وثائق Querio](https://docs.querio.ai/integrations/clickhouse)
+* [وثائق Querio](https://docs.querio.ai/)
 * [أدلة البدء والدروس التعليمية الخاصة بـ Querio](https://www.querio.ai)

@@ -46,6 +46,10 @@ SELECT
 
 이 함수는 `now('UTC')`와 동일한 결과를 반환합니다. MySQL 지원용으로만 추가되었습니다. 권장되는 사용 방식은 [`now`](#now)입니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -1588,7 +1592,7 @@ LIMIT 10
 
 도입 버전: v20.1.0
 
-`formatDateTime`와 비슷하지만, MySQL 스타일 대신 Joda 스타일로 날짜/시간 값을 포맷합니다. 자세한 내용은 [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)을 참조하십시오.
+`formatDateTime`와 비슷하지만, MySQL 스타일 대신 Joda 스타일로 날짜-시간 값을 포맷합니다. 자세한 내용은 [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)을 참조하십시오.
 
 이 함수의 반대 연산은 [`parseDateTimeInJodaSyntax`](/ko/reference/functions/regular-functions/type-conversion-functions#parseDateTimeInJodaSyntax)입니다.
 
@@ -1630,7 +1634,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 
 **인수**
 
-* `datetime` — 포맷할 날짜 또는 날짜/시간 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 포맷할 날짜 또는 날짜-시간 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `format` — Joda 스타일 대체 필드가 포함된 포맷 문자열입니다. [`String`](/ko/reference/data-types/string)
 * `timezone` — 선택 사항입니다. 포맷된 시간에 사용할 시간대 이름입니다. [`String`](/ko/reference/data-types/string)
 
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 
 쿼리 분석 시점의 서버(또는 세션) 시간대에서 현재 시각을 반환합니다.
 이 함수는 상수 표현식입니다. SQL 표준 / PostgreSQL `LOCALTIME`이며, `CAST(now() AS Time)`와 동일합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 같은 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -2230,13 +2238,17 @@ SELECT monthName(date_value)
 
 쿼리 분석 시점의 현재 날짜와 시간을 반환합니다. 이 함수는 상수 표현식입니다.
 
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
 now([timezone])
 ```
 
-**별칭**: `localtimestamp`, `current_timestamp`
+**별칭**: `current_timestamp`, `localtimestamp`
 
 **인수**
 
@@ -2292,6 +2304,10 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 쿼리 분석 시점의 현재 날짜 및 시간을 초 미만 정밀도로 반환합니다. 이 함수는 상수 표현식입니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -2330,6 +2346,10 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 각 데이터 블록의 처리 시점에 해당하는 현재 날짜와 시간을 반환합니다. [`now`](#now) 함수와 달리 상수 표현식이 아니므로, 장시간 실행되는 쿼리에서는 블록마다 반환 값이 달라집니다.
 
 장시간 실행되는 `INSERT SELECT` 쿼리에서 현재 시간을 생성할 때 이 함수를 사용하는 것이 적절합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -2377,6 +2397,10 @@ FORMAT PrettyCompactMonoBlock
 
 장시간 실행되는 INSERT SELECT 쿼리에서 현재 시간을 생성할 때는 이 함수를 사용하는 것이 좋습니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -2421,7 +2445,11 @@ FORMAT PrettyCompactMonoBlock
 도입 버전: v23.6.0
 
 서버의 시간대, 즉 [`timezone`](/ko/reference/settings/server-settings/settings#timezone) 설정 값을 반환합니다.
-함수가 분산 테이블에서 실행되면 각 세그먼트에 해당하는 값을 가진 일반 컬럼을 생성합니다. 그렇지 않으면 상수 값을 생성합니다.
+함수가 분산 테이블의 컨텍스트에서 실행되면 각 세그먼트에 해당하는 값을 가진 일반 컬럼을 생성합니다. 그렇지 않으면 상수 값을 생성합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -2976,9 +3004,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3403,6 +3431,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 도입 버전: v21.4.0
 
 현재 세션의 시간대 이름을 반환하거나, 시간대 오프셋 또는 이름을 정식 시간대 이름으로 변환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -3865,7 +3897,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 날짜 또는 날짜와 시간이 포함된 값을 해당 월의 마지막 날로 올림합니다.
 
 <Note>
-  반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
+  반환 타입은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
 </Note>
 
 **구문**
@@ -3907,7 +3939,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 날짜 또는 날짜/시간 값을 가장 가까운 토요일 또는 일요일로 올림합니다.
 
 <Note>
-  반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
+  반환 타입은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
 </Note>
 
 **구문**
@@ -3932,10 +3964,10 @@ toLastDayOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* 금요일 */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 금요일 */
-    toLastDayOfWeek(toDate('2023-04-23')), /* 일요일 */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* 일요일 */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
@@ -4170,8 +4202,8 @@ toMonday(value)
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- 금요일
-toMonday(toDate('2023-04-24'));              -- 이미 월요일인 경우
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4716,7 +4748,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 
 도입 버전: v1.1.0
 
-날짜 및 시간 값을 15분 인터벌 시작 시점으로 내림합니다.
+시간이 포함된 날짜를 15분 인터벌 시작 시점으로 내림합니다.
 
 <Note>
   반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
@@ -4730,11 +4762,11 @@ toStartOfFifteenMinutes(datetime)
 
 **인수**
 
-* `datetime` — 반올림할 날짜 또는 날짜와 시간이 포함된 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 내림할 날짜 또는 시간이 포함된 날짜입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-가장 가까운 15분 인터벌의 시작 시점으로 반올림된 날짜 및 시간 값을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+가장 가까운 15분 인터벌의 시작 시점으로 내림한 시간이 포함된 날짜를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -4762,7 +4794,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 도입 버전: v22.6.0
 
-시간이 포함된 날짜를 가장 가까운 5분 인터벌의 시작 시점으로 내림 처리합니다.
+시간이 포함된 날짜를 가장 가까운 5분 인터벌의 시작 시점으로 내림합니다.
 
 <Note>
   반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
@@ -4778,11 +4810,11 @@ toStartOfFiveMinutes(datetime)
 
 **인수**
 
-* `datetime` — 반올림할 시간 정보가 포함된 날짜입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 내림할 시간 정보가 포함된 날짜입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-가장 가까운 5분 인터벌의 시작으로 반올림된 시간 정보가 포함된 날짜를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+가장 가까운 5분 인터벌의 시작으로 내림한 시간 정보가 포함된 날짜를 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -4810,7 +4842,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 도입 버전: v1.1.0
 
-시간 정보가 포함된 날짜 값을 해당 시간의 시작으로 내림합니다.
+시간이 포함된 날짜 값을 해당 시간의 시작으로 내림합니다.
 
 <Note>
   반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 구성할 수 있습니다.
@@ -4824,11 +4856,11 @@ toStartOfHour(datetime)
 
 **인수**
 
-* `datetime` — 내림할 날짜 및 시간. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 내림할 시간이 포함된 날짜입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-날짜 및 시간을 해당 시간의 시작 시각으로 내림한 값을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+시간이 포함된 날짜를 해당 시간의 시작 시각으로 내림한 값을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -4851,7 +4883,7 @@ SELECT
 
 도입 버전: v1.1.0
 
-날짜 또는 날짜/시간 값을 ISO 연도의 첫날로 내림합니다. ISO 연도는 일반적인 연도와 다를 수 있습니다. [ISO 주차 날짜](https://en.wikipedia.org/wiki/ISO_week_date)를 참조하세요.
+날짜 또는 시간이 포함된 날짜 값을 ISO 연도의 첫날로 내림합니다. ISO 연도는 일반적인 연도와 다를 수 있습니다. [ISO 주차 날짜](https://en.wikipedia.org/wiki/ISO_week_date)를 참조하세요.
 
 <Note>
   반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
@@ -4865,11 +4897,11 @@ toStartOfISOYear(value)
 
 **인수**
 
-* `value` — ISO 연도의 첫째 날로 내림할 날짜 또는 날짜와 시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `value` — ISO 연도의 첫째 날로 내림할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정된 날짜 또는 날짜와 시간에 해당하는 ISO 연도의 첫째 날을 반환합니다. [`Date`](/ko/reference/data-types/date)
+지정된 날짜 또는 시간이 포함된 날짜에 해당하는 ISO 연도의 첫째 날을 반환합니다. [`Date`](/ko/reference/data-types/date)
 
 **예시**
 
@@ -4929,7 +4961,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**별칭**: `time_bucket`, `date_bin`
+**별칭**: `date_bin`, `time_bucket`
 
 **인수**
 
@@ -5132,11 +5164,11 @@ toStartOfMonth(value)
 
 **인수**
 
-* `value` — 해당 월의 첫째 날로 내림할 날짜 또는 날짜/시간 값입니다. [`Date`](/ko/reference/data-types/date) or [`Date32`](/ko/reference/data-types/date32) or [`DateTime`](/ko/reference/data-types/datetime) or [`DateTime64`](/ko/reference/data-types/datetime64)
+* `value` — 해당 월의 첫째 날로 내림할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) or [`Date32`](/ko/reference/data-types/date32) or [`DateTime`](/ko/reference/data-types/datetime) or [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정한 날짜 또는 날짜/시간 값이 속한 월의 첫째 날을 반환합니다. [`Date`](/ko/reference/data-types/date)
+지정한 날짜 또는 시간이 포함된 날짜가 속한 월의 첫째 날을 반환합니다. [`Date`](/ko/reference/data-types/date)
 
 **예시**
 
@@ -5223,11 +5255,11 @@ toStartOfQuarter(value)
 
 **인수**
 
-* `value` — 분기의 첫날로 내림할 날짜 또는 시간 정보가 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `value` — 분기의 첫날로 내림할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정된 날짜 또는 시간 정보가 포함된 날짜에 해당하는 분기의 첫날을 반환합니다. [`Date`](/ko/reference/data-types/date)
+지정된 날짜 또는 시간이 포함된 날짜에 해당하는 분기의 첫날을 반환합니다. [`Date`](/ko/reference/data-types/date)
 
 **예시**
 
@@ -5300,7 +5332,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 
 도입 버전: v20.1.0
 
-시간이 포함된 날짜 값을 가장 가까운 10분 인터벌의 시작 시각으로 내립니다.
+날짜/시간 값을 가장 가까운 10분 인터벌의 시작 시각으로 내림합니다.
 
 <Note>
   반환 유형은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings#enable_extended_results_for_datetime_functions) 설정을 통해 지정할 수 있습니다.
@@ -5314,11 +5346,11 @@ toStartOfTenMinutes(datetime)
 
 **인수**
 
-* `datetime` — 시간이 포함된 날짜입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 날짜/시간입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-날짜와 시간을 가장 가까운 10분 인터벌의 시작으로 반올림한 값을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+날짜/시간을 가장 가까운 10분 인터벌의 시작으로 반올림한 값을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -5374,10 +5406,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* 금요일 */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 금요일 */
-        toStartOfWeek(toDate('2023-04-24')), /* 월요일 */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* 월요일 */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5536,7 +5568,7 @@ int32samoa: 1546300800
 
 도입 버전: v23.8.0
 
-한 시간대의 날짜 또는 날짜-시간 값을 UTC 시간대의 timestamp로 변환합니다. 이 함수는 주로 Apache Spark 및 이와 유사한 프레임워크와의 호환성을 위해 포함되어 있습니다.
+한 시간대의 날짜 또는 날짜-시간 값을 UTC 시간대의 타임스탬프로 변환합니다. 이 함수는 주로 Apache Spark 및 이와 유사한 프레임워크와의 호환성을 위해 포함되어 있습니다.
 
 **구문**
 
@@ -5565,8 +5597,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5927,13 +5959,17 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 쿼리 분석 시점의 현재 날짜를 반환합니다. `toDate(now())`와 동일합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
 today()
 ```
 
-**별칭**: `curdate`, `current_date`
+**별칭**: `current_date`, `curdate`
 
 **인수**
 
@@ -5980,6 +6016,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 도입 버전: v1.1.0
 
 인수를 받지 않으며, 쿼리 분석이 수행되는 시점의 어제 날짜를 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 즉, 같은 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
