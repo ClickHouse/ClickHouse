@@ -223,8 +223,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     make_distributed_plan = from[Setting::make_distributed_plan];
 
-    /// make_distributed_plan is incompatible with parallel replicas, including the automatic
-    /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
+    /// Parallel replicas (including the automatic heuristic) are auto-disabled for distributed
+    /// plans in InterpreterSelectQueryAnalyzer::buildContext(), so this cannot fire for queries
+    /// planned through the analyzer. Kept as a backstop for contexts that bypass it (e.g. the
+    /// old analyzer): parallel replicas' plan switching and statistics collection interfere
+    /// with the distributed plan.
     if (make_distributed_plan
         && (from[Setting::allow_experimental_parallel_reading_from_replicas] > 0
             || from[Setting::automatic_parallel_replicas_mode] != 0))
