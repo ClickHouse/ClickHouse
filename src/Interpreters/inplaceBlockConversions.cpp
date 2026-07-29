@@ -423,7 +423,8 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    bool share_nested_offsets,
+    const NameSet & additional_available_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -450,6 +451,15 @@ void fillMissingColumns(
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+            continue;
+
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
+        if (storage_snapshot
+            && requested_column->isSubcolumn()
+            && (available_columns.contains(requested_column->getNameInStorage())
+                || additional_available_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
