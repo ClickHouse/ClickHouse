@@ -746,6 +746,72 @@ def test_file_engine():
     instance.query("DROP TABLE test.table")
 
 
+def test_backup_to_not_yet_existing_backup_area():
+    # When the configured backup area does not exist yet, BackupWriterFile creates the whole chain
+    # and has to fsync all of it - a directory that exists but whose parent's entry for it was never
+    # flushed does not survive a power loss. Only an integration test can set this up, because
+    # backups.allowed_path is a server config setting, and in CI it always points somewhere existing.
+    #
+    # The load-bearing assertion is the DIFFERENCE between two backups to the same area: the first
+    # has to create deep_backups/a/b/c, the second finds it there. Comparing two backups is what
+    # makes this independent of how many directories the backup contents themselves need, which
+    # randomized merge-tree settings vary.
+    #
+    # The concurrent variant - two backups racing to create a shared intermediate directory, which
+    # is what motivated syncing the created chain instead of trusting existence - is NOT covered
+    # here, and this sequential pair must not be read as covering it: a sequential pair passes even
+    # under the buggy logic that synced only from "the first directory that exists" downwards.
+    # Pinning the race needs a failpoint between the writer ctor's boundary sampling and its first
+    # create_directories, which does not exist.
+    create_and_fill_table(n=10)
+
+    # A previous run leaves the chain behind - the writer removes directories it created only when
+    # the backup fails - which would collapse the difference to zero. Start from the state the
+    # assertion is about.
+    instance.exec_in_container(
+        ["bash", "-c", "rm -rf /var/lib/clickhouse/deep_backups"], user="root"
+    )
+
+    def backup_to(subdir, query_id, fsync=1):
+        instance.query(
+            f"BACKUP TABLE test.table TO File('/var/lib/clickhouse/deep_backups/a/b/c/{subdir}')"
+            f" SETTINGS fsync_backup_files = {fsync}",
+            query_id=query_id,
+        )
+        return get_events_for_query(query_id)
+
+    # b1 has to create deep_backups, a, b and c under the pre-existing /var/lib/clickhouse. The ctor
+    # records the created chain plus the existing boundary it stopped at - /var/lib/clickhouse,
+    # deep_backups, a, b, c - and /var/lib as the best-effort level above the area: six. b2 finds the
+    # area present, so its boundary is the area itself: that one directory plus
+    # /var/lib/clickhouse/deep_backups/a/b as the best-effort level: two. The directories inside the
+    # destination are the same for both and cancel, leaving 6 - 2.
+    first = backup_to("b1", "backup_deep_first")
+    second = backup_to("b2", "backup_deep_second")
+
+    created_chain_syncs = first["DirectorySync"] - second["DirectorySync"]
+    assert created_chain_syncs == 4, (
+        f"expected the created backup area chain to add 4 directory fsyncs, got"
+        f" {created_chain_syncs} (b1={first['DirectorySync']}, b2={second['DirectorySync']})"
+    )
+
+    # Control: the opt-out must issue no fsyncs of either kind, so the counts above are attributable
+    # to fsync_backup_files rather than to something ambient.
+    third = backup_to("b3", "backup_deep_off", fsync=0)
+    assert (third.get("FileSync", 0), third.get("DirectorySync", 0)) == (0, 0), (
+        f"fsync_backup_files = 0 still synced {third.get('FileSync', 0)} files"
+        f" / {third.get('DirectorySync', 0)} directories"
+    )
+
+    # A backup written into a freshly created area must also be restorable, not merely counted.
+    instance.query("DROP TABLE test.table")
+    instance.query(
+        "RESTORE TABLE test.table FROM File('/var/lib/clickhouse/deep_backups/a/b/c/b1')"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "10\t45\n"
+    instance.query("DROP TABLE test.table")
+
+
 def test_database():
     backup_name = new_backup_name()
     create_and_fill_table()
