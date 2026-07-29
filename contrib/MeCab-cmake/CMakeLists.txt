@@ -27,7 +27,6 @@ set(SRCS
 )
 
 add_library(_mecab ${SRCS})
-set_property(TARGET _mecab PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Build upstream MeCab unmodified; two flags accommodate modern C++/libc++ (no source edits):
 #  * -Wno-register: old code uses the `register` keyword (an error in C++17+); contrib `-w` misses it.
