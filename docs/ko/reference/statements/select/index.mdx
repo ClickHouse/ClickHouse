@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 모든 절은 선택 사항입니다. 단, `SELECT` 바로 뒤에 오는 필수 표현식 목록은 예외이며, 이에 대해서는 [아래](#select-clause)에서 더 자세히 설명합니다.
 
-각 선택적 절의 세부 내용은 별도의 섹션에서 설명하며, 실제 실행 순서와 동일한 순서로 나열되어 있습니다:
+각 선택적 절의 세부 내용은 별도의 섹션에서 설명하며, 실제 실행 순서와 동일한 순서로 나열되어 있습니다(`SELECT` 및 `DISTINCT`는 편의를 위해 먼저 나열되지만, 해당 표현식은 [아래](#select-clause)에서 설명한 대로 앞선 절의 실행이 끝난 후에만 평가됩니다):
 
 * [WITH 절](/ko/reference/statements/select/with)
 * [SELECT 절](#select-clause)
+* [ALL 절](/ko/reference/statements/select/all)
 * [DISTINCT 절](/ko/reference/statements/select/distinct)
 * [FROM 절](/ko/reference/statements/select/from)
 * [SAMPLE 절](/ko/reference/statements/select/sample)
+* [ARRAY JOIN 절](/ko/reference/statements/select/array-join)
 * [JOIN 절](/ko/reference/statements/select/join)
 * [PREWHERE 절](/ko/reference/statements/select/prewhere)
 * [WHERE 절](/ko/reference/statements/select/where)
-* [WINDOW 절](/ko/reference/functions/window-functions/index)
 * [GROUP BY 절](/ko/reference/statements/select/group-by)
-* [LIMIT BY 절](/ko/reference/statements/select/limit-by)
 * [HAVING 절](/ko/reference/statements/select/having)
+* [WINDOW 절](/ko/reference/functions/window-functions/index)
 * [QUALIFY 절](/ko/reference/statements/select/qualify)
+* [ORDER BY 절](/ko/reference/statements/select/order-by)
+* [LIMIT BY 절](/ko/reference/statements/select/limit-by)
 * [LIMIT 절](/ko/reference/statements/select/limit)
 * [OFFSET 절](/ko/reference/statements/select/offset)
 * [UNION 절](/ko/reference/statements/select/union)

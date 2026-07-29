@@ -54,5 +54,17 @@ SELECT trim(explain) FROM (
              optimize_aggregation_in_order = 1, max_threads = 1
 ) WHERE explain LIKE '%ReadType%';
 
+-- #110662 (no-aggregation manifestation): a plain top-level ORDER BY over a partial_merge
+-- JOIN must be truly sorted. Pre-fix the sort was elided because the plan wrongly trusted the
+-- join output to already be sorted by the left key. Self-checking: the join is 1:1 on n and k
+-- spans 0..499, so a correctly sorted stream emits exactly [0, 1, ..., 499] == range(500).
+-- The read-in-order gates are pinned on (and swap off) so the defective path is always exercised;
+-- otherwise a run that randomizes them off would sort correctly and pass without testing the fix.
+SELECT groupArray(k) = range(500) FROM (
+    SELECT l.k AS k FROM t2 AS l LEFT JOIN t2 AS r ON l.n = r.n ORDER BY l.k
+) SETTINGS enable_analyzer = 1, join_algorithm = 'partial_merge', max_threads = 1,
+           optimize_read_in_order = 1, query_plan_read_in_order = 1,
+           query_plan_read_in_order_through_join = 1, query_plan_join_swap_table = 'false';
+
 DROP TABLE t1;
 DROP TABLE t2;

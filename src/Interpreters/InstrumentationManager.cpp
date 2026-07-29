@@ -522,11 +522,10 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
     LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms);
     auto now = std::chrono::system_clock::now();
     std::this_thread::sleep_for(duration<Float64, std::milli>(duration_ms));
-    auto element = createTraceLogElement(instrumented_point, entry_type, now);
     if (instrumented_point.context)
     {
         if (auto log = instrumented_point.context->getTraceLog())
-            log->add(std::move(element));
+            log->add([&](TraceLogElement & element) { element = createTraceLogElement(instrumented_point, entry_type, now); });
     }
 }
 
@@ -551,11 +550,10 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
             instrumented_point.function_name, instrumented_point.function_id,
             entry_type == XRayEntryType::ENTRY ? "Entry" : "Exit", logger_info, stack_trace_str);
 
-        auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
         if (instrumented_point.context)
         {
             if (auto log = instrumented_point.context->getTraceLog())
-                log->add(std::move(element));
+                log->add([&](TraceLogElement & element) { element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now()); });
         }
     }
     else
@@ -592,7 +590,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         if (instrumented_point.context)
         {
             if (auto log = instrumented_point.context->getTraceLog())
-                log->add(element);
+                log->add([&](TraceLogElement & log_element) { log_element = element; });
         }
         profile_elements[instrumented_point.function_id].emplace(std::move(element), now_high_res);
 
@@ -632,7 +630,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             if (instrumented_point.context)
             {
                 if (auto log = instrumented_point.context->getTraceLog())
-                    log->add(std::move(element));
+                    log->add([&](TraceLogElement & log_element) { log_element = element; });
             }
 
             it->second.pop();
