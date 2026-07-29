@@ -372,6 +372,9 @@ struct LikePatternFixedPrefix
     bool is_exact = false;
 };
 
+/// Extracts the prefix of a LIKE pattern before the first wildcard, e.g. 'Hello\_World%' -> 'Hello_World'.
+/// Escapes are folded exactly as `likePatternToRegexp` does, so the prefix equals the string LIKE matches:
+/// '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it ('\w' matches the literal "\w").
 LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);

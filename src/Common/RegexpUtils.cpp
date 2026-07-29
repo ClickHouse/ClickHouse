@@ -1,7 +1,5 @@
 #include <Common/RegexpUtils.h>
 
-#include <base/defines.h>
-
 #include <algorithm>
 #include <utility>
 #include <vector>
@@ -13,12 +11,8 @@ namespace DB
 namespace
 {
 
-/// Returns true if '\' followed by this character means "match this character
-/// literally". For example, '\.' matches a literal dot, '\(' matches a
-/// literal '(', '\-' matches a literal '-'.
-/// Returns false for escape sequences where the matched character is different
-/// from what follows '\': '\n' matches a newline (not 'n'), '\d' matches any
-/// digit (not 'd'), '\x41' matches 'A' (not 'x').
+/// Returns true if '\' followed by this character matches that character literally, e.g. '\.' matches a dot.
+/// Returns false when the escape matches something else: '\n' matches a newline (not 'n'), '\d' matches a digit.
 bool isLiteralEscape(char c)
 {
     switch (c)
@@ -42,8 +36,6 @@ bool isLiteralEscape(char c)
         default:
             return false;
     }
-
-    UNREACHABLE();
 }
 
 /// Returns true if the expression contains any unescaped '|'.
@@ -63,65 +55,18 @@ bool expressionHasUnescapedAlternation(std::string_view expression)
     return false;
 }
 
-/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
-/// each branch is a plain literal string (no metacharacters, no nesting).
-///
-/// This is used when the expression contains an unescaped '|', meaning the
-/// character-by-character scan cannot be used (it would stop at '|' or '(').
-/// Returns empty for any pattern more complex than simple literal branches
-/// inside a single group.
-///
-/// "^(abc-xx|abc-yy)"
-///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
-///   Both start with "abc-", so every matching string begins with "abc-".
-///   Prefix: "abc-".
-///
-/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
-///   Three alternatives. All three start with "abc-", but they diverge
-///   after that ('x' vs 'y'). So "abc-" is the longest common start.
-///   Prefix: "abc-".
-///
-/// "^(abc|def)"
-///   Two alternatives: "abc" and "def". They share nothing at the start —
-///   'a' vs 'd' already differ. We cannot guarantee any prefix.
-///   Prefix: "".
-///
-/// "^(abc|def)$"
-///   '$' means "must end at the end of the string". It constrains what
-///   comes after the match, but does not change what the string starts
-///   with. So the prefix analysis is the same as without '$'.
-///   Prefix: "".
-///
-/// Not supported (returns empty — could be improved in the future):
-///
-/// "^(abc.*|abd.*)"
-///   Branches contain '.*' (wildcard). We only handle plain literal branches.
-///   The common prefix "ab" could theoretically be extracted, but is not.
-///   Prefix: "".
-///
-/// "^(abc|abd)+"
-///   The '+' after the group means it must appear at least once.
-///   We only handle patterns where the group is followed by '$' or end
-///   of expression. Prefix: "".
-///
-/// "^(abc(1|2)|abc(3|4))"
-///   Branches contain nested groups. We only handle flat literal branches.
-///   The common prefix "abc" could theoretically be extracted, but is not.
-///   Prefix: "".
+/// Extracts the longest prefix common to all branches of "^(branch1|branch2|...)$?", where every branch
+/// is a plain literal, for example "abc-" for "^(abc-xx|abc-yy)". Returns empty for anything more complex:
+/// a branch containing a metacharacter or a nested group, a single branch, or a group followed by something
+/// other than '$'.
 String extractCommonPrefixFromAlternationBranches(std::string_view expression)
 {
-    /// We only handle "^(literal1|literal2|...)$?".
-    /// Reject anything that doesn't start with "^(".
     if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
         return {};
 
     const char * pos = expression.data() + 2; /// Start right after "^("
     const char * end = expression.data() + expression.size();
 
-    /// Split branches by '|'. Each branch must be a plain literal —
-    /// no metacharacters, no nested groups, no character classes.
-    /// If we see anything other than a literal char, escaped char, or '|',
-    /// we give up.
     std::vector<String> branches;
     String current_branch;
 
@@ -140,14 +85,12 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
         }
         else if (*pos == '|')
         {
-            /// Branch separator — save the current branch and start a new one.
             branches.push_back(std::move(current_branch));
             current_branch.clear();
             ++pos;
         }
         else if (*pos == ')')
         {
-            /// End of the group. Save the last branch.
             branches.push_back(std::move(current_branch));
             ++pos;
 
@@ -163,7 +106,7 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
             *pos == '(' || *pos == '[' || *pos == '.' || *pos == '*' || *pos == '+' || *pos == '?' || *pos == '{' || *pos == '^'
             || *pos == '$')
         {
-            /// Any metacharacter inside a branch — too complex, give up.
+            /// A metacharacter inside a branch is too complex to analyze.
             return {};
         }
         else
@@ -230,7 +173,7 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
             }
 
             case '$':
-                /// '$' means "must end at the end of the string", so "^abc$" matches only "abc".
+                /// A trailing '$' means the pattern matches `fixed_prefix` and nothing else.
                 /// A '$' in the middle constrains the rest of the pattern, which we don't analyze.
                 if (pos + 1 == end)
                     return {.prefix = fixed_prefix, .is_exact = true};
@@ -271,8 +214,7 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
         }
     }
 
-    /// The whole pattern is a literal string and nothing constrains the end of the matched string,
-    /// so "^abc" matches every string starting with "abc".
+    /// The whole pattern is a literal string, so it matches every string starting with `fixed_prefix`.
     return {.prefix = fixed_prefix, .is_perfect = true};
 }
 

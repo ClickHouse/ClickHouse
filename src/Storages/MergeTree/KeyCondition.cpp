@@ -362,8 +362,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
 
                 /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
-                /// This must come before the empty-prefix bailout below: "^$" matches only the empty string
-                /// and is equivalent to `value = ''`, so it needs the exact empty-string point range too.
+                /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
                 if (prefix.is_exact)
                 {
                     out.function = RPNElement::FUNCTION_IN_RANGE;
