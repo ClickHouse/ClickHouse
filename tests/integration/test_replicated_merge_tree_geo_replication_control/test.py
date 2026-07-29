@@ -261,13 +261,14 @@ def test_region_setting_is_readonly_after_creation(start_cluster):
         )
 
         # The other geo settings are read live at each fetch / election, so they remain alterable.
+        # `system.merge_tree_settings` only exposes the server-wide defaults, so check the table metadata.
         apac1.query(
             "ALTER TABLE us_table MODIFY SETTING geo_replication_control_leader_wait = 7"
         )
         assert (
-            "7"
+            "geo_replication_control_leader_wait = 7"
             in apac1.query(
-                "SELECT value FROM system.merge_tree_settings WHERE name = 'geo_replication_control_leader_wait'"
+                "SELECT engine_full FROM system.tables WHERE database = 'default' AND name = 'us_table'"
             )
         )
 
@@ -357,7 +358,9 @@ def test_only_fetch_covered_part_from_same_region(start_cluster):
             )
         )
 
-        apac2.query("SYSTEM SYNC REPLICA us_table")
+        # Only wait for the fetches: merges are stopped on this replica, so the `MERGE_PARTS` entry produced by
+        # `OPTIMIZE` stays in the queue and a full `SYSTEM SYNC REPLICA` would wait for it until the timeout.
+        apac2.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT")
         num_part2 = int(
             apac2.query(
                 "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'us_table' AND active"
