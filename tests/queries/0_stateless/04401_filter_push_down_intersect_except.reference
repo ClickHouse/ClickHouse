@@ -27,6 +27,8 @@ tuple dec off	(1)
 date str ok
 enum str ok
 empty tuple ok
+dup input on	1	1
+dup input off	1	1
 reuse on	3
 reuse off	3
 block mismatch	0

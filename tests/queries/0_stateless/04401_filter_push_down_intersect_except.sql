@@ -192,6 +192,19 @@ SELECT 'empty tuple ok';
 DROP TABLE t_intex_et_l;
 DROP TABLE t_intex_et_r;
 
+-- Two outputs may alias the same input, which coarsens the set key: (1, 2) and (1, 3) survive
+-- EXCEPT ALL, but as (1, 1) and (1, 1) they cancel.
+DROP TABLE IF EXISTS t_intex_dup_l;
+DROP TABLE IF EXISTS t_intex_dup_r;
+CREATE TABLE t_intex_dup_l (a UInt8, b UInt8) ENGINE = Memory;
+CREATE TABLE t_intex_dup_r (a UInt8, b UInt8) ENGINE = Memory;
+INSERT INTO t_intex_dup_l VALUES (1, 2);
+INSERT INTO t_intex_dup_r VALUES (1, 3);
+SELECT 'dup input on', x, y FROM (SELECT a AS x, a AS y FROM (SELECT a, b FROM t_intex_dup_l EXCEPT ALL SELECT a, b FROM t_intex_dup_r)) WHERE x > 0 SETTINGS query_plan_filter_push_down = 1;
+SELECT 'dup input off', x, y FROM (SELECT a AS x, a AS y FROM (SELECT a, b FROM t_intex_dup_l EXCEPT ALL SELECT a, b FROM t_intex_dup_r)) WHERE x > 0 SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_dup_l;
+DROP TABLE t_intex_dup_r;
+
 -- A parent reusing the predicate column leaves a filter output of a single same-typed UInt8, so
 -- pushing it would feed x > 0 into the set instead of x.
 DROP TABLE IF EXISTS t_intex_reuse_l;

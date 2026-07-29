@@ -142,12 +142,13 @@ static bool filterMayThrow(const FilterStep & filter)
     return false;
 }
 
-/// True if the DAG output node is a branch input column, renamed through alias nodes only.
-static bool outputIsPassThroughInput(const ActionsDAG::Node * node)
+/// The branch input column this DAG output carries through, renamed through alias nodes only, or null
+/// if the output is a computed value rather than an input.
+static const ActionsDAG::Node * resolvePassThroughInput(const ActionsDAG::Node * node)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.empty() ? nullptr : node->children.front();
-    return node && node->type == ActionsDAG::ActionType::INPUT;
+    return node && node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
 }
 
 /// True if the subplan rooted at `node` contains a step that emits a totals port
@@ -1385,16 +1386,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
         }
 
-        /// A same-typed column count is not enough: the planner may retain the predicate column when a
+        /// A same-typed column count is not enough. The planner may retain the predicate column when a
         /// parent reuses it (e.g. SELECT x > 0 ... WHERE x > 0), so a single-UInt8 set key would become
-        /// x > 0 instead of x. Every set-key column must be a branch input carried through by name.
+        /// x > 0 instead of x. Two outputs may also alias the same input (SELECT a AS x, a AS y), which
+        /// coarsens the set key: rows differing only in the dropped column collapse onto each other and
+        /// cancel. So the new set key must be a permutation of the original one: every column resolves
+        /// to a branch input, and each input is used exactly once.
         std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
         for (const auto * out : filter->getExpression().getOutputs())
             output_by_name.emplace(out->result_name, out);
+
+        std::unordered_set<const ActionsDAG::Node *> used_inputs;
         for (const auto & col : *expected_output)
         {
             auto it = output_by_name.find(col.name);
-            if (it == output_by_name.end() || !outputIsPassThroughInput(it->second))
+            if (it == output_by_name.end())
+                return 0;
+            const auto * input = resolvePassThroughInput(it->second);
+            if (!input || !used_inputs.emplace(input).second)
                 return 0;
         }
 
