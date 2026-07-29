@@ -53,7 +53,8 @@ namespace
 /// `inside_simple_aggregate_function` is set once a `SimpleAggregateFunction` customization has been
 /// entered. Only there must a version-0 leaf be printed EXPLICITLY: the reader re-derives that leaf from
 /// the printed name, so an omitted 0 comes back as the default. Outside a customization the reader keeps
-/// the version unset and derives it from the revision, so omitting 0 is correct and must be preserved.
+/// the version unset and derives it from the revision, so omitting a 0 this writer assigned is correct and
+/// must be preserved. A 0 the DECLARATION carried is a separate, pre-existing case, not corrected here.
 /// `emit_version_token` is false for a peer that predates versioning: it cannot parse a version token at
 /// all, so the leaf keeps the versionless spelling while the syntax half of the rendering still applies.
 std::optional<String> renderTypeNameWithLiveVersions(
@@ -172,8 +173,9 @@ std::optional<String> renderTypeNameWithLiveVersions(
         size_t advertised_version = cached_agg->getVersion();
         /// Inside a `SimpleAggregateFunction` the reader re-derives this leaf by PARSING the printed name,
         /// and version 0 is never printed, so an omitted version comes back as the function's default,
-        /// which is the whole failure. Outside one the reader leaves the version unset and derives it from
-        /// the peer revision instead, so an omitted 0 is correct there and must stay omitted.
+        /// which is the whole failure. Outside one the reader derives it from the peer revision, so a 0
+        /// here was never negotiated and announcing one would invent a value. An EXPLICITLY declared 0
+        /// survives that assignment and is a separate defect, not corrected here.
         if (inside_simple_aggregate_function && advertised_version == 0)
             advertised_version = cached_agg->getFunction()->getDefaultVersion();
         if (advertised_version == live_version)

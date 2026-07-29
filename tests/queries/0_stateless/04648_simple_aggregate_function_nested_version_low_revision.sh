@@ -67,3 +67,17 @@ for revision in 54450 54451; do
         echo "tuple payload at $revision DIFFERS from revision 0"
     fi
 done
+
+# `groupBitmapAnd` negotiates version 1 only from 54455, so it is the one function whose token has to be
+# emitted at a NON-ZERO revision: at 54452 and 54454 the live version is still 0 while the cached spelling
+# re-parses to the default 1, so the explicit 0 must be announced there and dropped again at 54455. The
+# `sumMap` arms above cannot pin that, because their own threshold is 54452 and their live version already
+# agrees with the cached spelling from the first revision that permits a token at all.
+BITMAP_DECL="SimpleAggregateFunction(anyLast, AggregateFunction(0, groupBitmapAnd, AggregateFunction(groupBitmap, UInt64)))"
+BITMAP_VALUE="(SELECT groupBitmapAndState(z) FROM (SELECT groupBitmapState(u) AS z FROM (SELECT 42::UInt64 AS u)))"
+BITMAP_RUN='SimpleAggregateFunction\(anyLast, AggregateFunction\([^)]*'
+
+for revision in 0 54451 54452 54454 54455; do
+    echo "bitmap revision $revision: $(native_block "$revision" "$BITMAP_DECL" "$BITMAP_VALUE" \
+        | LC_ALL=C grep -aoE "$BITMAP_RUN" | head -1)"
+done

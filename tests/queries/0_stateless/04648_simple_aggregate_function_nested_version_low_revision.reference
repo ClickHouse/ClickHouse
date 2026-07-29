@@ -10,3 +10,8 @@ tuple revision 54451: SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(s
 tuple revision 54452: SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(1, sumMap, Array(UInt64
 tuple payload at 54450 matches revision 0
 tuple payload at 54451 matches revision 0
+bitmap revision 0: SimpleAggregateFunction(anyLast, AggregateFunction(0, groupBitmapAnd, AggregateFunction(groupBitmap, UInt64
+bitmap revision 54451: SimpleAggregateFunction(anyLast, AggregateFunction(groupBitmapAnd, AggregateFunction(groupBitmap, UInt64
+bitmap revision 54452: SimpleAggregateFunction(anyLast, AggregateFunction(0, groupBitmapAnd, AggregateFunction(groupBitmap, UInt64
+bitmap revision 54454: SimpleAggregateFunction(anyLast, AggregateFunction(0, groupBitmapAnd, AggregateFunction(groupBitmap, UInt64
+bitmap revision 54455: SimpleAggregateFunction(anyLast, AggregateFunction(groupBitmapAnd, AggregateFunction(groupBitmap, UInt64
