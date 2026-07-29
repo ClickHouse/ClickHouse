@@ -231,7 +231,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
         Int64 next_snapshot_version = snapshot_version + 1;
         StoredObject snapshot_object(latest_snapshot_path);
         StoredObject next_snapshot_object(
-            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
+            std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR
             / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
         if (object_storage->exists(snapshot_object) && !object_storage->exists(next_snapshot_object))
         {
