@@ -10,6 +10,18 @@ t1
 1
 1
 1
+-- matcher-expanded columns are qualified with the view name
+tenant_id	String					
+host_id	UInt64					
+pv.tenant_id	String					
+pv.host_id	UInt64					
+tenant_id	String					
+host_id	UInt64					
+pv.host_id	UInt64					
+-- control: a real table function contributes no qualifier
+tenant_id	String					
+host_id	UInt64					
+number	UInt64					
 -- the parameter type is irrelevant
 1
 -- controls: an alias or no qualifier always worked

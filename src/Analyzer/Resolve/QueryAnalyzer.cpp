@@ -1629,6 +1629,18 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         if (!table_node->getTemporaryTableName().empty())
             additional_column_qualification_parts = {table_node->getTemporaryTableName()};
     }
+    else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+    {
+        /// A parameterized view is resolved as a `TableFunctionNode` but has a name of its own,
+        /// so its columns are qualified with it exactly like a `TableNode`'s. A regular table
+        /// function has no name and contributes no qualification parts.
+        const auto & storage = table_function_node->getStorage();
+        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        {
+            const auto & table_storage_id = table_function_node->getStorageID();
+            additional_column_qualification_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
+        }
+    }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
