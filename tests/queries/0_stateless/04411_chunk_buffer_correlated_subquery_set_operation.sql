@@ -192,4 +192,26 @@ SELECT count() FROM (
     SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ) WHERE explain ILIKE '%Type: LEFT%';
 
+-- Offering a merge algorithm the buffered case must not use: the shared buffer can only be read after
+-- the writer finished, so the decorrelation join has to stay a hash join on the forced layout. The
+-- rows, the buffer and the RIGHT layout must all be unchanged from the runs above.
+SET join_algorithm = 'full_sorting_merge,hash';
+
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+  SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+           correlated_subqueries_default_join_kind = 'left'
+INTERSECT
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+ORDER BY i;
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%Type: RIGHT%';
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+
 DROP TABLE t_chunk_buffer_set_op;
