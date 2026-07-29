@@ -191,93 +191,6 @@ _Static_assert(config_opt_size_checks, "JEMALLOC_OPT_SIZE_CHECKS is not in effec
 """
 
 
-def preprocessor_tokens(command):
-    """`command` split into the argv the preprocessor sees, in the order it sees it.
-
-    A driver flag can forward its operands to the preprocessor unchanged, and clang really
-    does define the macro that way: `-Wp,-DX`, `-Wp,-D,X` and
-    `-Xpreprocessor -D -Xpreprocessor X` each leave X defined (verified with
-    `clang-21 -fsyntax-only` on an `#ifdef` probe).
-
-    The order the preprocessor sees is *not* the command line's: `clang-21 -###` shows the
-    driver emitting every plain `-D`/`-U` first, in command-line order, and the forwarded
-    ones after them, however they were written. So a forwarded flag wins either way round -
-    `-Wp,-DX -UX` leaves X **defined** and `-Wp,-UX -DX` leaves it **undefined**, both the
-    opposite of a left-to-right reading of the command line. Getting that backwards is
-    unsafe in the leak direction: it would report the first case as a cancelled definition
-    while the macro really does reach a non-jemalloc translation unit.
-
-    Both mechanisms feed one argv, so a pair split across them (`-Wp,-D -Xpreprocessor X`)
-    still defines; the pieces are emitted as argv elements and left to the caller's
-    split-form handling.
-    """
-    plain = []
-    forwarded = []
-    raw = shlex.split(command)
-    index = 0
-    while index < len(raw):
-        token = raw[index]
-        if token.startswith("-Wp,"):
-            forwarded.extend(
-                piece for piece in token[len("-Wp,") :].split(",") if piece
-            )
-        elif token == "-Xpreprocessor" and index + 1 < len(raw):
-            forwarded.append(raw[index + 1])
-            index += 2
-            continue
-        else:
-            plain.append(token)
-        index += 1
-    return plain + forwarded
-
-
-def effective_macro_states(command, macros):
-    """Each macro's state on this compile line: True defined, False `-U`ed, None absent.
-
-    The preprocessor applies `-D`/`-U` in command-line order, so the last mention
-    wins: `-DX -UX` leaves X undefined, `-UX -DX` leaves it defined.
-
-    Every spelling of each flag counts. `-D`/`-U` take their operand either joined
-    (`-DX`, `-DX=v`, `-UX`) or as the next argv element (`-D X`), and the preprocessor
-    treats the two identically - so reading only the joined form is wrong in both
-    directions: a split `-U` would be missed (the definition read as surviving, with the
-    detector actually gone) and a split `-D` would not be seen at all. The split form is
-    this repo's own idiom: `cmake/target.cmake:3` is `add_definitions(-D OS_LINUX)`, so
-    every compile line in a configured tree carries one. The forwarded spellings
-    (`-Wp,-DX`, `-Xpreprocessor -D -Xpreprocessor X`) define just as plainly, and
-    `preprocessor_tokens` above unwraps them - after the plain ones, which is the order
-    the preprocessor is handed them in - so a leak in one of them cannot pass as absent.
-
-    All macros are answered in one pass, because splitting each of a configured tree's
-    ~17k compile lines once per macro costs about a minute.
-    """
-    states = {macro: None for macro in macros}
-    tokens = preprocessor_tokens(command)
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token in ("-D", "-U") and index + 1 < len(tokens):
-            # Consume the operand as part of the pair, so that a `-D <macro>` operand is
-            # not also read as a bare token by the joined branch below.
-            name = tokens[index + 1].split("=", 1)[0]
-            if name in states:
-                states[name] = token == "-D"
-            index += 2
-            continue
-        for macro in macros:
-            if token == f"-D{macro}" or token.startswith(f"-D{macro}="):
-                states[macro] = True
-            elif token == f"-U{macro}":
-                states[macro] = False
-        index += 1
-    return states
-
-
-def effective_macro_state(command, macro):
-    """`effective_macro_states` for a single macro."""
-    return effective_macro_states(command, (macro,))[macro]
-
-
 # The depfile flags that take an operand as the next argv element. `-MD`, `-MMD` and `-MP`
 # take none, so they must not swallow the token after them.
 DEPFILE_FLAGS_WITH_OPERAND = ("-MT", "-MF", "-MQ", "-MJ")
@@ -580,16 +493,28 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     type that requests the option, and the Python-level assertion reads the `ci/` cmake
     commands rather than a configured tree.
 
-    Only jemalloc's own entries are scanned, and by flag rather than by compile: the
-    question here is whether a `-D` is on the line at all, and one probe per build is not
-    worth a definition that cannot arrive any other way. The leak direction is the positive
-    check's business.
+    Only jemalloc's own entries are scanned; the leak direction is the positive check's
+    business. Like every other direction in this guard, the question is put to the
+    **compiler**: a scan is only ever as complete as the list of `-D` spellings someone
+    thought of, and each driver flag that forwards its operands to the preprocessor is
+    another spelling (`-Wp,-DX`, `-Xpreprocessor -D -Xpreprocessor X`,
+    `-Xclang -D -Xclang X`, a `-D` inside an `@response` file or a pre-included header).
+    `JEMALLOC_LEAK_PROBE_SOURCE` already `#error`s exactly when a macro is defined, which
+    is precisely this check's failure condition, so it needs no probe source of its own.
+
+    Cost is one compile: the flags are per-target, so probing one entry per **distinct**
+    flag set covers them all, exactly as the arming half does (a non-safety build has ~67
+    jemalloc entries with one flag set between them).
 
     An **empty** jemalloc set is expected and passes: `contrib/jemalloc-cmake
     /CMakeLists.txt:1-11` disables jemalloc outright whenever `SANITIZE` is set to anything
     but `undefined`, so `amd_asan_ubsan`, `amd_tsan` and `amd_msan` genuinely have no
     jemalloc translation units, and copying the positive check's emptiness guard here would
     red every one of those builds.
+
+    An **inconclusive** probe - a nonzero exit carrying neither `#error` marker - raises
+    rather than passing, for the same reason a missing file does: it says the question
+    could not be answered, which is not an answer of "neither macro is defined".
 
     A **missing** `compile_commands.json` is a different thing and fails closed, exactly as
     in the positive check. All three of this guard's premises say the file is there:
@@ -612,16 +537,31 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
 
     carried = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
     jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    probed = {}
     for entry in jemalloc:
-        states = effective_macro_states(entry["command"], JEMALLOC_SAFETY_MACROS)
-        for macro, state in states.items():
-            if state is True:
-                carried[macro].append(entry["file"])
+        probed.setdefault(tuple(jemalloc_probe_flags(entry["command"])), entry)
+    for flags, entry in probed.items():
+        language = "c++" if entry["file"].endswith(CXX_SOURCE_EXTENSIONS) else "c"
+        macros, stderr = run_jemalloc_leak_probe(
+            list(flags), entry["directory"], language
+        )
+        if stderr and not macros:
+            raise AssertionError(
+                "the jemalloc safety-macro probe is inconclusive for "
+                f"{entry['file']}: compiling a probe against that translation unit's own "
+                "flags fails without reporting either macro, so whether this build "
+                f"carries them cannot be decided.\ndirectory: {entry['directory']}\n"
+                f"{stderr}\n"
+                "An inconclusive probe must not pass: it is not evidence that the macros "
+                "are absent."
+            )
+        for macro in macros:
+            carried[macro].append(entry["file"])
     for macro, files in carried.items():
         if files:
             files = sorted(files)
             raise AssertionError(
-                f"-D{macro} is on {len(files)} jemalloc compile lines "
+                f"{macro} is defined for {len(files)} jemalloc flag set(s) "
                 f"(first: {files[:5]}) of a build that did not request "
                 f"ENABLE_JEMALLOC_SAFETY_CHECKS. The option defaults to OFF, and arming "
                 "the gates outside the diagnostic lane changes every x86-64 jemalloc "
@@ -630,8 +570,8 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
 
     print(
         f"jemalloc safety macros: neither of {', '.join(JEMALLOC_SAFETY_MACROS)} is "
-        f"defined for any of the {len(jemalloc)} jemalloc translation units, as this "
-        "build did not request them"
+        f"defined for any of the {len(jemalloc)} jemalloc translation units "
+        f"({len(probed)} distinct flag set(s) probed), as this build did not request them"
     )
 
 

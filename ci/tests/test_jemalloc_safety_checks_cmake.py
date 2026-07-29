@@ -84,7 +84,6 @@ from ci.jobs.build_clickhouse import (
     assert_jemalloc_macros_stay_private,
     assert_jemalloc_safety_macros_absent,
     assert_jemalloc_safety_macros_armed,
-    effective_macro_state,
     jemalloc_probe_flags,
 )
 
@@ -475,11 +474,11 @@ def test_the_probe_answers_whether_each_gate_is_armed(
 def test_the_flag_reduction_leaves_no_stray_operand(label, command, must_go, must_stay):
     """A depfile operand kept as a positional input turns a PASS into a misleading FAIL.
 
-    `-o` is already consumed as a pair and `effective_macro_states` takes the same care
-    for `-D`/`-U`, so this was an asymmetry: clang reads the leftover path as an input
-    file and reports `no such file or directory`, which the checker then presents as
-    "the gates are not armed" - pointing at entirely the wrong cause. The reverse mistake
-    costs the same in the other direction, so both are pinned here.
+    `-o` is consumed as a pair, and the operand-taking depfile flags must be too: clang
+    reads a leftover path as an input file and reports `no such file or directory`, which
+    the checker then presents as "the gates are not armed" - pointing at entirely the
+    wrong cause. The reverse mistake costs the same in the other direction (a flag dropped
+    that should have been kept changes how the probe compiles), so both are pinned here.
     """
     flags = jemalloc_probe_flags(command)
     for stray in must_go:
@@ -971,87 +970,218 @@ def test_the_armed_check_also_runs_the_leak_sweep(compiler_probe, tmp_path):
     )
 
 
-@pytest.mark.parametrize(
-    "label, cancelled, restored",
-    [
-        (
-            "joined -U",
-            f"{BOTH} -UJEMALLOC_OPT_SIZE_CHECKS",
-            f"{SAFETY} -UJEMALLOC_OPT_SIZE_CHECKS {SIZE}",
-        ),
-        # The same property in the split spelling, whose operand is the next argv
-        # element: `-D X -U X` is undefined and `-U X -D X` defined, exactly as joined.
-        (
-            "split -U",
-            f"{BOTH} -U JEMALLOC_OPT_SIZE_CHECKS",
-            f"{SAFETY} -U JEMALLOC_OPT_SIZE_CHECKS {SIZE}",
-        ),
-    ],
-)
-def test_a_substring_test_cannot_replace_the_ordered_state(label, cancelled, restored):
-    """The pair differs only in order, so the last mention must win.
+# The negative direction, decided by the compiler. Each row is a way to define a macro on a
+# compile line; the checker must CATCH every one, and must ACCEPT a line that defines
+# neither. The two controls are what make the table meaningful - without the `-D` row a
+# blanket-catch would pass it, and without the clean row a blanket-catch would too.
+#
+# `-Xclang -D -Xclang <M>` is the row this table exists for: it is the spelling that a
+# parse of the compile line reported as "absent" while clang defined it, so the checker
+# printed "neither macro is defined" on a line where one was. Adding `-Xclang` to a
+# spelling list would have been the fourth pattern on a chain that had already eaten five
+# rounds, so the parse is gone instead and the compiler answers.
+_DEFINING_FORMS = [
+    ("-D<M> (control)", f"-D{REQUIRED_MACROS[0]}"),
+    ("-D <M> split", f"-D {REQUIRED_MACROS[0]}"),
+    ("-D<M>=1 valued", f"-D{REQUIRED_MACROS[0]}=1"),
+    ("-Wp,-D<M>", f"-Wp,-D{REQUIRED_MACROS[0]}"),
+    ("-Wp,-D,<M>", f"-Wp,-D,{REQUIRED_MACROS[0]}"),
+    (
+        "-Xpreprocessor -D -Xpreprocessor <M>",
+        f"-Xpreprocessor -D -Xpreprocessor {REQUIRED_MACROS[0]}",
+    ),
+    ("-Xclang -D -Xclang <M>", f"-Xclang -D -Xclang {REQUIRED_MACROS[0]}"),
+    ("-Xclang -D<M>", f"-Xclang -D{REQUIRED_MACROS[0]}"),
+    # The second macro, so neither is the only one the checker can see.
+    ("-D<SIZE>", f"-D{REQUIRED_MACROS[1]}"),
+]
 
-    Both contain `-DJEMALLOC_OPT_SIZE_CHECKS`, so a naive `f"-D{macro}" in command`
-    would read both as defined and miss the bypass entirely - in the leak direction that
-    means every non-jemalloc translation unit reported as carrying the macro.
-    """
-    assert SIZE in cancelled and SIZE in restored, (
-        f"{label}: both spellings must contain the -D, otherwise this pair no longer "
-        "distinguishes ordered evaluation from a substring test"
-    )
-    assert effective_macro_state(cancelled, "JEMALLOC_OPT_SIZE_CHECKS") is False
-    assert effective_macro_state(restored, "JEMALLOC_OPT_SIZE_CHECKS") is True
-
-
-# The pairs below decide the same macro with one plain and one forwarded flag, written in
-# both orders. The scan's answer for each is checked against the compiler's, because the
-# rule is the opposite of what the command line reads like: clang's driver emits every
-# plain `-D`/`-U` before any forwarded one, so the forwarded member wins whichever was
-# written first. Asserting the scan alone would just restate whatever it happens to do.
-_FORWARDING_ORDER_COMMANDS = [
-    f"{SAFETY} -Wp,-U{REQUIRED_MACROS[0]}",
-    f"-Wp,-D{REQUIRED_MACROS[0]} {SAFETY.replace('-D', '-U')}",
-    f"{SAFETY} -Xpreprocessor -U -Xpreprocessor {REQUIRED_MACROS[0]}",
-    f"-Xpreprocessor -D -Xpreprocessor {REQUIRED_MACROS[0]} "
-    f"{SAFETY.replace('-D', '-U')}",
-    f"-Wp,-D{REQUIRED_MACROS[0]} -Wp,-U{REQUIRED_MACROS[0]}",
-    f"-Wp,-U{REQUIRED_MACROS[0]} -Wp,-D{REQUIRED_MACROS[0]}",
-    f"-Wp,-D{REQUIRED_MACROS[0]},-U{REQUIRED_MACROS[0]}",
-    f"-Wp,-D -Xpreprocessor {REQUIRED_MACROS[0]}",
+_NON_DEFINING_FORMS = [
+    ("clean (control)", ""),
+    ("an unrelated -D", "-DUNRELATED=1"),
+    # Cancelled: the compiler leaves it undefined, so this build does not carry it.
+    ("-D<M> then -U<M>", f"-D{REQUIRED_MACROS[0]} -U{REQUIRED_MACROS[0]}"),
+    # A suffixed lookalike, which a substring test would misread as our macro.
+    ("a suffixed lookalike", f"-D{REQUIRED_MACROS[1]}_DISABLED"),
+    # The name as a linker operand rather than a definition.
+    (
+        "the name inside a -Wl, operand",
+        f"-Wl,-rpath,/opt/{REQUIRED_MACROS[0]}/lib",
+    ),
 ]
 
 
-@pytest.mark.parametrize("command", _FORWARDING_ORDER_COMMANDS)
-def test_the_scan_agrees_with_the_compiler_on_forwarded_flags(
-    compiler_probe, tmp_path, command
+def _absent_verdict(tmp_path, flags):
+    """`assert_jemalloc_safety_macros_absent`'s verdict for one jemalloc entry."""
+    path = tmp_path / "compile_commands.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": JE,
+                    "command": f"{ToolSet.COMPILER_C} {flags} -o out.o -c {JE}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    try:
+        assert_jemalloc_safety_macros_absent(str(path))
+    except AssertionError as error:
+        return str(error)
+    return None
+
+
+@pytest.mark.parametrize("label, flags", _DEFINING_FORMS)
+def test_the_absent_check_catches_every_defining_spelling(
+    compiler_probe, tmp_path, label, flags
 ):
-    """The scan's state for each pair must be the state the compiler really computes."""
-    macro = REQUIRED_MACROS[0]
-    source = tmp_path / "probe.c"
-    source.write_text(
-        f"#ifdef {macro}\nint defined_ok;\n#else\n#error not defined\n#endif\n",
+    """Every way of defining a macro must be caught, whatever the spelling.
+
+    Asserted against what the **compiler** does with the same flags, so a row cannot
+    quietly stop being a definition and leave the case asserting nothing.
+    """
+    probe = tmp_path / "defines.c"
+    probe.write_text(
+        "".join(
+            f"#ifdef {macro}\nint defined_{index};\n#endif\n"
+            for index, macro in enumerate(REQUIRED_MACROS)
+        )
+        + "int probe_ok;\n",
         encoding="utf-8",
     )
     compiled = subprocess.run(
-        [
-            ToolSet.COMPILER_C,
-            "-fsyntax-only",
-            *shlex.split(command),
-            "-x",
-            "c",
-            str(source),
-        ],
+        [ToolSet.COMPILER_C, "-fsyntax-only", "-dM", "-E", *shlex.split(flags), str(probe)],
         capture_output=True,
         text=True,
         check=False,
     )
-    defined = compiled.returncode == 0
-    assert (
-        effective_macro_state(f"{ToolSet.COMPILER_C} {command} -c x.c", macro)
-        is defined
-    ), (
-        f"{command!r}: the compiler leaves {macro} "
-        f"{'defined' if defined else 'undefined'}, so the scan must say the same"
+    defined = any(f"define {macro}" in compiled.stdout for macro in REQUIRED_MACROS)
+    assert defined, (
+        f"{label}: the compiler does not actually define either macro with {flags!r}, so "
+        "this row asserts nothing; re-derive it"
+    )
+
+    verdict = _absent_verdict(tmp_path, flags)
+    assert verdict is not None, (
+        f"{label}: clang defines the macro with {flags!r}, but the absent check accepted "
+        "the line - so a build that did not request the option would be reported as "
+        "carrying neither macro while one is armed"
+    )
+    assert "did not request" in verdict, (
+        f"{label}: the failure must say this build did not request the option; got "
+        f"{verdict}"
+    )
+
+
+@pytest.mark.parametrize("label, flags", _NON_DEFINING_FORMS)
+def test_the_absent_check_accepts_a_line_defining_neither(
+    compiler_probe, tmp_path, label, flags
+):
+    """The other direction: a clean line must pass, or the check catches everything.
+
+    Without these the catching cases above would be satisfied by a checker that simply
+    always fails.
+    """
+    assert _absent_verdict(tmp_path, flags) is None, (
+        f"{label}: {flags!r} defines neither macro, so the absent check must accept it"
+    )
+
+
+def test_the_absent_check_rejects_an_inconclusive_probe(compiler_probe, tmp_path):
+    """A probe that fails for an unrelated reason is not an answer of "absent".
+
+    Reading it as one would let a flipped default through on any build whose compile
+    lines changed shape - the same fail-closed reasoning as the missing-file case.
+    """
+    verdict = _absent_verdict(tmp_path, "-I/definitely/missing --nonexistent-flag")
+    assert verdict is not None and "inconclusive" in verdict, (
+        "a probe failing without reporting either macro must raise as inconclusive; got "
+        f"{verdict}"
+    )
+
+
+def test_the_absent_check_probes_a_cxx_entry_as_cxx(compiler_probe, tmp_path):
+    """The probe's language must follow the entry, or a C++ entry reads as inconclusive.
+
+    Today `_jemalloc`'s sources are all `.c` (`jemalloc_cpp.cpp` exists in the submodule
+    but is not in the cmake `SRCS`), so this clause is a guard against that changing rather
+    than a description of the tree. It is pinned because getting it wrong is silent in the
+    dangerous direction: a `.cpp` entry compiled as C fails for reasons of its own, and a
+    probe that fails without naming a macro is inconclusive - which this check raises on,
+    so the whole build's guard would red with a misleading cause.
+
+    Driven with C++-only flags, so a C compile cannot pass: `-std=c++20` is rejected by
+    the C frontend.
+    """
+    path = tmp_path / "compile_commands.json"
+    cxx = "/ClickHouse/contrib/jemalloc/src/jemalloc_cpp.cpp"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": cxx,
+                    "command": f"{ToolSet.COMPILER_C} -std=c++20 -o out.o -c {cxx}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    # Accepted, not inconclusive: the entry defines neither macro, and it must be compiled
+    # as C++ for that to be answerable at all.
+    assert_jemalloc_safety_macros_absent(str(path))
+
+    # And the same entry really does carry a definition when one is on its line, so the
+    # case above is not passing merely because the probe never ran.
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": cxx,
+                    "command": f"{ToolSet.COMPILER_C} -std=c++20 {SAFETY} -o out.o "
+                    f"-c {cxx}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="did not request"):
+        assert_jemalloc_safety_macros_absent(str(path))
+
+
+def test_the_absent_check_probes_one_entry_per_distinct_flag_set(
+    compiler_probe, tmp_path, capsys
+):
+    """Cost is one compile per distinct flag set, not per entry.
+
+    A non-safety build has ~67 jemalloc entries sharing one flag set, so deduping is what
+    makes asking the compiler affordable here. The count is printed, so a future per-file
+    divergence is visible rather than silently unprobed.
+    """
+    path = tmp_path / "compile_commands.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": f"/ClickHouse/contrib/jemalloc/src/unit{index}.c",
+                    "command": f"{ToolSet.COMPILER_C} -DSHARED=1 -o out{index}.o "
+                    f"-c /ClickHouse/contrib/jemalloc/src/unit{index}.c",
+                }
+                for index in range(5)
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert_jemalloc_safety_macros_absent(str(path))
+    printed = capsys.readouterr().out
+    assert "5 jemalloc translation units" in printed, printed
+    assert "1 distinct flag set(s) probed" in printed, (
+        "five entries sharing one flag set must cost one probe, and the count must be "
+        f"reported; got {printed!r}"
     )
 
 
