@@ -69,6 +69,7 @@ $CLICKHOUSE_CLIENT -q "
     FROM (
         SELECT argMax(ProfileEvents['JoinProbeTableRowCount'], event_time_microseconds) AS probed
         FROM system.query_log
-        WHERE type = 'QueryFinish' AND query_id = '04612_split_$CLICKHOUSE_DATABASE'
+        WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+          AND query_id = '04612_split_$CLICKHOUSE_DATABASE'
     )
     SETTINGS use_query_cache = 0"
