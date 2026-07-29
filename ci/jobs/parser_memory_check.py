@@ -55,6 +55,11 @@ NOISE_FRAME_PREFIXES = (
     "dumpProfile",
 )
 
+EXCLUDED_STACK_FRAME_PREFIXES = (
+    "(anonymous namespace)::dumpProfile",
+    "dumpProfile",
+)
+
 
 def get_merge_base_profiler_url() -> str:
     """Find the S3 URL for a recent master `clickhouse-examples` binary.
@@ -227,12 +232,41 @@ def format_stack(frames: list) -> str:
     return " > ".join(flat)
 
 
+def contains_excluded_stack_frame(frames: list) -> bool:
+    """Return whether a stack belongs to profiler bookkeeping."""
+    return any(
+        part.startswith(prefix)
+        for frame in frames
+        for part in frame.split("--")
+        for prefix in EXCLUDED_STACK_FRAME_PREFIXES
+    )
+
+
+def canonicalize_stack_frames(frames: list) -> list:
+    """Build a cross-binary stack key from one primary symbol per address.
+
+    Master binaries contain DWARF inline frames separated by `--`, while PR
+    release binaries are built without debug information. Keeping only the
+    primary symbol makes the same physical backtrace comparable on both sides.
+    """
+    canonical = []
+    for frame in filter_stack_frames(frames):
+        primary = frame.split("--", 1)[0]
+        if primary == "??":
+            continue
+        canonical.append(re.sub(r"\.llvm\.\d+", "", primary))
+    return canonical
+
+
 def compute_diff(stacks_before: dict, stacks_after: dict) -> tuple:
     """
     Compute per-stack byte diffs between before and after heap profiles.
     Skips stacks that are entirely profiler overhead (e.g. dumpProfile, main-only).
-    Returns (total_diff, list of (diff_bytes, formatted_stack, full_frames) sorted by |diff| desc).
-    full_frames is the untruncated frame list for accurate cross-version matching.
+    Returns (total_diff, list of
+    (diff_bytes, formatted_stack, full_frames, canonical_frames)
+    sorted by |diff| desc).
+    full_frames is the untruncated frame list for detailed rendering.
+    canonical_frames contains one primary symbol per physical backtrace address.
     """
     all_keys = set(stacks_before.keys()) | set(stacks_after.keys())
     diffs = []
@@ -246,11 +280,14 @@ def compute_diff(stacks_before: dict, stacks_after: dict) -> tuple:
             frames = stacks_after.get(key, stacks_before.get(key, {})).get(
                 "frames", [key]
             )
+            if contains_excluded_stack_frame(frames):
+                continue
             formatted = format_stack(frames)
             if not formatted:
                 continue
             full = flatten_frames_full(frames)
-            diffs.append((diff, formatted, full))
+            canonical = canonicalize_stack_frames(frames)
+            diffs.append((diff, formatted, full, canonical))
             total += diff
 
     diffs.sort(key=lambda x: -abs(x[0]))
@@ -272,20 +309,21 @@ def flatten_frames_full(frames: list) -> list:
 
 def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
     """Compute per-stack diff between master and PR allocation profiles.
-    Input: lists of (diff_bytes, formatted_stack_str, full_frames).
-    Uses full (untruncated) frames as map keys to avoid false merges,
-    but returns the formatted (truncated) string for display.
+    Input: lists of
+    (diff_bytes, formatted_stack_str, full_frames, canonical_frames).
+    Uses canonical frames as map keys to correlate debug and stripped binaries,
+    but returns the formatted string for display.
     Returns list of (delta, master_bytes, pr_bytes, stack_str) sorted by |delta| desc."""
     master_map = {}
     master_display = {}
-    for b, s, full in master_stacks:
-        key = tuple(full)
+    for b, s, _full, canonical in master_stacks:
+        key = tuple(canonical)
         master_map[key] = master_map.get(key, 0) + b
         master_display[key] = s
     pr_map = {}
     pr_display = {}
-    for b, s, full in pr_stacks:
-        key = tuple(full)
+    for b, s, _full, canonical in pr_stacks:
+        key = tuple(canonical)
         pr_map[key] = pr_map.get(key, 0) + b
         pr_display[key] = s
     all_keys = set(master_map.keys()) | set(pr_map.keys())
@@ -985,13 +1023,17 @@ def analyze_heap_profiles(heap_before: str, heap_after: str) -> dict:
             if diff == 0:
                 continue
             frames = stacks_after.get(key, stacks_before.get(key, {})).get("frames", [])
+            if contains_excluded_stack_frame(frames):
+                continue
             full = flatten_frames_full(frames)
             if not full:
                 continue
-            path = ";".join(reversed(full))
-            collapsed_all.append((path, diff))
+            canonical = canonicalize_stack_frames(frames)
+            if not canonical:
+                continue
+            collapsed_all.append((";".join(reversed(canonical)), diff))
             if diff > 0:
-                collapsed.append((path, diff))
+                collapsed.append((";".join(reversed(full)), diff))
 
     return {
         "heap_diff": heap_diff,

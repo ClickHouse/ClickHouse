@@ -95,6 +95,70 @@ def test_batch_symbolize_uses_clickhouse_examples_multicall(monkeypatch):
     ]
 
 
+def test_canonical_stack_correlates_debug_and_stripped_symbols():
+    master_frames = [
+        "DB::ParserSelectWithUnionQuery::parseImpl--boost::intrusive_ptr<DB::ASTSelectWithUnionQuery> DB::make_intrusive<DB::ASTSelectWithUnionQuery>()",
+        "DB::IParserBase::parse--DB::IParserBase::wrapParseImpl--operator()",
+        "DB::ParserQueryWithOutput::parseImpl.llvm.123456",
+    ]
+    pr_frames = [
+        "DB::ParserSelectWithUnionQuery::parseImpl",
+        "DB::IParserBase::parse",
+        "DB::ParserQueryWithOutput::parseImpl.llvm.987654",
+    ]
+
+    assert parser_memory_check.canonicalize_stack_frames(
+        master_frames
+    ) == parser_memory_check.canonicalize_stack_frames(pr_frames)
+
+
+def test_cross_version_diff_correlates_same_allocation_stack():
+    master_frames = [
+        "DB::ParserSelectWithUnionQuery::parseImpl--boost::intrusive_ptr<DB::ASTSelectWithUnionQuery> DB::make_intrusive<DB::ASTSelectWithUnionQuery>()",
+        "DB::IParserBase::parse--DB::IParserBase::wrapParseImpl--operator()",
+    ]
+    pr_frames = [
+        "DB::ParserSelectWithUnionQuery::parseImpl",
+        "DB::IParserBase::parse",
+    ]
+    master_stacks = [
+        (
+            192,
+            "master display",
+            parser_memory_check.flatten_frames_full(master_frames),
+            parser_memory_check.canonicalize_stack_frames(master_frames),
+        )
+    ]
+    pr_stacks = [
+        (
+            192,
+            "PR display",
+            parser_memory_check.flatten_frames_full(pr_frames),
+            parser_memory_check.canonicalize_stack_frames(pr_frames),
+        )
+    ]
+
+    assert (
+        parser_memory_check.compute_cross_version_diff(master_stacks, pr_stacks)
+        == []
+    )
+
+
+def test_compute_diff_excludes_dump_profile_allocations():
+    stacks_after = {
+        "stack": {
+            "bytes": 192,
+            "frames": [
+                "std::__1::basic_string<char>::append",
+                "(anonymous namespace)::dumpProfile",
+                "mainEntryExampleParserMemoryProfiler",
+            ],
+        }
+    }
+
+    assert parser_memory_check.compute_diff({}, stacks_after) == (0, [])
+
+
 def test_main_stops_after_batch_symbolization_failure(tmp_path, monkeypatch):
     (tmp_path / "clickhouse-examples").touch()
     completed_results = []
