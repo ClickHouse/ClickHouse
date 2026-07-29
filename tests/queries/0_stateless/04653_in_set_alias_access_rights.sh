@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Tags: shard
 
-# Consuming a set-backed table through an `Alias` on the right of IN replaces reading it, so it
-# requires SELECT on the target exactly like `StorageAlias::read` does. The analyzer, the legacy IN
-# implementation and the serialized-plan path all resolve the alias, so all of them must check.
+# Consuming a set-backed table through an `Alias` on the right of IN replaces reading the alias and
+# the `StorageAlias::read` it would delegate to, so it requires SELECT on both the alias and the
+# target, exactly like an ordinary alias on the right of IN does. The analyzer, the legacy IN
+# implementation and the serialized-plan reconstruction all resolve the alias, so all of them check.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
@@ -13,29 +15,55 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER IF EXISTS ${user};
     DROP TABLE IF EXISTS t_set;
     DROP TABLE IF EXISTS t_set_alias;
+    DROP TABLE IF EXISTS t_src;
 
     CREATE TABLE t_set (arr Array(UInt8)) ENGINE = Set;
     INSERT INTO t_set VALUES ([1, 2, 3]);
     CREATE TABLE t_set_alias ENGINE = Alias('t_set');
+
+    CREATE TABLE t_src (a Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO t_src VALUES ([1, 2, 3]), ([9, 9]);
+
     CREATE USER ${user} NOT IDENTIFIED;
-    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_src TO ${user};
+    -- The serialized-plan case reads through a cluster, so it needs REMOTE as well. Granting it up
+    -- front keeps every ACCESS_DENIED below attributable to the set-backed table alone.
+    GRANT REMOTE ON *.* TO ${user};
 "
 
-for analyzer in 1 0; do
-    echo "Alias granted, target not granted, enable_analyzer = ${analyzer}"
+run_all_paths()
+{
+    for analyzer in 1 0; do
+        echo "  enable_analyzer = ${analyzer}"
+        ${CLICKHOUSE_CLIENT} --user="${user}" --query \
+            "SELECT [1, 2, 3] IN t_set_alias SETTINGS enable_analyzer = ${analyzer}" 2>&1 \
+            | grep -oE "ACCESS_DENIED|^[01]$" | uniq
+    done
+    # The plan is serialized to the shards, so the set is rebuilt from its table name there.
+    echo "  serialized plan"
     ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT [1, 2, 3] IN t_set_alias SETTINGS enable_analyzer = ${analyzer}" 2>&1 | grep -o "ACCESS_DENIED" | uniq
-done
+        "SELECT count() FROM cluster('test_cluster_two_shards', currentDatabase(), t_src)
+         WHERE a IN t_set_alias SETTINGS serialize_query_plan = 1" 2>&1 \
+        | grep -oE "ACCESS_DENIED|^[0-9]+$" | uniq
+}
 
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set TO ${user}"
-
-for analyzer in 1 0; do
-    echo "Target granted, enable_analyzer = ${analyzer}"
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT [1, 2, 3] IN t_set_alias AS present, [9, 9] IN t_set_alias AS absent SETTINGS enable_analyzer = ${analyzer}"
-done
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user}"
+echo "Alias granted, target not granted"
+run_all_paths
 
 ${CLICKHOUSE_CLIENT} -m --query "
+    REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias FROM ${user};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set TO ${user};
+"
+echo "Target granted, alias not granted"
+run_all_paths
+
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user}"
+echo "Both granted"
+run_all_paths
+
+${CLICKHOUSE_CLIENT} -m --query "
+    DROP TABLE t_src;
     DROP TABLE t_set_alias;
     DROP TABLE t_set;
     DROP USER ${user};

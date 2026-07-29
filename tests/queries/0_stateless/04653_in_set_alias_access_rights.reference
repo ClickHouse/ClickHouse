@@ -1,8 +1,21 @@
-Alias granted, target not granted, enable_analyzer = 1
+Alias granted, target not granted
+  enable_analyzer = 1
 ACCESS_DENIED
-Alias granted, target not granted, enable_analyzer = 0
+  enable_analyzer = 0
 ACCESS_DENIED
-Target granted, enable_analyzer = 1
-1	0
-Target granted, enable_analyzer = 0
-1	0
+  serialized plan
+ACCESS_DENIED
+Target granted, alias not granted
+  enable_analyzer = 1
+ACCESS_DENIED
+  enable_analyzer = 0
+ACCESS_DENIED
+  serialized plan
+ACCESS_DENIED
+Both granted
+  enable_analyzer = 1
+1
+  enable_analyzer = 0
+1
+  serialized plan
+2

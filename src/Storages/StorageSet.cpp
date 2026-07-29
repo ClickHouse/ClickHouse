@@ -3,6 +3,7 @@
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageAlias.h>
+#include <Access/Common/AccessFlags.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -213,12 +214,17 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
 
         if (const auto * alias = dynamic_cast<const StorageAlias *>(current.get()))
         {
-            /// Consuming the target as a prepared set replaces reading it, so it must require the
-            /// same SELECT grant that StorageAlias::read checks. Without a context (a caller that
-            /// only asks whether this is a set-backed table) resolve without a check.
-            current = context
-                ? alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::SELECT})
-                : alias->tryGetTargetTable();
+            /// Consuming the target as a prepared set replaces both reading the alias and the
+            /// StorageAlias::read it would delegate to, so it must require what those require:
+            /// SELECT on the alias itself and SELECT on the target. Without a context (a caller
+            /// that only asks whether this is a set-backed table) resolve without a check.
+            if (context)
+            {
+                context->checkAccess(AccessType::SELECT, alias->getStorageID());
+                current = alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::SELECT});
+            }
+            else
+                current = alias->tryGetTargetTable();
             continue;
         }
 
