@@ -1,12 +1,15 @@
 default codecs:
+locality_hash	UInt64	
 id	UUID	
 timestamp	DateTime64(3)	CODEC(DoubleDelta, ZSTD(1))
 value	Float64	CODEC(Gorilla(8), ZSTD(1))
 after detach/attach:
+locality_hash	UInt64	
 id	UUID	
 timestamp	DateTime64(3)	CODEC(DoubleDelta, ZSTD(1))
 value	Float64	CODEC(Gorilla(8), ZSTD(1))
 explicit columns keep user codecs:
+locality_hash	UInt64	
 id	UUID	
 timestamp	DateTime64(3)	
 value	Float64	
