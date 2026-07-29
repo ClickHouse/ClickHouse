@@ -11,6 +11,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -21,6 +22,7 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 
 #include <algorithm>
+#include <iterator>
 
 /// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
 /// The pass only rewrites the plan; the index is read at execution time by `ReadFromTextIndexCount`.
@@ -42,7 +44,8 @@ namespace
 /// Returns the output column of a bare argument-less count(), or nothing for anything else.
 std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 {
-    if (aggregating.isGroupingSets())
+    /// The rewrite merges count() states the same way aggregate projections do.
+    if (!aggregating.canUseProjection())
         return {};
 
     const auto & params = aggregating.getParams();
@@ -306,36 +309,91 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     if (!matched->reading->getAnalyzedResult())
         matched->reading->setAnalyzedResult(matched->reading->selectRangesToRead());
 
+    auto logger = getLogger("optimizeTrivialCountFromTextIndex");
+
     if (!guardsHold(*matched->reading))
-        return false;
-
-    auto resolved = recoverSearchQuery(*matched->reading, matched->predicate_columns);
-    if (!resolved)
-        return false;
-
-    /// Skip optimization when the text index is partially materialized.
-    /// TODO(ahmadov): better handling for the partially materialized text index.
-    const auto & parts = matched->reading->getParts();
-    const auto & text_index = *resolved->index.index;
-    for (const auto & part_with_ranges : parts)
     {
-        if (!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName()))
-            return false;
+        LOG_DEBUG(logger, "Cannot apply the optimization: correctness guards do not hold");
+        return false;
     }
 
-    String description = makeStepDescription(*resolved);
+    auto search_query = recoverSearchQuery(*matched->reading, matched->predicate_columns);
+    if (!search_query)
+    {
+        LOG_DEBUG(logger, "Cannot apply the optimization: cannot recover the text search query");
+        return false;
+    }
+
+    /// Split the parts by index materialization (checksum lookups, no I/O).
+    const auto & text_index = *search_query->index.index;
+    auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
+    {
+        return !!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName());
+    };
+
+    const auto & all_parts = matched->reading->getParts();
+    const size_t num_materialized_parts = std::ranges::count_if(all_parts, is_materialized_part);
+
+    if (num_materialized_parts == 0)
+    {
+        LOG_DEBUG(logger, "Cannot apply the optimization because the text index is not materialized in any part");
+        return false;
+    }
+    LOG_DEBUG(logger, "Applying the optimization: {} indexed parts, {} unindexed parts", num_materialized_parts, all_parts.size() - num_materialized_parts);
+
+    const bool is_fully_materialized = num_materialized_parts == all_parts.size();
+
+    RangesInDataParts indexed_parts;
+    if (is_fully_materialized)
+    {
+        indexed_parts = all_parts;
+    }
+    else
+    {
+        /// Partially materialized index: count the indexed parts from the index and keep reading
+        /// the rows of the unindexed parts, the same way aggregate projections handle parent parts.
+        /// Partition the cloned analysis in place, so the parts are copied once and split by moves.
+        auto analysis = std::make_shared<ReadFromMergeTree::AnalysisResult>(*matched->reading->getAnalyzedResult());
+        auto & analysis_parts = analysis->parts_with_ranges;
+        auto first_indexed = std::stable_partition(
+            analysis_parts.begin(), analysis_parts.end(),
+            [&](const RangesInDataPart & part_with_ranges) { return !is_materialized_part(part_with_ranges); });
+
+        indexed_parts.reserve(num_materialized_parts);
+        std::move(first_indexed, analysis_parts.end(), std::back_inserter(indexed_parts));
+        analysis_parts.erase(first_indexed, analysis_parts.end());
+
+        for (const auto & part_with_ranges : indexed_parts)
+        {
+            analysis->selected_parts -= 1;
+            analysis->selected_marks -= part_with_ranges.getMarksCount();
+            analysis->selected_rows -= part_with_ranges.getRowsCount();
+            analysis->selected_ranges -= part_with_ranges.ranges.size();
+        }
+        matched->reading->setAnalyzedResult(std::move(analysis));
+    }
+
+    String description = makeStepDescription(*search_query);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(
-        parts,
-        std::move(*resolved),
+        std::move(indexed_parts),
+        std::move(*search_query),
         matched->reading->getReaderSettings(),
         *count_column,
         matched->reading->getNumStreams());
     source_node.step->setStepDescription(description, settings.max_step_description_length);
 
-    aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
-    node.children.front() = &source_node;
+    if (is_fully_materialized)
+    {
+        aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
+        node.children.front() = &source_node;
+    }
+    else
+    {
+        node.step = aggregating->convertToAggregatingProjection(source_node.step->getOutputHeader());
+        node.children.push_back(&source_node);
+    }
 
     return true;
 }

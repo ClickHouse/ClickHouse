@@ -1,3 +1,4 @@
+Inject trivial count optimization from the text index into the query plan
 -- fires: single-token hasToken / hasAnyTokens / hasAllTokens
 └──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
 └──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
@@ -31,3 +32,27 @@
 741
 -- does not fire: not a bare count()
 0
+Partially materialized text index
+-- one part without the index, one part with it
+1
+1
+AggregatingProjection
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+-- results match the reader
+750
+750
+1500
+1500
+500
+500
+0
+-- the optimization reads fewer rows: only the unindexed part
+1
+-- fully materialized after ALTER: back to the plain count source
+0
+0
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+750
+-- does not fire: no part has the index
+0
+100
