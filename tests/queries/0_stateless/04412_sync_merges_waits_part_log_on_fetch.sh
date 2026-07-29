@@ -74,12 +74,16 @@ releaser=$!
 # SYNC MERGES must not return until the DOWNLOAD_PART row is queued, so the flush right after must
 # surface it. count = 1 only if SYNC MERGES waited for the post-commit part_log write on the fetch
 # path; without the fix SYNC MERGES returns inside the paused window and count = 0.
+#
+# enable_parallel_replicas is pinned off only for the part_log count: reading system.part_log over
+# parallel replicas changes the aggregation and is unrelated to the part_log ordering under test.
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM SYNC MERGES sm_b;
     SYSTEM FLUSH LOGS part_log;
     SELECT count() FROM system.part_log
     WHERE database = currentDatabase() AND table = 'sm_b'
-      AND event_type = 'DownloadPart' AND part_name = 'all_0_1_1';
+      AND event_type = 'DownloadPart' AND part_name = 'all_0_1_1'
+    SETTINGS enable_parallel_replicas = 0;
 "
 
 wait "$releaser" 2>/dev/null || true
