@@ -478,9 +478,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignifi
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, ExplicitDefaultNullsOrderIsNotSignificant)
 {
-    /// Writing the default `NULLS` modifier does not change the sort order, so a definition that
-    /// spells it out must compare equal to one that leaves it implicit. Only the effective nulls
-    /// direction is significant.
+    /// Only the effective nulls direction is significant, not whether `NULLS` was written.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
@@ -496,8 +494,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ExplicitDefaultNullsOrderIsNotSign
     descending_nulls_last.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC NULLS LAST)";
     EXPECT_FALSE(diffOf(descending, descending_nulls_last).constraints_changed);
 
-    /// A non-default modifier reverses where NULLs sort, so it must still be significant. Without
-    /// these the test would pass on a hash that dropped the nulls direction altogether.
+    /// A non-default modifier still moves the NULLs, so it stays significant.
     MetadataFields ascending_nulls_first;
     ascending_nulls_first.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number ASC NULLS FIRST)";
     EXPECT_TRUE(diffOf(ascending, ascending_nulls_first).constraints_changed);
@@ -506,9 +503,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ExplicitDefaultNullsOrderIsNotSign
     descending_nulls_first.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC NULLS FIRST)";
     EXPECT_TRUE(diffOf(descending, descending_nulls_first).constraints_changed);
 
-    /// `NULLS LAST` is the default for either direction, so `ASC NULLS FIRST` and `DESC` both end
-    /// up with `nulls_direction` reversed relative to `direction`. They differ only in `direction`,
-    /// which pins that it is still hashed on its own.
+    /// These two share `nulls_direction` and differ only in `direction`.
     EXPECT_TRUE(diffOf(ascending_nulls_first, descending).constraints_changed);
 }
 
