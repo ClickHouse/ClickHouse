@@ -23,4 +23,12 @@
             <allow_no_expiration>true</allow_no_expiration>
         </remote_jwks_processor>
     </token_processors>
+
+    <user_directories>
+        <token>
+            <processor>single_key_processor</processor>
+            <default_profile>default</default_profile>
+            <roles_filter>^role_[a-z_]+$</roles_filter>
+        </token>
+    </user_directories>
 </clickhouse>
