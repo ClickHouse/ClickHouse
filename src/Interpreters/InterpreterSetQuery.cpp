@@ -180,9 +180,9 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
                         /// A value-less `SETTINGS name` in a `CREATE` reaches the context here
-                        /// rather than through `executeForCurrentContext`.
-                        if (it->shorthand)
-                            context_settings.checkShorthandIsBool(name);
+                        /// rather than through `executeForCurrentContext`, and the constraint check
+                        /// below converts the value first, so this has to come before it.
+                        context_settings.checkShorthandChange(*it);
                         context_->checkSettingsConstraints(*it, SettingSource::QUERY);
                         context_->applySettingChange(*it);
                         it = engine_settings->changes.erase(it);

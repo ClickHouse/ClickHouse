@@ -14,8 +14,9 @@ CREATE TABLE t_04662 (a UInt8) ENGINE = Memory SETTINGS default_database_engine;
 -- Engine setting, left in the storage definition.
 CREATE TABLE t_04662 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity; -- { error TYPE_MISMATCH }
 
--- A Bool engine setting is what the shorthand is for.
+-- A Bool engine setting is what the shorthand is for. The value-less form is kept by the formatter,
+-- so it is what `engine_full` shows.
 CREATE TABLE t_04662 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS ttl_only_drop_parts;
-SELECT extract(engine_full, 'ttl_only_drop_parts = .') FROM system.tables WHERE database = currentDatabase() AND name = 't_04662';
+SELECT extract(engine_full, 'SETTINGS [^,]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_04662';
 
 DROP TABLE t_04662;
