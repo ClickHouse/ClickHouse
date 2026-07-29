@@ -1071,10 +1071,20 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             /// possibly unfinalized — committing as success could mark files Processed
             /// whose rows were never written. Route it through the failed-commit path.
             if (cancelled_by_shutdown)
+            {
+                /// Log with the storage logger: when the executor-level cancel wins the race,
+                /// the chunk-boundary shutdown checks in `generateImpl` never run, so their
+                /// log line is absent. `test_drop_table` depends on this log message.
+                LOG_DEBUG(
+                    log,
+                    "{} (streaming pipeline was cancelled)",
+                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called");
+
                 throw Exception(
                     ErrorCodes::QUERY_WAS_CANCELLED,
                     "{} (streaming pipeline was cancelled)",
                     table_is_being_dropped ? "Table is being dropped" : "Shutdown was called");
+            }
 
             if (cancelled_mid_insert)
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
