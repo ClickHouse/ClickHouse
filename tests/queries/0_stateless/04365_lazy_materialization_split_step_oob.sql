@@ -1,7 +1,7 @@
 -- Tags: no-old-analyzer
--- no-old-analyzer: lazy materialization is gated on the new analyzer, so the EXPLAIN
--- assertion below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old
--- one; the old-analyzer variant also forbids changing enable_analyzer inside a subquery.
+-- no-old-analyzer: lazy materialization is gated on the analyzer, so the EXPLAIN assertion
+-- below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old analyzer; that
+-- CI variant also forbids changing enable_analyzer inside a subquery.
 --
 -- Regression test for issue #101567: OOB in splitExpressionStep and splitFilterStep during
 -- optimizeLazyMaterialization2. The first query covers splitExpressionStep over a projection;
