@@ -1,9 +1,10 @@
--- ORDER BY <LowCardinality column> LIMIT N after LEFT JOIN with lazy column
--- replication. On current master sortBlock routes a replicated column through
--- transformColumnsWithSharedIndex, so this query permutes the shared index and
--- never reaches ColumnReplicated::permute. The query is pinned here so that
--- routing keeps holding; the relaxed ColumnReplicated::permute contract itself
--- is covered directly by the ColumnReplicated gtest cases.
+-- End-to-end coverage for ORDER BY <LowCardinality column> LIMIT N after a
+-- LEFT JOIN with lazy column replication: the query must return its rows.
+-- This does not exercise the relaxed ColumnReplicated::permute contract, and
+-- it is not a regression test for it: on current master sortBlock routes a
+-- replicated column through transformColumnsWithSharedIndex, so the query
+-- permutes the shared index and never reaches that method. The contract is
+-- covered directly by the ColumnReplicated gtest cases instead.
 
 SET enable_lazy_columns_replication = 1;
 
