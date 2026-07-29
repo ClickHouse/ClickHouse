@@ -1,0 +1,42 @@
+{
+    "name": "Stress test (amd_debug)",
+    "status": "FAIL",
+    "start_time": 1785283856.620968,
+    "duration": 2.406690835952759,
+    "results": [
+        {
+            "name": "Check failed",
+            "status": "FAIL",
+            "start_time": null,
+            "duration": null,
+            "results": [],
+            "files": [],
+            "assets": [],
+            "links": [],
+            "info": "Check failed with exit code 2",
+            "ext": {}
+        },
+        {
+            "name": "test",
+            "status": "OK",
+            "start_time": null,
+            "duration": 1.0,
+            "results": [],
+            "files": [],
+            "assets": [],
+            "links": [],
+            "info": "",
+            "ext": {}
+        }
+    ],
+    "files": [
+        "/worktrees/tasks/2026-07-27-ci-p0-jemalloc-extent-metadata-sigsegv-/ci/tmp/cores/aes.key.rsa",
+        "/worktrees/tasks/2026-07-27-ci-p0-jemalloc-extent-metadata-sigsegv-/ci/tmp/cores/core.test.zst.enc",
+        "/worktrees/tasks/2026-07-27-ci-p0-jemalloc-extent-metadata-sigsegv-/ci/tmp/result_path/fatal.log",
+        "/worktrees/tasks/2026-07-27-ci-p0-jemalloc-extent-metadata-sigsegv-/ci/tmp/result_path/test_results.tsv"
+    ],
+    "assets": [],
+    "links": [],
+    "info": "Failures: 1/2",
+    "ext": {}
+}

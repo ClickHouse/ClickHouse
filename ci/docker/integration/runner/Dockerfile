@@ -46,6 +46,27 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# clang, for the `CI Tests` job. `ci/tests/test_jemalloc_safety_checks_cmake.py` answers
+# whether the jemalloc safety-check macros are armed by *compiling* a probe rather than by
+# parsing a compile line, so without a compiler its whole oracle half skips - and praktika
+# counts a skip as success, leaving that guard reporting success without measuring
+# anything. That module now fails instead of skipping when the compiler is missing in CI
+# (see `_require_compiler_or_skip`), so this image has to carry one.
+#
+# The LLVM apt source cannot be inherited: test-base adds it as
+# /etc/apt/sources.list.d/llvm.list, and line 9 above removes
+# /etc/apt/sources.list.d/*.list before its own first `apt-get update`. The signing key
+# does survive (`apt-key add` writes /etc/apt/trusted.gpg, not a *.list), so only the
+# source line has to be restored. LLVM_VERSION and lsb-release both come from test-base.
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        clang-${LLVM_VERSION} \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && clang-${LLVM_VERSION} --version
+
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 

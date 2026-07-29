@@ -100,6 +100,11 @@ JEMALLOC_PREAMBLE_REL = (
 )
 JEMALLOC_PREAMBLE = REPO_ROOT / JEMALLOC_PREAMBLE_REL[2:]
 
+# The image the `CI Tests` job runs in (`JobConfigs.ci_tests.run_in_docker`). This
+# module's oracle cases compile, so that image has to carry the compiler; the assertion
+# below is what keeps the package from being dropped again.
+JOB_IMAGE_WITH_COMPILER_REL = "./ci/docker/integration/runner/Dockerfile"
+
 OPTION_NAME = "ENABLE_JEMALLOC_SAFETY_CHECKS"
 REQUIRED_MACROS = ("JEMALLOC_OPT_SAFETY_CHECKS", "JEMALLOC_OPT_SIZE_CHECKS")
 
@@ -233,11 +238,53 @@ def _probe_verdict(tmp_path: Path, flags: str, others=()) -> str | None:
     return None
 
 
+def _running_in_ci():
+    """Whether this pytest process is a CI job rather than a contributor's local run.
+
+    Every generated workflow runs jobs as `praktika run ... --ci` (see the `CI Tests`
+    step in `.github/workflows/pull_request.yml`), which leaves `LOCAL_RUN` false;
+    `Runner.generate_local_run_environment` sets it true for a local `praktika run`.
+    The environment is a file under `Settings.TEMP_DIR`, which is inside the directory
+    the job's docker invocation mounts, so it is readable in the container.
+
+    Fails **closed**: any problem reading the signal counts as CI, so this guard cannot
+    evaporate merely because the signal could not be found. A tree carrying no
+    environment file at all also reports false, which is the same conservative
+    direction - relied on deliberately rather than by luck.
+    """
+    try:
+        from ci.praktika.info import Info
+
+        return not Info().is_local_run
+    except Exception:
+        return True
+
+
+def _require_compiler_or_skip():
+    """`compiler_probe`'s body, factored out so its own behaviour can be tested."""
+    if shutil.which(ToolSet.COMPILER_C):
+        return
+    if _running_in_ci():
+        pytest.fail(
+            f"{ToolSet.COMPILER_C} is not on PATH in this CI job's image, so every "
+            "compiler-oracle case in this module would skip - and praktika counts a "
+            "skip as success (`Result.is_ok`, ci/praktika/result.py). This guard would "
+            "then report success without having measured anything, which is the very "
+            "failure it exists to catch, one layer up. Run this module in a job whose "
+            f"image carries {ToolSet.COMPILER_C} (see JOB_IMAGE_WITH_COMPILER_REL)."
+        )
+    pytest.skip(f"{ToolSet.COMPILER_C} is not on PATH (local run)")
+
+
 @pytest.fixture
 def compiler_probe():
-    """Skip when the recorded compiler is absent; these cases need a real one."""
-    if not shutil.which(ToolSet.COMPILER_C):
-        pytest.skip(f"{ToolSet.COMPILER_C} is not on PATH")
+    """Skip when the compiler is absent locally; **fail** when it is absent in CI.
+
+    These cases are this module's compiler oracle - what lets it answer questions by
+    compiling rather than by parsing. A skip is silent and counts as success, so
+    absence in CI is an error, not a skip.
+    """
+    _require_compiler_or_skip()
 
 
 SAFETY_MACRO, SIZE_MACRO = REQUIRED_MACROS
@@ -1932,3 +1979,235 @@ def test_ci_tests_digest_covers_the_compiled_preamble():
     assert not JobConfigs.ci_tests.is_affected_by(
         ["contrib/jemalloc/include/jemalloc/internal/jemalloc_preamble.h.in"]
     ), "the preamble digest entry points at the submodule template, not the compiled header"
+
+
+# The compiler oracle is only an oracle if it runs. A skip counts as success
+# (`Result.is_ok`), so a compiler missing from the job's image would leave this module
+# green while every compiling case silently evaporated - the same failure it exists to
+# catch, one layer up. Two things keep that from happening: the fixture fails rather than
+# skips in CI, and the job's image really installs a compiler. Both are asserted here,
+# and neither assertion needs a compiler itself, so they are alive either way.
+@pytest.mark.parametrize(
+    "label, local_run, expect",
+    [
+        ("in CI, compiler absent", False, "fail"),
+        ("local run, compiler absent", True, "skip"),
+    ],
+)
+def test_a_missing_compiler_fails_in_ci_and_skips_locally(
+    monkeypatch, label, local_run, expect
+):
+    """Absence must be loud in CI and quiet locally, and nowhere silent in CI.
+
+    Driven with `monkeypatch`, so it neither needs nor cares whether a real compiler is
+    installed - which is what lets it assert the clang-free behaviour on a host that has
+    clang.
+    """
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        sys.modules[__name__], "_running_in_ci", lambda: not local_run
+    )
+    with pytest.raises(BaseException) as raised:
+        _require_compiler_or_skip()
+    if expect == "fail":
+        assert raised.type is pytest.fail.Exception, (
+            f"{label}: expected a hard failure, got {raised.type.__name__}; a skip in CI "
+            "is counted as success, so the oracle would evaporate silently"
+        )
+        message = str(raised.value)
+        assert ToolSet.COMPILER_C in message and "skip" in message, (
+            f"{label}: the failure must name the compiler and say why a skip is not "
+            f"acceptable; got {message!r}"
+        )
+    else:
+        assert raised.type is pytest.skip.Exception, (
+            f"{label}: a contributor without {ToolSet.COMPILER_C} must get a skip, not a "
+            f"failure; got {raised.type.__name__}"
+        )
+    # A present compiler is neither, whichever side we are on.
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    _require_compiler_or_skip()
+
+
+def test_the_ci_signal_fails_closed_when_it_cannot_be_read():
+    """An unreadable signal must read as CI, or the guard evaporates on a broken tree.
+
+    The dangerous direction is `local`: it turns absence back into a skip. So anything
+    unexpected - praktika not importable, the environment file malformed - counts as CI.
+    """
+    assert _running_in_ci.__doc__, "keep the fail-closed reasoning documented"
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _boom(name, *args, **kwargs):
+        if name.startswith("ci.praktika"):
+            raise ImportError("simulated: praktika is not importable")
+        return real_import(name, *args, **kwargs)
+
+    builtins.__import__ = _boom
+    try:
+        assert _running_in_ci() is True, (
+            "an unreadable CI signal must count as CI; reading it as a local run would "
+            "turn a missing compiler back into a silent skip"
+        )
+    finally:
+        builtins.__import__ = real_import
+
+
+def _apt_installed_packages(text):
+    """The packages `text`'s `apt-get install`/`satisfy` commands name as operands.
+
+    Three things have to happen for "is this package installed" to be answerable, and
+    each of them is a way to get the wrong answer:
+
+    * `\\` continuations are spliced, or an operand on its own physical line is invisible;
+    * comment lines are dropped, or a package named in a comment reads as installed;
+    * the spliced `RUN` is then split on `&&`/`||`/`;`/`|` into single commands, and only
+      the install commands' operands are collected. Without this last step every token in
+      the whole `RUN` counts - including a `clang-<N> --version` sanity check in the same
+      chain, which made an earlier version of this assertion unfalsifiable.
+
+    Flags are dropped, so `--yes` and `-o Acquire::...` cannot pass as packages.
+    """
+    logical = []
+    pending = ""
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not pending and stripped.startswith("#"):
+            continue
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+            continue
+        logical.append(pending + stripped)
+        pending = ""
+    if pending:
+        logical.append(pending)
+
+    packages = set()
+    for line in logical:
+        command = []
+        for token in shlex.split(line, posix=False) + ["&&"]:
+            if token in ("&&", "||", ";", "|"):
+                if "apt-get" in command and (
+                    "install" in command or "satisfy" in command
+                ):
+                    packages.update(
+                        argument
+                        for argument in command
+                        if not argument.startswith("-")
+                        and argument
+                        not in ("apt-get", "install", "satisfy", "env", "RUN")
+                        and "=" not in argument
+                    )
+                command = []
+                continue
+            command.append(token)
+    return packages
+
+
+def test_apt_installed_packages_reads_operands_and_nothing_else():
+    """The helper above is what makes the install assertion mean "installed".
+
+    Each of its three jobs is asserted, because failing any one of them silently weakens
+    the assertion it feeds - which is exactly how the first version of that assertion
+    ended up unfalsifiable.
+    """
+    packages = _apt_installed_packages(
+        "# commented-package in a comment\n"
+        "RUN apt-get update \\\n"
+        "    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \\\n"
+        "        real-package \\\n"
+        "    && other-package --version \\\n"
+        "    && rm -rf /tmp/*\n"
+        "ENV X=1\n"
+    )
+    assert "real-package" in packages, (
+        "an operand on its own continuation line must be seen as installed; got "
+        f"{sorted(packages)}"
+    )
+    assert "commented-package" not in packages, "a comment must not read as installed"
+    assert "other-package" not in packages, (
+        "a command chained after the install with && is not the install; its arguments "
+        f"must not read as installed packages. Got {sorted(packages)}"
+    )
+    assert not any(package.startswith("-") for package in packages), (
+        f"flags must not read as packages; got {sorted(packages)}"
+    )
+    # And a file with no install at all yields nothing rather than everything.
+    assert _apt_installed_packages("RUN echo real-package\n") == set()
+
+
+def test_the_job_image_installs_the_compiler_these_cases_need():
+    """`CI Tests` runs in one image, and that image must carry the compiler.
+
+    This is the pin for the other half of the fix: the fixture failing loudly is only an
+    improvement if the compiler is actually there, or every CI run reds. It is a plain
+    text assertion about a file this PR owns, so it holds with or without a compiler on
+    the host.
+    """
+    dockerfile = REPO_ROOT / JOB_IMAGE_WITH_COMPILER_REL[2:]
+    assert dockerfile.is_file(), f"{JOB_IMAGE_WITH_COMPILER_REL} is missing"
+    text = dockerfile.read_text(encoding="utf-8")
+
+    # The image really is the one this job runs in, so the assertion cannot drift onto
+    # an image `CI Tests` stopped using.
+    image = "clickhouse/integration-tests-runner"
+    assert image in JobConfigs.ci_tests.run_in_docker, (
+        f"CI Tests no longer runs in {image} "
+        f"({JobConfigs.ci_tests.run_in_docker!r}); point "
+        "JOB_IMAGE_WITH_COMPILER_REL at the image it does run in, and assert the "
+        "compiler there"
+    )
+
+    # Asserted as an `apt-get install` **operand**, not merely as text present somewhere:
+    # a mention in a comment, or in a `--version` sanity line, is not an installation, and
+    # an assertion satisfied by inactive text is the failure mode two removed cmake-text
+    # models in this PR's history were removed for. So find the install commands and
+    # require the package among their operands.
+    installed = _apt_installed_packages(text)
+    assert installed, (
+        f"{JOB_IMAGE_WITH_COMPILER_REL} installs no apt packages at all; re-derive this "
+        "assertion against how that image now installs them"
+    )
+    assert "clang-${LLVM_VERSION}" in installed, (
+        f"{JOB_IMAGE_WITH_COMPILER_REL} does not install clang-${{LLVM_VERSION}} as an "
+        "apt-get operand, so every compiler-oracle case in this module would fail (and, "
+        "before the fixture change, would have silently skipped). "
+        f"{ToolSet.COMPILER_C} is what makes this module answer by compiling instead of "
+        f"by parsing. Operands seen: {sorted(t for t in installed if 'clang' in t)}"
+    )
+
+    # The version installed has to be the one the checks invoke. `ToolSet.COMPILER_C` is
+    # `clang-<N>`; the Dockerfile spells that `N` as LLVM_VERSION, inherited from
+    # test-base, so pin the two together rather than trusting they agree.
+    version = ToolSet.COMPILER_C.rsplit("-", 1)[-1]
+    base = REPO_ROOT / "ci/docker/test-base/Dockerfile"
+    assert f"LLVM_VERSION={version}" in base.read_text(encoding="utf-8"), (
+        f"test-base does not set LLVM_VERSION={version}, so "
+        f"{JOB_IMAGE_WITH_COMPILER_REL} installs a clang other than "
+        f"{ToolSet.COMPILER_C}, which is the binary these checks invoke"
+    )
+
+    # The apt source has to be restored in this image: test-base adds llvm.list, and the
+    # runner removes /etc/apt/sources.list.d/*.list before its own first `apt-get
+    # update`, so inheriting it is not possible. Without this line the `apt-get install`
+    # above resolves against Ubuntu's own archive and installs nothing named clang-21.
+    # Asserted against the *executable* text: this file explains the restore in a comment
+    # right above it, and a comment is not a restore. Same reason the install above is
+    # read as an operand rather than as a substring.
+    executable = "\n".join(
+        line
+        for line in text.splitlines()
+        if not line.strip().startswith("#")
+    )
+    assert "sources.list.d/llvm.list" in executable, (
+        f"{JOB_IMAGE_WITH_COMPILER_REL} installs clang-${{LLVM_VERSION}} without "
+        "restoring the LLVM apt source. Line 9 of that file removes "
+        "/etc/apt/sources.list.d/*.list, which includes the llvm.list test-base wrote, "
+        f"so {ToolSet.COMPILER_C} is not installable from Ubuntu's archive alone"
+    )
+    assert "apt.llvm.org" in executable, (
+        f"{JOB_IMAGE_WITH_COMPILER_REL} writes an llvm.list that does not point at "
+        "apt.llvm.org, so clang-${LLVM_VERSION} still is not installable"
+    )
