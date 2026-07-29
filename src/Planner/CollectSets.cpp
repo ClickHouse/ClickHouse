@@ -98,8 +98,8 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        /// Recognize a set-backed table through any StorageAlias wrapping, matching the guard in
-        /// the analyzer (resolveFunction). A set-backed table cannot be read, so it must be consumed
+        /// Recognize a set-backed table through any `StorageAlias` wrapping, matching the guard in
+        /// the analyzer (`resolveFunction`). A set-backed table cannot be read, so it must be consumed
         /// natively as a prepared set here, otherwise the fallback plan reads through it and hits
         /// `Method read is not supported by storage Set`.
         std::shared_ptr<StorageSet> storage_set = second_argument_table != nullptr ? getSetStorageFromTable(second_argument_table->getStorage(), planner_context.getQueryContext()) : nullptr;

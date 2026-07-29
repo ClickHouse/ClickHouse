@@ -203,7 +203,7 @@ SetPtr StorageSet::getSet() const
 
 std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context)
 {
-    /// Resolve first and only then check access: this is called for every table on the right of IN,
+    /// Resolve first and only then check access: this is called for every table on the right of `IN`,
     /// so a check while walking would apply set semantics to aliases whose target is not set-backed.
     /// Keep the ids, not the storages: only the ids are needed below, and the walk does not keep
     /// the wrappers themselves alive.
@@ -236,7 +236,7 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, c
     /// The whole set is consumed, so the check is on all of the target's columns, which lets a
     /// column-level grant covering them all suffice, exactly as it does for an ordinary alias.
     ///
-    /// Only the aliases add a check. A set-backed table named directly on the right of IN has never
+    /// Only the aliases add a check. A set-backed table named directly on the right of `IN` has never
     /// required SELECT on it, and that is left as it is. Without a context (a caller that only asks
     /// whether this is a set-backed table without consuming it) there is nothing to check either.
     if (context && !alias_ids.empty())

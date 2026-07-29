@@ -219,7 +219,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
         auto table_node = resolveTable(identifier, context);
-        /// Recognize a set-backed table through any StorageAlias wrapping, like the analyzer and the
+        /// Recognize a set-backed table through any `StorageAlias` wrapping, like the analyzer and the
         /// planner do, so a prepared set is still reused after the plan is deserialized.
         auto storage_set = getSetStorageFromTable(table_node->getStorage(), context);
         if (!storage_set)

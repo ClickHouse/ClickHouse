@@ -1319,16 +1319,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If table is already prepared set, we do not replace it with subquery.
             /// If table is not a StorageSet, we'll create plan to build set in the Planner.
             ///
-            /// A StorageSet (including the Cloud-only StorageSharedSet derived from it, and one
-            /// reached through a StorageAlias) is consumed natively as a prepared set (see
-            /// Planner/CollectSets), and cannot be read, so it must not be rewritten into a
-            /// `SELECT column FROM table` subquery. Its Array elements are the set rows and are
-            /// matched by the native path. getSetStorageFromTable recognizes set-backed tables
+            /// A `StorageSet` (including the Cloud-only `StorageSharedSet` derived from it, and one
+            /// reached through a `StorageAlias`) is consumed natively as a prepared set (see
+            /// `Planner/CollectSets`), and cannot be read, so it must not be rewritten into a
+            /// `SELECT column FROM table` subquery. Its `Array` elements are the set rows and are
+            /// matched by the native path. `getSetStorageFromTable` recognizes set-backed tables
             /// through any alias wrapping, matching the detection in the planner.
             ///
-            /// For any other table, if its single column is an Array one dimension deeper than the
+            /// For any other table, if its single column is an `Array` one dimension deeper than the
             /// left argument, interpret it as the set of the array's elements, exactly like an array
-            /// subquery, an array literal, or an array-returning function on the right side of IN.
+            /// subquery, an array literal, or an array-returning function on the right side of `IN`.
             if (!getSetStorageFromTable(table_node->getStorage()))
                 flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
         }
@@ -1361,7 +1361,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             /// If the wrapped subquery's single column is an Array one dimension deeper than the left
             /// argument, interpret it as the set of the array's elements, exactly like an array
-            /// subquery, an array literal, or an array-returning function on the right side of IN.
+            /// subquery, an array literal, or an array-returning function on the right side of `IN`.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
         }
         else
