@@ -44,6 +44,10 @@ CLOUD = CloudInfrastructure.Config(
             ],
             instance_type="mac2-m2pro.metal",
             auto_placement="on",
+            # 10 of the 16 hosts allowed by quota `L-14F120D1`. One of them was
+            # allocated outside praktika and carries the name
+            # `clickhouse-pr-macos-m2-e753fc`; it is counted here because it
+            # occupies a slot under the quota, but it runs no managed instance.
             quantity_per_az=10,
             praktika_resource_tag="mac_m2_pro",
         ),
@@ -82,6 +86,10 @@ CLOUD = CloudInfrastructure.Config(
             tenancy="host",
             praktika_resource_tag="mac_m2_pro",
             runner_labels=MACOS_ARM_SMALL_RUNNER_LABELS,
+            # One instance per managed host: 10 hosts minus the one allocated
+            # outside praktika. A single instance completes about three fast
+            # test runs per hour, so 9 of them absorb the ~18 runs per hour
+            # that were queueing up behind 6 instances.
             quantity=9,
         ),
     ]
