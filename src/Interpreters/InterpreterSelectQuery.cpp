@@ -2515,7 +2515,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
         }
 
-        if (row_level_filter)
+        /// A row policy that will not be pushed into the storage read is applied as an ordinary
+        /// FilterStep above it, so its columns are read normally and are not PREWHERE columns.
+        if (row_level_filter && shouldPushRowLevelFilterToStorage())
         {
             auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
             columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
