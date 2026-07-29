@@ -14,6 +14,46 @@ using namespace DB;
 namespace
 {
 
+/// `Bugfix validation (unit tests)` compiles this test against the merge-base sources, where the
+/// fields this PR adds to `RangesInDataPartDescription` do not exist yet. Dispatch on their
+/// presence from a template so the discarded branch is not instantiated; the test then builds
+/// against both sources and demonstrates the bug at runtime on the before-binary. Enumerators
+/// must be spelled dependently (`Desc::`) because a discarded branch is still parsed.
+template <typename Desc>
+void setTotalMarksInPart(Desc & desc, size_t marks)
+{
+    if constexpr (requires { desc.total_marks_in_part; })
+        desc.total_marks_in_part = marks;
+}
+
+template <typename Desc>
+void setPartFingerprint(Desc & desc, UInt64 low64, UInt64 high64)
+{
+    if constexpr (requires { desc.part_checksum_low64; desc.part_checksum_high64; })
+    {
+        desc.part_checksum_low64 = low64;
+        desc.part_checksum_high64 = high64;
+    }
+}
+
+/// `StorageReplication` is a nested TYPE, so a member-access `requires` cannot probe it.
+template <typename Desc>
+constexpr bool has_storage_replication = requires { typename Desc::StorageReplication; };
+
+template <typename Desc>
+void setStorageReplicated(Desc & desc)
+{
+    if constexpr (has_storage_replication<Desc>)
+        desc.storage_replication = Desc::StorageReplication::Replicated;
+}
+
+template <typename Desc>
+void setStorageNotReplicated(Desc & desc)
+{
+    if constexpr (has_storage_replication<Desc>)
+        desc.storage_replication = Desc::StorageReplication::NotReplicated;
+}
+
 /// Builds a `RangesInDataPartDescription` whose analyzed view (`ranges` / `rows`) AND underlying
 /// total mark count both equal `marks`. This is the simplest shape: the part has `marks` marks
 /// on disk and the announcing replica analyzed all of them. Leaves the part fingerprint at
@@ -24,7 +64,7 @@ RangesInDataPartDescription makePart(const String & partition_id, Int64 min_bloc
     desc.info = MergeTreePartInfo(partition_id, min_block, max_block, level);
     desc.ranges = MarkRanges{MarkRange{0, marks}};
     desc.rows = marks * 8192;
-    desc.total_marks_in_part = marks;
+    setTotalMarksInPart(desc, marks);
     return desc;
 }
 
@@ -41,8 +81,7 @@ RangesInDataPartDescription makePartWithFingerprint(
     UInt64 fingerprint_high64)
 {
     auto desc = makePart(partition_id, min_block, max_block, level, marks);
-    desc.part_checksum_low64 = fingerprint_low64;
-    desc.part_checksum_high64 = fingerprint_high64;
+    setPartFingerprint(desc, fingerprint_low64, fingerprint_high64);
     return desc;
 }
 
@@ -65,7 +104,7 @@ RangesInDataPartDescription makePartWithAnalyzedAndTotal(
     desc.info = MergeTreePartInfo(partition_id, min_block, max_block, level);
     desc.ranges = MarkRanges{MarkRange{0, analyzed_marks}};
     desc.rows = rows;
-    desc.total_marks_in_part = total_marks;
+    setTotalMarksInPart(desc, total_marks);
     return desc;
 }
 
@@ -491,8 +530,7 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsSameChecksumWithDivergentAnalyze
         RangesInDataPartsDescription parts;
         auto desc = makePartWithAnalyzedAndTotal(
             "all", 1, 1, 0, /*analyzed_marks=*/4, /*total_marks=*/10000, /*rows=*/4);
-        desc.part_checksum_low64 = 0xCAFEBABE12345678ull;
-        desc.part_checksum_high64 = 0xDEADBEEF87654321ull;
+        setPartFingerprint(desc, 0xCAFEBABE12345678ull, 0xDEADBEEF87654321ull);
         parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
@@ -502,8 +540,7 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsSameChecksumWithDivergentAnalyze
     RangesInDataPartsDescription divergent_view;
     auto desc = makePartWithAnalyzedAndTotal(
         "all", 1, 1, 0, /*analyzed_marks=*/10000, /*total_marks=*/10000, /*rows=*/10000);
-    desc.part_checksum_low64 = 0xCAFEBABE12345678ull;
-    desc.part_checksum_high64 = 0xDEADBEEF87654321ull;
+    setPartFingerprint(desc, 0xCAFEBABE12345678ull, 0xDEADBEEF87654321ull);
     divergent_view.push_back(desc);
     EXPECT_NO_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent_view))));
@@ -526,7 +563,7 @@ TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnRepl
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        desc.storage_replication = RangesInDataPartDescription::StorageReplication::Replicated;
+        setStorageReplicated(desc);
         parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
@@ -560,7 +597,7 @@ TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOn
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+        setStorageNotReplicated(desc);
         parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
@@ -595,7 +632,7 @@ TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOn
     /// fingerprint (checksums not loaded). Mark counts agree, but identity is unverifiable.
     RangesInDataPartsDescription parts_new;
     auto desc = makePart("all", 1, 1, 0, /*marks=*/8);
-    desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+    setStorageNotReplicated(desc);
     parts_new.push_back(desc);
     EXPECT_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_new))),
@@ -615,7 +652,7 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNonReplicat
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
             /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
-        desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+        setStorageNotReplicated(desc);
         parts.push_back(desc);
         EXPECT_NO_THROW(coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(replica_num, std::move(parts))));
     }
