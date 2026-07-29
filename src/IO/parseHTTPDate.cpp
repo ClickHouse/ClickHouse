@@ -99,13 +99,20 @@ std::optional<time_t> tryParseIMFFixdate(std::string_view date)
     return makeTimestamp(*year, *month, *day, *time);
 }
 
-UInt32 resolveTwoDigitYear(UInt32 two_digit_year, time_t reference_time)
+std::optional<time_t> makeTimestampFromTwoDigitYear(
+    UInt32 two_digit_year, UInt8 month, UInt32 day, TimeOfDay time, time_t reference_time)
 {
-    const Int16 reference_year = DateLUT::instance("UTC").toYear(static_cast<Int64>(reference_time));
-    UInt32 year = reference_year / 100 * 100 + two_digit_year;
-    if (year > static_cast<UInt32>(reference_year) + 50)
-        year -= 100;
-    return year;
+    const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+    const UInt32 year = date_lut.toYear(static_cast<Int64>(reference_time)) / 100 * 100 + two_digit_year;
+
+    std::optional<time_t> res = makeTimestamp(year, month, day, time);
+    if (!res)
+        return res;
+
+    if (*res > date_lut.addYears(static_cast<Int64>(reference_time), 50))
+        return makeTimestamp(year - 100, month, day, time);
+
+    return res;
 }
 
 std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference_time)
@@ -131,7 +138,7 @@ std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference
     if (!month || !day || !two_digit_year || !time)
         return std::nullopt;
 
-    return makeTimestamp(resolveTwoDigitYear(*two_digit_year, reference_time), *month, *day, *time);
+    return makeTimestampFromTwoDigitYear(*two_digit_year, *month, *day, *time, reference_time);
 }
 
 std::optional<time_t> tryParseAsctimeDate(std::string_view date)

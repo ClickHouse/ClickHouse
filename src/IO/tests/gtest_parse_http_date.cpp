@@ -71,14 +71,26 @@ TEST(ParseHTTPDate, RFC850Date)
 TEST(ParseHTTPDate, RFC850TwoDigitYear)
 {
     /// RFC 9110, 5.6.7: a timestamp more than 50 years in the future denotes the most recent past year
-    /// with the same last two digits. The reference year is 2026, so `76` is the last year still ahead.
+    /// with the same last two digits. The reference time is 2026-07-28, so the cutoff is 2076-07-28.
     EXPECT_EQ(parse("Fri, 06-Nov-76 08:49:37 GMT"), std::nullopt);
-    EXPECT_EQ(parse("Friday, 06-Nov-76 08:49:37 GMT"), 3371878177);
+    EXPECT_EQ(parse("Monday, 06-Jan-76 08:49:37 GMT"), 3345526177);
+    EXPECT_EQ(parse("Saturday, 06-Nov-76 08:49:37 GMT"), 216118177);
     EXPECT_EQ(parse("Sunday, 06-Nov-77 08:49:37 GMT"), 247654177);
 
-    /// A different reference year moves the window.
+    /// A different reference time moves the window.
     EXPECT_EQ(tryParseHTTPDate("Sunday, 06-Nov-94 08:49:37 GMT", 784111777), 784111777);
     EXPECT_EQ(tryParseHTTPDate("Sunday, 06-Nov-69 08:49:37 GMT", 784111777), -4806623);
+}
+
+TEST(ParseHTTPDate, RFC850TwoDigitYearCutoff)
+{
+    /// The cutoff is a whole timestamp, not just a year: with a reference time of 2026-01-01 the last
+    /// instant that is not more than 50 years ahead is 2076-01-01 00:00:00, so a day later already
+    /// denotes 1976. Comparing years alone would keep both in 2076.
+    constexpr time_t start_of_2026 = 1767225600;
+
+    EXPECT_EQ(tryParseHTTPDate("Wednesday, 01-Jan-76 00:00:00 GMT", start_of_2026), 3345062400);
+    EXPECT_EQ(tryParseHTTPDate("Friday, 02-Jan-76 00:00:00 GMT", start_of_2026), 189388800);
 }
 
 TEST(ParseHTTPDate, AsctimeDate)
