@@ -61,6 +61,11 @@ extern const SettingsTimezone iceberg_timezone_for_timestamptz;
 namespace
 {
 
+String getIcebergTimestamptzTimezoneSetting(const ContextPtr & context_)
+{
+    return context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
+}
+
 void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
 {
     auto type_str = type->getValue<String>(Iceberg::f_type);
@@ -358,37 +363,50 @@ namespace Iceberg
 
 std::string IcebergSchemaProcessor::default_link{};
 
-void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_)
+void IcebergSchemaProcessor::eraseClickhouseSchemaArtifactsLocked(Int32 schema_id)
 {
-    std::lock_guard lock(mutex);
+    clickhouse_table_schemas_by_ids.erase(schema_id);
+    clickhouse_timestamptz_timezone_by_ids.erase(schema_id);
 
-    Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
-
-    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
-    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
-    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
-        return;
-
-    current_schema_id = schema_id;
-    if (iceberg_table_schemas_by_ids.contains(schema_id))
+    for (auto it = clickhouse_types_by_source_ids.begin(); it != clickhouse_types_by_source_ids.end();)
     {
-        chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
-                schema_id);
+        if (it->first.first == schema_id)
+            it = clickhouse_types_by_source_ids.erase(it);
+        else
+            ++it;
     }
-    else
+
+    for (auto it = clickhouse_ids_by_source_names.begin(); it != clickhouse_ids_by_source_names.end();)
     {
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+        if (it->first.first == schema_id)
+            it = clickhouse_ids_by_source_names.erase(it);
+        else
+            ++it;
+    }
+
+    /// Transform DAGs embed DateTime64 timezones from the materialization context.
+    for (auto it = transform_dags_by_ids.begin(); it != transform_dags_by_ids.end();)
+    {
+        if (it->first.first == schema_id || it->first.second == schema_id)
+            it = transform_dags_by_ids.erase(it);
+        else
+            ++it;
+    }
+}
+
+void IcebergSchemaProcessor::materializeClickhouseSchemaLocked(
+    Int32 schema_id,
+    Poco::JSON::Object::Ptr schema_ptr,
+    ContextPtr context_)
+{
+    eraseClickhouseSchemaArtifactsLocked(schema_id);
+
+    /// Nested struct materialization reads `current_schema_id` when registering field characteristics.
+    auto previous_schema_id = current_schema_id;
+    current_schema_id = schema_id;
+
+    try
+    {
         auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
@@ -404,6 +422,56 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
+        clickhouse_timestamptz_timezone_by_ids[schema_id] = getIcebergTimestamptzTimezoneSetting(context_);
+    }
+    catch (...)
+    {
+        current_schema_id = previous_schema_id;
+        throw;
+    }
+    current_schema_id = previous_schema_id;
+}
+
+void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_)
+{
+    std::lock_guard lock(mutex);
+
+    Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+
+    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
+    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
+    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+        return;
+
+    current_schema_id = schema_id;
+    const String requested_timezone = getIcebergTimestamptzTimezoneSetting(context_);
+    if (iceberg_table_schemas_by_ids.contains(schema_id))
+    {
+        chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
+        std::unordered_map<String, String> type_mapping;
+        if (allow_geo_parser)
+        {
+            type_mapping[f_geography] = f_binary;
+            type_mapping[f_geometry] = f_binary;
+        }
+        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
+        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
+                schema_id);
+
+        /// ClickHouse DateTime64 timezone for timestamptz is query-setting dependent and is not part of
+        /// the Iceberg schema identity. Rematerialize when the setting changes so persistent processors
+        /// (and background prefetch that used a different context) do not pin the first timezone forever.
+        auto timezone_it = clickhouse_timestamptz_timezone_by_ids.find(schema_id);
+        if (timezone_it == clickhouse_timestamptz_timezone_by_ids.end() || timezone_it->second != requested_timezone)
+            materializeClickhouseSchemaLocked(schema_id, iceberg_table_schemas_by_ids.at(schema_id), context_);
+    }
+    else
+    {
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+        materializeClickhouseSchemaLocked(schema_id, schema_ptr, context_);
     }
     current_schema_id = std::nullopt;
 }
@@ -477,15 +545,13 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
     {
-        std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
-        return std::make_shared<DataTypeDateTime64>(6, timezone);
+        return std::make_shared<DataTypeDateTime64>(6, getIcebergTimestamptzTimezoneSetting(context_));
     }
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
     {
-        std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
-        return std::make_shared<DataTypeDateTime64>(9, timezone);
+        return std::make_shared<DataTypeDateTime64>(9, getIcebergTimestamptzTimezoneSetting(context_));
     }
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
@@ -739,20 +805,25 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         return nullptr;
 
     std::lock_guard lock(mutex);
+
+    const String requested_timezone = getIcebergTimestamptzTimezoneSetting(context_);
+    for (Int32 schema_id : {old_id, new_id})
+    {
+        auto schema_it = iceberg_table_schemas_by_ids.find(schema_id);
+        if (schema_it == iceberg_table_schemas_by_ids.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", schema_id);
+
+        auto timezone_it = clickhouse_timestamptz_timezone_by_ids.find(schema_id);
+        if (timezone_it == clickhouse_timestamptz_timezone_by_ids.end() || timezone_it->second != requested_timezone)
+            materializeClickhouseSchemaLocked(schema_id, schema_it->second, context_);
+    }
+
     auto required_transform_dag_it = transform_dags_by_ids.find({old_id, new_id});
     if (required_transform_dag_it != transform_dags_by_ids.end())
         return required_transform_dag_it->second;
 
-    auto old_schema_it = iceberg_table_schemas_by_ids.find(old_id);
-    if (old_schema_it == iceberg_table_schemas_by_ids.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", old_id);
-
-    auto new_schema_it = iceberg_table_schemas_by_ids.find(new_id);
-    if (new_schema_it == iceberg_table_schemas_by_ids.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
-
-    return transform_dags_by_ids[{old_id, new_id}]
-        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, context_, old_id, new_id);
+    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(
+        iceberg_table_schemas_by_ids.at(old_id), iceberg_table_schemas_by_ids.at(new_id), context_, old_id, new_id);
 }
 
 Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const

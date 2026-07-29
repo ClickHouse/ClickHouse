@@ -111,6 +111,9 @@ public:
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
+    /// Literal `iceberg_timezone_for_timestamptz` value used when ClickHouse types were last materialized.
+    /// Empty means "use session timezone" (non-explicit DateTime64), which is distinct from explicit `"UTC"`.
+    std::unordered_map<Int32, String> clickhouse_timestamptz_timezone_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
@@ -140,6 +143,11 @@ private:
         ContextPtr context_,
         Int32 old_id,
         Int32 new_id);
+
+    /// Must be called under exclusive `mutex`. Rebuilds ClickHouse types for `schema_id` from Iceberg JSON.
+    void materializeClickhouseSchemaLocked(Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_) TSA_REQUIRES(mutex);
+    /// Must be called under exclusive `mutex`. Drops CH type maps and transform DAGs that depend on `schema_id`.
+    void eraseClickhouseSchemaArtifactsLocked(Int32 schema_id) TSA_REQUIRES(mutex);
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;
