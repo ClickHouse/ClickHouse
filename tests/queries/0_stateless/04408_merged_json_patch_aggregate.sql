@@ -256,13 +256,13 @@ FROM
 );
 
 
--- Map typed path: RFC 7396 deep merge must preserve x=1 when newer patch only touches y.
--- Without the fix, Map was treated as an atomic leaf and x was dropped.
+-- Map typed path: typed Map/JSON paths are atomic — the whole value is replaced by the newer
+-- patch. There is no deep merge inside a typed Map or JSON path.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":1,"y":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"y":3}}'::JSON(a Map(String, UInt32)), 2
-);
+); -- newer patch replaces the whole map: {"a":{"y":3}}
 
 -- Same case via State+Merge combinator.
 SELECT toJSONString(mergedJSONPatchMerge(state))
@@ -274,27 +274,25 @@ FROM (
     )
 );
 
--- Map typed path: newer non-Map scalar at the same path still replaces the whole key.
+-- Map typed path: newer non-Map scalar at the same path replaces the whole key.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":1}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
     UNION ALL SELECT '{"a":5}'::JSON, 2
 );
 
--- Nested JSON typed path: single-row round-trip must not produce a double "a" path.
--- Without the fix, the flattened leaf "a.x" fell through to a dynamic path and the
--- typed "a" column received insertDefault(), producing {"a":{},"a":{"x":1}}.
+-- JSON typed path: single-row round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":1}}'::JSON(a JSON) AS patch, 1 AS version
 );
 
--- Nested JSON typed path: RFC 7396 deep merge across two rows.
+-- JSON typed path: newer row replaces the whole value atomically.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":1,"y":2}}'::JSON(a JSON) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"y":3}}'::JSON(a JSON), 2
-);
+); -- newer patch replaces the whole JSON value: {"a":{"y":3}}
 
 -- Same case via State+Merge combinator.
 SELECT toJSONString(mergedJSONPatchMerge(state))
@@ -306,64 +304,54 @@ FROM (
     )
 );
 
--- Nullable(JSON) typed path: single-row round-trip must not double-write.
--- Without the fix, WhichDataType(Nullable(JSON)) reports "Nullable" not "Object",
--- so the typed parent was skipped and the leaf fell through to dynamic data.
+-- Nullable(JSON) typed path: single-row round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x":1}}'::JSON(a Nullable(JSON)) AS patch, 1 AS version);
 
--- Nullable(JSON) typed path: RFC 7396 deep merge.
+-- Nullable(JSON) typed path: newer row wins atomically.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":1,"y":2}}'::JSON(a Nullable(JSON)) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"y":3}}'::JSON(a Nullable(JSON)), 2
 );
 
--- Nested Map typed path: descendants under the same key must not be duplicated.
--- Without the fix, rebuildNestedMap pushed one tuple per leaf rather than per key.
+-- Nested Map typed path: single-row round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x":{"y":1,"z":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version);
 
--- Nested Map typed path: RFC 7396 deep merge (z=99 wins, y=1 survives).
+-- Nested Map typed path: newer row replaces the whole map atomically.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x":{"y":1,"z":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"x":{"z":99}}}'::JSON(a Map(String, Map(String, UInt32))), 2
 );
 
-
--- Bug 1: dangling string_view in rebuildNestedMap dedup set — two distinct first-level keys.
--- Without the fix, string_views into moved-from Strings caused mis-deduplication (UB).
+-- Nested Map typed path: two first-level keys, single-row round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x":{"y":1},"z":{"w":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version);
 
--- Bug 3: JSON(a JSON, `a.b` UInt32) — typed child path must not be absorbed into the
--- reconstructed parent object and must still be written to its own typed column.
--- Without the fix, a.b was consumed by the ancestor reconstruction loop and defaulted.
+-- JSON(a JSON, `a.b` UInt32): both typed paths must be written independently.
 -- Note: toJSONString renders `a JSON` and `a.b UInt32` as two separate "a" entries
 -- (a property of the overlapping typed-path schema, observable on the raw input row too).
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x":1,"b":42}}'::JSON(a JSON, `a.b` UInt32) AS patch, 1 AS version);
 
--- Map(String, JSON) typed path: child values must be reconstructed as Field::Object, not Field::Map.
--- Without the fix, all levels of rebuildNestedMap produced Field::Map regardless of the declared
--- value type, causing ColumnObject::insert to throw on the JSON-typed value column.
+-- Map(String, JSON) typed path: single-row round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"k":{"x":1}}}'::JSON(a Map(String, JSON)) AS patch, 1 AS version);
 
--- Same case: RFC 7396 deep merge across two rows with Map(String, JSON).
+-- Map(String, JSON) typed path: newer row replaces the whole map atomically.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"k":{"x":1,"y":2}}}'::JSON(a Map(String, JSON)) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"k":{"y":3}}}'::JSON(a Map(String, JSON)), 2
 );
 
--- Map typed path: dotted keys must round-trip — a key "x.y" must not be misread as two
--- path levels "x" -> "y", which would cause BAD_GET at finalization.
+-- Map typed path: dotted key round-trip.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x.y":1}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version);
 
--- Dotted key survives deep merge: older x.y=1 must not be lost when newer patch updates z only.
+-- Map typed path with dotted key: newer row replaces the whole map atomically.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (
     SELECT '{"a":{"x.y":1,"z":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
@@ -380,8 +368,47 @@ FROM (
     )
 );
 
--- Map key collision fix: key "x\u0001y" (containing literal \x01) and key "x.y" must be
--- stored as two distinct entries.  The old single-byte scheme mapped both to the same
--- internal path segment; the two-byte scheme encodes them differently.
+-- Map key with literal \x01 character: both keys survive in a single row.
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x\u0001y":1,"x.y":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version);
+
+-- Type preservation: inferred Date path must round-trip as Date, not be re-derived as UInt16.
+-- The bug: going through Field for typed paths loses the declared DataType (Date{18262} becomes
+-- Field(UInt16{18262})), and re-deriving the type on output yields UInt16 instead of Date.
+WITH CAST('{"d" : "2020-01-01"}', 'JSON') AS json
+SELECT
+    JSONAllPathsWithTypes(mergedJSONPatch(json, 1)) AS merged_paths_and_types;
+
+-- Same case via State+Merge combinator.
+SELECT
+    JSONAllPathsWithTypes(mergedJSONPatchMerge(state)) AS merged_paths_and_types
+FROM (
+    SELECT mergedJSONPatchState(CAST('{"d" : "2020-01-01"}', 'JSON'), 1) AS state
+);
+
+-- Typed Date path must also round-trip correctly (JSON(d Date)).
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT CAST('{"d":"2020-01-01"}', 'JSON(d Date)') AS patch, 1 AS version
+    UNION ALL
+    SELECT CAST('{"d":"2021-06-15"}', 'JSON(d Date)'), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT CAST('{"d":"2020-01-01"}', 'JSON(d Date)') AS patch, 1 AS version
+        UNION ALL
+        SELECT CAST('{"d":"2021-06-15"}', 'JSON(d Date)'), 2
+    )
+);
+
+-- Typed DateTime path round-trip.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT CAST('{"ts":"2020-01-01 12:00:00"}', 'JSON(ts DateTime)') AS patch, 1 AS version
+    UNION ALL
+    SELECT CAST('{"ts":"2021-06-15 08:30:00"}', 'JSON(ts DateTime)'), 2
+);

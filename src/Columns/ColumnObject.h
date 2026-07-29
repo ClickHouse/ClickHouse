@@ -330,9 +330,30 @@ public:
 
         PathInfo getCurrentPathInfo() const;
 
+        /// Path string of the current entry.
+        std::string_view getCurrentPath() const;
+
+        /// True if the current TYPED-path value is null (i.e. the patch omitted this member).
+        /// Always false for DYNAMIC and SHARED_DATA (null dynamic paths are skipped by the iterator).
+        bool isCurrentTypedNull() const;
+
+        /// Serialize the current path's value into `buf` in Dynamic binary format
+        /// (encodeDataType(type) + type->serializeBinary(value)).
+        /// `typed_path_types` is the DataTypeObject::getTypedPaths() map; pass nullptr if there
+        /// are no typed paths.
+        ///
+        /// All path types — TYPED, DYNAMIC, and SHARED_DATA — are always serialized as
+        /// atomic leaves.  Typed paths with structured types (Map, JSON, Dynamic) are stored
+        /// as a single binary blob; they are never flattened into child paths.
+        ///
+        /// For SHARED_DATA paths the raw bytes are copied directly from shared_data_values
+        /// without a deserialize+reserialize round-trip.
+        void serializeCurrentValueBinary(
+            const std::unordered_map<String, DataTypePtr> * typed_path_types,
+            WriteBuffer & buf) const;
+
     private:
         void setCurrentPath();
-        std::string_view getCurrentPath() const;
         std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
 
         const ColumnObject & column_object;

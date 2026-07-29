@@ -4,24 +4,20 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
-#include <Common/SipHash.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 
 #include <algorithm>
 #include <memory>
-#include <unordered_set>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 
 namespace DB
@@ -44,7 +40,12 @@ namespace ErrorCodes
   *
   * Arrays are preserved as atomic replacement values, including mixed arrays such as `[42, "x", {"k": 1}]`.
   *
-  * Three `ColumnObject` limitations affect RFC 7396 conformance:
+  * Deep merging applies only to paths that `ColumnObject` stores as separate dynamic paths (i.e.
+  * paths that `ColumnObject` has already flattened). Typed paths with structured types such as
+  * `Map(K, V)` or `JSON` are treated as atomic leaves: the whole value is replaced by the newer
+  * patch. There is no deep merge inside typed Map or JSON typed paths.
+  *
+  * Five `ColumnObject` limitations affect RFC 7396 conformance:
   *
   * 1. Null deletion: `ColumnObject` drops null-valued members on insertion, so a patch
   *    like `{"key": null}` cannot remove a key — `ColumnObject` cannot distinguish between
@@ -63,40 +64,122 @@ namespace ErrorCodes
   *    non-zero value. To avoid this, use `Nullable` typed paths
   *    (e.g., `JSON(a Nullable(UInt32))`): a `NULL` value in a nullable typed-path column
   *    unambiguously represents absence and is skipped by the aggregate.
+  *
+  * 4. Typed Map/JSON paths are atomic: a `JSON` column with a typed path declared as
+  *    `Map(K,V)` or `JSON` stores the whole sub-object as a single column value. The
+  *    aggregate cannot flatten it into individual key paths, so the entire typed value is
+  *    replaced atomically rather than deep-merged key-by-key as RFC 7396 would require.
+  *
+  * 5. Dot-in-key ambiguity: `ColumnObject` represents `{"a":{"b":1}}` and `{"a.b":1}` with
+  *    the same internal path `a.b`. A single row can therefore expose both `a` and `a.b` as
+  *    independent peers. When a newer patch writes only `a`, the ancestor/descendant conflict
+  *    rule erases `a.b`; when it writes only `a.b`, the same rule erases `a`. Neither is
+  *    strictly correct when both paths coexist. To avoid this, enable
+  *    `json_type_escape_dots_in_keys = 1`: literal dots in JSON keys are then percent-encoded
+  *    (e.g. `a.b` → `a%2Eb`), making them distinct from nested paths and eliminating the
+  *    false conflict.
   */
 struct AggregateFunctionMergedJSONPatchData
 {
 
+    /// Efficient sort-key value. Stores Int64/UInt64 inline (no allocation), String in-place,
+    /// and falls back to a heap-allocated Field only for exotic types (Float, Decimal, UUID, …).
+    /// Comparisons are a single tag-dispatch on a small enum instead of Field's heavyweight
+    /// type dispatch.
+    ///
+    /// All leaf paths in one input row share the same sort key. To avoid copying a potentially
+    /// large String N times (once per path), SortKeyData is ref-counted via boost::intrusive_ptr
+    /// with a plain (non-atomic) int refcount — the aggregate state is single-threaded.
+    struct SortKeyData
+    {
+        enum class Kind : UInt8
+        {
+            Int64  = 0,
+            UInt64 = 1,
+            String = 2,
+            Field  = 3,  ///< fallback for Float, Decimal, UUID, etc.
+        };
+
+        Kind kind;
+        Int64  i64 = 0;
+        UInt64 u64 = 0;
+        String str; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        Field  field;
+
+        int refcount = 0;
+
+        /// Construct from a Field, choosing the most compact representation.
+        explicit SortKeyData(Field v)
+        {
+            switch (v.getType())
+            {
+                case Field::Types::Int64:
+                    kind = Kind::Int64;
+                    i64  = v.safeGet<Int64>();
+                    break;
+                case Field::Types::UInt64:
+                    kind = Kind::UInt64;
+                    u64  = v.safeGet<UInt64>();
+                    break;
+                case Field::Types::String:
+                    kind = Kind::String;
+                    str  = v.safeGet<String>();
+                    break;
+                default:
+                    kind  = Kind::Field;
+                    field = std::move(v);
+                    break;
+            }
+        }
+
+        bool operator<(const SortKeyData & other) const
+        {
+            /// Both sides must have been created from the same column type, so kinds match.
+            switch (kind)
+            {
+                case Kind::Int64:  return i64   < other.i64;
+                case Kind::UInt64: return u64   < other.u64;
+                case Kind::String: return str   < other.str;
+                case Kind::Field:  return field < other.field;
+            }
+            UNREACHABLE();
+        }
+
+        bool operator<=(const SortKeyData & other) const { return !(other < *this); }
+        bool operator>(const SortKeyData & other) const  { return other < *this; }
+
+        Field toField() const
+        {
+            switch (kind)
+            {
+                case Kind::Int64:  return Field(i64);
+                case Kind::UInt64: return Field(u64);
+                case Kind::String: return Field(str);
+                case Kind::Field:  return field;
+            }
+            UNREACHABLE();
+        }
+
+        friend void intrusive_ptr_add_ref(SortKeyData * p) noexcept { ++p->refcount; }
+        friend void intrusive_ptr_release(SortKeyData * p) noexcept { if (--p->refcount == 0) delete p; }
+    };
+
+    using SortKeyPtr = boost::intrusive_ptr<SortKeyData>;
+
+    static SortKeyPtr makeSortKey(Field v)
+    {
+        return SortKeyPtr(new SortKeyData(std::move(v)));
+    }
+
+    /// Thin wrapper that lets call sites use comparison operators directly on a SortKeyPtr.
+    /// We pass SortKeyPtr by const-ref everywhere; this avoids bumping the refcount on comparisons.
     struct SortKey
     {
-        Field value;
+        SortKeyPtr ptr;
 
-        SortKey() = default;
-
-        explicit SortKey(Field value_)
-            : value(std::move(value_))
-        {
-        }
-
-        const Field & toField() const
-        {
-            return value;
-        }
-
-        bool operator<(const SortKey & other) const
-        {
-            return value < other.value;
-        }
-
-        bool operator<=(const SortKey & other) const
-        {
-            return value <= other.value;
-        }
-
-        bool operator>(const SortKey & other) const
-        {
-            return other < *this;
-        }
+        bool operator<(const SortKey & other) const  { return *ptr < *other.ptr; }
+        bool operator<=(const SortKey & other) const { return *ptr <= *other.ptr; }
+        bool operator>(const SortKey & other) const  { return *ptr > *other.ptr; }
     };
 
     struct EncodedField
@@ -108,12 +191,16 @@ struct AggregateFunctionMergedJSONPatchData
             UInt64 = 2,
             String = 3,
             BinaryNonObjectField = 4,
+            /// Dynamic binary format: encodeDataType(type) + type->serializeBinary(value).
+            /// Used for typed-path leaf values so that types like Date, DateTime, UUID that
+            /// have no corresponding Field type are preserved across serialization round-trips.
+            DynamicBinary = 5,
         };
 
         Kind kind = Kind::Empty;
         Int64 inline_int64 = 0;
         UInt64 inline_uint64 = 0;
-        /// Owned string storage for String and BinaryNonObjectField kinds.
+        /// Owned string storage for String, BinaryNonObjectField, and DynamicBinary kinds.
         /// Using owned String rather than an arena pointer means the bytes are freed immediately
         /// when the Entry is erased, keeping memory proportional to the live state size rather
         /// than to the total number of updates processed.
@@ -158,9 +245,30 @@ struct AggregateFunctionMergedJSONPatchData
                     ReadBufferFromString buf(data);
                     return decodeField(buf);
                 }
+                case Kind::DynamicBinary:
+                {
+                    Field field;
+                    ReadBufferFromString buf(data);
+                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(field, buf, {});
+                    return field;
+                }
             }
 
             UNREACHABLE();
+        }
+
+        /// True if the stored value is a null / Nothing (written by Dynamic serialization for
+        /// absent typed-path values that escaped the Nullable null-skip path).
+        bool isNull() const
+        {
+            if (kind == Kind::Empty)
+                return true;
+            if (kind == Kind::DynamicBinary)
+            {
+                Field f = get();
+                return f.isNull();
+            }
+            return false;
         }
     };
 
@@ -194,77 +302,6 @@ struct AggregateFunctionMergedJSONPatchData
                 return EncodedField(EncodedField::Kind::BinaryNonObjectField, std::move(buf.str()));
             }
         }
-    }
-
-    /// Map keys are arbitrary strings and may contain '.' (the path separator) or the escape
-    /// byte \x01 itself.  We use a two-byte escape scheme so the encoding is injective:
-    ///
-    ///   '.'   → \x01\x00   (dot escaped)
-    ///   \x01  → \x01\x01   (sentinel escaped)
-    ///
-    /// This guarantees that distinct keys always produce distinct escaped representations and
-    /// that unescapeMapKey is the exact inverse of escapeMapKey.
-    static String escapeMapKey(std::string_view key)
-    {
-        if (key.find('.') == std::string_view::npos && key.find('\x01') == std::string_view::npos)
-            return String(key); // fast path: nothing to escape
-        String result;
-        result.reserve(key.size() + 4); // a small over-estimate
-        for (char c : key)
-        {
-            if (c == '.')
-            {
-                result += '\x01';
-                result += '\x00';
-            }
-            else if (c == '\x01')
-            {
-                result += '\x01';
-                result += '\x01';
-            }
-            else
-            {
-                result += c;
-            }
-        }
-        return result;
-    }
-
-    static String unescapeMapKey(std::string_view escaped)
-    {
-        if (escaped.find('\x01') == std::string_view::npos)
-            return String(escaped); // fast path: no escape sequences
-        String result;
-        result.reserve(escaped.size());
-        for (size_t i = 0; i < escaped.size(); ++i)
-        {
-            if (escaped[i] == '\x01' && i + 1 < escaped.size())
-            {
-                ++i;
-                result += (escaped[i] == '\x00') ? '.' : '\x01';
-            }
-            else
-            {
-                result += escaped[i];
-            }
-        }
-        return result;
-    }
-
-    /// Returns true for Field types that represent a JSON object and should be recursed into
-    /// during leaf collection, rather than stored as an atomic value.
-    ///
-    /// Field::Types::Object — produced by ColumnObject::get (untyped / dynamic JSON).
-    /// Field::Types::Map    — produced by ColumnMap::get for typed Map(K,V) paths; in Field
-    ///                        representation a Map is a vector of Tuple(key, value) pairs.
-    ///
-    /// Field::Types::Tuple is intentionally excluded: Tuple sub-fields are positional and carry
-    /// no key names, so we cannot reconstruct dotted JSON child paths without the column's type
-    /// metadata. Tuples are treated as atomic leaves (replaced as a whole on conflict).
-    static bool isExpandableField(const Field & value)
-    {
-        return value.getType() == Field::Types::Object
-            || value.getType() == Field::Types::Map;
     }
 
     static bool isDescendantPath(std::string_view ancestor, std::string_view path)
@@ -315,62 +352,15 @@ struct AggregateFunctionMergedJSONPatchData
             entries.end());
     }
 
-    void pushLeafEntry(std::string_view path, Field value, const SortKey & sort_key)
+    void pushLeafEntry(std::string_view path, EncodedField value, const SortKey & sort_key)
     {
         Entry entry;
         entry.path = path;
-        entry.value = encodeField(std::move(value));
+        entry.value = std::move(value);
         entry.sort_key = sort_key;
 
         auto it = findInsertPosition(entries, path);
         entries.insert(it, std::move(entry));
-    }
-
-    void insertLeafEntry(std::string_view path, Field value, const SortKey & sort_key)
-    {
-        if (hasNewerConflictingEntry(path, sort_key))
-            return;
-
-        eraseShadowedEntries(path, sort_key);
-        pushLeafEntry(path, std::move(value), sort_key);
-    }
-
-    void insertPathValue(std::string_view path, Field value, const SortKey & sort_key)
-    {
-        if (!isExpandableField(value))
-        {
-            insertLeafEntry(path, std::move(value), sort_key);
-            return;
-        }
-
-        if (value.getType() == Field::Types::Object)
-        {
-            const auto & object = value.safeGet<Object>();
-            for (const auto & [child_key, child_value] : object)
-            {
-                String child_path(path);
-                if (!child_path.empty())
-                    child_path += '.';
-                child_path += child_key;
-                insertPathValue(child_path, child_value, sort_key);
-            }
-        }
-        else
-        {
-            /// Field::Types::Map: each element is a Tuple(key, value) pair.
-            const auto & map = value.safeGet<Map>();
-            for (const auto & elem : map)
-            {
-                const auto & kv = elem.safeGet<Tuple>();
-                chassert(kv.size() == 2);
-                const String & child_key = kv[0].safeGet<String>();
-                String child_path(path);
-                if (!child_path.empty())
-                    child_path += '.';
-                child_path += escapeMapKey(child_key);
-                insertPathValue(child_path, kv[1], sort_key);
-            }
-        }
     }
 
     static EncodedField readEncodedField(ReadBuffer & buf)
@@ -384,7 +374,8 @@ struct AggregateFunctionMergedJSONPatchData
             && kind != EncodedField::Kind::Int64
             && kind != EncodedField::Kind::UInt64
             && kind != EncodedField::Kind::String
-            && kind != EncodedField::Kind::BinaryNonObjectField)
+            && kind != EncodedField::Kind::BinaryNonObjectField
+            && kind != EncodedField::Kind::DynamicBinary)
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -410,6 +401,7 @@ struct AggregateFunctionMergedJSONPatchData
             }
             case EncodedField::Kind::String:
             case EncodedField::Kind::BinaryNonObjectField:
+            case EncodedField::Kind::DynamicBinary:
             {
                 String stored;
                 readStringBinary(stored, buf);
@@ -420,71 +412,26 @@ struct AggregateFunctionMergedJSONPatchData
         UNREACHABLE();
     }
 
-    void add(const IColumn & json_column, size_t row_num, Arena &)
+    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, const DataTypeObject * obj_type = nullptr)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(json_column);
-
-        /// Hash the row into a temporary SipHash — no arena allocation needed.
-        SipHash hash;
-        object_column.updateHashWithValue(row_num, hash);
-        SortKey sort_key = SortKey(Field(hash.get128()));
-
-        addKeyValuePairs(object_column, row_num, sort_key);
-    }
-
-    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, Arena &)
-    {
-        const auto & object_column = assert_cast<const ColumnObject &>(json_column);
-        SortKey sort_key = SortKey(key_column[row_num]);
-        addKeyValuePairs(object_column, row_num, sort_key);
+        /// Create one SortKeyData and share it across all leaf paths from this row.
+        /// Copying a SortKeyPtr is O(1) regardless of key size.
+        SortKey sort_key{makeSortKey(key_column[row_num])};
+        addKeyValuePairs(object_column, row_num, sort_key, obj_type);
     }
 
     /// A leaf entry used as a staging buffer before atomic batch insertion.
-    /// path is owned (String) so collectLeaves and deserialize can move/copy into it safely.
+    /// path is owned (String) so deserialize can move/copy into it safely.
     struct LeafRef
     {
         String path;
-        Field value;
+        EncodedField value;
         SortKey sort_key;
     };
 
-    /// Recursively flatten value into (path, scalar-or-array, sort_key) leaf entries.
-    /// Field::Types::Object and Field::Types::Map are expanded into child paths.
-    /// All other types (including Tuple) are stored as atomic leaves.
-    static void collectLeaves(String path, Field value, const SortKey & sort_key, std::vector<LeafRef> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        if (!isExpandableField(value))
-        {
-            out.push_back({std::move(path), std::move(value), sort_key});
-            return;
-        }
-
-        if (value.getType() == Field::Types::Object)
-        {
-            const auto & object = value.safeGet<Object>();
-            for (const auto & [child_key, child_value] : object)
-            {
-                String child_path = path.empty() ? child_key : path + '.' + child_key;
-                collectLeaves(child_path, child_value, sort_key, out);
-            }
-        }
-        else
-        {
-            /// Field::Types::Map: each element is a Tuple(key, value) pair.
-            const auto & map = value.safeGet<Map>();
-            for (const auto & elem : map)
-            {
-                const auto & kv = elem.safeGet<Tuple>();
-                chassert(kv.size() == 2);
-                const String & child_key = kv[0].safeGet<String>();
-                String escaped = escapeMapKey(child_key);
-                String child_path = path.empty() ? escaped : path + '.' + escaped;
-                collectLeaves(child_path, kv[1], sort_key, out);
-            }
-        }
-    }
-
-    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key)
+    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key,
+                          const DataTypeObject * obj_type)
     {
         /// Collect all leaf (path, value) pairs from the row, then insert them atomically.
         ///
@@ -492,10 +439,8 @@ struct AggregateFunctionMergedJSONPatchData
         /// so intra-row siblings (e.g. "a" and "a.b" from JSON(a UInt32, `a.b` UInt32)) cannot
         /// erase each other.
         ///
-        /// SortedPathsIterator already skips null-valued dynamic paths (null = absent).
-        /// For typed paths backed by Nullable columns, null also means absent, so we mirror
-        /// that skip here: a Nullable typed path that is NULL in this row was not written by
-        /// the patch and must not displace an older non-null value.
+        /// SortedPathsIterator skips null dynamic paths (null = absent).
+        /// For typed paths backed by Nullable columns isCurrentTypedNull() handles the same skip.
         ///
         /// Non-Nullable typed paths (e.g. UInt32) have no null representation.  Their column
         /// stores the type default (e.g. 0) whenever the patch omitted the path.  We cannot
@@ -503,20 +448,28 @@ struct AggregateFunctionMergedJSONPatchData
         /// through — see the documentation limitation for the consequence.
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+        const auto * typed_path_types = obj_type ? &obj_type->getTypedPaths() : nullptr;
+
         ColumnObject::SortedPathsIterator it(object_column, row_num);
         while (!it.end())
         {
-            auto path_info = it.getCurrentPathInfo();
             /// Skip Nullable typed paths that are null — null means the patch omitted this path.
-            if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
-                && path_info.column->isNullAt(path_info.row))
+            if (it.isCurrentTypedNull())
             {
                 it.next();
                 continue;
             }
-            Field value;
-            path_info.column->get(path_info.row, value);
-            collectLeaves(String(path_info.path), std::move(value), sort_key, batch);
+
+            /// Serialize the value in Dynamic binary format directly from the column.
+            /// This preserves the exact DataType (e.g. Date, Map, JSON) without going through
+            /// Field, which loses type fidelity. All path types — TYPED, DYNAMIC, SHARED_DATA —
+            /// are serialized as atomic leaves; typed Map/JSON paths are not flattened.
+            WriteBufferFromOwnString val_buf;
+            it.serializeCurrentValueBinary(typed_path_types, val_buf);
+            batch.push_back({String(it.getCurrentPath()),
+                EncodedField(EncodedField::Kind::DynamicBinary, std::move(val_buf.str())),
+                sort_key});
+
             it.next();
         }
 
@@ -587,12 +540,12 @@ struct AggregateFunctionMergedJSONPatchData
             pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key);
     }
 
-    void merge(const AggregateFunctionMergedJSONPatchData & other, Arena &)
+    void merge(const AggregateFunctionMergedJSONPatchData & other)
     {
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
-            batch.push_back({String(entry.pathView()), entry.value.get(), entry.sort_key});
+            batch.push_back({String(entry.pathView()), entry.value, entry.sort_key});
         insertBatchAtomic(batch);
     }
 
@@ -615,14 +568,15 @@ struct AggregateFunctionMergedJSONPatchData
                     break;
                 case EncodedField::Kind::String:
                 case EncodedField::Kind::BinaryNonObjectField:
+                case EncodedField::Kind::DynamicBinary:
                     writeStringBinary(entry.value.dataView(), buf);
                     break;
             }
-            DB::encodeField(entry.sort_key.toField(), buf);
+            DB::encodeField(entry.sort_key.ptr->toField(), buf);
         }
     }
 
-    void deserialize(ReadBuffer & buf, Arena &)
+    void deserialize(ReadBuffer & buf)
     {
         entries.clear();
 
@@ -640,114 +594,14 @@ struct AggregateFunctionMergedJSONPatchData
         {
             LeafRef & lv = batch.emplace_back();
             readStringBinary(lv.path, buf);
-            lv.value = readEncodedField(buf).get();
-            lv.sort_key = SortKey(decodeField(buf));
+            lv.value = readEncodedField(buf);
+            lv.sort_key = SortKey{makeSortKey(decodeField(buf))};
         }
 
         insertBatchAtomic(batch);
     }
 
-    /// Reconstruct a Field::Object for all entries under `ancestor_path`.
-    ///
-    /// If a direct exact-path entry exists at `ancestor_path` (scalar replacement of the whole
-    /// object), that scalar is returned as-is.  Otherwise a Field::Object is assembled from all
-    /// descendant leaf entries, recursing for multi-level paths.
-    ///
-    /// `result_column` is used to detect separately-declared typed child paths (e.g. `a.b` UInt32
-    /// when the parent `a` is JSON) so they are excluded from the reconstructed object and left
-    /// for the main loop to handle.  Pass nullptr to skip this filtering (e.g. when recursing).
-    Field rebuildNestedObject(std::string_view ancestor_path,
-                              const ColumnObject * result_column_for_skip = nullptr) const
-    {
-        /// Exact-path entry: scalar/array replaced the whole sub-object — return it directly.
-        for (const auto & entry : entries)
-        {
-            if (entry.pathView() == ancestor_path)
-                return entry.value.get();
-        }
-
-        Object result;
-        for (const auto & entry : entries)
-        {
-            std::string_view p = entry.pathView();
-            if (!isDescendantPath(ancestor_path, p))
-                continue;
-
-            /// Skip entries that have their own separate typed column in the result schema —
-            /// they will be written directly by the main loop and must not appear inside the
-            /// reconstructed parent object (which would double-write them).
-            if (result_column_for_skip && result_column_for_skip->getTypedPaths().contains(p))
-                continue;
-
-            std::string_view rel = p.substr(ancestor_path.size() + 1);
-            auto dot = rel.find('.');
-            String direct_key(dot == std::string_view::npos ? rel : rel.substr(0, dot));
-
-            if (dot == std::string_view::npos)
-            {
-                result[direct_key] = entry.value.get();
-            }
-            else
-            {
-                String child_prefix = String(ancestor_path) + '.' + direct_key;
-                result[direct_key] = rebuildNestedObject(child_prefix, result_column_for_skip);
-            }
-        }
-        return result;
-    }
-
-    /// Produces a Field::Map (vector of Tuple(key,value) pairs) for a typed Map path.
-    ///
-    /// `value_type` is the declared value type of the Map at this nesting level (already
-    /// Nullable/LowCardinality-unwrapped by the caller).  It is used to decide whether each
-    /// child value should itself be reconstructed as a Field::Map (nested Map) or as a
-    /// Field::Object (nested JSON / Dynamic / anything else).
-    ///
-    /// Keys are deduplicated: all leaf entries under a child key are gathered by one recursive
-    /// call, matching the coalescing that rebuildNestedObject achieves via map-assignment.
-    Field rebuildNestedMap(std::string_view ancestor_path, const DataTypePtr & value_type) const
-    {
-        /// Exact-path entry: scalar / atomic Map replaced the whole value — return it directly.
-        for (const auto & entry : entries)
-        {
-            if (entry.pathView() == ancestor_path)
-                return entry.value.get();
-        }
-
-        /// Determine how to reconstruct child values based on the declared value type.
-        DataTypePtr inner_value_type = removeLowCardinality(removeNullable(value_type));
-        const auto * nested_map_type = typeid_cast<const DataTypeMap *>(inner_value_type.get());
-
-        /// Collect distinct direct child keys (escaped) preserving insertion order.
-        /// Uses owned Strings (not string_views) to avoid dangling references after move.
-        std::vector<String> seen_escaped_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        for (const auto & entry : entries)
-        {
-            std::string_view p = entry.pathView();
-            if (!isDescendantPath(ancestor_path, p))
-                continue;
-            std::string_view rel = p.substr(ancestor_path.size() + 1);
-            String escaped_key(rel.substr(0, rel.find('.')));
-            if (seen_set.insert(escaped_key).second)
-                seen_escaped_keys.push_back(std::move(escaped_key));
-        }
-
-        Map result;
-        result.reserve(seen_escaped_keys.size());
-        for (const String & escaped_key : seen_escaped_keys)
-        {
-            String child_prefix = String(ancestor_path) + '.' + escaped_key;
-            Field child_value = nested_map_type
-                ? rebuildNestedMap(child_prefix, nested_map_type->getValueType())
-                : rebuildNestedObject(child_prefix);
-            /// Unescape \x01 back to '.' to recover the original Map key.
-            result.push_back(Tuple{Field(unescapeMapKey(escaped_key)), std::move(child_value)});
-        }
-        return result;
-    }
-
-    void insertResultInto(IColumn & to, const DataTypePtr & result_type_) const
+    void insertResultInto(IColumn & to, const DataTypePtr & /* result_type_ */) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
@@ -760,101 +614,73 @@ struct AggregateFunctionMergedJSONPatchData
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
 
-        /// Typed paths whose column type is a nested Object (JSON), Dynamic, or Map need special
-        /// handling: the aggregate flattens {"a":{"x":1}} into leaf "a.x", so on output we must
-        /// reconstruct the value from all descendant leaves and insert it into the typed parent
-        /// column as a whole.
-        ///
-        /// The map stores the Nullable/LowCardinality-unwrapped inner DataTypePtr so that Map
-        /// typed paths can retrieve their declared value type for nested reconstruction.
-        std::unordered_map<std::string_view, DataTypePtr> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        if (const auto * obj_type = typeid_cast<const DataTypeObject *>(result_type_.get()))
-        {
-            for (const auto & [tp, dt] : obj_type->getTypedPaths())
-            {
-                /// Unwrap Nullable / LowCardinality wrappers before testing the inner type,
-                /// because WhichDataType(Nullable(JSON)) reports "Nullable", not "Object".
-                DataTypePtr inner = removeLowCardinality(removeNullable(dt));
-                WhichDataType w(inner);
-                /// Variant typed paths are not reconstructed here: ColumnVariant::get() does
-                /// not return a Field::Object even when the active variant is JSON, so no child
-                /// paths are produced by collectLeaves and there is nothing to rebuild.
-                if (w.isObject() || w.isDynamic() || w.isMap())
-                    nested_typed_ancestors.emplace(tp, inner);
-            }
-        }
-
-        /// Entries consumed by a nested-typed-ancestor insertion must not be re-processed.
-        std::unordered_set<std::string_view> consumed; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
-        for (const auto & [ancestor, inner_type] : nested_typed_ancestors)
-        {
-            bool any = false;
-            for (const auto & entry : entries)
-            {
-                std::string_view p = entry.pathView();
-                if (p == ancestor || isDescendantPath(ancestor, p))
-                {
-                    any = true;
-                    break;
-                }
-            }
-            if (!any)
-                continue;
-
-            Field nested;
-            if (const auto * map_type = typeid_cast<const DataTypeMap *>(inner_type.get()))
-                nested = rebuildNestedMap(ancestor, map_type->getValueType());
-            else
-                nested = rebuildNestedObject(ancestor, &result_column);
-            auto typed_it = result_column.getTypedPaths().find(ancestor);
-            if (typed_it != result_column.getTypedPaths().end())
-                typed_it->second->insert(nested);
-
-            for (const auto & entry : entries)
-            {
-                std::string_view p = entry.pathView();
-                /// Do not consume entries that are themselves separately declared typed paths
-                /// in the result schema (e.g. `a.b` UInt32 when parent `a` is JSON).
-                /// Those must still be inserted into their own typed columns by the main loop.
-                if ((p == ancestor || isDescendantPath(ancestor, p))
-                    && result_column.getTypedPaths().find(p) == result_column.getTypedPaths().end())
-                    consumed.insert(p);
-            }
-        }
-
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
-            if (consumed.contains(path))
-                continue;
-
-            Field value = entry.value.get();
 
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
             {
-                typed_it->second->insert(value);
+                /// Typed columns accept a Field — the target column knows its declared type
+                /// and stores the raw value regardless of the Field's coarse type tag.
+                typed_it->second->insert(entry.value.get());
             }
-            else if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path); dynamic_it != result_column.getDynamicPathsPtrs().end())
+            else if (entry.value.kind == EncodedField::Kind::DynamicBinary)
             {
-                dynamic_it->second->insert(value);
-            }
-            else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
-            {
-                dynamic_path_column->insert(value);
-            }
-            else if (!value.isNull())
-            {
-                /// Dynamic path limit reached: write directly to shared data using Dynamic
-                /// binary serialization. This is the same encoding ColumnObject::insert uses
-                /// for overflow paths and handles any Field including arrays containing objects.
-                shared_data_paths->insertData(path.data(), path.size());
-                auto & chars = shared_data_values->getChars();
+                /// DynamicBinary stores encodeDataType + value bytes, exactly the format that
+                /// ColumnDynamic and shared-data use internally. Deserialise directly into the
+                /// target column to avoid FieldToDataType re-deriving the type (which would turn
+                /// Date{18262} back into UInt16 when going through Field).
+                ReadBufferFromString val_buf(entry.value.dataView());
+                if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
+                    dynamic_it != result_column.getDynamicPathsPtrs().end())
                 {
-                    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag{});
-                    DataTypeDynamic().getDefaultSerialization()->serializeBinary(value, value_buf, {});
+                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_it->second, val_buf, {});
                 }
-                shared_data_values->getOffsets().push_back(chars.size());
+                else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
+                {
+                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_path_column, val_buf, {});
+                }
+                else
+                {
+                    /// Dynamic path limit reached: copy bytes directly to shared data.
+                    /// The bytes are already in the correct format — no re-serialization needed.
+                    auto type = decodeDataType(val_buf);
+                    if (!isNothing(type))
+                    {
+                        shared_data_paths->insertData(path.data(), path.size());
+                        auto & chars = shared_data_values->getChars();
+                        /// Rewind and copy the full DynamicBinary blob (type tag + value).
+                        std::string_view bytes = entry.value.dataView();
+                        chars.insert(chars.end(), bytes.begin(), bytes.end());
+                        shared_data_values->getOffsets().push_back(chars.size());
+                    }
+                }
+            }
+            else
+            {
+                Field value = entry.value.get();
+                if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
+                    dynamic_it != result_column.getDynamicPathsPtrs().end())
+                {
+                    dynamic_it->second->insert(value);
+                }
+                else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
+                {
+                    dynamic_path_column->insert(value);
+                }
+                else if (!value.isNull())
+                {
+                    /// Dynamic path limit reached: write directly to shared data using Dynamic
+                    /// binary serialization. This is the same encoding ColumnObject::insert uses
+                    /// for overflow paths and handles any Field including arrays containing objects.
+                    shared_data_paths->insertData(path.data(), path.size());
+                    auto & chars = shared_data_values->getChars();
+                    {
+                        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag{});
+                        DataTypeDynamic().getDefaultSerialization()->serializeBinary(value, value_buf, {});
+                    }
+                    shared_data_values->getOffsets().push_back(chars.size());
+                }
             }
         }
 
@@ -879,13 +705,14 @@ class AggregateFunctionMergedJSONPatch final
     : public IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData, AggregateFunctionMergedJSONPatch>
 {
 private:
-    bool has_sort_key;
+    /// Typed-path declarations from the input JSON type; null if the type has no typed paths.
+    const DataTypeObject * obj_type;
 
 public:
     explicit AggregateFunctionMergedJSONPatch(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData, AggregateFunctionMergedJSONPatch>(
             argument_types_, {}, argument_types_[0])
-        , has_sort_key(argument_types_.size() > 1)
+        , obj_type(typeid_cast<const DataTypeObject *>(argument_types_[0].get()))
     {
     }
 
@@ -894,26 +721,16 @@ public:
         return "mergedJSONPatch";
     }
 
-    bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        /// The data helpers (add / merge / deserialize) accept Arena & by reference.
-        /// Returning false would let callers such as runningAccumulate pass nullptr,
-        /// which would form a reference to a null pointer (UB) even though the arena
-        /// is never actually allocated from.
-        return true;
+        data(place).addWithKey(*columns[0], *columns[1], row_num, obj_type);
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        if (has_sort_key)
-            data(place).addWithKey(*columns[0], *columns[1], row_num, *arena);
-        else
-            data(place).add(*columns[0], row_num, *arena);
-    }
-
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        data(place).merge(data(rhs), *arena);
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -921,9 +738,9 @@ public:
         data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        data(place).deserialize(buf, *arena);
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -938,9 +755,9 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
 {
     assertNoParameters(name, parameters);
 
-    if (argument_types.size() != 1 && argument_types.size() != 2)
+    if (argument_types.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for aggregate function {}. Expected 1 or 2 arguments (JSON value and optional sort key), got {} arguments",
+            "Incorrect number of arguments for aggregate function {}. Expected 2 arguments (JSON value and sort key), got {} arguments",
             name, argument_types.size());
 
     if (!isObject(argument_types[0]))
@@ -948,7 +765,7 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
             "Illegal type {} of first argument for aggregate function {}. Expected type JSON",
             argument_types[0]->getName(), name);
 
-    if (argument_types.size() == 2 && !argument_types[1]->isComparable())
+    if (!argument_types[1]->isComparable())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of second argument for aggregate function {}. Expected comparable type for sort key",
             argument_types[1]->getName(), name);
@@ -971,15 +788,9 @@ The aggregate function stores state as triplets (key, value, sorting_key) where 
 only keeps the latest effective record according to the sorting_key. Object writes are flattened into
 descendant paths, and ancestor non-object writes shadow conflicting descendants.
 
-When called with one argument `mergedJSONPatch(json_col)`, a deterministic sort key is generated
-from the serialized JSON object to ensure consistent ordering across distributed queries.
-
-When called with two arguments `mergedJSONPatch(json_col, sort_key)`, the provided sort_key
-determines which value wins for each JSON path. The value with the largest sort_key is retained.
-
-If two conflicting patches have equal sort keys, the result is order-dependent: the patch processed
-later wins the tie. This matches the aggregate implementation and means users should not rely on
-`ORDER BY` being removed before aggregation to break ties deterministically.
+The sort_key determines which value wins for each JSON path. The row with the largest sort_key is
+retained. If two conflicting patches have equal sort keys, the result is order-dependent: the patch
+processed later wins the tie. Users should not rely on `ORDER BY` to break ties deterministically.
 
 LIMITATIONS (inherited from `ColumnObject`):
 
@@ -998,15 +809,22 @@ LIMITATIONS (inherited from `ColumnObject`):
     non-zero value. To avoid this, declare typed paths as `Nullable`
     (e.g., `JSON(a Nullable(UInt32))`). A null in a nullable typed path is treated as
     "path absent" and is correctly skipped.
+
+4. Dot-in-key ambiguity: the `JSON` type represents `{"a":{"b":1}}` and `{"a.b":1}` with
+    the same internal path `a.b`. A single row can therefore expose both `a` and `a.b` as
+    independent peers. When a newer patch writes only `a`, the ancestor/descendant conflict
+    rule erases `a.b`; when it writes only `a.b`, the same rule erases `a`. To avoid this,
+    set `json_type_escape_dots_in_keys = 1`. With this setting, literal dots in JSON keys
+    are percent-encoded (e.g. `a.b` becomes `a%2Eb`), making them distinct from nested
+    paths and eliminating the false conflict.
 )";
 
-    FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json[, sort_key])";
+    FunctionDocumentation::Syntax syntax = "mergedJSONPatch(json, sort_key)";
 
     FunctionDocumentation::Arguments arguments = {
         {"json", "JSON column to aggregate.", {"JSON"}},
-        {"sort_key", "Optional. Comparable column that determines which write wins for each path. "
-                     "The row with the largest sort_key value is retained. "
-                     "When omitted, a deterministic key is derived from the serialized JSON object.", {}}
+        {"sort_key", "Comparable column that determines which write wins for each path. "
+                     "The row with the largest sort_key value is retained.", {}}
     };
 
     FunctionDocumentation::ReturnedValue returned_value = {

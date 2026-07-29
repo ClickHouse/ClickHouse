@@ -2291,6 +2291,60 @@ ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::g
     return path_info;
 }
 
+bool ColumnObject::SortedPathsIterator::isCurrentTypedNull() const
+{
+    if (current_path_type != PathType::TYPED)
+        return false;
+    return column_object.typed_paths.find(*typed_paths_it)->second->isNullAt(row);
+}
+
+void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
+    const std::unordered_map<String, DataTypePtr> * typed_path_types,
+    WriteBuffer & buf) const
+{
+    if (current_path_type == PathType::SHARED_DATA)
+    {
+        /// Shared-data values are already stored in Dynamic binary format.
+        /// Copy the bytes directly without deserializing and re-serializing.
+        auto value_data = shared_data_values->getDataAt(shared_data_it);
+        buf.write(value_data.data(), value_data.size());
+        return;
+    }
+
+    if (current_path_type == PathType::DYNAMIC)
+    {
+        const auto & dynamic_col = assert_cast<const ColumnDynamic &>(
+            *column_object.dynamic_paths.find(*dynamic_paths_it)->second);
+        getDynamicSerialization()->serializeBinary(dynamic_col, row, buf, getFormatSettings());
+        return;
+    }
+
+    /// TYPED path.
+    /// Serialize with the exact declared DataType (e.g. Date, DateTime, Map, JSON) so that
+    /// the original type is preserved verbatim.  Typed paths are always stored as atomic
+    /// leaves — Map and JSON typed paths are not flattened into child paths.
+    chassert(current_path_type == PathType::TYPED);
+    const IColumn & col = *column_object.typed_paths.find(*typed_paths_it)->second;
+
+    if (typed_path_types)
+    {
+        auto tit = typed_path_types->find(String(*typed_paths_it));
+        if (tit != typed_path_types->end())
+        {
+            const DataTypePtr & raw_type = tit->second;
+            encodeDataType(raw_type, buf);
+            raw_type->getDefaultSerialization()->serializeBinary(col, row, buf, getFormatSettings());
+            return;
+        }
+    }
+
+    /// No declared type available (should not normally happen): serialize via Dynamic so
+    /// the caller receives valid bytes regardless.
+    Field field;
+    col.get(row, field);
+    DataTypeDynamic().getDefaultSerialization()->serializeBinary(field, buf, getFormatSettings());
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnObject::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
