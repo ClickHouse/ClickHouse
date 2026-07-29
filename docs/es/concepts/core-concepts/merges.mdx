@@ -67,17 +67,17 @@ El resultado de la consulta [descrita anteriormente](/es/concepts/core-concepts/
    └────────────┴───────┴──────────┘
 ```
 
-En ClickHouse 24.10, se añadió un nuevo [dashboard de merges](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) a los [dashboards de monitorización](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) integrados. Disponible tanto en OSS como en Cloud a través del `handler` HTTP `/merges`, podemos usarlo para visualizar todos los merges de partes de nuestra tabla de ejemplo:
+En ClickHouse 24.10, se añadió un nuevo [dashboard de fusiones](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) a los [dashboards de monitorización](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) integrados. Disponible tanto en OSS como en Cloud a través del `handler` HTTP `/merges`, podemos usarlo para visualizar todas las fusiones de partes de nuestra tabla de ejemplo:
 
 <Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="FUSIONES DE PARTES" />
 
 <br />
 
-La grabación del dashboard anterior muestra todo el proceso, desde las inserciones iniciales de datos hasta el merge final en una sola parte:
+La grabación del dashboard anterior muestra todo el proceso, desde las inserciones iniciales de datos hasta la fusión final en una sola parte:
 
 ① Número de partes activas.
 
-② Merges de partes, representados visualmente con cuadros (su tamaño refleja el tamaño de la parte).
+② Fusiones de partes, representadas visualmente con cuadros (su tamaño refleja el tamaño de la parte).
 
 ③ [Amplificación de escritura](https://en.wikipedia.org/wiki/Write_amplification).
 
@@ -185,7 +185,7 @@ En el paso ② de fusión, ClickHouse reemplaza todas las filas con la misma cla
   ### Fusiones con agregación
 </div>
 
-El ejemplo de la tabla `SummingMergeTree` anterior es una variante especializada de la tabla [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree), que permite la [transformación automática e incremental de datos](https://www.youtube.com/watch?v=QDAJTKZT8y4) al aplicar cualquiera de las [más de 90](/es/reference/functions/aggregate-functions/reference-index) funciones de agregación durante las fusiones de partes:
+El ejemplo anterior de la tabla `SummingMergeTree` es una variante especializada de la tabla [AggregatingMergeTree](/es/reference/engines/table-engines/mergetree-family/aggregatingmergetree), que permite la [transformación automática e incremental de datos](https://www.youtube.com/watch?v=QDAJTKZT8y4) al aplicar cualquiera de las [90+](/es/reference/functions/aggregate-functions/reference-index) funciones de agregación durante las fusiones de partes:
 
 <Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="FUSIONES DE PARTES" />
 
