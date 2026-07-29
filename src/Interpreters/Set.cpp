@@ -334,7 +334,8 @@ static void fillLossySubSecondFlags(const DataTypeWithSubSeconds & from_type, co
         if (value < 0 && lossy)
             --whole;
         lossy = lossy || whole < min_whole_seconds || whole > max_whole_seconds;
-        lossy_flags[i] |= lossy ? 1 : 0;
+        if (lossy)
+            lossy_flags[i] = 1;
     }
 }
 
@@ -550,7 +551,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         // DateTime64/Time64 probe values (possibly nested in Array/Tuple/Map) that would be cast lossily must not match.
-        auto lossy_null_map_column = ColumnUInt8::create(column_to_cast.column->size(), 0);
+        auto lossy_null_map_column = ColumnUInt8::create(column_to_cast.column->size(), static_cast<UInt8>(0));
         markLossyProbeValues(column_to_cast.type, *column_to_cast.column, data_types[i], lossy_null_map_column->getData());
         bool has_lossy_values = false;
         for (const auto flag : lossy_null_map_column->getData())
