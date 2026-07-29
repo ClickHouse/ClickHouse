@@ -427,14 +427,31 @@ ITOA_IFMA_TARGET ALWAYS_INLINE inline __m128i digitsOfSixteen(UInt64 n)
     return _mm512_castsi512_si128(_mm512_permutex2var_epi8(high, indexes, low));
 }
 
+/// Writes the last `count` of the eight digits in `digits` at `p`.
+///
+/// MemorySanitizer does not model `_mm512_mask_cvtusepi64_storeu_epi8`: the bytes are written, but their shadow
+/// is left untouched, so under MSan every number formatted here looks uninitialized to whatever reads it next.
+/// Converting in a register and storing with `_mm_mask_storeu_epi8` is modelled correctly and still propagates
+/// the shadow of `digits`, so genuinely uninitialized input is still caught. It needs one extra instruction,
+/// hence it is only used under MSan.
+ITOA_IFMA_TARGET ALWAYS_INLINE inline void storeDigitsOfEight(char * p, UInt32 count, __m512i digits)
+{
+    char * destination = shiftedPointer(p, static_cast<Int32>(count) - 8);
+#if defined(MEMORY_SANITIZER)
+    _mm_mask_storeu_epi8(
+        destination, static_cast<__mmask16>((0xff00u >> count) & 0xffu), _mm512_cvtusepi64_epi8(digits));
+#else
+    _mm512_mask_cvtusepi64_storeu_epi8(destination, static_cast<__mmask8>(0xff00 >> count), digits);
+#endif
+}
+
 ITOA_IFMA_TARGET char * toChars(char * p, UInt64 value)
 {
     if (value < 100000000ULL)
     {
         const __m512i digits_of_eight = digitsOfEight(value);
         const UInt32 n = digitCount(value);
-        _mm512_mask_cvtusepi64_storeu_epi8(
-            shiftedPointer(p, static_cast<Int32>(n) - 8), static_cast<__mmask8>(0xff00 >> n), digits_of_eight);
+        storeDigitsOfEight(p, n, digits_of_eight);
         return p + n;
     }
 
@@ -467,10 +484,7 @@ ITOA_IFMA_TARGET char * fixedDigits(char * p, UInt64 value, UInt32 width)
         if (unlikely(value >= 100000000ULL))
             value %= 100000000ULL;
 
-        _mm512_mask_cvtusepi64_storeu_epi8(
-            shiftedPointer(p, static_cast<Int32>(width) - 8),
-            static_cast<__mmask8>(0xff00 >> width),
-            digitsOfEight(value));
+        storeDigitsOfEight(p, width, digitsOfEight(value));
         return p + width;
     }
 
@@ -488,10 +502,7 @@ ITOA_IFMA_TARGET char * fixedDigits(char * p, UInt64 value, UInt32 width)
 
     const UInt64 quotient = value / 10000000000000000ULL;
     const UInt32 quotient_digits = width - 16;
-    _mm512_mask_cvtusepi64_storeu_epi8(
-        shiftedPointer(p, static_cast<Int32>(quotient_digits) - 8),
-        static_cast<__mmask8>(0xff00 >> quotient_digits),
-        digitsOfEight(quotient));
+    storeDigitsOfEight(p, quotient_digits, digitsOfEight(quotient));
     _mm_storeu_si128(
         reinterpret_cast<__m128i *>(p + quotient_digits), digitsOfSixteen(value - quotient * 10000000000000000ULL));
     return p + width;
