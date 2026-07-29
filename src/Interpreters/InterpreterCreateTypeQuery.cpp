@@ -29,6 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_ALREADY_EXISTS;
     extern const int UNKNOWN_TYPE;
@@ -189,7 +190,13 @@ BlockIO InterpreterCreateTypeQuery::execute()
                 const auto * param_ident = param_ast->as<ASTIdentifier>();
                 if (!param_ident)
                     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Type parameter for UDT '{}' is not an identifier", type_name);
-                formal_param_names_set.insert(param_ident->name());
+                /// `DataTypeFactory` substitutes the actual arguments through a map keyed by the formal
+                /// parameter name, so a repeated name would silently take the value of its last
+                /// occurrence: `CREATE TYPE Pair(T, T) AS Tuple(T, T)` would ignore the first argument.
+                if (!formal_param_names_set.insert(param_ident->name()).second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Duplicate type parameter '{}' in definition of user-defined type '{}'",
+                                    param_ident->name(), type_name);
             }
         }
 

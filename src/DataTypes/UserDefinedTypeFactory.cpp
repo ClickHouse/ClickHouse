@@ -119,6 +119,11 @@ void UserDefinedTypeFactory::removeType(ContextPtr context, const String & name,
     bool type_existed = false;
     bool should_remove_from_system_table = false;
 
+    /// Without this, `DROP TYPE` right after a restart would look only at the (still empty) in-memory
+    /// map: it would throw `UNKNOWN_TYPE` for a persisted type, and `DROP TYPE IF EXISTS` would
+    /// silently do nothing while leaving the row in `udt.user_defined_types`.
+    ensureTypesLoaded(context);
+
     {
         std::unique_lock lock(mutex);
 

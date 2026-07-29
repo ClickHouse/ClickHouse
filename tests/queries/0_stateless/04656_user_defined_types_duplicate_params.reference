@@ -1,0 +1,2 @@
+Pair	Tuple(T, U)	T, U	\N	\N	\N	CREATE TYPE Pair(T, U) AS Tuple(T, U)
+Tuple(String, UInt8)
