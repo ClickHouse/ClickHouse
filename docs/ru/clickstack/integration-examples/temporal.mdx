@@ -40,9 +40,7 @@ Temporal предоставляет абстракцию для создания
 * Сетевой доступ по HTTP из ClickStack в ваш Temporal Cloud
 
 <Steps>
-  <Step>
-    #### Создайте ключ Temporal Cloud
-
+  <Step title="Создайте ключ Temporal Cloud" id="create-temporal-cloud-key">
     Убедитесь, что у вас есть API-ключ Temporal Cloud. Его можно создать, следуя [руководству по аутентификации](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication) в документации Temporal.
 
     <Warning>
@@ -52,9 +50,7 @@ Temporal предоставляет абстракцию для создания
     </Warning>
   </Step>
 
-  <Step>
-    #### Создайте пользовательскую конфигурацию OTel collector
-
+  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив собственный файл конфигурации и задав переменную окружения. Эта конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл `temporal-metrics.yaml` со следующей конфигурацией:
@@ -111,9 +107,7 @@ Temporal предоставляет абстракцию для создания
     </Note>
   </Step>
 
-  <Step>
-    #### Настройка ClickStack для загрузки пользовательской конфигурации
-
+  <Step title="Настройка ClickStack для загрузки пользовательской конфигурации" id="load-custom">
     Чтобы включить пользовательскую конфигурацию коллектора в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать пользовательский файл конфигурации по пути `/etc/otelcol-contrib/custom.config.yaml`
@@ -130,13 +124,13 @@ Temporal предоставляет абстракцию для создания
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... другие тома ...
+          # ... other volumes ...
     ```
 
     ##### Вариант 2: Docker run (образ «всё в одном»)
@@ -153,9 +147,7 @@ Temporal предоставляет абстракцию для создания
     ```
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verifying-metrics">
     После настройки войдите в HyperDX и убедитесь, что метрики поступают:
 
     1. Перейдите в Metrics explorer
@@ -173,13 +165,11 @@ Temporal предоставляет абстракцию для создания
 Чтобы вам было проще начать мониторинг Temporal Cloud с помощью ClickStack, мы подготовили несколько примеров визуализаций для метрик Temporal.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенный дашборд
-
+  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -190,9 +180,7 @@ Temporal предоставляет абстракцию для создания
     <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step>
-    #### Просмотрите панель мониторинга
-
+  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Панель мониторинга метрик Temporal" />
@@ -299,4 +287,4 @@ docker exec <container> cat /var/log/otel-collector.log | grep -i error
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертывания в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурация для продакшна описана в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
