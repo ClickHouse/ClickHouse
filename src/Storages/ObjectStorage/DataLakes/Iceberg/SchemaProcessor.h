@@ -151,9 +151,8 @@ private:
         Int32 new_id);
 
     /// Must be called under exclusive `mutex`. Materializes ClickHouse types for `(schema_id, timezone)`.
+    /// Callers must only invoke this when `(schema_id, timezone)` is not already present.
     void materializeClickhouseSchemaLocked(Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_) TSA_REQUIRES(mutex);
-    /// Must be called under exclusive `mutex`. Drops CH type maps and transform DAGs for `(schema_id, timezone)`.
-    void eraseClickhouseSchemaArtifactsLocked(Int32 schema_id, const String & timezone) TSA_REQUIRES(mutex);
     /// Must be called under exclusive `mutex`. Ensures `(schema_id, timezone)` is materialized.
     void ensureClickhouseSchemaMaterializedLocked(Int32 schema_id, ContextPtr context_) TSA_REQUIRES(mutex);
 

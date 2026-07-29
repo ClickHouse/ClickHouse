@@ -364,36 +364,12 @@ namespace Iceberg
 
 std::string IcebergSchemaProcessor::default_link{};
 
-void IcebergSchemaProcessor::eraseClickhouseSchemaArtifactsLocked(Int32 schema_id, const String & timezone)
-{
-    clickhouse_table_schemas_by_ids.erase({schema_id, timezone});
-
-    for (auto it = clickhouse_types_by_source_ids.begin(); it != clickhouse_types_by_source_ids.end();)
-    {
-        if (std::get<0>(it->first) == schema_id && std::get<1>(it->first) == timezone)
-            it = clickhouse_types_by_source_ids.erase(it);
-        else
-            ++it;
-    }
-
-    /// Transform DAGs embed DateTime64 timezones from the materialization context.
-    for (auto it = transform_dags_by_ids.begin(); it != transform_dags_by_ids.end();)
-    {
-        const auto & [old_id, new_id, dag_timezone] = it->first;
-        if (dag_timezone == timezone && (old_id == schema_id || new_id == schema_id))
-            it = transform_dags_by_ids.erase(it);
-        else
-            ++it;
-    }
-}
-
 void IcebergSchemaProcessor::materializeClickhouseSchemaLocked(
     Int32 schema_id,
     Poco::JSON::Object::Ptr schema_ptr,
     ContextPtr context_)
 {
     const String timezone = getIcebergTimestamptzTimezoneSetting(context_);
-    eraseClickhouseSchemaArtifactsLocked(schema_id, timezone);
 
     /// Nested struct materialization reads `current_schema_id` / timezone when registering field characteristics.
     auto previous_schema_id = current_schema_id;
