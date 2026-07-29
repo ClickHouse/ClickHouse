@@ -11,6 +11,7 @@ from .prometheus_test_utils import (
     execute_range_query_via_http_api,
     http_api_response_close_to,
     send_protobuf_to_remote_write,
+    value_close_to,
 )
 
 
@@ -506,7 +507,7 @@ def matrix_result_close_to_at_timestamp(actual, expected, timestamp, eps):
             if actual_t != expected_t:
                 return False
             if actual_t == timestamp:
-                if abs(float(actual_v) - float(expected_v)) > eps:
+                if not value_close_to(float(actual_v), float(expected_v), eps):
                     return False
             elif actual_v != expected_v:
                 return False
