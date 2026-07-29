@@ -24,6 +24,7 @@ public:
 
     Projections getProjections() const override;
     void setProjections(Projections projections_) override;
+    using IDataPartStorage::detectProjections; /// keep the no-arg overload visible under the override
     Projections detectProjections(const ProjectionScan & scan) const override;
 
     bool hasProjection(const std::string & dir_name) const override;

@@ -2674,7 +2674,7 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 void IMergeTreeDataPart::adoptOnDiskProjectionsForDetach()
 {
     IDataPartStorage::Projections adopted;
-    for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections({}))
+    for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections())
         if (!projection.is_temp)
             adopted.emplace(projection_dir, projection);
     getDataPartStorage().setProjections(std::move(adopted));

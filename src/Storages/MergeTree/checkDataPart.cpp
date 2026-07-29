@@ -355,7 +355,7 @@ static CheckDataPartResult checkDataPart(
     /// now checking projections of all storage types
     NameSet remaining_projections_on_disk;
     if (!data_part->isProjectionPart())
-        for (const auto & [projection_dir, projection] : data_part_storage.detectProjections({}))
+        for (const auto & [projection_dir, projection] : data_part_storage.detectProjections())
             if (!projection.is_temp)
                 remaining_projections_on_disk.insert(projection_dir);
 

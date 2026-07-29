@@ -162,7 +162,7 @@ TEST(ProjectionStorageSchema, CreateRenameRemoveMaintainCache)
     EXPECT_FALSE(std::filesystem::exists(fixture.base_path / "all_1_1_0.q.tmp_proj"));
 
     /// The schema survives and matches disk truth.
-    auto detected = fixture.storage->detectProjections({});
+    auto detected = fixture.storage->detectProjections();
     ASSERT_EQ(detected.size(), 1u);
     EXPECT_TRUE(detected.contains("p.proj"));
     EXPECT_EQ(detected.at("p.proj").format, IDataPartStorage::ProjectionStorageFormat::FLAT);
@@ -176,7 +176,7 @@ TEST(ProjectionStorageSchema, DetectProjectionsBothLayouts)
     std::filesystem::create_directories(fixture.base_path / "all_1_1_0.tmp.tmp_proj");
     std::filesystem::create_directories(fixture.base_path / "all_1_1_1.other.proj");   /// different owner
 
-    auto detected = fixture.storage->detectProjections({});
+    auto detected = fixture.storage->detectProjections();
     ASSERT_EQ(detected.size(), 3u);
     EXPECT_EQ(detected.at("nested.proj").format, IDataPartStorage::ProjectionStorageFormat::LEGACY_NESTED);
     EXPECT_EQ(detected.at("flat.proj").format, IDataPartStorage::ProjectionStorageFormat::FLAT);

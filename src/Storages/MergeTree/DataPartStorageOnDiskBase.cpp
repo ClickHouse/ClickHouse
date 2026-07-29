@@ -1614,7 +1614,7 @@ void DataPartStorageOnDiskBase::removeRecursive()
 {
     /// Physical teardown uses disk truth, not the owned cache: every FLAT sibling and temp projection dir on disk must go, ownership is
     /// irrelevant here.
-    const auto detected = detectProjections({});
+    const auto detected = detectProjections();
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)
@@ -1630,7 +1630,7 @@ void DataPartStorageOnDiskBase::removeRecursive()
 void DataPartStorageOnDiskBase::removeSharedRecursive(bool keep_in_remote_fs)
 {
     /// See removeRecursive: disk truth, not the owned cache.
-    const auto detected = detectProjections({});
+    const auto detected = detectProjections();
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)

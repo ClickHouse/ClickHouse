@@ -193,9 +193,9 @@ public:
         std::optional<Strings> candidates = std::nullopt;
         std::optional<Strings> root_listing = std::nullopt;
     };
-    /// No default argument: callers pass {} for a full scan. (A `= {}` default here cannot use ProjectionScan's member initializers
-    /// while this class is still incomplete -- C++ forbids it. The NSDMIs let a call site set just one field, e.g. {.candidates = ...}.)
     virtual Projections detectProjections(const ProjectionScan & scan) const = 0;
+    /// Full-scan convenience (default args are disallowed on virtuals).
+    Projections detectProjections() const { return detectProjections(ProjectionScan{}); }
 
     /// Owned-set membership by dirName().
     virtual bool hasProjection(const std::string & dir_name) const = 0;
