@@ -359,9 +359,23 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (expression.find('\0') != String::npos)
                     return false;
 
-                String prefix = extractFixedPrefixFromRegularExpression(expression);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
+
+                /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: "^$" matches only the empty string
+                /// and is equivalent to `value = ''`, so it needs the exact empty-string point range too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
                 if (prefix.empty())
                     return false;
+
+                if (!is_perfect)
+                    out.relaxed = true;
 
                 String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
@@ -369,7 +383,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.range = !right_bound.empty()
                     ? Range(prefix, true, right_bound, false)
                     : Range::createLeftBounded(prefix, true);
-                out.relaxed = true;
 
                 return true;
             }

@@ -47,7 +47,7 @@ bool isLiteralEscape(char c)
 }
 
 /// Returns true if the expression contains any unescaped '|'.
-bool expressionHasUnescapedAlternation(const String & expression)
+bool expressionHasUnescapedAlternation(std::string_view expression)
 {
     for (size_t i = 0; i < expression.size(); ++i)
     {
@@ -108,7 +108,7 @@ bool expressionHasUnescapedAlternation(const String & expression)
 ///   Branches contain nested groups. We only handle flat literal branches.
 ///   The common prefix "abc" could theoretically be extracted, but is not.
 ///   Prefix: "".
-String extractCommonPrefixFromAlternationBranches(const String & expression)
+String extractCommonPrefixFromAlternationBranches(std::string_view expression)
 {
     /// We only handle "^(literal1|literal2|...)$?".
     /// Reject anything that doesn't start with "^(".
@@ -193,79 +193,102 @@ String extractCommonPrefixFromAlternationBranches(const String & expression)
     return common_prefix;
 }
 
-}
-
-
-String extractFixedPrefixFromRegularExpression(const String & regexp)
+/// Extracts {fixed_prefix, is_perfect_prefix, is_exact} without looking at `requires_perfect_prefix`.
+std::tuple<String, bool, bool> extractFixedPrefix(std::string_view regexp)
 {
     /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
     if (regexp.size() <= 1 || regexp[0] != '^')
-        return {};
+        return {"", /* perfect = */ false, /* exact = */ false};
 
     /// The scan below stops at '|' and '(', so alternations are analyzed separately.
+    /// Their prefix is never perfect: strings starting with the common prefix of all branches
+    /// do not necessarily match one of the branches.
     if (expressionHasUnescapedAlternation(regexp))
-        return extractCommonPrefixFromAlternationBranches(regexp);
+        return {extractCommonPrefixFromAlternationBranches(regexp), /* perfect = */ false, /* exact = */ false};
 
     String fixed_prefix;
-    const char * begin = regexp.data() + 1;
-    const char * pos = begin;
+    fixed_prefix.reserve(regexp.size());
+
+    const char * pos = regexp.data() + 1;
     const char * end = regexp.data() + regexp.size();
 
     while (pos < end)
     {
         switch (*pos)
         {
-            case '\0':
-                pos = end;
-            break;
-
             case '\\':
             {
                 ++pos;
-                if (pos == end)
-                    break;
+                /// A trailing escape is an invalid pattern which the matcher rejects,
+                /// so never report it as exact.
+                if (pos == end || !isLiteralEscape(*pos))
+                    return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
 
-                if (isLiteralEscape(*pos))
-                {
-                    fixed_prefix += *pos;
-                    ++pos;
-                }
-                else
-                    pos = end;
-
+                fixed_prefix += *pos;
+                ++pos;
                 break;
             }
 
-            /// non-trivial cases
+            case '$':
+                /// '$' means "must end at the end of the string", so "^abc$" matches only "abc".
+                /// A '$' in the middle constrains the rest of the pattern, which we don't analyze.
+                if (pos + 1 == end)
+                    return {fixed_prefix, /* perfect = */ false, /* exact = */ true};
+                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+
+            case '.':
+                /// A trailing ".*" allows any continuation.
+                /// A trailing ".*$" also allows any continuation because of
+                /// flag OptimizedRegularExpression::RE_DOT_NL (see `Regexps::createRegexp`).
+                if ((end - pos == 2 || (end - pos == 3 && *(pos + 2) == '$')) && *(pos + 1) == '*')
+                    return {fixed_prefix, /* perfect = */ true, /* exact = */ false};
+                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
+
+            /// An unescaped '|' is handled by the alternation path above, so this is unreachable.
             case '|':
-                fixed_prefix.clear();
-            [[fallthrough]];
+                return {"", /* perfect = */ false, /* exact = */ false};
+
+            /// None of these gives another fixed character.
+            case '\0':
             case '(':
             case '[':
             case '^':
-            case '$':
-            case '.':
             case '+':
-                pos = end;
-            break;
+                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
 
-            /// Quantifiers that allow a zero number of occurrences.
+            /// Quantifiers that allow a zero number of occurrences make the previous character optional.
             case '{':
             case '?':
             case '*':
                 if (!fixed_prefix.empty())
                     fixed_prefix.pop_back();
+                return {fixed_prefix, /* perfect = */ false, /* exact = */ false};
 
-            pos = end;
-            break;
             default:
                 fixed_prefix += *pos;
-            pos++;
-            break;
+                ++pos;
+                break;
         }
     }
 
-    return fixed_prefix;
+    /// The whole pattern is a literal string and nothing constrains the end of the matched string,
+    /// so "^abc" matches every string starting with "abc".
+    return {fixed_prefix, /* perfect = */ true, /* exact = */ false};
+}
+
+}
+
+
+std::tuple<String, bool, bool> extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix)
+{
+    auto [fixed_prefix, is_perfect_prefix, is_exact] = extractFixedPrefix(regexp);
+
+    /// An exact prefix is not a perfect one, but it is returned anyway: it describes the set of
+    /// matching strings even more precisely, so a caller which needs a perfect prefix can use it too.
+    if (requires_perfect_prefix && !is_perfect_prefix && !is_exact)
+        return {"", /* perfect = */ false, /* exact = */ false};
+
+    return {fixed_prefix, is_perfect_prefix, is_exact};
 }
 
 }
