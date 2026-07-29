@@ -414,8 +414,16 @@ ITOA_IFMA_TARGET ALWAYS_INLINE inline __m128i digitsOfSixteen(UInt64 n)
 {
     const __m512i high = digitsOfEight(n / 100000000);
     const __m512i low = digitsOfEight(n % 100000000);
-    const __m512i indexes = _mm512_castsi128_si512(_mm_set_epi8(
-        0x78, 0x70, 0x68, 0x60, 0x58, 0x50, 0x48, 0x40, 0x38, 0x30, 0x28, 0x20, 0x18, 0x10, 0x08, 0x00));
+    /// Only the low 16 indexes matter, but the whole vector is spelled out as a constant on purpose:
+    /// widening a 128-bit constant with `_mm512_castsi128_si512` leaves the upper lanes undefined, which makes
+    /// the index a non-constant value in the IR, and MemorySanitizer in clang 21 falsely reports
+    /// use-of-uninitialized-value for `vpermi2b` with a non-constant index. See
+    /// https://github.com/llvm/llvm-project/pull/148785 - the fix is not in clang 21.
+    const __m512i indexes = _mm512_set_epi8(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x78, 0x70, 0x68, 0x60, 0x58, 0x50, 0x48, 0x40, 0x38, 0x30, 0x28, 0x20, 0x18, 0x10, 0x08, 0x00);
     return _mm512_castsi512_si128(_mm512_permutex2var_epi8(high, indexes, low));
 }
 
