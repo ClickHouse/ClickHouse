@@ -332,15 +332,17 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
 
     reader.finishStreams(std::move(streams));
 
-    /// A snapshot that contains nodes but lost the root node `"/"` is catastrophically corrupted:
-    /// every node in it looks like an orphan, so orphan cleanup would delete the entire data tree
-    /// and `KeeperStorage::initializeSystemNodes` would silently recreate an empty one. Refuse to
+    /// A snapshot that lost the root node `"/"` is catastrophically corrupted: every remaining node
+    /// looks like an orphan, so orphan cleanup would delete the entire data tree, and
+    /// `KeeperStorage::initializeSystemNodes` would then silently recreate `"/"` and `"/keeper"` —
+    /// Keeper would start with an empty database. This also covers a snapshot with no nodes at all,
+    /// which is corrupted for the same reason: every valid Keeper snapshot contains `"/"`. Refuse to
     /// load such a snapshot regardless of `remove_orphaned_nodes_on_startup`.
-    if (container.size() != 0 && container.find("/") == container.end())
+    if (container.find("/") == container.end())
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
-            "Snapshot contains {} nodes but is missing the root node '/'. Refusing to load it: the whole data tree would be "
-            "treated as orphaned. Restore Keeper from a valid snapshot or from the changelog",
+            "Snapshot is missing the root node '/' ({} nodes loaded). Refusing to load it: the whole data tree would be treated as "
+            "orphaned and Keeper would start with an empty database. Restore Keeper from a valid snapshot or from the changelog",
             container.size());
 
     /// Detect orphaned nodes — nodes whose parent is absent from the snapshot. Without special

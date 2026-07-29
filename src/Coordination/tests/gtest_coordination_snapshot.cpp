@@ -1992,6 +1992,38 @@ TEST_P(CoordinationTestWithCompression, TestSnapshotMissingRootAlwaysThrows)
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/true), DB::Exception);
 }
 
+/// A snapshot with no nodes at all is corrupted for the same reason: every valid Keeper snapshot
+/// contains `/`. Loading it must throw instead of letting `KeeperStorage::initializeSystemNodes`
+/// recreate a fresh empty tree.
+TEST_P(CoordinationTestWithCompression, TestSnapshotWithoutNodesAlwaysThrows)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    /// Keep only the system nodes with data (children of `/keeper`, which are never serialized), so
+    /// that the resulting snapshot carries zero nodes
+    mem_storage.container.erase("/");
+    mem_storage.container.erase(DB::keeper_system_path);
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/true), DB::Exception);
+}
+
 /// Test that ephemeral tracking is cleaned up when orphaned ephemeral nodes are removed.
 TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedEphemeralCleanup)
 {
