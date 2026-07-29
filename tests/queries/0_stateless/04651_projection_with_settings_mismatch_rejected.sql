@@ -66,6 +66,20 @@ ALTER TABLE t_proj_a REPLACE PARTITION 1 FROM t_proj_b; -- { serverError BAD_ARG
 DROP TABLE t_proj_a;
 DROP TABLE t_proj_b;
 
+-- A setting whose value happens to spell out the bytes of a query parameter of the same name.
+-- The parser strips the `param_` prefix, so without length-prefixed and counted carriers these
+-- two definitions stream identical bytes.
+CREATE TABLE t_proj_a (a UInt32, b UInt32,
+    PROJECTION p (SELECT a, b ORDER BY b) WITH SETTINGS (max_compress_block_size = 3458764513820540928))
+ENGINE = MergeTree PARTITION BY a ORDER BY a;
+CREATE TABLE t_proj_b (a UInt32, b UInt32,
+    PROJECTION p (SELECT a, b ORDER BY b) WITH SETTINGS (param_max_compress_block_size = 0))
+ENGINE = MergeTree PARTITION BY a ORDER BY a;
+INSERT INTO t_proj_b VALUES (1, 10);
+ALTER TABLE t_proj_a REPLACE PARTITION 1 FROM t_proj_b; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_proj_a;
+DROP TABLE t_proj_b;
+
 -- Two resets of the same setting differing only in formatting must still be accepted.
 CREATE TABLE t_proj_a (a UInt32, b UInt32,
     PROJECTION p (SELECT a, b ORDER BY b) WITH SETTINGS (index_granularity = DEFAULT))

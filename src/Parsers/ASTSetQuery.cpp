@@ -86,6 +86,15 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     /// None of the members below is a child, so the default implementation does not see them.
     static_assert(sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
 
+    /// The three lists hold different kinds of entry, and a query parameter is stored with its
+    /// `param_` prefix removed. Their sizes are hashed so that one list cannot be mistaken for
+    /// another, and every value is length-prefixed so that neighbouring entries cannot be read as
+    /// one: `param_x = 0` must not stream the same bytes as `x` set to a UInt64 that happens to
+    /// spell the character `0`.
+    hash_state.update(changes.size());
+    hash_state.update(default_settings.size());
+    hash_state.update(query_parameters.size());
+
     for (const auto & change : changes)
     {
         hash_state.update(change.name.size());

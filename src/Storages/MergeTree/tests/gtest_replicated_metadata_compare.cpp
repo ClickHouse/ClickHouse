@@ -386,6 +386,25 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ProjectionWithSettingsIsSignifican
     param_renamed.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (param_y = 1)";
     EXPECT_TRUE(diffOf(param_one, param_renamed).projections_changed);
 
+    /// A setting whose value spells out the bytes of a query parameter of the same name. The
+    /// parser strips the `param_` prefix, so the two entries only stay distinct because every
+    /// carrier is length-prefixed and each list contributes its size.
+    MetadataFields value_spelling_parameter;
+    value_spelling_parameter.projections
+        = "pr (SELECT b ORDER BY c) WITH SETTINGS (max_compress_block_size = 3458764513820540928)";
+    MetadataFields parameter_spelling_value;
+    parameter_spelling_value.projections = "pr (SELECT b ORDER BY c) WITH SETTINGS (param_max_compress_block_size = 0)";
+    EXPECT_TRUE(diffOf(value_spelling_parameter, parameter_spelling_value).projections_changed);
+
+    /// Two reset settings whose names concatenate to the name of a single reset setting.
+    MetadataFields two_resets;
+    two_resets.projections
+        = "pr (SELECT b ORDER BY c) WITH SETTINGS (index_granularity = DEFAULT, max_compress_block_size = DEFAULT)";
+    MetadataFields one_concatenated_reset;
+    one_concatenated_reset.projections
+        = "pr (SELECT b ORDER BY c) WITH SETTINGS (index_granularitymax_compress_block_size = DEFAULT)";
+    EXPECT_TRUE(diffOf(two_resets, one_concatenated_reset).projections_changed);
+
     /// Declarations that differ only in formatting are still equal.
     MetadataFields granularity_default_parens;
     granularity_default_parens.projections = "pr (SELECT (b) ORDER BY (c)) WITH SETTINGS (index_granularity = DEFAULT)";
