@@ -15,7 +15,7 @@ cleanup() { $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null || 
 trap cleanup EXIT
 
 # SYSTEM SYNC MERGES captures the set of scheduled source parts once, at entry, and every wait clause
-# (coverage, merge list, fetch) plus the final clearScheduledParts() must be scoped to that snapshot.
+# (coverage, merge list, fetch) plus the final `clearScheduledParts` must be scoped to that snapshot.
 # Otherwise a concurrent SYSTEM SCHEDULE MERGE for unrelated parts, issued after the snapshot, keeps
 # the first call waiting on parts it never scheduled: the coverage check used to walk the live
 # registry instead of the captured snapshot.
