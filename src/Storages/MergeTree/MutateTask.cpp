@@ -26,7 +26,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
@@ -83,6 +82,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
@@ -624,6 +625,18 @@ static void splitAndModifyMutationCommands(
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
+
+    /// Any mutation that processes data through the interpreter also materializes `_block_number` and `_block_offset` columns when they are enabled.
+    if (!for_interpreter.empty())
+    {
+        const auto data_settings = part->storage.getSettings();
+
+        if ((*data_settings)[MergeTreeSetting::enable_block_number_column] && !part_columns.has(BlockNumberColumn::name))
+            for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockNumberColumn::name, .data_type = BlockNumberColumn::type});
+
+        if ((*data_settings)[MergeTreeSetting::enable_block_offset_column] && !part_columns.has(BlockOffsetColumn::name))
+            for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockOffsetColumn::name, .data_type = BlockOffsetColumn::type});
+    }
 }
 
 static void addRenamedColumnToColumnsSubstreams(
@@ -736,6 +749,8 @@ getColumnsForNewDataPart(
         bool need_column = false;
         if (name == RowExistsColumn::name)
             need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+        else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
+            need_column = part_columns.has(name) || updated_header.has(name);
         else
             need_column = part_columns.has(name);
 
@@ -1083,6 +1098,9 @@ static NameSet collectFilesToSkip(
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+
+    /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
+    files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
@@ -1488,7 +1506,7 @@ static void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
+    new_data_part->setMinMaxIndex(source_part->getMinMaxIndex());
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1514,6 +1532,21 @@ static void finalizeMutatedPart(
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
+
+    /// This hardlink / mutate-some-columns path assembles the checksums and index granularity in the
+    /// default arenas (the full-rewrite path re-homes them in `MergedBlockOutputStream::finalizePartAsync`).
+    /// Re-home the finished part-lifetime maps into the dedicated arena. The primary index set above is
+    /// already routed by `setIndex`; the minmax index by `setMinMaxIndex`.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        reallocateByCopy(new_data_part->checksums);
+        /// TTL-recalculating mutations rebuild `ttl_infos` during execution (in the default arenas),
+        /// so re-home the final maps here, mirroring `MergedBlockOutputStream::finalizePartAsync`.
+        reallocateByCopy(new_data_part->ttl_infos);
+        if (new_data_part->index_granularity)
+            new_data_part->index_granularity = new_data_part->index_granularity->clone();
+    }
 }
 
 }
@@ -1591,6 +1624,14 @@ struct MutationContext
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
+    /// The statistics objects the mutation must compute from the blocks it writes. This is a
+    /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
+    /// source part only to be carried over unchanged, and they belong to columns this mutation
+    /// does not rewrite, so their state is already correct for the new part. Building them
+    /// against a block that happens to contain the column at a different type is what produced
+    /// the "Type mismatch when building statistics" logical error. `MergeTask` makes the same
+    /// distinction through `statistics_to_build_by_part`.
+    ColumnsStatistics statistics_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -1813,8 +1854,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
-        if (!ctx->all_gathered_data.statistics.empty())
-            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
+        if (!ctx->statistics_to_build.empty())
+            ctx->statistics_to_build.buildIfExists(cur_block);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -1890,7 +1931,8 @@ void PartMergerWriter::createBuildTextIndexesTask()
         temporary_text_index_storage,
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
-        ctx->mrk_extension);
+        ctx->mrk_extension,
+        *ctx->data->getSettings());
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
@@ -2040,7 +2082,8 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
-                ctx->out->getWriterSettings());
+                ctx->out->getWriterSettings(),
+                ctx->need_sync);
 
             merge_subtasks.push_back(std::move(merge_task));
         }
@@ -2376,8 +2419,10 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
+        const auto & new_part_columns = ctx->new_data_part->getColumns();
+        const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -2388,6 +2433,10 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot);
+
+        /// This task rewrites every column, so all statistics objects were created empty from the
+        /// current metadata above and all of them have to be computed.
+        ctx->statistics_to_build = ctx->all_gathered_data.statistics;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2509,6 +2558,17 @@ private:
             *ctx->source_part,
             ctx->metadata_snapshot);
 
+        /// This task rewrites only some of the columns and carries the rest over from the source
+        /// part. Only the statistics `processStatisticsChanges` has just replaced with empty
+        /// objects built from the current metadata may be computed here; every other entry is a
+        /// source-part statistics object to preserve as it is.
+        for (const auto & [stat_name, _] : ctx->stats_to_recalc)
+        {
+            auto it = ctx->all_gathered_data.statistics.find(stat_name);
+            if (it != ctx->all_gathered_data.statistics.end())
+                ctx->statistics_to_build.emplace(stat_name, it->second);
+        }
+
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
@@ -2611,6 +2671,7 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
+        ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
@@ -3519,11 +3580,15 @@ bool MutateTask::prepare()
         }
     }
 
-    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
-    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for the
+    /// mutated part's lifetime, so create it in the dedicated arena. `build()` re-enters the arena for
+    /// the part object; the mutation planning below (column transforms, projection/statistics
+    /// collections, file lists, task construction) is transient and stays on the default per-CPU arenas.
+    VolumePtr single_disk_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    }
     ctx->disk = single_disk_volume->getDisk();
 
     std::string prefix;
@@ -3569,6 +3634,11 @@ bool MutateTask::prepare()
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
+
+    /// Re-home the part-lifetime metadata assigned above (partition, ttl_infos) into the dedicated
+    /// arena; `setColumns` / `setColumnsSubstreams` already self-scope. Everything below is transient
+    /// mutation planning and deliberately stays on the default per-CPU arenas.
+    ctx->new_data_part->moveMetadataToDedicatedArena();
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();

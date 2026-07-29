@@ -24,7 +24,7 @@ A continuación, se ofrece un resumen de las distintas formas de eliminar datos 
 Las eliminaciones ligeras hacen que las filas se marquen inmediatamente como eliminadas, de modo que puedan excluirse automáticamente de todas las consultas `SELECT` posteriores. La eliminación posterior de estas filas se produce durante los ciclos naturales de merge y, por lo tanto, conlleva menos E/S. Como resultado, es posible que, durante un período no especificado, los datos no se eliminen realmente del almacenamiento y solo queden marcados como eliminados. Si necesita garantizar que los datos se eliminen, considere el comando de mutación anterior.
 
 ```sql
--- delete all data from 2018 with a lightweight delete. Not recommended.
+-- eliminar todos los datos de 2018 con una eliminación ligera. No recomendado.
 DELETE FROM posts WHERE toYear(CreationDate) = 2018
 ```
 
