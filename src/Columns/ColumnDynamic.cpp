@@ -918,9 +918,10 @@ UInt32 ColumnDynamic::hashSharedValue(std::string_view value, SharedValueHashCac
     /// Reset to an EMPTY column rather than popping the previous row: `popBack` is a row operation, so
     /// a column that keeps state outside its rows would retain every value seen so far and re-hash all
     /// of it here. `ColumnLowCardinality::popBack` drops indexes but not the dictionary, and
-    /// `computeHashInto` hashes the whole dictionary per call, which would make this loop quadratic;
-    /// `ColumnVariant` nests the same shape. `cloneEmpty` is `cloneResized(0)`, which those types
-    /// implement by clone-emptying that state, so one fresh column per row keeps the work O(1).
+    /// `computeHashInto` hashes the whole dictionary per call, which would make this loop quadratic in
+    /// the rows of one `computeHashInto` call (the cache is a local there, so it never carries across
+    /// calls); `ColumnVariant` nests the same shape. `cloneEmpty` is `cloneResized(0)`, which those
+    /// types implement by clone-emptying that state, so one fresh column per row keeps the work O(1).
     if (entry.column)
         entry.column = entry.column->cloneEmpty();
     else

@@ -1176,8 +1176,9 @@ TEST(ComputeHashInto, ReprIndependenceDynamicSharedVariant)
 // must be reset to an EMPTY column between rows, not merely popped: `popBack` is a row operation, so a
 // type that keeps state outside its rows retains every value seen so far and `computeHashInto` re-reads
 // all of it. `ColumnLowCardinality` is such a type -- `popBack` drops indexes only, `insertData` grows
-// the dictionary, and `computeHashInto` hashes the whole dictionary per call, which turns hashing N
-// shared rows into O(N^2) work over a dictionary that also grows to N entries.
+// the dictionary, and `computeHashInto` hashes the whole dictionary per call, which turns hashing the N
+// shared rows of ONE `computeHashInto` call into O(N^2) work over a dictionary that also grows to N
+// entries. The cache is a local of that call, so N is bounded by one row range, never by the table.
 //
 // The values stay correct either way (the dictionary is gathered by index), so the assertions below are
 // split: first that the fix changes no hash VALUE, then that the retained state is gone. The retention
