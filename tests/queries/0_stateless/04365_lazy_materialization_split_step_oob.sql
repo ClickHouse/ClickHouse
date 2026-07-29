@@ -3,11 +3,13 @@
 -- assertion below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old
 -- one; the old-analyzer variant also forbids changing enable_analyzer inside a subquery.
 --
--- Regression test for issue #101567: OOB in splitExpressionStep / splitFilterStep during
+-- Regression test for issue #101567: OOB in splitExpressionStep during
 -- optimizeLazyMaterialization2. A multi-column SELECT (url, extra1, extra2) over a projection
--- with PREWHERE routes through the split* functions with more than one required output, which
--- is the shape the issue flagged. The EXPLAIN assertion fails if the lazy split path is not
--- produced, so the test cannot pass as a no-op.
+-- routes through splitExpressionStep with more than one required output, which is the shape
+-- the issue flagged. The predicate is absorbed into the projection PREWHERE here, so
+-- splitFilterStep (the other helper named in the issue) is not reached by this query.
+-- The EXPLAIN assertion fails if the lazy split path or the projection is not produced,
+-- so the test cannot pass as a no-op.
 
 DROP TABLE IF EXISTS test_split_oob4;
 CREATE TABLE test_split_oob4
@@ -24,22 +26,25 @@ INSERT INTO test_split_oob4 (id, url, region) VALUES (2, 'page2', 'us_west');
 
 OPTIMIZE TABLE test_split_oob4 FINAL;
 
--- Plan check: the lazy-materialization split path must be present.
+-- Plan check: the lazy-materialization split path over the projection must be present.
 -- query_plan_max_limit_for_lazy_materialization must be >= the LIMIT or the optimization
 -- is skipped (the CI randomizer can set it to 1, which would drop the lazy steps).
+-- optimize_use_projections is randomized off, and it also neuters force_optimize_projection.
 -- pretty = 0: the pretty format prefixes step names, which would defeat the exact match.
 SELECT trimLeft(explain) AS s FROM (
     EXPLAIN actions = 0, pretty = 0
     SELECT url, extra1, extra2 FROM test_split_oob4 WHERE region = 'europe' ORDER BY url LIMIT 10
     SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_steps = 0,
+        optimize_use_projections = 1,
         force_optimize_projection = 1, force_optimize_projection_name = 'region_proj',
         query_plan_optimize_lazy_materialization = 1,
         query_plan_max_limit_for_lazy_materialization = 1000
-) WHERE s IN ('JoinLazyColumnsStep', 'LazilyReadFromMergeTree') ORDER BY s;
+) WHERE s IN ('JoinLazyColumnsStep', 'LazilyReadFromMergeTree', 'ReadFromMergeTree (region_proj)') ORDER BY s;
 
--- Correctness (and no crash under debug / ASan).
+-- Correctness (and no abort under debug / ASan).
 SELECT url, extra1, extra2 FROM test_split_oob4 WHERE region = 'europe' ORDER BY url LIMIT 10
 SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_steps = 0,
+    optimize_use_projections = 1,
     force_optimize_projection = 1, force_optimize_projection_name = 'region_proj',
     query_plan_optimize_lazy_materialization = 1,
     query_plan_max_limit_for_lazy_materialization = 1000;

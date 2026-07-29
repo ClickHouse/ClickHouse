@@ -1,3 +1,4 @@
 JoinLazyColumnsStep
 LazilyReadFromMergeTree
+ReadFromMergeTree (region_proj)
 page1	e1	e2
