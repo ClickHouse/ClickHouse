@@ -74,3 +74,20 @@
 16
 1
 16
+-- 21. over-fire control: a subcolumn the part list cannot describe keeps pruning after a reload
+1
+0
+1
+0
+0
+1
+0
+0
+1
+1
+0
+0
+-- 22. a SUBCOLUMN whose parent the part does not carry at all must still refuse
+1
+1
+1

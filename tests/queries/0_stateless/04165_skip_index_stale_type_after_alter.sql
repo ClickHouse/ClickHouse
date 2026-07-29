@@ -390,6 +390,82 @@ ALTER TABLE t_keep_subexpr_dst ATTACH PARTITION 0 FROM t_keep_subexpr_src SETTIN
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_subexpr_dst WHERE toString(p.x) = '0') WHERE explain ILIKE '%Granules: 4/17%';
 SELECT count() FROM t_keep_subexpr_dst WHERE toString(p.x) = '0';
 
+SELECT '-- 21. over-fire control: a subcolumn the part list cannot describe keeps pruning after a reload';
+-- `vec.quantized` comes from a custom SERIALIZATION the Quantized codec attaches to the metadata-side
+-- type, not from the declared type, so columns.txt cannot represent it (IMergeTreeReader.cpp) and the
+-- part's own parent type offers no such subcolumn once the part is reloaded from disk. That is an
+-- unrepresentable-in-columns.txt fact, not a type difference, so pruning must survive the reload -
+-- a refusal here would answer differently before and after a restart.
+SET allow_experimental_codecs = 1;
+DROP TABLE IF EXISTS t_keep_quantized;
+CREATE TABLE t_keep_quantized (k UInt64, vec Array(Float32) CODEC(Quantized('int8', 8)),
+    INDEX idx vec.quantized TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_quantized SELECT number, arrayMap(j -> toFloat32(number + j), range(8)) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_quantized;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_quantized WHERE vec.quantized = 'xxxxxxxxxxxx') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_keep_quantized WHERE vec.quantized = 'xxxxxxxxxxxx';
+DETACH TABLE t_keep_quantized SYNC;
+ATTACH TABLE t_keep_quantized;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_quantized WHERE vec.quantized = 'xxxxxxxxxxxx') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_keep_quantized WHERE vec.quantized = 'xxxxxxxxxxxx';
+SELECT count() FROM t_keep_quantized WHERE vec.quantized = 'xxxxxxxxxxxx' SETTINGS use_skip_indexes = 0;
+-- The same refusal is reachable through the other branch: no IDataType::equals() compares
+-- custom_serialization, so a part whose own list is uncustomized shares the interned
+-- ColumnsDescription of a customized one and tryGetColumn() then SUCCEEDS, while the part's own
+-- parent still offers no subcolumn. ATTACH PARTITION FROM makes that collision deterministic the
+-- same way case 15 does. Both branches must answer alike, or pruning would depend on load order.
+DROP TABLE IF EXISTS t_keep_quant_src;
+CREATE TABLE t_keep_quant_src (k UInt64, vec Array(Float32) CODEC(Quantized('int8', 8)),
+    INDEX idx vec.quantized TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_quant_src SELECT number, arrayMap(j -> toFloat32(number + j), range(8)) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_quant_src;
+DROP TABLE IF EXISTS t_keep_quant_dst;
+CREATE TABLE t_keep_quant_dst (k UInt64, vec Array(Float32) CODEC(Quantized('int8', 8)),
+    INDEX idx vec.quantized TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_quant_dst SELECT 1000 + number, arrayMap(j -> toFloat32(number + j), range(8)) FROM numbers(4);
+SYSTEM STOP MERGES t_keep_quant_dst;
+ALTER TABLE t_keep_quant_dst ATTACH PARTITION 0 FROM t_keep_quant_src SETTINGS alter_sync = 2;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_quant_dst WHERE vec.quantized = 'xxxxxxxxxxxx') WHERE explain ILIKE '%Granules: 0/17%';
+SELECT count() FROM t_keep_quant_dst WHERE vec.quantized = 'xxxxxxxxxxxx';
+SELECT count() FROM t_keep_quant_dst WHERE vec.quantized = 'xxxxxxxxxxxx' SETTINGS use_skip_indexes = 0;
+
+-- A dotted PARENT name pins the name split: `a.b`.quantized must resolve as `a.b` + `quantized`,
+-- not as the shortest prefix `a` + `b.quantized`, which resolves to no column and loses pruning.
+DROP TABLE IF EXISTS t_keep_quant_dotted;
+CREATE TABLE t_keep_quant_dotted (k UInt64, `a.b` Array(Float32) CODEC(Quantized('int8', 8)),
+    INDEX idx `a.b`.quantized TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_quant_dotted SELECT number, arrayMap(j -> toFloat32(number + j), range(8)) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_quant_dotted;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_quant_dotted WHERE `a.b`.quantized = 'xxxxxxxxxxxx') WHERE explain ILIKE '%Granules: 0/16%';
+DETACH TABLE t_keep_quant_dotted SYNC;
+ATTACH TABLE t_keep_quant_dotted;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_quant_dotted WHERE `a.b`.quantized = 'xxxxxxxxxxxx') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_keep_quant_dotted WHERE `a.b`.quantized = 'xxxxxxxxxxxx';
+SELECT count() FROM t_keep_quant_dotted WHERE `a.b`.quantized = 'xxxxxxxxxxxx' SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 22. a SUBCOLUMN whose parent the part does not carry at all must still refuse';
+-- Case 11 with a subcolumn requirement: the part holds index files for p.x but no p column, so the
+-- part records no type to compare against and the granule holds bytes of the old type. This is the
+-- shape that separates "the part cannot express this subcolumn" from "the parent is simply absent" -
+-- a guard keyed on parent existence alone would skip the type check here and prune wrongly.
+DROP TABLE IF EXISTS t_absent_sub;
+CREATE TABLE t_absent_sub (k UInt64, other String) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_absent_sub SELECT number, toString(number) FROM numbers(64);
+ALTER TABLE t_absent_sub ADD COLUMN p Tuple(x UInt64) DEFAULT tuple(k * 3) SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_absent_sub ADD INDEX idx p.x TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_absent_sub MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_absent_sub' AND active AND column = 'p';
+SYSTEM STOP MERGES t_absent_sub;
+ALTER TABLE t_absent_sub MODIFY COLUMN p Tuple(x Nullable(UInt64));
+KILL MUTATION WHERE table = 't_absent_sub' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_absent_sub WHERE p.x = 150;
+SELECT count() FROM t_absent_sub WHERE p.x = 150 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -423,3 +499,8 @@ DROP TABLE t_keep_sub_src;
 DROP TABLE t_keep_sub_dst;
 DROP TABLE t_keep_subexpr_src;
 DROP TABLE t_keep_subexpr_dst;
+DROP TABLE t_keep_quantized;
+DROP TABLE t_keep_quant_src;
+DROP TABLE t_keep_quant_dst;
+DROP TABLE t_keep_quant_dotted;
+DROP TABLE t_absent_sub;

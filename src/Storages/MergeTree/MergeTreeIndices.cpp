@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -203,10 +204,39 @@ DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const NameAndType
     return nullptr;
 }
 
+/// Is a subcolumn of @name_in_storage produced by the metadata-side parent's custom SERIALIZATION
+/// rather than by its declared type? A Quantized codec attaches one to expose `<col>.quantized`
+/// (ColumnsDescription::attachQuantizeSerializationIfNeeded), and columns.txt round-trips only the
+/// bare type name (IMergeTreeReader.cpp), so a part's own list cannot describe such a subcolumn at
+/// all. Its silence is then an unrepresentable fact, not a type difference.
+///
+/// A subcolumn of the DECLARED type is unaffected: a Tuple element or a JSON typed path is compared
+/// by the parent's equals() as usual, so a stale hint is still caught.
+bool hasSerializationDefinedSubcolumns(const ColumnsDescription & metadata_columns, const String & name_in_storage)
+{
+    const auto * parent = metadata_columns.tryGet(name_in_storage);
+    return parent && parent->type->getCustomSerialization() != nullptr;
+}
+
+/// The same question for a name that has not been split yet, which also answers "is it a subcolumn
+/// at all": a name with no separator yields no pair and so no parent. `a.b.c` is ambiguous between
+/// `a` + `b.c` and `a.b` + `c`, so take the first split whose parent resolves, exactly as
+/// Nested::tryGetColumnNameInStorage does.
+bool isSerializationDefinedSubcolumn(const ColumnsDescription & metadata_columns, const String & column)
+{
+    for (const auto & [name_in_storage, _] : Nested::getAllColumnAndSubcolumnPairs(column))
+        if (const auto * parent = metadata_columns.tryGet(String(name_in_storage)))
+            return parent->type->getCustomSerialization() != nullptr;
+
+    return false;
+}
+
 }
 
 bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
 {
+    const auto & metadata_columns = metadata_snapshot->getColumns();
+
     for (const auto & [column, metadata_type] : getColumnsWithTypesRequiredForIndexCalc())
     {
         auto part_column = part.tryGetColumn(column);
@@ -218,7 +248,13 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         /// part that already has the index on disk, so a part that merely predates ADD INDEX is
         /// unaffected.
         if (!part_column)
+        {
+            /// Unless the part's list simply cannot express this subcolumn; see
+            /// isSerializationDefinedSubcolumn(). A genuinely absent column still refuses.
+            if (isSerializationDefinedSubcolumn(metadata_columns, column))
+                continue;
             return false;
+        }
 
         /// Prefer the part's own uncached list; see tryGetPartOwnType() for why the cached one cannot
         /// answer this question. tryGetColumn() above stays the EXISTENCE test: its nullopt is what
@@ -230,7 +266,16 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
             /// renamed, or the parent is absent from this part). Refuse: falling back to the cached
             /// description here would reintroduce the load-order dependency above.
             if (part_column->isSubcolumn())
+            {
+                /// The same unrepresentable fact reached through the other branch: the interned
+                /// description can hand this part a customized parent instance, because no
+                /// IDataType::equals() compares custom_serialization, so tryGetColumn() succeeds
+                /// while the part's OWN parent still cannot offer the subcolumn. Which branch fires
+                /// depends on part load order, so both ask the same question.
+                if (hasSerializationDefinedSubcolumns(metadata_columns, part_column->getNameInStorage()))
+                    continue;
                 return false;
+            }
             part_type = part_column->type;
         }
 
