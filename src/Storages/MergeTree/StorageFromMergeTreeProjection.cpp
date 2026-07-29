@@ -168,14 +168,26 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
     if (projection->with_parent_part_offset)
         remapPartOffsetToParent(expr);
 
-    /// Resolve against exactly what the projection read can serve: its physical columns plus the parent
-    /// offsets it preserves (`_part_starting_offset` from `part_starting_offset_in_query`, and the parent
-    /// `_part_offset` as `_parent_part_offset`). Anything else fails to resolve, and we fail closed with a
-    /// clear ACCESS_DENIED.
+    /// Resolve against exactly what the projection read can serve. Anything else fails to resolve, and we
+    /// fail closed with a clear ACCESS_DENIED. What the projection read can serve:
+    ///  - its stored physical columns;
+    ///  - part-identity virtuals (`_part`, `_partition_id`, ...): a projection part maps back to its parent
+    ///    part (`RangesInDataPart::getDescription`), so these keep parent-row semantics;
+    ///  - the parent offsets it preserves: `_part_starting_offset`, and the parent `_part_offset` remapped
+    ///    to `_parent_part_offset` above.
+    /// Position-relative virtuals (`_part_offset`, `_part_index`, ...) are intentionally NOT offered: on a
+    /// reordered projection they point at different rows than the parent, so enforcing a policy on them
+    /// would filter the wrong rows. That is why we use this explicit set instead of the whole snapshot.
     auto available_columns = projection->metadata->getColumns().getAllPhysical();
     available_columns.emplace_back("_part_starting_offset", std::make_shared<DataTypeUInt64>());
     if (projection->with_parent_part_offset)
         available_columns.emplace_back("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+
+    auto parent_snapshot = merge_tree.getStorageSnapshot(parent_metadata, context);
+    auto virtual_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    for (const auto & name : MergeTreeData::virtuals_useful_for_filter)
+        if (auto virtual_column = parent_snapshot->tryGetColumn(virtual_options, name))
+            available_columns.push_back(*virtual_column);
 
     ActionsDAG dag = [&]
     {

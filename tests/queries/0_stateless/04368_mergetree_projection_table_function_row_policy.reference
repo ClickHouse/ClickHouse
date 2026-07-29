@@ -34,3 +34,6 @@ Carol	engineering
 1
 2
 3
+-- policy on the _partition_id virtual is enforced (expect 1, 3)
+1
+3

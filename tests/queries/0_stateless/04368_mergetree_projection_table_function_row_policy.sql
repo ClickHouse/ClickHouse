@@ -175,3 +175,22 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'pso_rls_proj', 'p') ORDER
 
 DROP ROW POLICY rp_pso_rls_proj ON pso_rls_proj;
 DROP TABLE pso_rls_proj;
+
+-- A policy on a part-identity virtual (`_partition_id`) is enforced: a projection part maps back to its
+-- parent part, so the virtual keeps parent-row semantics (unlike the projection-local `_part_offset`).
+DROP TABLE IF EXISTS pid_rls_proj;
+DROP ROW POLICY IF EXISTS rp_pid_rls_proj ON pid_rls_proj;
+
+CREATE TABLE pid_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree PARTITION BY (id % 2) ORDER BY id;
+INSERT INTO pid_rls_proj VALUES (1, 10), (2, 20), (3, 30), (4, 40);
+
+ALTER TABLE pid_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
+ALTER TABLE pid_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_pid_rls_proj ON pid_rls_proj FOR SELECT USING _partition_id = '1' TO ALL;
+
+SELECT '-- policy on the _partition_id virtual is enforced (expect 1, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'pid_rls_proj', 'p') ORDER BY id;
+
+DROP ROW POLICY rp_pid_rls_proj ON pid_rls_proj;
+DROP TABLE pid_rls_proj;
