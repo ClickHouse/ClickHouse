@@ -545,6 +545,10 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// index analysis and the reader.
     parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
     parallel_replicas_step->top_k_filter_info = top_k_filter_info;
+    /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
+    /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
+    /// virtual columns that only this task map materializes.
+    parallel_replicas_step->index_read_tasks = index_read_tasks;
     return parallel_replicas_step;
 }
 
@@ -3670,6 +3674,12 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
     /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
     cloned_step->top_k_filter_info = top_k_filter_info;
+    /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
+    /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
+    /// already have a predicate rewritten to `__text_index_*` virtual columns; those columns are
+    /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
+    /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
+    cloned_step->index_read_tasks = index_read_tasks;
     return cloned_step;
 }
 
