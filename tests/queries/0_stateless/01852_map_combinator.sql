@@ -52,6 +52,13 @@ SELECT mapApply((k,v) -> (k, finalizeAggregation(v)), anyMapArgMax(state, partit
 SELECT uniqExactMap(number, reinterpretAsUUID(number)) FROM numbers(3);
 SELECT argMinMapMerge(state) FROM (SELECT argMaxMapState(number, number, number % 3) AS state FROM numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- the nested function takes no arguments, so the only argument belongs to the combinator and is the key
+SELECT countMap(number % 3) FROM numbers(10);
+SELECT countMapMerge(state) FROM (SELECT countMapState(number % 3) AS state FROM numbers(10));
+
+-- all `NaN` keys are the same key regardless of the payload, and `-0` is the same key as `+0`
+SELECT length(mapKeys(m)), arraySort(mapValues(m)) FROM (SELECT sumMap(1, arrayJoin([nan, reinterpretAsFloat64(reverse(unhex('7FF8000000000001'))), reinterpretAsFloat64(reverse(unhex('FFF8000000000000'))), 0., -0.])) AS m);
+
 DROP TABLE IF EXISTS sum_map_decimal;
 
 CREATE TABLE sum_map_decimal(statusMap Map(UInt16,Decimal32(5))) ENGINE = Log;
