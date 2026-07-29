@@ -1456,6 +1456,26 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
 
 Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 {
+    /// view_id is empty for a direct INSERT into the table, non-empty when the table is a materialized
+    /// view target. In the latter case the plain storage error names only the target, so add the view.
+    if (view_id.empty())
+        return createSinkImpl(view_id);
+
+    try
+    {
+        return createSinkImpl(view_id);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while writing to target table {} of materialized view {}",
+            inner_tables.at(view_id).getNameForLogs(), view_id.getNameForLogs());
+        throw;
+    }
+}
+
+
+Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) const
+{
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
     const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
@@ -1504,20 +1524,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     }
     else
     {
-        SinkToStoragePtr sink;
-        try
-        {
-            sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
-        }
-        catch (Exception & e)
-        {
-            /// view_id is empty for a direct INSERT into inner_storage, non-empty when inner_storage is a
-            /// materialized view target; name the view and target only in the latter case.
-            if (!view_id.empty())
-                e.addMessage("while writing to target table {} of materialized view {}",
-                    inner_table_id.getNameForLogs(), view_id.getNameForLogs());
-            throw;
-        }
+        auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));

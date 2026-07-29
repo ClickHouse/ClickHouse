@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -o pipefail
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -10,16 +12,35 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE src_04329 (x Int64) ENGINE=MergeTree 
 ${CLICKHOUSE_CLIENT} --query "CREATE VIEW vw_04329 AS SELECT x FROM src_04329 WHERE x > 10;"
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW mv_04329 TO vw_04329 AS SELECT x FROM src_04329;"
 
-# Inserting into the source pushes to mv_04329, whose target vw_04329 is a View and cannot be written to.
-# The error message must name both the materialized view and its target table (db name normalized for the test).
-${CLICKHOUSE_CLIENT} --query "INSERT INTO src_04329 VALUES (100);" 2>&1 \
-    | grep -oF "Method write is not supported by storage View: while writing to target table $CLICKHOUSE_DATABASE.vw_04329 of materialized view $CLICKHOUSE_DATABASE.mv_04329" \
-    | sed "s/$CLICKHOUSE_DATABASE/{db}/g" \
-    | head -n 1
+# Print the whole exception message of a failing query on one line, so that an unexpected
+# prefix or suffix also changes the output. Prints NO_ERROR if the query unexpectedly succeeds.
+run_and_report() {
+    local out
+    out=$(${CLICKHOUSE_CLIENT} "${@}" 2>&1 >/dev/null | tr '\n' ' ')
+    # Keep only the innermost exception text, without the server address or the echoed query.
+    out=${out##*DB::Exception: }
+    out=$(echo "$out" \
+        | sed -E 's/ ?\(query: .*//' \
+        | sed -E "s/${CLICKHOUSE_DATABASE}\./{db}./g" \
+        | sed -E 's/ \([0-9a-f-]{36}\)//g' \
+        | sed -E 's/[[:space:]]+$//')
+    if [ -z "$out" ]; then
+        echo "NO_ERROR"
+    else
+        echo "$out"
+    fi
+}
 
-# A direct INSERT into a View keeps the plain message (no materialized view context).
-${CLICKHOUSE_CLIENT} --query "INSERT INTO vw_04329 VALUES (100);" 2>&1 \
-    | grep -oF "Method write is not supported by storage View" \
-    | head -n 1
+# Inserting into the source pushes to mv_04329, whose target vw_04329 is a View and cannot be written to.
+# The error must name both the materialized view and its target table.
+# async_insert is pinned off because the async path appends its own "While executing WaitForAsyncInsert".
+run_and_report --async_insert=0 --query "INSERT INTO src_04329 VALUES (100);"
+
+# The same insert inside a transaction fails earlier, in the transaction support check,
+# and must name the materialized view as well.
+run_and_report --async_insert=0 --implicit_transaction=1 --query "INSERT INTO src_04329 VALUES (101);"
+
+# A direct INSERT into a View keeps the plain message, with no materialized view context appended.
+run_and_report --async_insert=0 --query "INSERT INTO vw_04329 VALUES (100);"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS src_04329; DROP VIEW IF EXISTS vw_04329; DROP TABLE IF EXISTS mv_04329;"
