@@ -58,6 +58,14 @@ SELECT count() FROM t_map ARRAY JOIN m, b; -- { serverError SIZES_OF_ARRAYS_DONT
 TRUNCATE TABLE t_map;
 INSERT INTO t_map VALUES (1, {'x': 1}, ['p']);
 SELECT count() FROM t_map ARRAY JOIN m, b;
+-- Only the Map's size is read, not the Map itself. The last row is the live control for the
+-- Map(String, UInt32) pattern: there m IS read in full, so a never-matching pattern would fail it.
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_map ARRAY JOIN m, b)
+    WHERE explain ILIKE '%m.size0 UInt64%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM (EXPLAIN header = 1 SELECT count() FROM t_map ARRAY JOIN m, b)
+    WHERE explain ILIKE '%Map(String, UInt32)%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT m FROM t_map ARRAY JOIN m, b)
+    WHERE explain ILIKE '%Map(String, UInt32)%' SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE t_map;
 
@@ -103,6 +111,18 @@ SELECT count() FROM t_types ARRAY JOIN nl, b; -- { serverError SIZES_OF_ARRAYS_D
 SELECT count() FROM t_types ARRAY JOIN aa, b; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT count() FROM t_types ARRAY JOIN tp, b; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
+-- A wrapped element type is substituted like any other: only its size is read. The last row is the
+-- live control for the Nullable(Int64) pattern, where nl IS read in full.
+TRUNCATE TABLE t_types;
+INSERT INTO t_types VALUES (1, ['x', 'y'], [1, NULL], [[1], [2]], [(1), (2)], ['p', 'q']);
+SELECT count() FROM t_types ARRAY JOIN nl, b;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT count() FROM t_types ARRAY JOIN nl, b)
+    WHERE explain ILIKE '%nl.size0 UInt64%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM (EXPLAIN header = 1 SELECT count() FROM t_types ARRAY JOIN nl, b)
+    WHERE explain ILIKE '%Nullable(Int64)%' SETTINGS enable_parallel_replicas = 0;
+SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT nl FROM t_types ARRAY JOIN nl, b)
+    WHERE explain ILIKE '%Nullable(Int64)%' SETTINGS enable_parallel_replicas = 0;
+
 DROP TABLE t_types;
 
 -- A column literally named `b.size0` must not be mistaken for b's size subcolumn: the substituted
@@ -121,13 +141,18 @@ SELECT count() FROM t_shadow ARRAY JOIN a, b; -- { serverError SIZES_OF_ARRAYS_D
 
 DROP TABLE t_shadow;
 
--- An ALIAS column operand resolves to its defining expression and still validates.
+-- An ALIAS column operand resolves to its defining expression: matching sizes pass, and a mismatch
+-- still throws through the ALIAS indirection.
 DROP TABLE IF EXISTS t_alias;
 CREATE TABLE t_alias (id UInt32, a Array(String), b Array(String), c Array(String) ALIAS b) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_alias VALUES (1, ['x', 'y'], ['p', 'q']);
 
 SELECT 'ALIAS column operand';
 SELECT count() FROM t_alias ARRAY JOIN a, c;
+
+TRUNCATE TABLE t_alias;
+INSERT INTO t_alias VALUES (1, ['x', 'y'], ['p']);
+SELECT count() FROM t_alias ARRAY JOIN a, c; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 DROP TABLE t_alias;
 

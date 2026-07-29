@@ -24,6 +24,8 @@ namespace DB
   * is read from storage in full just to be validated. An expression built from its lengths keeps
   * the validation and drops the read.
   *
+  * A `nested()` operand is excluded and goes through the subcolumn pruning described above instead.
+  *
   * Example: Table has a, b.
   *   SELECT b FROM t ARRAY JOIN a, b
   *   Before: ARRAY JOIN a, b
