@@ -761,8 +761,11 @@ static void rejectQueryPlanOnlyVirtualColumns(
 
         /// An `ALIAS` column is replaced by its defining expression after this check, so follow
         /// that expression here: `a String ALIAS _table` used in a mutation is a reference to
-        /// `_table`. Track names being expanded so a self-referential alias cannot loop.
-        if (!isQueryPlanOnlyVirtualColumn(short_name) && !aliases_in_progress.contains(short_name))
+        /// `_table`. An alias may itself be named like one of these virtuals (`_table String
+        /// ALIAS _database`), so inspect the definition whatever the alias is called, or that
+        /// name would shadow the virtual below and let the reference through. Track names being
+        /// expanded so a self-referential alias cannot loop.
+        if (!aliases_in_progress.contains(short_name))
         {
             if (auto column_default = columns.getDefault(short_name);
                 column_default && column_default->kind == ColumnDefaultKind::Alias && column_default->expression)
@@ -830,7 +833,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Reject query-plan-only virtual columns (`_sample_factor`, `_table`, `_database`)
     /// referenced by the mutation's expressions before the mutation can start. See
     /// `rejectQueryPlanOnlyVirtualColumns` above for why a raw name match is insufficient.
-    if (source.getMergeTreeData())
+    /// Only the per-part path reads through `MergeTreeSequentialSource`, which cannot
+    /// materialize them; `return_mutated_rows` readers (lightweight updates) go through
+    /// `ReadFromMergeTree`, which supplies these fields, so they stay allowed.
+    if (source.getMergeTreeData() && !settings.return_mutated_rows)
     {
         for (const auto & command : commands)
             if (auto alter = command.ast())

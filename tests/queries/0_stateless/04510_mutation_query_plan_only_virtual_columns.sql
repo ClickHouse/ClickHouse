@@ -63,3 +63,14 @@ ALTER TABLE t_mut_qp_virtuals DELETE WHERE _part = 'nonexistent_part';
 SELECT count() FROM t_mut_qp_virtuals;
 
 DROP TABLE t_mut_qp_virtuals;
+
+-- A lightweight update reads through `ReadFromMergeTree`, which does supply these fields, so
+-- it must keep working: the rejection applies only to the per-part mutation read path.
+DROP TABLE IF EXISTS t_mut_qp_lightweight;
+CREATE TABLE t_mut_qp_lightweight (c0 UInt32, v UInt32) ENGINE = MergeTree ORDER BY c0
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_mut_qp_lightweight SELECT number, 0 FROM numbers(4);
+SET allow_experimental_lightweight_update = 1;
+UPDATE t_mut_qp_lightweight SET v = length(_table) WHERE c0 < 2;
+SELECT sum(v) FROM t_mut_qp_lightweight;
+DROP TABLE t_mut_qp_lightweight;

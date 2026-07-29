@@ -38,3 +38,12 @@ SELECT count() FROM t_mut_qp_alias_subcol;
 -- The alias itself is still rejected on the same table.
 ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE a_tbl != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP TABLE t_mut_qp_alias_subcol;
+
+-- An alias may be named like one of these virtuals while being defined over another one.
+-- The name must not shadow the virtual and let the reference reach the read path.
+DROP TABLE IF EXISTS t_mut_qp_alias_shadow;
+CREATE TABLE t_mut_qp_alias_shadow (c0 UInt32, `_table` String ALIAS _database)
+ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_mut_qp_alias_shadow SELECT number FROM numbers(4);
+ALTER TABLE t_mut_qp_alias_shadow DELETE WHERE `_table` != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP TABLE t_mut_qp_alias_shadow;
