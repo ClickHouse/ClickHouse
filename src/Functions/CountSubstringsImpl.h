@@ -55,6 +55,16 @@ struct CountSubstringsImpl
         /// Current index in the column of strings.
         size_t i = 0;
 
+        /// `Impl::countChars` is O(n) for UTF-8 policies, so counting from the row start on every match
+        /// would make the loop quadratic in the row size. Instead keep a cursor inside the current row and
+        /// count only the bytes newly traversed since the previous match, visiting every byte at most once.
+        /// `counted_row_begin` identifies the row the cursor belongs to: only a row containing a match sets
+        /// the cursor, and such a row is non-empty (the index scan below leaves
+        /// `haystack_offsets[i - 1] <= pos < haystack_offsets[i]`), so two of them always differ in start offset.
+        const UInt8 * counted_row_begin = nullptr;
+        const UInt8 * counted_up_to = nullptr;
+        size_t chars_before = 0;
+
         typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
 
         /// We will search for the next occurrence in all strings at once.
@@ -78,7 +88,18 @@ struct CountSubstringsImpl
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() <= begin + haystack_offsets[i])
             {
-                auto found_offset = Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                if (counted_row_begin != row_begin)
+                {
+                    /// The cursor belongs to an earlier row: restart it at the beginning of this one.
+                    counted_row_begin = row_begin;
+                    counted_up_to = row_begin;
+                    chars_before = 0;
+                }
+                chars_before += Impl::countChars(reinterpret_cast<const char *>(counted_up_to), reinterpret_cast<const char *>(pos));
+                counted_up_to = pos;
+
+                auto found_offset = chars_before;
                 if (found_offset >= start)
                     ++res[i];
 
