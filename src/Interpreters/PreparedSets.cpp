@@ -603,13 +603,15 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
-    /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
-    /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
-    /// consumed by `build`, so `reset` is a no-op there. Reset only now, after the pipeline and executor have
-    /// been destroyed, so the resources held by `source` outlive every processor.
+    /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`).
     if (speculative_set)
         set_and_key->set = speculative_set;
-    source.reset();
+
+    /// Keep the preserved `source`: plan serialization ships a set as a subquery plan and cannot rebuild one
+    /// from a built set. This cannot cause a second build - `build` returns early once the set is created.
+    /// On the destructive fallback `build` already moved `source` out.
+    if (!source_preserved)
+        source.reset();
 
     return set_and_key->set;
 }
