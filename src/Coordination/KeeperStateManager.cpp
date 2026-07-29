@@ -397,14 +397,15 @@ enum ServerStateVersion : uint8_t
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
 /// Makes an already-written file durable, contents and directory entry both, without changing a
-/// byte of it. IDisk has no fsync entry point for an existing file, but WriteMode::Append does not
-/// truncate (DiskLocal maps it to O_APPEND | O_CREAT | O_WRONLY) and sync() on a buffer with
-/// nothing buffered reaches only fdatasync, so opening for append and syncing is exactly that.
+/// byte of it. `IDisk` has no `fsync` entry point for an existing file, but `WriteMode::Append`
+/// does not truncate (`DiskLocal` maps it to `O_APPEND | O_CREAT | O_WRONLY`) and `sync` on a
+/// buffer with nothing buffered reaches only `fdatasync`, so opening for append and syncing is
+/// exactly that.
 ///
 /// Object storage is excluded rather than relied upon: an empty append there writes no object but
 /// still records its key in the metadata, which would leave the state file referencing a blob that
-/// does not exist. Plain (s3_plain) metadata additionally rejects WriteMode::Append outright. On a
-/// disk without this capability the file is left as it is, which is no worse than not syncing.
+/// does not exist. Plain (`s3_plain`) metadata additionally rejects `WriteMode::Append` outright.
+/// On a disk without this capability the file is left as it is, which is no worse than not syncing.
 void syncExistingFile(const DiskPtr & disk, const String & path)
 {
     if (disk->isRemote() || !supportWritingWithAppend(disk))
@@ -417,7 +418,7 @@ void syncExistingFile(const DiskPtr & disk, const String & path)
     }
 
     /// Durable contents are not enough: the directory entry may still be missing after a power
-    /// loss, which would lose the file altogether. save_state syncs the two separately for the
+    /// loss, which would lose the file altogether. `save_state` syncs the two separately for the
     /// same reason.
     SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
 }
@@ -495,12 +496,12 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     auto disk = getStateFileDisk();
 
     /// Only a live file that reads back and verifies may become the backup, so that a torn one
-    /// cannot overwrite a still-valid state-OLD.
+    /// cannot overwrite a still-valid `state-OLD`.
     if (disk->existsFile(server_state_file_name)
         && readAndVerifyStateFile(disk, server_state_file_name, logger) != nullptr)
     {
         /// The live bytes are complete, but on a retry after a failed sync they may still not be
-        /// durable while the state-OLD about to be replaced is. Make them durable first, so the
+        /// durable while the `state-OLD` about to be replaced is. Make them durable first, so the
         /// refresh below cannot leave this term with no durable copy at all.
         syncExistingFile(disk, server_state_file_name);
 
@@ -580,14 +581,18 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             /// Parsing proves the bytes are complete, not that they reached the disk, so make the
             /// live file durable before acting on the term it holds. Otherwise the term could still
             /// evaporate on the next power loss and the restart after that would fall back to the
-            /// older state-OLD, i.e. the node would forget a term it had already voted in.
+            /// older `state-OLD`, i.e. the node would forget a term it had already voted in.
             syncExistingFile(disk, server_state_file_name);
 
-            /// The backup is kept regardless: save_state drops it once it has synced a replacement.
+            /// The backup is kept regardless: `save_state` drops it once it has synced a replacement.
             return state;
         }
 
-        disk->removeFile(server_state_file_name);
+        /// A file that failed its checksum is kept for now: if nothing turns out to be
+        /// recoverable, the tail below has to be able to fail the same way on every restart
+        /// rather than leaving the next one with no state at all.
+        if (corrupted_path != server_state_file_name)
+            disk->removeFile(server_state_file_name);
     }
 
     if (disk->existsFile(old_path))
@@ -603,10 +608,11 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             if (state)
             {
                 /// The backup is deliberately left in place: copying it back would drop it
-                /// before the copy is durable. The next successful save_state clears it.
+                /// before the copy is durable. The next successful `save_state` clears it.
                 return state;
             }
-            disk->removeFile(old_path);
+            if (corrupted_path != old_path)
+                disk->removeFile(old_path);
         }
     }
     else if (disk->existsFile(copy_lock_file))

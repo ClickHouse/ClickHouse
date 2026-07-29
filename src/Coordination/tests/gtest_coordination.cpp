@@ -979,6 +979,18 @@ TEST_P(CoordinationTest, TestDurableState)
 #    else
         ASSERT_THROW(state_manager->read_state(), DB::Exception);
 #    endif
+
+        /// The attempt that reports the corruption must not consume the evidence. Were the file
+        /// deleted here, the restart after a failed start would find no state at all and NuRaft
+        /// would silently resume at term 0 with an empty vote, which is worse than not starting.
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+        reload_state_manager();
+#    ifdef NDEBUG
+        ASSERT_EQ(state_manager->read_state(), nullptr);
+#    else
+        ASSERT_THROW(state_manager->read_state(), DB::Exception);
+#    endif
+        ASSERT_TRUE(std::filesystem::exists("./state"));
     }
 
     {
@@ -1026,7 +1038,7 @@ public:
     {
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
         /// Only a rewrite truncates, so only a rewrite leaves the torn file these tests are
-        /// about. An append open, which save_state also does to sync an existing file, must not
+        /// about. An append open, which `save_state` also does to sync an existing file, must not
         /// be the thing that fails, or the injection would land before the rewrite window.
         if (armed && path == fail_path && mode == DB::WriteMode::Rewrite)
             throw std::runtime_error("Injected state write failure");
@@ -1044,7 +1056,7 @@ public:
 
     void moveFile(const String &, const String &) override
     {
-        /// Matches plain (s3_plain) metadata, which throws NOT_IMPLEMENTED for moveFile.
+        /// Matches plain (`s3_plain`) metadata, which throws `NOT_IMPLEMENTED` for `moveFile`.
         throw std::runtime_error("moveFile is not implemented for this disk");
     }
 
@@ -1056,7 +1068,7 @@ private:
 
 using DiskEvents = std::shared_ptr<std::vector<std::string>>;
 
-/// Records sync() on the file it wraps, so a test can tell a durable write from a write that
+/// Records `sync` on the file it wraps, so a test can tell a durable write from a write that
 /// only reached the page cache.
 class RecordingWriteBuffer : public DB::WriteBufferFromFileDecorator
 {
@@ -1109,7 +1121,7 @@ public:
     std::unique_ptr<DB::WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
-        /// Only Rewrite truncates, so the two modes are recorded apart: "open:" marks the
+        /// Only `Rewrite` truncates, so the two modes are recorded apart: `open:` marks the
         /// destructive open a durability assertion has to order against.
         events->push_back((mode == DB::WriteMode::Append ? "append:" : "open:") + path);
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
@@ -1328,7 +1340,7 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     /// durable by then. Without the sync the term could still be lost to a power failure, and the
     /// restart after that would fall back to the older backup, i.e. the node would forget a term
     /// it had already voted in. The sync must be an append (a rewrite would truncate the file it
-    /// is meant to preserve), and it must happen before read_state returns.
+    /// is meant to preserve), and it must happen before `read_state` returns.
     ASSERT_NE(indexOf(*events, "append:state"), std::string::npos);
     ASSERT_NE(indexOf(*events, "sync:state"), std::string::npos);
     ASSERT_LT(indexOf(*events, "append:state"), indexOf(*events, "sync:state"));
