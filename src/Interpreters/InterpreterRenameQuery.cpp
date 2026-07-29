@@ -151,11 +151,11 @@ namespace
         /// path, it keeps no registry of the servers mounting it, and the set of servers sharing a
         /// rename (a Replicated database, an ON CLUSTER query) is a different set entirely.
         ///
-        /// The condition is on the server's CONFIGURATION, not on the affected policies: a
-        /// replicated storage answers reads from an asynchronously refreshed cache, so a policy it
-        /// has not observed yet is invisible to `collectRowPolicyRekeys` and an entity-level test
-        /// would miss it. At startup the cache can still be empty entirely, because
-        /// convertDatabasesEnginesIfNeed runs before AccessControl::startPeriodicReloading.
+        /// The condition is on the server's CONFIGURATION, not on the affected policies: no locally
+        /// computed predicate can bound a re-key that is published globally in one transaction. A
+        /// replicated storage also answers reads from its own copy of the entities, refreshed from
+        /// Keeper, so a policy written on another server and not yet observed here is invisible to
+        /// `collectRowPolicyRekeys` and an entity-level test would silently find nothing to protect.
         ///
         /// It drops ALL re-keys, not just the shared ones: leaving a shared policy on `a` while
         /// still moving a node-local policy from `b` to `a` would leave `b` unfiltered, and the

@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -87,6 +89,34 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def _wait_entity(instance, predicate_sql, expected, attempts=60, delay=0.5):
+    """A replicated access entity written on another server reaches this one through the watching
+    thread (ZooKeeperReplicator::runWatchingThread). That is normally prompt -- the Keeper watch
+    callback pushes the id and the thread's tryPop returns at once, so measured over 30 writes the
+    peer already had the entity on its first query -- but the thread also recovers from errors by
+    sleeping 5s and starting over (ZooKeeperReplicator.cpp:444), so arrival is not synchronous with
+    the write and a peer read is not guaranteed to be ordered after it.
+
+    Used only at SETUP points that depend on a cross-server read. This adds tolerance to no
+    assertion: the reads that measure the fix stay exact and un-retried."""
+    last = ""
+    for _ in range(attempts):
+        last = instance.query(predicate_sql)
+        if last == expected:
+            return
+        time.sleep(delay)
+    assert last == expected
+
+
+def _wait_policy_visible(instances, short_name):
+    for n in instances:
+        _wait_entity(
+            n,
+            f"SELECT count() FROM system.row_policies WHERE short_name = '{short_name}'",
+            "1\n",
+        )
 
 
 def _cleanup(instances, db):
@@ -257,10 +287,12 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
         shared1.query("SELECT storage FROM system.row_policies WHERE short_name = 'rp_a'")
         == "replicated\n"
     )
+    _wait_policy_visible(shared_nodes[:2], "rp_a")
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
     try:
+        skips_before = int(shared1.count_in_log(SKIP_WARNING))
         shared1.query(f"RENAME TABLE {db}.ta TO {db}.ta_new")
         # The renaming server sees the table unfiltered under its new name: the policy did not
         # follow. That is the accepted cost, and it is exactly what master does.
@@ -273,7 +305,9 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
             )
             == f"{db}\tta\n"
         )
-        assert shared1.contains_in_log(SKIP_WARNING)
+        # The log is cumulative and never rotated between arms, so a plain `contains_in_log` here
+        # would also be satisfied by another arm's warning. Assert THIS rename emitted one.
+        assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
     finally:
         for n in shared_nodes[:2]:
             n.query(f"DROP DATABASE IF EXISTS {db} SYNC")
@@ -305,6 +339,7 @@ def test_no_rekey_for_server_outside_the_renaming_group(started_cluster):
         f"CREATE ROW POLICY rp_a ON {db}.ta FOR SELECT USING dept = 'eng' TO rp_user"
     )
     _sync(shared_nodes[:2], db, ["ta"])
+    _wait_policy_visible(shared_nodes, "rp_a")
     for n in shared_nodes:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
@@ -332,8 +367,11 @@ def test_no_rekey_for_server_outside_the_renaming_group(started_cluster):
 
 
 def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster):
-    """RENAME DATABASE moves both `ON db.*` and `ON db.tbl` policies, through the same preflight.
-    A shared storage must decline that too, so the peer's database keeps its policies."""
+    """RENAME DATABASE moves both `ON db.*` and `ON db.tbl` policies, through the same preflight
+    (`collectRowPolicyRekeysForDatabase` collects both granularities in one loop and the skip clears
+    the whole vector). A shared storage must decline that too, so the peer's database keeps both
+    policies. Both granularities are in the fixture so the all-or-nothing clearing is measured on
+    each of them."""
     db = "rp_sharedb"
     new_db = "rp_sharedb_new"
     for n in shared_nodes[:2]:
@@ -346,21 +384,31 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
     shared1.query(
         f"CREATE ROW POLICY rp_a ON {db}.ta FOR SELECT USING dept = 'eng' TO rp_user"
     )
+    # A database-wide policy alongside the per-table one. It does not change the counts below: a
+    # `db.*` policy is only the FALLBACK for tables with no policy of their own
+    # (EnabledRowPolicies::getFilter looks up `db.tbl` first), and `ta` has `rp_a`.
+    shared1.query(
+        f"CREATE ROW POLICY rp_db ON {db}.* FOR SELECT USING dept = 'eng' TO rp_user"
+    )
+    _wait_policy_visible(shared_nodes[:2], "rp_a")
+    _wait_policy_visible(shared_nodes[:2], "rp_db")
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
     try:
+        skips_before = int(shared1.count_in_log(SKIP_WARNING))
         shared1.query(f"RENAME DATABASE {db} TO {new_db}")
         assert shared1.query(f"SELECT count() FROM {new_db}.ta", user="rp_user") == UNFILTERED
-        # The peer still has the old database name, and its policy is still bound to it.
+        # The peer still has the old database name, and both policies are still bound to it.
         assert shared2.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
         assert (
             shared2.query(
-                "SELECT database, table FROM system.row_policies WHERE short_name = 'rp_a'"
+                "SELECT short_name, database, table FROM system.row_policies "
+                "WHERE short_name IN ('rp_a', 'rp_db') ORDER BY short_name"
             )
-            == f"{db}\tta\n"
+            == f"rp_a\t{db}\tta\nrp_db\t{db}\t\n"
         )
-        assert shared1.contains_in_log(SKIP_WARNING)
+        assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
     finally:
         for n in shared_nodes[:2]:
             for d in (db, new_db):
@@ -368,6 +416,7 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
             n.query("DROP USER IF EXISTS rp_user")
         for d in (db, new_db):
             shared1.query(f"DROP ROW POLICY IF EXISTS rp_a ON {d}.ta")
+            shared1.query(f"DROP ROW POLICY IF EXISTS rp_db ON {d}.*")
 
 
 def test_no_rekey_for_mixed_storages_leaves_both_names_filtered(started_cluster):
@@ -550,6 +599,9 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
     _make_atomic_table(shared_nodes[:2], db, "tb")
     shared2.query("CREATE USER rp_user")
     shared2.query(f"GRANT SELECT ON {db}.* TO rp_user")
+    # `rp_user` is a replicated entity created on shared2, and the statement below has to resolve it
+    # from shared1 -- so shared1 must have observed it first.
+    _wait_entity(shared1, "SELECT count() FROM system.users WHERE name = 'rp_user'", "1\n")
     # A node-local policy on `tb`, which the skip must decline to move even though the shared
     # policy that motivates the skip is invisible below.
     shared1.query(
@@ -557,6 +609,7 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
     )
 
     try:
+        skips_before = int(shared1.count_in_log(SKIP_WARNING))
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(shared1)
             # Written on shared2 while shared1 cannot reach Keeper, so shared1 never sees it.
@@ -578,7 +631,7 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
                 )
                 == f"{db}\ttb\n"
             )
-            assert shared1.contains_in_log(SKIP_WARNING)
+            assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
 
         # Once Keeper is reachable again the shared policy is still on its original name, so
         # shared2 -- which never renamed -- is unaffected either way.
@@ -601,9 +654,14 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
 
 def test_startup_conversion_succeeds_with_a_shared_storage_policy(started_cluster):
     """The Ordinary -> Atomic startup conversion is a chain of renames, so it goes through the same
-    preflight -- while the access storages have not finished reloading. Declining the re-key there
-    must not throw: a throw would propagate out of the conversion and the server would refuse to
-    start. Assert the server comes back up and the policy still filters."""
+    preflight, driven from inside the server's startup sequence. Declining the re-key there must not
+    throw: a throw would propagate out of the conversion and the server would refuse to start.
+    Assert the server comes back up and the policies still filter.
+
+    The load-bearing policy here is `rp_inner`, not `rp_a`: the conversion restores every table's
+    own name, so `rp_a`'s move has from_table == to_table and skips the preflight entirely
+    (`conversion_keeps_table_name`). The materialized view's inner table is the only one whose name
+    genuinely changes, so it is the only policy that reaches the shared-storage skip."""
     db = "rp_convert"
     convert_node.query(f"DROP DATABASE IF EXISTS {db}")
     convert_node.query("DROP USER IF EXISTS rp_user")
@@ -654,6 +712,15 @@ def test_startup_conversion_succeeds_with_a_shared_storage_policy(started_cluste
             == f"{db}\tt\n"
         )
         assert convert_node.query(f"SELECT count() FROM {db}.t", user="rp_user") == FILTERED
+        # `rp_inner` is the assertion that measures the skip: its table name DID change during the
+        # conversion (`.inner.mv` -> `.inner_id.<uuid>`), so it entered the preflight and the skip
+        # declined to move it. It must still be bound to the pre-conversion name.
+        assert (
+            convert_node.query(
+                "SELECT database, table FROM system.row_policies WHERE short_name = 'rp_inner'"
+            )
+            == f"{db}\t{inner}\n"
+        )
     finally:
         convert_node.exec_in_container(
             ["bash", "-c", "rm -f /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
