@@ -275,8 +275,8 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
-`NaN` in a [Float](/reference/data-types/float) `JOIN` key does not follow the `NULL` rule above. The
-scalar comparison `NaN = NaN` is `0`, but an equality `JOIN` key is compared by key identity, so `NaN`
+`NaN` in a `Float` `JOIN` key does not follow the `NULL` rule above. The scalar comparison
+`NaN = NaN` is `0`, but an equality `JOIN` key is compared by key identity, so `NaN`
 keys can match each other. Whether they do depends on their bit patterns and on the join
 implementation that ClickHouse chooses, and `isNotDistinctFrom` does not reliably separate them. On a
 key that is not `Nullable`, use `ON if(isNaN(A.id), NULL, A.id) = B.id` when `NaN` rows must not
