@@ -396,20 +396,30 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
-/// fdatasync an already-written file without changing a byte of it. IDisk has no fsync entry point
-/// for an existing file, but WriteMode::Append does not truncate (DiskLocal maps it to
-/// O_APPEND | O_CREAT | O_WRONLY), and sync() on a buffer with nothing buffered only reaches
-/// fdatasync, so opening for append and syncing is exactly that.
-/// Plain (s3_plain) metadata rejects WriteMode::Append with NOT_IMPLEMENTED, hence the capability
-/// check; where the capability is missing the file is left as it is.
+/// Makes an already-written file durable, contents and directory entry both, without changing a
+/// byte of it. IDisk has no fsync entry point for an existing file, but WriteMode::Append does not
+/// truncate (DiskLocal maps it to O_APPEND | O_CREAT | O_WRONLY) and sync() on a buffer with
+/// nothing buffered reaches only fdatasync, so opening for append and syncing is exactly that.
+///
+/// Object storage is excluded rather than relied upon: an empty append there writes no object but
+/// still records its key in the metadata, which would leave the state file referencing a blob that
+/// does not exist. Plain (s3_plain) metadata additionally rejects WriteMode::Append outright. On a
+/// disk without this capability the file is left as it is, which is no worse than not syncing.
 void syncExistingFile(const DiskPtr & disk, const String & path)
 {
-    if (!supportWritingWithAppend(disk))
+    if (disk->isRemote() || !supportWritingWithAppend(disk))
         return;
 
-    auto buf = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
-    buf->sync();
-    buf->finalize();
+    {
+        auto buf = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        buf->sync();
+        buf->finalize();
+    }
+
+    /// Durable contents are not enough: the directory entry may still be missing after a power
+    /// loss, which would lose the file altogether. save_state syncs the two separately for the
+    /// same reason.
+    SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
 }
 
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is

@@ -1323,6 +1323,11 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_LT(indexOf(*events, "append:state"), indexOf(*events, "sync:state"));
     ASSERT_EQ(indexOf(*events, "open:state"), std::string::npos);
 
+    /// Durable contents alone still allow the directory entry to be lost, which would lose the
+    /// whole file, so the parent directory must be synced too.
+    ASSERT_NE(indexOf(*events, "dirsync"), std::string::npos);
+    ASSERT_LT(indexOf(*events, "sync:state"), indexOf(*events, "dirsync"));
+
     /// The sync must not have cost any content: the live file still has to hold the same state.
     reload_state_manager();
     auto after_sync = state_manager->read_state();
