@@ -701,6 +701,12 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// must be skipped: a single allocation traverses every Process tracker in the chain, so charging more
     /// than once would double-count. This also keeps the value independent of the depth of the tracker
     /// hierarchy and leaves the much hotter Global/Thread allocation paths untouched (they only pay a branch).
+    /// The consequence is deliberate and documented in the description of the event: `MemoryCredits` is a
+    /// query-scoped quantity, so the rows of the nested scopes (a materialized view in `system.query_views_log`,
+    /// an asynchronous insert flush running inside another query) do not report it separately - the memory they
+    /// hold is integrated into the enclosing query. Attributing it per nested scope would require charging the
+    /// counters that each tracker belongs to, which is not reachable from the allocation path without adding a
+    /// back reference to `MemoryTracker` and a second increment on it.
     if (level != VariableContext::Process)
         return 0;
     if (const auto * loaded_parent = parent.load(std::memory_order_relaxed); loaded_parent && loaded_parent->level == VariableContext::Process)

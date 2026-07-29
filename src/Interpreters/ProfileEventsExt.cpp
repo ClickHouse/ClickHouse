@@ -153,6 +153,13 @@ DB::Block getProfileEvents(
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Current thread is not attached to any thread group");
 
+    /// Charge the interval during which memory was held without any allocation or free, so that the
+    /// `MemoryCredits` events streamed to the client are as up to date as the ones logged in
+    /// `system.query_log`. The atomic exchange inside `takeMemoryCreditsDelta` charges every elapsed
+    /// interval exactly once, so this periodic flush neither double-counts nor conflicts with the
+    /// allocation-driven updates and with the final flush in `QueryStatus::getInfo`.
+    thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+
     ThreadIdToCountersSnapshot new_snapshots;
 
     ProfileEventsSnapshot group_snapshot;
