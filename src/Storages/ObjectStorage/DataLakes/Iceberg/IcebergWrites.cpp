@@ -272,21 +272,38 @@ static void extendSchemaForPartitions(
     const std::vector<DataTypePtr> & partition_types)
 {
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
+
+    /// Types that need a `logicalType` annotation (Time/Time64 -> "time-micros") are
+    /// written as `{"type": T, "logicalType": ...}`. The annotation must decorate the
+    /// concrete Avro type, so for a Nullable partition column it goes inside the
+    /// `["null", T]` union branch, not on the union itself (an annotated union is not
+    /// a valid Avro schema and makes the manifest schema fail to compile).
+    auto make_annotated_type = [](DataTypePtr type) -> Poco::Dynamic::Var
+    {
+        auto logical_type = getAvroLogicalType(type);
+        if (logical_type.isEmpty())
+            return getAvroType(type);
+
+        Poco::JSON::Object::Ptr type_field = new Poco::JSON::Object;
+        type_field->set(Iceberg::f_type, getAvroType(type));
+        type_field->set(Iceberg::f_logicalType, logical_type);
+        return type_field;
+    };
+
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        auto logical_type = getAvroLogicalType(partition_types[i]);
-        if (!logical_type.isEmpty())
+        if (partition_types[i]->isNullable())
         {
-            Poco::JSON::Object::Ptr type_field = new Poco::JSON::Object;
-            type_field->set(Iceberg::f_type, getAvroType(partition_types[i]));
-            type_field->set(Iceberg::f_logicalType, logical_type);
-            field->set(Iceberg::f_type, type_field);
+            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+            union_array->add("null");
+            union_array->add(make_annotated_type(removeNullable(partition_types[i])));
+            field->set(Iceberg::f_type, union_array);
         }
         else
-            field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+            field->set(Iceberg::f_type, make_annotated_type(partition_types[i]));
         partition_fields->add(field);
     }
 
@@ -446,22 +463,14 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-<<<<<<< HEAD
             /// Build the Avro datum that holds the actual partition value (without
             /// the surrounding union). Throws on an unsupported value type.
             auto make_value_datum = [&]() -> avro::GenericDatum
-=======
-            auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
-            if (!partition_values[i].isNull() && partition_time_type)
             {
-                partition_record.field(partition_columns[i]) =
-                    avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
-                continue;
-            }
+                auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
+                if (partition_time_type)
+                    return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
 
-            switch (partition_values[i].getType())
->>>>>>> b51229ea981 (Merge pull request #1761 from Altinity/bugfix/antalya-26.3/1535_time_type_write_support)
-            {
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:
@@ -486,7 +495,6 @@ void generateManifestFile(
             const bool is_nullable_partition = partition_types[i]->isNullable();
             const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
 
-<<<<<<< HEAD
             if (is_nullable_partition)
             {
                 /// Nullable partition columns are encoded as Avro `["null", T]`
@@ -495,26 +503,6 @@ void generateManifestFile(
                 /// silently written as 0 because the schema was non-nullable.
                 size_t field_index = 0;
                 if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
-=======
-                case Field::Types::Float64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
-                    break;
-
-                case Field::Types::Decimal32:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
-                    break;
-
-                case Field::Types::Decimal64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
-                    break;
-                case Field::Types::Null:
-                    break;
-
-                default:
->>>>>>> b51229ea981 (Merge pull request #1761 from Altinity/bugfix/antalya-26.3/1535_time_type_write_support)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Partition field {} not found in manifest schema",
