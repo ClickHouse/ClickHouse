@@ -33,6 +33,8 @@ reuse on	3
 reuse off	3
 block mismatch	0
 block mismatch off	0
+block mismatch filters on	2
+block mismatch filters off	1
 totals except	0
 totals except off	0
 totals intersect	0
@@ -52,3 +54,6 @@ dt64 mixed scale	1
 u256 top filter	0
 u256 on	0
 u256 off	0
+lc nullable top filter	0
+lc nullable on	a
+lc nullable off	a

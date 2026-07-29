@@ -223,6 +223,13 @@ DROP TABLE t_intex_reuse_r;
 -- plan-time header check must match the contract updatePipeline reconciles at runtime.
 SELECT 'block mismatch', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'block mismatch off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+-- Both results are 0 either way, so assert the rewrite itself: one filter per branch with the
+-- pushdown, a single one above the set operation without it. A count() parent collapses the plan,
+-- so this probe selects the set-key column instead.
+SELECT 'block mismatch filters on', countIf(explain ILIKE '%Filter column: materialize(NULL) = materialize(NULL)%') FROM
+(EXPLAIN SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1);
+SELECT 'block mismatch filters off', countIf(explain ILIKE '%Filter column: materialize(NULL) = materialize(NULL)%') FROM
+(EXPLAIN SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0);
 
 -- IntersectOrExceptTransform uniformizes only the main ports, so a WITH TOTALS branch whose main port
 -- constant-folds leaves the outer DISTINCT comparing a Const main port against a full totals one.
@@ -312,3 +319,17 @@ SELECT 'u256 on', u FROM (SELECT u FROM t_intex_w_l EXCEPT ALL SELECT u FROM t_i
 SELECT 'u256 off', u FROM (SELECT u FROM t_intex_w_l EXCEPT ALL SELECT u FROM t_intex_w_r) WHERE u = toUInt256(0) SETTINGS query_plan_filter_push_down = 0;
 DROP TABLE t_intex_w_l;
 DROP TABLE t_intex_w_r;
+
+-- Both wrappers unwrap to String, which is total, so a wrapped comparison must still push down.
+DROP TABLE IF EXISTS t_intex_lcn_l;
+DROP TABLE IF EXISTS t_intex_lcn_r;
+CREATE TABLE t_intex_lcn_l (s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_intex_lcn_r (s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_intex_lcn_l VALUES ('a'), ('b');
+INSERT INTO t_intex_lcn_r VALUES ('b');
+SELECT 'lc nullable top filter', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT s FROM (SELECT s FROM t_intex_lcn_l EXCEPT ALL SELECT s FROM t_intex_lcn_r) WHERE s = 'a');
+SELECT 'lc nullable on', s FROM (SELECT s FROM t_intex_lcn_l EXCEPT ALL SELECT s FROM t_intex_lcn_r) WHERE s = 'a' SETTINGS query_plan_filter_push_down = 1;
+SELECT 'lc nullable off', s FROM (SELECT s FROM t_intex_lcn_l EXCEPT ALL SELECT s FROM t_intex_lcn_r) WHERE s = 'a' SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_lcn_l;
+DROP TABLE t_intex_lcn_r;
