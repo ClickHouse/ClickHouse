@@ -116,7 +116,9 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
 
         const auto & variant_types = variant_type->getVariants();
-        const size_t num_variants = column_variant->getNumVariants();
+        /// A `Variant` may declare at most `ColumnVariant::MAX_NESTED_COLUMNS` alternatives, which is
+        /// `Discriminator`'s maximum, so the count always fits a `Discriminator`.
+        const auto num_variants = static_cast<ColumnVariant::Discriminator>(column_variant->getNumVariants());
 
         Columns new_variants;
         new_variants.reserve(num_variants);
