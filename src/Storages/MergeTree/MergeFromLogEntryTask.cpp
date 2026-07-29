@@ -479,6 +479,19 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         throw;
     }
 
+    /// Armed as soon as the result part is committed (active) and before any post-commit work that
+    /// can throw. The result part is visible to the selector from now on whether or not the rest of
+    /// this function succeeds, so a dependent merge must be selectable immediately in both cases. If
+    /// this were armed only after the throw-capable work below, a throw there would leave it unset:
+    /// the retry then finds the part already committed, retires the queue entry via
+    /// `checkExistingPart` without ever reaching here, and no wakeup happens, so the next merge in a
+    /// chain waits for the selector's backoff timer (up to `max_merge_selecting_sleep_ms`) and
+    /// SYSTEM SYNC MERGES can hit `max_execution_time` even though its prerequisite part exists.
+    /// Arming early is safe: the callback only schedules the selecting task, and it runs after
+    /// `merge_mutate_entry` is destroyed because member destruction order is fixed by the declaration
+    /// order in ReplicatedMergeMutateTaskBase, not by where it is assigned.
+    finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
+
     /// From here the result part is committed (active), so every step up to `write_part_log` is
     /// guarded: on any failure we queue the part_log row before rethrowing. Otherwise the part stays
     /// active with no part_log row, which would let SYSTEM SYNC MERGES return before part_log is
@@ -486,6 +499,14 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// unlock talks to Keeper and can throw, so it has to be inside the guard too.
     try
     {
+        /// Injected at the very top of the guard, so it stands in for the earliest throw-capable
+        /// post-commit statement (the zero-copy unlock below, which talks to Keeper). Anything that
+        /// must survive a throw in this window has to be in place before this point.
+        fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
+        });
+
         if (zero_copy_lock)
             zero_copy_lock->lock->unlock();
 
@@ -499,13 +520,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
         ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
 
-        finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
-
-        fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
-        });
 
         auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
