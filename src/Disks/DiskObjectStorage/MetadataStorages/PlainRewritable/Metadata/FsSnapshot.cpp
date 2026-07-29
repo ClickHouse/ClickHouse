@@ -33,6 +33,14 @@ bool isVirtual(const FsNodePtr & node)
     return !node->info.has_value();
 }
 
+FsNodePtr cloneFsNodeIfNotExclusive(const FsNodePtr & node)
+{
+    if (node.use_count() > 1)
+        return std::make_shared<FsNode>(*node);
+
+    return node;
+}
+
 template <class Ptr>
 Ptr walk(Ptr node, const NormalizedPath & path)
 {
@@ -87,14 +95,14 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
 
 std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const NormalizedPath & path)
 {
-    FsNodePtr cloned_start = std::make_shared<FsNode>(*start);
+    FsNodePtr cloned_start = cloneFsNodeIfNotExclusive(start);
     FsNodePtr node = cloned_start;
 
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
         if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
-            cloned_child = std::make_shared<FsNode>(*it->second);
+            cloned_child = cloneFsNodeIfNotExclusive(it->second);
         else
             cloned_child = std::make_shared<FsNode>();
 
@@ -302,15 +310,15 @@ std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) con
     return result;
 }
 
-std::pair<bool, std::optional<DirectoryRemoteInfo>> FsSnapshot::existsDirectory(const std::string & path) const
+bool FsSnapshot::existsDirectory(const std::string & path) const
 {
     UniqueLock lock(mutex);
     const auto node = walk(root, normalizePath(path));
 
     if (!node)
-        return {false, std::nullopt};
+        return false;
 
-    return {true, node->info};
+    return true;
 }
 
 std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> FsSnapshot::getSubtreeRemoteInfo(const std::string & path) const
