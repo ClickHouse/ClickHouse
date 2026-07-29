@@ -94,6 +94,9 @@ echo "============="
 
 # Same column type read back through the bucketed Map format. Every query here is
 # order-independent, so the assertions hold under either bucket layout.
+# `serialization_info_version` and `max_buckets_in_map` are pinned as well: the first
+# downgrades Map serialization to `basic` and the second collapses the column to a
+# single bucket, and either one would silently skip the split/reassembly path.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested_buckets"
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -104,9 +107,18 @@ ${CLICKHOUSE_CLIENT} -q "
     )
     ENGINE = MergeTree ORDER BY id
     SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
-             map_buckets_strategy = 'constant', map_buckets_min_avg_size = 1" --enable_json_type 1
+             serialization_info_version = 'with_types', map_buckets_strategy = 'constant',
+             max_buckets_in_map = 32, map_buckets_min_avg_size = 1" --enable_json_type 1
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_json_nested_buckets SELECT * FROM t_json_nested"
+
+# The queries below normalize key order, so they would still pass if the Map had been
+# written without bucketing. Assert the part really has 32 key buckets first.
+$CLICKHOUSE_CLIENT -q "
+    SELECT countDistinct(extract(s, '^data%2E2\.([0-9]+)%2Ekeys\$')) AS buckets
+    FROM (SELECT arrayJoin(substreams) AS s FROM system.parts_columns
+          WHERE database = currentDatabase() AND table = 't_json_nested_buckets' AND column = 'data' AND active)
+    WHERE match(s, '^data%2E2\.[0-9]+%2Ekeys\$')"
 
 $CLICKHOUSE_CLIENT -q "
     SELECT id, data.1 AS s, mapSort(data.2) AS m, data.3 AS obj
