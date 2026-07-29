@@ -1017,6 +1017,9 @@ public:
     void arm() { armed = true; }
     void disarm() { armed = false; }
 
+    void armReads() { reads_armed = true; }
+    void disarmReads() { reads_armed = false; }
+
     std::unique_ptr<DB::WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
@@ -1024,6 +1027,15 @@ public:
         if (armed && path == fail_path)
             throw std::runtime_error("Injected state write failure");
         return inner;
+    }
+
+    void prepareRead(
+        const String & path, const DB::ReadSettings & settings, std::optional<size_t> read_hint, DB::ReadPipeline & pipeline)
+        const override
+    {
+        if (reads_armed && path == fail_path)
+            throw std::runtime_error("Injected state read failure");
+        DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
     }
 
     void moveFile(const String &, const String &) override
@@ -1035,6 +1047,7 @@ public:
 private:
     std::string fail_path;
     bool armed = false;
+    bool reads_armed = false;
 };
 
 using DiskEvents = std::shared_ptr<std::vector<std::string>>;
@@ -1350,6 +1363,65 @@ TEST_P(CoordinationTest, TestDurableStateRetryKeepsValidBackup)
     ASSERT_EQ(recovered->get_voted_for(), 2);
 
     /// A later successful save still works and clears the backup.
+    state_manager->save_state(*new_state);
+    reload_state_manager();
+    auto final_state = state_manager->read_state();
+    ASSERT_NE(final_state, nullptr);
+    ASSERT_EQ(final_state->get_term(), 2);
+    ASSERT_EQ(final_state->get_voted_for(), 3);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
+/// Validating the live state file before backing it up must not turn a transient read error into
+/// the verdict "this file holds nothing worth keeping": save_state truncates the live file right
+/// after, so skipping the backup on an unread file would recreate the term/vote-loss window.
+/// See https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStateReadErrorDoesNotDropBackup)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto disk = std::make_shared<ThrowingStateDisk>("StateFile", ".", "state");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
+
+    /// The live state file cannot be read, so save_state cannot know whether it is worth backing
+    /// up. It must fail instead of truncating the only durable copy.
+    disk->armReads();
+    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    disk->disarmReads();
+
+    /// Term 1 must be intact: the failed save must not have touched the live file at all.
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    ASSERT_EQ(recovered->get_term(), 1);
+    ASSERT_EQ(recovered->get_voted_for(), 2);
+
+    /// Once reads work again, saving proceeds normally.
     state_manager->save_state(*new_state);
     reload_state_manager();
     auto final_state = state_manager->read_state();

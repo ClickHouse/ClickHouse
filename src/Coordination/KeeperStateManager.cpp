@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
@@ -394,33 +395,40 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
-/// Reads a serialized state file and verifies its checksum. Returns nullptr if the file is
-/// empty, truncated or otherwise unusable, which is the on-disk shape left behind by a save
-/// that was interrupted while rewriting it.
+/// Reads a serialized state file and verifies its checksum. Returns nullptr only when the content
+/// is provably unusable (empty, too short, bad checksum, undeserializable), which is the on-disk
+/// shape left behind by a save that was interrupted while rewriting the file.
+/// Failing to read the file at all is NOT such a verdict and is propagated: save_state must not
+/// mistake a transient IO error for "this file holds nothing worth keeping" and drop the backup
+/// step, because it truncates the live file immediately afterwards.
 /// throw_on_corrupted_checksum distinguishes the two callers: read_state must keep failing loudly
 /// on a checksum mismatch in debug builds, while save_state has to tolerate an unusable live file
 /// because tolerating it is the whole point of the backup step.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
     const DiskPtr & disk, const String & path, bool throw_on_corrupted_checksum, LoggerPtr logger)
 {
-    try
+    /// Read the file first and parse only from memory, so that IO failures cannot be confused
+    /// with a content verdict.
+    String content;
     {
         auto read_buf = disk->readFile(path, getReadSettings());
-        auto content_size = read_buf->getFileSize();
+        readStringUntilEOF(content, *read_buf);
+    }
 
-        if (content_size == 0)
+    try
+    {
+        uint64_t read_checksum{0};
+        uint8_t version = 0;
+
+        if (content.size() < sizeof read_checksum + sizeof version)
             return nullptr;
 
-        uint64_t read_checksum{0};
-        readIntBinary(read_checksum, *read_buf);
+        ReadBufferFromString content_buf(content);
+        readIntBinary(read_checksum, content_buf);
+        readIntBinary(version, content_buf);
 
-        uint8_t version = 0;
-        readIntBinary(version, *read_buf);
-
-        auto buffer_size = content_size - sizeof read_checksum - sizeof version;
-
-        auto state_buf = nuraft::buffer::alloc(buffer_size);
-        read_buf->readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+        auto state_buf = nuraft::buffer::alloc(content.size() - sizeof read_checksum - sizeof version);
+        content_buf.readStrict(reinterpret_cast<char *>(state_buf->data_begin()), state_buf->size());
 
         SipHash hash;
         hash.update(version);
@@ -529,10 +537,26 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
-        if (state)
-            LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
-        return state;
+        try
+        {
+            auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
+            if (state)
+                LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
+            return state;
+        }
+        catch (const std::exception & e)
+        {
+            if (const auto * exception = dynamic_cast<const Exception *>(&e);
+                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
+            {
+                throw;
+            }
+
+            /// Unlike save_state, startup keeps going if a state file cannot be read: the next
+            /// candidate below may still be usable, and nothing is overwritten here.
+            LOG_ERROR(logger, "Failed to read state from {}: {}", disk->getPath() + path, e.what());
+            return nullptr;
+        }
     };
 
     if (disk->existsFile(server_state_file_name))
