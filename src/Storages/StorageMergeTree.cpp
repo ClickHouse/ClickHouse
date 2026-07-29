@@ -3815,7 +3815,22 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 MutationCounters StorageMergeTree::getMutationCounters() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-    return mutation_counters;
+
+    /// A rolled-back or orphaned transactional mutation will never be applied, so the table must not
+    /// report it as pending: these counters feed `system.tables`, mutation throttling and the
+    /// count-from-defaultness optimization in `MergeTreeData::getColumnDefaultnessStats`, which
+    /// would needlessly stay disabled. The entry itself is removed later (by `killMutation` and by
+    /// `selectPartsToMutate` respectively), and that can be arbitrarily late — with `SYSTEM STOP
+    /// MERGES` the orphan cleanup round never comes at all.
+    /// Entries of finished mutations are already discounted, so only the pending ones are inspected.
+    MutationCounters result = mutation_counters;
+    for (const auto & [version, entry] : current_mutations_by_version)
+    {
+        if (!entry.is_done && isDeadTransactionalMutation(entry))
+            decrementMutationsCounters(result, *entry.commands);
+    }
+
+    return result;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

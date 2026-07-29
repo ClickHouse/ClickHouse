@@ -1042,6 +1042,18 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
         == "0"
     )
 
+    # The table-level mutation counters must not count it either: they are
+    # reported by system.tables and disable the count-from-defaultness
+    # optimization for as long as a data mutation looks pending.
+    assert (
+        node.query(
+            "SELECT active_on_fly_data_mutations, active_on_fly_alter_mutations,"
+            " active_on_fly_metadata_mutations FROM system.tables"
+            " WHERE database = currentDatabase() AND name = 'mt_kill_txn_on_fly'"
+        ).strip()
+        == "0\t0\t0"
+    )
+
     # A barrier ALTER waits for the latest mutation before changing the metadata.
     # The orphan must not be picked as that mutation: it never finishes and is
     # reported as killed, so the ALTER would fail with "Mutation ... was killed".
