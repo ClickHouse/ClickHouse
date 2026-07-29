@@ -39,6 +39,21 @@ SELECT 'no top filter EXCEPT ALL', countIf(explain LIKE 'Filter%') FROM
 SELECT 'top filter EXCEPT ALL off', countIf(explain LIKE 'Filter%') FROM
 (EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 0);
 
+-- Propagating the condition is not enough: with more than one granule per part, both branches must
+-- actually prune down to a single granule, which is the point of the optimization.
+DROP TABLE IF EXISTS t_intex_g_l;
+DROP TABLE IF EXISTS t_intex_g_r;
+CREATE TABLE t_intex_g_l (a UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_intex_g_r (a UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_intex_g_l SELECT number FROM numbers(100000);
+INSERT INTO t_intex_g_r SELECT number FROM numbers(100000);
+SELECT 'granules on', countIf(explain LIKE '%Granules: 1/12%') FROM
+(EXPLAIN indexes = 1 SELECT a FROM (SELECT a FROM t_intex_g_l EXCEPT ALL SELECT a FROM t_intex_g_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 1);
+SELECT 'granules off', countIf(explain LIKE '%Granules: 12/12%') FROM
+(EXPLAIN indexes = 1 SELECT a FROM (SELECT a FROM t_intex_g_l EXCEPT ALL SELECT a FROM t_intex_g_r) WHERE a = 5 SETTINGS query_plan_filter_push_down = 0);
+DROP TABLE t_intex_g_l;
+DROP TABLE t_intex_g_r;
+
 -- Multiplicity must be preserved with the filter pushed down.
 DROP TABLE t_intex_l;
 DROP TABLE t_intex_r;
@@ -117,6 +132,21 @@ SELECT 'dec except on', count() FROM (SELECT a FROM t_intex_dec_l EXCEPT ALL SEL
 SELECT 'dec except off', count() FROM (SELECT a FROM t_intex_dec_l EXCEPT ALL SELECT a FROM t_intex_dec_r) WHERE a * toDecimal64(4000000000, 0) = toDecimal64(4000000000, 0) SETTINGS query_plan_filter_push_down = 0;
 DROP TABLE t_intex_dec_l;
 DROP TABLE t_intex_dec_r;
+
+-- A whitelisted comparison recurses into wrappers, so a Decimal nested in a Tuple can still raise
+-- DECIMAL_OVERFLOW on a scale mismatch and must be rejected like a top-level Decimal.
+DROP TABLE IF EXISTS t_intex_tdec_l;
+DROP TABLE IF EXISTS t_intex_tdec_r;
+CREATE TABLE t_intex_tdec_l (a Tuple(Decimal64(0))) ENGINE = Memory;
+CREATE TABLE t_intex_tdec_r (a Tuple(Decimal64(0))) ENGINE = Memory;
+INSERT INTO t_intex_tdec_l VALUES (tuple(toDecimal64(1, 0))), (tuple(toDecimal64(9000000000000000000, 0)));
+INSERT INTO t_intex_tdec_r VALUES (tuple(toDecimal64(9000000000000000000, 0)));
+-- The parent must select the set-key column, or the set-key guard rejects the pushdown first and
+-- this case stops exercising the type check.
+SELECT 'tuple dec on', a FROM (SELECT a FROM t_intex_tdec_l EXCEPT ALL SELECT a FROM t_intex_tdec_r) AS t0 WHERE t0.a = tuple(toDecimal64(1, 4)) SETTINGS query_plan_filter_push_down = 1;
+SELECT 'tuple dec off', a FROM (SELECT a FROM t_intex_tdec_l EXCEPT ALL SELECT a FROM t_intex_tdec_r) AS t0 WHERE t0.a = tuple(toDecimal64(1, 4)) SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_tdec_l;
+DROP TABLE t_intex_tdec_r;
 
 -- A parent reusing the predicate column leaves a filter output of a single same-typed UInt8, so
 -- pushing it would feed x > 0 into the set instead of x.

@@ -48,16 +48,25 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the type is, or recursively contains, a Variant or Dynamic type.
-static bool typeIsOrContainsDynamic(const IDataType & type)
+/// True if the type is, or contains at any depth, a Decimal, Variant or Dynamic type. Comparisons
+/// recurse into wrappers (tuple equality executes element equality), so a nested Decimal can still
+/// raise DECIMAL_OVERFLOW and a nested Variant/Dynamic can still throw on the alternative a row
+/// carries. forEachChild already visits descendants recursively, so inspect each child once.
+static bool typeIsOrContainsThrowingType(const IDataType & type)
 {
-    if (WhichDataType(type).isVariant() || WhichDataType(type).isDynamic())
+    auto is_throwing = [](const IDataType & t)
+    {
+        WhichDataType which(t);
+        return which.isDecimal() || which.isVariant() || which.isDynamic();
+    };
+
+    if (is_throwing(type))
         return true;
 
     bool found = false;
     type.forEachChild([&](const IDataType & child)
     {
-        found |= typeIsOrContainsDynamic(child);
+        found |= is_throwing(child);
     });
     return found;
 }
@@ -89,15 +98,13 @@ static bool filterMayThrow(const FilterStep & filter)
 
         /// Whitelisted comparisons still throw DECIMAL_OVERFLOW on a decimal scale mismatch
         /// (Core/DecimalComparison.h), and a Variant/Dynamic argument can throw depending on the
-        /// alternative a row carries. Only function arguments are checked: a Variant/Dynamic column
-        /// merely projected to the output is never evaluated, so it must not block the pushdown.
+        /// alternative a row carries. Only function arguments are checked: such a column merely
+        /// projected to the output is never evaluated, so it must not block the pushdown.
         for (const auto & child : node.children)
         {
             if (!child->result_type)
                 continue;
-            if (WhichDataType(removeNullable(child->result_type)).isDecimal())
-                return true;
-            if (typeIsOrContainsDynamic(*child->result_type))
+            if (typeIsOrContainsThrowingType(*child->result_type))
                 return true;
         }
     }

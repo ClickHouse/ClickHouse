@@ -4,6 +4,8 @@ EXCEPT ALL	2
 EXCEPT DISTINCT	2
 no top filter EXCEPT ALL	0
 top filter EXCEPT ALL off	1
+granules on	2
+granules off	2
 res INTERSECT ALL	5
 res INTERSECT ALL	5
 res INTERSECT DISTINCT	5
@@ -20,6 +22,8 @@ count except mt	1
 count intersect mt	1
 dec except on	1
 dec except off	1
+tuple dec on	(1)
+tuple dec off	(1)
 reuse on	3
 reuse off	3
 block mismatch	0
