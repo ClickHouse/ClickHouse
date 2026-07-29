@@ -87,6 +87,8 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -121,6 +123,8 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -142,7 +146,7 @@ Para eliminar un índice de texto, ejecute
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
-**Argumento tokenizer (obligatorio)**. El argumento `tokenizer` especifica el tokenizador:
+**Argumento tokenizador (obligatorio)**. El argumento `tokenizer` especifica el tokenizador:
 
 * `splitByNonAlpha` divide cadenas por caracteres ASCII no alfanuméricos (consulte la función [splitByNonAlpha](/es/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` divide cadenas usando determinadas cadenas separadoras `S` definidas por el usuario (consulte la función [splitByString](/es/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
@@ -187,7 +191,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 Los índices de texto pueden construirse sobre datos de texto en cualquier idioma y conjunto de caracteres.
 Para texto no ASCII, se recomienda el tokenizador `asciiCJK`, ya que gestiona correctamente los límites de palabras de Unicode, incluidos los caracteres CJK.
 
-**Argumento de preprocesador (opcional)**. El preprocesador se refiere a una expresión que se aplica a la cadena de entrada antes de la tokenización.
+<a id="preprocessor-argument-optional" />**Argumento de preprocesador (opcional)**. El preprocesador se refiere a una expresión que se aplica a la cadena de entrada antes de la tokenización.
 
 Los casos de uso típicos del argumento de preprocesador incluyen
 
@@ -290,7 +294,195 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Otros argumentos (opcionales)**.
+<a id="postprocessor-argument-optional" />**Argumento posprocesador (opcional)**. El posprocesador es una expresión que se aplica a cada token de salida después de la tokenización.
+
+A diferencia del preprocesador, que transforma toda la cadena de entrada antes de que el tokenizador la divida en tokens, el posprocesador actúa sobre los propios tokens, uno a uno.
+Este es el lugar natural para las transformaciones que son intrínsecamente a nivel de token.
+
+Los casos de uso típicos del argumento posprocesador incluyen:
+
+1. **Filtrado de palabras vacías (tokens extremadamente frecuentes)**. Los tokens muy comunes como &quot;the&quot;, &quot;a&quot; e &quot;is&quot; aportan poca relevancia a la búsqueda e inflan el índice.
+   Puede usar el posprocesador para descartarlos convirtiéndolos en tokens vacíos; los tokens vacíos se ignoran, es decir, no se añaden al índice.
+   Ejemplo: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+2. **Eliminación de marcas de tiempo**. Las líneas de log suelen empezar con una marca de tiempo estructurada como `2024-01-15T10:23:45` o contenerla.
+   Indexar tokens de marcas de tiempo hincha el índice con cadenas que no aportan relevancia para la búsqueda.
+   Hay dos enfoques complementarios para ignorar las marcas de tiempo:
+   * **Enfoque con posprocesador**: use el tokenizador `splitByString` (división por espacios en blanco) para que la marca de tiempo completa se convierta en un único token y, a continuación, use `parseDateTimeOrNull` para detectarlo y descartarlo.
+     Ejemplo: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     Para marcas de tiempo con desplazamientos de zona horaria o segundos fraccionarios, use `parseDateTimeBestEffortOrNull(str)` sin una cadena de formato explícita.
+   * **Enfoque con preprocesador**: elimine la marca de tiempo de la línea de log completa *antes* de la tokenización mediante una expresión regular.
+     Ejemplo: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     Esto funciona con cualquier tokenizador y es más eficiente, ya que los caracteres de la marca de tiempo nunca se tokenizan.
+     Ambos enfoques pueden combinarse: el preprocesador elimina la marca de tiempo, mientras que el posprocesador normaliza o filtra los tokens restantes (p. ej., convierte a minúsculas + elimina palabras de severidad como `ERROR` o `INFO`).
+3. **Stemming**. Asignar a cada token su raíz mejora la exhaustividad de la búsqueda al hacer coincidir variantes morfológicas que comparten la misma raíz.
+   Por ejemplo, con stemming en inglés, &quot;running&quot;, &quot;runs&quot; y &quot;run&quot; se reducen todos a &quot;run&quot;, por lo que una consulta de cualquiera de estas variantes coincide con todas ellas.
+   ClickHouse proporciona una función [stem](/es/reference/functions/regular-functions/nlp-functions#stem) integrada para varios idiomas.
+   Ejemplo: `stem(str, 'en')`
+4. **Normalización de mayúsculas y minúsculas**. Convertir los tokens a minúsculas o mayúsculas para permitir la coincidencia sin distinción entre mayúsculas y minúsculas, p. ej. [lower](/es/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/es/reference/functions/regular-functions/string-functions#lowerUTF8).
+   Para convertir a minúsculas o mayúsculas, recomendamos usar un preprocesador en lugar de un posprocesador.
+
+La expresión de posprocesamiento transforma tokens de tipo [String](/es/reference/data-types/string) en tokens del mismo tipo.
+Además, la expresión de posprocesamiento solo puede hacer referencia a la columna o expresión sobre la que se define el índice de texto.
+Cuando la columna es de tipo `Array(String)`, el posprocesador sigue operando sobre tokens individuales como valores `String` simples.
+
+No se permite el uso de funciones no deterministas.
+
+El posprocesador se aplica a cada token generado durante la creación del índice (para el tokenizer `array`, cada elemento del array es un token). En tiempo de consulta, el comportamiento depende de la función:
+
+* Para `hasToken`, `hasAllTokens`, `hasAnyTokens` y `hasPhrase` (con cualquier tokenizer compatible): el posprocesador se aplica tanto a los tokens del texto buscado como al término de búsqueda, lo que permite una coincidencia completamente normalizada (p. ej., búsqueda sin distinción entre mayúsculas y minúsculas). En `hasPhrase`, los tokens posprocesados se colocan de forma contigua, de modo que si el posprocesador descarta un token, no queda ningún hueco posicional y la frase sigue coincidiendo a través de él; por ejemplo, con un posprocesador de palabras vacías que elimina `the`, `hasPhrase(col, 'see cat')` coincide con un documento `see the cat`.
+* Para todas las demás funciones (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): solo el término de búsqueda se posprocesa para la búsqueda asistida por el índice; el predicado a nivel de fila sigue comparándose con los valores originales de la columna.
+
+Ejemplos:
+
+* Eliminar palabras vacías mediante una expresión de posprocesamiento:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* Elimina las marcas de tiempo mediante una expresión de posprocesamiento:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+* Elimine las marcas de tiempo mediante una expresión de preprocesamiento:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+* Elimine las marcas de tiempo mediante una expresión combinada de preprocesador y posprocesador:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+* Aplica stemming a los tokens mediante una expresión de posprocesamiento:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**Compatibilidad con funciones**.
+
+Para los predicados que consultan el índice de texto, el preprocesador y el posprocesador se aplican al valor de búsqueda antes de la comprobación a nivel de gránulo, de modo que la búsqueda en el índice use los mismos tokens que se almacenaron al crear el índice.
+Para la mayoría de las funciones (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), el índice de texto se usa solo para omitir bloques de datos irrelevantes; ClickHouse sigue verificando cada fila resultante con el predicado original sobre los datos originales de la columna.
+Para las funciones de búsqueda de tokens (`hasToken`, `hasAllTokens`, `hasAnyTokens`), el índice de texto es la vía principal de evaluación: ClickHouse normaliza el término buscado mediante el mismo preprocesador, tokenizador y posprocesador que se aplicaron al crear el índice, y usa esta forma normalizada tanto para las partes de tabla indexadas como para las no indexadas. Con un posprocesador, los tokens del texto buscado también se normalizan en tiempo de consulta (para cualquier tokenizador, no solo `array`), de modo que ambos lados de la comparación se transforman de forma coherente y el resultado no depende de si el índice se lee directamente (ajuste `query_plan_direct_read_from_text_index`) ni de si una parte determinada tiene un índice materializado; por ejemplo, habilitar la coincidencia sin distinción entre mayúsculas y minúsculas para `hasAllTokens(col, ['FOO'])` con un posprocesador `lower`.
+Sin `support_phrase_search`, `hasPhrase` usa el índice solo como referencia y verifica cada fila resultante con el predicado original; además, un posprocesador normaliza de la misma manera tanto la frase como los tokens del texto buscado, por lo que el resultado es independiente de la ruta de lectura, y los tokens que el posprocesador descarta no rompen la adyacencia de la frase. Con `support_phrase_search = 1`, `hasPhrase` usa lecturas directas exactas (y sigue aplicando el posprocesador, si lo hay).
+Los tokens de búsqueda que el posprocesador convierte en una cadena vacía se ignoran; es decir, se tratan como ausentes de la frase de búsqueda.
+
+| Función                                                                                                 | Admite un preprocesador                                     | Tokenizadores compatibles                                | Admite un posprocesador |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- | ----------------------- |
+| `=`                                                                                                     | sí                                                          | todos                                                    | sí                      |
+| `IN`                                                                                                    | sí                                                          | todos                                                    | sí                      |
+| [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken)                     | sí                                                          | todos (diseñado para `splitByNonAlpha`)                  | sí                      |
+| [hasAnyTokens(col, str)](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | sí                                                          | todos                                                    | sí                      |
+| [hasAllTokens(col, str)](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | sí                                                          | todos                                                    | sí                      |
+| [hasAnyTokens(col, arr)](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | no (los elementos del array se tratan como tokens tal cual) | todos                                                    | sí                      |
+| [hasAllTokens(col, arr)](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | no (los elementos del array se tratan como tokens tal cual) | todos                                                    | sí                      |
+| [hasPhrase](/es/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | sí                                                          | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | sí                      |
+| [startsWith](/es/reference/functions/regular-functions/string-functions#startsWith)                        | sí                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | sí                      |
+| [endsWith](/es/reference/functions/regular-functions/string-functions#endsWith)                            | sí                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | sí                      |
+| [like](/es/reference/functions/regular-functions/string-search-functions#like)                             | sí¹                                                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | sí¹                     |
+| [match](/es/reference/functions/regular-functions/string-search-functions#match)                           | sí¹                                                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | sí¹                     |
+| [ilike](/es/reference/functions/regular-functions/string-search-functions#like)                            | sí² (`lower`/`upper` solamente)                             | `splitByNonAlpha`, `array`²                              | no²                     |
+| [mapContainsKey](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | sí                                                          | todos                                                    | sí                      |
+| [mapContainsValue](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | sí                                                          | todos                                                    | sí                      |
+| [mapContainsKeyLike](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | sí                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | sí                      |
+| [mapContainsValueLike](/es/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | sí                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | sí                      |
+| [has](/es/reference/functions/regular-functions/array-functions#has)                                       | sí                                                          | `array`                                                  | sí                      |
+| [hasAny](/es/reference/functions/regular-functions/array-functions#hasAny)                                 | sí                                                          | `array`                                                  | sí                      |
+| [hasAll](/es/reference/functions/regular-functions/array-functions#hasAll)                                 | sí                                                          | `array`                                                  | sí                      |
+
+¹ `LIKE` y `match` usan lectura directa como indicación para los tokenizadores listados; de lo contrario, recurren a una exploración por fuerza bruta.
+Además, `LIKE` admite *lectura directa (sin indicación)* (habilitada mediante `use_text_index_like_evaluation_by_dictionary_scan`) para los tokenizadores `splitByNonAlpha` y `array` sin preprocesador ni posprocesador.
+
+² `ILIKE` solo es compatible mediante lectura directa (sin indicación) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` o `array`).
+No hay fallback al uso del índice como indicación: si la configuración está deshabilitada o el tokenizador no está en el conjunto compatible, el índice no se usa para `ILIKE`.
+El preprocesador, si está presente, debe ser `lower` o `upper`; los posprocesadores no son compatibles.
+
+**Experimental: soporte para el argumento de búsqueda de frases (opcional)**.
+
+El parámetro experimental `support_phrase_search` (predeterminado: `0`) controla si el índice almacena las posiciones de los tokens.
+Cuando se establece en `1`, el índice también almacena datos de posición (en un archivo `.pos`), lo que permite la coincidencia exacta de frases mediante lecturas directas para la función [`hasPhrase`](#functions-example-hasphrase).
+Almacenar posiciones aumenta el tamaño del índice en disco y el costo de escritura, por lo que es una opción de activación explícita.
+El formato en disco aún no es estable, por lo que este parámetro es experimental y puede cambiar en una versión futura.
+Por lo tanto, crear un índice con `support_phrase_search = 1` requiere que esté habilitado el ajuste de MergeTree [`allow_experimental_text_index_phrase_search`](/es/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+Establezca `support_phrase_search = 0` (el valor predeterminado) para conservar el almacenamiento solo con posting lists; los índices de texto creados sin este argumento siguen sin posiciones.
+
+<Warning>
+  Este argumento es experimental y solo debe usarse para pruebas.
+  Establezca el ajuste de MergeTree [`allow_experimental_text_index_phrase_search`](/es/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) para habilitar el almacenamiento de posiciones.
+</Warning>
 
 <details markdown="1">
   <summary>Parámetros avanzados opcionales</summary>
@@ -302,7 +494,7 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
   El parámetro opcional `dictionary_block_frontcoding_compression` (predeterminado: 1) especifica si los bloques del diccionario usan front coding para la compresión.
 
-  El parámetro opcional `posting_list_block_size` (predeterminado: 1048576) especifica el tamaño de los bloques de listas de postings en filas.
+  El parámetro opcional `posting_list_block_size` (predeterminado: 1048576) especifica el tamaño de los bloques de posting lists en filas.
 
   El parámetro opcional `posting_list_codec` (predeterminado: `none`) especifica el códec de la posting list:
 
@@ -374,8 +566,8 @@ Si no existe ningún índice en una columna o en una parte de la tabla, las func
 
 <Note>
   Recomendamos usar las funciones `hasAnyTokens` y `hasAllTokens` para buscar en el índice de texto; consulta [más abajo](#functions-example-hasanytokens-hasalltokens).
-  Estas funciones funcionan con todos los tokenizadores disponibles y con todas las expresiones de preprocesador posibles.
-  Como las demás funciones compatibles son históricamente anteriores al índice de texto, en muchos casos tuvieron que conservar su comportamiento heredado (p. ej., sin compatibilidad con preprocesadores).
+  Estas funciones funcionan con todos los tokenizadores disponibles y con todas las expresiones posibles de preprocesador y posprocesador.
+  Como las demás funciones compatibles son históricamente anteriores al índice de texto, en muchos casos tuvieron que conservar su comportamiento heredado (p. ej., sin compatibilidad con preprocesadores ni posprocesadores).
 </Note>
 
 <div id="functions-support">
@@ -490,6 +682,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 Al igual que `LIKE`, las funciones [startsWith](/es/reference/functions/regular-functions/string-functions#startsWith) y [endsWith](/es/reference/functions/regular-functions/string-functions#endsWith) solo pueden usar un índice de texto si se pueden extraer tokens completos del término de búsqueda.
 En el caso del índice con el `tokenizador` `ngrams`, esto sucede si la longitud de las cadenas buscadas entre comodines es igual o mayor que la longitud del ngram.
+Cuando un índice de texto usa un posprocesador, estas funciones aún pueden usar el índice en modo Hint si los tokens de hint extraídos siguen siendo no vacíos después de la normalización. Si la normalización elimina todos los tokens de hint, el índice no se usa para ese predicado.
 
 Ejemplo del índice de texto con el `tokenizador` `splitByNonAlpha`:
 
@@ -512,16 +705,18 @@ Del mismo modo, `endsWith` debe usarse con un espacio inicial:
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken-hastokenornull">
-  #### `hasToken` and `hasTokenOrNull`
+<div id="functions-example-hastoken">
+  #### `hasToken`
 </div>
 
 <Note>
-  La función `hasToken` parece fácil de usar, pero presenta ciertos inconvenientes con tokenizadores no predeterminados y expresiones de preprocesador.
-  Recomendamos usar en su lugar las funciones `hasAnyTokens` y `hasAllTokens`.
+  `hasToken` presenta ciertos inconvenientes cuando se usa para lookups en índices de texto con tokenizadores que no son `splitByNonAlpha` y/o expresiones de preprocesador/postprocesador.
+  Recomendamos usar en su lugar `hasAnyTokens` y `hasAllTokens`.
+
+  Las variantes sin distinción entre mayúsculas y minúsculas `hasTokenCaseInsensitive` y `hasTokenCaseInsensitiveOrNull` no reconocen los índices de texto: siempre se ejecutan como un escaneo completo de filas, incluso en columnas con índice de texto. Para la coincidencia sin distinción entre mayúsculas y minúsculas, use un preprocesador o postprocesador `lower(...)` y combínelo con `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 </Note>
 
-Las funciones [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken) y [hasTokenOrNull](/es/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) buscan la coincidencia de un único token dado.
+La función [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken) busca la coincidencia de un único token dado.
 
 A diferencia de las funciones mencionadas anteriormente, no tokenizan el término de búsqueda (asumen que la entrada es un único token).
 
@@ -560,16 +755,17 @@ La función [hasPhrase](/es/reference/functions/regular-functions/string-search-
 
 A diferencia de `hasAllTokens`, que solo requiere que todos los tokens estén presentes en algún lugar, `hasPhrase` exige que aparezcan como una secuencia consecutiva.
 La frase de búsqueda se tokeniza con el mismo tokenizador configurado para la columna de índice.
+Cuando el índice de texto usa un posprocesador, la frase de búsqueda también se normaliza antes de la búsqueda en el índice.
 Ten en cuenta que la función requiere uno de estos tokenizadores: `splitByNonAlpha`, `splitByString`, `ngrams` o `asciiCJK`.
 
 Ejemplo:
 
 ```sql
--- Coincide: 'clickhouse' y 'olap' deben aparecer seguidos y en ese orden
+-- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
 SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
--- No coincide con una fila que contiene 'olap clickhouse' (orden incorrecto)
--- No coincide con una fila que contiene 'clickhouse fast olap' (no son consecutivos)
+-- Does NOT match a row containing 'olap clickhouse' (wrong order)
+-- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
 <div id="functions-example-has">
@@ -969,25 +1165,45 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
 <div id="text-index-phrase-search">
-  ### Búsqueda de frases
+  ### Búsqueda por frases
 </div>
 
-El índice de texto admite la búsqueda de frases mediante la función `hasPhrase`.
-Todos los tokens de la frase deben aparecer de forma consecutiva y en el mismo orden en el documento.
+Una búsqueda habitual en un índice de texto, por ejemplo
 
-El índice de texto acelera la búsqueda de frases mediante la intersección de las posting lists de todos los tokens de la frase para identificar gránulos candidatos.
-Dentro de esos gránulos, ClickHouse luego verifica la adyacencia exacta de los tokens.
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
 
-`hasPhrase` es compatible con los tokenizadores `splitByNonAlpha`, `splitByString`, `ngrams` y `asciiCJK`.
+coincide con todas las filas que contienen los tokens indicados en cualquier orden.
+En el ejemplo, la fila `While she stayed in Tokyo, the weather was great.` cumple el filtro.
 
-La cadena de la frase se tokeniza con el tokenizador configurado en el índice.
-Los caracteres separadores del tokenizador en la frase se ignoran: `hasPhrase(text, 'quick+brown')` es equivalente a `hasPhrase(text, 'quick brown')` para el tokenizador `splitByNonAlpha`.
+En cambio, la búsqueda de frases consiste en hacer coincidir los tokens en el orden dado.
+Por ejemplo,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+coincide con cualquier fila que contenga la secuencia de tokens `weather in Tokyo`, como en `How is the weather in Tokyo?`?
+
+El índice de texto acelera la búsqueda de frases al intersectar las listas de postings de todos los tokens de la frase para identificar los gránulos candidatos.
+Dentro de esos gránulos, ClickHouse verifica la adyacencia exacta de los tokens.
+Este proceso es relativamente costoso y más lento que las consultas normales de búsqueda de texto.
+Para acelerar las consultas de búsqueda de frases, habilite el almacenamiento de posiciones en el índice de texto (consulte `Optional parameters` más arriba).
+
+`hasPhrase` puede usarse junto con los tokenizadores `splitByNonAlpha`, `splitByString`, `ngrams` y `asciiCJK`.
+La cadena de la frase indicada se tokeniza usando el tokenizador del índice.
+Los caracteres separadores de la frase se ignoran: `hasPhrase(text, 'quick+brown')` es equivalente a `hasPhrase(text, 'quick brown')`, siempre que `splitByNonAlpha` se use como tokenizador.
 
 <div id="text-index-phrase-search-example">
   #### Ejemplo
 </div>
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1175,11 +1391,10 @@ Esta optimización solo admite las funciones `like` e `ilike`.
   ### Almacenamiento en caché
 </div>
 
-Hay diferentes cachés disponibles para almacenar en búfer partes del índice de texto en memoria (consulte la sección [Detalles de implementación](#implementation)):
-Actualmente, existen cachés para las cabeceras deserializadas, los tokens y las listas de postings del índice de texto, con el fin de reducir la E/S.
-Pueden habilitarse mediante las configuraciones [use&#95;text&#95;index&#95;header&#95;cache](/es/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/es/reference/settings/session-settings#use_text_index_tokens_cache) y [use&#95;text&#95;index&#95;postings&#95;cache](/es/reference/settings/session-settings#use_text_index_postings_cache).
+Hay diferentes cachés de servidor disponibles para almacenar en búfer partes del índice de texto en memoria (consulte la sección [Detalles de implementación](#implementation)):
+Actualmente, existen cachés para los encabezados deserializados, los tokens y las listas de postings del índice de texto, con el fin de reducir la E/S.
+Use las configuraciones [use&#95;text&#95;index&#95;header&#95;cache](/es/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/es/reference/settings/session-settings#use_text_index_tokens_cache) y [use&#95;text&#95;index&#95;postings&#95;cache](/es/reference/settings/session-settings#use_text_index_postings_cache) para deshabilitar la lectura y escritura de las cachés individuales por parte de las consultas.
 
-De forma predeterminada, todas las cachés están deshabilitadas.
 Para limpiar las cachés, use la sentencia [SYSTEM CLEAR TEXT INDEX CACHES](/es/reference/statements/system#drop-text-index-caches)
 
 Consulte las siguientes configuraciones del servidor para ajustar las cachés.
@@ -1290,6 +1505,11 @@ Esta estructura de índice disperso es similar al [índice de clave primaria dis
 Las listas de postings de todos los tokens se almacenan secuencialmente en el archivo de listas de postings.
 Para ahorrar espacio y, al mismo tiempo, permitir operaciones rápidas de intersección y unión, las listas de postings se almacenan como [bitmaps Roaring](https://roaringbitmap.org/).
 Si la lista de postings es más grande que `posting_list_block_size`, se divide en varios bloques que se almacenan secuencialmente en el archivo de listas de postings.
+
+**Archivo de posiciones (.pos)**
+
+Opcional, solo si el argumento del índice `support_phrase_search = 1`.
+Almacena las posiciones de los tokens dentro de las filas coincidentes.
 
 **Fusión de índices de texto**
 
