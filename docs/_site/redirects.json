@@ -1528,8 +1528,12 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -1928,8 +1932,12 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
   },
   {
     "destination": "/products/cloud/reference/architecture",
