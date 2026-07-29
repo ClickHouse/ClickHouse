@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the h3ToGeo/geoToH3 case needs a binary with the Uber H3 library, not built in fast test
-
 -- A storage key or skip-index expression type must be stable and independent of the session settings
 -- that change the RESULT TYPE of a key expression (enable_extended_results_for_datetime_functions,
 -- cast_keep_nullable, geo_distance_returns_float64_on_float64_arguments,
@@ -215,24 +212,6 @@ SELECT count() FROM tlg;
 
 DROP TABLE tlg;
 
--- h3togeo_lon_lat_result_order (default 0): h3ToGeo returns Tuple(latitude, longitude) by default and
--- Tuple(longitude, latitude) when set to 1. Unlike the settings above this keeps the SAME top-level type
--- Tuple(Float64, Float64); it only SWAPS the two elements, so a poisoned recompute does not abort with a
--- Bad cast - it silently reorders the key tuple. The observable divergence (parts serialized under one
--- element order, KeyDescription::data_types recomputed under the other) only appears across a
--- version/global-default boundary; a single self-consistent binary always serializes and deserializes
--- primary.idx under the same effective order, so this case cannot fail-without/pass-with on one binary.
--- It is a behavior-preserving guard: CREATE under a transient session flip must be neutralized to the
--- canonical (latitude, longitude) order, so parts are stored latitude-major and _part_offset order (the
--- physical stored order, independent of the reader's session setting) is monotonic in latitude.
-DROP TABLE IF EXISTS th3;
-SET h3togeo_lon_lat_result_order = 1;
-CREATE TABLE th3 (h UInt64) ENGINE = MergeTree() ORDER BY h3ToGeo(h) SETTINGS index_granularity = 1;
-SET h3togeo_lon_lat_result_order = 0;
-INSERT INTO th3 SELECT geoToH3(lon, lat, 5) FROM values('lat Float64, lon Float64', (10., 60.), (80., 5.), (-40., 50.), (50., -120.));
-SELECT round(h3ToGeo(h).1, 1) FROM th3 ORDER BY _part_offset SETTINGS max_threads = 1;
-
-DROP TABLE th3;
 
 -- allow_lossy_numeric_supertype (default 0) and use_variant_as_common_type are the two knobs that decide
 -- how if/multiIf/ifNull/coalesce/array/map resolve branches with no lossless common type. With

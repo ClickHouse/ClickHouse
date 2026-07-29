@@ -144,11 +144,13 @@ CREATE TABLE t_03363_hive_requires_format (c0 Int) ENGINE = S3(s3_conn, partitio
 -- Should throw because hive strategy does not allow partition columns to be the only columns
 CREATE TABLE t_03363_hive_only_partition_columns (country String, year UInt16) ENGINE = S3(s3_conn, partition_strategy='hive') PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
 
--- Object-storage partition strategies opt out of key-type canonicalization: the partition value is a path
--- string produced/consumed under the query context, not a persisted binary key file. A type-affecting session
--- setting must not change the recorded key type independently of the written directory names. Partition by a
--- bare DateTime64/Date32 column with enable_extended_results_for_datetime_functions=1 and confirm the paths and
--- round-trip are unaffected.
+-- Non-regression coverage for the hive strategy after object-storage partitioning was opted out of
+-- key-type canonicalization (the partition value is a path string produced and parsed back under the query
+-- context, not a persisted binary key file). This does NOT discriminate the opt-out: hive requires every
+-- partition expression column to be a storage column, so a setting-sensitive function expression cannot be
+-- used here at all ("could not find 'toStartOfDay(d)' in storage"), and a bare Date32/DateTime64 identifier
+-- carries no setting-dependent type. It only pins that Date32/DateTime64 partition columns keep writing the
+-- same paths and round-tripping with enable_extended_results_for_datetime_functions = 1.
 DROP TABLE IF EXISTS t_03363_ext_dt;
 CREATE TABLE t_03363_ext_dt (d Date32, ts DateTime64(3), v UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_ext_dt', format = Parquet, partition_strategy='hive')

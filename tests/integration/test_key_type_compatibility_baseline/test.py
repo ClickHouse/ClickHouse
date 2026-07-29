@@ -15,6 +15,14 @@ node_compat = cluster.add_instance(
 # Default profile: baseline is the current built-in defaults.
 node_default = cluster.add_instance("node_default", stay_alive=True)
 
+# What each case can detect. createKeyExpressionContext resolves the pinned values from the server's
+# global settings (so a non-default `compatibility` is honoured) rather than from the built-in literals.
+# Only the two use_variant_as_common_type cases below detect a regression that swapped that baseline read
+# for the built-in literals: their divergence is a different error code at DDL time. The geo and dateTrunc
+# cases cannot, because a binary reading the literals is self-consistent - it would resolve the same
+# (wrong) type at CREATE and at every recompute, so the parts are written to match and nothing diverges.
+# Those cases instead pin the other half of the contract, that a transient session override is ignored.
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -37,8 +45,14 @@ def test_geo_key_type_follows_compatibility_baseline_across_restart(started_clus
     )
     node_compat.query("INSERT INTO tg VALUES (55.0, 37.0, 55.1, 37.1), (10, 20, 10.1, 20.1), (0, 0, 1, 1)")
 
-    # Metadata-only ALTER: recompute the key type in a live query context.
-    node_compat.query("ALTER TABLE tg MODIFY COMMENT 'touch'")
+    # Metadata-only ALTER carrying the opposite transient override: without the pin this recomputes the
+    # key as Float64 while the parts on disk hold Float32, and the next write aborts with "Bad cast from
+    # ColumnVector<float> to ColumnVector<double>". The pin has to resolve the baseline value (Float32),
+    # not the session one.
+    node_compat.query(
+        "ALTER TABLE tg MODIFY COMMENT 'touch' "
+        "SETTINGS geo_distance_returns_float64_on_float64_arguments = 1"
+    )
     node_compat.query("INSERT INTO tg VALUES (1, 2, 3, 4)")
 
     # Restart: reload the table from persisted metadata (uses the global/default-profile context).
@@ -67,7 +81,12 @@ def test_date_trunc_key_type_follows_compatibility_baseline_across_restart(start
         "CREATE TABLE td (ts DateTime64(3)) ENGINE = MergeTree() ORDER BY dateTrunc('hour', ts)"
     )
     node_compat.query("INSERT INTO td VALUES ('2020-01-01 00:00:00'), ('2021-06-15 12:30:00')")
-    node_compat.query("ALTER TABLE td MODIFY COMMENT 'touch'")
+    # Opposite transient override, as in the geo case: without the pin the recomputed key becomes the
+    # extended DateTime64 while the parts hold DateTime, and the next write aborts with "Bad cast from
+    # ColumnVector<unsigned int> to ColumnDecimal<DateTime64>".
+    node_compat.query(
+        "ALTER TABLE td MODIFY COMMENT 'touch' SETTINGS function_date_trunc_return_type_behavior = 0"
+    )
     node_compat.query("INSERT INTO td VALUES ('2019-01-01 00:00:00')")
     node_compat.restart_clickhouse()
     assert (
@@ -102,8 +121,13 @@ def test_transient_session_override_still_neutralized_on_default_profile(started
         )
         == "Float64\n"
     )
-    node_default.query(
-        "SELECT count() FROM tg2 WHERE geoDistance(a, b, c, d) BETWEEN 0 AND 1e9 SETTINGS force_primary_key = 1"
+    # Assert the row actually comes back: reading through primary.idx has to agree with the persisted
+    # key type, and a wrong count would otherwise pass unnoticed.
+    assert (
+        node_default.query(
+            "SELECT count() FROM tg2 WHERE geoDistance(a, b, c, d) BETWEEN 0 AND 1e9 SETTINGS force_primary_key = 1"
+        )
+        == "1\n"
     )
     node_default.query("DROP TABLE tg2 SYNC")
 
