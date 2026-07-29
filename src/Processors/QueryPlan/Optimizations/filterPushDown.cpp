@@ -62,29 +62,16 @@ static bool typeIsOrContainsDynamic(const IDataType & type)
     return found;
 }
 
-/// True if the filter predicate may throw at runtime for some argument values, so it is unsafe to
-/// clone below a row-eliminating step (INTERSECT/EXCEPT): the pushed filter would then be evaluated
-/// on branch rows the set operation removes, surfacing an error the unoptimized plan never produces
-/// (e.g. intDiv(1, c0) on a c0 = 0 row, or decimal plus/minus/multiply overflowing under the
-/// decimal_check_overflow default).
-///
-/// There is no sound per-function "cannot throw" oracle: IExecutableFunction::canThrow defaults to
-/// true and its only override forwards to isSuitableForShortCircuitArgumentsExecution, which is a
-/// heuristic that misses value-dependent throwers such as decimal-arithmetic overflow. So instead of
-/// blacklisting known throwers we take the conservative inverse: allow the pushdown only when every
-/// function node is on a small whitelist of operations that are total for every input value, and even
-/// then reject Decimal arguments, because decimal comparison and arithmetic can raise DECIMAL_OVERFLOW.
-/// This preserves the common key-condition pushdown (comparisons like a = 5, logical connectives)
-/// while blocking arithmetic/parsing/division and any function we have not proven total.
+/// There is no sound per-function "cannot throw" oracle: IExecutableFunction::canThrow defaults to true
+/// and its only override forwards to isSuitableForShortCircuitArgumentsExecution, which misses
+/// value-dependent throwers such as decimal-arithmetic overflow. So whitelist operations that are total
+/// for every input value instead, and reject Decimal arguments separately.
 static bool functionIsProvenTotal(const std::string & name)
 {
     static const NameSet total_functions
     {
-        /// Comparisons (for non-decimal arguments; decimal args are rejected separately).
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        /// Logical connectives and negation.
         "and", "or", "not", "xor",
-        /// Null/default predicates.
         "isNull", "isNotNull", "isZeroOrNull",
     };
     return total_functions.contains(name);
@@ -100,12 +87,10 @@ static bool filterMayThrow(const FilterStep & filter)
         if (!functionIsProvenTotal(node.function_base->getName()))
             return true;
 
-        /// Even whitelisted comparisons throw DECIMAL_OVERFLOW on decimal arguments with a scale
-        /// mismatch (Core/DecimalComparison.h), so treat any Decimal argument as potentially throwing.
-        /// Likewise a Variant/Dynamic argument can throw depending on the concrete alternative a row
-        /// carries. We check function arguments, not every FilterStep input: a Variant/Dynamic column
-        /// merely projected through to the output (never fed to a function evaluated before the set op)
-        /// cannot raise an eliminated-row exception, so it must not block the pushdown.
+        /// Whitelisted comparisons still throw DECIMAL_OVERFLOW on a decimal scale mismatch
+        /// (Core/DecimalComparison.h), and a Variant/Dynamic argument can throw depending on the
+        /// alternative a row carries. Only function arguments are checked: a Variant/Dynamic column
+        /// merely projected to the output is never evaluated, so it must not block the pushdown.
         for (const auto & child : node.children)
         {
             if (!child->result_type)
@@ -119,10 +104,7 @@ static bool filterMayThrow(const FilterStep & filter)
     return false;
 }
 
-/// True if the DAG output node is just the corresponding branch input column, renamed through alias
-/// nodes only (no computation). IntersectOrExcept compares whole rows, so the set key must remain the
-/// original branch columns; an output that is a function/constant result would replace a key column
-/// (e.g. feeding x > 0 into the set instead of x) and change the result.
+/// True if the DAG output node is a branch input column, renamed through alias nodes only.
 static bool outputIsPassThroughInput(const ActionsDAG::Node * node)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
@@ -131,13 +113,7 @@ static bool outputIsPassThroughInput(const ActionsDAG::Node * node)
 }
 
 /// True if the subplan rooted at `node` contains a step that emits a totals port
-/// (WITH TOTALS / CUBE / ROLLUP). IntersectOrExceptTransform consumes only the main ports and
-/// uniformizes their structure to the output header, but the totals port bypasses the transform
-/// (unitePipes forwards a single branch totals port verbatim). Pushing a filter into a branch
-/// re-evaluates the predicate on that branch's ports and can leave the main port constant-folded
-/// (e.g. NULL AS x) while the totals port stays full, so a downstream Main-only transform
-/// (DISTINCT, ORDER BY) compares a Const main port against a full totals port and aborts with a
-/// "Block structure mismatch". Skip the pushdown for such branches.
+/// (WITH TOTALS / CUBE / ROLLUP).
 static bool subplanEmitsTotals(const QueryPlan::Node * node)
 {
     if (!node || !node->step)
@@ -1341,37 +1317,26 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * intersect_or_except = typeid_cast<IntersectOrExceptStep *>(child.get()))
     {
-        /// IntersectOrExcept does not change the header and its branches are positionally
-        /// aligned, so a deterministic filter above it can be cloned into every branch,
-        /// exactly as for UnionStep. This is equivalence-preserving for all set operators:
-        /// values failing the predicate cannot appear in the output, so dropping them from
-        /// each input does not change the result.
+        /// IntersectOrExcept does not change the header and its branches are positionally aligned,
+        /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
         ///
-        /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so the pushed-down filter is
-        /// evaluated on branch rows that the set operation would have removed. A predicate that
-        /// throws on some values (e.g. intDiv(1, c0) on a c0 = 0 row, or decimal arithmetic
-        /// overflowing) would then surface an error the unoptimized plan never produces, because
-        /// that row is dropped before the top filter runs. Skip the pushdown when the filter may
-        /// throw. filterMayThrow also rejects Variant/Dynamic values that are consumed by a function
-        /// (they can throw depending on the concrete alternative a row carries), while allowing a
-        /// Variant/Dynamic column that is only projected through to the output.
+        /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so a pushed-down filter also runs on
+        /// branch rows the set operation removes. A predicate that throws on some values would then
+        /// surface an error the unoptimized plan never produces.
         if (filterMayThrow(*filter))
             return 0;
 
-        /// If any branch emits a totals port (WITH TOTALS / CUBE / ROLLUP), the pushed-down filter
-        /// can leave that branch's main port constant-folded while its totals port stays full; a
-        /// downstream Main-only transform then aborts with a "Block structure mismatch". Skip.
+        /// A pushed-down filter can leave a branch main port constant-folded while its totals port
+        /// stays full, and a downstream Main-only transform then aborts on the mismatch.
         for (const auto * branch : child_node->children)
             if (subplanEmitsTotals(branch))
                 return 0;
 
-        /// IntersectOrExcept compares whole rows positionally: its entire header is the set key.
-        /// The pushed filter's output header becomes the new branch/set-key header. Dropping any
-        /// set-key column coarsens the comparison and changes the result; when the parent needs no
-        /// branch column (e.g. count()) the filter output projects them all away and becomes empty,
-        /// computing the set over zero columns and aborting (num_srcs > 0). Consistent renaming or
-        /// reordering across branches is harmless, so require only that the column count and
-        /// positional types are preserved. UNION is exempt because it never compares columns.
+        /// IntersectOrExcept compares whole rows positionally: its entire header is the set key, and
+        /// the pushed filter's output header becomes the new one. Dropping a set-key column coarsens
+        /// the comparison; projecting them all away (e.g. a count() parent) computes the set over zero
+        /// columns and aborts on num_srcs > 0. Consistent renaming or reordering is harmless, so only
+        /// the column count and positional types must be preserved.
         auto expected_output = filter->getOutputHeader();
         const auto & set_key_header = *intersect_or_except->getOutputHeader();
         if (expected_output->columns() != set_key_header.columns())
@@ -1382,11 +1347,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
         }
 
-        /// A same-typed column count is not enough: the planner may retain the filter-predicate
-        /// column when a parent reuses it (e.g. SELECT x > 0 ... WHERE x > 0), so a single-UInt8 set
-        /// key would silently become x > 0 fed into IntersectOrExcept instead of x, changing the
-        /// result. Require every new set-key column to be an original branch input carried through
-        /// (rename-only), never a function or constant result.
+        /// A same-typed column count is not enough: the planner may retain the predicate column when a
+        /// parent reuses it (e.g. SELECT x > 0 ... WHERE x > 0), so a single-UInt8 set key would become
+        /// x > 0 instead of x. Every set-key column must be a branch input carried through by name.
         std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
         for (const auto * out : filter->getExpression().getOutputs())
             output_by_name.emplace(out->result_name, out);
