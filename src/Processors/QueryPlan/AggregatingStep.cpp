@@ -1129,7 +1129,11 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
     /// Re-apply the initiator's temporary data settings, see `serializeSettings`.
-    auto tmp_data_scope = Context::getGlobalContextInstance()->getTempDataOnDisk();
+    /// The parent is the worker query's own temporary-data scope (installed by `ProcessList::insert`),
+    /// so the shard keeps enforcing `max_temporary_data_on_disk_size_for_query` / `..._for_user`;
+    /// it falls back to the server-wide root scope when there is no query-local scope,
+    /// same as the local path in `Planner::getAggregatorParams`.
+    auto tmp_data_scope = ctx.context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(
             /* metrics */ {},
