@@ -19,9 +19,9 @@ namespace DB
         for (const auto & name_type : actions.getRequiredColumns())
         {
             if (const auto & p = aliases.find(name_type.name); p != aliases.end())
-                required_columns_map[p->second->getColumnName()] = name_type;
+                required_columns_map.emplace(p->second->getColumnName(), name_type);
             else
-                required_columns_map[name_type.name] = name_type;
+                required_columns_map.emplace(name_type.name, name_type);
         }
 
         for (const ColumnWithTypeAndName & column : actions.getResultColumns())
