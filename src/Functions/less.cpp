@@ -62,8 +62,7 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
 }
 
 template <>
-ColumnPtr FunctionComparison<LessOp, NameLess>::executeArray(
-    const DataTypePtr & /*result_type*/,
+ColumnPtr FunctionComparison<LessOp, NameLess>::executeArrayLexicographic(
     const ColumnWithTypeAndName & column_type_name0,
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
@@ -73,18 +72,14 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeArray(
     FunctionOverloadResolverPtr order_resolver
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
 
-    return executeArrayLexicographicImpl(
+    return executeArrayLexicographicLessGreaterImpl(
+        equals_resolver,
+        order_resolver,
+        /*order_is_less=*/true,
+        /*or_equals=*/false,
         column_type_name0,
         column_type_name1,
-        input_rows_count,
-        /*is_equals=*/false,
-        /*is_not_equals=*/false,
-        /*is_less=*/true,
-        /*is_less_or_equals=*/false,
-        /*is_greater=*/false,
-        /*is_greater_or_equals=*/false,
-        equals_resolver,
-        order_resolver);
+        input_rows_count);
 }
 
 }

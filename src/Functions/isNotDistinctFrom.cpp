@@ -69,8 +69,7 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::
 }
 
 template <>
-ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::executeArray(
-    const DataTypePtr & /*result_type*/,
+ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::executeArrayLexicographic(
     const ColumnWithTypeAndName & column_type_name0,
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
@@ -78,18 +77,12 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::
     FunctionOverloadResolverPtr equals_resolver
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
 
-    return executeArrayLexicographicImpl(
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        /*invert=*/false,
         column_type_name0,
         column_type_name1,
-        input_rows_count,
-        /*is_equals=*/true,
-        /*is_not_equals=*/false,
-        /*is_less=*/false,
-        /*is_less_or_equals=*/false,
-        /*is_greater=*/false,
-        /*is_greater_or_equals=*/false,
-        equals_resolver,
-        nullptr);
+        input_rows_count);
 }
 
 }

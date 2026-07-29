@@ -1313,20 +1313,30 @@ private:
         return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
     }
 
-    /// Lexicographically compares two arrays element-by-element using the accurate scalar
-    /// comparison. The result is always a non-Nullable `UInt8`.
-    ColumnPtr executeArrayLexicographicImpl(
+    /// Aligned common-prefix elements of two array columns, gathered into flat equally-sized
+    /// columns so they can be compared with a single batch scalar comparison.
+    struct GatheredArrayElements
+    {
+        /// The gathered element columns with `LowCardinality` and top-level `Nullable` removed,
+        ColumnsWithTypeAndName element_args;
+        /// Keep the gathered `Nullable` columns alive: the null map pointers below point into them.
+        ColumnPtr full_elements0;
+        ColumnPtr full_elements1;
+        /// Null maps of the gathered elements (nullptr when the elements are not `Nullable`).
+        const NullMap * null_map0 = nullptr;
+        const NullMap * null_map1 = nullptr;
+        /// Per row: the aligned prefix length both arrays share.
+        PaddedPODArray<UInt64> common_lengths;
+        /// Per row: whether array0 is shorter(-1), equals(0), bigger(1) than array1.
+        PaddedPODArray<Int8> length_cmp;
+        /// Total number of gathered element pairs.
+        size_t num_elements = 0;
+    };
+
+    GatheredArrayElements gatherAlignedArrayElements(
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
-        size_t input_rows_count,
-        bool is_equals,
-        bool is_not_equals,
-        bool is_less,
-        bool is_less_or_equals,
-        bool is_greater,
-        bool is_greater_or_equals,
-        const FunctionOverloadResolverPtr & equals_resolver,
-        const FunctionOverloadResolverPtr & order_resolver) const
+        size_t input_rows_count) const
     {
         /// First, unwrap the two array columns
         chassert(column_type_name0.column && column_type_name1.column);
@@ -1345,10 +1355,9 @@ private:
         auto & idx0 = indexes0->getData();
         auto & idx1 = indexes1->getData();
 
-        /// stores the aligned prefix length both arrays share
-        PaddedPODArray<UInt64> common_lengths(input_rows_count);
-        /// whether array0 is shorter(-1), equals(0), bigger(1) than array1
-        PaddedPODArray<Int8> length_cmp(input_rows_count);
+        GatheredArrayElements gathered;
+        gathered.common_lengths.resize(input_rows_count);
+        gathered.length_cmp.resize(input_rows_count);
 
         ColumnArray::Offset prev0 = 0;
         ColumnArray::Offset prev1 = 0;
@@ -1371,15 +1380,15 @@ private:
                 idx1.push_back(prev1 + k);
             }
 
-            common_lengths[row] = common;
-            length_cmp[row] = len0 < len1 ? -1 : (len0 == len1 ? 0 : 1);/// shorter(-1), equals(0), greater(1)
+            gathered.common_lengths[row] = common;
+            gathered.length_cmp[row] = len0 < len1 ? -1 : (len0 == len1 ? 0 : 1);/// shorter(-1), equals(0), greater(1)
 
             /// update previous positions with current offsets
             prev0 = off0;
             prev1 = off1;
         }
 
-        const size_t num_elements = idx0.size();
+        gathered.num_elements = idx0.size();
 
         /// Now we can gather aligned elements into two equally-sized columns and compare them all at once.
         /// The element types may be wrapped in `LowCardinality` (e.g. `Array(LowCardinality(Nullable(UInt64)))`);
@@ -1387,73 +1396,62 @@ private:
         DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
         /// Strip it recursively from both the types and the gathered columns so the `Nullable` unwrapping just
         /// below and the scalar comparison see plain columns.
-        ColumnPtr full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
-        ColumnPtr full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
-
-        /// `Nullable` elements are compared with array semantics: a NULL is a regular comparable value
-        /// that is equal only to another NULL and sorts after every non-NULL value.
-        const NullMap * null_map0 = nullptr;
-        const NullMap * null_map1 = nullptr;
-        ColumnPtr elements0 = full_elements0;
-        ColumnPtr elements1 = full_elements1;
-        /// Unwrap the null maps here and feed the underlying non-`Nullable` values to the scalar comparison, then fold the NULL
-        /// logic back in per element below.
-        if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(full_elements0.get()))
+        gathered.full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
+        gathered.full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
+        ColumnPtr elements0 = gathered.full_elements0;
+        ColumnPtr elements1 = gathered.full_elements1;
+        if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
         {
-            null_map0 = &nullable0->getNullMapData();
+            gathered.null_map0 = &nullable0->getNullMapData();
             elements0 = nullable0->getNestedColumnPtr();
         }
-        if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(full_elements1.get()))
+        if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
         {
-            null_map1 = &nullable1->getNullMapData();
+            gathered.null_map1 = &nullable1->getNullMapData();
             elements1 = nullable1->getNestedColumnPtr();
         }
 
-        ColumnsWithTypeAndName element_args{
+        gathered.element_args = ColumnsWithTypeAndName{
             {elements0, removeNullable(nested_type0), "left"},
             {elements1, removeNullable(nested_type1), "right"}};
 
-        auto run = [&](const FunctionOverloadResolverPtr & resolver) -> ColumnPtr
-        {
-            /// Recurse over indexes to compare flat columns at element-level
-            auto impl = resolver->build(element_args);
-            return impl->execute(element_args, impl->getResultType(), num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
-        };
+        return gathered;
+    }
 
-        /// we always run equality comparison to check for equal arrays
-        ColumnPtr equals_col = run(equals_resolver);
+    /// Compares the gathered aligned elements with the given scalar comparison; returns its
+    /// full (non-const) `UInt8` result over all gathered element pairs.
+    static ColumnPtr compareGatheredElements(const FunctionOverloadResolverPtr & resolver, const GatheredArrayElements & gathered)
+    {
+        /// Recurse over indexes to compare flat columns at element-level
+        auto impl = resolver->build(gathered.element_args);
+        return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
+    }
+
+    /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
+    /// (a NULL element is equal only to another NULL). `invert` turns the result into inequality for `!=` and `isDistinctFrom`.
+    ColumnPtr executeArrayLexicographicEqualityImpl(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        bool invert,
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
+
+        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
         const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
 
-        ColumnPtr order_col;
-        if (order_resolver)
-            order_col = run(order_resolver);
-
-        const ColumnUInt8::Container * element_order = order_col ? &assert_cast<const ColumnUInt8 &>(*order_col).getData() : nullptr;
-
-        /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
+        /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
         auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
 
         /// Null-safe element equality: a NULL is equal only to another NULL.
         auto elements_equal = [&](size_t j) -> bool
         {
-            bool n0 = elem_is_null(null_map0, j);
-            bool n1 = elem_is_null(null_map1, j);
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
             if (n0 || n1)
                 return n0 && n1;
             return element_equals[j];
-        };
-
-        /// Order of the first differing element, with NULL sorting after every non-NULL value.
-        /// `order_resolver` already encodes the direction (`less` for `<`/`<=`, `greater` for `>`/`>=`).
-        const bool order_is_less = is_less || is_less_or_equals;
-        auto element_precedes = [&](size_t j) -> UInt8
-        {
-            bool n0 = elem_is_null(null_map0, j);
-            bool n1 = elem_is_null(null_map1, j);
-            /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
-            if (n0 || n1)
-                return (order_is_less ? n1 : n0) ? 1 : 0;
-            return (*element_order)[j];
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
@@ -1463,52 +1461,115 @@ private:
         /// For each row from both Arrays
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t common_length = common_lengths[row];
+            size_t common_length = gathered.common_lengths[row];
 
-            if (is_equals || is_not_equals)
-            {
-                bool equal = length_cmp[row] == 0;
-                for (size_t k = 0; equal && k < common_length; ++k)
-                    equal = elements_equal(pos + k);
-                res[row] = is_equals ? equal : !equal;
-            }
-            else
-            {
-                /// The first differing element decides; if the common prefix is equal, the shorter array is "less".
-                UInt8 value = 0;
-                bool decided = false;
-                for (size_t k = 0; k < common_length; ++k)
-                {
-                    if (!elements_equal(pos + k))
-                    {
-                        value = element_precedes(pos + k);
-                        decided = true;
-                        break;
-                    }
-                }
-                if (!decided)
-                {
-                    Int8 lc = length_cmp[row];
-                    if (is_less)
-                        value = lc < 0;
-                    else if (is_less_or_equals)
-                        value = lc <= 0;
-                    else if (is_greater)
-                        value = lc > 0;
-                    else if (is_greater_or_equals)
-                        value = lc >= 0;
-                }
-                res[row] = value;
-            }
+            /// Arrays of different lengths are never equal; otherwise all aligned elements must match.
+            bool equal = gathered.length_cmp[row] == 0;
+            for (size_t k = 0; equal && k < common_length; ++k)
+                equal = elements_equal(pos + k);
+            res[row] = invert ? !equal : equal;
+
             pos += common_length; /// advance to the next subarray
         }
 
         return result;
     }
 
-    /// Implemented as a template specialization for multiple Functions (=, !=, >, >=, <, <=)
-    ColumnPtr executeArray(
-        const DataTypePtr & /*result_type*/,
+    /// Lexicographic order comparison (`<`, `<=`, `>`, `>=`) of two arrays: the first differing aligned element decides via `order_resolver`
+    /// A NULL element is equal only to another NULL and sorts after every non-NULL value. The result is always a non-Nullable `UInt8`
+    ColumnPtr executeArrayLexicographicLessGreaterImpl(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        bool order_is_less, /// direction for NULL ordering and the length tie-break
+        bool or_equals,     /// true for `<=` and `>=`
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
+
+        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
+        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+        ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
+        const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+
+        /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
+        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+
+        /// Null-safe element equality: a NULL is equal only to another NULL.
+        auto elements_equal = [&](size_t j) -> bool
+        {
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
+            if (n0 || n1)
+                return n0 && n1;
+            return element_equals[j];
+        };
+
+        /// Order of the first differing element, with NULL sorting after every non-NULL value.
+        auto element_precedes = [&](size_t j) -> UInt8
+        {
+            bool n0 = elem_is_null(gathered.null_map0, j);
+            bool n1 = elem_is_null(gathered.null_map1, j);
+            /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
+            if (n0 || n1)
+                return (order_is_less ? n1 : n0) ? 1 : 0;
+            return element_order[j];
+        };
+
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & res = result->getData();
+
+        size_t pos = 0;
+        /// For each row from both Arrays
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t common_length = gathered.common_lengths[row];
+
+            /// The first differing element decides; if the common prefix is equal, the shorter array is "less".
+            UInt8 value = 0;
+            bool decided = false;
+            for (size_t k = 0; k < common_length; ++k)
+            {
+                if (!elements_equal(pos + k))
+                {
+                    value = element_precedes(pos + k);
+                    decided = true;
+                    break;
+                }
+            }
+            if (!decided)
+            {
+                Int8 lc = gathered.length_cmp[row];
+                if (order_is_less)
+                    value = or_equals ? lc <= 0 : lc < 0;
+                else
+                    value = or_equals ? lc >= 0 : lc > 0;
+            }
+            res[row] = value;
+
+            pos += common_length; /// advance to the next subarray
+        }
+
+        return result;
+    }
+
+    /// Entry point for array-vs-array comparison: chooses the strategy based on the least
+    /// supertype of the arguments.
+    ColumnPtr  executeArray(
+        const ColumnWithTypeAndName & c0,
+        const ColumnWithTypeAndName & c1,
+        size_t input_rows_count) const
+    {
+        if (tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
+            return executeGeneric(c0, c1);
+        /// when leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
+        /// element-by-element with the accurate scalar comparison.
+        return executeArrayLexicographic(c0, c1, input_rows_count);
+    }
+
+    /// Implemented as a template specialization per operator (`=`, `!=`, `<`, `<=`, `>`, `>=` and the null-safe variants)
+    ColumnPtr executeArrayLexicographic(
         const ColumnWithTypeAndName & column_type_name0,
         const ColumnWithTypeAndName & column_type_name1,
         size_t input_rows_count) const;
@@ -1575,8 +1636,7 @@ public:
                 if (left_array && right_array)
                 {
                     /// Array element comparison treats inner NULLs as regular comparable values (a NULL
-                    /// is equal only to another NULL and sorts after every non-NULL value), producing a
-                    /// definite non-`Nullable` `UInt8` result.
+                    /// is equal only to another NULL and sorts after every non-NULL value)
                     auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
                     auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
 
@@ -1585,13 +1645,11 @@ public:
                     ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
 
-                    /// Reject only aligned string-vs-non-string positions (the legacy String<->value
-                    /// coercion we do not support element-wise); aligned String-vs-String positions are fine.
+                    /// Reject only aligned string-vs-non-string positions
                     bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
 
                     /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
-                    /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields
-                    /// `Nullable(UInt8)`;
+                    /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields `Nullable(UInt8)`;
                     const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
                     const bool element_result_ok
                         = WhichDataType(element_result_type.get()).isUInt8()
@@ -1846,10 +1904,11 @@ public:
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }
 
-        /// Arrays whose element types have no common supertype are compared element-wise;
-        if (which_left.isArray() && which_right.isArray() && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
+        /// Arrays are compared in executeArray, which chooses the comparison strategy based on
+        /// the least supertype of the arguments.
+        if (which_left.isArray() && which_right.isArray())
         {
-            return executeArray(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+            return executeArray(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);

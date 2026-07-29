@@ -75,29 +75,22 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cm
 }
 
 template <>
-ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cmp*/>::executeArray(
-    const DataTypePtr & /*result_type*/,
+ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cmp*/>::executeArrayLexicographic(
     const ColumnWithTypeAndName & column_type_name0,
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
 {
-    /// executeArrayLexicographicImpl expects the resolver to return 1 for equal element
+    /// executeArrayLexicographicEqualityImpl expects the resolver to return 1 for equal element
     /// pairs, so use the null-safe equality probe (`FunctionIsNotDistinctFrom`) for inversion
     FunctionOverloadResolverPtr equals_resolver
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
 
-    return executeArrayLexicographicImpl(
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        /*invert=*/true,
         column_type_name0,
         column_type_name1,
-        input_rows_count,
-        /*is_equals=*/false,
-        /*is_not_equals=*/true,
-        /*is_less=*/false,
-        /*is_less_or_equals=*/false,
-        /*is_greater=*/false,
-        /*is_greater_or_equals=*/false,
-        equals_resolver,
-        nullptr);
+        input_rows_count);
 }
 
 }
