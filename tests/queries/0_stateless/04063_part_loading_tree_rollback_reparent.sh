@@ -32,16 +32,49 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE="t_plt_reparent"
 
+# Part directories fabricated out-of-band below; `cleanup` removes them if the table is still
+# detached, because their metadata is exactly what could have made `ATTACH TABLE` throw.
+FABRICATED_PARTS="all_1_2_2_1 all_1_1_1_1 all_2_3_1_0"
+
 cleanup()
 {
+    # A permanently detached table is invisible to `DROP TABLE` (`UNKNOWN_TABLE`) while its
+    # name still blocks `CREATE TABLE`, so on failure paths that exit before `ATTACH TABLE`
+    # succeeds the table must be re-attached before dropping.
+    #
+    # `cleanup` runs both from the `EXIT` trap and once at startup to recover a table leaked by
+    # a previous failed attempt. The startup call happens before the in-shell `DATA_PATH` is
+    # assigned, so the fabricated part directories (whose transaction metadata is what could
+    # make `ATTACH TABLE` throw) are located from the detached table's own `uuid` instead:
+    # the data path `<disk>/store/<uuid[0:3]>/<uuid>` is stable across restarts and is
+    # available whenever the table is present in `system.detached_tables`.
+    local detached_uuid disk_path data_path part
+    detached_uuid=$($CLICKHOUSE_CLIENT -q "
+        SELECT uuid FROM system.detached_tables
+        WHERE database = currentDatabase() AND table = '${TABLE}'" 2>/dev/null)
+    if [ -n "${detached_uuid}" ]; then
+        disk_path=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'default'" 2>/dev/null)
+        if [ -n "${disk_path}" ]; then
+            data_path="${disk_path}store/${detached_uuid:0:3}/${detached_uuid}"
+            for part in ${FABRICATED_PARTS}; do
+                rm -rf "${data_path:?}/${part}"
+            done
+        fi
+        $CLICKHOUSE_CLIENT -q "ATTACH TABLE ${TABLE}" 2>/dev/null
+    fi
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}" 2>/dev/null
 }
 trap cleanup EXIT
 cleanup
 
+# Pin to the local `default` policy: the raw fabricated `txn_version.txt` below only parses on a
+# local disk, and `cleanup` derives the fabricated-part path from the `default` disk. The
+# `no-object-storage` tag does not protect harnesses that set an object-storage default policy
+# without passing `--s3-storage` to clickhouse-test (e.g. the Stress check).
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${TABLE} (x UInt32)
     ENGINE = MergeTree ORDER BY x
+    SETTINGS storage_policy = 'default'
 "
 
 # One insert creates a committed part (`all_1_1_0`) with valid data files that we
@@ -54,7 +87,27 @@ DATA_PATH=$($CLICKHOUSE_CLIENT -q "
     WHERE database = currentDatabase() AND name = '${TABLE}'
 ")
 
-$CLICKHOUSE_CLIENT -q "DETACH TABLE ${TABLE}"
+# `PERMANENTLY` keeps the table detached across server restarts (stress tests restart the
+# server at arbitrary moments). With a plain `DETACH` the table is loaded again at startup
+# while this script is still fabricating part directories out-of-band, and the server's
+# version-metadata machinery races with the script on the same `txn_version.txt(.tmp)`
+# files, leaving corrupted metadata behind that fails every subsequent server start.
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${TABLE} PERMANENTLY"
+
+# The detach client call alone is not a sufficient gate: if it fails (e.g. the connection is
+# lost because a stress-test restart lands on it), the script would keep running under plain
+# `bash` and mutate a table directory that may still be attached. Verify the detach
+# postcondition and fail fast before touching anything under `DATA_PATH`.
+DETACHED=$($CLICKHOUSE_CLIENT -q "
+    SELECT (SELECT count() FROM system.tables
+            WHERE database = currentDatabase() AND name = '${TABLE}') = 0
+       AND (SELECT count() FROM system.detached_tables
+            WHERE database = currentDatabase() AND table = '${TABLE}' AND is_permanently) = 1
+")
+if [ "${DETACHED}" != "1" ]; then
+    echo "FAIL: table ${TABLE} is not detached permanently, refusing to modify its data directory"
+    exit 1
+fi
 
 SOURCE="${DATA_PATH}/all_1_1_0"
 

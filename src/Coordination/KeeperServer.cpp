@@ -1451,7 +1451,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 uint64_t KeeperServer::createSnapshot()
 {
     /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
-    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
+    /// beginWritingSnapshot() on storage in the state that corresponds to `log_idx`, rather than a
     /// more recent state.
     nuraft::raft_server::create_snapshot_options options;
     options.serialize_commit_ = true;
