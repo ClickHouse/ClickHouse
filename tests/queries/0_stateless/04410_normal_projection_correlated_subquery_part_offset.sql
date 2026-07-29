@@ -41,7 +41,7 @@ DROP TABLE t_proj_corr;
 -- normalized by the join, so that is part of the shape being pinned.
 DROP TABLE IF EXISTS t_proj_corr_events;
 
-CREATE TABLE t_proj_corr_events (organisation_id UUID, session_id UUID, id UUID, timestamp UInt64, payload String, PROJECTION p_by_session (SELECT * ORDER BY session_id, timestamp)) ENGINE = MergeTree ORDER BY (organisation_id, session_id, timestamp) SETTINGS index_granularity = 3, ratio_of_defaults_for_sparse_serialization = 0.9;
+CREATE TABLE t_proj_corr_events (organisation_id UUID, session_id UUID, id UUID, timestamp UInt64, payload String, PROJECTION p_by_session (SELECT * ORDER BY session_id, timestamp)) ENGINE = MergeTree ORDER BY (organisation_id, session_id, timestamp) SETTINGS index_granularity = 3, ratio_of_defaults_for_sparse_serialization = 0.9, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
 INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
@@ -50,6 +50,12 @@ SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND 
 
 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0;
 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left';
+
+-- The two statements above pass whenever the projection is not used, including if it is declined
+-- earlier than the structure check. Assert the candidate reaches that check and is rejected there, so
+-- the statements keep exercising it. The settings must match the statement each one mirrors.
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0) WHERE explain ILIKE '%does not match the structure it replaces%';
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left') WHERE explain ILIKE '%does not match the structure it replaces%';
 
 -- Skipping the projection must not change the answer: assert projection-on equals projection-off.
 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, optimize_use_projections = 0;
