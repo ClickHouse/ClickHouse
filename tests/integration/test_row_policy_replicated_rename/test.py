@@ -119,6 +119,28 @@ def _wait_policy_visible(instances, short_name):
         )
 
 
+def _wait_grant_visible(instances, user="rp_user"):
+    """Waiting for the POLICY does not prove the GRANT has arrived: the two travel by structurally
+    independent channels. A freshly created policy reaches peers through the uuid-children list watch
+    (ZooKeeperReplicator getChildrenWatch), whose `all=false` path refreshes only NEW uuids, while a
+    GRANT is an UPDATE to the user entity and so reaches peers only through that entity's per-entity
+    Event::CHANGED watch. An update is not a new uuid, so the list refresh does not carry it.
+
+    A missing grant fails loudly in setup at the pre-rename FILTERED loop rather than silently inside
+    a security assertion, so this is a setup-robustness wait like _wait_policy_visible: it adds
+    tolerance to no assertion, and every read that measures the fix stays exact and un-retried.
+
+    `SELECT ... ON db.*` and `SELECT ... ON *.*` both produce exactly ONE system.grants row
+    (verified: the row differs only in whether `database` is set), so one predicate covers both the
+    per-database sites and the `*.*` site."""
+    for n in instances:
+        _wait_entity(
+            n,
+            f"SELECT count() FROM system.grants WHERE user_name = '{user}'",
+            "1\n",
+        )
+
+
 def _cleanup(instances, db):
     for n in instances:
         n.query(f"DROP DATABASE IF EXISTS {db} SYNC")
@@ -288,6 +310,7 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
         == "replicated\n"
     )
     _wait_policy_visible(shared_nodes[:2], "rp_a")
+    _wait_grant_visible(shared_nodes[:2])
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
@@ -340,6 +363,7 @@ def test_no_rekey_for_server_outside_the_renaming_group(started_cluster):
     )
     _sync(shared_nodes[:2], db, ["ta"])
     _wait_policy_visible(shared_nodes, "rp_a")
+    _wait_grant_visible(shared_nodes)
     for n in shared_nodes:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
@@ -392,6 +416,7 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
     )
     _wait_policy_visible(shared_nodes[:2], "rp_a")
     _wait_policy_visible(shared_nodes[:2], "rp_db")
+    _wait_grant_visible(shared_nodes[:2])
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 

@@ -64,6 +64,14 @@ ACCESS_STORAGE_READONLY
 after rejected rename (table not renamed, read-only policy still bound to rt):
 0
 rt
+-- self-EXCHANGE of a table with a read-only (users.xml) policy still succeeds
+self-exchange accepted
+rt
+1
+-- self-EXCHANGE with a writable policy: succeeds, binding and filtering unchanged
+after self-exchange (policy still on selfx, still eng only):
+selfx
+1
 -- cross-database RENAME rejected when a database-wide (db.*) policy applies
 NOT_IMPLEMENTED
 after rejected cross-db rename (table not moved, db-wide policy still filters source -> eng only):
@@ -95,3 +103,14 @@ refreshed target really has both rows:
 after the first refresh (policy still filters -> eng only, not the fin row):
 1
 rmvt
+-- RENAME DICTIONARY: policy follows the dictionary
+before (eng only -> 1 row of 2):
+1
+after rename (policy followed -> still 1 row, and bound to dict2):
+1
+dict2
+-- cross-database RENAME DICTIONARY rejected when a database-wide (db.*) policy applies
+NOT_IMPLEMENTED
+after rejected cross-db dictionary rename (dictionary not moved, db-wide policy still bound):
+dict2
+1

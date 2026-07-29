@@ -228,7 +228,30 @@ ${CLICKHOUSE_LOCAL} --config-file "${LOCAL_DIR}/config.xml" --path "${LOCAL_DIR}
 SELECT count() FROM system.tables WHERE database = 'rodb' AND name = 'rt2';
 SELECT table FROM system.row_policies WHERE database = 'rodb';
 "
+
+# `EXCHANGE TABLES t AND t` is a documented no-op that succeeds (01109_exchange_tables pins it), so it
+# must keep succeeding even when a read-only policy names t: the element moves no binding, so there is
+# nothing to re-key and evaluating the transition could only invent a failure. Reuses the read-only
+# users.xml harness above because a writable policy cannot reach the read-only rejection at all.
+echo '-- self-EXCHANGE of a table with a read-only (users.xml) policy still succeeds'
+${CLICKHOUSE_LOCAL} --config-file "${LOCAL_DIR}/config.xml" --path "${LOCAL_DIR}" -q "
+EXCHANGE TABLES rodb.rt AND rodb.rt;
+SELECT 'self-exchange accepted';
+SELECT table FROM system.row_policies WHERE database = 'rodb';
+SELECT id FROM rodb.rt ORDER BY id;
+" 2>&1
 rm -rf "${LOCAL_DIR}"
+
+echo '-- self-EXCHANGE with a writable policy: succeeds, binding and filtering unchanged'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.selfx (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.selfx VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY selfxp ON ${CLICKHOUSE_DATABASE}.selfx FOR SELECT USING dept = 'eng' TO ${USER}"
+run_user "EXCHANGE TABLES ${CLICKHOUSE_DATABASE}.selfx AND ${CLICKHOUSE_DATABASE}.selfx"
+echo 'after self-exchange (policy still on selfx, still eng only):'
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'selfxp' AND database = '${CLICKHOUSE_DATABASE}'"
+run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.selfx ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY selfxp ON ${CLICKHOUSE_DATABASE}.selfx"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.selfx"
 
 # A database-wide policy (ON db.*) is not bound to a single table name, so it cannot follow a table
 # that moves to a different database (the destination lookup new_db.t / new_db.* never sees old db.*).
@@ -333,5 +356,34 @@ ${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rmv"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY rmvp ON ${CLICKHOUSE_DATABASE}.rmvt"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.rmvt"
+
+# A row policy can name a dictionary: ParserRowPolicyName parses `ON db.name` without checking the
+# storage kind, and the filter is applied by resolved StorageID regardless of engine. RENAME DICTIONARY
+# produces an ordinary ASTRenameQuery, so it takes the same path as a table rename -- deliberately, so
+# the policy follows instead of being stranded on the old dictionary name (the same escape class).
+echo '-- RENAME DICTIONARY: policy follows the dictionary'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.dsrc (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${CLICKHOUSE_DATABASE}.dsrc VALUES (1, 'eng'), (2, 'fin')"
+${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict (id UInt64, dept String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB '${CLICKHOUSE_DATABASE}')) LAYOUT(FLAT()) LIFETIME(0)"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY dp ON ${CLICKHOUSE_DATABASE}.dict FOR SELECT USING dept = 'eng' TO ${USER}"
+echo 'before (eng only -> 1 row of 2):'
+run_user "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dict"
+${CLICKHOUSE_CLIENT} --query "RENAME DICTIONARY ${CLICKHOUSE_DATABASE}.dict TO ${CLICKHOUSE_DATABASE}.dict2"
+echo 'after rename (policy followed -> still 1 row, and bound to dict2):'
+run_user "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dict2"
+${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'dp' AND database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY dp ON ${CLICKHOUSE_DATABASE}.dict2"
+
+# The cross-database rejection applies to dictionaries for the same reason as to tables: an ON db.*
+# policy cannot follow the object out of its database.
+echo '-- cross-database RENAME DICTIONARY rejected when a database-wide (db.*) policy applies'
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY dwide ON ${CLICKHOUSE_DATABASE}.* FOR SELECT USING dept = 'eng' TO ${USER}"
+${CLICKHOUSE_CLIENT} --query "RENAME DICTIONARY ${CLICKHOUSE_DATABASE}.dict2 TO ${DB2}.dict3" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+echo 'after rejected cross-db dictionary rename (dictionary not moved, db-wide policy still bound):'
+${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.dictionaries WHERE database = '${CLICKHOUSE_DATABASE}' ORDER BY name"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.row_policies WHERE short_name = 'dwide' AND database = '${CLICKHOUSE_DATABASE}'"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY dwide ON ${CLICKHOUSE_DATABASE}.*"
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.dict2"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.dsrc"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER}"

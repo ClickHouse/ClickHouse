@@ -7,6 +7,9 @@ node = cluster.add_instance(
     "node",
     user_configs=[
         "configs/users.xml",
+        # Declares a READ-ONLY (users.xml) row policy on an OUTER table of an Ordinary database.
+        # See test_conversion_with_a_readonly_policy_on_an_outer_table.
+        "configs/readonly_outer_policy.xml",
     ],
     stay_alive = True
 )
@@ -108,3 +111,67 @@ def test_conversion_with_row_policies():
     node.query("DROP USER pol_user")
     node.stop_clickhouse()
     node.start_clickhouse()
+
+
+def test_conversion_with_a_readonly_policy_on_an_outer_table():
+    # This is the arm that pins `conversion_keeps_table_name` in InterpreterRenameQuery.
+    #
+    # A users.xml row policy lives in a READ-ONLY access storage, so it can never be re-keyed and the
+    # preflight rejects any rename that would have to move it. The startup conversion of an Ordinary
+    # database to Atomic is a chain of renames, but its OUTER moves preserve the table name (the tables
+    # go into a staging database which is then renamed back), so for those the transition must be
+    # skipped -- the policy is already on the name the table will have when the conversion finishes.
+    # Without that exemption the read-only rejection fires during the conversion, which runs at
+    # startup, and the server does not come back up.
+    #
+    # The sibling arm above cannot catch this: its policies are writable, and its database-wide `dbp`
+    # is additionally exempted by the cross-database rejection's own `!converting_database_engine`
+    # guard, so a writable per-table policy just moves and moves back either way.
+    #
+    # Note this is the OUTER-table case, which the exemption HANDLES. A read-only policy on a
+    # materialized-view INNER table is the disclosed residual: that name genuinely changes, so the
+    # policy must follow it and cannot, and startup fails by design.
+    node.query("DROP DATABASE IF EXISTS rodb")
+    node.query("CREATE DATABASE rodb ENGINE = Ordinary")
+    node.query(
+        "CREATE TABLE rodb.outer (x UInt64, dept String) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO rodb.outer VALUES (1, 'eng'), (2, 'fin')")
+    # The read-only policy comes from configs/readonly_outer_policy.xml and is bound to (rodb, outer).
+    assert (
+        node.query(
+            "SELECT database, table FROM system.row_policies WHERE database = 'rodb'"
+        )
+        == "rodb\touter\n"
+    )
+    assert node.query("SELECT count() FROM rodb.outer", user="ro_user") == "1\n"
+
+    try:
+        _convert_to_atomic()
+
+        # The server came back up and the conversion completed.
+        assert (
+            node.query("SELECT engine FROM system.databases WHERE name = 'rodb'")
+            == "Atomic\n"
+        )
+        # The read-only policy is still bound to the same (database, table) -- nothing moved it ...
+        assert (
+            node.query(
+                "SELECT database, table FROM system.row_policies WHERE database = 'rodb'"
+            )
+            == "rodb\touter\n"
+        )
+        # ... and it still filters. The true row count is 2.
+        assert (
+            node.query(
+                "SELECT sum(rows) FROM system.parts "
+                "WHERE database = 'rodb' AND table = 'outer' AND active"
+            )
+            == "2\n"
+        )
+        assert node.query("SELECT count() FROM rodb.outer", user="ro_user") == "1\n"
+        assert node.query("SELECT x FROM rodb.outer", user="ro_user") == "1\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS rodb")
+        node.stop_clickhouse()
+        node.start_clickhouse()

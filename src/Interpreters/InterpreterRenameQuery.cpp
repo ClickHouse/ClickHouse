@@ -262,6 +262,105 @@ namespace
         return elem.from_table_name == StorageMaterializedView::generateRefreshTempTableName(*parent_table_uuid);
     }
 
+    /// Everything about a rename's row policies that must be decided BEFORE the rename commits:
+    /// reject the moves that cannot be applied, then return the plan for the ones that can.
+    /// Returns an empty plan when this rename keeps the name (so no policy moves) or when the
+    /// preflight declined the whole plan.
+    ///
+    /// In a Replicated database this runs twice for one user query, and the two runs have different
+    /// jobs. On the initiator it is a preflight only -- it rejects an inapplicable rename before the
+    /// DDL entry is enqueued, while nothing is committed yet, and its return value is discarded.
+    /// Every replica then re-executes the entry against its own node-local access state and applies
+    /// the plan it computes there, which is what makes the per-replica re-key work. See the two call
+    /// sites in executeToTables.
+    std::vector<RowPolicyRekey> collectAndPreflightRowPolicyRekeys(
+        const AccessControl & access_control,
+        const ASTRenameQuery & rename,
+        const ContextPtr & context,
+        const RenameDescription & elem,
+        bool exchange_tables)
+    {
+        /// Row policies are keyed by (database, table). They must follow the table on rename,
+        /// otherwise after the rename the policy stays orphaned on the old name and the table
+        /// becomes readable with no filtering under its new name (a row-policy escape).
+        std::vector<RowPolicyRekey> rekeys;
+
+        /// A storage-replacing swap (CREATE OR REPLACE / REPLACE TABLE, a non-append refreshable view
+        /// installing its fresh target, system log schema rotation) keeps the surviving name, so the
+        /// row policies bound to that name must stay there and filter the replacement data. Re-keying
+        /// would move them onto the transient side of the swap, which is dropped right after, leaving
+        /// the surviving name unfiltered -- the very escape this fix closes. See the flag's doc in
+        /// ASTRenameQuery.h for the full list of such sites.
+        ///
+        /// The startup conversion of an Ordinary database to Atomic is a second kind of
+        /// name-preserving move: it relocates every table into a temporary database and then renames
+        /// that database back, so each moved table ends up under its original (database, table). Its
+        /// outer moves keep the table name, and for those the re-key must be skipped too - the policy
+        /// is already on the name the table will have when the conversion finishes. The nested renames
+        /// of materialized-view and time-series inner tables are different: those names genuinely
+        /// change (`.inner.<name>` -> `.inner_id.<uuid>`), so their policies must follow as usual.
+        /// In both cases the cross-database `db.*` rejection below does not apply, because the
+        /// destination database is the staging name that is renamed back to the original one.
+        const bool converting_database_engine = context->isConvertingDatabaseEngine();
+        const bool conversion_keeps_table_name = converting_database_engine && elem.from_table_name == elem.to_table_name;
+
+        /// `EXCHANGE TABLES t AND t` is a documented no-op that succeeds (DatabaseAtomic::renameTable
+        /// returns early for it, and 01109_exchange_tables pins that). Such an element moves no
+        /// binding, so there is nothing to re-key and nothing that can escape - while evaluating the
+        /// transition for it could only invent a failure, because the same policy is collected on both
+        /// sides of the swap. This overlaps `conversion_keeps_table_name` only for a same-database
+        /// element: the conversion's outer moves are cross-database (staging db -> original db) with
+        /// the table name equal, so both conditions are needed.
+        const bool same_name = elem.from_database_name == elem.to_database_name && elem.from_table_name == elem.to_table_name;
+
+        if (keepsNameOfReplacedStorage(rename, context, elem) || conversion_keeps_table_name || same_name)
+            return rekeys;
+
+        /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
+        /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
+        /// then `new_db.*`, which never sees the old `db.*`, so the moved data would be readable
+        /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
+        /// rather than silently dropping the filter. A same-database rename is unaffected: the
+        /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
+        if (elem.from_database_name != elem.to_database_name && !converting_database_engine)
+        {
+            if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot move table {} to another database {} because a database-wide row policy "
+                    "(ON {}.*) applies to it and cannot follow it across databases",
+                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
+                    backQuoteIfNeed(elem.to_database_name),
+                    backQuoteIfNeed(elem.from_database_name));
+            /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
+            /// follow the table arriving from the other database.
+            if (exchange_tables && hasDatabaseWideRowPolicy(access_control, elem.to_database_name))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot exchange table {} with {} because a database-wide row policy (ON {}.*) "
+                    "applies to it and cannot follow it across databases",
+                    backQuoteIfNeed(elem.to_database_name) + "." + backQuoteIfNeed(elem.to_table_name),
+                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
+                    backQuoteIfNeed(elem.to_database_name));
+        }
+
+        /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation of the rename
+        /// (`removeDependencies` / `renameTable`, or the DDL enqueue on a Replicated initiator): if a
+        /// policy cannot be moved, the rename is rejected now with nothing changed. The actual re-key
+        /// runs after the rename commits, where a throw could not be rolled back and would leave the
+        /// table unfiltered.
+        rekeys = collectRowPolicyRekeys(
+            access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
+        if (exchange_tables)
+        {
+            auto to_rekeys = collectRowPolicyRekeys(
+                access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
+            rekeys.insert(rekeys.end(), to_rekeys.begin(), to_rekeys.end());
+        }
+        preflightRowPolicyRekeys(access_control, rekeys);
+        return rekeys;
+    }
+
     /// Applies a set of row-policy re-keyings collision-free by routing every affected policy
     /// through a unique temporary table name first, then to its final destination. The two-phase
     /// move is needed for EXCHANGE TABLES, where two policies with the same short name would
@@ -438,6 +537,20 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             pre_swap_check(StorageID(elem.to_database_name, elem.to_table_name));
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
+
+        /// Preflight the row-policy transition before the Replicated branch below enqueues the DDL
+        /// entry. Past that enqueue the canonical metadata rename is committed, so a replica that
+        /// cannot apply the transition can no longer reject the rename -- and the resulting failure is
+        /// not retriable (DDLWorker's `no_sense_to_retry` list covers neither ACCESS_STORAGE_READONLY
+        /// nor ACCESS_ENTITY_ALREADY_EXISTS, so the entry throws UNFINISHED and wedges the queue).
+        /// Rejecting here costs nothing and is the last point at which nothing is committed. The
+        /// initiator can only validate what it can see: row policies in a node-local storage are not
+        /// replicated by the DDL queue, so a peer whose OWN state is inapplicable still fails there.
+        /// This bounds that divergence to the peer-only case, it does not remove it. In-tree
+        /// precedent for initiator-side pre-enqueue validation: DatabaseReplicated::checkQueryValid.
+        std::vector<RowPolicyRekey> row_policy_rekeys = collectAndPreflightRowPolicyRekeys(
+            access_control, rename, getContext(), elem, exchange_tables);
+
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
@@ -464,75 +577,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         std::vector<StorageID> to_loading_dependencies;
         std::vector<StorageID> to_mv_dependencies;
         std::vector<StorageID> to_dependent_views;
-
-        /// Row policies are keyed by (database, table). They must follow the table on rename,
-        /// otherwise after the rename the policy stays orphaned on the old name and the table
-        /// becomes readable with no filtering under its new name (a row-policy escape).
-        std::vector<RowPolicyRekey> row_policy_rekeys;
-
-        /// A storage-replacing swap (CREATE OR REPLACE / REPLACE TABLE, a non-append refreshable view
-        /// installing its fresh target, system log schema rotation) keeps the surviving name, so the
-        /// row policies bound to that name must stay there and filter the replacement data. Re-keying
-        /// would move them onto the transient side of the swap, which is dropped right after, leaving
-        /// the surviving name unfiltered -- the very escape this fix closes. See the flag's doc in
-        /// ASTRenameQuery.h for the full list of such sites.
-        ///
-        /// The startup conversion of an Ordinary database to Atomic is a second kind of
-        /// name-preserving move: it relocates every table into a temporary database and then renames
-        /// that database back, so each moved table ends up under its original (database, table). Its
-        /// outer moves keep the table name, and for those the re-key must be skipped too - the policy
-        /// is already on the name the table will have when the conversion finishes. The nested renames
-        /// of materialized-view and time-series inner tables are different: those names genuinely
-        /// change (`.inner.<name>` -> `.inner_id.<uuid>`), so their policies must follow as usual.
-        /// In both cases the cross-database `db.*` rejection below does not apply, because the
-        /// destination database is the staging name that is renamed back to the original one.
-        const bool converting_database_engine = getContext()->isConvertingDatabaseEngine();
-        const bool conversion_keeps_table_name = converting_database_engine && elem.from_table_name == elem.to_table_name;
-
-        if (!keepsNameOfReplacedStorage(rename, getContext(), elem) && !conversion_keeps_table_name)
-        {
-            /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
-            /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
-            /// then `new_db.*`, which never sees the old `db.*`, so the moved data would be readable
-            /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
-            /// rather than silently dropping the filter. A same-database rename is unaffected: the
-            /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
-            if (elem.from_database_name != elem.to_database_name && !converting_database_engine)
-            {
-                if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Cannot move table {} to another database {} because a database-wide row policy "
-                        "(ON {}.*) applies to it and cannot follow it across databases",
-                        backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                        backQuoteIfNeed(elem.to_database_name),
-                        backQuoteIfNeed(elem.from_database_name));
-                /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
-                /// follow the table arriving from the other database.
-                if (exchange_tables && hasDatabaseWideRowPolicy(access_control, elem.to_database_name))
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Cannot exchange table {} with {} because a database-wide row policy (ON {}.*) "
-                        "applies to it and cannot follow it across databases",
-                        backQuoteIfNeed(elem.to_database_name) + "." + backQuoteIfNeed(elem.to_table_name),
-                        backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                        backQuoteIfNeed(elem.to_database_name));
-            }
-
-            /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation below
-            /// (`removeDependencies` / `renameTable`): if a policy cannot be moved, the rename is
-            /// rejected now with nothing changed. The actual re-key runs after the rename commits,
-            /// where a throw could not be rolled back and would leave the table unfiltered.
-            row_policy_rekeys = collectRowPolicyRekeys(
-                access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name, elem.to_table_name);
-            if (exchange_tables)
-            {
-                auto to_rekeys = collectRowPolicyRekeys(
-                    access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
-                row_policy_rekeys.insert(row_policy_rekeys.end(), to_rekeys.begin(), to_rekeys.end());
-            }
-            preflightRowPolicyRekeys(access_control, row_policy_rekeys);
-        }
 
         if (exchange_tables)
         {
