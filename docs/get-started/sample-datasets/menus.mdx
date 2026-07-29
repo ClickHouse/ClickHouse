@@ -10,7 +10,7 @@ keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
 
-Source: http://menus.nypl.org/data
+Source: https://www.nypl.org/research/support/whats-on-the-menu
 The data is in public domain.
 
 The data is from library's archive and it may be incomplete and difficult for statistical analysis. Nevertheless it is also very yummy.
@@ -27,7 +27,7 @@ md5sum 2021_08_01_07_01_17_data.tgz
 # Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-Replace the link to the up to date link from http://menus.nypl.org/data if needed.
+Replace the link to the up to date link from https://www.nypl.org/research/support/whats-on-the-menu if needed.
 Download size is about 35 MB.
 
 ## Unpack the dataset {#unpack-dataset}

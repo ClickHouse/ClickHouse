@@ -19,11 +19,13 @@ import PartnerBadge from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 Omni can connect to ClickHouse Cloud or on-premise deployment via the official ClickHouse data source.
 
-## 1. Gather your connection details {#1-gather-your-connection-details}
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
 
 <ConnectionDetails />
 
-## 2. Create a ClickHouse data source {#2-create-a-clickhouse-data-source}
+</Step>
+<Step title="Create a ClickHouse data source" id="2-create-a-clickhouse-data-source">
 
 Navigate to Admin -> Connections and click the "Add Connection" button in the top right corner.
 
@@ -36,3 +38,5 @@ Select `ClickHouse`. Enter your credentials in the form.
 <br/>
 
 Now you should can query and visualize data from ClickHouse in Omni.
+</Step>
+</Steps>

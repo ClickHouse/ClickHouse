@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ja/products/cloud/guides/index"
-                },
-                {
-                  "group": "API リファレンス",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
@@ -2598,7 +2594,10 @@
             {
               "expanded": true,
               "group": "API リファレンス",
-              "openapi": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+              "openapi": {
+                "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+                "directory": "ja/clickstack/api-reference"
+              },
               "root": "ja/clickstack/api-reference"
             }
           ]

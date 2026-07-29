@@ -14,6 +14,8 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -28,7 +30,9 @@
 
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
+#if CLICKHOUSE_CLOUD
 #include <DistributedCache/Utils.h>
+#endif
 #endif
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -931,6 +935,16 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 void DiskObjectStorage::waitBlobsCleanup()
 {
     blob_killer->triggerAndWait();
+}
+
+int64_t DiskObjectStorage::getDeadBlobsQueueEstimate() const
+{
+    return metadata_storage->getDeadBlobsQueueEstimate();
+}
+
+int64_t DiskObjectStorage::getMissingBlobsQueueEstimate() const
+{
+    return metadata_storage->getMissingBlobsQueueEstimate();
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

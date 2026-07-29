@@ -573,6 +573,60 @@ Two polygons
 
 UInt8, 0 for false, 1 for true
 
+## geometryIntersectCartesian {#geometryintersectcartesian}
+
+Returns true if two geometries intersect (share any common point, line or area).
+
+Unlike [`polygonsIntersectCartesian`](#polygonsintersectcartesian), it accepts any geometry data type
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
+[`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
+
+Coordinates are in the Cartesian coordinate system.
+
+### Example {#example-geometry-intersects-cartesian}
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+```response
+1
+```
+
+### Input parameters {#input-parameters-geometry-intersects-cartesian}
+
+Two geometries of any geometry data type (or `Geometry`).
+
+### Returned value {#returned-value-geometry-intersects-cartesian}
+
+UInt8, 0 for false, 1 for true
+
+## geometryIntersectSpherical {#geometryintersectspherical}
+
+Returns true if two geometries intersect (share any common point, line or area).
+
+Unlike [`polygonsIntersectSpherical`](#polygonsintersectspherical), it accepts any geometry data type
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
+[`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
+
+Coordinates are interpreted as being on an ideal sphere.
+
+### Example {#example-geometry-intersects-spherical}
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+```response
+1
+```
+
+### Input parameters {#input-parameters-geometry-intersects-spherical}
+
+Two geometries of any geometry data type (or `Geometry`).
+
+### Returned value {#returned-value-geometry-intersects-spherical}
+
+UInt8, 0 for false, 1 for true
+
 ## polygonConvexHullCartesian {#polygonconvexhullcartesian}
 
 Calculates a convex hull. [Reference](https://www.boost.org/doc/libs/1_61_0/libs/geometry/doc/html/geometry/reference/algorithms/convex_hull.html)

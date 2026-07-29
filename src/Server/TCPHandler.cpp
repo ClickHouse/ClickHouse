@@ -24,6 +24,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -126,6 +127,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
@@ -1155,7 +1157,7 @@ void TCPHandler::logQueryDuration(QueryState & state)
     /// We already logged more detailed info if we read some rows
     if (elapsed_sec < 1.0 && state.progress.read_rows)
         return;
-    LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+    LOG_DEBUG(log, "Processed in {:.3f} sec.", elapsed_sec);
 }
 
 
@@ -1599,12 +1601,82 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
 void TCPHandler::processTablesStatusRequest()
 {
+    /// `TablesStatusRequest` is sent during connection establishment, before any query
+    /// authenticates the connection with the cluster secret. In interserver mode the request
+    /// is authenticated with a cluster-secret hash that also covers the request body (mirroring
+    /// the per-query secret hash `processQuery` computes over the query text), so a relayed hash
+    /// cannot be reused for a different set of tables. On that path the hash precedes the body on
+    /// the wire, so the body is deserialized to recompute the digest — but the tables are only
+    /// *resolved* (existence / readonly / replication-delay) after the hash has been validated.
+    /// An unauthenticated request that will be rejected is refused *before* its body is read, so an
+    /// unauthenticated peer cannot make the server deserialize an arbitrary request.
     TablesStatusRequest request;
-    request.read(*in, client_tcp_protocol_version);
-
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
+#if USE_SSL
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+        {
+            std::string received_hash;
+            readStringBinary(received_hash, *in, 32);
+
+            /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
+            /// the query before validating the per-query secret hash). Tables are resolved only after
+            /// the hash validates below.
+            request.read(*in, client_tcp_protocol_version);
+
+            String cluster_secret;
+            try
+            {
+                cluster_secret = server.context()->getCluster(cluster)->getSecret();
+            }
+            catch (const Exception & e)
+            {
+                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            }
+
+            if (salt.empty() || cluster_secret.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest (no salt/cluster secret)");
+
+            /// Mirrors the per-query secret hash, reusing the salt/nonce from the Hello, and
+            /// binds the requested tables so a relayed hash cannot be reused for another set.
+            /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
+            /// the potentially large request through the throwing memory-tracker path.
+            StringWithMemoryTracking data(salt);
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
+            data += cluster_secret;
+            data += "TablesStatusRequest";
+            data += request.getAuthDigest();
+
+            if (encodeSHA256(data) != received_hash)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest");
+        }
+        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
+                 && !is_interserver_authenticated)
+        {
+            /// Older client that sends no hash: rejected by default
+            /// (`interserver_tables_status_require_auth` defaults to true), *before* reading the
+            /// body so an unauthenticated peer cannot make us deserialize its request. Operators can
+            /// turn the setting off as a temporary opt-out for a mixed-version rolling upgrade.
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        }
+        else
+        {
+            /// Old client authenticated by an earlier query on this connection, or auth not required:
+            /// no hash to bind the body to, so just read it.
+            request.read(*in, client_tcp_protocol_version);
+        }
+#else
+        if (!is_interserver_authenticated)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        request.read(*in, client_tcp_protocol_version);
+#endif
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
@@ -1617,6 +1689,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
+        request.read(*in, client_tcp_protocol_version);
     }
 
     TablesStatusResponse response;
@@ -1659,6 +1732,16 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::processUnexpectedTablesStatusRequest()
 {
+    /// Consume the same wire prefix as processTablesStatusRequest: on a new-protocol
+    /// interserver connection the request body is preceded by the authentication hash.
+#if USE_SSL
+    if (is_interserver_mode && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+    {
+        std::string skipped_hash;
+        readStringBinary(skipped_hash, *in, 32);
+    }
+#endif
+
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_tcp_protocol_version);
 
@@ -2403,9 +2486,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     readStringBinary(state->query, *in);
 
-    Settings passed_params;
+    NameToNameMap passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        passed_params.read(*in, settings_format);
+        passed_params = readQueryParameters(*in);
 
     if (is_interserver_mode)
     {
@@ -2452,6 +2535,15 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         data += state->query_id;
         data += client_info.initial_user;
         data += received_extra_roles;
+        /// Cover current roles in the auth hash too, mirroring the sender.
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info.current_roles.has_value())
+        {
+            String current_roles_str;
+            WriteBufferFromString buffer(current_roles_str);
+            writeVectorBinary(*client_info.current_roles, buffer);
+            buffer.finalize();
+            data += current_roles_str;
+        }
 
         std::string calculated_hash = encodeSHA256(data);
         chassert(calculated_hash.size() == 32);
@@ -2595,7 +2687,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// so we have to apply the changes first.
     state->query_context->setCurrentQueryId(state->query_id);
 
-    state->query_context->addQueryParameters(passed_params.toNameToNameMap());
+    state->query_context->addQueryParameters(passed_params);
 
     state->allow_partial_result_on_first_cancel = state->query_context->getSettingsRef()[Setting::partial_result_on_first_cancel];
 
@@ -2658,12 +2750,22 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
+    /// The plan will not be executed when we are draining leftover packets (skipping_data) or when it
+    /// arrives unexpectedly (deserialized against the global context, which lacks the parallel-replicas
+    /// coordinator callbacks). Only consume the bytes off the buffer, without building a runnable plan.
+    if (state.skipping_data || unexpected_packet)
+    {
+        QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context), /*skip_data=*/true);
+
+        if (!state.skipping_data && unexpected_packet)
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+        return true;
+    }
+
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
-
-    if (!state.skipping_data && unexpected_packet)
-        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
     return true;

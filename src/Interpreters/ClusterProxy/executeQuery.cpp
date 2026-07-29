@@ -1,3 +1,5 @@
+#include <memory>
+#include <optional>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <base/scope_guard.h>
@@ -27,6 +29,9 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -68,8 +73,6 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_skip_unavailable_shards_num;
     extern const SettingsFloat max_skip_unavailable_shards_ratio;
-    extern const SettingsUInt64 max_network_bandwidth;
-    extern const SettingsUInt64 max_network_bytes;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 offset;
@@ -82,6 +85,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
+    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
@@ -314,30 +318,6 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
         /* distributed_settings= */ {});
 }
 
-
-static ThrottlerPtr getThrottler(const ContextPtr & context)
-{
-    const Settings & settings = context->getSettingsRef();
-
-    ThrottlerPtr user_level_throttler;
-    if (auto process_list_element = context->getProcessListElement())
-        user_level_throttler = process_list_element->getUserNetworkThrottler();
-
-    /// Network bandwidth limit, if needed.
-    ThrottlerPtr throttler;
-    if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
-    {
-        throttler = std::make_shared<Throttler>(
-            settings[Setting::max_network_bandwidth],
-            settings[Setting::max_network_bytes],
-            "Limit for bytes to send or receive over network exceeded.",
-            user_level_throttler);
-    }
-    else
-        throttler = user_level_throttler;
-
-    return throttler;
-}
 
 AdditionalShardFilterGenerator
 getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns)
@@ -821,7 +801,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     return {pools_to_use, max_replicas_to_use};
 }
 
-static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
+static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -858,7 +838,7 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
         local_replica_index = max_replicas_to_use - 1;
     }
     pools.resize(max_replicas_to_use);
-    return local_replica_index;
+    return *local_replica_index;
 }
 
 void executeQueryWithParallelReplicas(
@@ -900,7 +880,7 @@ void executeQueryWithParallelReplicas(
             processed_stage,
             coordinator,
             std::move(analyzed_read_from_merge_tree),
-            local_replica_index.value());
+            local_replica_index);
 
         if (!with_parallel_replicas || connection_pools.size() == 1)
         {
@@ -928,7 +908,7 @@ void executeQueryWithParallelReplicas(
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
-        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
@@ -990,6 +970,62 @@ void executeQueryWithParallelReplicas(
             shard.pool);
 
         query_plan.addStep(std::move(read_from_remote));
+    }
+}
+
+QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr context)
+{
+    if (!plan_fragment->isInitialized())
+        return nullptr;
+
+    if (!canUseParallelReplicasOnInitiator(context))
+        return nullptr;
+
+    auto logger = getLogger("executeParallelReplicasPlanFragment");
+
+    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
+    auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+    if (connection_pools.size() == 1)
+        return nullptr;
+
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
+
+    if (canUseLocalPlanForParallelReplicas(new_context))
+    {
+        auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+
+        /// Pin the snapshot replica to the initiator-local replica_num BEFORE any announcement
+        /// is sent (either locally from here or from remote replicas over the network).
+        coordinator->setSnapshotReplicaNum(local_replica_index);
+
+        auto plan_fragment_clone = std::make_unique<QueryPlan>(plan_fragment->clone());
+        auto local_plan
+            = createLocalPlanFragmentForParallelReplicas(new_context, std::move(plan_fragment_clone), coordinator, local_replica_index);
+
+        auto remote_plan = createRemotePlanFragmentForParallelReplicas(
+            new_context, std::move(plan_fragment), coordinator, cluster, connection_pools, local_replica_index);
+
+        SharedHeaders input_headers;
+        input_headers.reserve(2);
+        input_headers.emplace_back(local_plan->getCurrentHeader());
+        input_headers.emplace_back(remote_plan->getCurrentHeader());
+
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::move(local_plan));
+        plans.emplace_back(std::move(remote_plan));
+
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+        auto query_plan = std::make_unique<QueryPlan>();
+        query_plan->unitePlans(std::move(union_step), std::move(plans));
+        return query_plan;
+    }
+    else
+    {
+        chassert(max_replicas_to_use <= connection_pools.size());
+        connection_pools.resize(max_replicas_to_use);
+        return createRemotePlanFragmentForParallelReplicas(
+            new_context, std::move(plan_fragment), coordinator, cluster, connection_pools, std::nullopt);
     }
 }
 

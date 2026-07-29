@@ -24,10 +24,10 @@ ClickHouse 支持 MySQL wire 协议。这使得某些没有原生 ClickHouse 连
 
 如果你的使用场景涉及某个没有原生 ClickHouse 驱动的工具，并且你希望通过 MySQL 接口使用它，同时发现了某些兼容性问题，请在 ClickHouse repository 中[创建 issue](https://github.com/ClickHouse/ClickHouse/issues)。
 
-::::note
+<Note>
 为了更好地支持上述 BI 工具的 SQL 方言，ClickHouse 的 MySQL 接口会在运行 SELECT 查询时隐式启用设置 [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/zh/reference/settings/session-settings#prefer_column_name_to_alias)。
 此行为无法关闭，在极少数边缘情况下，可能会导致发送到 ClickHouse 常规查询接口与 MySQL 查询接口的查询表现不同。
-::::
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## 在 ClickHouse Cloud 上启用 MySQL 接口

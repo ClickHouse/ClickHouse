@@ -380,7 +380,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
     {
         double ratio = max_bytes_ratio_before_external_group_by;
         if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({:.3f})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
         if (available_system_memory.has_value())
@@ -391,7 +391,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
             else
                 threshold = ratio_in_bytes;
 
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
+            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available system memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                 ratio,
                 formatReadableSizeWithBinarySuffix(*available_system_memory));
@@ -690,6 +690,20 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
+    /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
+    /// method serializes the whole block's keys on state construction, which is pathological for the
+    /// per-run in-order path, where a fresh state is constructed for every run of equal order-key
+    /// values. There it uses the plain `serialized` method, whose construction is O(1) and which
+    /// serializes keys lazily. The whole-block paths (including `mergeBlocks`) keep `method_chosen`.
+    method_chosen_for_in_order = method_chosen;
+    if (params.aggregation_in_order)
+    {
+        if (method_chosen_for_in_order == AggregatedDataVariants::Type::prealloc_serialized)
+            method_chosen_for_in_order = AggregatedDataVariants::Type::serialized;
+        else if (method_chosen_for_in_order == AggregatedDataVariants::Type::nullable_prealloc_serialized)
+            method_chosen_for_in_order = AggregatedDataVariants::Type::nullable_serialized;
+    }
+
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
     /// refactored to respect the `use_cache` setting.
@@ -855,10 +869,10 @@ void Aggregator::executeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        if (method_chosen != AggregatedDataVariants::Type::without_key)
-            initDataVariantsWithSizeHint(result, method_chosen, params);
+        if (method_chosen_for_in_order != AggregatedDataVariants::Type::without_key)
+            initDataVariantsWithSizeHint(result, method_chosen_for_in_order, params);
         else
-            result.init(method_chosen);
+            result.init(method_chosen_for_in_order);
 
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
@@ -881,7 +895,7 @@ void Aggregator::mergeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
+        initDataVariantsWithSizeHint(result, method_chosen_for_in_order, params);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
@@ -2745,7 +2759,7 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
 
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_DEBUG(log,
-        "Converted aggregated data to chunks. {} rows, {} in {} sec. ({:.3f} rows/sec., {}/sec.)",
+        "Converted aggregated data to chunks. {} rows, {} in {:.3f} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, static_cast<double>(rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(bytes) / elapsed_seconds));
@@ -3851,7 +3865,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_DEBUG(
         log,
-        "Merged partially aggregated blocks for bucket #{}. Got {} rows, {} from {} source rows in {} sec. ({:.3f} rows/sec., {}/sec.)",
+        "Merged partially aggregated blocks for bucket #{}. Got {} rows, {} from {} source rows in {:.3f} sec. ({:.3f} rows/sec., {}/sec.)",
         bucket_num,
         rows,
         ReadableSize(bytes),

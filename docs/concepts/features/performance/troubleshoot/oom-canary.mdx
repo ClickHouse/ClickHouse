@@ -28,7 +28,7 @@ instead of the server. The server then detects the death, confirms it was an OOM
 event, and sheds memory pressure so it can survive.
 
 The canary does not raise any memory limit and is not a replacement for correct
-limits (see [Memory overcommit](/operations/settings/memory-overcommit) and
+limits (see [Memory overcommit](/concepts/features/configuration/settings/memory-overcommit) and
 `max_server_memory_usage`). It is a last line of defense that trades a small,
 fixed amount of memory for a chance to survive a memory spike.
 
@@ -55,7 +55,7 @@ be advanced by unrelated processes and would trigger false responses.
 On a confirmed OOM the response runs these independent steps: log a `FATAL`
 message, purge allocator (jemalloc) arenas, best-effort cancel all running
 queries, cancel all merges and mutations, and queue an event in
-[`system.crash_log`](/operations/system-tables/crash_log). System logs are not
+[`system.crash_log`](/reference/system-tables/crash_log). System logs are not
 flushed synchronously, because forcing I/O under memory pressure can make things
 worse.
 
@@ -81,7 +81,7 @@ mode; a warning is logged at startup.
 
 ## Configuration {#configuration}
 
-The canary is controlled by [server settings](/operations/server-configuration-parameters/settings),
+The canary is controlled by [server settings](/reference/settings/server-settings/settings),
 set as top-level elements of the server configuration and applied on restart.
 
 | Setting | Default | Description |
@@ -103,7 +103,7 @@ set as top-level elements of the server configuration and applied on restart.
 ## Observability {#observability}
 
 A confirmed OOM produces a row in
-[`system.crash_log`](/operations/system-tables/crash_log) with `signal = 9` and a
+[`system.crash_log`](/reference/system-tables/crash_log) with `signal = 9` and a
 `signal_description` mentioning `OOM Canary`:
 
 ```sql

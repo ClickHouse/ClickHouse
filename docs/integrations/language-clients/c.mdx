@@ -238,10 +238,11 @@ LowCardinality keys, so a forged block could otherwise read past inner-column bo
 
 ## Inserting data {#inserting-data}
 
-Build a block with `chc_block_builder`, then hand it to `chc_client_send_data`. The builder records
-pointers rather than copying, so the column slabs must outlive the send. An INSERT sends the query,
-waits for the server's header block, sends one or more data blocks, then sends an empty block to
-terminate the stream.
+Build columns with the `chc_build_*` helpers, append them to a `chc_block_builder`, then hand it to
+`chc_client_send_data`. The builder uses caller-provided storage and records pointers rather than
+copying, so the storage, column trees, types, names, and slabs must outlive the send. An INSERT sends
+the query, waits for the server's header block, sends one or more data blocks, then sends an empty
+block to terminate the stream.
 
 ```c
 const char *sql = "INSERT INTO greetings (id, message) VALUES";
@@ -263,20 +264,25 @@ while (!got_header) {
     if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
 }
 
-chc_block_builder *bb = NULL;
-chc_block_builder_init(&bb, &al, &err);
+chc_block_col columns[2];
+chc_block_builder bb;
+chc_block_builder_init(&bb, columns);
 
 uint64_t ids[3] = { 1, 2, 3 };
 chc_type *u64 = NULL;
 chc_type_parse("UInt64", 6, &al, &u64, &err);
-chc_block_builder_append_fixed(bb, "id", 2, u64, ids, 3, &err);
+chc_column id = chc_build_fixed(ids, sizeof ids[0], 3);
+chc_block_builder_append(&bb, "id", 2, u64, &id);
 
 /* String columns: cumulative exclusive end offsets + a packed byte slab. */
 uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
 const uint8_t bytes[] = "hellobuenasgoedendag";
-chc_block_builder_append_string(bb, "message", 7, offsets, bytes, 3, &err);
+chc_type *string = NULL;
+chc_type_parse("String", 6, &al, &string, &err);
+chc_column message = chc_build_string(offsets, bytes, 3);
+chc_block_builder_append(&bb, "message", 7, string, &message);
 
-chc_client_send_data(client, bb, &err);   /* the populated block */
+chc_client_send_data(client, &bb, &err);  /* the populated block */
 chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
 
 /* Drain to EndOfStream. */
@@ -288,15 +294,22 @@ for (;;) {
     if (done) break;
 }
 
-chc_block_builder_destroy(bb);
 chc_type_destroy(u64, &al);
+chc_type_destroy(string, &al);
 ```
 
-`chc_block_builder_append_fixed` takes `n_rows * elem_size` little-endian bytes;
-`chc_block_builder_append_string` takes cumulative exclusive end offsets in host byte order over a
-packed slab. Routing the builder through `chc_client_send_data` rather than the lower-level
-`chc_block_write` lets the client set the block options from the negotiated revision and apply
-compression.
+`chc_build_fixed` takes `n_rows * elem_size` little-endian bytes; `chc_build_string` takes cumulative
+exclusive end offsets in host byte order over a packed slab. The helpers return column nodes by
+value. Nest them to match the type: for example, pass a fixed or string node to
+`chc_build_nullable`, pass that result to `chc_build_array`, and append the array root. Tuple,
+LowCardinality, Map, and geo columns use the same tree: Map is `Array(Tuple(K, V))`.
+
+All columns in a block must have the same top-level row count. The writer checks the tree against
+the parsed ClickHouse type, but the caller must size the `chc_block_col` storage for every append.
+You can also append a decoded column from `chc_block_column` directly to re-encode it, or call
+`chc_block_write_cols` with a `chc_block_col` array to skip the builder. Routing the builder through
+`chc_client_send_data` rather than the lower-level `chc_block_write` lets the client set the block
+options from the negotiated revision and apply compression.
 
 ## Compression {#compression}
 
@@ -444,10 +457,10 @@ The block reader decodes:
 - `SimpleAggregateFunction(f, T)`, which decodes as its inner `T`
 - `JSON` and `Object('json')`, as `String` columns under string serialization (see below)
 
-`JSON` and `Object('json')` decode only when the query sets `output_format_native_write_json_as_string=1`.
-Each row arrives as one JSON document in a `CHC_COL_STRING` column, so the string accessors read it;
-the builder writes the same shape with `chc_block_builder_append_json_string`. Any other JSON
-serialization version returns `CHC_ERR_TYPE` naming the setting.
+`JSON` and `Object('json')` decode under string serialization; set
+`output_format_native_write_json_as_string=1` on the query. Each supported row arrives as
+one JSON document in a `CHC_COL_STRING` column. Build same shape with `chc_build_string`;
+writer emits prefix required by parsed type.
 
 `Variant`, `Dynamic`, `AggregateFunction` aren't yet decoded and return `CHC_ERR_TYPE`;
 cast them to `String` server-side as a fallback.

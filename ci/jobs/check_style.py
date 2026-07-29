@@ -272,6 +272,17 @@ def check_other():
     return out
 
 
+def check_embedded_doc_snippets():
+    # A shared `docs/snippets/*.mdx` is hand-embedded into the built-in help surfaces
+    # (TerminalMarkdownRenderer.cpp and docs.html); fail if those copies drift from the source.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "python3 ./ci/jobs/scripts/check_style/check_embedded_doc_snippets.py"
+    )
+    if err:
+        out += err
+    return out
+
+
 def check_mypy():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-mypy"
@@ -706,6 +717,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_other,
+            )
+        )
+    testname = "embedded_doc_snippets"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_embedded_doc_snippets,
             )
         )
     testname = "ruff"

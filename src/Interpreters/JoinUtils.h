@@ -63,6 +63,15 @@ public:
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
     }
 
+    /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
+    /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
+    /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
+    const UInt8 * getRawDataOrNull() const
+    {
+        chassert(kind != Kind::Unknown || column);
+        return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
+    }
+
     Kind getKind() const { return kind; }
 
 private:

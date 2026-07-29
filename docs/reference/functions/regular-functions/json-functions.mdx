@@ -716,13 +716,13 @@ Returns an array of tuples with the parsed key-value pairs. [`Array(Tuple(String
 **Usage example**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
 ```
 
 ```response title=Response
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
 ```
 
 ## JSONExtractKeysAndValuesCaseInsensitive {#JSONExtractKeysAndValuesCaseInsensitive}
@@ -792,7 +792,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1310,10 +1310,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```
 
 ## JSONType {#JSONType}

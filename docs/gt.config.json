@@ -27,6 +27,10 @@
     "json": {
       "include": [
         "./docs.json"
+      ],
+      "exclude": [
+        "./_specs/**",
+        "./products/cloud/api-reference/navigation.json"
       ]
     },
     "js": {
@@ -79,7 +83,9 @@
         "./changelogs/**/*.md",
         "./changelogs/**/*.mdx",
         "./en/**/*.md",
-        "./en/**/*.mdx"
+        "./en/**/*.mdx",
+        "./products/cloud/api-reference/**/*.md",
+        "./products/cloud/api-reference/**/*.mdx"
       ]
     }
   },

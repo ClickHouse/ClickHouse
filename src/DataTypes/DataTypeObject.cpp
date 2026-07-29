@@ -865,15 +865,17 @@ void registerDataTypeJSON(DataTypeFactory & factory)
 {
     factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive, Documentation{
             .description = String(R"DOCS_MD(
-:::tip
-Check out our [JSON best practice guide](/docs/best-practices/use-json-where-appropriate) for examples, advanced features and considerations for using the JSON type.
-:::
+import WhenToUseJson from '/snippets/_when-to-use-json.mdx';
+
+<Card title="Looking for a guide?" href="/concepts/best-practices/json-type" icon="book">
+  Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type.
+</Card>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
-:::note
+<Note>
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
-:::
+</Note>
 
 To declare a column of `JSON` type, you can use the following syntax:
 
@@ -896,6 +898,8 @@ Where the parameters in the syntax above are defined as:
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+
+<WhenToUseJson />
 
 ## Creating `JSON` {#creating-json}
 
@@ -973,7 +977,7 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 └────────────────────────────────────────────────────────┘
 ```
 
-:::note
+<Note>
 JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
 it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a": { "b": { "c": ... } } }`.
 Our implementation will always assume the latter.
@@ -987,31 +991,31 @@ SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 will return:
 
 ```response title="Response"
-┌─json───────────────────┐
-│ {"a":{"b":{"c":"42"}}} │
-└────────────────────────┘
+   ┌─json───────────────────┐
+1. │ {"a":{"b":{"c":"42"}}} │
+   └────────────────────────┘
 ```
 
 and **not**:
 
-```text
-┌─json───────────┐
-│ {"a.b.c":"42"} │
-└────────────────┘
+```sql
+   ┌─json───────────┐
+1. │ {"a.b.c":"42"} │
+   └────────────────┘
 ```
-:::
+</Note>
 
 ## Reading JSON paths as sub-columns {#reading-json-paths-as-sub-columns}
 
 The `JSON` type supports reading every path as a separate sub-column.
 If the type of the requested path is not specified in the JSON type declaration,
-then the sub column of the path will always have type [Dynamic](/sql-reference/data-types/dynamic.md).
+then the sub column of the path will always have type [Dynamic](/reference/data-types/dynamic).
 
 For example:
 
 ```sql title="Query"
 CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -1128,9 +1132,9 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 (NOT_IMPLEMENTED)
 ```
 
-:::note
-To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](../../operations/settings/merge-tree-settings.md#write_marks_for_substreams_in_compact_parts) is enabled.
-:::
+<Note>
+To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) is enabled.
+</Note>
 
 ## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
 
@@ -1138,7 +1142,7 @@ The `JSON` type supports reading nested objects as sub-columns with type `JSON` 
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -1162,9 +1166,9 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 └───────────────────────────────┴────────────────────────────────────────┘
 ```
 
-:::note
+<Note>
 When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
-:::
+</Note>
 
 ## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
 
@@ -1215,26 +1219,26 @@ FROM test;
 - Row 2: `a` holds a nested object. `json.a` returns `NULL` (no literal at that path), `json.^a` returns the sub-object as `JSON`, and `json.@a` also returns the sub-object as `Dynamic(JSON)`.
 - Row 3: `a` is absent entirely. Both `json.a` and `json.@a` return `NULL`, while `json.^a` returns an empty `{}`.
 
-:::note
+<Note>
 When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
-:::
+</Note>
 
 ## Type inference for paths {#type-inference-for-paths}
 
 During parsing of `JSON`, ClickHouse tries to detect the most appropriate data type for each JSON path.
-It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
+It works similarly to [automatic schema inference from input data](/concepts/features/interfaces/schema-inference),
 and is controlled by the same settings:
 
-- [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
-- [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
-- [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
-- [input_format_json_try_infer_numbers_from_strings](/operations/settings/formats#input_format_json_try_infer_numbers_from_strings)
-- [input_format_json_infer_incomplete_types_as_strings](/operations/settings/formats#input_format_json_infer_incomplete_types_as_strings)
-- [input_format_json_read_numbers_as_strings](/operations/settings/formats#input_format_json_read_numbers_as_strings)
-- [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
-- [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
-- [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
-- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/operations/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+- [input_format_try_infer_dates](/reference/settings/formats#input_format_try_infer_dates)
+- [input_format_try_infer_datetimes](/reference/settings/formats#input_format_try_infer_datetimes)
+- [schema_inference_make_columns_nullable](/reference/settings/formats#schema_inference_make_columns_nullable)
+- [input_format_json_try_infer_numbers_from_strings](/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
+- [input_format_json_infer_incomplete_types_as_strings](/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+- [input_format_json_read_numbers_as_strings](/reference/settings/formats#input_format_json_read_numbers_as_strings)
+- [input_format_json_read_bools_as_strings](/reference/settings/formats#input_format_json_read_bools_as_strings)
+- [input_format_json_read_bools_as_numbers](/reference/settings/formats#input_format_json_read_bools_as_numbers)
+- [input_format_json_read_arrays_as_strings](/reference/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
@@ -1286,9 +1290,9 @@ To read an array of objects, you can extract it from the `Dynamic` column as a s
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
 INSERT INTO test VALUES
-('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]], "k" : {"j" : 2000}}]}}'),
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
 ('{"a" : {"b" : [1, 2, 3]}}'),
-('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]], "k" : {"j" : 3000}}]}}');
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
 SELECT json FROM test;
 ```
 
@@ -1438,7 +1442,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
-setting [json_type_escape_dots_in_keys](/operations/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
+setting [json_type_escape_dots_in_keys](/reference/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
 escaped into `%2E` and unescaped back during formatting.
 
 ```sql title="Query"
@@ -1513,17 +1517,14 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 └────────────────────────────┴────────────┘
 ```
 
-)DOCS_MD")
-            // The JSON documentation is concatenated at runtime from several string literals because a single
-            // string literal would exceed the 65536-byte length that C++ compilers are required to support.
-            + R"DOCS_MD(## Reading JSON type from data {#reading-json-type-from-data}
+## Reading JSON type from data {#reading-json-type-from-data}
 
 All text formats
-([`JSONEachRow`](/interfaces/formats/JSONEachRow),
-[`TSV`](/interfaces/formats/TabSeparated),
-[`CSV`](/interfaces/formats/CSV),
-[`CustomSeparated`](/interfaces/formats/CustomSeparated),
-[`Values`](/interfaces/formats/Values), etc.) support reading the `JSON` type.
+([`JSONEachRow`](/reference/formats/JSON/JSONEachRow),
+[`TSV`](/reference/formats/TabSeparated/TabSeparated),
+[`CSV`](/reference/formats/CSV/CSV),
+[`CustomSeparated`](/reference/formats/CustomSeparated/CustomSeparated),
+[`Values`](/reference/formats/Values), etc.) support reading the `JSON` type.
 
 Examples:
 
@@ -1557,7 +1558,8 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 {"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}
 {"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}')
 ```
-
+)DOCS_MD")
+            + R"DOCS_MD(
 ```text title="Response"
 ┌─json──────────────────────────────────────────────────────────┐
 │ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
@@ -1678,7 +1680,7 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
 
-See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
+See section ["introspection functions"](/reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
 
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
@@ -1687,17 +1689,17 @@ To extract a path subcolumn from it, we just iterate over all rows in this `Map`
 
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
-In [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
+In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
 Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
 and `advanced`.
 
 The serialization version is controlled by MergeTree
-settings [object_shared_data_serialization_version](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version)
-and [object_shared_data_serialization_version_for_zero_level_parts](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version_for_zero_level_parts)
+settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
+and [object_shared_data_serialization_version_for_zero_level_parts](/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
 (zero level part is the part created during inserting data into the table, during merges parts have higher level).
 
 Note: changing shared data structure serialization is supported only
-for `v3` [object serialization version](../../operations/settings/merge-tree-settings.md#object_serialization_version)
+for `v3` [object serialization version](/reference/settings/merge-tree-settings#object_serialization_version)
 
 #### Map {#shared-data-map}
 
@@ -1716,10 +1718,8 @@ reads the whole `Map` column from a single bucket and extracts the requested pat
 This serialization is less efficient for writing data and reading the whole `JSON` column, but it's more efficient for reading paths sub-columns
 because it reads data only from required buckets.
 
-Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](
-../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_compact_part) (8 by default)
-and [object_shared_data_buckets_for_wide_part](
-../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_wide_part) (32 by default).
+Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (8 by default)
+and [object_shared_data_buckets_for_wide_part](/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (32 by default).
 The maximum allowed value for both settings is 256.
 
 #### Advanced {#shared-data-advanced}
@@ -1750,15 +1750,15 @@ Note: limit on dynamic paths cannot exceed the value specified in `max_dynamic_p
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column:
-- [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
-- [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
-- [`JSONAllValues`](../functions/json-functions.md#JSONAllValues)
-- [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
-- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
-- [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
-- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
-- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctDynamicTypes.md)
-- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctJSONPaths.md)
+- [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths)
+- [`JSONAllPathsWithTypes`](/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes)
+- [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues)
+- [`JSONDynamicPaths`](/reference/functions/regular-functions/json-functions#JSONDynamicPaths)
+- [`JSONDynamicPathsWithTypes`](/reference/functions/regular-functions/json-functions#JSONDynamicPathsWithTypes)
+- [`JSONSharedDataPaths`](/reference/functions/regular-functions/json-functions#JSONSharedDataPaths)
+- [`JSONSharedDataPathsWithTypes`](/reference/functions/regular-functions/json-functions#JSONSharedDataPathsWithTypes)
+- [`distinctDynamicTypes`](/reference/functions/aggregate-functions/distinctDynamicTypes)
+- [`distinctJSONPaths and distinctJSONPathsAndTypes`](/reference/functions/aggregate-functions/distinctJSONPaths)
 
 **Examples**
 
@@ -1909,9 +1909,9 @@ SELECT json, json.a, json.b, json.c FROM test;
 
 ## Lazy Type Hints (Experimental) {#lazy-type-hints}
 
-:::note
+<Note>
 This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
-:::
+</Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
 
@@ -2012,20 +2012,20 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 └────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
 
-**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/sql-reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
 
 ## Data skipping indexes for JSON {#data-skipping-indexes-for-json}
 
-[Data skipping indexes](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in three ways:
+[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in three ways:
 
 1. **Indexes on specific subcolumns** — create a standard skip index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path.
-3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths using a [text index](/engines/table-engines/mergetree-family/textindexes.md) to accelerate full-text search on any JSON subcolumn with a single index.
+3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths using a [text index](/reference/engines/table-engines/mergetree-family/textindexes) to accelerate full-text search on any JSON subcolumn with a single index.
 
 ### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
 You can create a skip index on any JSON subcolumn using the same syntax as for regular columns.
-Any [supported index type](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) works (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`, etc.).
+Any [supported index type](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) works (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`, etc.).
 
 There are two ways to reference a JSON subcolumn in an index expression:
 
@@ -2085,16 +2085,16 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 
 ### Path-based indexes with JSONAllPaths {#json-indexes-jsonallpaths}
 
-[Data skipping indexes](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can also be created on `JSON` columns using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function.
-This works similarly to creating skip indexes on [`Map`](/sql-reference/data-types/map) columns via `mapKeys` — the index stores the set of JSON paths present in each granule and uses it to skip granules that cannot contain the queried path.
+[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can also be created on `JSON` columns using the [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths) function.
+This works similarly to creating skip indexes on [`Map`](/reference/data-types/map) columns via `mapKeys` — the index stores the set of JSON paths present in each granule and uses it to skip granules that cannot contain the queried path.
 
 #### Supported index types {#json-indexes-jsonallpaths-supported-types}
 
 `JSONAllPaths` can be used with the following skip index types:
-- [`bloom_filter`](/engines/table-engines/mergetree-family/mergetree#bloom-filter) — supports `equals`, `in`, and `IS NOT NULL`.
-- [`tokenbf_v1`](/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — supports `equals` and `IS NOT NULL`.
-- [`ngrambf_v1`](/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — supports `equals` and `IS NOT NULL`.
-- [`text`](/engines/table-engines/mergetree-family/textindexes) (inverted index) — supports `equals`, `in` and `IS NOT NULL`.
+- [`bloom_filter`](/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) — supports `equals`, `in`, and `IS NOT NULL`.
+- [`tokenbf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — supports `equals` and `IS NOT NULL`.
+- [`ngrambf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — supports `equals` and `IS NOT NULL`.
+- [`text`](/reference/engines/table-engines/mergetree-family/textindexes) (inverted index) — supports `equals`, `in` and `IS NOT NULL`.
 
 #### Example {#json-indexes-jsonallpaths-example}
 
@@ -2173,11 +2173,11 @@ When a JSON path is absent from a granule, the subcolumn evaluates to:
 
 ### Full-text search with JSONAllValues {#json-indexes-jsonallvalues}
 
-[Text indexes](/engines/table-engines/mergetree-family/textindexes.md) can be used to accelerate full-text search on JSON columns via the [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues) function.
+[Text indexes](/reference/engines/table-engines/mergetree-family/textindexes) can be used to accelerate full-text search on JSON columns via the [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) function.
 `JSONAllValues` returns all values from a JSON column as `Array(String)`, which can be indexed by a text index.
 A single index on `JSONAllValues(json_column)` covers all JSON paths, enabling full-text search on any subcolumn without creating separate indexes for each path.
 
-See [Value-based indexes with JSONAllValues](/engines/table-engines/mergetree-family/textindexes.md#json-indexes-jsonallvalues) in the text indexes documentation for details and examples.
+See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) in the text indexes documentation for details and examples.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 
@@ -2186,7 +2186,7 @@ Before creating `JSON` column and loading data into it, consider the following t
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
-While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
+  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
 
 ## Further Reading {#further-reading}
 

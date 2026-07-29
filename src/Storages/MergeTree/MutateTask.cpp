@@ -2918,9 +2918,17 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
+        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
             part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
+        /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
+        /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
+        /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
+        /// then install the new tmp_empty_<part> holder. The local tmp_dir_holder keeps tmp_empty_<part>
+        /// registered across this reorder, so both directories stay protected at all times. Installing
+        /// the holder keeps temporary_parts authoritative for every createEmptyPart caller (see
+        /// createEmptyPart), so the entry outlives the physical tmp_empty_<part> directory.
         ctx->new_data_part = std::move(mutable_empty_part);
+        ctx->temporary_directory_lock = std::move(tmp_dir_holder);
     }
 };
 
@@ -3400,12 +3408,16 @@ bool MutateTask::prepare()
                 "Part {} is fully deleted, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-            auto [empty_part, _] = ctx->data->createEmptyPart(
+            auto [empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
+            /// Keep the temporary-directory holder alive until the part is renamed/committed, so
+            /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
+            /// directory, keeping the holder authoritative for every createEmptyPart caller.
+            ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
             promise.set_value(std::move(empty_part));

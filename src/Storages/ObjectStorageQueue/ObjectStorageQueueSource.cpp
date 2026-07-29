@@ -1144,7 +1144,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 if (old_processed_files >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_DEBUG(log, "Number of max processed files before commit reached "
-                            "(rows: {}, bytes: {}, files: {}, time: {})",
+                            "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
@@ -1310,7 +1310,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_files >= commit_settings.max_processed_files_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1319,7 +1319,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_rows >= commit_settings.max_processed_rows_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1328,7 +1328,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_bytes >= commit_settings.max_processed_bytes_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1337,7 +1337,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }

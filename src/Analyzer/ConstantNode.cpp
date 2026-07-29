@@ -85,6 +85,26 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
+
+    /// The initiator serializes a folded constant as `_CAST('<value>', '<type>')` with a plain literal inside,
+    /// so only that shape means that the constant was received from the initiator. `_CAST(__getScalar('<hash>'), '<type>')`
+    /// is different: it is a live expression in the initiator's query tree (for example, a scalar subquery result
+    /// cast by the `DistanceTransposedPartialReadsPass` optimization), and the initiator names the result column
+    /// after the whole expression. A constant folded from it on a secondary server must be named after its source
+    /// expression as well, or the initiator won't find the expected column in blocks received from remote servers.
+    const auto & cast_arguments = cast_function->getArguments().getNodes();
+    if (!cast_arguments.empty())
+    {
+        const IQueryTreeNode * cast_argument = cast_arguments.front().get();
+        if (const auto * constant_argument = cast_argument->as<ConstantNode>();
+            constant_argument && constant_argument->hasSourceExpression())
+            cast_argument = constant_argument->getSourceExpression().get();
+
+        if (const auto * function_argument = cast_argument->as<FunctionNode>();
+            function_argument && function_argument->getFunctionName() == "__getScalar")
+            return false;
+    }
+
     return true;
 }
 

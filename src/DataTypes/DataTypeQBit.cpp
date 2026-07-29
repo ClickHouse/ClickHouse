@@ -216,6 +216,78 @@ SELECT vec FROM test ORDER BY id;
 └──────────────────────────┘
 ```
 
+## Converting arrays to QBit {#converting-arrays-to-qbit}
+
+Arrays convert to `QBit` when the array length matches the `QBit` dimension. The array's element type does not need to match the `QBit` element type. Any numeric element type is converted to it automatically. This lets you move an existing column of embeddings straight into a `QBit` column:
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+The conversion also works explicitly with `CAST`, for example `CAST(embedding AS QBit(Float32, 8))`.
+
+## Converting QBit to arrays {#converting-qbit-to-arrays}
+
+The reverse conversion reconstructs the original vector from the bit-transposed representation, so casting a `QBit` to an `Array` returns the stored values. This is the inverse of [converting arrays to `QBit`](#converting-arrays-to-qbit):
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+The reconstructed array uses the `QBit`'s element type, and its elements are then converted to the requested array element type. A cast that also changes the element type, such as `QBit(Float32, N)` to `Array(Float64)`, therefore works as well.
+
+An `Array` -> `QBit` -> `Array` round trip is lossless for `Int8`, `Float32` and `Float64`. For `BFloat16` it matches a direct conversion to `BFloat16` — the only precision lost is that of `BFloat16` itself.
+
+When the `dimension` is not a multiple of 8, the trailing padding elements present in the internal representation are dropped, so the result always has exactly `dimension` elements.
+
+## Converting between QBit types {#converting-between-qbit-types}
+
+A `QBit` can be cast to another `QBit` as long as the `dimension` (the number of vector elements) stays the same. The `element_type` and the `stride` may both change; casting to a `QBit` with a different `dimension` raises an exception, because that would change the vector itself.
+
+Changing the `element_type` reconstructs the vector and converts each element to the new type, exactly like the corresponding `Array` conversion: widening (for example `QBit(Float32, N)` to `QBit(Float64, N)`) is exact, while narrowing loses precision in the same way a narrowing `Array` cast would.
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::QBit(Float64, 4) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+Changing only the [`stride`](#strides) (keeping the same `element_type`) re-groups the stored bit planes without touching the values, so it is always lossless:
+
+```sql
+SELECT range(16)::Array(Float32)::QBit(Float32, 16)::QBit(Float32, 16, 8)::Array(Float32)
+     = range(16)::Array(Float32) AS is_lossless;
+```
+
+```text
+┌─is_lossless─┐
+│           1 │
+└─────────────┘
+```
+
 ## QBit subcolumns {#qbit-subcolumns}
 
 `QBit` implements a subcolumn access pattern that allows you to access individual bit planes of the stored vectors. Each bit position can be accessed using the `.N` syntax, where `N` is the bit position:
@@ -242,6 +314,18 @@ The number of accessible subcolumns depends on the element type (and, when strid
 * `Float64`: 64 subcolumns per stride group (1-64)
 
 The subcolumns follow a group-major order: in general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`. For example, with `QBit(BFloat16, 4096, 1024)` the 4096 dimensions are split into 4 groups of 1024, so there are 64 subcolumns: `vec.1` … `vec.16` are the bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on.
+
+## Strides {#strides}
+
+By default a `QBit` stores each bit plane as a single stream spanning all `dimension` dimensions, so a search always reads whole bit planes across the full vector. The optional `stride` parameter partitions the `dimension` dimensions into `dimension / stride` contiguous groups and stores each group's bit planes in separate streams. This lets a search over only the first `D` dimensions (with `D` a multiple of `stride`) read just the streams of the groups that cover those dimensions — useful for [Matryoshka embeddings](https://arxiv.org/abs/2205.13147), where the leading dimensions form a usable lower-dimensional embedding.
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree ORDER BY id;
+```
+
+Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow a group-major order: with `BFloat16` (16 bit planes), `vec.1` … `vec.16` are the 16 bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on. In general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`.
+
+To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have exactly that many elements, and the value must be a multiple of `stride`.
 
 ## Vector search functions {#vector-search-functions}
 

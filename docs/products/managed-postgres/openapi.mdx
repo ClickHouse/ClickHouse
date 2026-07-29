@@ -423,22 +423,22 @@ counter set documented under [per-execution counters].
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 [API keys]: /products/cloud/features/admin-features/api/openapi "Managing API Keys"
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres
-  "OpenAPI spec for ClickHouse Cloud: Postgres"
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create
+  "ClickHouse Cloud API reference: Postgres"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list
   "Fetch a list of an organization's Postgres services"
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create
   "Create new Postgres service"
 [psql]: https://www.postgresql.org/docs/current/app-psql.html
   "PostgreSQL Docs: psql — PostgreSQL interactive terminal"
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch
   "Update a PostgreSQL service"
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html
   "PostgreSQL Docs: Server Configuration"
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig
-  "Update a Postgres Service configuration"
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post
+  "Replace Postgres service configuration"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete
   "Delete a PostgreSQL service"
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus
   "Managed Postgres Prometheus endpoint"
@@ -450,7 +450,7 @@ counter set documented under [per-execution counters].
   "Query insights detail flyout"
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters
   "Query insights per-execution counters"
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list
   "List Postgres slow query patterns"
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get
   "Get a Postgres slow query pattern with recent executions"

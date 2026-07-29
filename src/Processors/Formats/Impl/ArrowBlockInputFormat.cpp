@@ -327,68 +327,116 @@ void registerInputFormatArrow(FormatFactory & factory)
 
 ## Description {#description}
 
-[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
-`Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
+[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats.
+ClickHouse supports read and write operations for these formats.
+`Arrow` is Apache Arrow's "file mode" format, designed for in-memory random access.
 
 ## Data types matching {#data-types-matching}
 
-The table below shows the supported data types and how they correspond to ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+The table below shows the supported data types and how they correspond to ClickHouse [data types](/reference/data-types/index) in `INSERT` and `SELECT` queries.
 
 | Arrow data type (`INSERT`)              | ClickHouse data type                                                                                       | Arrow data type (`SELECT`) |
 |-----------------------------------------|------------------------------------------------------------------------------------------------------------|----------------------------|
-| `BOOL`                                  | [Bool](/sql-reference/data-types/boolean.md)                                                       | `BOOL`                     |
-| `UINT8`, `BOOL`                         | [UInt8](/sql-reference/data-types/int-uint.md)                                                     | `UINT8`                    |
-| `INT8`                                  | [Int8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)   | `INT8`                     |
-| `UINT16`                                | [UInt16](/sql-reference/data-types/int-uint.md)                                                    | `UINT16`                   |
-| `INT16`                                 | [Int16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `INT16`                    |
-| `UINT32`                                | [UInt32](/sql-reference/data-types/int-uint.md)                                                    | `UINT32`                   |
-| `INT32`                                 | [Int32](/sql-reference/data-types/int-uint.md)                                                     | `INT32`                    |
-| `UINT64`                                | [UInt64](/sql-reference/data-types/int-uint.md)                                                    | `UINT64`                   |
-| `INT64`                                 | [Int64](/sql-reference/data-types/int-uint.md)                                                     | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`                   | [Float32](/sql-reference/data-types/float.md)                                                      | `FLOAT32`                  |
-| `DOUBLE`                                | [Float64](/sql-reference/data-types/float.md)                                                      | `FLOAT64`                  |
-| `DATE32`                                | [Date32](/sql-reference/data-types/date32.md)                                                      | `UINT16`                   |
-| `DATE64`                                | [DateTime](/sql-reference/data-types/datetime.md)                                                  | `UINT32`                   |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/sql-reference/data-types/datetime64.md)                                              | `TIMESTAMP`                |
-| `STRING`, `BINARY`                      | [String](/sql-reference/data-types/string.md)                                                      | `BINARY`                   |
-| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/sql-reference/data-types/fixedstring.md)                                            | `FIXED_SIZE_BINARY`        |
-| `DECIMAL`                               | [Decimal](/sql-reference/data-types/decimal.md)                                                    | `DECIMAL`                  |
-| `DECIMAL256`                            | [Decimal256](/sql-reference/data-types/decimal.md)                                                 | `DECIMAL256`               |
-| `LIST`                                  | [Array](/sql-reference/data-types/array.md)                                                        | `LIST`                     |
-| `STRUCT`                                | [Tuple](/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                   |
-| `MAP`                                   | [Map](/sql-reference/data-types/map.md)                                                            | `MAP`                      |
-| `UINT32`                                | [IPv4](/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                   |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/sql-reference/data-types/ipv6.md)                                                          | `FIXED_SIZE_BINARY`        |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                             | `FIXED_SIZE_BINARY`        |
-| `DURATION`                              | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
-| `INT64`                                 | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
+| `BOOL`                                  | [Bool](/reference/data-types/boolean)                                                       | `BOOL`                     |
+| `UINT8`, `BOOL`                         | [UInt8](/reference/data-types/int-uint)                                                     | `UINT8`                    |
+| `INT8`                                  | [Int8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)   | `INT8`                     |
+| `UINT16`                                | [UInt16](/reference/data-types/int-uint)                                                    | `UINT16`                   |
+| `INT16`                                 | [Int16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) | `INT16`                    |
+| `UINT32`                                | [UInt32](/reference/data-types/int-uint)                                                    | `UINT32`                   |
+| `INT32`                                 | [Int32](/reference/data-types/int-uint)                                                     | `INT32`                    |
+| `UINT64`                                | [UInt64](/reference/data-types/int-uint)                                                    | `UINT64`                   |
+| `INT64`                                 | [Int64](/reference/data-types/int-uint)                                                     | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/reference/data-types/float)                                                      | `FLOAT32`                  |
+| `DOUBLE`                                | [Float64](/reference/data-types/float)                                                      | `FLOAT64`                  |
+| `DATE32`                                | [Date32](/reference/data-types/date32)                                                      | `UINT16`                   |
+| `DATE64`                                | [DateTime](/reference/data-types/datetime)                                                  | `UINT32`                   |
+| `TIMESTAMP`                             | [DateTime64](/reference/data-types/datetime64)                                              | `TIMESTAMP`                |
+| `TIME32`, `TIME64`                      | [Time64](/reference/data-types/time64)                                              | `TIME32`, `TIME64`                |
+| `STRING`, `BINARY`                      | [String](/reference/data-types/string)                                                      | `BINARY`                   |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/reference/data-types/fixedstring)                                            | `FIXED_SIZE_BINARY`        |
+| `DECIMAL`                               | [Decimal](/reference/data-types/decimal)                                                    | `DECIMAL`                  |
+| `DECIMAL256`                            | [Decimal256](/reference/data-types/decimal)                                                 | `DECIMAL256`               |
+| `LIST`                                  | [Array](/reference/data-types/array)                                                        | `LIST`                     |
+| `STRUCT`                                | [Tuple](/reference/data-types/tuple)                                                        | `STRUCT`                   |
+| `MAP`                                   | [Map](/reference/data-types/map)                                                            | `MAP`                      |
+| `UINT32`                                | [IPv4](/reference/data-types/ipv4)                                                          | `UINT32`                   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/reference/data-types/ipv6)                                                          | `FIXED_SIZE_BINARY`        |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                             | `FIXED_SIZE_BINARY`        |
+| `DURATION`                              | [Interval](/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
+| `INT64`                                 | [Interval](/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/reference/data-types/lowcardinality) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
 
-Unsupported Arrow data types:
+Unsupported Arrow data types: 
 - `JSON`
 - `ENUM`.
 
-The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 
-### Inserting data {#inserting-data}
-
-You can insert Arrow data from a file into ClickHouse table using the following command:
-
-```bash
-$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
-```
+In the example below we use the `forex` dataset available in the
+[ClickHouse SQL playground](https://sql.clickhouse.com).
 
 ### Selecting data {#selecting-data}
 
-You can select data from a ClickHouse table and save it into some file in the Arrow format using the following command:
+We select one day of `EUR/USD` exchange rates from the playground and save it
+into a local `forex_eurusd.arrow` file. We query the playground over the HTTP
+interface, where the host is `sql-clickhouse.clickhouse.com` and the user is
+`demo` (which has no password):
 
 ```bash
-$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'EUR' AND quote = 'USD'
+            AND datetime >= '2020-01-01' AND datetime < '2020-01-02'
+        ORDER BY datetime ASC
+        FORMAT Arrow
+        SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
+```
+
+### Reading the file back {#reading-data}
+
+We can now read the local Arrow file back with
+[`clickhouse-local`](/concepts/features/tools-and-utilities/clickhouse-local) using the
+[`file`](/reference/functions/table-functions/file) table function. The file is
+self-describing, so the `Arrow` format infers the schema automatically:
+
+```bash
+clickhouse-local --query "
+    SELECT *
+    FROM file('forex_eurusd.arrow', Arrow)
+    ORDER BY last_update ASC
+    LIMIT 5
+    FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬─────bid─┬─────ask─┬────────────────spread─┐
+1. │ EUR.USD    │ 2020-01-01 17:00:00.065 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+2. │ EUR.USD    │ 2020-01-01 17:00:10.447 │  1.1212 │ 1.12192 │ 0.0007200241088867188 │
+3. │ EUR.USD    │ 2020-01-01 17:00:10.498 │ 1.12117 │ 1.12161 │ 0.0004400014877319336 │
+4. │ EUR.USD    │ 2020-01-01 17:00:12.579 │  1.1212 │ 1.12161 │ 0.0004100799560546875 │
+5. │ EUR.USD    │ 2020-01-01 17:00:12.630 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+   └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
+```
+
+### Inserting data {#inserting-data}
+
+To load an Arrow file into a ClickHouse table, pipe it into `clickhouse-client`
+with `FORMAT Arrow`:
+
+```bash
+cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
 ## Format settings {#format-settings}
@@ -422,7 +470,128 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
 ## Example usage {#example-usage}
 
+In the example below we use the `forex` dataset which is available in the
+[ClickHouse SQL playground](https://sql.clickhouse.com). You can connect to it
+remotely with `clickhouse-client` using the host `sql-clickhouse.clickhouse.com`
+and the user `demo` (which has no password). The `forex` table lives in the
+`forex` database, so we select it as the default database:
+
+```bash
+clickhouse-client --secure --host sql-clickhouse.clickhouse.com --user demo --database forex
+```
+
+The `forex` table stores currency exchange rates. We can inspect its size and
+how well it compresses on disk by querying [`system.columns`](/reference/system-tables/columns):
+
+```sql title="Query"
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    sum(data_compressed_bytes) / sum(data_uncompressed_bytes) AS compression_ratio
+FROM system.columns
+WHERE (database = 'forex') AND (table = 'forex')
+GROUP BY table
+ORDER BY table ASC
+```
+
+```response title="Response"
+   ┌─table─┬─compressed_size─┬─uncompressed_size─┬───compression_ratio─┐
+1. │ forex │ 63.69 GiB       │ 280.48 GiB        │ 0.22708227109363446 │
+   └───────┴─────────────────┴───────────────────┴─────────────────────┘
+```
+
+Unlike the [`Arrow`](/reference/formats/Arrow/Arrow) "file mode" format, which
+requires the whole result before it can be read, `ArrowStream` is delivered as a
+sequence of record batches that a consumer can read incrementally as they
+arrive. This makes it well suited to streaming a query result straight into a
+visualization or analytics tool without first materializing the entire dataset.
+
+To stream the result, send the query over ClickHouse's HTTP interface with a
+`POST` request and read the response as an Arrow stream. We disable compression
+of the Arrow output via the
+[`output_format_arrow_compression_method`](/reference/settings/formats#output_format_arrow_compression_method)
+setting so that consumers can decode batches directly as they are received.
+
+The `ArrowStream` output is raw binary, so rather than printing it to the
+terminal we pipe it into a consumer. The stream is self-describing (it carries
+its own schema), so here we pipe it straight into
+[`clickhouse-local`](/concepts/features/tools-and-utilities/clickhouse-local), which reads the
+incoming batches with `--input-format ArrowStream` and queries them as a table.
+The `forex` table is large, so we bound the remote query with a `WHERE`
+predicate and a `LIMIT` to keep this example small:
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'USD' AND quote = 'CHF'
+        ORDER BY datetime ASC
+        LIMIT 5
+        FORMAT ArrowStream
+        SETTINGS output_format_arrow_compression_method='none'" \
+  | clickhouse-local --input-format ArrowStream \
+      --query "SELECT * FROM table ORDER BY last_update ASC FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬────bid─┬────ask─┬────────────────spread─┐
+1. │ USD.CHF    │ 2000-05-30 17:23:44.000 │  1.688 │ 1.6885 │ 0.0005000829696655273 │
+2. │ USD.CHF    │ 2000-05-30 17:23:46.000 │ 1.6885 │  1.689 │ 0.0004999637603759766 │
+3. │ USD.CHF    │ 2000-05-30 17:23:48.000 │ 1.6886 │ 1.6891 │ 0.0005000829696655273 │
+4. │ USD.CHF    │ 2000-05-30 17:23:49.000 │ 1.6888 │ 1.6893 │ 0.0004999637603759766 │
+5. │ USD.CHF    │ 2000-05-30 17:24:45.000 │  1.689 │ 1.6895 │ 0.0004999637603759766 │
+   └────────────┴─────────────────────────┴────────┴────────┴───────────────────────┘
+```
+
+The same stream can be consumed incrementally by any Arrow-aware client, which
+reads it batch-by-batch rather than buffering the result in full. For example,
+using the [Apache Arrow JavaScript library](https://arrow.apache.org/docs/js/), a
+`RecordBatchReader` yields each record batch as soon as it is streamed from the
+server:
+
+```js
+const reader = await RecordBatchReader.from(response);
+await reader.open();
+for await (const recordBatch of reader) {
+    const batchTable = new Table(recordBatch);
+    const ipcStream = tableToIPC(batchTable, 'stream');
+    const bytes = new Uint8Array(ipcStream);
+    table.update(bytes);
+}
+```
+
+For a full walkthrough of streaming `ArrowStream` data from ClickHouse into a
+real-time visualization with [Perspective](https://perspective.finos.org/), see
+the blog post
+[Streaming real-time visualizations with ClickHouse, Apache Arrow and Perspective](https://clickhouse.com/blog/streaming-real-time-visualizations-clickhouse-apache-arrow-perpsective).
+
 ## Format settings {#format-settings}
+
+`ArrowStream` shares the same format settings as the [`Arrow`](/reference/formats/Arrow/Arrow) format.
+
+| Setting                                                                      | Description                                                                                                                                | Default     |
+|------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|-------------|
+| `input_format_arrow_allow_missing_columns`                                   | Allow missing columns while reading Arrow input formats                                                                                    | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | Ignore case when matching Arrow columns with CH columns.                                                                                   | `0`         |
+| `input_format_arrow_import_nested`                                           | Obsolete setting, does nothing.                                                                                                            | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Skip columns with unsupported types while schema inference for format Arrow                                                                | `0`         |
+| `input_format_arrow_use_native_reader`                                       | Use the native ClickHouse reader for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library reader. | `1`         |
+| `output_format_arrow_compression_method`                                     | Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed)                                         | `lz4_frame` |
+| `output_format_arrow_date_as_uint16`                                         | Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32). | `0`         |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                                                                | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | Enable output LowCardinality type as Dictionary Arrow type                                                                                 | `0`         |
+| `output_format_arrow_string_as_string`                                       | Use Arrow String type instead of Binary for String columns                                                                                 | `1`         |
+| `output_format_arrow_unsupported_types_as_binary`                            | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. Applies to both the native and the Apache Arrow library writer. | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Always use 64 bit integers for dictionary indexes in Arrow format                                                                          | `0`         |
+| `output_format_arrow_use_native_writer`                                      | Use the native ClickHouse writer for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library writer. | `1`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Use signed integers for dictionary indexes in Arrow format                                                                                 | `1`         |
 )DOCS_MD"});
 }
 
