@@ -101,7 +101,8 @@ SELECT 'oracle_multiply_ip6_right_g1', (SELECT count() FROM u32g1 WHERE multiply
 SELECT 'oracle_multiply_ip6_left_g1', (SELECT count() FROM u32g1 WHERE multiply(toIPv6('::2'), a) > 40) = (SELECT count() FROM ou32 WHERE multiply(toIPv6('::2'), a) > 40);
 
 -- The equal-endpoints fast path compared two different values, so it has two carriers: the key
--- endpoint, pinned by `prune_plus_ip4key_2of4` below, and the constant, pinned here. Deferring the
+-- endpoint, pinned by the `prune_*_const_left_ip4key_2of4` rows below, and the constant, pinned here
+-- (a right-role constant short-circuits the endpoint comparison away). Deferring the
 -- comparison keeps the interval monotonic, so the granule holding it is still discarded; a fix that
 -- reported non-monotonic instead would leave every `oracle_` row green and lose only the pruning.
 -- `< 25` is required: the fast path is reached for the granule whose min equals its max at the end
@@ -209,6 +210,22 @@ SELECT 'prune_plus_ip4key_ip4const_2of4', count() > 0 FROM (EXPLAIN indexes = 1 
 -- normalization as the bare IP constant, so they get the granule row their oracles lacked.
 SELECT 'prune_plus_nullable_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, CAST(toIPv4('0.0.0.2') AS Nullable(IPv4))) < 25) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'prune_plus_lc_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, toLowCardinality(toIPv4('0.0.0.2'))) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+-- The same wrapper matrix for `multiply`, whose arm normalizes the constant as well as both endpoints,
+-- so a gate keyed on the constant's IP tag is visible here and in none of the `plus` rows above.
+-- `prune_multiply_numconst_right_g1_2of4` is the control: same table, same threshold.
+SELECT 'prune_multiply_nullable_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, CAST(toIPv4('0.0.0.2') AS Nullable(IPv4))) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_lc_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, toLowCardinality(toIPv4('0.0.0.2'))) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_nullable_ip6const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, CAST(toIPv6('::2') AS Nullable(IPv6))) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+-- A numeric constant in the LEFT role over an IP key. `right_arg_is_zero` short-circuits on the LEFT
+-- operand being the constant and then compares a KEY endpoint, so these three shapes are the only ones
+-- reaching the IP-vs-zero comparison with an endpoint as its operand; every right-role row above
+-- leaves that conjunct unevaluated. `ctl32` holds the identical bit values, so it controls the count.
+SELECT 'prune_plus_const_left_ip4key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE plus(1, a) < 40000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_plus_const_left_u32key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctl32 WHERE plus(1, a) < 40000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_minus_const_left_ip4key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE minus(1, a) > -40000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_minus_const_left_u32key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctl32 WHERE minus(1, a) > -40000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_const_left_ip4key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE multiply(1, a) < 40000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_const_left_u32key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctl32 WHERE multiply(1, a) < 40000000) WHERE explain ILIKE '%Granules: 2/4%';
 
 SELECT '-- numeric constants stay unaffected';
 SELECT 'oracle_multiply_zero', (SELECT count() FROM u32g4 WHERE multiply(a, 0) > 0) = (SELECT count() FROM ou32 WHERE multiply(a, 0) > 0);

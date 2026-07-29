@@ -81,6 +81,15 @@ prune_multiply_ip4key_ip4const_2of4	1
 prune_plus_ip4key_ip4const_2of4	1
 prune_plus_nullable_ip4const_g1_2of4	1
 prune_plus_lc_ip4const_g1_2of4	1
+prune_multiply_nullable_ip4const_g1_2of4	1
+prune_multiply_lc_ip4const_g1_2of4	1
+prune_multiply_nullable_ip6const_g1_2of4	1
+prune_plus_const_left_ip4key_2of4	1
+prune_plus_const_left_u32key_2of4	1
+prune_minus_const_left_ip4key_2of4	1
+prune_minus_const_left_u32key_2of4	1
+prune_multiply_const_left_ip4key_2of4	1
+prune_multiply_const_left_u32key_2of4	1
 -- numeric constants stay unaffected
 oracle_multiply_zero	1
 oracle_multiply_negative	1
