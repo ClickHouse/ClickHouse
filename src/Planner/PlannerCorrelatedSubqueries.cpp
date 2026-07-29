@@ -33,11 +33,11 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/DropTotalsAndExtremesStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -135,38 +135,6 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     }
 
     return result;
-}
-
-/// Returns true if the subquery plan produces a totals stream that would survive into the result,
-/// i.e. a TotalsHavingStep is reachable from the root without passing through an AggregatingStep.
-/// AggregatingStep drops input totals (see AggregatingStep::transformPipeline -> dropTotalsAndExtremes),
-/// so a totals stream consumed by an enclosing aggregation never reaches the result.
-/// Decorrelation turns the subquery into a JOIN, and JoinStep propagates totals from either input
-/// (JoinStep::transformPipeline -> addDefaultTotals), so such a surviving totals stream would leak
-/// into the outer (non-aggregate) query and reach the client as a spurious totals row.
-bool correlatedPlanResultHasTotals(const QueryPlan & query_plan)
-{
-    struct Frame
-    {
-        const QueryPlan::Node * node;
-        bool aggregated_above;
-    };
-
-    std::vector<Frame> stack{ { .node = query_plan.getRootNode(), .aggregated_above = false } };
-    while (!stack.empty())
-    {
-        auto [node, aggregated_above] = stack.back();
-        stack.pop_back();
-
-        if (!aggregated_above && typeid_cast<const TotalsHavingStep *>(node->step.get()))
-            return true;
-
-        /// An aggregation between the current node and the result drops any totals coming from below.
-        bool aggregated_below = aggregated_above || typeid_cast<const AggregatingStep *>(node->step.get()) != nullptr;
-        for (const auto * child : node->children)
-            stack.push_back({ .node = child, .aggregated_above = aggregated_below });
-    }
-    return false;
 }
 
 struct DecorrelationContext
@@ -528,6 +496,17 @@ void buildRenamingForScalarSubquery(
     query_plan.addStep(std::move(expression_step));
 }
 
+/// A subquery's totals/extremes are not part of its value: the non-correlated scalar subquery path
+/// consumes data chunks only (see evaluateScalarSubqueryIfNeeded). Decorrelation replaces the
+/// subquery with a JOIN, which propagates totals from either input (addDefaultTotals in
+/// QueryPipelineBuilder::joinPipelinesRightLeft), so they must be dropped here or they become the
+/// outer query's totals. Added unconditionally: the transform is a no-op without those streams, and
+/// nothing here has to recognize which step produced them.
+void dropTotalsAndExtremesOfDecorrelatedPlan(QueryPlan & query_plan)
+{
+    query_plan.addStep(std::make_unique<DropTotalsAndExtremesStep>(query_plan.getCurrentHeader()));
+}
+
 void buildExistsResultExpression(
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
@@ -759,11 +738,6 @@ void buildQueryPlanForCorrelatedSubquery(
 
             addStepForResultRenaming(correlated_subquery, correlated_query_plan, planner_context);
 
-            if (correlatedPlanResultHasTotals(correlated_query_plan))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Decorrelation of a correlated subquery with WITH TOTALS is not supported");
-
             /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
@@ -785,6 +759,7 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
+            dropTotalsAndExtremesOfDecorrelatedPlan(decorrelated_plan);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             query_plan = buildLogicalJoin(
@@ -812,11 +787,6 @@ void buildQueryPlanForCorrelatedSubquery(
                 return;
             }
 
-            if (correlatedPlanResultHasTotals(correlated_query_plan))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Decorrelation of a correlated subquery with WITH TOTALS is not supported");
-
             /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
@@ -839,6 +809,7 @@ void buildQueryPlanForCorrelatedSubquery(
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             /// Add a 'exists(<table expression id>)' expression that is always true.
             buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
+            dropTotalsAndExtremesOfDecorrelatedPlan(decorrelated_plan);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             /// If there's no corresponding rows from the right side, 'exists(<table expression id>)' would be replaced by default value (false).

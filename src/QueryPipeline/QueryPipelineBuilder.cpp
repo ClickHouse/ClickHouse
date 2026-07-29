@@ -814,29 +814,21 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
-namespace
-{
-
-/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
-/// construction / CTE materialization) using a `DroppingTransform` instead of a
-/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
-/// forwards the data streams and discards totals/extremes. Unlike a childless
-/// `NullSink`, it keeps the dropping node connected to the data path, so
-/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
-/// gated source sub-pipeline before its materialized CTE has been built.
-void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
+/// The transform consumes all output ports (data + totals + extremes), forwards the data streams
+/// and discards totals/extremes. Unlike a childless `NullSink`, it keeps the dropping node connected
+/// to the data path, so `ExecutingGraph::initializeExecution` does not seed it and does not pull a
+/// gated source sub-pipeline before it is ready.
+void QueryPipelineBuilder::dropTotalsAndExtremesViaTransform()
 {
     if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
         return;
 
     bool has_totals = pipe.getTotalsPort() != nullptr;
     bool has_extremes = pipe.getExtremesPort() != nullptr;
-    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
+    auto dropping = std::make_shared<DroppingTransform>(getSharedHeader(), pipe.numOutputPorts(), has_totals, has_extremes);
     auto * totals_in = dropping->getTotalsPort();
     auto * extremes_in = dropping->getExtremesPort();
     pipe.addTransform(std::move(dropping), totals_in, extremes_in);
-}
-
 }
 
 void QueryPipelineBuilder::addCreatingSetsTransform(
@@ -845,7 +837,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremesViaTransform();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -864,7 +856,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremesViaTransform();
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(
