@@ -40,7 +40,9 @@ SELECT count() FROM (
     WHERE a.x = 'no_such_value_104985_pr' AND b.x = 'no_such_value_104985_pr'
 )
 SETTINGS
-    allow_experimental_parallel_reading_from_replicas = 1,
+    -- Mode 2 throws instead of silently falling back to a local read, so the query failing to use
+    -- parallel replicas is a test failure rather than a silent downgrade to the non-parallel path.
+    allow_experimental_parallel_reading_from_replicas = 2,
     max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -51,15 +53,18 @@ SETTINGS
 SYSTEM FLUSH LOGS query_log;
 
 -- Not crashing is not sufficient: the predicate matches no rows, so an ordinary full scan also
--- returns 0. Assert that the parallel warm run really was served from the query condition cache and
--- pruned every granule, otherwise a parallel-replicas-specific no-op would still pass. Expected:
---   1  1   (hit, exactly 0 rows read)
+-- returns 0, and a cache hit with no selected rows is equally reachable from a plain local warm
+-- query. Assert all three properties on the initiator row, so the run is pinned to the parallel
+-- path and to being served from the query condition cache. Expected:
+--   1  1  1   (parallel replicas used, hit, exactly 0 rows read)
 SELECT
+    ProfileEvents['ParallelReplicasQueryCount'] > 0,
     ProfileEvents['QueryConditionCacheHits'] > 0,
     ProfileEvents['SelectedRows'] = 0
 FROM system.query_log
 WHERE event_date >= yesterday()
     AND type = 'QueryFinish'
+    AND is_initial_query
     AND current_database = currentDatabase()
     AND log_comment = 'qcc_join_104985_pr'
 ORDER BY event_time_microseconds;
