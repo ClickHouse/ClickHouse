@@ -320,7 +320,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)
     {
@@ -354,7 +354,7 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
             if (fixed_prefix.empty())
                 return getTables();
 
-            DB::Names result;
+            CatalogTables result;
             for (const auto & namespace_name : getNamespaces())
             {
                 const std::string namespace_prefix = namespace_name + ".";
