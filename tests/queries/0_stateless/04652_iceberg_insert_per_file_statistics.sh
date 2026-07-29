@@ -9,8 +9,10 @@ MULTI_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_multi"
 SINGLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_single"
 TYPES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_types"
 PART_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_part"
+PAIRED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_paired"
+BOUNDED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_bounded"
 
-rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}"
+rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}"
 
 # One row per data file, so the number of data files does not depend on randomized block sizes.
 ONE_ROW_PER_FILE="
@@ -134,4 +136,99 @@ ${CLICKHOUSE_CLIENT} --query "
     FORMAT TSV;
 "
 
-rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}"
+# The statistics-to-file pairing is a bare index, so every assertion above (a sorted multiset or an
+# aggregate) still holds if the per-file statistics are permuted relative to the data files, which is
+# exactly the mis-pairing that reintroduces the unsafe pruning. This scenario joins each manifest
+# entry to the Parquet file it names and compares against that file's real contents, so a permutation
+# moves the output. `score` is non-NULL only in the file holding `id` = 1, and each row is ordered by
+# the file's own `id` rather than by `file_path` because paths carry generated names.
+${CLICKHOUSE_CLIENT} --query "
+    ${ONE_ROW_PER_FILE}
+    CREATE TABLE paired (id Int32, score Nullable(Int32))
+    ENGINE = IcebergLocal('${PAIRED_PATH}', 'Parquet') ORDER BY (id);
+    INSERT INTO paired SELECT number + 1, if(number > 0, NULL, 10) FROM numbers(3);
+"
+
+echo '--- per-entry pairing against the referenced Parquet file ---'
+for manifest in $(find "${PAIRED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
+    # `lower_bounds`/`upper_bounds` hold raw little-endian bytes (`dumpValue` in `IcebergWrites.cpp`),
+    # so they are decoded with `reinterpretAsInt32`; both key columns are `Int32` here. An entry whose
+    # `score` is all-NULL legitimately has NO bounds at all: `canWriteStatistics` is all-or-nothing
+    # across the entry's columns and `ColumnNullable::getExtremes` yields NULL extremes for an
+    # all-NULL column, which `canDumpIcebergStats` rejects. That is pre-existing behaviour, so it is
+    # asserted here rather than fixed.
+    ${CLICKHOUSE_CLIENT} --query "
+        WITH entries AS (
+            SELECT
+                replaceRegexpOne(tupleElement(data_file, 'file_path'), '^.*/', '')                     AS base,
+                tupleElement(data_file, 'record_count')                                               AS entry_rows,
+                CAST(tupleElement(data_file, 'null_value_counts'), 'Map(Int32, Int64)')[2]            AS entry_score_nulls,
+                arrayMap(x -> (x.1, reinterpretAsInt32(x.2)), tupleElement(data_file, 'lower_bounds')) AS entry_lower,
+                arrayMap(x -> (x.1, reinterpretAsInt32(x.2)), tupleElement(data_file, 'upper_bounds')) AS entry_upper
+            FROM file('${manifest}', Avro)
+        ),
+        files AS (
+            SELECT
+                replaceRegexpOne(_path, '^.*/', '') AS base,
+                any(id)                             AS own_id,
+                count()                             AS file_rows,
+                countIf(score IS NULL)              AS file_score_nulls
+            FROM file('${PAIRED_PATH}/data/*.parquet', Parquet)
+            GROUP BY base
+        )
+        SELECT
+            'id=' || toString(f.own_id)
+              || ' rows=' || toString(e.entry_rows) || '/' || toString(f.file_rows)
+              || ' score_nulls=' || toString(e.entry_score_nulls) || '/' || toString(f.file_score_nulls)
+              || ' paired=' || if((e.entry_rows = f.file_rows) AND (e.entry_score_nulls = f.file_score_nulls), 'yes', 'no')
+              || ' lower=' || toString(e.entry_lower)
+              || ' upper=' || toString(e.entry_upper) AS entry
+        FROM entries AS e INNER JOIN files AS f ON e.base = f.base
+        ORDER BY f.own_id
+        FORMAT TSV;
+    "
+done
+
+# The bounds above are present on one entry only, because the two all-NULL files legitimately carry no
+# bounds at all. This companion has no nullable column, so every entry carries bounds and the decoded
+# value of each is checked against the single row its own file holds. Without it the bounds half of
+# this change would be pinned on a single entry.
+${CLICKHOUSE_CLIENT} --query "
+    ${ONE_ROW_PER_FILE}
+    CREATE TABLE bounded (id Int32, v Int32)
+    ENGINE = IcebergLocal('${BOUNDED_PATH}', 'Parquet') ORDER BY (id);
+    INSERT INTO bounded SELECT number + 1, (number + 1) * 100 FROM numbers(3);
+"
+
+echo '--- per-entry bounds describe only their own file ---'
+for manifest in $(find "${BOUNDED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
+    ${CLICKHOUSE_CLIENT} --query "
+        WITH entries AS (
+            SELECT
+                replaceRegexpOne(tupleElement(data_file, 'file_path'), '^.*/', '')                     AS base,
+                arrayMap(x -> (x.1, reinterpretAsInt32(x.2)), tupleElement(data_file, 'lower_bounds')) AS entry_lower,
+                arrayMap(x -> (x.1, reinterpretAsInt32(x.2)), tupleElement(data_file, 'upper_bounds')) AS entry_upper
+            FROM file('${manifest}', Avro)
+        ),
+        files AS (
+            SELECT
+                replaceRegexpOne(_path, '^.*/', '') AS base,
+                any(id)                             AS own_id,
+                any(v)                              AS own_v
+            FROM file('${BOUNDED_PATH}/data/*.parquet', Parquet)
+            GROUP BY base
+        )
+        SELECT
+            'id=' || toString(f.own_id)
+              || ' lower=' || toString(e.entry_lower)
+              || ' upper=' || toString(e.entry_upper)
+              || ' bounds_are_own_row=' || if(
+                     e.entry_lower = [(1, f.own_id), (2, f.own_v)]
+                     AND e.entry_upper = [(1, f.own_id), (2, f.own_v)], 'yes', 'no') AS entry
+        FROM entries AS e INNER JOIN files AS f ON e.base = f.base
+        ORDER BY f.own_id
+        FORMAT TSV;
+    "
+done
+
+rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}"
