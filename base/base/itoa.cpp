@@ -327,6 +327,15 @@ char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
     if (rest == 0)
         return p;
 
+    if (rest <= 2)
+    {
+        if (rest == 2)
+            outTwoDigits(p, static_cast<uint8_t>(value % 100));
+        else
+            *p = static_cast<char>('0' + value % 10);
+        return p + width;
+    }
+
     char tail[8];
     writeEightFixedDigits(tail, static_cast<uint32_t>(value % 100000000ULL));
 
@@ -337,9 +346,7 @@ char * writeFixedDigitsPortable(char * p, UInt64 value, UInt32 width)
         case 6: memcpy(p, tail + 2, 6); break;
         case 5: memcpy(p, tail + 3, 5); break;
         case 4: memcpy(p, tail + 4, 4); break;
-        case 3: memcpy(p, tail + 5, 3); break;
-        case 2: memcpy(p, tail + 6, 2); break;
-        default: p[0] = tail[7]; break;
+        default: memcpy(p, tail + 5, 3); break;
     }
     return p + width;
 }
