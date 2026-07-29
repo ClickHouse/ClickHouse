@@ -1098,9 +1098,6 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
-```response title=Response
-```
-
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1553,7 +1550,7 @@ topLevelDomain(url)
 
 **Возвращаемое значение**
 
-Возвращает имя домена, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
+Возвращает доменное имя, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 

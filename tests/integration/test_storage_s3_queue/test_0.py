@@ -179,6 +179,79 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         assert blob_count == 0, f"blobs left: {blob_count}"
 
 
+def test_delete_after_processing_failure_not_counted(started_cluster):
+    # A failed after-processing DELETE must not be reported as a successful removal:
+    # the objects should be left behind in the bucket and the
+    # ObjectStorageQueueRemovedObjects profile event must not move.
+    node = started_cluster.instances["instance"]
+    table_name = f"delete_after_processing_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    files_num = 5
+    row_num = 10
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    generate_random_files(
+        started_cluster, files_path, files_num, row_num=row_num, storage="s3"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # Do not retry the after-processing delete, the failpoint fails it anyway.
+            "after_processing_retries": 0,
+        },
+        engine_name="S3Queue",
+        after_processing="delete",
+    )
+
+    def removed_objects():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueRemovedObjects' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    removed_before = removed_objects()
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_delete")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        expected_count = files_num * row_num
+        for _ in range(100):
+            if (
+                int(node.query(f"SELECT count() FROM {dst_table_name}"))
+                == expected_count
+            ):
+                break
+            time.sleep(1)
+
+        # The files are processed into the destination table ...
+        assert (
+            int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+        )
+        # ... but the after-processing delete fails, so the objects are left behind.
+        assert (
+            count_minio_objects(
+                started_cluster, started_cluster.minio_bucket, files_path
+            )
+            == files_num
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_delete")
+
+    # The failed delete must not have been reported as a successful removal.
+    assert removed_objects() == removed_before
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_tag_after_processing(started_cluster, engine_name):
     mode = "ordered"

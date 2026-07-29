@@ -8,7 +8,7 @@ keywords: ['clickstack', 'AIノートブック', '調査', 'オブザーバビ�
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -41,11 +41,11 @@ AIノートブックを使用する前に、次の点を確認してください
 
 ノートブック (およびその他の AI 機能) を使用するには、事前にチーム管理者が Generative AI の同意トグルを有効にしておく必要があります。
 
-1. **チーム設定 &gt; セキュリティポリシー** に移動します。
+1. **Team Settings &gt; Security Policies** に移動します。
 2. **Generative AI** をオンにします。
 3. 同意ダイアログを確認し、同意します。
 
-<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="チーム設定の Generative AI トグル" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="Team Settings の Generative AI トグル" size="lg" />
 
 <div id="using-notebooks">
   ## AIノートブックを使う
@@ -84,19 +84,19 @@ AIノートブックを使用する前に、次の点を確認してください
   ### 調査を分岐する
 </div>
 
-AI が調査を進める中で、興味深い内容が現れた途中のステップに気づいても、エージェントがそのまま別の経路に進んでしまうことがあります。**分岐** を使うと、元の調査経路を失うことなく、その時点から別のプロンプトで再開できます。
+AI が調査を進める中で、興味深い内容が現れた途中のステップに気づいても、エージェントがそのまま別の経路に進んでしまうことがあります。**ブランチ** を使うと、元の調査経路を失うことなく、その時点から別のプロンプトで再開できます。
 
-分岐を作成するには:
+ブランチを作成するには:
 
 1. 思考プロセスのタイルを展開し、**Restart from Here** をクリックします。
 2. ダイアログで、調査を新しい方向に導くよう修正したプロンプトを入力します。
-3. **Interrupt &amp; Create Branch** をクリックします。AI はその時点から新しい調査の分岐を開始します。
+3. **Interrupt &amp; Create Branch** をクリックします。AI はその時点から新しい調査のブランチを開始します。
 
 <Image img="/images/use-cases/observability/hyperdx-notebook-branch-modal.webp" alt="Create New Branch ダイアログ" size="md" />
 
-1 つのタイルに複数の分岐がある場合、タイルヘッダーに左右の矢印ボタンと、分岐の数を示すバッジ (例: **1/2**) が表示されます。矢印をクリックして分岐を切り替えます。
+1 つのタイルに複数のブランチがある場合、タイルヘッダーに左右の矢印ボタンと、ブランチの数を示すバッジ (例: **1/2**) が表示されます。矢印をクリックしてブランチを切り替えます。
 
-<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="タイル上の分岐ナビゲーション矢印と 1/2 バッジ" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="タイル上のブランチナビゲーション矢印と 1/2 バッジ" size="lg" />
 
 <div id="manual-tiles">
   ### 手動タイルの追加
@@ -104,12 +104,12 @@ AI が調査を進める中で、興味深い内容が現れた途中のステ�
 
 AI が生成したタイルに加えて、ノートブックの下部にあるボタンを使って独自の分析ブロックを追加できます。
 
-| Button       | Shortcut | Description                                                                        |
-| ------------ | -------- | ---------------------------------------------------------------------------------- |
-| **Search**   | `S`      | 検索ページと同等の、ログ/トレースの検索ビュー。                                                           |
+| Button       | Shortcut | Description                                                                           |
+| ------------ | -------- | ------------------------------------------------------------------------------------- |
+| **Search**   | `S`      | 検索ページと同等の、ログ/トレースの検索ビュー。                                                              |
 | **Chart**    | `L`      | [Dashboards](/ja/clickstack/features/dashboards/overview) と同じ可視化ビルダーを使用する、時系列の折れ線グラフ。 |
-| **Table**    | `T`      | 表形式の集計ビュー。                                                                         |
-| **Markdown** | `M`      | メモ、仮説、結論を記述するための自由形式のテキスト。                                                         |
+| **Table**    | `T`      | 表形式の集計ビュー。                                                                            |
+| **Markdown** | `M`      | メモ、仮説、結論を記述するための自由形式のテキスト。                                                            |
 
 タイルを追加するとインライン編集モードで開き、データソース、フィルター、集計を設定できます。これは、[dashboard visualizations](/ja/clickstack/features/dashboards/overview#creating-visualizations) の作成時に使用するものと同じインターフェイスです。タイルを確定するには **Save** をクリックします。
 
