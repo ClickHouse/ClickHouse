@@ -32,6 +32,8 @@ set use_skip_indexes_on_data_read=0;
 set secondary_indices_enable_bulk_filtering=0;
 set query_plan_optimize_prewhere=1;
 set optimize_move_to_prewhere=1;
+-- Otherwise the `Output:` header of the reading step lists the prewhere column as well.
+set query_plan_remove_unused_columns=1;
 
 -- JOIN: both sides keep their own index stats (no flat aggregation under the join header).
 -- { echo }
