@@ -26,10 +26,15 @@ void ASTOrderByElement::updateChildRolesHash(SipHash & hash_state) const
 
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// `nulls_direction` already holds the effective direction whether or not `NULLS` was written,
+    /// so the explicitness flag only decides whether `formatImpl` prints the modifier. Hashing it
+    /// would make `ORDER BY x` and `ORDER BY x ASC NULLS LAST` differ, which is the text-level
+    /// strictness this comparison exists to avoid. `SortNode::updateTreeHashImpl` canonicalizes the
+    /// same way.
+    static_assert(sizeof(*this) == 88, "If members were added to ASTOrderByElement, hash them here unless they are purely cosmetic.");
     updateChildRolesHash(hash_state);
     hash_state.update(direction);
     hash_state.update(nulls_direction);
-    hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

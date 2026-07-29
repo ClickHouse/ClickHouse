@@ -476,6 +476,41 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignifi
     EXPECT_FALSE(diffOf(fill_to, fill_to_parens).constraints_changed);
 }
 
+TEST(ReplicatedMergeTreeTableMetadataCompare, ExplicitDefaultNullsOrderIsNotSignificant)
+{
+    /// Writing the default `NULLS` modifier does not change the sort order, so a definition that
+    /// spells it out must compare equal to one that leaves it implicit. Only the effective nulls
+    /// direction is significant.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields ascending;
+    ascending.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number ASC)";
+    MetadataFields ascending_nulls_last;
+    ascending_nulls_last.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number ASC NULLS LAST)";
+    EXPECT_FALSE(diffOf(ascending, ascending_nulls_last).constraints_changed);
+
+    MetadataFields descending;
+    descending.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC)";
+    MetadataFields descending_nulls_last;
+    descending_nulls_last.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC NULLS LAST)";
+    EXPECT_FALSE(diffOf(descending, descending_nulls_last).constraints_changed);
+
+    /// A non-default modifier reverses where NULLs sort, so it must still be significant. Without
+    /// these the test would pass on a hash that dropped the nulls direction altogether.
+    MetadataFields ascending_nulls_first;
+    ascending_nulls_first.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number ASC NULLS FIRST)";
+    EXPECT_TRUE(diffOf(ascending, ascending_nulls_first).constraints_changed);
+
+    MetadataFields descending_nulls_first;
+    descending_nulls_first.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC NULLS FIRST)";
+    EXPECT_TRUE(diffOf(descending, descending_nulls_first).constraints_changed);
+
+    /// `ASC NULLS FIRST` and `DESC NULLS LAST` both sort NULLs opposite to the default for their
+    /// direction, so the pair pins that the direction itself is still hashed.
+    EXPECT_TRUE(diffOf(ascending_nulls_first, descending_nulls_last).constraints_changed);
+}
+
 TEST(ReplicatedMergeTreeTableMetadataCompare, CommonTableExpressionIdentityIsSignificant)
 {
     /// The CTE name, `MATERIALIZED` and the column aliases are not children.
