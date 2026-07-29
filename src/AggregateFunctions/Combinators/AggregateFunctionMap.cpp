@@ -43,11 +43,32 @@ struct CompareHelperLess
     bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
 };
 
+/// The hash has to agree with `CompareHelperEqual`, which is used as the equality predicate of `merged_maps`:
+/// for floating point keys it treats all `NaN` values as equal regardless of their payload, and `-0` as equal to `+0`.
+/// Hashing the value as is would place such equal keys into different buckets, and the map would then keep
+/// duplicate logical keys instead of merging their states, so both cases are canonicalized before hashing.
+template <typename T>
+struct CompareHelperHash
+{
+    size_t operator()(const T & x) const
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            /// An arbitrary, but the same value for every `NaN`.
+            if (isNaN(x))
+                return 0x8ff4c1b3d6a7e59fULL;
+            if (x == T(0))
+                return std::hash<T>()(T(0));
+        }
+        return std::hash<T>()(x);
+    }
+};
+
 template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr, std::hash<KeyType>, CompareHelperEqual<KeyType>> merged_maps;
+    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr, CompareHelperHash<KeyType>, CompareHelperEqual<KeyType>> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
