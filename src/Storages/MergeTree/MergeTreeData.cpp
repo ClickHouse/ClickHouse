@@ -9129,10 +9129,11 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
-    /// DRY RUN takes no merge guard, so a concurrent real merge on the same parts would reserve
-    /// the same "tmp_merge_<result>" directory. The dry-run part is throwaway, so give it a unique
-    /// suffix to make that collision impossible.
-    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_SUFFIX) + toString(UUIDHelpers::generateV4());
+    /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. A UUID rather than
+    /// a counter, because the directory can live on storage shared with other servers, where a
+    /// process-local counter restarts and repeats itself.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX) + toString(UUIDHelpers::generateV4());
 
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,

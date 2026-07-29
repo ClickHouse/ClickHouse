@@ -542,6 +542,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
 
+String MergeTask::buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix)
+{
+    if (suffix.empty() || !suffix.starts_with(DRY_RUN_TEMP_INFIX))
+        return prefix + part_name + suffix;
+
+    /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
+    /// merge of those parts, and its length must not follow the part name, which is not capped. Keeps
+    /// `prefix`, which the temporary directory cleaner and the startup skip logic select by, and is
+    /// never parsed back into a part name.
+    return prefix + suffix;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -582,7 +594,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+    auto local_tmp_part_basename = buildTempPartBasename(local_tmp_prefix, global_ctx->future_part->name, local_tmp_suffix);
 
     /// The `SingleDiskVolume`, `DataPartStorageOnDiskFull`, and `IMergeTreeDataPart` constructed
     /// here are stored on the merged part and live for its whole lifetime, so route them into the
@@ -624,9 +636,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     /// Test-only: widen the window between reserving the temporary merge directory and the rest
-    /// of the merge, to deterministically race two OPTIMIZE ... DRY RUN over the same parts.
+    /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.
     /// Scoped to dry-run merges so an unrelated background merge cannot consume the pause.
-    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_SUFFIX))
+    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_INFIX))
         FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_reserving_tmp_dir);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
