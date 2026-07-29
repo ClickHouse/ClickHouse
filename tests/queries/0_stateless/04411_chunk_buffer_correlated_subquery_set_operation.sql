@@ -129,11 +129,13 @@ ORDER BY i;
 -- ------------------------------------------------------------------------------------------------
 -- The cases above assert result rows, and the materialized no-buffer path returns the same rows, so
 -- they would still pass if buffering silently stopped being used and the fix stopped being exercised.
--- Pin the buffer decision itself: a buffer must exist exactly where the fix has to force the safe
--- layout (default and per-branch-off) and must be absent when the session setting reaches the
--- top-level query context.
+-- Pin the buffer decision itself. Each set operation has one correlated branch per side, so a
+-- buffered case must report exactly two `ReadFromCommonBuffer` readers: `count() > 0` would still
+-- pass if only one branch kept its buffer while the other silently materialized. The count must be 2
+-- where the fix has to force the safe layout (default and per-branch-off) and 0 when the session
+-- setting reaches the top-level query context.
 -- ------------------------------------------------------------------------------------------------
-SELECT count() > 0 FROM (
+SELECT count() FROM (
     EXPLAIN PIPELINE SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
       SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
                correlated_subqueries_default_join_kind = 'left'
@@ -141,7 +143,7 @@ SELECT count() > 0 FROM (
     SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ) WHERE explain ILIKE '%ReadFromCommonBuffer%';
 
-SELECT count() > 0 FROM (
+SELECT count() FROM (
     EXPLAIN PIPELINE SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
       SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
                correlated_subqueries_default_join_kind = 'left',
