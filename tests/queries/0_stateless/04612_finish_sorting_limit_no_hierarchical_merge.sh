@@ -25,8 +25,12 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_finish_sorting_limit"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_finish_sorting_limit (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192"
 # Stop merges so the number of parts (and therefore read streams) is stable.
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_finish_sorting_limit"
+# 20 small parts: more parts than the threshold of 16, and small enough that the test
+# stays fast under sanitizers (the sibling `04492_*` test used to time out in the TSan
+# flaky check with bigger parts). The stream count depends on the number of parts, not
+# on their size, so the hierarchy decision is unaffected.
 $CLICKHOUSE_CLIENT -q "
-    $(for i in $(seq 1 20); do echo "INSERT INTO t_finish_sorting_limit SELECT number, number FROM numbers(200000);"; done)"
+    $(for i in $(seq 1 20); do echo "INSERT INTO t_finish_sorting_limit SELECT number, number FROM numbers(10000);"; done)"
 
 FS_SETTINGS="optimize_read_in_order = 1, read_in_order_two_level_merge_threshold = 1,
     max_threads = 32, max_threads_min_free_memory_per_thread = 0, max_rows_to_read = 0"
