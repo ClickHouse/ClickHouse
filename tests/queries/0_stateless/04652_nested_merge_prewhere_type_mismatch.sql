@@ -124,19 +124,23 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer (x Nullable(UInt64), 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
+-- Switch into the lazy database so the system.tables lookup below can filter on currentDatabase(),
+-- as the style check requires (a `{...:String}` parameter is not recognized by it).
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+
 SELECT '-- re-attached tables are lazy proxies --';
-SELECT name, engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} ORDER BY name;
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';
-SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+SELECT x, y FROM lazy_outer PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '-- a matching column still supports PREWHERE through the proxy --';
-SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE y != 0;
-SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer PREWHERE y != 0 ORDER BY y LIMIT 3;
+SELECT count() FROM lazy_outer PREWHERE y != 0;
+SELECT x, y FROM lazy_outer PREWHERE y != 0 ORDER BY y LIMIT 3;
 
 SELECT '-- the same predicates as WHERE keep working through the proxy --';
-SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE x != 0;
-SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE y != 0;
-SELECT x, y FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_outer WHERE x != 0 ORDER BY x LIMIT 3;
+SELECT count() FROM lazy_outer WHERE x != 0;
+SELECT count() FROM lazy_outer WHERE y != 0;
+SELECT x, y FROM lazy_outer WHERE x != 0 ORDER BY x LIMIT 3;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
