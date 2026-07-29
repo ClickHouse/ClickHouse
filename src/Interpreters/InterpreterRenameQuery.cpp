@@ -11,6 +11,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/RowPolicyDefs.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -117,10 +118,63 @@ namespace
     ///   - the transient parking name used during the move is already taken by a non-moving policy
     ///     (deterministic, because the name is derived from the visible policy UUID).
     /// Throws (failing the rename with nothing changed) if any planned re-key is not applicable.
-    void preflightRowPolicyRekeys(const AccessControl & access_control, const std::vector<RowPolicyRekey> & rekeys)
+    ///
+    /// One case is declined instead of rejected: on a server with a replicated access storage the
+    /// whole plan is dropped with a warning, because a global re-key cannot be correct for servers
+    /// that are not renaming (see the comment on that branch). `rekeys` is therefore mutable, and
+    /// the caller passes the same vector to `applyRowPolicyRekeys`, so the apply skips exactly what
+    /// was dropped and the two cannot disagree.
+    void preflightRowPolicyRekeys(const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys)
     {
         if (rekeys.empty())
             return;
+
+        /// (1) Read-only storage: `AccessControl::update` would throw after the commit point. This
+        /// stays first and applies unconditionally -- a policy that is both read-only and shared is
+        /// still a genuine cannot-move on this node, so the rename must fail rather than silently
+        /// skip below.
+        for (const auto & rekey : rekeys)
+        {
+            if (auto policy = access_control.tryRead<RowPolicy>(rekey.id); policy && access_control.isReadOnly(rekey.id))
+                throw Exception(
+                    ErrorCodes::ACCESS_STORAGE_READONLY,
+                    "Cannot rename because {} is stored in a read-only access storage "
+                    "and cannot follow the table to its new name",
+                    policy->formatTypeWithName());
+        }
+
+        /// (2) A replicated access storage is shared between servers through its ZooKeeper path, and
+        /// a re-key there is published globally in one transaction, while a table rename applies
+        /// only to the server that runs it. Moving the policy would unbind it from the name every
+        /// other server still uses, leaving the table unfiltered there -- worse than not moving it.
+        /// Whether those servers rename too is not knowable here: the storage's identity is just its
+        /// path, it keeps no registry of the servers mounting it, and the set of servers sharing a
+        /// rename (a Replicated database, an ON CLUSTER query) is a different set entirely.
+        ///
+        /// The condition is on the server's CONFIGURATION, not on the affected policies: a
+        /// replicated storage answers reads from an asynchronously refreshed cache, so a policy it
+        /// has not observed yet is invisible to `collectRowPolicyRekeys` and an entity-level test
+        /// would miss it. At startup the cache can still be empty entirely, because
+        /// convertDatabasesEnginesIfNeed runs before AccessControl::startPeriodicReloading.
+        ///
+        /// It drops ALL re-keys, not just the shared ones: leaving a shared policy on `a` while
+        /// still moving a node-local policy from `b` to `a` would leave `b` unfiltered, and the
+        /// collision check cannot catch that because the two have different short names. Clearing
+        /// the whole plan leaves exactly the bindings this operation would have had without the
+        /// re-key, so no name ends up less filtered than it is without this feature.
+        if (access_control.containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
+        {
+            LOG_WARNING(
+                getLogger("InterpreterRenameQuery"),
+                "Not moving {} row polic{} to follow this rename: this server has a replicated access storage "
+                "configured, and such a storage is shared with servers that this rename does not apply to. "
+                "The policies keep their current names; recreate them on the new name if the rename is meant "
+                "to be visible on every server sharing the storage.",
+                rekeys.size(),
+                rekeys.size() == 1 ? "y" : "ies");
+            rekeys.clear();
+            return;
+        }
 
         /// IDs that are moving (so their current name is about to be vacated and must not be
         /// treated as a collision with another moving policy's destination).
@@ -159,22 +213,14 @@ namespace
             if (!policy)
                 continue;
 
-            /// (1) Read-only storage: AccessControl::update would throw after the commit point.
-            if (access_control.isReadOnly(rekey.id))
-                throw Exception(
-                    ErrorCodes::ACCESS_STORAGE_READONLY,
-                    "Cannot rename because {} is stored in a read-only access storage "
-                    "and cannot follow the table to its new name",
-                    policy->formatTypeWithName());
-
-            /// (2) Transient parking name (phase 1 of the apply) is taken by a non-moving policy.
+            /// (3) Transient parking name (phase 1 of the apply) is taken by a non-moving policy.
             RowPolicyName parking_name;
             parking_name.short_name = policy->getShortName();
             parking_name.database = policy->getDatabase();
             parking_name.table_name = tempRekeyTableName(rekey.id, i);
             reject_if_taken(parking_name, rekey.id, policy, /*allow_moving_occupant*/ false, "transient name used while renaming");
 
-            /// (3) Final destination name is taken by a policy that is NOT itself moving.
+            /// (4) Final destination name is taken by a policy that is NOT itself moving.
             RowPolicyName dst_name;
             dst_name.short_name = policy->getShortName();
             dst_name.database = rekey.new_database;
