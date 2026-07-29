@@ -1298,6 +1298,18 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
     ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
 
+    /// Both files valid: a usable live state file is not proof that its bytes reached the disk,
+    /// so startup must still keep the backup rather than delete it on the strength of parsing.
+    /// The previous step left only the backup, so restore the live file from it.
+    std::filesystem::copy_file("./state-OLD", "./state");
+    events->clear();
+    reload_state_manager();
+    auto both_valid = state_manager->read_state();
+    ASSERT_NE(both_valid, nullptr);
+    ASSERT_EQ(both_valid->get_term(), 2);
+    ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
+    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+
     /// The next successful save re-establishes the live file and clears the backup.
     state_manager->save_state(*new_state);
     ASSERT_TRUE(std::filesystem::exists("./state"));

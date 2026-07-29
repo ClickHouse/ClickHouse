@@ -556,7 +556,11 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
         if (state)
         {
-            disk->removeFileIfExists(old_path);
+            /// The backup is left in place even though the live file is usable. Parsing proves the
+            /// bytes are complete, not that they reached the disk: sync() flushes and only then
+            /// calls fdatasync, so a kill in between leaves a valid live file whose contents are
+            /// still only in the page cache, with state-OLD the sole durable copy. It is dropped by
+            /// the next successful save_state, which syncs the replacement first.
             return state;
         }
 
