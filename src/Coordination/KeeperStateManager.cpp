@@ -535,28 +535,16 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     auto disk = getStateFileDisk();
 
+    /// A read failure is deliberately not caught here. Every nullptr below leads to deleting the
+    /// file that was just read, and returning nullptr makes NuRaft start from term 0 with an empty
+    /// vote, so treating "could not read it" as "it is worthless" would destroy recoverable state.
+    /// Letting the error out leaves both files in place and fails startup instead.
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        try
-        {
-            auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
-            if (state)
-                LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
-            return state;
-        }
-        catch (const std::exception & e)
-        {
-            if (const auto * exception = dynamic_cast<const Exception *>(&e);
-                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
-            {
-                throw;
-            }
-
-            /// Unlike save_state, startup keeps going if a state file cannot be read: the next
-            /// candidate below may still be usable, and nothing is overwritten here.
-            LOG_ERROR(logger, "Failed to read state from {}: {}", disk->getPath() + path, e.what());
-            return nullptr;
-        }
+        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
+        if (state)
+            LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
+        return state;
     };
 
     if (disk->existsFile(server_state_file_name))

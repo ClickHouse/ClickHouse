@@ -1414,7 +1414,15 @@ TEST_P(CoordinationTest, TestDurableStateReadErrorDoesNotDropBackup)
     ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
     disk->disarmReads();
 
-    /// Term 1 must be intact: the failed save must not have touched the live file at all.
+    /// The same must hold on the startup path: a read failure there must not delete the state
+    /// file, because returning no state makes NuRaft restart from term 0 with an empty vote.
+    reload_state_manager();
+    disk->armReads();
+    ASSERT_THROW(state_manager->read_state(), std::exception);
+    disk->disarmReads();
+    ASSERT_TRUE(std::filesystem::exists("./state"));
+
+    /// Term 1 must be intact: neither the failed save nor the failed read touched the live file.
     reload_state_manager();
     auto recovered = state_manager->read_state();
     ASSERT_NE(recovered, nullptr);
