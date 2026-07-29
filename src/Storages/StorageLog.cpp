@@ -283,6 +283,22 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
         if (!column->empty())
             result_columns.emplace_back(std::move(column));
     }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    /// Before the substreams caches and deserialize states go out of scope, verify that the reference
+    /// counts of the columns shared between them and the result columns account for all those holders.
+    /// `getCacheKey` deliberately shares a cache across the subcolumns of a `Nested` group, so a broken
+    /// copy-on-write reference count on a shared child (e.g. `Nested` array offsets) would free it here
+    /// while it is still referenced from the result, leading to use-after-free (issue #105626).
+    ColumnsOwnershipValidator ownership_validator;
+    for (const auto & [_, cache] : caches)
+        ownership_validator.add(cache);
+    for (const auto & [_, states] : deserialize_states_caches)
+        ownership_validator.add(states);
+    for (const auto & [_, state] : deserialize_states)
+        ownership_validator.add(state);
+    ownership_validator.validate(result_columns);
+#endif
 }
 
 void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
