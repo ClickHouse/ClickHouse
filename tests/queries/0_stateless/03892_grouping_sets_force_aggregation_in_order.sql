@@ -1,7 +1,14 @@
--- A query with GROUPING SETS and `force_aggregation_in_order` used to raise the exception
--- `Trying to get name of not a column: ExpressionList` (issue #97988): the old analyzer's
--- `force_aggregation_in_order` branch called `getColumnName` on each GROUP BY child, but with
+-- `force_aggregation_in_order` used to build in-order aggregation state for GROUPING SETS on both
+-- planning paths, even though `AggregatingStep::transformPipeline` leaves through the grouping-sets
+-- branch before any `AggregatingInOrderTransform` is created.
+--
+-- Old analyzer: the exception `Trying to get name of not a column: ExpressionList` (issue #97988),
+-- because `getSortDescriptionFromGroupBy` called `getColumnName` on each GROUP BY child and with
 -- GROUPING SETS those children are `ExpressionList` nodes.
+--
+-- Analyzer: the stale in-order state reached `AggregatingStep`, so a distributed query with
+-- `enable_memory_bound_merging_of_aggregation_results` raised
+-- `Memory bound merging of aggregated results is not supported for grouping sets.`
 
 SET enable_analyzer = 0;
 SET force_aggregation_in_order = 1;
@@ -46,5 +53,54 @@ SELECT 'in-order not forced for GROUPING SETS',
     count() > 0
 FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM t_grouping_sets_force GROUP BY GROUPING SETS ((), (a)))
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
+
+-- The analyzer path had the same defect in `Planner::addAggregationStep`. There the stale in-order
+-- state is not caught by `getSortDescriptionFromGroupBy`, so it survives into `AggregatingStep` and
+-- only surfaces in a distributed query: `enableMemoryBoundMerging` believes the local step is
+-- in-order-capable, calls `MergingAggregatedStep::applyOrder`, and the initiator then raises
+-- `Memory bound merging of aggregated results is not supported for grouping sets.`
+
+SET enable_analyzer = 1;
+SET force_aggregation_in_order = 1;
+SET enable_memory_bound_merging_of_aggregation_results = 1;
+-- Memory bound merging reads the sort description off the local shard plan, so without a local
+-- replica it never engages and the two positive assertions below would silently return 0. The
+-- setting is randomized in CI, hence the explicit value (same reason as in 02404_memory_bound_merging).
+SET prefer_localhost_replica = 1;
+
+SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY GROUPING SETS ((), (a)) ORDER BY a;
+
+SELECT a, b, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY GROUPING SETS ((a), (b)) ORDER BY a, b;
+
+-- Distributed ROLLUP / CUBE / WITH TOTALS / plain GROUP BY must keep working on that path too.
+SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY a WITH ROLLUP ORDER BY a;
+SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY a WITH CUBE ORDER BY a;
+SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY a WITH TOTALS ORDER BY a;
+SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force)
+GROUP BY a ORDER BY a;
+
+-- Pin the mechanism on the analyzer path as well. Memory-bound merging stays enabled for the
+-- sibling GROUP BY modifiers (only GROUPING SETS cannot support it), so a guard that keyed on
+-- "any of ROLLUP/CUBE/GROUPING SETS" instead of GROUPING SETS alone would be too wide and would
+-- turn the first two rows below into 0.
+SELECT 'memory-bound merging kept for distributed plain GROUP BY',
+    count() > 0
+FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force) GROUP BY a)
+WHERE explain ILIKE '%FinishAggregatingInOrderTransform%';
+
+SELECT 'memory-bound merging kept for distributed ROLLUP',
+    count() > 0
+FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force) GROUP BY a WITH ROLLUP)
+WHERE explain ILIKE '%FinishAggregatingInOrderTransform%';
+
+SELECT 'memory-bound merging not used for distributed GROUPING SETS',
+    count() > 0
+FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,2}', currentDatabase(), t_grouping_sets_force) GROUP BY GROUPING SETS ((), (a)))
+WHERE explain ILIKE '%FinishAggregatingInOrderTransform%';
 
 DROP TABLE t_grouping_sets_force;
