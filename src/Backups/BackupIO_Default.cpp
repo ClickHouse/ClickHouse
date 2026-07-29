@@ -40,7 +40,7 @@ namespace ErrorCodes
 
 void fsyncBackupFileContents(const fs::path & path)
 {
-    int fd = ::open(path.c_str(), O_RDONLY);
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} for fsync", path.string());
 
@@ -69,7 +69,7 @@ void fsyncBackupFileContents(const fs::path & path)
 
 void fsyncBackupDirectory(const fs::path & path)
 {
-    int fd = ::open(path.c_str(), O_DIRECTORY);
+    int fd = ::open(path.c_str(), O_DIRECTORY | O_CLOEXEC);
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open directory {} for fsync", path.string());
 

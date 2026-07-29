@@ -10,6 +10,7 @@ main_configs = [
     "configs/remote_servers.xml",
     "configs/backups_disk.xml",
     "configs/keeper_map_path_prefix.xml",
+    "configs/query_thread_log.xml",  # The common integration config removes query_thread_log; test_on_cluster needs it.
 ]
 
 user_configs = [
@@ -60,21 +61,82 @@ def start_cluster():
 backup_id_counter = 0
 
 
-def new_backup_name(base_name):
+def new_backup_id():
+    """A per-run counter for backup destinations.
+
+    /backups is a shared mount that survives between the cases of a module, and a BACKUP to a
+    destination that already holds one fails outright, so a fixed name only works on a first run.
+    """
     global backup_id_counter
     backup_id_counter += 1
-    return f"Disk('backups', '{base_name}{backup_id_counter}')"
+    return backup_id_counter
 
 
-def get_file_syncs(node):
-    """Read this node's process-wide FileSync counter.
+def get_backup_file_syncs(node, backup_name):
+    """Sum FileSync over the threads of this node's own operations for one backup.
 
-    `system.events` exposes `ProfileEvents::global_counters` of the queried server process only, so
-    this reads one host at a time. `sum()` is used because the row is absent while the counter is 0.
+    Scoped to the backup rather than read from `system.events`, whose counters are process-wide:
+    `fsync_metadata` defaults to true, so an unrelated `CREATE TABLE` - in particular the lazy
+    creation of a system log table on its first flush - fsyncs its metadata file and would inflate a
+    process-wide delta, failing an exact assertion on an unrelated change. A per-thread row can only
+    hold the fsyncs of its own query.
+
+    All the fsync work is attributable: the per-file ones (the data file and its copies alike) run in
+    `writeFile` on `BackupWorker` pool threads, and the initiator's `.backup` fsync runs in
+    `finalizeWriting` on the `BackupAsync` thread of a foreground BACKUP, whose query context outlives
+    it. The rows are waited for rather than read once, because a host reaches its coordination finish
+    node in `finalizeWriting`, before `setStatus(BACKUP_CREATED)` writes the `system.backup_log` row
+    the query ids come from.
+
+    `system.backup_log` is used rather than `system.backups` because the latter hides the internal
+    operations of an ON CLUSTER backup (`getAllInfos` skips them), and those are exactly the ones that
+    write the data files. Every host runs one, including the host the query was issued on, which also
+    runs the initiator operation - hence "operations", plural, per node.
     """
+
+    def read_backup_log_query_ids():
+        node.query("SYSTEM FLUSH LOGS backup_log")
+        # `name` holds the destination re-formatted from the AST, so match on the unique path only.
+        return node.query(
+            f"SELECT DISTINCT query_id FROM system.backup_log"
+            f" WHERE name LIKE '%{backup_name}%' AND status = 'BACKUP_CREATED'"
+            f" ORDER BY query_id FORMAT TSV"
+        ).split()
+
+    try:
+        query_ids = wait_condition(
+            read_backup_log_query_ids,
+            lambda ids: len(ids) > 0,
+            max_attempts=60,
+            delay=0.5,
+        )
+    except Exception as exception:
+        raise AssertionError(
+            f"no BACKUP_CREATED row on {node.name} for {backup_name}"
+        ) from exception
+
+    id_list = ", ".join(f"'{query_id}'" for query_id in query_ids)
+
+    # Wait for the threads that do the syncing, not for "any row": the foreground query thread logs a
+    # row promptly, so a zero read too early would look like "no fsyncs" instead of "not logged yet".
+    def count_backup_thread_rows():
+        node.query("SYSTEM FLUSH LOGS query_thread_log")
+        return int(
+            node.query(
+                f"SELECT count() FROM system.query_thread_log"
+                f" WHERE query_id IN ({id_list})"
+                f" AND thread_name IN ('BackupWorker', 'BackupAsync')"
+            ).strip()
+        )
+
+    wait_condition(
+        count_backup_thread_rows, lambda n: n > 0, max_attempts=60, delay=0.5
+    )
+
     return int(
         node.query(
-            "SELECT sum(value) FROM system.events WHERE event = 'FileSync'"
+            f"SELECT sum(ProfileEvents['FileSync']) FROM system.query_thread_log"
+            f" WHERE query_id IN ({id_list})"
         ).strip()
     )
 
@@ -111,7 +173,8 @@ def test_on_cluster(deduplicate_files):
 
     verify_data()
 
-    backup_name = new_backup_name("test_on_cluster")
+    backup_path = f"test_on_cluster_fsync{deduplicate_files}_{new_backup_id()}"
+    backup_name = f"Disk('backups', '{backup_path}')"
     # keeper1 and keeper2 share one zk root, and only one table may own the data of a root, so the
     # other one is collected as a BackupEntryReference - the only producer of one in the tree. With
     # deduplicate_files = 0 a reference is written as a copy of its target's data file, and each of
@@ -119,20 +182,21 @@ def test_on_cluster(deduplicate_files):
     # deduplicate_files = 1 is the control: it stores the duplicate once instead of copying it, so
     # it has no copies at all and a smaller num_entries.
     #
-    # The count is summed over the cluster rather than read from the initiator's own row: each host
-    # syncs the data files it wrote itself, the initiator's own operation writes only the manifest,
-    # and which host ends up owning a shared zk root is decided by coordination, so no single host
-    # has a stable count. Summed, the relation is exact - one fsync per entry actually written
-    # (targets and copies alike, a plain backup keeping every file info as its own entry) plus the
-    # one .backup manifest the initiator syncs last in finalizeWriting.
-    backup_query_id = f"backup_{database_name}"
+    # Each host's count comes from the threads of its own backup operations, and those are summed:
+    # every host writes and syncs the data files it produced itself, the initiator additionally syncs
+    # the one .backup manifest last in finalizeWriting, and which host ends up owning a shared zk root
+    # is decided by coordination, so no single host has a stable count. The sum is exact for the
+    # backup's own fsyncs - one per entry actually written, targets and copies alike, a plain backup
+    # keeping every file info as its own entry, plus the manifest.
+    backup_query_id = f"backup_{backup_path}"
     nodes = [node1, node2, node3]
-    file_syncs_before = sum(get_file_syncs(node) for node in nodes)
     node1.query(
-        f"BACKUP DATABASE {database_name} ON CLUSTER cluster TO {backup_name} SETTINGS async = false, deduplicate_files = {deduplicate_files}, fsync_backup_files = 1;",
+        f"BACKUP DATABASE {database_name} ON CLUSTER cluster TO {backup_name}"
+        f" SETTINGS async = false, deduplicate_files = {deduplicate_files}, fsync_backup_files = 1,"
+        f" log_query_threads = 1, log_profile_events = 1;",
         query_id=backup_query_id,
     )
-    file_syncs = sum(get_file_syncs(node) for node in nodes) - file_syncs_before
+    file_syncs = sum(get_backup_file_syncs(node, backup_path) for node in nodes)
 
     # system.backups is in-memory and holds the cluster-wide counters, which BackupImpl recomputes
     # over the file infos of all hosts while writing the manifest. Waiting for the BACKUP_CREATED
