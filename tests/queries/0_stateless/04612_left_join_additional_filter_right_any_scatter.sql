@@ -1,8 +1,9 @@
 -- A LEFT JOIN whose right table has unique keys is promoted to RightAny. With a non-equi ON
--- condition the additional-filter path drops the unmatched trailing left rows, so the block is
--- scattered while the negated-null-map `filter` kept the full block size. Applying that stale
--- filter to the shrunk left key column raised a size-mismatch LOGICAL_ERROR.
--- Both left rows sit in one block: `k = 0` fails `k > b` and `k = 1` matches.
+-- condition the join processes only a prefix of the left block once max_joined_block_size_rows
+-- candidate rows are collected, so the block is scattered to that prefix while the negated
+-- null map `filter` kept the full block size. Applying that stale filter to the shorter left
+-- key column raised a size-mismatch LOGICAL_ERROR.
+-- Here `k = 0` fails `k > b` and `k = 1` matches.
 
 SET enable_analyzer = 1;
 

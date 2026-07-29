@@ -1155,11 +1155,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate.resize(left_block_rows);
 
-    /// The additional filter can drop trailing left rows, shrinking `left_block_rows` below
-    /// `selector.size()`. The caller scatters the block to the first `left_block_rows` rows
-    /// (the return value), so `filter` must be truncated to the same size to stay in the same
-    /// row space, otherwise it desyncs the block downstream (e.g. RightAny where `filter` is
-    /// used to blank non-matched right keys but `need_replication` is false).
+    /// `left_block_rows` is now the prefix of left rows processed above, which the caller
+    /// scatters the block to while deferring the rest. `filter` was sized for the whole block,
+    /// so truncate it to that prefix to keep it in the same row space.
     if (need_filter)
         added_columns.filter.resize(left_block_rows);
 
