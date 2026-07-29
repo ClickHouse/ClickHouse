@@ -385,7 +385,13 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant, bool is_runtime_filter_id)
+const ActionsDAG::Node & ActionsDAG::addColumn(
+    ColumnConstPtr column,
+    DataTypePtr type,
+    std::string name,
+    bool is_deterministic_constant,
+    bool is_masked_secret,
+    bool is_runtime_filter_id)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -401,6 +407,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     node.result_name = std::move(name);
     node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_masked_secret = is_masked_secret;
     node.is_runtime_filter_id = is_runtime_filter_id;
 
     return addNode(std::move(node));
@@ -2927,7 +2934,10 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    auto res = split(split_nodes);
+    /// The filter name may also be an input name. Two same-named outputs of different structure in the
+    /// first half would break the Block invariant, so let split() rename the promoted node and repair
+    /// the second half. The mapping carries the final name of the filter node.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
@@ -3736,7 +3746,7 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
                 /// its mark and hash its volatile value again.
                 result_node = &result_dag.addColumn(
                     node->column, node->result_type, node->result_name,
-                    node->is_deterministic_constant, node->is_runtime_filter_id);
+                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:

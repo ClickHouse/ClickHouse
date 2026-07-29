@@ -109,6 +109,10 @@ public:
         bool is_deterministic_constant = true;
         /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
         bool is_runtime_filter_id = false;
+        /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
+        /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        bool is_masked_secret = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -169,7 +173,13 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true, bool is_runtime_filter_id = false);
+    const Node & addColumn(
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic_constant = true,
+        bool is_masked_secret = false,
+        bool is_runtime_filter_id = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
