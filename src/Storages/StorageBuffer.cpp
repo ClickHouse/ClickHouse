@@ -433,30 +433,35 @@ void StorageBuffer::read(
                         local_context);
                 }
 
+                /// The prefix converts the whole sample block, but the filter runs inside the
+                /// destination read, where only its own columns are known to have the declared
+                /// types. Keep just the filter's outputs; the rest converts after the read as usual.
+                auto merge_converting_prefix = [&](ActionsDAG filter_dag)
+                {
+                    Names filter_outputs;
+                    filter_outputs.reserve(filter_dag.getOutputs().size());
+                    for (const auto * output : filter_dag.getOutputs())
+                        filter_outputs.push_back(output->result_name);
+
+                    auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+                    merged.removeUnusedActions(filter_outputs);
+                    return merged;
+                };
+
                 if (src_table_query_info.row_level_filter)
                 {
                     auto row_level_filter = std::make_shared<FilterDAGInfo>();
                     row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
                     row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
-
-                    row_level_filter->actions = ActionsDAG::merge(
-                        converting_dag.clone(),
-                        src_table_query_info.row_level_filter->actions.clone());
-
-                    row_level_filter->actions.removeUnusedActions();
+                    row_level_filter->actions = merge_converting_prefix(src_table_query_info.row_level_filter->actions.clone());
                     src_table_query_info.row_level_filter = std::move(row_level_filter);
                 }
 
                 if (src_table_query_info.prewhere_info)
                 {
                     src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
-                    {
-                        src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            converting_dag.clone(),
-                            std::move(src_table_query_info.prewhere_info->prewhere_actions));
-
-                        src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
-                    }
+                    src_table_query_info.prewhere_info->prewhere_actions
+                        = merge_converting_prefix(std::move(src_table_query_info.prewhere_info->prewhere_actions));
                 }
 
                 src_table_query_info.initial_storage_snapshot = storage_snapshot;
@@ -954,19 +959,18 @@ std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
     if (!destination)
         return NameSet{};
 
-    /// The Buffer may declare different types than its destination, and read() hands the built
-    /// PREWHERE to the destination, which re-derives it against its own types. Only columns both
-    /// declare with the same type are safe - the same loop as StorageMaterializedView.
+    /// A type declared differently than in the destination is fine: read() prepends a converting
+    /// prefix to the filter. But the column must exist in the destination, or the filter has an
+    /// input nothing binds to.
     auto own_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto own_columns = own_metadata->getColumns().getAll();
     auto destination_metadata = destination->getInMemoryMetadataPtr(getContext(), false);
     const auto & destination_columns = destination_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : own_columns)
+    for (const auto & column : own_columns)
     {
-        auto destination_column = destination_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (destination_column && destination_column->type->equals(*type))
-            supported_columns.insert(name);
+        if (destination_columns.tryGetColumn(GetColumnsOptions::All, column.name))
+            supported_columns.insert(column.name);
     }
 
     /// And only if the destination itself allows them, so the constraint holds transitively.

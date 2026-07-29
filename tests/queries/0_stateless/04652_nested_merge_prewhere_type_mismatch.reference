@@ -48,9 +48,17 @@
 1	2
 2	3
 3	4
--- a Buffer whose own types differ from the destination must be rejected too --
--- while its type-matching column keeps working --
+-- a column the destination rejects stays rejected, whatever the Buffer declares --
+-- a Buffer-only type drift converts at read: PREWHERE fails like the WHERE twin, not with an abort --
+-- reading a destination-drifted column next to a clean PREWHERE must not abort --
 10
+0	1
+1	2
+2	3
+-- a row policy is a filter too: same converting prefix, same pruning --
+0	1
+1	2
+2	3
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10
