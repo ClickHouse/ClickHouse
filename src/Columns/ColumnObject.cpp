@@ -2299,7 +2299,7 @@ bool ColumnObject::SortedPathsIterator::isCurrentTypedNull() const
 }
 
 void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
-    const std::unordered_map<String, DataTypePtr> * typed_path_types,
+    const std::unordered_map<String, DataTypePtr> * typed_path_types, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     WriteBuffer & buf) const
 {
     if (current_path_type == PathType::SHARED_DATA)

@@ -349,7 +349,7 @@ public:
         /// For SHARED_DATA paths the raw bytes are copied directly from shared_data_values
         /// without a deserialize+reserialize round-trip.
         void serializeCurrentValueBinary(
-            const std::unordered_map<String, DataTypePtr> * typed_path_types,
+            const std::unordered_map<String, DataTypePtr> * typed_path_types, // STYLE_CHECK_ALLOW_STD_CONTAINERS
             WriteBuffer & buf) const;
 
     private:
