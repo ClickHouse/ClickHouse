@@ -13,7 +13,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Swapping the tables turns this into a RIGHT join, which is not promoted to RightAny and takes
 # the need_replication path that always resized `filter`, so neither query below would reproduce.
-SETTINGS="SETTINGS enable_analyzer = 1, query_plan_join_swap_table = false, join_algorithm = 'hash', max_joined_block_size_rows = 1"
+# The query cache is off because the same query runs more than once here, and serving it from the
+# cache skips the join, which the assertions at the end would read as the join having changed.
+SETTINGS="SETTINGS enable_analyzer = 1, query_plan_join_swap_table = false, use_query_cache = 0, join_algorithm = 'hash', max_joined_block_size_rows = 1"
 
 # Raised "Null map of size 2 at offset 0 does not match ColumnNullable of size 1".
 $CLICKHOUSE_CLIENT -q "
@@ -65,4 +67,5 @@ $CLICKHOUSE_CLIENT -q "
         SELECT argMax(ProfileEvents['JoinProbeTableRowCount'], event_time_microseconds) AS probed
         FROM system.query_log
         WHERE type = 'QueryFinish' AND query_id = '04612_split_$CLICKHOUSE_DATABASE'
-    )"
+    )
+    SETTINGS use_query_cache = 0"
