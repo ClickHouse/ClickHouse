@@ -53,6 +53,10 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    /// The children carry different roles (collation, WITH FILL bounds) recorded only in
+    /// `positions`, so the roles have to be hashed alongside the children themselves.
+    void updateChildRolesHash(SipHash & hash_state) const;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 

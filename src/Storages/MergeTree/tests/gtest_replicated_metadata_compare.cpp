@@ -456,3 +456,26 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NestedQueryShapeIsSignificant)
     nested_where_parens.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(10) WHERE (number) > 1) ORDER BY (c))";
     EXPECT_FALSE(diffOf(nested_where, nested_where_parens).projections_changed);
 }
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignificant)
+{
+    /// The children of an `ASTOrderByElement` carry different roles (collation, WITH FILL bounds)
+    /// recorded only in its `positions` map, so without the roles `WITH FILL FROM 1 TO 2` and
+    /// `WITH FILL FROM 1 STEP 2` hash equally.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    MetadataFields fill_to;
+    fill_to.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 TO 2) ORDER BY c)";
+    MetadataFields fill_step;
+    fill_step.projections
+        = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 STEP 2) ORDER BY c)";
+    EXPECT_TRUE(diffOf(fill_to, fill_step).projections_changed);
+    EXPECT_FALSE(diffOf(fill_to, fill_to).projections_changed);
+
+    /// Redundant parentheses around the bounds still compare equal.
+    MetadataFields fill_to_parens;
+    fill_to_parens.projections
+        = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM (1) TO (2)) ORDER BY (c))";
+    EXPECT_FALSE(diffOf(fill_to, fill_to_parens).projections_changed);
+}

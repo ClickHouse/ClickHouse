@@ -2,12 +2,31 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
+#include <magic_enum.hpp>
+
 
 namespace DB
 {
 
+void ASTOrderByElement::updateChildRolesHash(SipHash & hash_state) const
+{
+    /// Iterate over all enumerators so that a newly added child role is hashed without changing
+    /// this code. Without the roles, `WITH FILL FROM 1 TO 2` and `WITH FILL FROM 1 STEP 2` would
+    /// hash equally.
+    for (auto child : magic_enum::enum_values<Child>())
+    {
+        auto it = positions.find(child);
+        if (it != positions.end())
+        {
+            hash_state.update(child);
+            hash_state.update(it->second);
+        }
+    }
+}
+
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    updateChildRolesHash(hash_state);
     hash_state.update(direction);
     hash_state.update(nulls_direction);
     hash_state.update(nulls_direction_was_explicitly_specified);
