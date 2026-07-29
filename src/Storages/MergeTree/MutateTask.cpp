@@ -2217,11 +2217,9 @@ static bool isIndexResolvableFromOwnFiles(
     return false;
 }
 
-/// Does the part hold a file of `index` on disk, under any substream the index declares?
-/// `IMergeTreeDataPart::hasSecondaryIndex` answers the read-time question and probes only the base
-/// `.idx` / `.idx2`, so a part whose base pair is gone while `.dct` / `.pst` / `.pos` survive looks
-/// index-free to it. Those files still have to be repaired, so mutation repair asks storage about
-/// every declared substream instead.
+/// Does the part hold a file of `index` on disk, under any substream it declares? Wider than
+/// `hasSecondaryIndex`, which probes only the base `.idx` / `.idx2`: repair must also see a part
+/// left with just its side streams. Read-time callers keep the narrower predicate.
 static bool hasAnyIndexFileOnDisk(
     const IMergeTreeIndex & index,
     const MergeTreeDataPartPtr & source_part,
