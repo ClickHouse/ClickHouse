@@ -48,6 +48,9 @@
 1	2
 2	3
 3	4
+-- a Buffer whose own types differ from the destination must be rejected too --
+-- while its type-matching column keeps working --
+10
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10

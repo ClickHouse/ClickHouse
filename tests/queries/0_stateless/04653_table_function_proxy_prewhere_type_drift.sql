@@ -15,17 +15,17 @@ SET schema_inference_make_columns_nullable = 'auto';
 
 DROP TABLE IF EXISTS tf_drift;
 
-INSERT INTO FUNCTION file('04653_tf_proxy_drift.parquet', Parquet, 'x Nullable(UInt64), y UInt64')
+INSERT INTO FUNCTION file(currentDatabase() || '_04653_tf_proxy_drift.parquet', Parquet, 'x Nullable(UInt64), y UInt64')
 SELECT number, number + 1 FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1;
 
-CREATE TABLE tf_drift AS file('04653_tf_proxy_drift.parquet');
+CREATE TABLE tf_drift AS file(currentDatabase() || '_04653_tf_proxy_drift.parquet');
 
 SELECT '-- columns cached in metadata at DDL time --';
 SELECT name, type FROM system.columns
 WHERE table = 'tf_drift' AND database = currentDatabase() ORDER BY name;
 
 -- The external schema drifts: `x` is no longer Nullable. The cached metadata still says it is.
-INSERT INTO FUNCTION file('04653_tf_proxy_drift.parquet', Parquet, 'x UInt64, y UInt64')
+INSERT INTO FUNCTION file(currentDatabase() || '_04653_tf_proxy_drift.parquet', Parquet, 'x UInt64, y UInt64')
 SELECT number, number + 1 FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 1;
 
 DETACH TABLE tf_drift;

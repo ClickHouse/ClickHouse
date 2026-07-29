@@ -915,9 +915,30 @@ bool StorageBuffer::supportsPrewhere() const
 
 std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
 {
-    if (auto destination = getDestinationTable())
-        return destination->supportedPrewhereColumns();
-    return NameSet{};
+    auto destination = getDestinationTable();
+    if (!destination)
+        return NameSet{};
+
+    /// The Buffer may declare different types than its destination, and read() hands the built
+    /// PREWHERE to the destination, which re-derives it against its own types. Only columns both
+    /// declare with the same type are safe - the same loop as StorageMaterializedView.
+    auto own_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto own_columns = own_metadata->getColumns().getAll();
+    auto destination_metadata = destination->getInMemoryMetadataPtr(getContext(), false);
+    const auto & destination_columns = destination_metadata->getColumns();
+    NameSet supported_columns;
+    for (const auto & [name, type] : own_columns)
+    {
+        auto destination_column = destination_columns.tryGetColumn(GetColumnsOptions::All, name);
+        if (destination_column && destination_column->type->equals(*type))
+            supported_columns.insert(name);
+    }
+
+    /// And only if the destination itself allows them, so the constraint holds transitively.
+    if (const auto destination_supported_columns = destination->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !destination_supported_columns->contains(name); });
+
+    return supported_columns;
 }
 
 bool StorageBuffer::canMoveConditionsToPrewhere() const

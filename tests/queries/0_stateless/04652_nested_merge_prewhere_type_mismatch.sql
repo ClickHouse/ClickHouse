@@ -134,6 +134,26 @@ SELECT count() FROM buf_top WHERE x != 0;
 SELECT count() FROM buf_top WHERE y != 0;
 SELECT x, y FROM buf_top WHERE x != 0 ORDER BY x LIMIT 3;
 
+-- The Buffer may also declare types that differ from the destination's own declaration, not just
+-- from a leaf's (found by the AST fuzzer). Forwarding the destination's supported *names* is not
+-- enough then: the built PREWHERE would be re-derived against the destination's type. Every
+-- mismatched column must be rejected no matter which level disagrees.
+CREATE TABLE buf_bad (x Decimal(18, 15), y Enum8('e1' = -127, 'v0' = 0))
+    ENGINE = Buffer(currentDatabase(), buf_merge, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+-- `y` matches the destination but `x` does not.
+CREATE TABLE buf_partial (x Decimal(18, 15), y UInt64)
+    ENGINE = Buffer(currentDatabase(), buf_merge, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+
+SELECT '-- a Buffer whose own types differ from the destination must be rejected too --';
+SELECT y, x FROM buf_bad PREWHERE y <= 1024 ORDER BY y LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+SELECT y, x FROM buf_bad PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM buf_partial PREWHERE x != 0; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- while its type-matching column keeps working --';
+SELECT count() FROM buf_partial PREWHERE y != 0;
+
+DROP TABLE buf_partial;
+DROP TABLE buf_bad;
 DROP TABLE buf_top;
 DROP TABLE buf_merge;
 DROP TABLE buf_leaf;
