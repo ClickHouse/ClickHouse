@@ -957,6 +957,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto make_map_function = [&](VectorWithMemoryTracking<String> tokens)
         {
+            /// Empty needles produce no tokens that can be searched for --> fall back to brute force scan.
+            /// See function "equals" for a longer explanation.
+            if (tokens.empty())
+                return false;
+
             out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -984,6 +989,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
+
         /// Special case: Don't use the index if the needle is empty.
         /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
         ///   is invalid.
@@ -1220,6 +1228,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1227,6 +1237,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1399,6 +1411,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
+
+        /// Empty needles produce no tokens that can be searched for, fall back to brute force scan.
+        /// See function "equals" for a longer explanation.
+        if (tokens.empty())
+            return false;
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
