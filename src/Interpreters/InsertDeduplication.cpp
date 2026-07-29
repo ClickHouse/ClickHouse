@@ -17,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/ErrorCodes.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
@@ -28,6 +29,12 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event DuplicationDataHashComputations;
+}
 
 
 namespace DB
@@ -361,6 +368,11 @@ UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Bloc
     if (tokens[offset].data_hash_batch.has_value())
         return tokens[offset].data_hash_batch.value();
 
+    /// Cache miss: an actual column-wise hash pass over the token's rows. Counting these makes the
+    /// prewarm optimization observable: pre-warming keeps this at O(tokens); the per-partition
+    /// cold-clone path drives it to O(partitions*tokens) for tokens that span several partitions.
+    ProfileEvents::increment(ProfileEvents::DuplicationDataHashComputations);
+
     chassert(block.rows() == getRows());
 
     auto cols = block.getColumns();
@@ -473,6 +485,11 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
 
 void DeduplicationInfo::prewarmDataHashes() const
 {
+    /// When disabled the hashes are never consumed (deduplicateSelf/getDeduplicationHashes
+    /// early-return), so warming them would be a wasted O(rows x cols x tokens) pass.
+    if (disabled)
+        return;
+
     if (!original_block || !original_block->rows())
         return;
 
