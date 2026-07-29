@@ -33,8 +33,8 @@ def parse_settings_history_changes(patch, file_lines):
     from global name presence - names can exist in both histories.
 
     Whether such a change must sit under the CURRENT version block is decided by the caller
-    (check_settings_changes_history), which enforces the rule only when a settings source file
-    also changed. A change that edits only this file - fixing what a past release recorded -
+    (check_settings_changes_history), which enforces the rule as soon as any other C++ source
+    file changed. A change that edits only this file - fixing what a past release recorded -
     is a historical correction, not a default change made now, so it is allowed there."""
     added = []  # (new_line_number, name, signature)
     removed_signatures = set()

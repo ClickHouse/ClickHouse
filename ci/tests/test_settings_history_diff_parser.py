@@ -6,11 +6,11 @@ Tests for `parse_settings_history_changes` in
 
 The parser reports new records and value changes (including an in-place edit of an existing
 entry), but not reason-only edits. Whether such a change must sit under the current version
-block is decided by the style check, not the parser: it enforces the rule only when a settings
-source file also changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
+block is decided by the style check, not the parser: it enforces the rule as soon as any other
+C++ source file changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
 correction - is allowed there. The parser therefore reports in-place value edits; the source-file
 gate in check_settings_changes_history is what distinguishes a real default change from a
-correction.
+correction (see ci/tests/test_settings_history_source_gate.py).
 """
 
 import os
