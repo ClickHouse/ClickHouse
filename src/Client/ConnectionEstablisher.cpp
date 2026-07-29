@@ -1,4 +1,5 @@
 #include <Client/ConnectionEstablisher.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -157,6 +158,10 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
     for (size_t tries = 0; ; ++tries)
     {
+        /// Every distributed connection attempt passes through here, so this is the one place where a
+        /// cancelled or timed out query can be stopped before it blocks on another connect.
+        CurrentThread::checkIfNotCancelled();
+
         try
         {
             try_establish();
