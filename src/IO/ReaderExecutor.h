@@ -21,6 +21,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 #include <atomic>
+#include <limits>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -748,6 +749,27 @@ private:
         if (!read_bound)
             return std::nullopt;
         return toPhys(*read_bound);
+    }
+
+    /// How far contiguous DEMAND reaches from `phys_pos` under the request map:
+    /// narrow map holes (< `min_bytes_for_seek`) are bridged - reading through
+    /// is cheaper than a reopen - and a wide hole stops speculation. Unmapped:
+    /// no clamp.
+    size_t demandReachPhys(size_t phys_pos) const
+    {
+        if (!request_map_set || request_map.empty())
+            return std::numeric_limits<size_t>::max();
+        return std::max(request_map.contiguousEnd(phys_pos, min_bytes_for_seek), phys_pos);
+    }
+
+    /// The start of the contiguous demand run containing `phys_pos` (narrow
+    /// holes bridged): fills must not walk BACK across a wide demand hole to
+    /// the global frontier. Unmapped: no clamp (0).
+    size_t demandFloorPhys(size_t phys_pos) const
+    {
+        if (!request_map_set || request_map.empty())
+            return 0;
+        return std::min(request_map.contiguousStart(phys_pos, min_bytes_for_seek), phys_pos);
     }
 
     /// Translate an observation into 1:1 `GeometryEntry`/`PlanTier` pairs

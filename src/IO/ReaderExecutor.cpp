@@ -1552,6 +1552,10 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
         if (res.resident() && res.run_end - wide >= min_bytes_for_seek)
             reach = std::min(reach, wide);
     }
+    /// The next WIDE request-map hole is a stop exactly like a wide cached run:
+    /// the channel drains there instead of streaming bytes nobody will ask for
+    /// (narrow holes are bridged inside `demandReachPhys`).
+    reach = std::min(reach, std::max(demandReachPhys(phys_off), phys_off));
     /// Cap the long-connection reach so an over-predicted continuous run cannot open or
     /// extend a GET beyond the bound.
     reach = std::min(reach, phys_off + long_connection_max_bound);
@@ -1609,6 +1613,11 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
         phys_bound = std::max(phys_bound, phys_offset + long_connection_open_range);
     phys_bound = std::min(phys_bound, phys_offset + long_connection_max_bound);
     phys_bound = std::min(phys_bound, bound_phys);
+    /// The demand caps last with the read bound: the open-range floor must not
+    /// stream a channel into a wide request-map hole (the seek-time tail drain
+    /// would then read the hole through). Narrow holes are bridged inside the
+    /// reach.
+    phys_bound = std::min(phys_bound, std::max(demandReachPhys(phys_offset), phys_offset));
     return phys_bound - object_base;
 }
 
@@ -1926,6 +1935,23 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     /// and completes the cell. Zero stays zero - the ceil must not resurrect an exhausted
     /// allowance.
     size_t allowance = prefetchAllowance(base);
+    if (!allowance && request_map_set && !request_map.empty())
+    {
+        /// The frontier can sit in the grid slack BELOW a demand-run start (the
+        /// head cell floors at the grid): when the demand resumes inside the
+        /// frontier's cell, fetch from the frontier so the head cell completes -
+        /// at most one grid quantum of hole bytes.
+        if (const auto next = request_map.nextIntervalAfter(base); next && next->offset < cellCeil(r, base))
+        {
+            size_t hard = std::numeric_limits<size_t>::max();
+            if (!hasUnknownSize())
+                hard = toPhys(totalSize());
+            if (read_bound)
+                hard = std::min(hard, toPhys(*read_bound));
+            const size_t reach = std::min(hard, demandReachPhys(next->offset));
+            allowance = reach > base ? reach - base : 0;
+        }
+    }
     if (allowance)
         allowance = std::min(r.range.end(), cellCeil(r, base + allowance)) - base;
     size_t chunk = std::min({r.range.end() - base, capacity, allowance});
@@ -2042,7 +2068,15 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     /// job) and walk the fill frontier from there - ACROSS runs, so a before-slack run no
     /// serve window ever reaches (a seek past it) is still fetched and the cell fills
     /// whole from its floor.
-    const size_t floor_off = std::max(r.range.offset, cellFloor(r, missing));
+    /// The floor never walks BACK across a wide demand hole to the global
+    /// frontier - but it DOES drop to the touched CELL's floor: the head cell
+    /// grid-floors below the demand start, and an append-only writer starting
+    /// above its segment head would refuse every write. At most one grid
+    /// quantum of hole bytes completes the intersecting cell (the accepted
+    /// edge cost); bypass jobs (no cells) keep the raw demand floor.
+    const size_t demand_floor
+        = cellFloor(r, std::max(demandFloorPhys(window_phys.offset), r.range.offset));
+    const size_t floor_off = std::max({r.range.offset, cellFloor(r, missing), demand_floor});
     const size_t base = floor_off < missing
         ? fill_prefix_end(ByteRange{floor_off, missing - floor_off})
         : missing;
@@ -2149,8 +2183,10 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     /// from its segment start), clamped into the job's range; the TAIL is capped by
     /// `cellTailCap` (whole-cell targets extend to their edge, incremental cells cap at
     /// the window once the overhang exceeds it - the tail fills on later windows).
+    const size_t pump_demand_floor
+        = cellFloor(r, std::max(demandFloorPhys(window.offset), r.range.offset));
     const size_t fetch_lo
-        = std::min(window.offset, std::max(r.range.offset, cellFloor(r, window.offset)));
+        = std::min(window.offset, std::max({r.range.offset, cellFloor(r, window.offset), pump_demand_floor}));
     const size_t tail_cap = cellTailCap(r, window.end(), window.size);
     const size_t fetch_hi = std::max(window.end(), std::min(r.range.end(), tail_cap));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
@@ -3144,6 +3180,10 @@ size_t ReaderExecutor::prefetchAllowance(size_t phys_from) const
         bound = toPhys(totalSize());
     if (read_bound)
         bound = std::min(bound, toPhys(*read_bound));
+    /// The request map stops speculation at a WIDE demand hole (bytes nobody
+    /// will ask for); narrow holes are bridged. Service is never capped - a
+    /// read into a hole serves synchronously.
+    bound = std::min(bound, demandReachPhys(phys_from));
     return bound > phys_from ? bound - phys_from : 0;
 }
 

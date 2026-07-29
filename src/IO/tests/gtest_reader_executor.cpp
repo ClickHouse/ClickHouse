@@ -976,6 +976,105 @@ TEST(ReaderExecutor, PlannedReadEndCapsPrefetchButNotService)
     EXPECT_EQ(got, content) << "reads past the planned end are served";
 }
 
+TEST(ReaderExecutor, RequestMapWideHoleStopsSpeculation)
+{
+    /// A WIDE request-map hole stops speculation like a wide cached run: prefetch
+    /// never fetches hole bytes and the long connection drains at the hole edge;
+    /// service past the hole (the consumer's seek) is unaffected.
+    String content(600u << 10, 'h');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 50u << 10;
+    executor_options.min_bytes_for_seek = 4096;
+    executor_options.block_size = 16u << 10;
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    /// Demand: [0, 200K) and [400K, 600K); the 200K hole dwarfs min_bytes_for_seek.
+    executor.setRequestMap({{0, 200u << 10}, {400u << 10, 200u << 10}});
+    executor.setReadBound(600u << 10);
+
+    String got;
+    auto consume_to = [&](size_t end)
+    {
+        while (got.size() < end)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+    };
+
+    consume_to(200u << 10);
+    EXPECT_LE(inspect(executor).bytesFromSource(), 200u << 10)
+        << "speculation into the wide demand hole is forbidden";
+    EXPECT_EQ(inspect(executor).incompleteConnections(), 0u)
+        << "the channel drains at the hole edge";
+
+    /// The consumer seeks over the hole; the second demand range serves in full.
+    executor.seek(400u << 10);
+    String tail;
+    while (tail.size() < (200u << 10))
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            tail.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got, content.substr(0, 200u << 10));
+    EXPECT_EQ(tail, content.substr(400u << 10, 200u << 10));
+    EXPECT_LE(inspect(executor).bytesFromSource(), 400u << 10)
+        << "the hole itself is never fetched";
+}
+
+TEST(ReaderExecutor, RequestMapNarrowHoleIsBridged)
+{
+    /// A NARROW hole (< min_bytes_for_seek) is read through - cheaper than a
+    /// reopen - so the demand runs on either side coalesce into one fetch run.
+    String content(200u << 10, 'b');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 50u << 10;
+    executor_options.min_bytes_for_seek = 4096;
+    executor_options.block_size = 16u << 10;
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = limit;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    /// Demand: [0, 100K) and [102K, 200K) - the 2K hole is below the bridge bound.
+    executor.setRequestMap({{0, 100u << 10}, {102u << 10, 98u << 10}});
+    executor.setReadBound(200u << 10);
+
+    String got;
+    while (got.size() < content.size())
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got, content);
+    EXPECT_EQ(inspect(executor).incompleteConnections(), 0u)
+        << "one bridged run - nothing drains mid-way";
+}
+
 TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one

@@ -425,6 +425,84 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         << "warm chain must serve everything without touching the source";
 }
 
+/// A request-map demand run whose start is NOT grid-aligned: the head cell floors at the
+/// alignment grid BELOW the demand start, and the fill must drop to that cell floor - an
+/// append-only segment writer starting above its head would refuse every write and the
+/// head cell would never populate (silently: the bank serves the reads). At most one grid
+/// quantum of hole bytes completes the intersecting cell - the accepted edge cost. A
+/// second executor over the same cache proves the head cell is genuinely resident.
+TEST_F(ReaderExecutorCacheChain, RequestMapUnalignedStartPopulatesHeadCell)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 8 * segment_size;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto fc = makeFileCache("fc_headcell", segment_size, /*max_size=*/1ull << 20);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    /// Demand starts mid-cell at 3.5 segments; the wide lead-in hole (224 bytes
+    /// >> min_bytes_for_seek) must not be walked back to, but the head cell
+    /// [3*segment, 4*segment) must fill from its floor.
+    const size_t demand_start = 3 * segment_size + segment_size / 2;
+    const size_t demand_size = file_size - demand_start;
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = segment_size;
+        executor_options.min_bytes_for_seek = 16;
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, executor_options);
+        executor.setRequestMap({{demand_start, demand_size}});
+        executor.setReadBound(file_size);
+        executor.seek(demand_start);
+
+        String got;
+        while (got.size() < demand_size)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+        EXPECT_EQ(got, content.substr(demand_start, demand_size));
+        EXPECT_LT(inspect(executor).bytesFromSource(), file_size)
+            << "the wide lead-in hole is not fetched wholesale";
+    }
+
+    /// Warm re-read of the SAME demand: everything - including the unaligned
+    /// head - must come from the cache.
+    const size_t src_before_warm = sourceRequestsSoFar();
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = segment_size;
+        executor_options.min_bytes_for_seek = 16;
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, executor_options);
+        executor.setRequestMap({{demand_start, demand_size}});
+        executor.setReadBound(file_size);
+        executor.seek(demand_start);
+
+        String got;
+        while (got.size() < demand_size)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+        EXPECT_EQ(got, content.substr(demand_start, demand_size));
+    }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_warm)
+        << "the head cell populated on the cold pass - the warm pass never hits the source";
+}
+
 /// The plan span is independent of `read_extent_end`, so advancing the extent per "mark
 /// range" does NOT rebuild the plan (the cursor stays inside the one plan that already
 /// reaches the file end) -- one observation for the whole scan, serving identical bytes.

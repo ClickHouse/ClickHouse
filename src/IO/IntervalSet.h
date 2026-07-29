@@ -34,6 +34,18 @@ public:
     /// The first interval strictly after `pos` (its offset > pos), or nullopt.
     std::optional<ByteRange> nextIntervalAfter(size_t pos) const;
 
+    /// How far contiguous demand reaches from `pos`: walks intervals forward,
+    /// BRIDGING gaps strictly smaller than `bridge_gap` (reading through them
+    /// is cheaper than a reopen), and stops at the first wide gap. `pos` in a
+    /// narrow gap continues from the next interval; `pos` in a wide gap (or
+    /// past the last interval) has no demand - returns `pos` itself.
+    size_t contiguousEnd(size_t pos, size_t bridge_gap) const;
+
+    /// The symmetric start: how far back the contiguous demand run containing
+    /// (or bridge-adjacent to) `pos` begins, bridging narrow gaps backwards.
+    /// `pos` with no demand behind it returns `pos` itself.
+    size_t contiguousStart(size_t pos, size_t bridge_gap) const;
+
     bool empty() const { return intervals.empty(); }
 
 private:
