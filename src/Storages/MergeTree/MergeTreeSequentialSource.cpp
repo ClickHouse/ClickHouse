@@ -351,10 +351,19 @@ Pipe createMergeTreeSequentialSource(
     /// executor's long connection spanning the ranges of a merge/mutation read
     /// now that per-range extents no longer carry the reach past themselves.
     if (mark_ranges)
+    {
+        info->planned_ranges.reserve(mark_ranges->size());
         for (const auto & range : *mark_ranges)
+        {
             info->planned_last_mark = std::max(info->planned_last_mark, range.end);
+            info->planned_ranges.emplace_back(range.begin, range.end);
+        }
+    }
     else
+    {
         info->planned_last_mark = info->data_part->getMarksCount();
+        info->planned_ranges.emplace_back(0, info->planned_last_mark);
+    }
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();

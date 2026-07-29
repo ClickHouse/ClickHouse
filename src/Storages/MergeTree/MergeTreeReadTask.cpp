@@ -177,6 +177,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
+    /// The FALLBACK: no per-task stripe means the reader consumes the part's
+    /// whole assignment (in-order, projection-index, merges) - its map.
+    if (planned_ranges.empty())
+        planned_ranges = read_info->planned_ranges;
+
     size_t planned_last_mark = 0;
     for (const auto & [begin_mark, end_mark] : planned_ranges)
         planned_last_mark = std::max(planned_last_mark, end_mark);

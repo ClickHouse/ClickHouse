@@ -218,8 +218,12 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
 
+    read_task_info.planned_ranges.reserve(part_with_ranges.ranges.size());
     for (const auto & range : part_with_ranges.ranges)
+    {
         read_task_info.planned_last_mark = std::max(read_task_info.planned_last_mark, range.end);
+        read_task_info.planned_ranges.emplace_back(range.begin, range.end);
+    }
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext()
 #if CLICKHOUSE_CLOUD
         , getContext()->getAccess()->getEnabledMaskingPolicies()
@@ -425,16 +429,17 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     {
         /// The reused readers' task series moved to this task's stripe:
         /// re-announce its planned end and request map (a same-stripe
-        /// continuation is a no-op; a stolen stripe moves them).
+        /// continuation is a no-op; a stolen stripe moves them). No stripe
+        /// falls back to the part's whole assignment - the sequential pools'
+        /// map (a repeated announce dedups at the stream).
         size_t planned_last_mark = 0;
         for (const auto & [begin_mark, end_mark] : planned_ranges)
             planned_last_mark = std::max(planned_last_mark, end_mark);
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges);
         task_readers.updatePlannedLastMark(planned_last_mark ? planned_last_mark : read_info->planned_last_mark);
-        /// Unconditional: an empty map WITHDRAWS the previous stripe's map
-        /// (the whole file is assumed again).
-        task_readers.updateRequestMap(std::move(planned_ranges));
+        task_readers.updateRequestMap(
+            planned_ranges.empty() ? read_info->planned_ranges : std::move(planned_ranges));
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);

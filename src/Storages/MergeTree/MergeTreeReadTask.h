@@ -131,6 +131,11 @@ struct MergeTreeReadTaskInfo
     /// selected ranges, fixed at pool build) - the reader's prefetch edge.
     /// 0 = unknown.
     size_t planned_last_mark = 0;
+    /// The part's whole per-query assignment in marks (the request-map
+    /// FALLBACK: pools that pre-slice per-thread stripes pass a tighter
+    /// per-task list; pools with one sequential consumer per part - in-order,
+    /// projection-index - and merges use this).
+    std::vector<std::pair<size_t, size_t>> planned_ranges;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
