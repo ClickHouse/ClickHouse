@@ -11,6 +11,11 @@
 -- The empty-queue output ports were never finished, so `Concat` waited forever on an empty
 -- branch while the chunks queued on the loaded shards could never drain -> `Pipeline stuck`.
 -- The three low-cardinality keys guarantee the skew that triggers the stuck state.
+--
+-- Every query below pins `max_rows_to_group_by = 0`: the stateless profile sets it to 10G
+-- (tests/config/users.d/limits.yaml) and `AggregatingStep::canUseShardedAggregation`
+-- rejects any nonzero value, so without the pin these queries would silently run normal
+-- aggregation and never reach `BufferedShardByHashTransform` at all.
 
 DROP TABLE IF EXISTS test_106237;
 CREATE TABLE test_106237 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -22,6 +27,22 @@ INSERT INTO test_106237 SELECT 2 AS a, number AS b FROM numbers(100000);
 -- with the skewed keys above, a wider fan-out guarantees the sequentially-activated
 -- ConcatProcessor demands an empty shard, which is what triggers the stuck state. A small
 -- value (e.g. 2-3) routes all keys onto the demanded shards and hides the bug.
+-- Precondition: the sharded transform really is in the pipeline for this shape.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT a, max(s)
+    FROM (
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+        UNION ALL
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+    )
+    GROUP BY a
+    ORDER BY a
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
+             max_streams_for_union_step = 1, max_rows_to_group_by = 0
+);
+
 SELECT a, max(s)
 FROM (
     SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
@@ -32,7 +53,8 @@ GROUP BY a
 ORDER BY a
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
-         max_streams_for_union_step = 1;
+         max_streams_for_union_step = 1,
+         max_rows_to_group_by = 0;
 
 -- Same deadlock via a scalar-subquery-wrapped UNION ALL (found by the AST-fuzzer oracle,
 -- see the issue thread). The stuck state is a property of the sharded transform, not of
@@ -44,7 +66,8 @@ SELECT (
         SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
     ) SETTINGS enable_sharding_aggregator = 1,
               max_threads = 16,
-              max_streams_for_union_step = 1
+              max_streams_for_union_step = 1,
+              max_rows_to_group_by = 0
 );
 
 -- Cover the soft-cap paths in `BufferedShardByHashTransform::prepare`. The two queries
@@ -70,10 +93,15 @@ ORDER BY a
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_streams_for_union_step = 1,
-         max_block_size = 100;
+         max_block_size = 100,
+         max_rows_to_group_by = 0;
 
--- (b) Cap reached while NO port has an empty queue, so the transform must back-pressure.
---     Distinct keys spread rows over every shard, so no shard queue is ever empty.
+-- (b) Cap reached while NO port has an empty queue, which is the only state that reaches
+--     the back-pressure return. Distinct keys spread rows over every shard, so no shard
+--     queue is ever empty. This case exercises that branch and checks the aggregation is
+--     still correct; it cannot assert the back-pressure itself, because the cap is a
+--     memory bound with no query-visible effect (removing it only changes peak queue
+--     depth, which no SQL oracle exposes).
 DROP TABLE IF EXISTS test_106237_spread;
 CREATE TABLE test_106237_spread (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_106237_spread SELECT number AS a, number AS b FROM numbers(1000000);
@@ -82,7 +110,8 @@ SELECT count(), sum(s)
 FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
-         max_block_size = 100;
+         max_block_size = 100,
+         max_rows_to_group_by = 0;
 
 DROP TABLE test_106237_spread;
 DROP TABLE test_106237_cap;
