@@ -390,22 +390,31 @@ static void extendSchemaForPartitions(
     const DataTypes & partition_types,
     const Poco::JSON::Array::Ptr & partition_spec_fields)
 {
-    /// The manifest's `partition` struct must use the SAME field-ids as the table's partition
-    /// spec: Iceberg projects the manifest partition values onto the spec by field-id. The ids
-    /// are not a fixed `1000 + i` offset — they depend on who created the table (ClickHouse and
-    /// Spark start numbering differently), so read them from the actual persisted spec.
-    if (partition_spec_fields->size() != partition_columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Partition spec has {} fields but {} partition columns were provided",
-            partition_spec_fields->size(),
-            partition_columns.size());
+    /// Iceberg projects the manifest `partition` values onto the spec by field-id, so reuse
+    /// the persisted spec ids. A legacy v1 spec may omit them; there the spec assigns partition
+    /// field-ids sequentially from 1000, so fall back to that default when any id is missing.
+    bool spec_has_all_ids = partition_spec_fields && partition_spec_fields->size() == partition_columns.size();
+    if (spec_has_all_ids)
+    {
+        for (size_t i = 0; i < partition_columns.size(); ++i)
+        {
+            if (!partition_spec_fields->getObject(static_cast<UInt32>(i))->has(Iceberg::f_field_id))
+            {
+                spec_has_all_ids = false;
+                break;
+            }
+        }
+    }
 
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
     {
+        Int32 field_id = spec_has_all_ids
+            ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
+            : static_cast<Int32>(1000 + i);
+
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_field_id, partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id));
+        field->set(Iceberg::f_field_id, field_id);
         field->set(Iceberg::f_name, partition_columns[i]);
         field->set(Iceberg::f_type, getAvroType(partition_types[i]));
         partition_fields->add(field);
@@ -525,6 +534,9 @@ void generateManifestFile(
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
+    /// avro-cpp's compiled schema loses the Iceberg field-id/element-id attributes; write the
+    /// original id-carrying JSON as the avro.schema header so external readers can plan a scan.
+    writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_schema, json_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
@@ -692,6 +704,9 @@ void generateManifestList(
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
+    /// See generateManifestFile: avro-cpp drops the Iceberg field-id/element-id attributes, so
+    /// write the original id-carrying JSON as the avro.schema header for external readers.
+    writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
     for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
