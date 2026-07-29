@@ -211,7 +211,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     /// Read each part until next boundary (or last boundary)
     while (!in.eof())
     {
-        if (max_fields_number && fields > max_fields_number)
+        if (max_fields_number && fields == max_fields_number)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         Poco::Net::MessageHeader header;
@@ -235,14 +235,18 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         else
         {
             std::string name = params["name"];
+            if (name.size() > max_field_name_size)
+                throw Poco::Net::HTMLFormException("Field name too long");
+
             std::string value;
             char ch = 0;
 
             while (in.read(ch))
             {
-                if (value.size() > max_field_value_size)
+                if (value.size() < max_field_value_size)
+                    value += ch;
+                else
                     throw Poco::Net::HTMLFormException("Field value too long");
-                value += ch;
             }
 
             add(name, value);

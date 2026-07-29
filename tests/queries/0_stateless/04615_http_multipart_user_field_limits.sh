@@ -25,6 +25,11 @@ URL="${CLICKHOUSE_URL}&user=${USER_NAME}&query=SELECT+length(%7Bp1%3AString%7D)"
 # A multipart form field within the user's limit is accepted.
 ${CLICKHOUSE_CURL} -sS -F "param_p1=$(yes x 2>/dev/null | tr -d '\n' | head -c ${LIMIT})" "${URL}"
 
+# A multipart form field exactly one byte over the user's limit is rejected - the limit is exact,
+# same as for the URL-encoded form parsing in 'readQuery'.
+${CLICKHOUSE_CURL} -sS -F "param_p1=$(yes x 2>/dev/null | tr -d '\n' | head -c $((LIMIT + 1)))" "${URL}" 2>&1 | \
+    grep -o 'Field value too long' | head -n1
+
 # A multipart form field longer than the user's 'http_max_field_value_size' (but well under the
 # server default) is rejected.
 ${CLICKHOUSE_CURL} -sS -F "param_p1=$(yes x 2>/dev/null | tr -d '\n' | head -c 1000)" "${URL}" 2>&1 | \
