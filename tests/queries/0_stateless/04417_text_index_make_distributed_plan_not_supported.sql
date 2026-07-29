@@ -16,6 +16,11 @@ CREATE TABLE t_text_dist_guard (k UInt64, s String, INDEX idx s TYPE text(tokeni
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
 INSERT INTO t_text_dist_guard SELECT number, 'uniform' FROM numbers(258);
 
+-- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0. The test profile
+-- sets it, which would make the count() queries below throw the same SUPPORT_IS_DISABLED code from
+-- tryMakeDistributedAggregation and stop testing the text index guard at all.
+SET max_rows_to_group_by = 0;
+
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, query_plan_direct_read_from_text_index = 1;
 
 -- Multi-stage plans ship the read to a worker, so they are rejected.

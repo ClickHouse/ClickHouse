@@ -77,7 +77,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
-void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root);
+void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root, bool single_stage);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
@@ -160,12 +160,13 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
     }
 }
 
-void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root)
+void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root, bool single_stage)
 {
     /// A single-stage plan is executed locally (QueryPlan::convertToDistributed), so nothing is
     /// serialized and a direct text index read stays valid. Only a plan that is split into fragments
-    /// ships the read to a worker, and the exchange steps are what split it.
-    if (!planContainsLogicalExchange(root))
+    /// ships the read to a worker, and the exchange steps are what split it - unless
+    /// distributed_plan_single_stage keeps all of them inside one local stage.
+    if (single_stage || !planContainsLogicalExchange(root))
         return;
 
     std::vector<const QueryPlan::Node *> stack = {&root};

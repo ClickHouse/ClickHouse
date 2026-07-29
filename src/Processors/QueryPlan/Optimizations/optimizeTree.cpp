@@ -188,7 +188,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
-void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root);
+void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root, bool single_stage);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
@@ -518,9 +518,12 @@ void optimizeTreeSecondPass(
 
     /// Runs here, not next to checkDistributedReadSupported above: whether a read ends up inside a
     /// shipped fragment is only decided by the tryMakeDistributed* transforms and the exchange
-    /// optimization, both of which run after that check.
-    if (make_distributed_plan)
-        checkDistributedTextIndexReadSupported(root);
+    /// optimization, both of which run after that check. Gated on the raw setting, not on the local
+    /// `make_distributed_plan`: a plan that already carries exchanges is re-optimized (StorageMerge
+    /// pushes a filter into a child plan and re-runs this pass), and the direct read can be applied
+    /// for the first time during that later run.
+    if (optimization_settings.make_distributed_plan)
+        checkDistributedTextIndexReadSupported(root, optimization_settings.distributed_plan_single_stage);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
