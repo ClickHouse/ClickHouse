@@ -14,7 +14,12 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/mutation_hardlink_only_small:size=100M"],
+    tmpfs=[
+        "/mutation_hardlink_only_small:size=100M",
+        # Roomy on purpose: the move-between-admission-and-execution case is about the reservation
+        # naming the wrong DISK, not about space, so this one must not run out.
+        "/mutation_hardlink_only_other:size=400M",
+    ],
     macros={"replica": "r1"},
 )
 
@@ -44,7 +49,7 @@ def disk_free():
     )
 
 
-def fill(table, engine):
+def fill(table, engine, policy="small_only", rows=300000):
     # The whole point of the fixture is that the disk is nearly full, so nothing from an earlier case
     # may still be occupying it.
     for other in node.query(
@@ -56,7 +61,7 @@ def fill(table, engine):
         CREATE TABLE {table} (id UInt64, s String, payload String,
             INDEX idx_s s TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
         ENGINE = {engine} ORDER BY id
-        SETTINGS storage_policy = 'small_only',
+        SETTINGS storage_policy = '{policy}',
                  min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
                  packed_skip_index_max_bytes = 0
         """
@@ -67,7 +72,7 @@ def fill(table, engine):
     node.query(
         f"""
         INSERT INTO {table}
-        SELECT number, concat('tok', toString(number % 1000)), randomString(180) FROM numbers(300000)
+        SELECT number, concat('tok', toString(number % 1000)), randomString(180) FROM numbers({rows})
         """,
         settings={"max_insert_block_size": 1000000, "min_insert_block_size_rows": 1000000},
     )
@@ -190,3 +195,114 @@ def test_delete_on_a_nearly_full_disk_replicated_is_still_deferred(start_cluster
         ).strip()
         == "0"
     )
+
+
+def test_source_part_moved_between_admission_and_execution(start_cluster):
+    """The reservation must name the disk the source part is on WHEN THE MUTATION RUNS.
+
+    A replicated mutation admitted as hardlink-only reserves its small amount of space at selection
+    time, on the disk of the part selection saw. Execution resolves the active source part again, and
+    the two can disagree: a move that started BEFORE the MUTATE_PART entry existed passed its own
+    `can_move` check then, and MergeTreePartsMover::swapClonedPart only re-checks that an active part
+    of that name still exists - its own comment says "we don't block moving parts for merges or
+    mutations". Since the result part's path comes from that reservation and a hardlink cannot cross
+    disks, the reservation has to be re-taken on the part's current disk.
+
+    Ordering matters and is the whole difficulty: once the entry exists, BOTH move paths refuse the
+    part (`MergeTreeData::checkPartsForMove` and the background mover's `can_move` both reject a part
+    with `partIsAssignedToBackgroundOperation`, which for a replicated table is `queue.isVirtualPart`).
+    So the move is started first and parked mid-flight - after it cloned onto the other disk, before it
+    swaps - with `stop_moving_part_before_swap_with_active`; only then is the mutation issued.
+    """
+    fill(
+        "rmt_moved",
+        "ReplicatedMergeTree('/clickhouse/tables/rmt_moved', '{replica}')",
+        policy="two_disks",
+        # Small: this case is about the disk the reservation names, not about space, and the part has
+        # to be cheap to clone while the move is parked.
+        rows=20000,
+    )
+    part = node.query(
+        "SELECT name FROM system.parts WHERE table = 'rmt_moved' AND active"
+    ).strip()
+    disk_before = node.query(
+        "SELECT disk_name FROM system.parts WHERE table = 'rmt_moved' AND active"
+    ).strip()
+    other = "other_disk" if disk_before == "small_disk" else "small_disk"
+
+    # 1. Park a move after the clone, before the swap. The part is still active on its old disk here,
+    #    so the mutation that follows is admitted against THAT disk.
+    node.query("SYSTEM ENABLE FAILPOINT stop_moving_part_before_swap_with_active")
+    move = node.get_query_request(
+        f"ALTER TABLE rmt_moved MOVE PART '{part}' TO DISK '{other}'"
+    )
+    node.query("SYSTEM WAIT FAILPOINT stop_moving_part_before_swap_with_active PAUSE")
+
+    try:
+        # 2. Now admit the mutation. Selection reserves on the part's CURRENT (old) disk.
+        node.query("SYSTEM ENABLE FAILPOINT rmt_mutate_task_pause_in_prepare")
+        node.query(
+            "ALTER TABLE rmt_moved DROP INDEX idx_s", settings={"alter_sync": 0}
+        )
+        node.query("SYSTEM WAIT FAILPOINT rmt_mutate_task_pause_in_prepare PAUSE")
+
+        # 3. Let the parked move finish its swap while the mutation waits. The active part is now on
+        #    the other disk, while the mutation still carries a reservation naming the old one.
+        #    NOTIFY before DISABLE: disabling first destroys the wait channel the move sits on.
+        node.query("SYSTEM NOTIFY FAILPOINT stop_moving_part_before_swap_with_active")
+        node.query("SYSTEM DISABLE FAILPOINT stop_moving_part_before_swap_with_active")
+        move.get_answer()
+        assert (
+            node.query(
+                "SELECT disk_name FROM system.parts WHERE table = 'rmt_moved' AND active"
+            ).strip()
+            == other
+        ), "the move must have completed while the mutation was paused"
+
+        # 4. Release the mutation into exactly the disagreement this case exists for.
+        node.query("SYSTEM NOTIFY FAILPOINT rmt_mutate_task_pause_in_prepare")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare")
+        # Already disabled on the happy path; harmless to repeat, and required if step 2 or 3 threw.
+        node.query("SYSTEM DISABLE FAILPOINT stop_moving_part_before_swap_with_active")
+
+    # The mutation must complete on the part's CURRENT disk rather than fail on a cross-disk hardlink.
+    assert (
+        node.query_with_retry(
+            "SELECT count() FROM system.mutations WHERE table = 'rmt_moved' AND NOT is_done",
+            check_callback=lambda r: r.strip() == "0",
+        ).strip()
+        == "0"
+    )
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.data_skipping_indices WHERE table = 'rmt_moved'"
+            )
+        )
+        == 0
+    )
+    assert int(node.query("SELECT count() FROM rmt_moved")) == 20000
+    assert (
+        node.query(
+            "SELECT count() FROM system.mutations WHERE table = 'rmt_moved' AND notEmpty(latest_fail_reason)"
+        ).strip()
+        == "0"
+    )
+    # The result part lives where the source part ended up, which is what a hardlink requires.
+    assert (
+        node.query(
+            "SELECT disk_name FROM system.parts WHERE table = 'rmt_moved' AND active"
+        ).strip()
+        == other
+    )
+    assert "1" in node.query("CHECK TABLE rmt_moved")
+
+    # The load-bearing assertion. Without the re-validation the entry hardlinks from the disk the
+    # reservation named, which the part has left, and the attempt fails with CANNOT_LINK / ENOENT. That
+    # failure is RECOVERABLE - the next selection pass reserves on the part's current disk and the
+    # mutation then completes - so every assertion above still holds without the fix and only the
+    # error itself distinguishes the two. It must never have been attempted even once.
+    assert not node.contains_in_log(
+        "Cannot link", filename="clickhouse-server.err.log"
+    ), "a cross-disk hardlink must never be attempted"

@@ -16,11 +16,15 @@ set -e
 # every mutation to 1 byte, so every part exceeds it. A mutation that only hardlinks the files it does
 # not touch must be admitted anyway; anything that rewrites the part must still be postponed.
 
-# The failpoint is server-wide, so leaving it enabled after an early exit under `set -e` would give
-# every later mutation on this server a 1 byte budget. The queue stop below is table-scoped, but an
-# early exit between stopping and starting it would leave the DROP of that table waiting forever.
+# The failpoints are server-wide, so leaving one enabled after an early exit under `set -e` would give
+# every later mutation on this server a 1 byte budget, or leave a mutation paused forever. The queue
+# stop below is table-scoped, but an early exit between stopping and starting it would leave the DROP
+# of that table waiting forever.
 trap '$CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+" 2>/dev/null || true
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
 " 2>/dev/null || true
 $CLICKHOUSE_CLIENT --query "
     SYSTEM START REPLICATION QUEUES rmt_fetch_2;
@@ -202,10 +206,89 @@ $CLICKHOUSE_CLIENT --query "CHECK TABLE rmt_fetch_2" | while read -r line; do
     echo "rmt_fetch	check	$line"
 done
 
+##########################################################################################
+# The write side re-validates what admission assumed. Every other case here holds the copy mode
+# constant from CREATE through mutation, so the check that a mutation admitted as hardlink-only is
+# still hardlink-only when it reaches the write side is never exercised: delete it and nothing goes
+# red. This case changes the mode WHILE the entry is paused between admission and the write, which is
+# the only window in which the two can disagree.
+#
+# The refusal must also be recoverable: the second arm restores the mode and the same entry completes,
+# which is what makes it a postpone rather than a permanently poisoned queue entry.
+##########################################################################################
+
+$CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0;
+
+    CREATE TABLE rmt_copy_flip (event String, id UInt64,
+        INDEX idx_event event TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+    ENGINE = ReplicatedMergeTree('/zookeeper/{database}/rmt_copy_flip/', '1') ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0, always_use_copy_instead_of_hardlinks = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+
+    INSERT INTO rmt_copy_flip SELECT repeat('abcdefgh', 20), number FROM numbers(20000);
+    OPTIMIZE TABLE rmt_copy_flip FINAL;
+"
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM ENABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
+    ALTER TABLE rmt_copy_flip DROP INDEX idx_event SETTINGS alter_sync = 0;
+    SYSTEM WAIT FAILPOINT rmt_mutate_task_pause_in_prepare PAUSE;
+"
+
+# Paused between admission and the write: flip the mode the entry was admitted under, then let it go.
+$CLICKHOUSE_CLIENT --query "
+    ALTER TABLE rmt_copy_flip MODIFY SETTING always_use_copy_instead_of_hardlinks = 1;
+    SYSTEM NOTIFY FAILPOINT rmt_mutate_task_pause_in_prepare;
+"
+
+# It must be refused rather than complete: completing would copy the retained files, using space it
+# only ever reserved a fraction of. Only the error name is asserted, not the message text.
+for _ in $(seq 1 300); do
+    result=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.mutations
+        WHERE database = currentDatabase() AND table = 'rmt_copy_flip'
+          AND position(latest_fail_reason, 'NOT_ENOUGH_SPACE') > 0
+    ")
+    if [ "$result" -gt 0 ]; then
+        break
+    fi
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'rmt_copy_flip', 'refused', countIf(position(latest_fail_reason, 'NOT_ENOUGH_SPACE') > 0),
+        'not_done', countIf(NOT is_done)
+    FROM system.mutations WHERE database = currentDatabase() AND table = 'rmt_copy_flip';
+"
+
+# Restoring the mode must let the same entry through: the refusal is a postpone, not a poisoning.
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
+    ALTER TABLE rmt_copy_flip MODIFY SETTING always_use_copy_instead_of_hardlinks = 0;
+"
+
+wait_for_mutation "rmt_copy_flip" "0000000000"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'rmt_copy_flip_retry', 'pending', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 'rmt_copy_flip' AND NOT is_done;
+
+    SELECT 'rmt_copy_flip_retry', 'indices_left', count() FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 'rmt_copy_flip';
+
+    SELECT 'rmt_copy_flip_retry', 'rows', count() FROM rmt_copy_flip;
+"
+$CLICKHOUSE_CLIENT --query "CHECK TABLE rmt_copy_flip" | while read -r line; do
+    echo "rmt_copy_flip_retry	check	$line"
+done
+
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     DROP TABLE rmt_drop_index SYNC;
     DROP TABLE rmt_delete SYNC;
     DROP TABLE rmt_fetch_1 SYNC;
     DROP TABLE rmt_fetch_2 SYNC;
+    DROP TABLE rmt_copy_flip SYNC;
 "

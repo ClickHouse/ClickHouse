@@ -435,6 +435,78 @@ $CLICKHOUSE_CLIENT --query "CHECK TABLE write_footprint_nonexempt" | while read 
     echo "write_footprint	non_exempt_check	$line"
 done
 
+##########################################################################################
+# A mutation that REWRITES a column's values must write its statistics anew even when its commands
+# cannot change WHICH statistics the part holds. MATERIALIZE COLUMN on a MATERIALIZED column is the
+# case: it reaches the interpreter and rewrites the values, while being in none of the command types
+# the preservation decision tests, so a decision made from those alone would hardlink an archive that
+# no longer describes the data.
+#
+# Measured the same threshold-free way as write_footprint above, with two independent differences:
+#   mat_st - mat_nost   what MATERIALIZE COLUMN writes over its statistics-free twin: the archive
+#   drop_st - drop_nost what DROP INDEX writes over its twin: near nothing, since it does preserve
+# The assertion is that the first exceeds the second, so it goes red both if the rewriting mutation
+# starts preserving and if the preserving one stops.
+##########################################################################################
+
+$CLICKHOUSE_CLIENT --query "
+    SET allow_statistics = 1;
+    CREATE TABLE materialize_column_st (id UInt64, base UInt64,
+        a UInt64 MATERIALIZED base * 1 STATISTICS(tdigest), b UInt64 MATERIALIZED base * 2 STATISTICS(tdigest),
+        c UInt64 MATERIALIZED base * 3 STATISTICS(tdigest), d UInt64 MATERIALIZED base * 4 STATISTICS(tdigest),
+        e UInt64 MATERIALIZED base * 5 STATISTICS(tdigest), f UInt64 MATERIALIZED base * 6 STATISTICS(tdigest),
+        INDEX idx_id id TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0, auto_statistics_types = '';
+
+    /* Statistics-free twin: whatever the two write in common cancels out. */
+    CREATE TABLE materialize_column_nost (id UInt64, base UInt64,
+        a UInt64 MATERIALIZED base * 1, b UInt64 MATERIALIZED base * 2,
+        c UInt64 MATERIALIZED base * 3, d UInt64 MATERIALIZED base * 4,
+        e UInt64 MATERIALIZED base * 5, f UInt64 MATERIALIZED base * 6,
+        INDEX idx_id id TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+             packed_skip_index_max_bytes = 0, auto_statistics_types = '';
+
+    /* The preserving baseline, same shape, mutated by a DROP INDEX instead. */
+    CREATE TABLE materialize_column_keep_st AS materialize_column_st;
+    CREATE TABLE materialize_column_keep_nost AS materialize_column_nost;
+
+    INSERT INTO materialize_column_st        SELECT number, number FROM numbers(50000);
+    INSERT INTO materialize_column_nost      SELECT number, number FROM numbers(50000);
+    INSERT INTO materialize_column_keep_st   SELECT number, number FROM numbers(50000);
+    INSERT INTO materialize_column_keep_nost SELECT number, number FROM numbers(50000);
+    OPTIMIZE TABLE materialize_column_st FINAL;
+    OPTIMIZE TABLE materialize_column_nost FINAL;
+    OPTIMIZE TABLE materialize_column_keep_st FINAL;
+    OPTIMIZE TABLE materialize_column_keep_nost FINAL;
+
+    ALTER TABLE materialize_column_st        MATERIALIZE COLUMN a SETTINGS alter_sync = 2, mutations_sync = 2;
+    ALTER TABLE materialize_column_nost      MATERIALIZE COLUMN a SETTINGS alter_sync = 2, mutations_sync = 2;
+    ALTER TABLE materialize_column_keep_st   DROP INDEX idx_id SETTINGS alter_sync = 2, mutations_sync = 2;
+    ALTER TABLE materialize_column_keep_nost DROP INDEX idx_id SETTINGS alter_sync = 2, mutations_sync = 2;
+
+    SYSTEM FLUSH LOGS part_log;
+
+    SELECT 'materialize_column', 'rewrites_more_than_preserving',
+        toInt64(sumIf(bytes, table = 'materialize_column_st'))
+                - toInt64(sumIf(bytes, table = 'materialize_column_nost'))
+            > toInt64(sumIf(bytes, table = 'materialize_column_keep_st'))
+                - toInt64(sumIf(bytes, table = 'materialize_column_keep_nost'))
+    FROM (
+        SELECT table, ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS bytes
+        FROM system.part_log
+        WHERE database = currentDatabase() AND event_type = 'MutatePart'
+          AND table IN ('materialize_column_st', 'materialize_column_nost',
+                        'materialize_column_keep_st', 'materialize_column_keep_nost')
+    );
+"
+$CLICKHOUSE_CLIENT --query "CHECK TABLE materialize_column_st" | while read -r line; do
+    echo "materialize_column	check	$line"
+done
+
 # A column whose name merely starts with the statistics file prefix must not matter. The fix must not
 # grow a name-based test; this is the case that fails the moment one is added.
 $CLICKHOUSE_CLIENT --query "
@@ -471,5 +543,9 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE write_footprint_rewrite SYNC;
     DROP TABLE write_footprint_nonexempt SYNC;
     DROP TABLE write_footprint_nonexempt_baseline SYNC;
+    DROP TABLE materialize_column_st SYNC;
+    DROP TABLE materialize_column_nost SYNC;
+    DROP TABLE materialize_column_keep_st SYNC;
+    DROP TABLE materialize_column_keep_nost SYNC;
     DROP TABLE statistics_named_column SYNC;
 "

@@ -33,6 +33,8 @@ write_footprint	keep_writes_less_than_rewrite	1	non_exempt_preserves_statistics_
 write_footprint	keep_check	all_1_1_1_2	1
 write_footprint	rewrite_check	all_1_1_1_2	1
 write_footprint	non_exempt_check	all_1_1_1_2	1
+materialize_column	rewrites_more_than_preserving	1
+materialize_column	check	all_1_1_1_2	1
 statistics_named_column	pending	0
 statistics_named_column	rows	20000
 statistics_named_column	check	all_1_1_1_2	1

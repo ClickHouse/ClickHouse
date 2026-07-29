@@ -118,8 +118,45 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// touch, and the little space it needs was reserved there rather than here (see
     /// ReplicatedMergeTreeQueue::selectEntryToProcess): a reservation that fails here makes the entry
     /// fetch the result part, and fetching a whole part to avoid a hardlink is worse than waiting.
-    const bool hardlink_only = selected_entry->hardlink_only_reservation != nullptr;
+    ReservationSharedPtr hardlink_only_reservation = selected_entry->hardlink_only_reservation;
+    const bool hardlink_only = hardlink_only_reservation != nullptr;
     future_mutated_part->hardlink_only = hardlink_only;
+
+    /// Selection reserved on the disk of the part it saw, while the source part was resolved again just
+    /// above. A move that passed its own checks before this entry existed commits at an arbitrary later
+    /// time (MergeTreePartsMover::swapClonedPart only re-checks that an active part of that name still
+    /// exists), so the two disks can differ - and this reservation is what decides the result part's
+    /// path, which a hardlink cannot cross.
+    if (hardlink_only)
+    {
+        const String reserved_disk_name = hardlink_only_reservation->getDisk()->getName();
+        const String source_disk_name = source_part->getDataPartStorage().getDiskName();
+
+        if (reserved_disk_name != source_disk_name)
+        {
+            hardlink_only_reservation = MergeTreeData::tryReserveSpace(0, source_part->getDataPartStorage());
+
+            /// Postponing, not fetching: the entry is still cheap to run locally as soon as the little
+            /// space it needs appears, while a fetch reserves the whole result part on a disk that just
+            /// proved unable to spare even this much.
+            if (!hardlink_only_reservation)
+            {
+                LOG_DEBUG(log, "Source part {} is on disk {} while this mutation reserved space on disk {}, "
+                    "and there is no space to reserve on disk {}; will retry later",
+                    source_part->name, source_disk_name, reserved_disk_name, source_disk_name);
+
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = false,
+                    .part_log_writer = part_log_writer,
+                };
+            }
+
+            LOG_DEBUG(log, "Source part {} moved from disk {} to disk {} since this mutation was admitted; "
+                "reserved space on the part's current disk instead",
+                source_part->name, reserved_disk_name, source_disk_name);
+        }
+    }
 
     /// Never divert such a mutation into a fetch either: it is cheap locally, while the fetch reserves
     /// the sender's whole part, which on a full disk can never succeed - the reported bug with extra
@@ -177,7 +214,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
     if (hardlink_only)
-        reserved_space = selected_entry->hardlink_only_reservation;
+        reserved_space = hardlink_only_reservation;
     else
         reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
     future_mutated_part->updatePath(storage, reserved_space.get());

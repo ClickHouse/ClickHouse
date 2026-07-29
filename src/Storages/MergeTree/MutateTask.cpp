@@ -1365,8 +1365,13 @@ static NameToNameVector collectFilesForRenames(
 /// Returns true iff the source part's statistics are left as they are, so the files holding them are
 /// hardlinked and must not be written again. The caller passes that on to finalizeMutatedPart.
 /// `task_rewrites_all_columns` says the caller writes every column of the part anew, so nothing of the
-/// source part is carried over and there is nothing to keep. It is a property of the route, which is
-/// derived from the source part and the commands, so every replica executing one log entry agrees on it.
+/// source part is carried over and there is nothing to keep.
+/// `task_builds_pipeline` says the mutation reads and rewrites at least one column, so any statistics it
+/// carries over may no longer describe the data. The command types tested below cannot see that on their
+/// own: a command can rewrite a column's values while being in none of them (MATERIALIZE COLUMN on a
+/// MATERIALIZED column, UPDATE, DELETE, MATERIALIZE TTL, APPLY_PATCHES).
+/// All three are properties of the route, which is derived from the source part and the commands, so every
+/// replica executing one log entry agrees on them.
 static bool processStatisticsChanges(
     NameSet & files_to_skip,
     NameToNameVector & files_to_rename,
@@ -1375,7 +1380,8 @@ static bool processStatisticsChanges(
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
     StorageMetadataPtr metadata_snapshot,
-    bool task_rewrites_all_columns)
+    bool task_rewrites_all_columns,
+    bool task_builds_pipeline)
 {
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
@@ -1438,10 +1444,14 @@ static bool processStatisticsChanges(
     }
 
     /// Keeping them: leave every file holding them out of both lists, so the mutation hardlinks them
-    /// with their inherited checksums, and tell the caller not to write them again. Both inputs are
+    /// with their inherited checksums, and tell the caller not to write them again. All three inputs are
     /// derived from the source part and the commands alone, so two replicas executing one log entry
     /// reach the same answer and produce byte-equal parts.
-    if (!task_rewrites_all_columns && !statistics_may_change)
+    ///
+    /// All three conditions are needed. `statistics_may_change` alone misses a command that rewrites a
+    /// column's values without changing which statistics exist; `task_builds_pipeline` alone would keep
+    /// them for DROP STATISTICS, which needs no pipeline yet does change the set.
+    if (!task_rewrites_all_columns && !statistics_may_change && !task_builds_pipeline)
         return true;
 
     /// Remove old statistics files.
@@ -2508,7 +2518,8 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot,
-            /*task_rewrites_all_columns=*/ true);
+            /*task_rewrites_all_columns=*/ true,
+            /*task_builds_pipeline=*/ true);
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2625,7 +2636,8 @@ private:
         /// statistics too whenever its own inputs say nothing changes them. Not keyed on the
         /// hardlink-only admission flag: that flag reads this replica's settings and live queue state,
         /// while two replicas executing one log entry must write byte-equal parts or one of them is
-        /// forced to fetch the whole result part.
+        /// forced to fetch the whole result part. `for_interpreter` carries no such state - it is derived
+        /// from the source part, the metadata snapshot and the commands by splitAndModifyMutationCommands.
         ctx->statistics_preserved = MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
@@ -2634,7 +2646,8 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot,
-            /*task_rewrites_all_columns=*/ false);
+            /*task_rewrites_all_columns=*/ false,
+            /*task_builds_pipeline=*/ !ctx->for_interpreter.empty());
 
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");

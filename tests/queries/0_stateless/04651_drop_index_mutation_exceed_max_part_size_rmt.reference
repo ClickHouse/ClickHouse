@@ -14,3 +14,8 @@ rmt_fetch	failed	0
 rmt_fetch	indices_left	0
 rmt_fetch	rows	20000
 rmt_fetch	check	all_0_0_1_1	1
+rmt_copy_flip	refused	1	not_done	1
+rmt_copy_flip_retry	pending	0
+rmt_copy_flip_retry	indices_left	0
+rmt_copy_flip_retry	rows	20000
+rmt_copy_flip_retry	check	all_0_0_1_1	1
