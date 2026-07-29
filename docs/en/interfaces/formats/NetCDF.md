@@ -109,7 +109,8 @@ The offsets of the data of the variables are a part of the header, and the heade
 beginning of the file, so the whole result is kept in memory until the query finishes.
 
 The version of the format is chosen automatically: CDF-5 when a column needs one of the types that
-only CDF-5 has, or when a column takes more than 4 GiB, and CDF-2 otherwise.
+only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
+length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.
 
 A [Nullable](/sql-reference/data-types/nullable.md) column is written with the `_FillValue`
 attribute, which is the way the format marks missing data. The value of the attribute is the
