@@ -102,7 +102,7 @@ public:
         /// the analyzer (resolveFunction). A set-backed table cannot be read, so it must be consumed
         /// natively as a prepared set here, otherwise the fallback plan reads through it and hits
         /// `Method read is not supported by storage Set`.
-        std::shared_ptr<StorageSet> storage_set = second_argument_table != nullptr ? getSetStorageFromTable(second_argument_table->getStorage()) : nullptr;
+        std::shared_ptr<StorageSet> storage_set = second_argument_table != nullptr ? getSetStorageFromTable(second_argument_table->getStorage(), planner_context.getQueryContext()) : nullptr;
 
         if (storage_set)
         {

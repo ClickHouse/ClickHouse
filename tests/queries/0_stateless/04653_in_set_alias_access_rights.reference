@@ -1,0 +1,8 @@
+Alias granted, target not granted, enable_analyzer = 1
+ACCESS_DENIED
+Alias granted, target not granted, enable_analyzer = 0
+ACCESS_DENIED
+Target granted, enable_analyzer = 1
+1	0
+Target granted, enable_analyzer = 0
+1	0

@@ -1307,7 +1307,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                 /// Recognize a set-backed table through any StorageAlias wrapping, like the analyzer
                 /// and the planner do, so this path also consumes it natively instead of falling
                 /// through to a read that the set storage does not support.
-                if (std::shared_ptr<StorageSet> storage_set = getSetStorageFromTable(table))
+                if (std::shared_ptr<StorageSet> storage_set = getSetStorageFromTable(table, data.getContext()))
                 {
 #if CLICKHOUSE_CLOUD
                     if (storage_set->getName() == "SharedSet")

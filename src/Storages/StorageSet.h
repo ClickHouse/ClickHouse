@@ -103,6 +103,8 @@ private:
 /// A set-backed table is consumed natively as a prepared set on the right of IN and cannot be read,
 /// so every path that prepares such a set must recognize it through any alias wrapping.
 /// The result shares ownership: through an alias the caller holds only the wrapper, not the target.
-std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage);
+/// With a `context`, resolving through an alias requires SELECT on the target, like reading it does.
+/// Pass no context only to ask whether this is a set-backed table without consuming it.
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context = nullptr);
 
 }

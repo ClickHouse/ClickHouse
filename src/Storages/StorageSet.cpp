@@ -200,7 +200,7 @@ SetPtr StorageSet::getSet() const
 }
 
 
-std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage)
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context)
 {
     StoragePtr current = storage;
     /// Bound the walk so a self-referential or cyclic alias chain cannot loop forever.
@@ -213,7 +213,12 @@ std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage)
 
         if (const auto * alias = dynamic_cast<const StorageAlias *>(current.get()))
         {
-            current = alias->tryGetTargetTable();
+            /// Consuming the target as a prepared set replaces reading it, so it must require the
+            /// same SELECT grant that StorageAlias::read checks. Without a context (a caller that
+            /// only asks whether this is a set-backed table) resolve without a check.
+            current = context
+                ? alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::SELECT})
+                : alias->tryGetTargetTable();
             continue;
         }
 
