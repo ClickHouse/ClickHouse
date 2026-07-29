@@ -23,7 +23,6 @@
 #include <Core/Field.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 
 #include <cstring>
@@ -994,280 +993,6 @@ TEST(ComputeHashInto, ReprIndependenceReplicatedUInt64)
     expectRangeSplitConsistent(*replicated);
 }
 
-// ColumnObject and ColumnDynamic are representation-independent for a reason the wrappers above are
-// not: their layout is chosen by INSERTION HISTORY, not by the query. A JSON path lands in a dynamic
-// column or in `shared_data` depending on which paths the block saw first, and a Dynamic value lands
-// in a typed variant or in the shared variant for the same reason. `compareAt` already treats the two
-// layouts as equal, so the hash has to agree as well.
-//
-// These two tests read the finalized per-row UInt32 directly. The SQL suite can only observe which
-// bucket a row lands in, and `IColumn::computeHashInto` explicitly permits collisions, so a hash
-// difference outside the bucket bits is invisible there.
-namespace
-{
-/// Compose one row of `second` after one row of `prefix`, the way scatter consumers do.
-UInt32 composeKeyRow(const IColumn & prefix, size_t prefix_row, const IColumn & second, size_t row)
-{
-    UInt32 h = WEAK_HASH32_INITIAL_VALUE;
-    prefix.computeHashInto(prefix_row, prefix_row + 1, &h, false);
-    second.computeHashInto(row, row + 1, &h, false);
-    return h;
-}
-
-UInt32 finalizedRow(const IColumn & col, size_t row)
-{
-    UInt32 h = 0;
-    col.computeHashInto(row, row + 1, &h, true);
-    return h;
-}
-
-/// Leaf hash of a one-row column, i.e. the value hash a typed representation contributes.
-UInt32 leafHashOfSingleRow(const IColumn & one_row)
-{
-    return finalizedRow(one_row, 0);
-}
-
-UInt32 leafHashOfString(std::string_view s)
-{
-    return leafHashOfSingleRow(*makeStringColumn({std::string(s)}));
-}
-
-std::vector<std::string> sharedDataPathsOfRow(const ColumnObject & obj, size_t row)
-{
-    const auto * paths = obj.getSharedDataPathsAndValues().first;
-    const auto & offsets = obj.getSharedDataOffsets();
-    std::vector<std::string> res;
-    for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
-        res.emplace_back(paths->getDataAt(i));
-    return res;
-}
-}
-
-TEST(ComputeHashInto, ReprIndependenceObjectSplit)
-{
-    // `max_dynamic_paths = 1` leaves room for exactly one dynamic path, so the second path of a
-    // two-path object is pushed into `shared_data`; which of the two that is depends only on the
-    // order the block saw them. `a` is a declared typed path, which can never move.
-    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a Int64)");
-
-    // `p` is a UInt8 (a sub-8-byte numeric) and `q` is a String (variable length). Both widths are
-    // required: at exactly 8 bytes a raw-blob hash of a `shared_data` value coincides with the typed
-    // hash, so an Int64-only fixture cannot tell the two apart.
-    const Object object = {{"a", Field(static_cast<Int64>(1))}, {"p", Field(static_cast<UInt64>(7))}, {"q", Field(String("s"))}};
-
-    // Column A: `p` takes the single dynamic slot first, so `q` goes to shared data.
-    auto col_a = type->createColumn();
-    auto & obj_a = assert_cast<ColumnObject &>(*col_a);
-    obj_a.insert(Object{{"p", Field(static_cast<UInt64>(7))}});
-    obj_a.insert(object);
-
-    // Column B: `q` takes the slot first, so the SAME logical object puts `p` in shared data.
-    auto col_b = type->createColumn();
-    auto & obj_b = assert_cast<ColumnObject &>(*col_b);
-    obj_b.insert(Object{{"q", Field(String("filler"))}});
-    obj_b.insert(object);
-
-    // Self-assert the layout divergence, so a future change to path promotion cannot silently turn
-    // this test into a tautology comparing two identically laid out columns.
-    ASSERT_TRUE(obj_a.getDynamicPaths().contains("p"));
-    ASSERT_FALSE(obj_a.getDynamicPaths().contains("q"));
-    ASSERT_FALSE(obj_b.getDynamicPaths().contains("p"));
-    ASSERT_TRUE(obj_b.getDynamicPaths().contains("q"));
-    ASSERT_EQ(sharedDataPathsOfRow(obj_a, 1), (std::vector<std::string>{"q"}));
-    ASSERT_EQ(sharedDataPathsOfRow(obj_b, 1), (std::vector<std::string>{"p"}));
-
-    auto prefix = makeUInt32Column({0xDEADBEEFu});
-
-    EXPECT_EQ(finalizedRow(obj_a, 1), finalizedRow(obj_b, 1))
-        << "The same JSON object must have the same finalized hash whichever section holds a path";
-    EXPECT_EQ(composeKeyRow(*prefix, 0, obj_a, 1), composeKeyRow(*prefix, 0, obj_b, 1))
-        << "...and must compose identically after a shared prefix column";
-
-    expectRangeSplitConsistent(obj_a);
-    expectRangeSplitConsistent(obj_b);
-
-    // Equality between the two layouts cannot pin the fold ORDER: any per-row permutation of the
-    // contributions is applied to both columns alike and cancels out. Reproduce the documented
-    // contract from the logical value using independent primitives -- typed paths chain first, then
-    // (path name, value) pairs fold over the sorted union of dynamic paths and shared data -- so a
-    // reordered or path-name-less fold is caught too.
-    UInt32 expected = WEAK_HASH32_INITIAL_VALUE;
-    {
-        auto typed_a = ColumnInt64::create();
-        typed_a->insert(Field(static_cast<Int64>(1)));
-        expected = combineWeakHash32(leafHashOfSingleRow(*typed_a), expected);
-
-        auto value_p = ColumnUInt8::create();
-        value_p->insert(Field(static_cast<UInt64>(7)));
-        expected = combineWeakHash32(leafHashOfSingleRow(*value_p), combineWeakHash32(leafHashOfString("p"), expected));
-
-        expected = combineWeakHash32(leafHashOfString("s"), combineWeakHash32(leafHashOfString("q"), expected));
-    }
-    EXPECT_EQ(finalizedRow(obj_a, 1), expected)
-        << "The object hash must fold (path, value) over the sorted union of dynamic paths and shared data";
-}
-
-TEST(ComputeHashInto, ReprIndependenceDynamicSharedVariant)
-{
-    // `max_types = 1` leaves room for exactly one typed variant, so whichever type the column sees
-    // first keeps it and every other value goes to the shared variant in its serialized form.
-    // Both a String (variable length) and a UInt8 (sub-8-byte) are covered for the same reason as
-    // in the Object test above.
-    struct Case
-    {
-        const char * name;
-        Field value;
-        Field filler;
-    };
-    const std::vector<Case> cases = {
-        {"UInt8", Field(static_cast<UInt64>(5)), Field(String("filler"))},
-        {"String", Field(String("abcdefghijk")), Field(static_cast<UInt64>(5))},
-    };
-
-    auto prefix = makeUInt32Column({0x0BADF00Du});
-
-    for (const auto & c : cases)
-    {
-        SCOPED_TRACE(c.name);
-
-        // Column A: the value's own type takes the single slot, so it is stored typed.
-        auto col_typed = ColumnDynamic::create(1);
-        col_typed->insert(c.value);
-
-        // Column B: a different type takes the slot first, so the SAME value goes to the shared variant.
-        auto col_shared = ColumnDynamic::create(1);
-        col_shared->insert(c.filler);
-        col_shared->insert(c.value);
-
-        // Self-assert the layout divergence (see the Object test).
-        ASSERT_NE(col_typed->getVariantColumn().globalDiscriminatorAt(0), col_typed->getSharedVariantDiscriminator());
-        ASSERT_EQ(col_shared->getVariantColumn().globalDiscriminatorAt(1), col_shared->getSharedVariantDiscriminator());
-
-        EXPECT_EQ(finalizedRow(*col_typed, 0), finalizedRow(*col_shared, 1))
-            << "A Dynamic value must have the same finalized hash in a typed and in the shared variant";
-        EXPECT_EQ(composeKeyRow(*prefix, 0, *col_typed, 0), composeKeyRow(*prefix, 0, *col_shared, 1))
-            << "...and must compose identically after a shared prefix column";
-
-        expectRangeSplitConsistent(*col_typed);
-        expectRangeSplitConsistent(*col_shared);
-    }
-
-    // Independently of the two layouts agreeing, the value both of them hash must be the LEAF hash
-    // of the value's own type, not the hash of the shared variant's serialized blob (which carries a
-    // binary type prefix, and for a String a length prefix as well).
-    {
-        auto value_u8 = ColumnUInt8::create();
-        value_u8->insert(Field(static_cast<UInt64>(5)));
-        auto shared_u8 = ColumnDynamic::create(1);
-        shared_u8->insert(Field(String("filler")));
-        shared_u8->insert(Field(static_cast<UInt64>(5)));
-        EXPECT_EQ(finalizedRow(*shared_u8, 1), leafHashOfSingleRow(*value_u8))
-            << "A UInt8 in the shared variant must hash as a UInt8, not as its serialized blob";
-
-        auto shared_str = ColumnDynamic::create(1);
-        shared_str->insert(Field(static_cast<UInt64>(5)));
-        shared_str->insert(Field(String("abcdefghijk")));
-        EXPECT_EQ(finalizedRow(*shared_str, 1), leafHashOfString("abcdefghijk"))
-            << "A String in the shared variant must hash as a String, not as its serialized blob";
-    }
-}
-
-// The shared-variant path decodes each value into a scratch column cached per type. A scratch column
-// must be reset to an EMPTY column between rows, not merely popped: `popBack` is a row operation, so a
-// type that keeps state outside its rows retains every value seen so far and `computeHashInto` re-reads
-// all of it. `ColumnLowCardinality` is such a type -- `popBack` drops indexes only, `insertData` grows
-// the dictionary, and `computeHashInto` hashes the whole dictionary per call, which turns hashing the N
-// shared rows of ONE `computeHashInto` call into O(N^2) work over a dictionary that also grows to N
-// entries. The cache is a local of that call, so N is bounded by one row range, never by the table.
-//
-// The values stay correct either way (the dictionary is gathered by index), so the assertions below are
-// split: first that the fix changes no hash VALUE, then that the retained state is gone. The retention
-// half is asserted structurally, via the dictionary size the scratch carries, rather than by timing.
-namespace
-{
-/// Serialize `n`-th row of `src` into the Dynamic binary form the shared variant stores.
-std::string dynamicSharedBlob(const IColumn & src, const DataTypePtr & type, size_t n)
-{
-    auto blob_holder = ColumnString::create();
-    ColumnDynamic::serializeValueIntoSharedVariant(*blob_holder, src, type, type->getDefaultSerialization(), n);
-    return std::string(blob_holder->getDataAt(0));
-}
-
-/// Largest dictionary held by any scratch column in `cache` (0 when no scratch is a LowCardinality).
-size_t maxScratchDictionarySize(const ColumnDynamic::SharedValueHashCache & cache)
-{
-    size_t max_dict = 0;
-    for (const auto & [_, entry] : cache)
-    {
-        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(entry.column.get()))
-            max_dict = std::max(max_dict, lc->getDictionary().size());
-    }
-    return max_dict;
-}
-}
-
-TEST(ComputeHashInto, SharedValueScratchKeepsNoStateAcrossRows)
-{
-    // A plain `LowCardinality(String)` really does reach the shared variant: the cast wrapper preserves
-    // LowCardinality (it strips only Nullable and LowCardinality(Nullable)), so `x::LowCardinality(String)`
-    // inserted into a Dynamic whose single slot is taken lands there in this exact serialized form.
-    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-
-    const size_t n = 64;
-    std::vector<std::string> values(n);
-    for (size_t i = 0; i < n; ++i)
-        values[i] = "lc" + std::to_string(i); // all DISTINCT, so a retained dictionary grows with i
-
-    // One-row source columns, plus the leaf hash each value has in its own typed LowCardinality column.
-    std::vector<std::string> blobs(n);
-    std::vector<UInt32> expected_leaf(n);
-    for (size_t i = 0; i < n; ++i)
-    {
-        auto one_row = lc_type->createColumn();
-        one_row->insertData(values[i].data(), values[i].size());
-        blobs[i] = dynamicSharedBlob(*one_row, lc_type, 0);
-        expected_leaf[i] = leafHashOfSingleRow(*one_row);
-    }
-
-    // Hash all N values through ONE cache, exactly as `computeHashInto` does for a row range.
-    ColumnDynamic::SharedValueHashCache cache;
-    for (size_t i = 0; i < n; ++i)
-    {
-        EXPECT_EQ(ColumnDynamic::hashSharedValue(blobs[i], cache), expected_leaf[i])
-            << "A LowCardinality(String) in the shared variant must hash as its typed leaf value (row " << i << ")";
-    }
-
-    // The scratch may hold the row currently being hashed, and `ColumnUnique::cloneEmpty` keeps one
-    // reserved slot for the default value, so 2 is the fixed steady-state size. Retaining previous rows
-    // instead would leave 1 + n here, and would have re-hashed that whole dictionary on every row.
-    EXPECT_LE(maxScratchDictionarySize(cache), 2u)
-        << "The per-type scratch column must not retain values from previously hashed rows";
-
-    // Same defect one level deeper: a Variant carrying a LowCardinality nests the same retained state,
-    // and `ColumnVariant::popBack` recurses into its variants without dropping it.
-    auto variant_type = DataTypeFactory::instance().get("Variant(LowCardinality(String), UInt64)");
-    ColumnDynamic::SharedValueHashCache variant_cache;
-    for (size_t i = 0; i < n; ++i)
-    {
-        auto one_row = variant_type->createColumn();
-        one_row->insert(Field(values[i]));
-        const auto blob = dynamicSharedBlob(*one_row, variant_type, 0);
-        EXPECT_EQ(ColumnDynamic::hashSharedValue(blob, variant_cache), leafHashOfSingleRow(*one_row))
-            << "A Variant(LowCardinality(String), ...) in the shared variant must hash as its typed leaf value (row " << i << ")";
-    }
-
-    size_t max_nested_dict = 0;
-    for (const auto & [_, entry] : variant_cache)
-    {
-        const auto & variant = assert_cast<const ColumnVariant &>(*entry.column);
-        for (size_t v = 0; v < variant.getNumVariants(); ++v)
-            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&variant.getVariantByLocalDiscriminator(v)))
-                max_nested_dict = std::max(max_nested_dict, lc->getDictionary().size());
-    }
-    EXPECT_LE(max_nested_dict, 2u)
-        << "A nested LowCardinality inside a Variant scratch must not retain previously hashed rows either";
-}
-
 
 // ──────────────────────────────────────────────────────────────────────
 // 17. Wide (128/256-bit) numeric types exercise the multi-word CRC32C path in
@@ -1403,4 +1128,168 @@ TEST(ComputeHashInto, ColumnDecimal256WideFold)
     auto as_const = makeConst(std::move(one), n);
     EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
         << "Materialized Decimal256 and ColumnConst(Decimal256) of the same value must compose identically";
+}
+
+// A logically equal JSON object or Dynamic value must get the same weak hash regardless of how it is
+// physically split between dynamic sub-columns / a typed variant and shared data / the shared variant.
+
+namespace
+{
+
+UInt32 composeKeyRow(const IColumn & prefix, size_t prefix_row, const IColumn & second, size_t row)
+{
+    UInt32 h = WEAK_HASH32_INITIAL_VALUE;
+    prefix.computeHashInto(prefix_row, prefix_row + 1, &h, false);
+    second.computeHashInto(row, row + 1, &h, false);
+    return h;
+}
+
+UInt32 finalizedRow(const IColumn & col, size_t row)
+{
+    UInt32 h = 0;
+    col.computeHashInto(row, row + 1, &h, true);
+    return h;
+}
+
+/// Leaf hash of a one-row column, i.e. the value hash a typed representation contributes.
+UInt32 leafHashOfSingleRow(const IColumn & one_row)
+{
+    return finalizedRow(one_row, 0);
+}
+
+/// Hash of a string as a leaf value; also equals the raw-bytes path-name hash the object hash uses.
+UInt32 leafHashOfString(std::string_view s)
+{
+    return leafHashOfSingleRow(*makeStringColumn({std::string(s)}));
+}
+
+std::vector<std::string> sharedDataPathsOfRow(const ColumnObject & obj, size_t row)
+{
+    const auto * paths = obj.getSharedDataPathsAndValues().first;
+    const auto & offsets = obj.getSharedDataOffsets();
+    std::vector<std::string> res;
+    for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
+        res.emplace_back(paths->getDataAt(i));
+    return res;
+}
+
+}
+
+TEST(ComputeHashInto, ReprIndependenceObjectSplit)
+{
+    // One dynamic slot, so of the two non-typed paths one is dynamic and the other in shared_data;
+    // `a` is a declared typed path, which can never move.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a Int64)");
+
+    // Both widths are required: at exactly 8 bytes a raw-blob hash of a shared value coincides with
+    // the typed hash, so a UInt8 (sub-8-byte) and a String (length-prefixed) are needed to tell them apart.
+    const Object object = {{"a", Field(static_cast<Int64>(1))}, {"p", Field(static_cast<UInt64>(7))}, {"q", Field(String("s"))}};
+
+    // The seeder row claims the dynamic slot for one path, so the same object splits oppositely in A and B.
+    auto col_a = type->createColumn();
+    auto & obj_a = assert_cast<ColumnObject &>(*col_a);
+    obj_a.insert(Object{{"p", Field(static_cast<UInt64>(7))}});
+    obj_a.insert(object);
+
+    auto col_b = type->createColumn();
+    auto & obj_b = assert_cast<ColumnObject &>(*col_b);
+    obj_b.insert(Object{{"q", Field(String("filler"))}});
+    obj_b.insert(object);
+
+    // Guard against the layouts silently becoming identical, which would make the test a tautology.
+    ASSERT_TRUE(obj_a.getDynamicPaths().contains("p"));
+    ASSERT_FALSE(obj_a.getDynamicPaths().contains("q"));
+    ASSERT_FALSE(obj_b.getDynamicPaths().contains("p"));
+    ASSERT_TRUE(obj_b.getDynamicPaths().contains("q"));
+    ASSERT_EQ(sharedDataPathsOfRow(obj_a, 1), (std::vector<std::string>{"q"}));
+    ASSERT_EQ(sharedDataPathsOfRow(obj_b, 1), (std::vector<std::string>{"p"}));
+
+    auto prefix = makeUInt32Column({0xDEADBEEFu});
+
+    EXPECT_EQ(finalizedRow(obj_a, 1), finalizedRow(obj_b, 1))
+        << "The same JSON object must have the same finalized hash whichever section holds a path";
+    EXPECT_EQ(composeKeyRow(*prefix, 0, obj_a, 1), composeKeyRow(*prefix, 0, obj_b, 1))
+        << "...and must compose identically after a shared prefix column";
+
+    expectRangeSplitConsistent(obj_a);
+    expectRangeSplitConsistent(obj_b);
+
+    // Layout equality alone can't catch a value- or path-name-ignoring fold (it cancels on both sides),
+    // so reconstruct the hash from primitives: typed paths chained, then non-typed (path, value) summed.
+    UInt32 expected = WEAK_HASH32_INITIAL_VALUE;
+    {
+        auto typed_a = ColumnInt64::create();
+        typed_a->insert(Field(static_cast<Int64>(1)));
+        expected = combineWeakHash32(leafHashOfSingleRow(*typed_a), expected);
+
+        auto value_p = ColumnUInt8::create();
+        value_p->insert(Field(static_cast<UInt64>(7)));
+        expected += combineWeakHash32(leafHashOfSingleRow(*value_p), leafHashOfString("p"));
+
+        expected += combineWeakHash32(leafHashOfString("s"), leafHashOfString("q"));
+    }
+    EXPECT_EQ(finalizedRow(obj_a, 1), expected)
+        << "The object hash must chain typed paths and commutatively fold (path, value) over the non-typed paths";
+}
+
+TEST(ComputeHashInto, ReprIndependenceDynamicSharedVariant)
+{
+    // One typed slot: the first type seen keeps it, every other value goes to the shared variant.
+    // Both widths are covered for the same reason as in the Object test.
+    struct Case
+    {
+        const char * name;
+        Field value;
+        Field filler;
+    };
+    const std::vector<Case> cases = {
+        {"UInt8", Field(static_cast<UInt64>(5)), Field(String("filler"))},
+        {"String", Field(String("abcdefghijk")), Field(static_cast<UInt64>(5))},
+    };
+
+    auto prefix = makeUInt32Column({0x0BADF00Du});
+
+    for (const auto & c : cases)
+    {
+        SCOPED_TRACE(c.name);
+
+        // Column A: the value's own type takes the single slot, so it is stored typed.
+        auto col_typed = ColumnDynamic::create(1);
+        col_typed->insert(c.value);
+
+        // Column B: a different type takes the slot first, so the SAME value goes to the shared variant.
+        auto col_shared = ColumnDynamic::create(1);
+        col_shared->insert(c.filler);
+        col_shared->insert(c.value);
+
+        // Self-assert the layout divergence (see the Object test).
+        ASSERT_NE(col_typed->getVariantColumn().globalDiscriminatorAt(0), col_typed->getSharedVariantDiscriminator());
+        ASSERT_EQ(col_shared->getVariantColumn().globalDiscriminatorAt(1), col_shared->getSharedVariantDiscriminator());
+
+        EXPECT_EQ(finalizedRow(*col_typed, 0), finalizedRow(*col_shared, 1))
+            << "A Dynamic value must have the same finalized hash in a typed and in the shared variant";
+        EXPECT_EQ(composeKeyRow(*prefix, 0, *col_typed, 0), composeKeyRow(*prefix, 0, *col_shared, 1))
+            << "...and must compose identically after a shared prefix column";
+
+        expectRangeSplitConsistent(*col_typed);
+        expectRangeSplitConsistent(*col_shared);
+    }
+
+    // Beyond the two layouts agreeing, the shared value must hash as its own type's leaf value, not as
+    // the serialized blob (which carries a type prefix, and for a String a length prefix too).
+    {
+        auto value_u8 = ColumnUInt8::create();
+        value_u8->insert(Field(static_cast<UInt64>(5)));
+        auto shared_u8 = ColumnDynamic::create(1);
+        shared_u8->insert(Field(String("filler")));
+        shared_u8->insert(Field(static_cast<UInt64>(5)));
+        EXPECT_EQ(finalizedRow(*shared_u8, 1), leafHashOfSingleRow(*value_u8))
+            << "A UInt8 in the shared variant must hash as a UInt8, not as its serialized blob";
+
+        auto shared_str = ColumnDynamic::create(1);
+        shared_str->insert(Field(static_cast<UInt64>(5)));
+        shared_str->insert(Field(String("abcdefghijk")));
+        EXPECT_EQ(finalizedRow(*shared_str, 1), leafHashOfString("abcdefghijk"))
+            << "A String in the shared variant must hash as a String, not as its serialized blob";
+    }
 }

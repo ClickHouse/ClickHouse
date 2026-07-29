@@ -197,23 +197,12 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Per-call scratch for the shared-representation rows of `computeHashInto`, keyed by decoded type.
-    /// `serialization` is what the cache is really for: it is resolved once per type and reused for
-    /// every row. `column` holds only the row currently being hashed and is replaced by a fresh empty
-    /// column each time, so no value state accumulates across rows (see `hashSharedValue`).
-    struct SharedValueHashScratch
-    {
-        SerializationPtr serialization;
-        MutableColumnPtr column;
-    };
-    using SharedValueHashCache = UnorderedMapWithMemoryTracking<String, SharedValueHashScratch>;
-
-    /// Leaf hash of a value held in the Dynamic binary form (`encodeDataType` prefix + binary value):
-    /// the hash the same logical value has in a typed variant. `ColumnObject::computeHashInto` reuses
-    /// it because `shared_data` values are written with the same Dynamic serialization.
-    static UInt32 hashSharedValue(std::string_view value, SharedValueHashCache & cache);
-
+    /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
+    /// or the shared variant), so it is safe to scatter join/aggregation keys by.
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+
+    /// Leaf hash of a value in the Dynamic binary form; reused by `ColumnObject` for `shared_data`.
+    static UInt32 hashSharedValue(std::string_view value);
 
     void updateHashFast(SipHash & hash) const override
     {

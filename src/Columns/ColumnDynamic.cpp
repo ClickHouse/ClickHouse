@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
@@ -899,49 +900,27 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
-UInt32 ColumnDynamic::hashSharedValue(std::string_view value, SharedValueHashCache & cache)
+UInt32 ColumnDynamic::hashSharedValue(std::string_view value)
 {
     ReadBufferFromMemory buf(value);
     auto type = decodeDataType(buf);
-
-    /// A `Nothing` prefix carries no value bytes, so decoding it would throw while merely hashing.
-    /// `SerializationDynamic` writes exactly that for a NULL row, and `ColumnObject` already decodes
-    /// and branches on it in `repairDuplicatesInDynamicPathsAndSharedData`, so it is a state in-tree
-    /// code handles rather than an impossible one.
+    /// A NULL is written as a `Nothing` prefix with no value bytes.
     if (isNothing(type))
         return WEAK_HASH32_INITIAL_VALUE;
 
-    auto & entry = cache[type->getName()];
-    if (!entry.serialization)
-        entry.serialization = type->getDefaultSerialization();
-
-    /// Reset to an EMPTY column rather than popping the previous row: `popBack` is a row operation, so
-    /// a column that keeps state outside its rows would retain every value seen so far and re-hash all
-    /// of it here. `ColumnLowCardinality::popBack` drops indexes but not the dictionary, and
-    /// `computeHashInto` hashes the whole dictionary per call, which would make this loop quadratic in
-    /// the rows of one `computeHashInto` call (the cache is a local there, so it never carries across
-    /// calls); `ColumnVariant` nests the same shape. `cloneEmpty` is `cloneResized(0)`, which those
-    /// types implement by clone-emptying that state, so one fresh column per row keeps the work O(1).
-    if (entry.column)
-        entry.column = entry.column->cloneEmpty();
-    else
-        entry.column = type->createColumn();
-
-    entry.serialization->deserializeBinary(*entry.column, buf, getFormatSettings());
-
+    /// Hash the decoded value, not its serialized blob, so it matches the same value stored typed.
+    auto serialization = getDataTypesCache().getSerialization(type->getName());
+    auto column = type->createColumn();
+    serialization->deserializeBinary(*column, buf, getFormatSettings());
     UInt32 h = WEAK_HASH32_INITIAL_VALUE;
-    entry.column->computeHashInto(0, 1, &h, /*initial=*/true);
+    column->computeHashInto(0, 1, &h, /*initial=*/true);
     return h;
 }
 
 void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// A value stored in the shared variant hashes its serialized blob while the same value in a typed
-    /// variant hashes the column's representation, so one logical value gets two hashes depending on a
-    /// layout that varies with insertion history (and across a grace-hash temp-file round-trip). Since
-    /// `compareAt` treats both representations as equal, a hash join then drops matches and a spilled
-    /// bucket can re-hash backwards. Only shared rows are wrong: decode those to the leaf hash a typed
-    /// row would get, and leave master's bulk `ColumnVariant` hash for typed rows untouched.
+    /// A value must hash the same whether it sits in a typed variant or the shared variant. Typed rows
+    /// are already correct via `ColumnVariant`; only shared rows need decoding to the typed leaf hash.
     const auto & variant_col = getVariantColumn();
     const auto & shared_variant = getSharedVariant();
     if (shared_variant.empty())
@@ -955,16 +934,22 @@ void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * h
     variant_col.computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
 
     const auto shared_discr = getSharedVariantDiscriminator();
-    SharedValueHashCache cache;
     for (size_t i = 0; i < n; ++i)
     {
         const size_t row = row_begin + i;
         if (variant_col.globalDiscriminatorAt(row) == shared_discr)
-            value_hash[i] = hashSharedValue(shared_variant.getDataAt(variant_col.offsetAt(row)), cache);
+            value_hash[i] = hashSharedValue(shared_variant.getDataAt(variant_col.offsetAt(row)));
     }
 
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = initial ? value_hash[i] : combineWeakHash32(value_hash[i], hash_out[i]);
+    if (initial)
+    {
+        memcpy(hash_out, value_hash.data(), n * sizeof(UInt32));
+    }
+    else
+    {
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(value_hash[i], hash_out[i]);
+    }
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

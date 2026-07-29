@@ -1246,83 +1246,64 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
-namespace
-{
-
-/// Fold one `(path, value)` contribution into a row's accumulator. Chained in ascending path order
-/// so the result does not depend on which section holds the path: a repeated seeded fold is not
-/// associative, so the SEQUENCE is what has to be fixed, not the combiner.
-void foldPathAndValueHash(UInt32 & accumulator, UInt32 path_hash, UInt32 value_hash)
-{
-    accumulator = combineWeakHash32(value_hash, combineWeakHash32(path_hash, accumulator));
-}
-
-UInt32 hashPathName(std::string_view path)
-{
-    return ::updateWeakHash32(reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-}
-
-}
-
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// Which section holds a path varies per block, so fold `(path name, value)` over the sorted union
-    /// of both sections rather than over the physical section order. Typed paths are a fixed sorted set
-    /// that can never move between sections, so their bulk hashes just chain first.
+    /// A logically equal object must hash the same regardless of how its paths are split between
+    /// dynamic sub-columns and `shared_data` (the split varies across blocks and temp-file round-trips).
+    /// Typed paths can never move between sections, so they are chained in a fixed order. Dynamic paths
+    /// and `shared_data` can hold the same path, so each `(path, value)` is folded commutatively (`+`)
+    /// and a `shared_data` value is decoded to the leaf hash it would have as a typed variant.
     const size_t n = row_end - row_begin;
     PaddedPODArray<UInt32> object_hash(n, WEAK_HASH32_INITIAL_VALUE);
-    for (auto path : sorted_typed_paths)
+
+    for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
 
-    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
-    const auto & shared_data_offsets = getSharedDataOffsets();
-
-    /// One forward cursor per row into that row's shared-data entries, which are sorted within the row,
-    /// so the scratch stays O(rows) rather than the O(paths * rows) a per-path hash matrix would need.
-    PaddedPODArray<size_t> shared_cursor(n);
-    for (size_t i = 0; i < n; ++i)
-        shared_cursor[i] = shared_data_offsets[static_cast<ssize_t>(row_begin + i) - 1];
-
-    ColumnDynamic::SharedValueHashCache shared_value_cache;
-    auto foldSharedEntriesBefore = [&](size_t i, std::string_view upper_bound, bool drain_all)
+    if (global_max_dynamic_paths == 0)
     {
-        const size_t row_shared_end = shared_data_offsets[row_begin + i];
-        while (shared_cursor[i] < row_shared_end)
+        /// No path can ever be dynamic, so `shared_data` holds every non-typed path in a canonical
+        /// layout and its bulk hash is already split-invariant (no per-value decode needed).
+        shared_data->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
+    }
+    else
+    {
+        PaddedPODArray<UInt32> value_hash(n);
+        for (const auto & [path, column] : dynamic_paths_ptrs)
         {
-            auto path = shared_data_paths->getDataAt(shared_cursor[i]);
-            if (!drain_all && !(path < upper_bound))
-                break;
-            foldPathAndValueHash(
-                object_hash[i],
-                hashPathName(path),
-                ColumnDynamic::hashSharedValue(shared_data_values->getDataAt(shared_cursor[i]), shared_value_cache));
-            ++shared_cursor[i];
+            column->computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
+            const UInt32 path_hash = updateWeakHash32(
+                reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
+            for (size_t i = 0; i < n; ++i)
+            {
+                /// An absent/NULL path contributes nothing, so `{"a":1}` and `{"a":1,"b":null}` agree.
+                if (!column->isNullAt(row_begin + i))
+                    object_hash[i] += combineWeakHash32(value_hash[i], path_hash);
+            }
         }
-    };
 
-    PaddedPODArray<UInt32> path_hash(n);
-    for (auto path : sorted_dynamic_paths)
-    {
-        const auto * dynamic_column = dynamic_paths_ptrs.find(path)->second;
-        dynamic_column->computeHashInto(row_begin, row_end, path_hash.data(), /*initial=*/true);
-        const UInt32 path_name_hash = hashPathName(path);
+        const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
+        const auto & shared_offsets = getSharedDataOffsets();
         for (size_t i = 0; i < n; ++i)
         {
-            foldSharedEntriesBefore(i, path, /*drain_all=*/false);
-            /// A NULL path contributes nothing, so `{"a":1}` and `{"a":1,"b":null}` agree.
-            if (!dynamic_column->isNullAt(row_begin + i))
-                foldPathAndValueHash(object_hash[i], path_name_hash, path_hash[i]);
+            for (size_t j = shared_offsets[row_begin + i - 1]; j < shared_offsets[row_begin + i]; ++j)
+            {
+                const auto path = shared_paths->getDataAt(j);
+                const UInt32 path_hash = updateWeakHash32(
+                    reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
+                object_hash[i] += combineWeakHash32(ColumnDynamic::hashSharedValue(shared_values->getDataAt(j)), path_hash);
+            }
         }
     }
 
-    for (size_t i = 0; i < n; ++i)
-        foldSharedEntriesBefore(i, {}, /*drain_all=*/true);
-
     if (initial)
+    {
         memcpy(hash_out, object_hash.data(), n * sizeof(UInt32));
+    }
     else
+    {
         for (size_t i = 0; i < n; ++i)
             hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
+    }
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
