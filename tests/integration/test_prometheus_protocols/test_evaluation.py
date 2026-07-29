@@ -1275,6 +1275,50 @@ def test_date_time_functions():
     )
 
 
+# Regression test: a date/time function called without arguments synthesizes the evaluation time internally
+# and, at some point, used to always cast it to the TimeSeries table's scalar (value) data type before
+# extracting a calendar component from it. ClickHouse's TimeSeries engine explicitly supports Float32-typed
+# value columns, and Float32 only has ~128 seconds of precision at today's epoch magnitude, so on such a table
+# this used to round the evaluation time by up to ~64 seconds before minute()/hour()/etc. ever saw it - enough
+# to flip which minute (or hour, etc.) it falls into near a boundary. This must return the exact calendar value
+# regardless of the table's scalar type, both for a single evaluation time and for a range of evaluation times.
+def test_date_time_functions_zero_arg_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        assert execute_query_in_prometheus("minute()", 1770582700) == (
+            '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582700, "31"]}]}'
+        )
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute()', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert execute_range_query_in_prometheus(
+            "minute()", 1770582580, 1770582700, 60
+        ) == (
+            '{"resultType": "matrix", "result": [{"metric": {}, "values": '
+            '[[1770582580, "29"], [1770582640, "30"], [1770582700, "31"]]}]}'
+        )
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute()', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
+
+
 def test_math_functions():
     do_query_test(
         "abs(vector(-3))",

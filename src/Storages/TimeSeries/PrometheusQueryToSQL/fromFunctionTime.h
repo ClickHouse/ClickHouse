@@ -14,4 +14,12 @@ SQLQueryPiece fromFunctionTime(const PQT::Function * function_node, std::vector<
 /// Makes a query piece returning the evaluation time of the specified node, the same as the function time() would return.
 SQLQueryPiece makeTimeQueryPiece(const PQT::Node * node, ConverterContext & context);
 
+/// Same as makeTimeQueryPiece(), but keeps the evaluation time in `context.timestamp_data_type` (native DateTime64
+/// precision) instead of casting it down to `context.scalar_data_type` (which can be Float32). Intended for callers
+/// that only need the evaluation time to immediately extract a calendar component from it (e.g. 0-argument date/time
+/// functions like hour(), minute()) and must not lose timestamp precision through an intermediate float scalar cast
+/// before doing so. Not suitable for time() itself, which legitimately wants a scalar/float value the user can do
+/// arithmetic on.
+SQLQueryPiece makeTimeQueryPieceNative(const PQT::Node * node, ConverterContext & context);
+
 }

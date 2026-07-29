@@ -132,7 +132,12 @@ SQLQueryPiece applyDateTimeFunction(
     if (arguments.empty())
     {
         /// A date/time function called without arguments acts as if it was called with `vector(time())`.
-        auto time_argument = makeTimeQueryPiece(function_node, context);
+        /// Use makeTimeQueryPieceNative() here (instead of makeTimeQueryPiece(), which time() itself uses) to keep
+        /// the evaluation time in `context.timestamp_data_type` (native DateTime64 precision) through the
+        /// toDateTime64() conversion below, instead of `context.scalar_data_type` (which can be Float32 and, for a
+        /// range query, would round the evaluation-time array to ~128-second granularity at today's epoch
+        /// magnitude before the calendar component is even extracted).
+        auto time_argument = makeTimeQueryPieceNative(function_node, context);
         time_argument.type = ResultType::INSTANT_VECTOR;
         arguments.push_back(std::move(time_argument));
     }
