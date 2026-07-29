@@ -3,6 +3,8 @@
 union count
 200
 200
+is materialized
+1
 two consumers
 40000
 40000
