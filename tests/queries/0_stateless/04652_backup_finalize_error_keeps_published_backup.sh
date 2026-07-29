@@ -3,7 +3,7 @@
 # no-fasttest: the archive arms need minizip, which is not built in the fast test
 # no-parallel: enables a global failpoint
 
-# A BACKUP that fails after its backup has already been published at the destination must not have
+# A `BACKUP` that fails after its backup has already been published at the destination must not have
 # that backup deleted by the failure cleanup: the published backup is complete and usable, and any
 # incremental chained onto it would otherwise become unrestorable.
 
@@ -100,7 +100,8 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO Disk('bac
 
 # --- control_mid, archive: a failure after `.backup` is written but BEFORE the archive is
 # --- finalized is still UNPUBLISHED (the archive is not readable yet), so it must be cleaned up.
-# --- This is what distinguishes arming after closeArchive(true) from arming before it.
+# --- This is what distinguishes arming after `closeArchive` with `finalize = true` from arming
+# --- before it.
 
 echo "control_mid_error"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT backup_fail_while_finalizing_archive"
