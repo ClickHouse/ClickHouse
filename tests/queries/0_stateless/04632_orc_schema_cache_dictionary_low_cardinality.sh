@@ -14,9 +14,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE=${CLICKHOUSE_TMP}/04632_dict.orc
 
-# Write the dictionary-encoded file in a separate process so the schema cache of the reading
-# process does not see it as freshly modified (which would bypass the cache and hide the bug).
+# Write the dictionary-encoded file in a separate process so the reading process starts with an
+# empty schema cache.
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$DATA_FILE', ORC) SELECT toLowCardinality(toString(number % 10)) AS c FROM numbers(100000) SETTINGS output_format_orc_dictionary_key_size_threshold = 0.1, engine_file_truncate_on_insert = 1"
+
+# Force an old mtime so the cached schema stays valid across the two DESCs below. SchemaCache
+# invalidates an entry when st_mtime >= registration_time (src/Storages/Cache/SchemaCache.cpp:125),
+# and both are second-granularity time_t; without this, a write and the first DESC in the same
+# second would drop the entry and the second DESC would re-infer regardless of the cache key,
+# passing even when input_format_orc_dictionary_as_low_cardinality is missing from the key.
+touch -t 200001010000 "$DATA_FILE"
 
 $CLICKHOUSE_LOCAL --multiquery "
     -- Infer and cache the LowCardinality schema with the setting on.
