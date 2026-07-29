@@ -92,40 +92,10 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
 
-    if (status != IProcessor::Status::Finished || finish_done)
-        return status;
-
-    finish_done = true;
-    bool completed_the_filter = finish();
-
-    if (seal_port)
-    {
-        /// Note: on early termination (e.g. the query is cancelled) the filter may never be
-        /// completed and no seal is emitted; the gated consumers see their input finish
-        /// without a seal and produce nothing, which is fine for a dying query.
-        if (completed_the_filter)
-        {
-            Chunk seal;
-            auto info = std::make_shared<RuntimeFilterSealInfo>();
-            info->filter = query_context->getRuntimeFilterLookup()->find(filter_key);
-            chassert(info->filter && info->filter->isReady());
-            seal.getChunkInfos().add(std::move(info));
-            seal_port->push(std::move(seal));
-        }
-        seal_port->finish();
-    }
+    if (status == IProcessor::Status::Finished)
+        finish();
 
     return status;
-}
-
-OutputPort * BuildRuntimeFilterTransform::addSealPort()
-{
-    if (seal_port)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Seal port was already added to BuildRuntimeFilterTransform");
-
-    outputs.emplace_back(Block(), this);
-    seal_port = &outputs.back();
-    return seal_port;
 }
 
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
@@ -143,18 +113,18 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
     built_filter->insert(filter_column);
 }
 
-bool BuildRuntimeFilterTransform::finish()
+void BuildRuntimeFilterTransform::finish()
 {
     /// A deserialized step has no random key and is never executed in practice; nothing to register.
     if (filter_key.empty())
-        return false;
+        return;
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterTransform");
     auto filter_lookup = query_context->getRuntimeFilterLookup();
     /// Register under the random key (matches the probe-side `__applyFilter`), not the displayed
     /// stable `filter_name`. Keeping the key off the plan means it never enters a plan-step hash.
     /// The stable name is passed alongside for readable stats logging (the key is opaque).
-    return filter_lookup->add(filter_key, filter_name, std::move(built_filter));
+    filter_lookup->add(filter_key, filter_name, std::move(built_filter));
 }
 
 }

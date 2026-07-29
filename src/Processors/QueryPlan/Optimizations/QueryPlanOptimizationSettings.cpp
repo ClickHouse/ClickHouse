@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
+    extern const SettingsBool enable_join_seal_gated_reading;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
     extern const SettingsBool query_plan_merge_expressions;
@@ -273,6 +274,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
+    join_seal_gated_reading = from[Setting::enable_join_seal_gated_reading].value;
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];

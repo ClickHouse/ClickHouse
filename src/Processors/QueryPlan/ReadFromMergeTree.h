@@ -417,6 +417,16 @@ public:
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
+
+    /// Gate this read on a seal from a join marked with enableSealGatedProbeReading: the
+    /// sources are replaced by SealGatedReadTransforms which do not read until the seal
+    /// arrives through a pipeline edge, and the runtime filter delivered with the seal then
+    /// prunes mark ranges by the given primary key column (see RuntimeFilterReadRangesRefiner).
+    /// Set by the plan optimization together with marking the join step. Only the default
+    /// multi-threaded reading path supports gating; on other paths the mark has no effect
+    /// and the join wiring falls back gracefully.
+    void enableSealGatedReading(const String & key_column_name) { seal_gated_key_column = key_column_name; }
+
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
@@ -642,6 +652,10 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+
+    /// See enableSealGatedReading.
+    std::optional<String> seal_gated_key_column;
+
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
     /// `read_bucket` parameter.

@@ -11,17 +11,6 @@ namespace DB
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
-/// Attached to the empty "seal" chunk emitted through the optional seal port of
-/// BuildRuntimeFilterTransform when the filter is completed. The payload is state, not data,
-/// so it travels in the chunk info and the seal chunk itself has no rows.
-struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
-{
-    RuntimeFilterSealInfo() = default;
-    RuntimeFilterSealInfo(const RuntimeFilterSealInfo & other) = default;
-
-    RuntimeFilterConstPtr filter;
-};
-
 /// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
 /// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
 /// a special function 'filterContains'
@@ -52,12 +41,6 @@ public:
 
     void transform(Chunk & chunk) override;
 
-    /// Adds an extra output port emitting a single seal chunk (see RuntimeFilterSealInfo)
-    /// when this transform is the one that completes the filter (the last concurrent build
-    /// stream to finish). The seal ports of the other transforms finish without data, so
-    /// resizing all of them to one stream yields exactly one seal. Call before wiring.
-    OutputPort * addSealPort();
-
 private:
     const String filter_column_name;
     const size_t filter_column_position = -1;
@@ -72,11 +55,7 @@ private:
     UniqueRuntimeFilterPtr built_filter;
     ContextPtr query_context;
 
-    OutputPort * seal_port = nullptr;
-    bool finish_done = false;
-
-    /// Registers the built filter part; returns true if this call completed the filter.
-    bool finish();
+    void finish();
 };
 
 }

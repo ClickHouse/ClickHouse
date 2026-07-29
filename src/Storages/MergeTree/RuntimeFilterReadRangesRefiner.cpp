@@ -28,6 +28,11 @@ RuntimeFilterReadRangesRefiner::~RuntimeFilterReadRangesRefiner() = default;
 
 void RuntimeFilterReadRangesRefiner::setFilter(const RuntimeFilterConstPtr & filter)
 {
+    std::call_once(set_filter_once, [&] { setFilterImpl(filter); });
+}
+
+void RuntimeFilterReadRangesRefiner::setFilterImpl(const RuntimeFilterConstPtr & filter)
+{
     chassert(filter && filter->isReady());
 
     auto values = filter->getRecordedKeyValues();

@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -27,16 +29,21 @@ public:
     RuntimeFilterReadRangesRefiner(StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_);
     ~RuntimeFilterReadRangesRefiner() override;
 
+    /// Idempotent and thread-safe: the seal is copied to every gated reading stream, so this
+    /// is called once per stream with the same filter and only the first call takes effect.
     void setFilter(const RuntimeFilterConstPtr & filter);
 
     MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
 private:
+    void setFilterImpl(const RuntimeFilterConstPtr & filter);
+
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     const String key_column_name;
 
     /// Written once by setFilter before any refine call (guaranteed by the gating edge).
+    std::once_flag set_filter_once;
     bool drop_all = false;
     std::shared_ptr<const KeyCondition> condition;
 };

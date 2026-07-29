@@ -35,6 +35,7 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 

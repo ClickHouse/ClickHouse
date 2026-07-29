@@ -34,6 +34,12 @@ public:
     explicit Pipe(ProcessorPtr source);
     /// Create from source with specified totals end extremes (may be nullptr). Ports should be owned by source.
     explicit Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes);
+    /// Create from processors of a seal-gated read: like the ctor from processors, but the
+    /// given input port is allowed to stay disconnected and is registered as a pending seal
+    /// input (it is connected to the build-side seal of the nearest join marked as gating;
+    /// a pending input which is never wired is terminated on pipeline completion and the
+    /// read proceeds unfiltered).
+    Pipe(std::shared_ptr<Processors> processors_, InputPort * pending_seal_input_);
     /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
     explicit Pipe(std::shared_ptr<Processors> processors_);
 
@@ -50,6 +56,13 @@ public:
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
+
+    /// The seal inputs of gated reads (see SealGatedReadTransform). They stay disconnected
+    /// until a join marked as gating its probe side connects all of them to its build-side
+    /// seal. Each gated read contributes exactly one (it fans the seal out to its streams
+    /// with its own copy transform), but a probe subtree may unite several gated reads and
+    /// unmarked joins carry the inputs of both of their children upward.
+    const std::vector<InputPort *> & getPendingSealInputs() const { return pending_seal_inputs; }
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
@@ -120,6 +133,9 @@ private:
     OutputPortRawPtrs output_ports;
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
+
+    /// See getPendingSealInputs.
+    std::vector<InputPort *> pending_seal_inputs;
 
     /// It is the max number of processors which can be executed in parallel for each step.
     /// Usually, it's the same as the number of output ports.

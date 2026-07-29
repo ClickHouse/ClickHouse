@@ -5643,6 +5643,11 @@ If the number of rows to read from the projection index is less than or equal to
     DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
 If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0) \
+    DECLARE(Bool, enable_join_seal_gated_reading, false, R"(
+Gate the probe-side reading of a hash JOIN on the completion of the build-side runtime filter (see `enable_join_runtime_filters`): nothing is read on the probe side until the filter is complete, and the filter is then used to prune whole mark ranges by the primary key before read tasks are created, in addition to the ordinary row-level filtering. The gating is expressed as an edge of the query pipeline.
+
+Experimental: only the default multi-threaded reading path is gated; other paths fall back to ungated reading with row-level filtering.
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_projection_index_in_read_pools, false, R"(
 Apply the projection index (see `optimize_use_projection_filtering`) already inside MergeTree read pools: mark ranges fully filtered out by the projection index are dropped before a read task is created for them, instead of being skipped granule by granule during reading.
 

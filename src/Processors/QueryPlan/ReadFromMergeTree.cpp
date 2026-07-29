@@ -64,6 +64,10 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/RuntimeFilterReadRangesRefiner.h>
+#include <Storages/MergeTree/SealGatedReadTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
+#include <Columns/ColumnConst.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -667,6 +671,13 @@ Pipe ReadFromMergeTree::readFromPool(
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
+    /// The refiner turning the runtime filter delivered by the seal into primary key pruning
+    /// of every task cut (the gating edge guarantees it is set before the first cut).
+    /// TODO: combine with the projection index refiner when both apply.
+    std::shared_ptr<RuntimeFilterReadRangesRefiner> seal_refiner;
+    if (seal_gated_key_column)
+        seal_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(storage_snapshot->metadata, context, *seal_gated_key_column);
+
     if (use_prefetched_read_pool)
     {
         auto prefetched_pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -685,7 +696,10 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        if (seal_refiner)
+            prefetched_pool->setReadRangesRefiner(seal_refiner);
+        else
+            prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
     }
     else
@@ -706,11 +720,61 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        read_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        if (seal_refiner)
+            read_pool->setReadRangesRefiner(seal_refiner);
+        else
+            read_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
-    LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
+    LOG_DEBUG(log, "Reading approx. {} rows with {} streams{}", total_rows, pool_settings.threads,
+        seal_refiner ? " (gated by a runtime filter seal)" : "");
+
+    /// Seal-gated reading: the sources are replaced by transforms whose input is the seal,
+    /// so nothing is read until the build side of the JOIN completes its runtime filter.
+    /// One seal is copied to every stream; the copy input is registered on the pipe as
+    /// pending and is connected by the join pipeline wiring.
+    if (seal_refiner)
+    {
+        auto seal_header = std::make_shared<const Block>(Block{});
+        auto copy_seal = std::make_shared<CopyTransform>(seal_header, pool_settings.threads);
+        auto processors = std::make_shared<Processors>();
+
+        auto seal_output_it = copy_seal->getOutputs().begin();
+        for (size_t i = 0; i < pool_settings.threads; ++i)
+        {
+            auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
+
+            auto processor = std::make_unique<MergeTreeSelectProcessor>(
+                pool,
+                std::move(algorithm),
+                query_info.row_level_filter,
+                query_info.prewhere_info,
+                index_read_tasks,
+                actions_settings,
+                reader_settings,
+                index_build_context,
+                lazy_materializing_rows,
+                &storage_snapshot->metadata->getColumns());
+
+            auto header = std::make_shared<const Block>(processor->getHeader());
+            auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_refiner, data.getLogName());
+
+            if (i == 0)
+                transform->addTotalRowsApprox(total_rows);
+
+            connect(*(seal_output_it++), transform->getSealInput());
+            processors->emplace_back(std::move(transform));
+        }
+
+        InputPort * pending_seal_input = &copy_seal->getInputs().front();
+        processors->emplace_back(std::move(copy_seal));
+
+        Pipe pipe(std::move(processors), pending_seal_input);
+        if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
+            pipe.resize(output_streams_limit);
+        return pipe;
+    }
 
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
