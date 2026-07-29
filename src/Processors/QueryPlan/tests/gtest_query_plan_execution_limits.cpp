@@ -64,27 +64,40 @@ TEST(QueryPlanExecutionLimits, ExtractSubplanPreservesLimitsAndResources)
 }
 
 /// `unitePlans` already merged `max_threads` across the children; `concurrency_control` has to be
-/// OR-ed the same way, so a united plan honours it whenever any child asked for it.
+/// OR-ed the same way, so a united plan honours it whenever any child asked for it. Both child
+/// orders are asserted: the folds accumulate over every child, so the result must not depend on
+/// which child happens to come last.
 TEST(QueryPlanExecutionLimits, UnitePlansMergesLimitsFromChildren)
 {
-    auto without = std::make_unique<QueryPlan>(makeSourcePlan());
-    without->setMaxThreads(2);
-    without->setConcurrencyControl(false);
+    for (bool asking_child_first : {false, true})
+    {
+        auto without = std::make_unique<QueryPlan>(makeSourcePlan());
+        without->setMaxThreads(2);
+        without->setConcurrencyControl(false);
 
-    auto with = std::make_unique<QueryPlan>(makeSourcePlan());
-    with->setMaxThreads(4);
-    with->setConcurrencyControl(true);
+        auto with = std::make_unique<QueryPlan>(makeSourcePlan());
+        with->setMaxThreads(4);
+        with->setConcurrencyControl(true);
 
-    SharedHeaders input_headers{makeHeader(), makeHeader()};
-    std::vector<QueryPlanPtr> plans;
-    plans.emplace_back(std::move(without));
-    plans.emplace_back(std::move(with));
+        std::vector<QueryPlanPtr> plans;
+        if (asking_child_first)
+        {
+            plans.emplace_back(std::move(with));
+            plans.emplace_back(std::move(without));
+        }
+        else
+        {
+            plans.emplace_back(std::move(without));
+            plans.emplace_back(std::move(with));
+        }
 
-    QueryPlan united;
-    united.unitePlans(std::make_unique<UnionStep>(input_headers), std::move(plans));
+        SharedHeaders input_headers{makeHeader(), makeHeader()};
+        QueryPlan united;
+        united.unitePlans(std::make_unique<UnionStep>(input_headers), std::move(plans));
 
-    EXPECT_EQ(united.getMaxThreads(), 4u);
-    EXPECT_TRUE(united.getConcurrencyControl());
+        EXPECT_EQ(united.getMaxThreads(), 4u) << "asking_child_first=" << asking_child_first;
+        EXPECT_TRUE(united.getConcurrencyControl()) << "asking_child_first=" << asking_child_first;
+    }
 }
 
 /// The merge must not invent a limit no child asked for: a plan united from children that all run
