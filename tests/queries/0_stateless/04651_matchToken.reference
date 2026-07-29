@@ -1,0 +1,103 @@
+-- regexp: err.* (prefix-like)
+1	error occurred in the system
+3	errno is set to invalid value
+4	connection error handler
+9	err_code is 42
+10	warnings and errors everywhere
+-- regexp: .*or (suffix-like)
+1	error occurred in the system
+2	hello world from clickhouse
+4	connection error handler
+7	ERRor case sensitive test
+10	warnings and errors everywhere
+-- regexp: e.ror (single char)
+1	error occurred in the system
+4	connection error handler
+10	warnings and errors everywhere
+-- regexp: err(or|no) (alternation)
+1	error occurred in the system
+3	errno is set to invalid value
+4	connection error handler
+10	warnings and errors everywhere
+-- regexp: [a-z]rror (character class)
+1	error occurred in the system
+4	connection error handler
+10	warnings and errors everywhere
+-- regexp: test[0-9]+ (numeric suffix)
+8	test123 numeric token
+-- regexp: exact match error
+1	error occurred in the system
+4	connection error handler
+10	warnings and errors everywhere
+-- regexp: .* (match all)
+1	error occurred in the system
+2	hello world from clickhouse
+3	errno is set to invalid value
+4	connection error handler
+5	nothing matches here
+7	ERRor case sensitive test
+8	test123 numeric token
+9	err_code is 42
+10	warnings and errors everywhere
+11	café résumé naïve
+-- regexp: no match xyz.*
+-- edge: case sensitive (ERR.* matches ERRor, not lower-case error)
+7	ERRor case sensitive test
+-- literal tests
+1
+1
+1
+0
+1
+0
+-- combined: matchToken AND hasAnyTokens
+4	connection error handler
+-- supp: anchored ^err matches tokens starting with err
+1	error occurred in the system
+3	errno is set to invalid value
+4	connection error handler
+9	err_code is 42
+10	warnings and errors everywhere
+-- supp: bare substring ror matches token containing ror
+1	error occurred in the system
+4	connection error handler
+10	warnings and errors everywhere
+-- supp: top-level alternation hello|nothing
+2	hello world from clickhouse
+5	nothing matches here
+-- supp: empty pattern matches rows with at least one token
+1	error occurred in the system
+2	hello world from clickhouse
+3	errno is set to invalid value
+4	connection error handler
+5	nothing matches here
+7	ERRor case sensitive test
+8	test123 numeric token
+9	err_code is 42
+10	warnings and errors everywhere
+11	café résumé naïve
+-- supp: . does not cross separator (err.code should not match err_code)
+-- supp: non-ASCII token regexp prefix
+11	café résumé naïve
+-- array literal: regexp prefix-like matches across elements
+1
+-- array literal: regexp suffix-like matches across elements
+1
+-- array literal: array tokenizer matches whole element regexp
+1
+-- array literal: split tokenizer can match inner token regexp
+1
+-- array literal: nullable elements are ignored
+1
+-- array literal: empty array has no matching element
+0
+-- array literal: empty-string element contributes no token, other element matches
+1
+-- array literal: all elements non-matching
+0
+-- array table: regexp err.* with asciiCJK tokenizer
+1	['hello world','error handler']
+3	['errno state','misc value']
+-- array table: regexp err.* with splitByNonAlpha tokenizer
+1	['hello world','error handler']
+3	['errno state','misc value']

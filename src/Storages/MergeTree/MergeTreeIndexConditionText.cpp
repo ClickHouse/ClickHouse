@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsBool use_text_index_like_evaluation_by_dictionary_scan;
+    extern const SettingsBool use_text_index_match_token_evaluation_by_dictionary_scan;
     extern const SettingsUInt64 text_index_like_min_pattern_length;
     extern const SettingsBool allow_hyperscan;
     extern const SettingsUInt64 max_hyperscan_regexp_length;
@@ -206,6 +207,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_OR:
         case RPNElement::FUNCTION_NOT:
         case RPNElement::FUNCTION_HAS_ANY_TOKENS:
+        case RPNElement::FUNCTION_MATCH_TOKEN:
         {
             return true;
         }
@@ -247,6 +249,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match"
+        || function_name == "matchToken"
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
         || function_name == "multiMatchAny";
@@ -271,6 +274,18 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "hasPhrase")
         return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
+    /// matchToken resolves via the analyzer's queries_by_pattern dictionary scan (same path as `like`).
+    /// Exact direct read is opt-in: when disabled, the predicate is kept and only mayBeTrueOnGranule
+    /// uses the index. Patterns are compiled unconditionally (independent of direct_read_mode) so that
+    /// the None path still benefits from text-index granule pruning.
+    if (function_name == "matchToken")
+    {
+        const auto & settings = getContext()->getSettingsRef();
+        return settings[Setting::use_text_index_match_token_evaluation_by_dictionary_scan]
+            ? TextIndexDirectReadMode::Exact
+            : TextIndexDirectReadMode::None;
+    }
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -356,6 +371,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_HAS_PHRASE,
+         RPNElement::FUNCTION_MATCH_TOKEN,
          RPNElement::FUNCTION_LIKE,
          RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
@@ -469,6 +485,18 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             bool exists_in_granule = hasAnyPatternsInRange(*text_search_query, query_builder, current_range);
             rpn_stack.emplace_back(exists_in_granule, true);
 
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH_TOKEN)
+        {
+            /// matchToken carries its matcher in TextSearchQuery::patterns. The analyzer's
+            /// queries_by_pattern scan routes matching dictionary tokens into the per-query
+            /// QueryBuilder, so the granule check reuses the same hasAnyPatternsInRange
+            /// path as FUNCTION_LIKE.
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
+            bool exists_in_granule = hasAnyPatternsInRange(*text_search_query, query_builder, current_range);
+            rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
         {
@@ -1308,6 +1336,36 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         for (auto & tokens : tokens_for_queries)
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
 
+        return true;
+    }
+    if (function_name == "matchToken")
+    {
+        /// matchToken(haystack, pattern) applies an unanchored re2 regexp to each token independently.
+        /// The text index stores per-token posting lists, so the dictionary scan (queries_by_pattern)
+        /// is semantically exact: addTokenToPatterns runs pattern->match(token) for each dictionary token.
+        ///
+        /// The pattern is compiled with OptimizedRegularExpression(pattern) (default flags = 0),
+        /// matching the function body -- no RE_DOT_NL, no RE_NO_CAPTURE, no RE_CASELESS.
+        /// TextSearchQuery::tokens is empty; the matcher lives entirely in .patterns.
+        ///
+        /// Patterns are compiled unconditionally (not gated on direct_read_mode): in None mode the
+        /// predicate is kept, but mayBeTrueOnGranule still calls hasAnyPatternsInRange, which would
+        /// return false on empty patterns and drop rows.
+        const auto & pattern = value_field.safeGet<String>();
+        if (pattern.empty())
+        {
+            /// Empty regexp matches every token (empty string is a substring of any token).
+            /// Cannot prune -- keep the predicate for row-level evaluation.
+            return false;
+        }
+
+        std::vector<OptimizedRegularExpression> compiled;
+        compiled.emplace_back(pattern);
+
+        out.function = RPNElement::FUNCTION_MATCH_TOKEN;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::Any, direct_read_mode,
+            VectorWithMemoryTracking<String>(), std::move(compiled)));
         return true;
     }
     if ((function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8") && tokenizer->supportsStringLike())

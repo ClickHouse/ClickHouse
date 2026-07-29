@@ -140,6 +140,9 @@ private:
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
             FUNCTION_HAS_PHRASE,
+            /// Token-pattern: matchToken. Uses TextSearchQuery::patterns (not tokens)
+            /// via the analyzer's queries_by_pattern dictionary scan.
+            FUNCTION_MATCH_TOKEN,
             FUNCTION_LIKE,
             /// Can take any value
             FUNCTION_UNKNOWN,
