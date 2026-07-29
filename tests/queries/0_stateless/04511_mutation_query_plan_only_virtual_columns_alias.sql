@@ -25,7 +25,23 @@ ALTER TABLE t_mut_qp_alias UPDATE v = length(a_tbl) WHERE c0 < 2; -- { serverErr
 -- An alias over a real column keeps working (a_real = c0 + 1, so this deletes c0 = 1 and 2).
 ALTER TABLE t_mut_qp_alias DELETE WHERE a_real > 1 AND c0 < 3;
 SELECT count() FROM t_mut_qp_alias;
+-- The four rejections above happened before the mutation was queued, so exactly one entry
+-- exists here (the valid mutation) and none of them failed in the background.
+SELECT count(), countIf(latest_fail_reason != '') FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_qp_alias';
 DROP TABLE t_mut_qp_alias;
+
+-- Expression aliases scope the same way inside an `ALIAS` column's own defining expression,
+-- which the gate follows: the alias defined there shadows the name, so this is not a reference
+-- to the virtual column and the mutation must be allowed.
+DROP TABLE IF EXISTS t_mut_qp_nested_alias;
+CREATE TABLE t_mut_qp_nested_alias (c0 UInt32, al UInt32 ALIAS ((1 AS _table) + _table))
+ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t_mut_qp_nested_alias SELECT number FROM numbers(4);
+-- The second condition matches only some rows, so the part is really read.
+ALTER TABLE t_mut_qp_nested_alias DELETE WHERE al > 1 AND c0 > 2;
+SELECT count() FROM t_mut_qp_nested_alias;
+DROP TABLE t_mut_qp_nested_alias;
 
 -- A Tuple subcolumn whose name collides with an ALIAS column is a real column access: it is
 -- neither the virtual nor the alias, so following the alias must not reject it.

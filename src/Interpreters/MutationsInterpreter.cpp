@@ -794,8 +794,13 @@ static void rejectQueryPlanOnlyVirtualColumnsImpl(
             if (auto column_default = columns.getDefault(short_name);
                 column_default && column_default->kind == ColumnDefaultKind::Alias && column_default->expression)
             {
+                /// The defining expression is its own scope, so the aliases it defines shadow
+                /// names within it, just like the ones collected over a mutation command.
+                NameSet definition_scope = shadowed;
+                collectExpressionAliases(column_default->expression.get(), definition_scope);
+
                 aliases_in_progress.insert(short_name);
-                rejectQueryPlanOnlyVirtualColumns(column_default->expression.get(), columns, shadowed, aliases_in_progress);
+                rejectQueryPlanOnlyVirtualColumns(column_default->expression.get(), columns, definition_scope, aliases_in_progress);
                 aliases_in_progress.erase(short_name);
             }
         }
