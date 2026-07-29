@@ -6,6 +6,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/getBlobPropertiesWithRetry.h>
 #include <IO/ReadBufferFromString.h>
 #include <azure/core/credentials/credentials.hpp>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
@@ -332,43 +333,6 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     total_size = data_stream->Length() + offset;
 
     initialized = true;
-}
-
-namespace
-{
-    /// GetProperties() is a single request issued outside the read/download retry loops, so a
-    /// transient Azure 403 (RBAC-propagation window) would otherwise escape raw. Retry it with the
-    /// same policy the download loop uses (isRetryableAzureException + bounded exponential backoff).
-    Azure::Storage::Blobs::Models::BlobProperties getBlobPropertiesWithRetry(
-        const Azure::Storage::Blobs::BlobClient & client, size_t max_retries, const String & path, const LoggerPtr & log)
-    {
-        size_t sleep_time_with_backoff_milliseconds = 100;
-        for (size_t i = 0;; ++i)
-        {
-            try
-            {
-                return client.GetProperties().Value;
-            }
-            catch (const Azure::Core::RequestFailedException & e)
-            {
-                if (i + 1 >= max_retries || !isRetryableAzureException(e))
-                    throw;
-                LOG_TEST(log, "GetProperties for {} failed at attempt {}, retrying: {}", path, i + 1, e.Message);
-                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-                sleep_time_with_backoff_milliseconds *= 2;
-            }
-            catch (const Azure::Core::Credentials::AuthenticationException & e)
-            {
-                /// Credential/RBAC token-acquisition failure is transient (same window as 403); retry
-                /// within the same budget, matching runWithRetries / checkDataPart.
-                if (i + 1 >= max_retries)
-                    throw;
-                LOG_TEST(log, "GetProperties for {} failed at attempt {} (auth), retrying: {}", path, i + 1, e.what());
-                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-                sleep_time_with_backoff_milliseconds *= 2;
-            }
-        }
-    }
 }
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
