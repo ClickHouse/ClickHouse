@@ -1,6 +1,6 @@
 -- Tags: no-old-analyzer
--- The fix is in the new analyzer's LogicalExpressionOptimizerPass; the old analyzer rejects
--- these JOIN ON shapes via a different path (INVALID_JOIN_ON_EXPRESSION), so its output differs.
+-- The fix is in the analyzer's LogicalExpressionOptimizerPass; the old analyzer rejects these
+-- JOIN ON shapes via a different path (INVALID_JOIN_ON_EXPRESSION), so its output differs.
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (c0 Int) ENGINE = Memory;
