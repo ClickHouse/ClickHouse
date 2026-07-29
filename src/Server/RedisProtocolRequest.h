@@ -117,6 +117,10 @@ public:
         command_len = reader.readInteger();
         if (command_len < 1)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Wrong command length: {}", command_len);
+        if (command_len > MAX_ARRAY_SIZE)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Command length {} exceeds the maximum allowed {}", command_len, MAX_ARRAY_SIZE);
 
         auto cmd = Poco::toUpper(reader.readBulkString());
         if (cmd == Command::COMMAND)

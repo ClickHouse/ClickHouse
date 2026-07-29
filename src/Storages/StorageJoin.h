@@ -103,7 +103,11 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-    bool supportsGetRequests() const override { return true; }
+    /// Lookups are implemented via `joinGet`, which only supports `ANY LEFT` (and `RightAny LEFT`) joins.
+    bool supportsGetRequests() const override
+    {
+        return kind == JoinKind::Left && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
+    }
 
     Block getBlockByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context) override;
 

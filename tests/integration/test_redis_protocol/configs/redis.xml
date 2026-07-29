@@ -15,6 +15,20 @@
                 <key_column>name</key_column>
                 <value_column>surname</value_column>
             </_1>
+            <_2>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>recreated_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>surname</value_column>
+            </_2>
+            <_3>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>all_join_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>surname</value_column>
+            </_3>
         </db>
     </redis>
 </clickhouse>

@@ -20,6 +20,13 @@ namespace ErrorCodes
 namespace RedisProtocol
 {
 
+/// Limits on the client-controlled length prefixes, mirroring the Redis protocol limits
+/// (`PROTO_MAX_MULTIBULK_LEN` and the default `proto-max-bulk-len`).
+/// Without them a client could make the server allocate an arbitrary amount of memory
+/// by sending only a length header.
+static constexpr Int64 MAX_ARRAY_SIZE = 1024 * 1024;
+static constexpr Int64 MAX_BULK_STRING_SIZE = 64 * 1024 * 1024;
+
 enum class DataType : char
 {
     SIMPLE_STRING = '+',
@@ -61,6 +68,10 @@ public:
         auto size = readInteger();
         if (size < 0)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Negative bulk string length {}", size);
+        if (size > MAX_BULK_STRING_SIZE)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Bulk string length {} exceeds the maximum allowed {}", size, MAX_BULK_STRING_SIZE);
 
         String s;
         s.resize(size);

@@ -13,6 +13,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/IServer.h>
 #include <Server/RedisProtocolMapping.h>
+#include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Logger.h>
 
@@ -43,6 +44,13 @@ private:
 
     void initDB(UInt32 db_);
     void checkDBSet() const;
+
+    /// Resolves the table configured for the selected Redis database and validates that it can
+    /// serve lookups. The table is resolved for every request, so DDL on it is visible immediately.
+    StoragePtr resolveTable(UInt32 db_, const RedisProtocol::MappingPtr & mapping) const;
+
+    /// Checks that the table matches the configuration of the Redis database and supports lookups.
+    void validateTable(UInt32 db_, const StoragePtr & table) const;
 
     /// Renders a single value of a single-row lookup result as a Redis bulk string.
     /// An unset optional means the key was not found (serialized as Nil).

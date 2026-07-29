@@ -1,4 +1,5 @@
 import logging
+import socket
 
 import pytest
 from redis import Redis, exceptions
@@ -49,6 +50,13 @@ def started_cluster():
         node.query("CREATE USER IF NOT EXISTS pass_user IDENTIFIED WITH plaintext_password BY 'secret'")
         node.query("GRANT SELECT ON default.name_surname_map TO pass_user")
         node.query("CREATE USER IF NOT EXISTS limited_user IDENTIFIED WITH plaintext_password BY 'secret'")
+        # An unsupported `Join` variant: `joinGet` only works for `ANY LEFT`.
+        node.query(
+            """
+            CREATE TABLE IF NOT EXISTS all_join_map (name String, surname String)
+            ENGINE = Join(ALL, LEFT, name)
+            """
+        )
         yield cluster
     except Exception as ex:
         logging.exception(ex)
@@ -161,3 +169,62 @@ def test_auth(started_cluster):
         client.get("Alice")
     assert "Not enough privileges" in str(resp_err.value)
     client.close()
+
+
+def test_unsupported_join_variant(redis_client):
+    # `Join(ALL, LEFT, ...)` cannot serve lookups, and this has to be reported
+    # by `SELECT`, not by the first `GET`.
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.select(3)
+    assert "does not support get requests" in str(resp_err.value)
+
+
+def test_table_is_resolved_for_every_request(started_cluster, redis_client):
+    node.query(
+        """
+        CREATE TABLE recreated_map (name String, surname String)
+        ENGINE = Join(ANY, LEFT, name)
+        """
+    )
+    node.query("INSERT INTO recreated_map VALUES ('Alice', 'Smith')")
+
+    assert redis_client.select(2)
+    assert redis_client.get("Alice") == b"Smith"
+
+    # Recreating the table with different data must be visible to the already connected client.
+    node.query("DROP TABLE recreated_map SYNC")
+    node.query(
+        """
+        CREATE TABLE recreated_map (name String, surname String)
+        ENGINE = Join(ANY, LEFT, name)
+        """
+    )
+    node.query("INSERT INTO recreated_map VALUES ('Alice', 'Jones')")
+    assert redis_client.get("Alice") == b"Jones"
+
+    # A dropped table must not keep serving data either.
+    node.query("DROP TABLE recreated_map SYNC")
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.get("Alice")
+    assert "recreated_map" in str(resp_err.value)
+
+
+def send_raw_request(started_cluster, request):
+    sock = socket.create_connection((started_cluster.get_instance_ip("node"), server_port), timeout=30)
+    try:
+        sock.sendall(request)
+        return sock.recv(4096)
+    finally:
+        sock.close()
+
+
+def test_oversized_length_prefixes(started_cluster):
+    # The array length is client-controlled and must be rejected before anything is allocated for it.
+    response = send_raw_request(started_cluster, b"*100000000\r\n$4\r\nMGET\r\n")
+    assert response.startswith(b"-ERR ")
+    assert b"exceeds the maximum allowed" in response
+
+    # The same for the length of a bulk string.
+    response = send_raw_request(started_cluster, b"*2\r\n$3\r\nGET\r\n$1000000000\r\n")
+    assert response.startswith(b"-ERR ")
+    assert b"exceeds the maximum allowed" in response

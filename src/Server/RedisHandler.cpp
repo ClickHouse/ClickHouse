@@ -230,7 +230,7 @@ bool RedisHandler::processRequest()
             if (redis_db->getType() != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
-            auto table = redis_db->getTable();
+            auto table = resolveTable(db, redis_db);
             auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
             auto result_block = table->getBlockByKeys({get_request.getKey()}, {value_column}, query_context);
@@ -252,7 +252,7 @@ bool RedisHandler::processRequest()
             if (redis_db->getType() != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MGET command can only be applied to a database of type string");
 
-            auto table = redis_db->getTable();
+            auto table = resolveTable(db, redis_db);
             auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
 
@@ -281,7 +281,7 @@ bool RedisHandler::processRequest()
             if (redis_db->getType() != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HGET command can only be applied to a database of type hash");
 
-            auto table = redis_db->getTable();
+            auto table = resolveTable(db, redis_db);
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), hget_request.getField()});
             auto result_block = table->getBlockByKeys({hget_request.getKey()}, {hget_request.getField()}, query_context);
 
@@ -302,7 +302,7 @@ bool RedisHandler::processRequest()
             if (redis_db->getType() != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
-            auto table = redis_db->getTable();
+            auto table = resolveTable(db, redis_db);
             Strings columns_to_check{redis_db->getKeyColumnName()};
             columns_to_check.insert(columns_to_check.end(), hmget_request.getFields().begin(), hmget_request.getFields().end());
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), columns_to_check);
@@ -332,17 +332,39 @@ std::optional<String> RedisHandler::serializeValue(const ColumnWithTypeAndName &
 
 void RedisHandler::initDB(UInt32 db_)
 {
-    const auto & mapping = config->db_mapping[db_];
+    const auto & mapping = config->db_mapping.at(db_);
+    StorageID table_id{mapping.clickhouse_db, mapping.clickhouse_table};
 
-    auto db_ptr = DatabaseCatalog::instance().getDatabase(mapping.clickhouse_db, query_context);
-    if (db_ptr == nullptr)
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Database {} does not exist", mapping.clickhouse_db);
+    validateTable(db_, DatabaseCatalog::instance().getTable(table_id, query_context));
 
-    auto table_ptr = db_ptr->getTable(mapping.clickhouse_table, query_context);
-    if (table_ptr == nullptr)
-        throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Table {} does not exist in database {}", mapping.clickhouse_table, mapping.clickhouse_db);
+    switch (mapping.db_type)
+    {
+        case RedisProtocol::DBType::STRING:
+        {
+            redis_clickhouse_mapping[db_]
+                = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_id, mapping.key_column, mapping.value_column);
+            break;
+        }
+        case RedisProtocol::DBType::HASH:
+        {
+            redis_clickhouse_mapping[db_] = std::make_shared<RedisProtocol::RedisHashMapping>(mapping.db_type, table_id, mapping.key_column);
+            break;
+        }
+    }
+}
+
+StoragePtr RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MappingPtr & mapping) const
+{
+    /// Resolve the table again for every request: a session must not keep serving data from a table
+    /// that has been dropped, renamed, or recreated in the meantime.
+    auto table = DatabaseCatalog::instance().getTable(mapping->getTableID(), query_context);
+    validateTable(db_, table);
+    return table;
+}
+
+void RedisHandler::validateTable(UInt32 db_, const StoragePtr & table_ptr) const
+{
+    const auto & mapping = config->db_mapping.at(db_);
 
     if (!table_ptr->supportsGetRequests())
         throw Exception(
@@ -374,26 +396,11 @@ void RedisHandler::initDB(UInt32 db_)
             "Key column {} of table {} configured for Redis database {} must be of type String or FixedString, but it is {}",
             mapping.key_column, mapping.clickhouse_table, db_, sample_block.getByName(mapping.key_column).type->getName());
 
-    switch (mapping.db_type)
-    {
-        case RedisProtocol::DBType::STRING:
-        {
-            if (!sample_block.has(mapping.value_column))
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "There is no value_column {} configured for Redis database {} in table {}",
-                    mapping.value_column, db_, mapping.clickhouse_table);
-
-            redis_clickhouse_mapping[db_]
-                = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_ptr, mapping.key_column, mapping.value_column);
-            break;
-        }
-        case RedisProtocol::DBType::HASH:
-        {
-            redis_clickhouse_mapping[db_] = std::make_shared<RedisProtocol::RedisHashMapping>(mapping.db_type, table_ptr, mapping.key_column);
-            break;
-        }
-    }
+    if (mapping.db_type == RedisProtocol::DBType::STRING && !sample_block.has(mapping.value_column))
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "There is no value_column {} configured for Redis database {} in table {}",
+            mapping.value_column, db_, mapping.clickhouse_table);
 }
 
 void RedisHandler::checkDBSet() const

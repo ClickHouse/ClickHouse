@@ -6,7 +6,7 @@
 #include <Poco/String.h>
 
 #include <base/types.h>
-#include <Storages/IStorage_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -38,12 +38,14 @@ inline DBType toDBType(const String & type)
     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown Redis database type {}", type);
 }
 
-/// Binding of a Redis database number to a ClickHouse table resolved on first use.
+/// Binding of a Redis database number to a ClickHouse table.
+/// Only the table name is kept: the table is resolved anew for every request, so that
+/// `DROP TABLE`, `RENAME TABLE`, or drop-and-recreate are visible to already connected clients.
 class RedisClickHouseMapping
 {
 public:
-    RedisClickHouseMapping(DBType type_, StoragePtr table_, const String & key_column_)
-        : type(type_), table(std::move(table_)), key_column(key_column_)
+    RedisClickHouseMapping(DBType type_, StorageID table_id_, const String & key_column_)
+        : type(type_), table_id(std::move(table_id_)), key_column(key_column_)
     {
     }
 
@@ -51,13 +53,13 @@ public:
 
     DBType getType() const { return type; }
 
-    StoragePtr getTable() const { return table; }
+    const StorageID & getTableID() const { return table_id; }
 
     const String & getKeyColumnName() const { return key_column; }
 
 protected:
     DBType type;
-    StoragePtr table;
+    StorageID table_id;
     String key_column;
 };
 
@@ -66,8 +68,8 @@ using MappingPtr = std::shared_ptr<RedisClickHouseMapping>;
 class RedisStringMapping : public RedisClickHouseMapping
 {
 public:
-    RedisStringMapping(DBType type_, StoragePtr table_, const String & key_column_, const String & value_column_)
-        : RedisClickHouseMapping(type_, std::move(table_), key_column_), value_column(value_column_)
+    RedisStringMapping(DBType type_, StorageID table_id_, const String & key_column_, const String & value_column_)
+        : RedisClickHouseMapping(type_, std::move(table_id_), key_column_), value_column(value_column_)
     {
     }
 
@@ -80,8 +82,8 @@ private:
 class RedisHashMapping : public RedisClickHouseMapping
 {
 public:
-    RedisHashMapping(DBType type_, StoragePtr table_, const String & key_column_)
-        : RedisClickHouseMapping(type_, std::move(table_), key_column_)
+    RedisHashMapping(DBType type_, StorageID table_id_, const String & key_column_)
+        : RedisClickHouseMapping(type_, std::move(table_id_), key_column_)
     {
     }
 };
