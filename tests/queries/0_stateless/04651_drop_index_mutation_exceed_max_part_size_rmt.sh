@@ -95,25 +95,25 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt_delete DELETE WHERE id = 1 SETTINGS alter_sync = 0;
 "
 
+# The reported reason is re-read until it appears, rather than sampled once after a weaker wait: the
+# replicated merge-selecting task clears the postpone reasons at the top of every iteration and refills
+# them later under a separate acquisition of state_mutex, so a read landing in that window sees an empty
+# map. Waiting for any reason and then reading the specific one in a second query leaves that window open
+# between the two. A reason that never appears still fails, because only the last read is reported.
 for _ in $(seq 1 300); do
-    result=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.mutations
-        WHERE database = currentDatabase() AND table = 'rmt_delete'
-          AND NOT is_done AND notEmpty(parts_postpone_reasons)
+    postponed=$($CLICKHOUSE_CLIENT --query "
+        SELECT 'rmt_delete', 'postponed',
+            arrayExists(reason -> reason = 'Exceed max source part size', mapValues(parts_postpone_reasons)),
+            'no_failure', empty(latest_fail_reason)
+        FROM system.mutations
+        WHERE database = currentDatabase() AND table = 'rmt_delete' AND NOT is_done
     ")
-    if [ "$result" -gt 0 ]; then
+    if [ "$(echo "$postponed" | cut -f3)" = "1" ]; then
         break
     fi
     sleep 0.1
 done
-
-$CLICKHOUSE_CLIENT --query "
-    SELECT 'rmt_delete', 'postponed',
-        arrayExists(reason -> reason = 'Exceed max source part size', mapValues(parts_postpone_reasons)),
-        'no_failure', empty(latest_fail_reason)
-    FROM system.mutations
-    WHERE database = currentDatabase() AND table = 'rmt_delete' AND NOT is_done;
-"
+echo "$postponed"
 
 ##########################################################################################
 # Fetch suppression. An exempt mutation must run LOCALLY even when the result part is already
