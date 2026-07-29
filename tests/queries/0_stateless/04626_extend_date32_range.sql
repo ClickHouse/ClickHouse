@@ -73,7 +73,12 @@ SELECT toDaysSinceYearZero(toDate32('0000-01-01')), toDaysSinceYearZero(toDate32
 SELECT 'saturation at the boundaries of the representable range';
 SELECT toDate32(-719529);
 SELECT toDate32(-9223372036854775808);
+-- Numeric-to-date conversions saturate at the boundaries of the destination type, and the accurate cast does not
+-- change that: it only adds overflow checks for the numeric conversion itself. This is long-standing behavior shared
+-- with `Date` (see `01556_accurate_cast_or_null`, where `accurateCastOrNull('2180-01-01', 'Date')` is `2149-06-06`),
+-- and this PR only moves the saturation point of `Date32` from `1900-01-01` to `0000-01-01`.
 SELECT accurateCastOrNull(-719529, 'Date32'), accurateCastOrNull(-719528, 'Date32');
+SELECT accurateCastOrNull('9999-12-31', 'Date32'), accurateCastOrNull('99999-12-31', 'Date32');
 
 SELECT 'text formats';
 SELECT * FROM format(CSV, 'd Date32', '0079-08-24\n2345-01-02\n9999-12-31') ORDER BY d;
