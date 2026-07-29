@@ -130,6 +130,14 @@ WHERE int_col > 100
 SETTINGS use_paimon_minmax_index_pruning = 1
 ```
 
+### Supported column types {#minmax-index-pruning-supported-types}
+
+Min-max pruning is applied only to predicates on columns whose statistics ClickHouse can decode. The supported Paimon types are `CHAR`, `VARCHAR`, `BOOLEAN`, `DECIMAL`, `TINYINT`, `SMALLINT`, `INT`, `BIGINT`, `FLOAT`, `DOUBLE`, `DATE`, `TIME`, and `TIMESTAMP(p)` / `TIMESTAMP WITH LOCAL TIME ZONE(p)` with `p <= 3`.
+
+For every other column - including `BINARY`, `VARBINARY`, `ARRAY`, `MAP`, `ROW`, and, notably, `TIMESTAMP(p)` with `p > 3` (Paimon's default precision when it is omitted is `p = 6`) - pruning is silently disabled: the query still returns correct results, but no data files are skipped based on that column. In particular, enabling `use_paimon_minmax_index_pruning` on a table with a plain `TIMESTAMP` column does not speed up predicates on that column.
+
+Additionally, a data file is never pruned on a column whose recorded null count is non-zero or unknown, because a `NULL` value is not covered by the recorded min/max bounds. Files written under an older table schema than the current one are also not pruned, since their statistics may be encoded with a different column type.
+
 ## See Also {#see-also}
 
 * [Paimon cluster table function](/sql-reference/table-functions/paimonCluster.md)
