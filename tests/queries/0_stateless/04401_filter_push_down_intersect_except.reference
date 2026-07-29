@@ -37,3 +37,18 @@ totals except	0
 totals except off	0
 totals intersect	0
 totals intersect off	0
+dyn not on	0
+dyn not off	0
+var and on	0
+var and off	0
+logical chain	0
+logical chain on	1
+logical chain off	1
+dt64 granules on	2
+dt64 granules off	2
+dt64 on	0
+dt64 off	0
+dt64 mixed scale	1
+u256 top filter	0
+u256 on	0
+u256 off	0

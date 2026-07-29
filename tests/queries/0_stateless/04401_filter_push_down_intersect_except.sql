@@ -230,3 +230,85 @@ SELECT 'totals except', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NU
 SELECT 'totals except off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
 SELECT 'totals intersect', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'totals intersect off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+
+-- Logical functions take native numbers only, but a Variant/Dynamic argument passes analysis and is
+-- resolved per row, so it throws for a value the set operation removes.
+DROP TABLE IF EXISTS t_intex_dyn_l;
+DROP TABLE IF EXISTS t_intex_dyn_r;
+CREATE TABLE t_intex_dyn_l (d Dynamic) ENGINE = Memory;
+CREATE TABLE t_intex_dyn_r (d Dynamic) ENGINE = Memory;
+INSERT INTO t_intex_dyn_l SELECT 0::UInt8::Dynamic;
+INSERT INTO t_intex_dyn_r SELECT 'abc'::String::Dynamic;
+SELECT 'dyn not on', d FROM (SELECT d FROM t_intex_dyn_l EXCEPT ALL SELECT d FROM t_intex_dyn_r) WHERE NOT d SETTINGS query_plan_filter_push_down = 1;
+SELECT 'dyn not off', d FROM (SELECT d FROM t_intex_dyn_l EXCEPT ALL SELECT d FROM t_intex_dyn_r) WHERE NOT d SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_dyn_l;
+DROP TABLE t_intex_dyn_r;
+
+DROP TABLE IF EXISTS t_intex_var_l;
+DROP TABLE IF EXISTS t_intex_var_r;
+CREATE TABLE t_intex_var_l (v Variant(String, UInt64)) ENGINE = Memory;
+CREATE TABLE t_intex_var_r (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO t_intex_var_l SELECT CAST(0::UInt64, 'Variant(String, UInt64)');
+INSERT INTO t_intex_var_r SELECT CAST('abc', 'Variant(String, UInt64)');
+SELECT 'var and on', v FROM (SELECT v FROM t_intex_var_l EXCEPT ALL SELECT v FROM t_intex_var_r) WHERE NOT v AND 1 SETTINGS query_plan_filter_push_down = 1;
+SELECT 'var and off', v FROM (SELECT v FROM t_intex_var_l EXCEPT ALL SELECT v FROM t_intex_var_r) WHERE NOT v AND 1 SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_var_l;
+DROP TABLE t_intex_var_r;
+
+-- A boolean chain over ordinary keys must keep pushing: the logical arguments are UInt8 comparison
+-- results, so the new argument check does not reject them.
+DROP TABLE IF EXISTS t_intex_lc_l;
+DROP TABLE IF EXISTS t_intex_lc_r;
+CREATE TABLE t_intex_lc_l (a UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_intex_lc_r (a UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_intex_lc_l SELECT number FROM numbers(1000);
+INSERT INTO t_intex_lc_r SELECT number + 1 FROM numbers(1000);
+SELECT 'logical chain', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT a FROM (SELECT a FROM t_intex_lc_l EXCEPT ALL SELECT a FROM t_intex_lc_r) WHERE NOT (a = 5) AND (a < 10 OR a > 900));
+SELECT 'logical chain on', count() FROM (SELECT a FROM t_intex_lc_l EXCEPT ALL SELECT a FROM t_intex_lc_r) WHERE NOT (a = 5) AND (a < 10 OR a > 900) SETTINGS query_plan_filter_push_down = 1;
+SELECT 'logical chain off', count() FROM (SELECT a FROM t_intex_lc_l EXCEPT ALL SELECT a FROM t_intex_lc_r) WHERE NOT (a = 5) AND (a < 10 OR a > 900) SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_lc_l;
+DROP TABLE t_intex_lc_r;
+
+-- DateTime64 and wide integers compare without a conversion that can throw when both sides have the
+-- same type, so a key predicate over them must prune each branch.
+DROP TABLE IF EXISTS t_intex_dt_l;
+DROP TABLE IF EXISTS t_intex_dt_r;
+CREATE TABLE t_intex_dt_l (ts DateTime64(3)) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_intex_dt_r (ts DateTime64(3)) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_intex_dt_l SELECT toDateTime64(number, 3) FROM numbers(100000);
+INSERT INTO t_intex_dt_r SELECT toDateTime64(number + 1, 3) FROM numbers(100000);
+SELECT 'dt64 granules on', countIf(explain LIKE '%Granules: 1/13%') FROM
+(EXPLAIN indexes = 1 SELECT ts FROM (SELECT ts FROM t_intex_dt_l EXCEPT ALL SELECT ts FROM t_intex_dt_r) WHERE ts = toDateTime64(5, 3) SETTINGS query_plan_filter_push_down = 1);
+SELECT 'dt64 granules off', countIf(explain LIKE '%Granules: 13/13%') FROM
+(EXPLAIN indexes = 1 SELECT ts FROM (SELECT ts FROM t_intex_dt_l EXCEPT ALL SELECT ts FROM t_intex_dt_r) WHERE ts = toDateTime64(5, 3) SETTINGS query_plan_filter_push_down = 0);
+-- toUnixTimestamp64Milli, not the rendered value: the runner randomizes session_timezone.
+SELECT 'dt64 on', toUnixTimestamp64Milli(ts) FROM (SELECT ts FROM t_intex_dt_l EXCEPT ALL SELECT ts FROM t_intex_dt_r) WHERE ts = toDateTime64(0, 3) SETTINGS query_plan_filter_push_down = 1;
+SELECT 'dt64 off', toUnixTimestamp64Milli(ts) FROM (SELECT ts FROM t_intex_dt_l EXCEPT ALL SELECT ts FROM t_intex_dt_r) WHERE ts = toDateTime64(0, 3) SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_dt_l;
+DROP TABLE t_intex_dt_r;
+
+-- A different scale is a different type, so the comparison converts and can overflow.
+DROP TABLE IF EXISTS t_intex_dts_l;
+DROP TABLE IF EXISTS t_intex_dts_r;
+CREATE TABLE t_intex_dts_l (ts DateTime64(3)) ENGINE = Memory;
+CREATE TABLE t_intex_dts_r (ts DateTime64(3)) ENGINE = Memory;
+INSERT INTO t_intex_dts_l VALUES (toDateTime64(1, 3));
+INSERT INTO t_intex_dts_r VALUES (toDateTime64(2, 3));
+SELECT 'dt64 mixed scale', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT ts FROM (SELECT ts FROM t_intex_dts_l EXCEPT ALL SELECT ts FROM t_intex_dts_r) WHERE ts = toDateTime64(1, 9));
+DROP TABLE t_intex_dts_l;
+DROP TABLE t_intex_dts_r;
+
+DROP TABLE IF EXISTS t_intex_w_l;
+DROP TABLE IF EXISTS t_intex_w_r;
+CREATE TABLE t_intex_w_l (u UInt256) ENGINE = MergeTree ORDER BY u SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_intex_w_r (u UInt256) ENGINE = MergeTree ORDER BY u SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_intex_w_l SELECT toUInt256(number) FROM numbers(100000);
+INSERT INTO t_intex_w_r SELECT toUInt256(number + 1) FROM numbers(100000);
+SELECT 'u256 top filter', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT u FROM (SELECT u FROM t_intex_w_l EXCEPT ALL SELECT u FROM t_intex_w_r) WHERE u = toUInt256(5));
+SELECT 'u256 on', u FROM (SELECT u FROM t_intex_w_l EXCEPT ALL SELECT u FROM t_intex_w_r) WHERE u = toUInt256(0) SETTINGS query_plan_filter_push_down = 1;
+SELECT 'u256 off', u FROM (SELECT u FROM t_intex_w_l EXCEPT ALL SELECT u FROM t_intex_w_r) WHERE u = toUInt256(0) SETTINGS query_plan_filter_push_down = 0;
+DROP TABLE t_intex_w_l;
+DROP TABLE t_intex_w_r;

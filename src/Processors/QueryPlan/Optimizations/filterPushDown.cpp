@@ -49,19 +49,21 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if comparing a value of this type cannot throw. Decimal, Variant/Dynamic and containers can,
-/// so only unwrapped scalars qualify.
+/// True if comparing a value of this type cannot throw. Decimal (other than DateTime64, see below),
+/// Variant/Dynamic and containers can, so only unwrapped scalars qualify.
 static bool typeIsTotallyComparable(const DataTypePtr & type)
 {
     WhichDataType which(removeNullable(removeLowCardinality(type)));
-    return which.isNativeInt() || which.isNativeUInt() || which.isFloat() || which.isEnum()
-        || which.isDate() || which.isDate32() || which.isDateTime() || which.isString()
-        || which.isFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6()
-        || which.isNothing();
+    return which.isInteger() || which.isFloat() || which.isEnum()
+        || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isString() || which.isFixedString() || which.isUUID()
+        || which.isIPv4() || which.isIPv6() || which.isNothing();
 }
 
 /// True if comparing these argument types cannot throw. Mixed types are converted first, and only
-/// native numbers convert between each other without throwing.
+/// integers and floats convert between each other without throwing. DateTime64 is admitted for
+/// identical types only: its `equals` compares the scale, and comparison of two equally-scaled
+/// operands needs no scale multiplication, which is the only overflow-checked step.
 static bool comparisonIsTotal(const DataTypes & argument_types)
 {
     for (const auto & type : argument_types)
@@ -71,7 +73,7 @@ static bool comparisonIsTotal(const DataTypes & argument_types)
     auto is_number = [](const DataTypePtr & t)
     {
         WhichDataType which(removeNullable(removeLowCardinality(t)));
-        return which.isNativeInt() || which.isNativeUInt() || which.isFloat();
+        return which.isInteger() || which.isFloat();
     };
 
     auto first = removeNullable(removeLowCardinality(argument_types.front()));
@@ -79,6 +81,20 @@ static bool comparisonIsTotal(const DataTypes & argument_types)
     {
         auto inner = removeNullable(removeLowCardinality(type));
         if (!inner->equals(*first) && !(is_number(inner) && is_number(first)))
+            return false;
+    }
+    return true;
+}
+
+/// True if these argument types are accepted by the logical functions, which take native numbers
+/// only. A Variant/Dynamic argument passes analysis and is resolved per row instead, so it throws
+/// only for some values.
+static bool nativeNumberArguments(const DataTypes & argument_types)
+{
+    for (const auto & type : argument_types)
+    {
+        WhichDataType which(removeNullable(removeLowCardinality(type)));
+        if (!which.isNativeNumber() && !which.isNothing())
             return false;
     }
     return true;
@@ -108,6 +124,12 @@ static bool isComparison(const std::string & name)
     return comparisons.contains(name);
 }
 
+static bool isLogical(const std::string & name)
+{
+    static const NameSet logical{"and", "or", "not", "xor"};
+    return logical.contains(name);
+}
+
 static bool filterMayThrow(const FilterStep & filter)
 {
     for (const auto & node : filter.getExpression().getNodes())
@@ -119,9 +141,11 @@ static bool filterMayThrow(const FilterStep & filter)
         if (!functionIsProvenTotal(name))
             return true;
 
-        /// Only comparison arguments are inspected. A column merely projected to the output is never
-        /// evaluated before the set operation, so it must not block the pushdown.
-        if (!isComparison(name))
+        /// Only the arguments of functions that inspect a value's type are checked. A column merely
+        /// projected to the output is never evaluated before the set operation, so it must not block
+        /// the pushdown.
+        const bool comparison = isComparison(name);
+        if (!comparison && !isLogical(name))
             continue;
 
         DataTypes argument_types;
@@ -132,7 +156,9 @@ static bool filterMayThrow(const FilterStep & filter)
             argument_types.push_back(child->result_type);
         }
 
-        if (argument_types.empty() || !comparisonIsTotal(argument_types))
+        if (argument_types.empty())
+            return true;
+        if (comparison ? !comparisonIsTotal(argument_types) : !nativeNumberArguments(argument_types))
             return true;
     }
     return false;
