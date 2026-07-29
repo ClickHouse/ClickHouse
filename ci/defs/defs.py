@@ -373,6 +373,7 @@ class JobNames:
     STRESS = "Stress test"
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
+    CLI_STARTUP = "CLI startup benchmark"
     COMPATIBILITY = "Compatibility check"
     DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"

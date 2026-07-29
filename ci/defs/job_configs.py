@@ -1425,6 +1425,36 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
+    # Start-up cost of short-lived `clickhouse local` / `clickhouse client` invocations, compared
+    # against the latest master build. The performance-comparison job cannot cover this: it measures
+    # queries over a persistent connection to an already-running server, so process start-up falls
+    # entirely outside its measurement window.
+    cli_startup_jobs = Job.Config(
+        name=JobNames.CLI_STARTUP,
+        runs_on=["#from param"],
+        command="python3 ./ci/jobs/cli_startup_benchmark.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/cli_startup_benchmark.py",
+                "./ci/jobs/scripts/cli_startup/",
+            ],
+        ),
+        # A dedicated runner: the whole point is measuring CPU time, so the job must not share a
+        # machine with anything else. Same labels the performance comparison uses.
+        run_in_docker="clickhouse/performance-comparison",
+        timeout=1800,
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_RELEASE,
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_RELEASE,
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+    )
     clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,

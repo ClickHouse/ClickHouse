@@ -185,6 +185,12 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # Like ClickBench, this runs on PRs only when files in its digest change
+        # (see `cli_startup_jobs.digest_config`), so the cost is bounded.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.cli_startup_jobs
+        ],
         # ClickBench runs on PRs only when files in its digest change
         # (see `clickbench_jobs.digest_config`), so the cost is bounded.
         *[
