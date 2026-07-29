@@ -36,8 +36,13 @@ namespace ErrorCodes
     extern const int HANDLER_ALREADY_EXISTS;
     extern const int HANDLER_DOESNT_EXIST;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
 }
+
+/// How many times a snapshot read (list the children, then read each of them) is retried when a concurrent
+/// mutation bumped the root version midway, so the read never returns a mixed set that never existed.
+static constexpr size_t max_snapshot_read_attempts = 100;
 
 static const std::string query_rules_storage_config_path = "query_rules_storage";
 
@@ -60,6 +65,11 @@ public:
     /// for replicated storage; 0 for local). The version is fed back to `write` to make the cross-replica
     /// "read set -> check ambiguity -> persist" sequence atomic via optimistic concurrency.
     virtual std::vector<std::string> list(Int32 & version) const { version = 0; return list(); }
+    /// The current version token of the whole set, read without touching the background update watch.
+    /// Used to check that the set did not change while the children were being read one by one.
+    virtual Int32 getVersion() const { return 0; }
+    /// The version token observed when the update watch was last armed in `list`.
+    virtual Int32 getArmedVersion() const { return 0; }
     virtual std::string read(const std::string & path) const = 0;
     /// Persist data. When `expected_root_version >= 0` the write is conditional: it commits only if the
     /// set has not changed since it was read at that version, otherwise nothing is written and `false` is
@@ -269,6 +279,16 @@ public:
         root_version = armed_version.load();
     }
 
+    Int32 getVersion() const override
+    {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::getVersion");
+        Coordination::Stat stat;
+        getClient()->get(root_path, &stat);
+        return stat.version;
+    }
+
+    Int32 getArmedVersion() const override { return armed_version.load(); }
+
     std::vector<std::string> list(Int32 & version) const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::list");
@@ -452,13 +472,47 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::s
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll() const
 {
     /// The normal reload path: list via the watch-arming `listHandlers()` (see the note there).
-    return readHandlers(listHandlers());
+    ///
+    /// Listing only fixes the *child list* at one root version - the per-child reads happen afterwards, so
+    /// without the version re-check below the reader could assemble a map that never existed atomically.
+    /// Starting from `{A=/a, B=/b}`, if one replica commits `ALTER A -> /c` and another then commits
+    /// `ALTER B -> /a`, a reader that listed at `V0`, read the old `A` and then the new `B` would install
+    /// `{A=/a, B=/a}` and route `/a` to a handler Keeper has already moved away. Retry until the root
+    /// version is unchanged across the child reads, so the returned map is a real snapshot of one version.
+    for (size_t attempt = 0; attempt < max_snapshot_read_attempts; ++attempt)
+    {
+        auto handler_names = listHandlers();
+        /// The version the watch was just armed at, i.e. the version this child list belongs to.
+        const Int32 listed_version = storage->getArmedVersion();
+        auto handlers = readHandlers(handler_names);
+        if (storage->getVersion() == listed_version)
+            return handlers;
+    }
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+        "Cannot read a consistent snapshot of SQL-defined handlers: the set kept changing during {} attempts",
+        max_snapshot_read_attempts);
 }
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll(Int32 & version) const
 {
-    /// The replicated read-check-write path: list at a known root version without touching the watch.
-    return readHandlers(listHandlers(version));
+    /// The replicated read-check-write path: list at a known root version without touching the watch, and
+    /// re-check that version after the child reads - for the same reason as in the overload above, and
+    /// because the caller conditions its write on this version and validates ambiguity against this map.
+    for (size_t attempt = 0; attempt < max_snapshot_read_attempts; ++attempt)
+    {
+        Int32 listed_version = 0;
+        auto handlers = readHandlers(listHandlers(listed_version));
+        if (storage->getVersion() == listed_version)
+        {
+            version = listed_version;
+            return handlers;
+        }
+    }
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+        "Cannot read a consistent snapshot of SQL-defined handlers: the set kept changing during {} attempts",
+        max_snapshot_read_attempts);
 }
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::readHandlers(const std::vector<std::string> & handler_names) const
