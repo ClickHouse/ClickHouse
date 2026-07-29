@@ -1186,3 +1186,128 @@ TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(v, 'Dynamic')) > 3;
 DROP TABLE test_ttl_cast_variant_source_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+DROP TABLE IF EXISTS test_ttl_selector_same_domain_accept;
+
+-- A selector function (`if`, `multiIf`, `coalesce`, `ifNull`) returns one of its value arguments, so a
+-- non-constant condition can only choose *which* of their domains the result comes from. Both branches here
+-- can only ever hold the `UInt32` payload, so the narrowed domain survives the selector and the expression
+-- is accepted instead of being confronted with the synthetic payloads of a plain `Dynamic` column.
+CREATE TABLE test_ttl_selector_same_domain_accept
+(
+    cond UInt8,
+    n UInt32,
+    m UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_same_domain_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_multi_if_same_domain_accept;
+
+CREATE TABLE test_ttl_selector_multi_if_same_domain_accept
+(
+    cond UInt8,
+    n UInt32,
+    m UInt32,
+    k UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(multiIf(cond, CAST(n, 'Dynamic'), cond > 1, CAST(m, 'Dynamic'), CAST(k, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_multi_if_same_domain_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_different_domains_reject;
+
+-- Branches with *different* payload domains keep the fail-closed behaviour: the condition selects which of
+-- them the result carries, so the narrowing of neither branch describes the result.
+CREATE TABLE test_ttl_selector_different_domains_reject
+(
+    cond UInt8,
+    n UInt32,
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(s, 'Dynamic'))) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_selector_different_domains_reject
+(
+    cond UInt8,
+    n UInt32,
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(s, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_different_domains_reject;
+
+SET allow_suspicious_ttl_expressions = 0;
+
+DROP TABLE IF EXISTS test_ttl_array_map_accept;
+
+-- `arrayMap` returns an array of the values its lambda body produces, so the body's narrowed domain
+-- describes the elements of the result: the elements of `arrayMap(x -> CAST(x, 'Dynamic'), arr)` over
+-- `arr Array(UInt32)` can only ever hold the `UInt32` payload, and a consumer of an element is accepted.
+CREATE TABLE test_ttl_array_map_accept
+(
+    arr Array(UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(arrayElement(arrayMap(x -> CAST(x, 'Dynamic'), arr), 1)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_array_map_accept;
+
+DROP TABLE IF EXISTS test_ttl_array_map_string_source_reject;
+
+-- The rules narrowing the lambda body's domain are the same as everywhere else, so a cast of a *string*
+-- inside the lambda stays fail-closed (`cast_string_to_dynamic_use_inference` would parse the stored
+-- alternative out of the row contents) and the consumer of an element is rejected.
+CREATE TABLE test_ttl_array_map_string_source_reject
+(
+    arr Array(String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(arrayElement(arrayMap(x -> CAST(x, 'Dynamic'), arr), 1)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+DROP TABLE IF EXISTS test_ttl_array_map_dynamic_input_reject;
+
+-- A lambda body that just passes a stored `Dynamic` column through keeps the static enumeration of the
+-- payloads that column can hold, so a consumer that cannot handle all of them is rejected.
+CREATE TABLE test_ttl_array_map_dynamic_input_reject
+(
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(arrayElement(arrayMap(x -> x, arr), 1)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_array_map_dynamic_input_reject
+(
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(arrayElement(arrayMap(x -> x, arr), 1)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_array_map_dynamic_input_reject;
+
+SET allow_suspicious_ttl_expressions = 0;
