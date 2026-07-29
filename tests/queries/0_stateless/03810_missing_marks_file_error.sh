@@ -93,7 +93,7 @@ $CLICKHOUSE_CLIENT -q "detach table t_missing_granularity_marks"
 remove_all_marks_files "$path" || exit 1
 
 # reloading the table re-reads index granularity from disk; the missing marks file makes the
-# part broken-on-start instead of crashing with an opaque std::filesystem error.
+# part broken-on-start instead of failing with an opaque `std::filesystem` error.
 # send_logs_level=none keeps the (expected) broken-part error out of the client stderr stream.
 $CLICKHOUSE_CLIENT --send_logs_level=none -q "attach table t_missing_granularity_marks"
 
