@@ -77,6 +77,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
@@ -152,17 +153,35 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                 if (column == "_part_index" || column == "_part_starting_offset")
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
-
-            /// Direct read from a text index adds ephemeral virtual columns to the read and a separate
-            /// index-read step that a worker fragment cannot reproduce (the column is not in the table
-            /// and ReadFromDistributedPlanSource cannot materialize it). Reject cleanly at planning time
-            /// instead of crashing later: the single-stage path re-runs the (non-idempotent) text index
-            /// optimization and trips "Column ... already added for reading", and the multi-stage path
-            /// fails with NOT_FOUND_COLUMN_IN_BLOCK at execution.
-            if (read->hasTextIndexReadTasks())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "make_distributed_plan does not support a distributed read using direct text index tasks");
         }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
+void checkDistributedTextIndexReadSupported(const QueryPlan::Node & root)
+{
+    /// A single-stage plan is executed locally (QueryPlan::convertToDistributed), so nothing is
+    /// serialized and a direct text index read stays valid. Only a plan that is split into fragments
+    /// ships the read to a worker, and the exchange steps are what split it.
+    if (!planContainsLogicalExchange(root))
+        return;
+
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        /// Direct read from a text index replaces a text-search function with a synthetic
+        /// `__text_index_..._has_<hash>` column that exists only in the coordinator's read step. A worker
+        /// rebuilds its fragment against the table, where that column does not exist, so the read fails
+        /// with NOT_FOUND_COLUMN_IN_BLOCK once the fragment ships. Reject at planning time instead.
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+            read && !read->getIndexReadTasks().empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a distributed read using direct text index tasks");
 
         for (const auto * child : node->children)
             stack.push_back(child);

@@ -1,7 +1,11 @@
--- fuzzer shape: hasToken in PREWHERE and WHERE
 -- WHERE hasToken
 -- PREWHERE hasToken
 -- hasAnyTokens
+-- hasToken in PREWHERE and WHERE
+-- single stage: still runs
+-- broadcast-sized read: still runs
+0
+1
 -- not distributed: results are correct
 258
 0
