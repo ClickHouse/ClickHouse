@@ -71,6 +71,9 @@ namespace Setting
     extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool make_distributed_plan;
 }
 
 namespace ErrorCodes
@@ -426,6 +429,14 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.finalizeWriteInQueryResultCache();
 }
 
+/// Whether a prepared set can be shipped to another server as its subquery plan. Fails closed: a new
+/// serializing consumer must be added here to keep the plan.
+static bool maySerializeQueryPlan(const Settings & settings)
+{
+    return settings[Setting::serialize_query_plan] || settings[Setting::parallel_replicas_plan_based]
+        || settings[Setting::make_distributed_plan];
+}
+
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
@@ -607,10 +618,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (speculative_set)
         set_and_key->set = speculative_set;
 
-    /// Keep the preserved `source`: plan serialization ships a set as a subquery plan and cannot rebuild one
-    /// from a built set. This cannot cause a second build - `build` returns early once the set is created.
-    /// On the destructive fallback `build` already moved `source` out.
-    if (!source_preserved)
+    /// A retained `source` is only reachable through plan serialization, and after a clone-path build it
+    /// solely owns the subquery's table locks. On the destructive fallback `build` already moved it out.
+    if (!source_preserved || !maySerializeQueryPlan(settings))
         source.reset();
 
     return set_and_key->set;
