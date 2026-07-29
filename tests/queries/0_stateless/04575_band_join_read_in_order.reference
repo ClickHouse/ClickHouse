@@ -1,0 +1,9 @@
+band join used	1
+in-order reads	1	1
+sort relaxed	1
+read in order result	1
+oracle result	1
+31258
+virtual rows in pipeline	1
+virtual row result	1
+virtual row per block result	1

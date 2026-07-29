@@ -17,7 +17,7 @@ INSERT INTO t_read_in_order_agg SELECT number FROM numbers_mt(1000000);
 -- Single-partition table with two parts: after merge-sort there is 1 stream.
 -- With max_streams_to_max_threads_ratio > 1 and read-in-order, the pipeline
 -- must still expand to more than 1 stream after aggregation.
--- The new analyzer produces "Resize 1 -> 8" (max_threads); the old analyzer
+-- The analyzer produces "Resize 1 -> 8" (max_threads); the old analyzer
 -- produces "Resize 1 -> 16" (max_threads * ratio), so match both.
 SELECT count() > 0
 FROM viewExplain('EXPLAIN PIPELINE', '', (

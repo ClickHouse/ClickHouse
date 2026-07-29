@@ -1,9 +1,6 @@
 #include <optional>
 
 #include <Core/Block.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
@@ -78,29 +75,7 @@ IEJoinStep::IEJoinStep(
     swap_inputs = ie_kind->second;
 
     if (residual_condition_)
-    {
-        const auto & sample = residual_condition_->getSampleBlock();
-        if (sample.columns() != 1
-            || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
-                sample.dumpStructure());
-
-        IEJoinResidualCondition prepared;
-        prepared.actions = std::move(residual_condition_);
-        for (const auto & required_column : prepared.actions->getRequiredColumnsWithTypes())
-        {
-            bool in_left = left_header_->has(required_column.name);
-            bool in_right = right_header_->has(required_column.name);
-            if (in_left == in_right)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition input {} must come from exactly one input, found in {}",
-                    required_column.name, in_left ? "both" : "neither");
-            if (in_left)
-                prepared.inputs.push_back({.side = 0, .position = left_header_->getPositionByName(required_column.name)});
-            else
-                prepared.inputs.push_back({.side = 1, .position = right_header_->getPositionByName(required_column.name)});
-        }
-        residual = std::move(prepared);
-    }
+        residual = resolveJoinResidualCondition(std::move(residual_condition_), *left_header_, *right_header_);
 
     updateInputHeaders({left_header_, right_header_});
 }

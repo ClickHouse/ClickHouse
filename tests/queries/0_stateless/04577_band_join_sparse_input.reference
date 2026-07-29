@@ -1,0 +1,12 @@
+sparse used	1
+routed	1
+in-order read	1
+inner	1	202940
+left	1	203076
+lazy sparse used	1
+lazy point payload	110	900010
+lazy point payload oracle	110	900010
+lazy point key	200000	900010
+lazy point key oracle	200000	900010
+lazy interval payload	55	0
+lazy interval payload oracle	55	0

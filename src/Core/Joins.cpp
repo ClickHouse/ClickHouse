@@ -74,6 +74,7 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
         case JoinAlgorithm::IE_JOIN: return "IE_JOIN";
+        case JoinAlgorithm::BAND_JOIN: return "BAND_JOIN";
     }
 }
 

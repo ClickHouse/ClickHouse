@@ -1,0 +1,15 @@
+right type	1
+right swapped	1
+right point side	1
+semi type	1
+semi swapped	1
+anti type	1
+right >= <=	1	1
+right > <	1	1
+semi >= <=	1	1
+semi > <	1	1
+anti >= <=	1	1
+anti > <	1	1
+orientation parity left	1
+orientation parity semi	1
+orientation parity anti	1

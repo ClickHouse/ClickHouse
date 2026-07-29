@@ -48,7 +48,7 @@ private:
     IEJoinConditions conditions;
     /// The residual ON condition with its inputs resolved against the query-orientation
     /// headers, if any.
-    std::optional<IEJoinResidualCondition> residual;
+    std::optional<JoinResidualCondition> residual;
 
     /// The executed join type and whether to swap the input pipelines for it,
     /// derived from the query kind/strictness.

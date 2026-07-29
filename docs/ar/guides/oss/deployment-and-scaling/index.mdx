@@ -1,16 +1,44 @@
 ---
 slug: /deployment-guides/index
 title: 'نظرة عامة على أدلة النشر'
-description: 'الصفحة الرئيسية لقسم النشر والتوسيع'
-keywords: ['أدلة النشر', 'التوسيع', 'نشر العنقود', 'النسخ المتماثل', 'تحمّل الأعطال']
+description: 'الصفحة الرئيسية لقسم النشر والتوسّع'
+keywords: ['أدلة النشر', 'التوسّع', 'نشر العنقود', 'النسخ المتماثل', 'تحمّل الأعطال']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 يغطي هذا القسم الموضوعات التالية:
 
-| الموضوع                                                                                         |
-| ----------------------------------------------------------------------------------------------- |
-| [مقدمة](/ar/guides/oss/deployment-and-scaling/terminology)                                         |
-| [التوسيع الأفقي](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)                |
-| [النسخ المتماثل لتحمّل الأعطال](/ar/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [نشر العنقود](/ar/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)                  |
+<CardGroup cols={2}>
+  <Card title="مقدمة" icon="book-open" href="/ar/guides/oss/deployment-and-scaling/terminology">
+    المصطلحات المستخدمة لوصف عمليات نشر ClickHouse.
+  </Card>
+
+  <Card title="أجزاء الجدول والنسخ المتماثلة" icon="table-cells-large" href="/ar/guides/oss/deployment-and-scaling/shards">
+    تعرّف على ماهية أجزاء الجدول والنسخ المتماثلة وفيمَ تُستخدم.
+  </Card>
+
+  <Card title="إعادة موازنة البيانات" icon="scale-balanced" href="/ar/guides/oss/deployment-and-scaling/scaling-clusters">
+    أساليب إعادة موازنة البيانات عند توسيع نطاق عنقود.
+  </Card>
+
+  <Card title="فصل التخزين عن الحوسبة" icon="hard-drive" href="/ar/guides/oss/deployment-and-scaling/separation-storage-compute">
+    استخدم ClickHouse مع التخزين الكائني لفصل التخزين عن الحوسبة.
+  </Card>
+
+  <Card title="اكتشاف العنقود" icon="magnifying-glass" href="/ar/guides/oss/deployment-and-scaling/cluster-discovery">
+    اسمح للعُقد باكتشاف نفسها وتسجيلها تلقائيًا عبر ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/ar/guides/oss/deployment-and-scaling/keeper/index">
+    تهيئة ClickHouse Keeper، نظام التنسيق للنسخ المتماثل وdistributed DDL.
+  </Card>
+
+  <Card title="المراقبة" icon="chart-line" href="/ar/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    مراقبة ClickHouse وتتبع عملياته باستخدام OpenTelemetry.
+  </Card>
+
+  <Card title="أمثلة" icon="server" href="/ar/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    أمثلة على عمليات النشر: النسخ المتماثل لتحمّل الأعطال، والتوسّع الأفقي، ونشر عنقود يجمع بينهما.
+  </Card>
+</CardGroup>
