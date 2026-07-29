@@ -295,16 +295,27 @@ def get_internal_backup_file_syncs(node, backup_path):
     `system.backup_log` is used rather than `system.backups` because the latter hides internal
     operations (`getAllInfos` skips them). Only the row's query id is read: its size/entry
     counters are always 0 for an internal operation, since `doBackup` fills them only when not
-    internal.
+    internal. That read is retried because the row is not ordered before the initiator's BACKUP
+    returns - see the call site.
     """
-    node.query("SYSTEM FLUSH LOGS backup_log")
-    # `name` holds the destination re-formatted from the AST, so match on the unique path only.
-    query_id = node.query(
-        f"SELECT query_id FROM system.backup_log"
-        f" WHERE name LIKE '%{backup_path}%' AND status = 'BACKUP_CREATED'"
-        f" ORDER BY event_time_microseconds DESC LIMIT 1"
-    ).strip()
-    assert query_id != "", f"no BACKUP_CREATED row on {node.name} for {backup_path}"
+
+    def read_backup_log_query_id():
+        node.query("SYSTEM FLUSH LOGS backup_log")
+        # `name` holds the destination re-formatted from the AST, so match on the unique path only.
+        return node.query(
+            f"SELECT query_id FROM system.backup_log"
+            f" WHERE name LIKE '%{backup_path}%' AND status = 'BACKUP_CREATED'"
+            f" ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+
+    try:
+        query_id = wait_condition(
+            read_backup_log_query_id, lambda s: s != "", max_attempts=60, delay=0.5
+        )
+    except Exception as exception:
+        raise AssertionError(
+            f"no BACKUP_CREATED row on {node.name} for {backup_path}"
+        ) from exception
 
     def count_worker_rows():
         node.query("SYSTEM FLUSH LOGS query_thread_log")
@@ -381,8 +392,11 @@ def test_backup_on_cluster_internal_writer_fsyncs():
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO File('{on_path}')"
         f" SETTINGS fsync_backup_files = 1, {logging_settings}"
     )
-    # BACKUP ON CLUSTER is synchronous: it returns only after waitOtherHostsFinish, so node2 has
-    # finished writing and syncing by now.
+    # BACKUP ON CLUSTER returns only after waitOtherHostsFinish, and node2 reaches its finish node
+    # only after finalizeWriting, so node2 has done all its writing and syncing by now and the
+    # delta is safe to read straight away. That wait says nothing about node2's log tables:
+    # setStatus(BACKUP_CREATED), which writes the system.backup_log row, runs after finish() - so
+    # the helper below retries that read.
     dir_syncs_on = get_directory_syncs(node2) - dir_syncs_before
 
     file_syncs_on = get_internal_backup_file_syncs(node2, on_path)
