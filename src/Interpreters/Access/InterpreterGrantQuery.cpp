@@ -14,14 +14,12 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <Storages/StorageFactory.h>
-#include <Common/re2.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int LOGICAL_ERROR;
 }
 
@@ -400,6 +398,8 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
+        query.access_rights_elements.throwIfFilterIsNotCompilable();
+
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
@@ -439,20 +439,12 @@ BlockIO InterpreterGrantQuery::execute()
             /// Will throw UNKNOWN_STORAGE if engine is unknown
             (void)StorageFactory::instance().getStorageFeatures(element.parameter);
         }
-
-        /// The filter of `GRANT READ ON S3('s3://foo/.*')` is matched with `RE2::FullMatch` when
-        /// access is checked, and a pattern that does not compile simply never matches - the grant
-        /// would look accepted but grant nothing. Reject it here instead.
-        if (!element.filter.empty())
-        {
-            re2::RE2::Options options;
-            options.set_log_errors(false);
-            if (const re2::RE2 compiled(element.filter, options); !compiled.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_COMPILE_REGEXP,
-                    "The pattern '{}' cannot be compiled: {}", element.filter, compiled.error());
-        }
     }
+
+    /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
+    /// put a regex engine in it - so it is validated here, and on every other path that turns an
+    /// `ASTGrantQuery` into access rights.
+    query.access_rights_elements.throwIfFilterIsNotCompilable();
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
