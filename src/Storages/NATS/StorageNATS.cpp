@@ -911,7 +911,7 @@ Required parameters:
 
 - `nats_url` – host:port (for example, `localhost:4222`)..
 - `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
-- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 
 Optional parameters:
 
@@ -924,8 +924,8 @@ Optional parameters:
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `2000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
-- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
-- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
+- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
+- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
@@ -990,7 +990,7 @@ More specifically you can add your password for the NATS engine:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
 1.  Use the engine to create a NATS consumer and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -1042,11 +1042,11 @@ Note: `_raw_message` and `_error` virtual columns are filled only in case of exc
 
 ## Data formats support {#data-formats-support}
 
-NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
+NATS engine supports all [formats](/reference/formats/index) supported in ClickHouse.
 The number of rows in one NATS message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/reference/settings/session-settings/max#max_block_size).
 
 ## Using JetStream {#using-jetstream}
 
