@@ -48,6 +48,13 @@ struct MergeTreeDataPartTTLInfos
     /// correspond to the expression it is shifting from; otherwise it falls back to a full rewrite.
     String table_ttl_expression;
 
+    /// The time zone the rows-TTL timestamps of `table_ttl` were computed under, as returned by
+    /// `getRowsTTLTimeZoneFingerprint`. Empty means unknown, exactly like `table_ttl_expression`.
+    /// It is a separate part of the fingerprint because the expression text does not pin the time zone
+    /// down: a `DateTime` column can change its zone with a metadata-only `MODIFY COLUMN`, and the
+    /// server time zone can change with a restart.
+    String table_ttl_timezone;
+
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
     /// to merge in order to remove expired rows.
     time_t part_min_ttl = 0;

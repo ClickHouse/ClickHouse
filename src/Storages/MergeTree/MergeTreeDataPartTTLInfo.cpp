@@ -60,16 +60,24 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
         moves_ttl[expression].update(ttl_info);
 
-    /// Propagate the rows-TTL expression fingerprint. The result is a known expression only if every
+    /// Propagate the rows-TTL fingerprint (expression and time zone). The result is known only if every
     /// merged part that carries rows-TTL data agrees on it; otherwise it becomes empty (unknown), which
     /// forces the fast `MODIFY TTL` path to fall back to a full rewrite. Presence of rows-TTL data is
     /// detected via `table_ttl.min`, so this must run before merging `table_ttl` below.
     if (other_infos.table_ttl.min != 0)
     {
         if (table_ttl.min == 0)
+        {
             table_ttl_expression = other_infos.table_ttl_expression;
-        else if (table_ttl_expression != other_infos.table_ttl_expression)
-            table_ttl_expression.clear();
+            table_ttl_timezone = other_infos.table_ttl_timezone;
+        }
+        else
+        {
+            if (table_ttl_expression != other_infos.table_ttl_expression)
+                table_ttl_expression.clear();
+            if (table_ttl_timezone != other_infos.table_ttl_timezone)
+                table_ttl_timezone.clear();
+        }
     }
 
     table_ttl.update(other_infos.table_ttl);
@@ -113,6 +121,9 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         if (table.has("expression"))
             table_ttl_expression = table["expression"].getString();
+
+        if (table.has("timezone"))
+            table_ttl_timezone = table["timezone"].getString();
 
         updatePartMinMaxTTL(table_ttl);
     }
@@ -197,6 +208,11 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         {
             writeString(R"(,"expression":)", out);
             writeString(doubleQuoteString(table_ttl_expression), out);
+        }
+        if (!table_ttl_timezone.empty())
+        {
+            writeString(R"(,"timezone":)", out);
+            writeString(doubleQuoteString(table_ttl_timezone), out);
         }
         writeString("}", out);
     }

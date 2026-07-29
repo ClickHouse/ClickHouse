@@ -63,8 +63,10 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
     else
     {
         data_part->ttl_infos.table_ttl = new_ttl_info;
-        /// Record the rows-TTL expression these timestamps were computed under (see `MergeTreeDataPartTTLInfos`).
+        /// Record the rows-TTL expression and time zone these timestamps were computed under
+        /// (see `MergeTreeDataPartTTLInfos`).
         data_part->ttl_infos.table_ttl_expression = description.result_column;
+        data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
     }
 
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);

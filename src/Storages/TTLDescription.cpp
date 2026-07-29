@@ -404,6 +404,21 @@ std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl,
     return delta;
 }
 
+String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)
+{
+    if (rows_ttl.expression_columns.size() == 1)
+    {
+        const auto & type = rows_ttl.expression_columns.front().type;
+        WhichDataType which(type);
+        if (which.isDateTime())
+            return assert_cast<const DataTypeDateTime &>(*type).getTimeZone().getTimeZone();
+        if (which.isDateTime64())
+            return assert_cast<const DataTypeDateTime64 &>(*type).getTimeZone().getTimeZone();
+    }
+
+    return DateLUT::serverTimezoneInstance().getTimeZone();
+}
+
 std::optional<time_t> tryComputeConstantTTLDelta(
     const String & old_ttl_expression, const TTLDescription & new_ttl,
     const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context)

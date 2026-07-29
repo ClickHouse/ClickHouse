@@ -170,4 +170,16 @@ std::optional<time_t> tryComputeConstantTTLDelta(
     const String & old_ttl_expression, const TTLDescription & new_ttl,
     const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context);
 
+/// The name of the time zone whose semantics a part's stored rows-TTL timestamps depend on. It is the
+/// column's time zone when the TTL reads a single `DateTime`/`DateTime64` column (`addDays` preserves the
+/// local wall-clock time, so the shift it produces is a property of that zone) and the server time zone
+/// otherwise (a `Date`/`Date32` TTL result is turned into a timestamp with `DateLUT::serverTimezoneInstance`).
+///
+/// The fast `MODIFY TTL` path records this next to the part's TTL expression fingerprint and requires it to
+/// still match, because neither the expression text nor the part's column type pins the zone down:
+/// `DataTypeDateTime::equals` ignores the time zone, `DataTypeDateTime64::equals` compares only the scale,
+/// and the server time zone is not part of the table metadata at all. Without it, a part written under one
+/// zone could be shifted by a delta proven under another one.
+String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl);
+
 }

@@ -3461,10 +3461,12 @@ bool MutateTask::prepare()
 
         std::optional<time_t> delta;
         String new_ttl_expression;
+        String new_ttl_timezone;
         if (part_has_only_rows_ttl && !part_lags_conversions && ctx->metadata_snapshot->hasRowsTTL())
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = rows_ttl.result_column;
+            new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl);
             delta = tryComputeConstantTTLDelta(
                 source_ttl_infos.table_ttl_expression, rows_ttl,
                 ctx->metadata_snapshot->getColumns(), ctx->metadata_snapshot->getPrimaryKey(), ctx->context);
@@ -3482,6 +3484,18 @@ bool MutateTask::prepare()
                 auto part_column = ctx->source_part->tryGetColumn(ttl_column.name);
                 if (!part_column || !part_column->type->equals(*ttl_column.type))
                     delta.reset();
+            }
+
+            /// The time zone is not covered by the checks above: `DataTypeDateTime::equals` ignores it,
+            /// `DataTypeDateTime64::equals` compares only the scale, and a `Date`/`Date32` TTL depends on
+            /// the SERVER time zone, which is not part of the table metadata at all. So the part must also
+            /// have been written under the same zone the delta was proven under; a part written by an older
+            /// server has no recorded zone and therefore never takes the fast path.
+            if (delta
+                && (source_ttl_infos.table_ttl_timezone.empty()
+                    || source_ttl_infos.table_ttl_timezone != new_ttl_timezone))
+            {
+                delta.reset();
             }
         }
 
@@ -3529,6 +3543,7 @@ bool MutateTask::prepare()
             part->ttl_infos.part_max_ttl = part->ttl_infos.table_ttl.max;
             /// The part now reflects the new rows-TTL expression, so update its fingerprint accordingly.
             part->ttl_infos.table_ttl_expression = new_ttl_expression;
+            part->ttl_infos.table_ttl_timezone = new_ttl_timezone;
 
             /// Rewrite the file with ttl infos in json format.
             part->getDataPartStorage().removeFile("ttl.txt");
