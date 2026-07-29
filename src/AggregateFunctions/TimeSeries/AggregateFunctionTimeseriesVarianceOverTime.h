@@ -28,52 +28,71 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         return is_stddev ? "timeSeriesStddevToGrid" : "timeSeriesStdvarToGrid";
     }
 
-    /// Running `{count, sum, sum2}` accumulator. `merge` is commutative and associative (plain field-wise addition),
-    /// so buckets can accumulate their samples directly - there is no need to keep raw samples around for later
-    /// preaggregation.
+    /// Running Welford/Chan `{count, mean, m2}` accumulator - the same technique as
+    /// `AggregateFunctionTimeseriesLinearRegression::Summary` and ClickHouse's own `varPopStable`/`stddevPopStable`
+    /// (`AggregateFunctionVarianceData` in `AggregateFunctionStatistics.cpp`). `mean` is the running mean and `m2`
+    /// is the sum of squared deviations from it (`sum((x - mean)^2)`), updated incrementally per sample (Welford,
+    /// `add`) and combined pairwise via Chan et al.'s parallel-merge formula (`merge`), which is commutative and
+    /// associative up to floating-point rounding, so buckets can accumulate their samples directly - there is no
+    /// need to keep raw samples around for later preaggregation.
     ///
-    /// Deliberately *not* invertible (no `unmerge`): `sum2` for real-world data (e.g. byte counters ~1e9) reaches
-    /// ~1e17-1e18, where a merge-then-unmerge round trip (add a bucket, later subtract it back out) loses enough
-    /// precision to leave a residual of tens to hundreds - enough to turn an exact 0 variance into a visibly wrong
-    /// value. (Confirmed empirically: for two real samples ~5.4e8, `(v0^2 + v1^2) - v0^2` recovers `v1^2` off by
-    /// -64.0, i.e. a spurious `variance=64`/`stddev=8` where the correct answer is exactly 0.) `AggregateFunctionTimeseriesLinearRegression`
-    /// hits the same class of issue for the same reason and likewise avoids `unmerge` despite an order-independent
-    /// merge. Omitting `unmerge` makes `AggregateFunctionTimeseriesSlidingSum` fall back to the two-stacks/recompute
-    /// strategies, which only ever combine values by addition (never subtract a running sum), so this cancellation
-    /// cannot happen.
+    /// This replaces an earlier raw `{count, sum, sum2}` accumulator finalized as `sum2 - sum * sum / count`: for
+    /// real-world data (e.g. byte counters ~5e8) `sum` and `sum2` reach magnitudes (~1e9, ~1e17) far beyond what a
+    /// tiny true variance needs precision for, so the subtraction of two nearly-equal ~1e17 quantities lost every
+    /// significant digit and could silently round an exact positive variance all the way down to `0` (confirmed
+    /// empirically: two samples `540000000`/`540000001` - true population variance `0.25` - came out as exactly
+    /// `0`). Because `m2` accumulates deviations from the mean rather than raw sums of squares, it stays as small
+    /// as the series' actual spread regardless of the values' magnitude, so this cancellation cannot happen.
+    ///
+    /// Deliberately *not* invertible (no `unmerge`): subtracting one `m2`/`mean` back out of a combined one is
+    /// exposed to the same class of cancellation, so - like `AggregateFunctionTimeseriesLinearRegression` - this
+    /// only ever combines by `merge`, leaving `AggregateFunctionTimeseriesSlidingSum` on the two-stacks/recompute
+    /// strategies (which only ever combine values via `merge`, never subtract a running combine).
     struct Summary
     {
         UInt64 count = 0;
-        Float64 sum = 0;
-        Float64 sum2 = 0;
+        Float64 mean = 0;  /// running mean
+        Float64 m2 = 0;    /// sum of (x - mean)^2
 
         void add(TimestampType /*timestamp*/, ValueType value)
         {
-            const Float64 v = static_cast<Float64>(value);
+            const Float64 x = static_cast<Float64>(value);
             ++count;
-            sum += v;
-            sum2 += v * v;
+            const Float64 delta = x - mean;
+            mean += delta / static_cast<Float64>(count);
+            /// The trailing factor uses the just-updated `mean` (Welford).
+            m2 += delta * (x - mean);
         }
 
+        /// Chan et al.'s parallel merge of two centered-moment aggregates (same formula as
+        /// `AggregateFunctionTimeseriesLinearRegression::Summary::merge`).
         void merge(const Summary & other)
         {
+            if (other.count == 0)
+                return;
+
+            const Float64 na = static_cast<Float64>(count);
+            const Float64 nb = static_cast<Float64>(other.count);
+            const Float64 total = na + nb;
+            const Float64 delta = other.mean - mean;
+
+            mean += delta * nb / total;
+            m2 += other.m2 + delta * delta * na * nb / total;
             count += other.count;
-            sum += other.sum;
-            sum2 += other.sum2;
         }
 
         void serialize(WriteBuffer & buf) const
         {
             writeBinaryLittleEndian(count, buf);
-            writeBinaryLittleEndian(sum, buf);
-            writeBinaryLittleEndian(sum2, buf);
+            writeBinaryLittleEndian(mean, buf);
+            writeBinaryLittleEndian(m2, buf);
         }
 
         void deserialize(ReadBuffer & buf)
         {
             readBinaryLittleEndian(count, buf);
-            readBinaryLittleEndian(sum, buf);
-            readBinaryLittleEndian(sum2, buf);
+            readBinaryLittleEndian(mean, buf);
+            readBinaryLittleEndian(m2, buf);
         }
 
         /// Unlike e.g. `AggregateFunctionTimeseriesToGridSparseTraits::Summary`, this summary carries no timestamp
@@ -84,7 +103,7 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         }
     };
 
-    /// Sliding aggregator: keeps the running `{count, sum, sum2}` combine over the window in a `SlidingSum` (two-stacks
+    /// Sliding aggregator: keeps the running `{count, mean, m2}` combine over the window in a `SlidingSum` (two-stacks
     /// or recompute, chosen by `createAggregator`) and derives the (population) variance or standard deviation from
     /// it at each grid point.
     struct Aggregator
@@ -113,13 +132,11 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             if (combined.count == 0)
                 return std::nullopt;
 
-            const Float64 count = static_cast<Float64>(combined.count);
-
-            /// Naive (non-Welford) population variance - the same formula ClickHouse's own `varPop`/`stddevPop`
-            /// use by default (`VarMoments::getPopulation()`); Welford's algorithm is reserved for the explicitly
-            /// named `*Stable` variants. Due to numerical errors the result can be slightly less than zero even
-            /// though variance is mathematically non-negative, so it is clamped to zero before an eventual sqrt.
-            const Float64 variance = std::max(0.0, (combined.sum2 - combined.sum * combined.sum / count) / count);
+            /// `combined.m2` is already the numerically stable sum of squared deviations from the mean over the
+            /// whole window (Welford/Chan, see `Summary` above), so population variance is simply its average.
+            /// Due to floating-point rounding the result can be slightly less than zero even though variance is
+            /// mathematically non-negative, so it is clamped to zero before an eventual sqrt.
+            const Float64 variance = std::max(0.0, combined.m2 / static_cast<Float64>(combined.count));
 
             if constexpr (is_stddev)
                 return static_cast<ValueType>(std::sqrt(variance));
@@ -128,7 +145,7 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
         }
     };
 
-    /// No raw-sample preaggregation is needed (see `Summary` above) - the bucket accumulates `{count, sum, sum2}`
+    /// No raw-sample preaggregation is needed (see `Summary` above) - the bucket accumulates `{count, mean, m2}`
     /// directly as samples are added.
     using Bucket = Summary;
 };
@@ -170,7 +187,9 @@ public:
         return typename Traits::Aggregator{stack_size};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    /// Bumped from 1: `Summary`'s serialized layout changed meaning (raw `{sum, sum2}` -> Welford/Chan
+    /// `{mean, m2}`), so old serialized states must not be misread as the new format.
+    static constexpr UInt16 FORMAT_VERSION = 2;
     static constexpr bool DateTime64Supported = true;
 };
 

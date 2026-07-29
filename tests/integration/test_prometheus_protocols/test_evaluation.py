@@ -163,6 +163,21 @@ def send_test_data():
         ]
     )
 
+    # Two large-magnitude (~5.4e8) samples with a tiny (1-unit) spread: regression for a catastrophic-cancellation
+    # bug where a naive {count, sum, sum2} variance accumulator collapsed population variance/stddev to 0 instead
+    # of the correct 0.25/0.5 (sum2 and sum*sum/count rounded to the same Float64 at that magnitude).
+    send_data(
+        [
+            (
+                {"__name__": "large_magnitude"},
+                {
+                    100: 540000000,
+                    110: 540000001,
+                },
+            )
+        ]
+    )
+
     send_data(
         [
             (
@@ -817,8 +832,8 @@ def test_function_over_time():
     )
 
     # stddev_over_time / stdvar_over_time (population standard deviation/variance).
-    # `eps=1e-9` accounts for our naive sum-based formula differing from Prometheus'
-    # own Welford-style incremental algorithm in the last couple of float digits.
+    # `eps=1e-9` accounts for our Welford/Chan two-stacks/recompute merge order differing from Prometheus'
+    # own single-pass Welford algorithm in the last couple of float digits.
     do_query_test(
         "stddev_over_time(test[45s])[120s:15s]",
         210,
@@ -870,6 +885,35 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
             ]
         ],
+    )
+
+    # Regression: two large-magnitude (~5.4e8) samples 45s apart with a tiny (1-unit) spread must not collapse
+    # to zero variance/stddev due to catastrophic cancellation in a naive {count, sum, sum2} accumulator.
+    # Population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
+    do_query_test(
+        "stddev_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "large_magnitude"}, "values": [[100, "0"], [110, "0.5"]]}]}',
+        [
+            [
+                "[('__name__','large_magnitude')]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.5)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "large_magnitude"}, "values": [[100, "0"], [110, "0.25"]]}]}',
+        [
+            [
+                "[('__name__','large_magnitude')]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.25)]",
+            ]
+        ],
+        eps=1e-9,
     )
 
 

@@ -57,3 +57,21 @@ SELECT timeSeriesStdvarToGridMerge(90, 210, 15, 45)(stdvar_agg) FROM ts_data_agg
 
 DROP TABLE ts_data_agg;
 DROP TABLE ts_raw_data;
+
+-- Regression: two large-magnitude (~5.4e8) samples with a tiny (1-unit) spread must not collapse to
+-- zero variance/stddev due to catastrophic cancellation in a naive `{count, sum, sum2}` accumulator -
+-- `combined.sum2` and `combined.sum * combined.sum / count` would round to the same Float64 there.
+-- Population variance/stddev for {540000000, 540000001} is exactly 0.25 / 0.5.
+CREATE TABLE ts_large_magnitude(timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
+
+INSERT INTO ts_large_magnitude VALUES (100, 540000000), (110, 540000001);
+
+WITH
+    100 AS start, 110 AS end, 10 AS step, 20 AS window,
+    range(start, end + 1, step) as grid
+SELECT
+    arrayZip(grid, timeSeriesStddevToGrid(start, end, step, window)(toUnixTimestamp(timestamp), value)) as stddev_large,
+    arrayZip(grid, timeSeriesStdvarToGrid(start, end, step, window)(toUnixTimestamp(timestamp), value)) as stdvar_large
+FROM ts_large_magnitude FORMAT Vertical;
+
+DROP TABLE ts_large_magnitude;
