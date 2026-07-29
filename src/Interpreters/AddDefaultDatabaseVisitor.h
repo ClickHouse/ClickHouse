@@ -210,6 +210,11 @@ private:
                             if (identifier->compound())
                                 continue;
 
+                            /// A parameterized name is only known when the view is called, and it
+                            /// has no resolvable name to qualify here.
+                            if (identifier->isParam())
+                                continue;
+
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
                             child->children[i] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
