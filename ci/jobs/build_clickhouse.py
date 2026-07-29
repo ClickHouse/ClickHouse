@@ -495,12 +495,17 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
 def assert_jemalloc_safety_macros_absent(compile_commands_path):
     """Fail if a build that did not request the option carries either macro.
 
-    The option defaults to OFF, so every other build compiles jemalloc without the two
-    macros. Flipping that default - or widening the `-D`s to a target other builds link -
-    would arm both gates in every x86-64 jemalloc build, release included, which is a
+    The option defaults to OFF, so a build that did not request it compiles jemalloc without
+    the two macros. Flipping that default - or widening the `-D`s to a target other builds
+    link - would arm both gates in every x86-64 jemalloc build, release included, which is a
     user-visible change no other layer can see: the probe above only runs for the one build
     type that requests the option, and the Python-level assertion reads the `ci/` cmake
     commands rather than a configured tree.
+
+    Called for exactly one ordinary build, `amd_debug` - see the call site for why one is
+    enough and why making it mandatory for all 31 non-lane build types is not proportional.
+    It is `amd_debug` specifically because that is the lane's own base, so this verdict and
+    the armed one differ in exactly the option under test.
 
     Only jemalloc's own entries are scanned; the leak direction is the positive check's
     business. Like every other direction in this guard, the question is put to the
@@ -515,11 +520,13 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     flag set covers them all, exactly as the arming half does (a non-safety build has ~67
     jemalloc entries with one flag set between them).
 
-    An **empty** jemalloc set is expected and passes: `contrib/jemalloc-cmake
-    /CMakeLists.txt:1-11` disables jemalloc outright whenever `SANITIZE` is set to anything
-    but `undefined`, so `amd_asan_ubsan`, `amd_tsan` and `amd_msan` genuinely have no
-    jemalloc translation units, and copying the positive check's emptiness guard here would
-    red every one of those builds.
+    An **empty** jemalloc set passes rather than failing closed, unlike the positive check.
+    `amd_debug` does have jemalloc translation units, so this is not the expected outcome
+    there - but "no jemalloc was built" genuinely is an answer of "neither macro reaches a
+    jemalloc TU", and `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc outright
+    whenever `SANITIZE` is set to anything but `undefined`, so the emptiness case is a real
+    configuration rather than a broken one. Copying the positive check's emptiness guard here
+    would red any build reaching this with jemalloc legitimately switched off.
 
     An **inconclusive** probe - a nonzero exit carrying neither `#error` marker - raises
     rather than passing, for the same reason a missing file does: it says the question
@@ -788,27 +795,39 @@ def main():
 
         # The lane's whole value depends on the two jemalloc safety macros really
         # reaching the compiler, so assert it here rather than after ~40 minutes of
-        # compiling. Only this build type promises them - and every other one must be
-        # without them, since the option defaults to OFF and arming the gates in an
-        # ordinary build is a user-visible change.
+        # compiling. The option defaults to OFF, so arming the gates outside this lane
+        # would be a user-visible change to every x86-64 jemalloc build; the absence
+        # direction catches that, and one ordinary build is enough to catch it.
+        #
+        # That build is `amd_debug`, this lane's own base: the armed and absent verdicts are
+        # then directly comparable, since the two cmake commands differ in exactly the one
+        # option. Running it for all 31 other build types instead would make a fail-closed
+        # check - a missing `compile_commands.json`, an inconclusive probe - block builds
+        # that have nothing to do with a weekly diagnostic lane, including 24 sanitizer,
+        # non-x86 and coverage builds that carry no jemalloc translation units at all or
+        # cannot be affected by an x86-64-only cmake guard. The check is cheap (0.31s) but
+        # cheap is not a reason to make it mandatory everywhere.
         if res:
-            if build_type == BuildTypes.AMD_JEMALLOC_SAFETY:
+            jemalloc_check = {
+                BuildTypes.AMD_JEMALLOC_SAFETY: (
+                    "jemalloc safety macros",
+                    assert_jemalloc_safety_macros_armed,
+                ),
+                BuildTypes.AMD_DEBUG: (
+                    "jemalloc safety macros absent",
+                    assert_jemalloc_safety_macros_absent,
+                ),
+            }.get(build_type)
+            if jemalloc_check:
+                name, command = jemalloc_check
                 results.append(
                     Result.from_commands_run(
-                        name="jemalloc safety macros",
-                        command=assert_jemalloc_safety_macros_armed,
+                        name=name,
+                        command=command,
                         command_args=[f"{build_dir}/compile_commands.json"],
                     )
                 )
-            else:
-                results.append(
-                    Result.from_commands_run(
-                        name="jemalloc safety macros absent",
-                        command=assert_jemalloc_safety_macros_absent,
-                        command_args=[f"{build_dir}/compile_commands.json"],
-                    )
-                )
-            res = results[-1].is_ok()
+                res = results[-1].is_ok()
 
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
         if res:

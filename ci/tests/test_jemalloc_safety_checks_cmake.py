@@ -1610,29 +1610,57 @@ def test_the_build_job_asserts_the_macros_for_this_build_type(build_job_run):
     )
 
 
-@pytest.mark.parametrize(
-    "build_type", [BuildTypes.AMD_DEBUG, BuildTypes.AMD_TSAN, BuildTypes.AMD_RELEASE]
-)
-def test_the_build_job_does_not_assert_the_macros_elsewhere(build_job_run, build_type):
-    """Only this build type promises the macros, so no other build may be failed by it.
+def test_the_build_job_checks_one_ordinary_build_for_absence(build_job_run):
+    """The default-off contract must be checked, and `amd_debug` is where.
 
-    And every other build must be checked for their *absence* instead: the option defaults
-    to OFF, and nothing else can see a flipped default - the probe runs for one build type
-    only, and `test_only_this_build_type_requests_the_option` reads the `ci/` cmake
-    commands rather than a configured tree.
+    Nothing else can see a flipped default: the armed probe runs for one build type only,
+    and `test_only_this_build_type_requests_the_option` reads the `ci/` cmake commands rather
+    than a configured tree. `amd_debug` is the lane's own base, so this verdict and the armed
+    one differ in exactly the option under test.
     """
-    calls = build_job_run(build_type)
+    calls = build_job_run(BuildTypes.AMD_DEBUG)
     assert calls["armed"] == [], (
-        f"{build_type} does not request the option, so the armed check must not run for "
-        f"it; it was called with {calls['armed']}"
+        f"{BuildTypes.AMD_DEBUG} does not request the option, so the armed check must not "
+        f"run for it; it was called with {calls['armed']}"
     )
     assert len(calls["absent"]) == 1, (
-        f"{build_type} must be checked for the macros' absence exactly once; the checker "
-        f"ran {len(calls['absent'])} times"
+        f"{BuildTypes.AMD_DEBUG} must be checked for the macros' absence exactly once; the "
+        f"checker ran {len(calls['absent'])} times"
     )
     assert calls["absent"][0].endswith("compile_commands.json"), (
         "the absent check must be pointed at the generated compile commands; got "
         f"{calls['absent'][0]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "build_type",
+    [
+        # An ordinary release build: not the lane's base, so nothing to compare against.
+        BuildTypes.AMD_RELEASE,
+        # A sanitizer build: `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc
+        # outright, so there is nothing to probe.
+        BuildTypes.AMD_TSAN,
+        # A non-x86 build: the cmake option is guarded on `ARCH_AMD64`, so it cannot arm
+        # these gates here whatever the default becomes.
+        BuildTypes.S390X,
+        # A coverage build, whose instrumentation is unrelated to either macro.
+        BuildTypes.LLVM_COVERAGE_BUILD,
+    ],
+)
+def test_the_build_job_asserts_nothing_about_jemalloc_elsewhere(build_job_run, build_type):
+    """Neither direction may run for the remaining 30 build types.
+
+    Both checks are fail-closed - a missing `compile_commands.json` or an inconclusive probe
+    raises - so wiring them into every build makes a weekly diagnostic lane's guard able to
+    block unrelated builds. One representative ordinary build carries the default-off
+    contract; these must be left alone.
+    """
+    calls = build_job_run(build_type)
+    assert calls["armed"] == [] and calls["absent"] == [], (
+        f"{build_type} neither requests the option nor is the representative build for the "
+        f"absence check, so no jemalloc assertion may run for it; got armed="
+        f"{calls['armed']} absent={calls['absent']}"
     )
 
 
