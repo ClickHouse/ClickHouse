@@ -506,9 +506,10 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ExplicitDefaultNullsOrderIsNotSign
     descending_nulls_first.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number DESC NULLS FIRST)";
     EXPECT_TRUE(diffOf(descending, descending_nulls_first).constraints_changed);
 
-    /// `ASC NULLS FIRST` and `DESC NULLS LAST` both sort NULLs opposite to the default for their
-    /// direction, so the pair pins that the direction itself is still hashed.
-    EXPECT_TRUE(diffOf(ascending_nulls_first, descending_nulls_last).constraints_changed);
+    /// `NULLS LAST` is the default for either direction, so `ASC NULLS FIRST` and `DESC` both end
+    /// up with `nulls_direction` reversed relative to `direction`. They differ only in `direction`,
+    /// which pins that it is still hashed on its own.
+    EXPECT_TRUE(diffOf(ascending_nulls_first, descending).constraints_changed);
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, CommonTableExpressionIdentityIsSignificant)
