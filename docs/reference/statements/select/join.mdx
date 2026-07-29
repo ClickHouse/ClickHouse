@@ -275,6 +275,19 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
+`NaN` in a [Float](/reference/data-types/float) `JOIN` key does not follow the `NULL` rule above. The
+scalar comparison `NaN = NaN` is `0`, but an equality `JOIN` key is compared by key identity, so `NaN`
+keys can match each other. Whether they do depends on their bit patterns and on the join
+implementation that ClickHouse chooses, and `isNotDistinctFrom` does not reliably separate them. On a
+key that is not `Nullable`, use `ON if(isNaN(A.id), NULL, A.id) = B.id` when `NaN` rows must not
+match. On a `Nullable(Float)` key that form also stops `NULL` keys from matching each other, because
+`isNaN(NULL)` is `NULL`. To drop only the `NaN` matches and keep the `NULL = NULL` matches of the
+section above, write `ON isNotDistinctFrom(A.id, B.id) AND NOT ifNull(isNaN(A.id), 0)` instead. That
+predicate adds a condition besides the key equality, which not every join algorithm accepts, so
+`join_algorithm = 'full_sorting_merge'` on its own may reject it depending on the `JOIN` kind. The
+closest match key of an `ASOF JOIN` is searched by ordering rather than by key identity, so exclude
+`NaN` from that key on both sides when it can occur.
+
 ## ASOF JOIN usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
