@@ -3,11 +3,12 @@
 -- with "Trying to extract chunk from ChunkBuffer before all inputs are finished".
 --
 -- correlated_subqueries_use_in_memory_buffer controls whether the shared subplan is buffered, but the
--- decision is made from the top-level query context, so the same set operation must return the same
--- rows for all three placements of the setting:
+-- decision belongs to whichever context optimizes the plan, either the top-level query context or the
+-- local one, so the same set operation must return the same rows for every placement of the setting:
 --   * default (buffer on): a buffer is created;
 --   * session-level SET ... = 0: no buffer (the reference is materialized);
---   * per-branch SETTINGS ... = 0 (the #108521 shape): a buffer is still created.
+--   * per-branch SETTINGS ... = 0 (the #108521 shape): a buffer is still created;
+--   * session 0 with a subquery SETTINGS ... = 1: the local context buffers it (the last case here).
 
 -- Correlated subqueries are only supported by the analyzer.
 SET enable_analyzer = 1;
