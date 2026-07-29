@@ -904,11 +904,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    /// Planner callers pass only the columns they need, so serving them from the storage-wide
-    /// estimator would defeat lazy loading with full-column statistics I/O. The cache is
-    /// consulted (and populated) only for whole-table requests with an empty column list.
-    const bool use_cache = required_columns.empty()
-        && local_context->getSettingsRef()[Setting::use_statistics_cache];
+    /// The storage-wide `cached_estimator` (populated by the background refresher or a
+    /// previous whole-table request) is a superset of any explicit-column request, so a
+    /// cache hit avoids re-reading `statistics.packed`. Only whole-table loads (empty
+    /// `required_columns`) populate the cache; subset loads stay lazy.
+    const bool use_cache = local_context->getSettingsRef()[Setting::use_statistics_cache];
 
     if (use_cache)
     {
@@ -943,7 +943,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     auto estimator = estimator_builder.getEstimator();
 
-    if (use_cache)
+    if (use_cache && required_columns.empty())
     {
         std::lock_guard<std::mutex> lock(stats_mutex);
         cached_estimator = estimator;
