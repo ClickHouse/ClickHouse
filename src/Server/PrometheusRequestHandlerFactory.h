@@ -64,7 +64,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///
 /// <http_port>8123</http_port>
 /// <http_handlers>
-///     <my_rule_1>
+/// Note that inside <http_handlers> the name of every child element must start with "rule",
+/// and the handler type must start with "prometheus" for the rule to be routed here at all.
+///
+///     <rule_1>
 ///         <url>/metrics</url>
 ///         <handler>
 ///             <type>prometheus_metrics</type>
@@ -73,24 +76,24 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///             <events>true</events>
 ///             <errors>true</errors>
 ///         </handler>
-///     </my_rule_1>
-///     <my_rule2>
+///     </rule_1>
+///     <rule_2>
 ///         <url_prefix>/prometheus/api/v1</url_prefix>
 ///         <handler>
 ///             <type>prometheus_api_v1</type>
 ///             <table>db.time_series_table_name</table>
 ///         </handler>
-///     </my_rule2>
-///     <my_rule3>
+///     </rule_2>
+///     <rule_3>
 ///         <url>regex:^/[^/]+/[^/]+/write$</url>
 ///         <handler>
-///             <type>remote_write</type>
+///             <type>prometheus_write</type>
 ///             <!-- The URL is expected to start with /{db}/{table}/... -->
 ///             \verbatim
 ///             <enable_table_name_url_routing>true</enable_table_name_url_routing>
 ///             \endverbatim
 ///         </handler>
-///     </my_rule3>
+///     </rule_3>
 /// </http_handlers>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
