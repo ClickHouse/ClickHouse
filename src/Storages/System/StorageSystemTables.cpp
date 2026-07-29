@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
@@ -431,7 +432,7 @@ public:
         : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
+        , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
         , tables_filter(std::move(tables_filter_))
     {
@@ -483,7 +484,7 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = database->getLightweightTablesIteratorWithHint(context,
+        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
                                 /* filter_by_table_name */ {},
                                 /* skip_not_loaded */ false,
                                 tables_filter);
@@ -499,7 +500,7 @@ protected:
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(database_name);
+                res_columns[res_index++]->insert(databases_cursor.getDatabaseName());
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(table_detail.name);
@@ -524,30 +525,8 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
-            if (tables_it && !tables_it->isValid())
-            {
-                ++database_idx;
-                tables_it.reset();
-            }
-
-            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
-            {
-                database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-
-                if (!database)
-                {
-                    /// Database was deleted just now or the user has no access.
-                    ++database_idx;
-                    continue;
-                }
-
-                break;
-            }
-
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
-            if (database_idx >= databases->size())
+            if (!databases_cursor.advanceToNextDatabase())
             {
                 if (context->hasSessionContext())
                 {
@@ -671,6 +650,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
+            const String & database_name = databases_cursor.getDatabaseName();
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
@@ -681,30 +661,34 @@ protected:
                         ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
                             (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
 
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
+            /// A database whose iterator survived a block boundary was started on the
+            /// slow path and must be finished there, not re-emitted whole.
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !databases_cursor.hasTablesIterator())
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
-                ++database_idx;
+                databases_cursor.skipCurrentDatabase();
                 continue;
             }
 
-            if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIteratorWithHint(context,
+            const DatabasePtr & database = databases_cursor.getDatabase();
+            if (!databases_cursor.hasTablesIterator())
+                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false,
-                        tables_filter);
+                        tables_filter));
 
-            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
+            auto & tables_it = databases_cursor.getTablesIterator();
+            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
             {
-                auto table_name = tables_it->name();
+                auto table_name = tables_it.name();
                 if (!tables.contains(table_name))
                     continue;
 
                 if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it->table();
+                StoragePtr table = tables_it.table();
                 /// A null table means the storage object could not be resolved: either the table
                 /// was concurrently dropped between the iterator snapshot and this table() call, or
                 /// (for DataLakeCatalog databases) its metadata is unresolvable. We still emit a row
@@ -738,7 +722,7 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->uuid());
+                    res_columns[res_index++]->insert(tables_it.uuid());
 
                 if (columns_mask[src_index++])
                 {
@@ -1138,14 +1122,10 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
-    ColumnPtr databases;
+    DatabaseTablesCursor databases_cursor;
     NameSet tables;
-    size_t database_idx = 0;
-    DatabaseTablesIteratorPtr tables_it;
     ContextPtr context;
     bool done = false;
-    DatabasePtr database;
-    std::string database_name;
     TablesFilter tables_filter;
 };
 

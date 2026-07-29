@@ -27,9 +27,7 @@ doc_type: 'guide'
 </Info>
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     필요한 라이브러리를 설치하려면 `pip`로 다음 명령을 실행하세요:
 
     ```shell
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로 Anthropic API Key를 입력해야 합니다:
 
     ```python
@@ -69,9 +65,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCP 서버 초기화
-
+  <Step title="MCP 서버 초기화" id="initialize-mcp">
     이제 ClickHouse MCP 서버가 ClickHouse SQL Playground를 가리키도록 설정합니다.
 
     ```python
@@ -92,9 +86,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## LLM 초기화
-
+  <Step title="LLM 초기화" id="initialize-llm">
     다음으로, 아래 줄을 사용하여 LLM을 초기화합니다:
 
     ```python
@@ -102,9 +94,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 에이전트 실행
-
+  <Step title="에이전트 실행" id="run-the-agent">
     마지막으로, 에이전트를 초기화하고 실행합니다:
 
     ```python
@@ -141,7 +131,7 @@ doc_type: 'guide'
 
     📍 STEP 1
     ----------------------------------------
-    🧠 THINKING: Amazon 제품 카테고리에 관한 정보를 찾고 가장 인기 있는 카테고리를 파악해야 합니다. 먼저 사용 가능한 데이터베이스를 확인하여 Amazon 관련 데이터가 있는지 살펴보겠습니다.
+    🧠 THINKING: I need to find information about Amazon product categories and determine which one is most popular. First, I should explore what databases are available to see if there's any Amazon-related data.
 
     🔧 TOOL: list_databases
 
@@ -179,7 +169,7 @@ doc_type: 'guide'
 
     📍 STEP 2
     ----------------------------------------
-    🧠 THINKING: "amazon" 데이터베이스가 있음을 확인했습니다. Amazon 제품 카테고리 정보를 찾는 데 필요한 데이터베이스입니다. amazon 데이터베이스의 테이블을 살펴보고 어떤 데이터가 있는지 확인하겠습니다.
+    🧠 THINKING: Great! I can see there's an "amazon" database available. This is exactly what I need to find information about Amazon product categories. Let me explore the tables in the amazon database to see what data is available.
 
     🔧 TOOL: list_tables
        Args: {'database': 'amazon'}
@@ -198,50 +188,50 @@ doc_type: 'guide'
 
     📍 STEP 3
     ----------------------------------------
-    🧠 THINKING: product_category 컬럼을 포함하는 amazon_reviews 테이블을 찾았습니다. 이 테이블에는 1억 5천만 건 이상의 Amazon 리뷰 데이터가 있어 제품 인기도를 파악하기에 충분합니다. 가장 인기 있는 Amazon 제품 카테고리를 찾으려면 카테고리별 리뷰 수를 집계한 후 내림차순으로 정렬해야 합니다. 리뷰 수가 가장 많은 카테고리가 가장 인기 있는 카테고리로 간주됩니다.
+    🧠 THINKING: Perfect! I found the amazon_reviews table which contains a product_category column. This table has over 150 million rows of Amazon review data, which should give me a good representation of product popularity. To find the most popular Amazon product category, I need to count the number of reviews per category and order them by count in descending order. The category with the most reviews would be considered the most popular.
 
     🔧 TOOL: run_select_query
        Args: {'query': 'SELECT product_category, COUNT(*) as review_count FROM amazon.amazon_reviews GROUP BY product_category ORDER BY review_count DESC LIMIT 10'}
 
     📊 RESULT:
-       1. Books: 19,530,930건
-       2. Digital_Ebook_Purchase: 17,622,107건
-       3. Wireless: 9,001,567건
-       4. PC: 6,908,245건
-       5. Home: 6,221,321건
-       ... 외 5개
+       1. Books: 19,530,930 reviews
+       2. Digital_Ebook_Purchase: 17,622,107 reviews
+       3. Wireless: 9,001,567 reviews
+       4. PC: 6,908,245 reviews
+       5. Home: 6,221,321 reviews
+       ... and 5 more
 
     📍 STEP 4
     ----------------------------------------
-    🧠 THINKING: 사용자의 질문에 대한 답을 찾았습니다. Amazon 리뷰 데이터를 기반으로 "Books"가 19,530,930건의 리뷰로 가장 인기 있는 Amazon 제품 카테고리임을 확인할 수 있으며, 그 다음으로 "Digital_Ebook_Purchase"가 17,622,107건으로 뒤를 잇습니다. 데이터를 통해 각 카테고리가 받은 리뷰 수를 기준으로 제품 카테고리의 명확한 순위를 파악할 수 있습니다. 이제 사용자의 질문에 답하는 데 필요한 모든 정보를 확보했습니다.
+    🧠 THINKING: Perfect! I have found the answer to the user's question. Based on the Amazon reviews data, I can clearly see that "Books" is the most popular Amazon product category with 19,530,930 reviews, followed by "Digital_Ebook_Purchase" with 17,622,107 reviews. The data shows a clear ranking of product categories by popularity based on the number of reviews each category has received. I now have all the information needed to answer the user's question.
 
     🔧 TOOL: finish
 
     📊 RESULT:
-       완료되었습니다.
+       Completed.
 
     🎯 REASONING
     ----------------------------------------
-    가장 인기 있는 Amazon 제품 카테고리에 관한 질문에 답하기 위해 Amazon 데이터베이스에 접근하여 1억 5천만 건 이상의 리뷰 레코드가 포함된 "amazon_reviews" 테이블을 찾았습니다. 이 테이블에는 리뷰 수를 기반으로 제품 인기도를 분석할 수 있는 "product_category" 컬럼이 있습니다. 제품 카테고리별 리뷰 수를 집계하고 내림차순으로 정렬하는 쿼리를 실행했습니다. 여기서의 전제는 리뷰 수가 많은 카테고리일수록 인기가 높다는 것으로, 리뷰 수가 많을수록 일반적으로 더 많은 구매와 고객 참여로 이어지기 때문입니다.
+    To answer the question about the most popular Amazon product category, I accessed the Amazon database and found a table called "amazon_reviews" with over 150 million review records. This table contains a "product_category" column that allows me to analyze product popularity based on review volume. I ran a query to count the number of reviews per product category and ordered them by count in descending order. The assumption here is that categories with more reviews indicate higher popularity, as more reviews typically correlate with more purchases and customer engagement.
 
     ✅ FINAL RESULT
     ----------------------------------------
-    1억 5천만 건 이상의 레코드를 포함한 Amazon 리뷰 데이터를 기반으로, 가장 인기 있는 Amazon 제품 카테고리는 19,530,930건의 리뷰를 보유한 **Books**입니다.
+    Based on Amazon review data containing over 150 million records, the most popular Amazon product category is **Books** with 19,530,930 reviews. 
 
-    리뷰 수 기준 상위 10개 Amazon 제품 카테고리는 다음과 같습니다:
+    Here are the top 10 most popular Amazon product categories by review count:
 
-    1. **Books** - 19,530,930건
-    2. **Digital_Ebook_Purchase** - 17,622,107건  
-    3. **Wireless** - 9,001,567건
-    4. **PC** - 6,908,245건
-    5. **Home** - 6,221,321건
-    6. **Apparel** - 5,906,085건
-    7. **Health & Personal Care** - 5,331,239건
-    8. **Beauty** - 5,115,462건
-    9. **Video DVD** - 5,069,014건
-    10. **Mobile_Apps** - 5,033,164건
+    1. **Books** - 19,530,930 reviews
+    2. **Digital_Ebook_Purchase** - 17,622,107 reviews  
+    3. **Wireless** - 9,001,567 reviews
+    4. **PC** - 6,908,245 reviews
+    5. **Home** - 6,221,321 reviews
+    6. **Apparel** - 5,906,085 reviews
+    7. **Health & Personal Care** - 5,331,239 reviews
+    8. **Beauty** - 5,115,462 reviews
+    9. **Video DVD** - 5,069,014 reviews
+    10. **Mobile_Apps** - 5,033,164 reviews
 
-    주목할 만한 점은 Books와 Digital Ebook Purchase(연관된 카테고리)를 합산하면 3,700만 건 이상의 리뷰를 기록한다는 것으로, Amazon 플랫폼에서 독서 관련 콘텐츠가 얼마나 높은 인기를 누리고 있는지를 잘 보여줍니다.
+    It's interesting to note that Books and Digital Ebook Purchase (which are related categories) together account for over 37 million reviews, showing the strong popularity of reading materials on Amazon's platform.
     ================================================================================
     ```
   </Step>

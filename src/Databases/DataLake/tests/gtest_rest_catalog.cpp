@@ -72,6 +72,14 @@ void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & bod
     response.send() << body;
 }
 
+void writeError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+{
+    response.setStatus(status);
+    response.setContentType("application/json");
+    response.setContentLength(body.size());
+    response.send() << body;
+}
+
 std::string getRawPath(const std::string & uri)
 {
     const auto query_pos = uri.find('?');
@@ -187,10 +195,13 @@ public:
 
         if (path == "/v1/namespaces/namespace/tables/missing_table")
         {
-            writeJSON(
-                response,
-                R"({"error":{"message":"Table does not exist: namespace.missing_table","type":"NoSuchTableException","code":404}})",
-                Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+            writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/unauthorized_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})");
             return;
         }
 
@@ -357,7 +368,7 @@ TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
 }
 
-TEST(RestCatalog, TryGetTableMetadataMissingTableReturnsFalse)
+TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
 {
     RestCatalogTestServer server(CatalogShape::TopLevelTable);
     auto context = DB::Context::createCopy(getContext().context);
@@ -373,13 +384,18 @@ TEST(RestCatalog, TryGetTableMetadataMissingTableReturnsFalse)
         /* oauth_server_use_request_body */false,
         context);
 
-    auto metadata = TableMetadata().withLocation();
-    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", metadata));
-    EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
+    auto existing = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_EQ(existing.getLocation(), "s3://bucket/table_a");
+    EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
 
-    TableMetadata missing_metadata;
-    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing_metadata));
+    TableMetadata missing;
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
     EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
+
+    TableMetadata unauthorized;
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
 }
 
 TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)

@@ -1514,7 +1514,7 @@ bool RestCatalog::tryGetTableMetadata(
         /// on SELECT, `EXISTS TABLE` returning 0) instead of surfacing the real error.
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
         {
-            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.what());
+            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
         throw;
