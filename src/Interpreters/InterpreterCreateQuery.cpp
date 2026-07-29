@@ -915,14 +915,32 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         if (create.isParameterizedView())
         {
-            if (getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] && create.columns_list && create.columns_list->columns)
+            /// A parameterized view usually infers its schema only after parameter substitution, so
+            /// it carries no column list. An explicitly declared column list is honoured only when
+            /// `use_declared_schema_for_parameterized_views` is enabled.
+            ///
+            /// The setting is consulted exactly once, here, and the outcome is *persisted* in the
+            /// stored definition: when it is enabled the declared list is kept and drives both
+            /// exposure (`SHOW COLUMNS`/`system.columns`) and validation after substitution; when it
+            /// is disabled the list is dropped from the stored definition, because it is ignored
+            /// anyway. Reloading the stored definition therefore never consults the setting again
+            /// (see `DatabaseOnDisk::createTableFromAST`), so one `CREATE VIEW` definition always
+            /// materializes the same way on every replica and across restarts.
+            if (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty())
             {
-                properties.columns = getColumnsDescription(
-                    *create.columns_list->columns,
-                    getContext(),
-                    mode,
-                    is_restore_from_backup
-                );
+                /// On ATTACH/reload the stored definition is authoritative and must be honoured as is.
+                if (mode > LoadingStrictnessLevel::CREATE
+                    || getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
+                {
+                    properties.columns = getColumnsDescription(
+                        *create.columns_list->columns,
+                        getContext(),
+                        mode,
+                        is_restore_from_backup
+                    );
+                }
+                else
+                    create.columns_list->reset(create.columns_list->columns);
             }
             return properties;
         }

@@ -19,7 +19,6 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         const String & comment,
-        ContextPtr context,
         bool is_parameterized_view_ = false);
 
     std::string getName() const override { return "View"; }

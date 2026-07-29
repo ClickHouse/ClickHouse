@@ -183,7 +183,7 @@ StoragePtr TableFunctionEval::executeImpl(
     bool is_insert_query) const
 {
     auto columns = getActualTableStructure(context, is_insert_query);
-    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "", context);
+    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
 }

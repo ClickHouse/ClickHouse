@@ -60,7 +60,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
-    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace ErrorCodes
@@ -163,18 +162,19 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    ContextPtr context,
     bool is_parameterized_view_)
     : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
     {
-        /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (
-            (context->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views] && !columns_.empty())
-            || !query.isParameterizedView()
-        )
+        /// A parameterized view normally has no columns of its own, because they are only known
+        /// after parameter substitution. The exception is a view whose stored definition declares
+        /// an explicit column list: that declared schema is exposed and enforced. Whether the
+        /// declared list is part of the stored definition is decided once, at CREATE time, by
+        /// `use_declared_schema_for_parameterized_views`, so nothing here depends on the current
+        /// value of that setting.
+        if (!query.isParameterizedView() || !columns_.empty())
             storage_metadata.setColumns(columns_);
     }
     else
@@ -543,7 +543,7 @@ void registerStorageView(StorageFactory & factory)
             SelectIntersectExceptQueryVisitor{data}.visit(select);
         }
 
-        return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment, args.getLocalContext());
+        return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     },
     {},
     Documentation{

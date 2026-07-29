@@ -120,8 +120,9 @@ FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_
 SELECT *
 FROM 03271_parametrized_v_expl(upper_bound = 3);
 
--- Schema exposure is decided by the setting value at CREATE/ATTACH/reload time, not at
--- query time (a deliberate backward-compatibility choice).
+-- Schema exposure is decided by the setting value at CREATE time, not at query time
+-- (a deliberate backward-compatibility choice), and the decision is persisted in the stored
+-- definition so that reloading it never consults the setting again.
 SET enable_analyzer = 1;
 SET use_declared_schema_for_parameterized_views = 1;
 CREATE OR REPLACE VIEW 03271_parametrized_v_toggle (n UInt64) AS
@@ -151,18 +152,36 @@ CREATE OR REPLACE VIEW 03271_parametrized_v_off (n UInt64) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
 SET use_declared_schema_for_parameterized_views = 1;
--- Created while the setting was off: turning it on later must not retroactively expose it.
+-- Created while the setting was off: the declared column list is not part of the stored
+-- definition, so turning the setting on later must not retroactively expose it...
 SHOW COLUMNS IN 03271_parametrized_v_off;
+-- ...not even across a reload that happens while the setting is on.
+DETACH TABLE 03271_parametrized_v_off;
+ATTACH TABLE 03271_parametrized_v_off;
+SHOW COLUMNS IN 03271_parametrized_v_off;
+
+-- The declared schema is latched into the stored definition at CREATE time, so reloading it
+-- must not depend on the node-local setting value at load time: otherwise one replicated
+-- definition would expose (and enforce) different schemas on different replicas.
 CREATE OR REPLACE VIEW 03271_parametrized_v_reload (n UInt64) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+CREATE OR REPLACE VIEW 03271_parametrized_v_reload_mismatch (n UInt64, s String) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
 SET use_declared_schema_for_parameterized_views = 0;
 DETACH TABLE 03271_parametrized_v_reload;
 ATTACH TABLE 03271_parametrized_v_reload;
-SET use_declared_schema_for_parameterized_views = 1;
--- Reloaded under a default-off load context: the declared schema is dropped and re-enabling
--- the setting afterwards does not restore it.
+DETACH TABLE 03271_parametrized_v_reload_mismatch;
+ATTACH TABLE 03271_parametrized_v_reload_mismatch;
+-- Reloaded under a default-off load context: the declared schema is still exposed...
 SHOW COLUMNS IN 03271_parametrized_v_reload;
+-- ...still enforced for a matching view...
+SELECT *
+FROM 03271_parametrized_v_reload(upper_bound = 3);
+-- ...and still enforced for a mismatching one, on every node and after every restart.
+SELECT *
+FROM 03271_parametrized_v_reload_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 
 -- { echoOff }
 
@@ -173,3 +192,4 @@ DROP VIEW 03271_parametrized_v_toggle;
 DROP VIEW 03271_parametrized_v_toggle_mismatch;
 DROP VIEW 03271_parametrized_v_off;
 DROP VIEW 03271_parametrized_v_reload;
+DROP VIEW 03271_parametrized_v_reload_mismatch;
