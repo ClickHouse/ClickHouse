@@ -203,35 +203,51 @@ SetPtr StorageSet::getSet() const
 
 std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context)
 {
+    /// Resolve first and only then check access: this is called for every table on the right of IN,
+    /// so a check while walking would apply set semantics to aliases whose target is not set-backed.
+    std::vector<const StorageAlias *> aliases;
     StoragePtr current = storage;
+    std::shared_ptr<StorageSet> storage_set;
+
     /// Bound the walk so a self-referential or cyclic alias chain cannot loop forever.
     for (size_t depth = 0; current && depth < 64; ++depth)
     {
         /// Share ownership with the caller: through an alias the caller holds only the wrapper, so
         /// returning a raw pointer would leave the target owned by nothing once this returns.
-        if (auto storage_set = std::dynamic_pointer_cast<StorageSet>(current))
-            return storage_set;
+        storage_set = std::dynamic_pointer_cast<StorageSet>(current);
+        if (storage_set)
+            break;
 
-        if (const auto * alias = dynamic_cast<const StorageAlias *>(current.get()))
-        {
-            /// Consuming the target as a prepared set replaces both reading the alias and the
-            /// StorageAlias::read it would delegate to, so it must require what those require:
-            /// SELECT on the alias itself and SELECT on the target. Without a context (a caller
-            /// that only asks whether this is a set-backed table) resolve without a check.
-            if (context)
-            {
-                context->checkAccess(AccessType::SELECT, alias->getStorageID());
-                current = alias->getTargetTable(StorageAlias::TargetAccess{context, AccessType::SELECT});
-            }
-            else
-                current = alias->tryGetTargetTable();
-            continue;
-        }
+        const auto * alias = dynamic_cast<const StorageAlias *>(current.get());
+        if (!alias)
+            return nullptr;
 
-        break;
+        aliases.push_back(alias);
+        current = alias->tryGetTargetTable();
     }
 
-    return nullptr;
+    if (!storage_set)
+        return nullptr;
+
+    /// Consuming the target as a prepared set replaces reading the alias chain, so it must require
+    /// what reading that chain requires: SELECT on every alias and on the target it resolves to.
+    /// The whole set is consumed, so the check is on all of the target's columns, which lets a
+    /// column-level grant covering them all suffice, exactly as it does for an ordinary alias.
+    ///
+    /// Only the aliases add a check. A set-backed table named directly on the right of IN has never
+    /// required SELECT on it, and that is left as it is. Without a context (a caller that only asks
+    /// whether this is a set-backed table without consuming it) there is nothing to check either.
+    if (context && !aliases.empty())
+    {
+        const auto metadata = storage_set->getInMemoryMetadataPtr(context, false);
+        const Names column_names = metadata->getColumns().getNamesOfPhysical();
+
+        for (const auto * alias_in_chain : aliases)
+            context->checkAccess(AccessType::SELECT, alias_in_chain->getStorageID(), column_names);
+        context->checkAccess(AccessType::SELECT, storage_set->getStorageID(), column_names);
+    }
+
+    return storage_set;
 }
 
 

@@ -19,3 +19,10 @@ Both granted
 1
   serialized plan
 2
+Target granted by column
+  enable_analyzer = 1
+1
+  enable_analyzer = 0
+1
+  serialized plan
+2

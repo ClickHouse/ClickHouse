@@ -43,7 +43,8 @@ run_all_paths()
     echo "  serialized plan"
     ${CLICKHOUSE_CLIENT} --user="${user}" --query \
         "SELECT count() FROM cluster('test_cluster_two_shards', currentDatabase(), t_src)
-         WHERE a IN t_set_alias SETTINGS serialize_query_plan = 1" 2>&1 \
+         WHERE a IN t_set_alias
+         SETTINGS serialize_query_plan = 1, enable_analyzer = 1, prefer_localhost_replica = 0" 2>&1 \
         | grep -oE "ACCESS_DENIED|^[0-9]+$" | uniq
 }
 
@@ -60,6 +61,15 @@ run_all_paths
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_set_alias TO ${user}"
 echo "Both granted"
+run_all_paths
+
+# The whole set is consumed, so a column-level grant covering every column of the target is enough,
+# and one that misses a column is not. An ordinary alias on the right of IN behaves the same way.
+${CLICKHOUSE_CLIENT} -m --query "
+    REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_set FROM ${user};
+    GRANT SELECT(arr) ON ${CLICKHOUSE_DATABASE}.t_set TO ${user};
+"
+echo "Target granted by column"
 run_all_paths
 
 ${CLICKHOUSE_CLIENT} -m --query "
