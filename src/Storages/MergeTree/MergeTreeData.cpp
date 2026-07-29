@@ -802,7 +802,8 @@ MergeTreeData::MergeTreeData(
                               (*settings)[MergeTreeSetting::check_sample_column_is_correct] && sanity_checks);
     }
 
-    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
+    /// Runs after `setProperties` above, which validated the index descriptions.
+    checkStreamFilenamesForCollision(metadata_, *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
 
     /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
@@ -5436,8 +5437,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+    /// Must run after `checkProperties`: it validates the index descriptions, and the collision check
+    /// constructs real index objects whose creators assume a validated description.
+    checkStreamFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -10279,8 +10282,11 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     return total_rows;
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
+void MergeTreeData::checkStreamFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
 {
+    /// Re-derive the settings from the metadata rather than reading the installed ones: an ALTER
+    /// MODIFY SETTING is validated before `changeSettings` installs it, so the live settings (and the
+    /// `escape_filenames` flag cached on every index description) still hold the pre-ALTER values.
     auto settings = getDefaultSettings();
     if (metadata.settings_changes)
     {
@@ -10288,63 +10294,170 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
         settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
     }
 
-    checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
+    checkStreamFilenamesForCollision(metadata, *settings, throw_on_error);
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+namespace
 {
-    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
-    SerializationInfo::Settings serialization_settings
-    {
-        static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-        false,
-        settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-        settings[MergeTreeSetting::serialization_info_version],
-        settings[MergeTreeSetting::string_serialization_version],
-        settings[MergeTreeSetting::nullable_serialization_version],
-        settings[MergeTreeSetting::map_serialization_version],
-        settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-    };
 
-    for (const auto & column : columns_list)
+/// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
+class StreamFilenameCollisionChecker
+{
+public:
+    StreamFilenameCollisionChecker(const MergeTreeSettings & settings_, LoggerPtr log_, bool throw_on_error_)
+        : settings(settings_), log(std::move(log_)), throw_on_error(throw_on_error_)
     {
-        std::unordered_map<String, String> column_streams;
+    }
 
-        auto callback = [&](const auto & substream_path)
+    /// Returns false when a collision was found and reported without throwing, so the caller stops.
+    bool addColumns(const ColumnsDescription & columns)
+    {
+        auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+            ? Nested::collect(columns.getAllPhysical())
+            : columns.getAllPhysical();
+        SerializationInfo::Settings serialization_settings
         {
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
-            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+            static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            false,
+            settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+            settings[MergeTreeSetting::serialization_info_version],
+            settings[MergeTreeSetting::string_serialization_version],
+            settings[MergeTreeSetting::nullable_serialization_version],
+            settings[MergeTreeSetting::map_serialization_version],
+            settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
 
-        auto serialization = column.type->getSerialization(serialization_settings);
-        serialization->enumerateStreams(callback);
-
-        for (const auto & [stream_name, full_stream_name] : column_streams)
+        for (const auto & column : columns_list)
         {
-            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
-            if (!inserted)
+            std::unordered_map<String, String> column_streams;
+
+            auto callback = [&](const auto & substream_path)
             {
-                const auto & [other_full_name, other_column_name] = it->second;
-                auto other_type = columns.getPhysical(other_column_name).type;
+                auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+                String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
+                column_streams.emplace(stream_name, full_stream_name);
+            };
 
-                auto message = fmt::format(
-                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+            auto serialization = column.type->getSerialization(serialization_settings);
+            serialization->enumerateStreams(callback);
 
-                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
-
-                if (throw_on_error)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-                return;
+            auto owner = fmt::format("Column '{} {}'", column.name, column.type->getName());
+            for (const auto & [stream_name, full_stream_name] : column_streams)
+            {
+                if (!add(stream_name, full_stream_name, owner))
+                    return false;
             }
         }
+
+        return true;
+    }
+
+    /// Skip indices claim `skp_idx_<name>[<suffix>]` per substream, and each substream opens both a
+    /// data file and a marks file from that base. Only the base is keyed: two indices can differ in
+    /// their data extension yet still share one marks file, because the marks extension is a single
+    /// writer-wide value.
+    /// @escape_filenames_override is set for the table namespace, where it must come from the
+    /// candidate settings: `AlterCommands::apply` MODIFY_SETTING only records the change in
+    /// `settings_changes`, and `MergeTreeData::changeSettings` refreshes every description's cached
+    /// `escape_filenames` afterwards, so the descriptions still hold the pre-ALTER value here. It is
+    /// left unset for a projection, whose descriptions are the only source of truth: their escaping
+    /// is fixed at construction and `changeSettings` never revisits them.
+    bool addSkipIndices(
+        const StorageMetadataPtr & metadata_snapshot,
+        const IndicesDescription & indices,
+        std::optional<bool> escape_filenames_override)
+    {
+        const auto & index_factory = MergeTreeIndexFactory::instance();
+
+        for (const auto & index : indices)
+        {
+            /// Inert index types (a removed type kept only so old tables still attach) hold no data
+            /// and are skipped by every write path, so they can never collide with anything.
+            auto index_ptr = index_factory.get(metadata_snapshot, index, settings);
+            if (index_ptr->isInert())
+                continue;
+
+            auto file_name = getIndexFileName(index.name, escape_filenames_override.value_or(index.escape_filenames));
+            auto owner = fmt::format("Index '{}' of type '{}'", index.name, index.type);
+
+            for (const auto & substream : index_ptr->getSubstreams())
+            {
+                auto full_stream_name = file_name + substream.suffix;
+                auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
+
+                if (!add(stream_name, full_stream_name, owner))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    bool add(const String & stream_name, const String & full_stream_name, const String & owner)
+    {
+        auto [it, inserted] = stream_name_to_owner.emplace(stream_name, std::pair{full_stream_name, owner});
+        if (inserted)
+            return true;
+
+        const auto & [other_full_name, other_owner] = it->second;
+
+        auto message = fmt::format(
+            "{} and {} have streams ({} and {}) with collision in file name {}",
+            owner, other_owner, full_stream_name, other_full_name, stream_name);
+
+        if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+            message += ". It may be a collision between a filename for one stream and a hash of filename for another stream (see setting 'replace_long_file_name_to_hash')";
+
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+        LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+        return false;
+    }
+
+    const MergeTreeSettings & settings;
+    LoggerPtr log;
+    bool throw_on_error;
+    std::unordered_map<String, std::pair<String, String>> stream_name_to_owner;
+};
+
+}
+
+void MergeTreeData::checkStreamFilenamesForCollision(
+    const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    /// Constructing real index objects is what makes `getSubstreams()` the single source of truth for
+    /// the on-disk layout, but a creator assumes its validator has already run (for example
+    /// `setIndexCreator` dereferences `index.arguments` unchecked). Every caller therefore invokes
+    /// this only after `setProperties`/`checkProperties` has validated the index descriptions.
+    auto metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(metadata);
+
+    {
+        StreamFilenameCollisionChecker checker(settings, log.load(), throw_on_error);
+        if (!checker.addColumns(metadata.getColumns()))
+            return;
+        if (!checker.addSkipIndices(
+                metadata_snapshot, metadata.secondary_indices, settings[MergeTreeSetting::escape_index_filenames]))
+            return;
+    }
+
+    /// A projection's files live in its own `<name>.proj/` directory, so it is a separate namespace
+    /// and must not be pooled with the table's streams. Its settings are an overlay on the table's.
+    for (const auto & projection : metadata.projections)
+    {
+        if (!projection.metadata)
+            continue;
+
+        auto projection_settings = std::make_shared<MergeTreeSettings>(settings);
+        if (!projection.settings_changes.empty())
+            projection_settings->applyChanges(projection.settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
+        StreamFilenameCollisionChecker checker(*projection_settings, log.load(), throw_on_error);
+        if (!checker.addColumns(projection.metadata->getColumns()))
+            return;
+        if (!checker.addSkipIndices(projection.metadata, projection.metadata->secondary_indices, std::nullopt))
+            return;
     }
 }
 
