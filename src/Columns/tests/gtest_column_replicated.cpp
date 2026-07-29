@@ -101,7 +101,8 @@ TEST(ColumnReplicated, PermuteShorterThanColumnWithLimit)
 {
     /// Relaxed contract: a permutation shorter than the column is legal when limit == perm.size()
     /// (see IColumn::permute / getLimitForPermutation). This is the case ORDER BY ... LIMIT
-    /// produces for a replicated key column. permute must succeed and take the first `limit` rows.
+    /// produces for a replicated payload column. permute must succeed and take the first
+    /// `limit` rows.
     auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
     IColumnPermutation permutation = {3, 4};
     auto permuted_column = column->permute(permutation, 2);

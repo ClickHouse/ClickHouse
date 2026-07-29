@@ -1,15 +1,14 @@
--- Regression test for https://github.com/ClickHouse/ClickHouse/issues/109877
 -- ORDER BY <LowCardinality column> LIMIT N after LEFT JOIN with lazy column
--- replication produced a permutation of size min(rows, limit) = LIMIT, which
--- ColumnReplicated::permute (from the JOIN payload columns) rejected with
--- SIZES_OF_COLUMNS_DOESNT_MATCH. This fix relaxes the overly strict size check
--- in ColumnReplicated::permute so the general IColumn::permute contract
--- (a shorter permutation with a limit) is accepted.
+-- replication. On current master sortBlock routes a replicated column through
+-- transformColumnsWithSharedIndex, so this query permutes the shared index and
+-- never reaches ColumnReplicated::permute. The query is pinned here so that
+-- routing keeps holding; the relaxed ColumnReplicated::permute contract itself
+-- is covered directly by the ColumnReplicated gtest cases.
 
 SET enable_lazy_columns_replication = 1;
 
--- Minimal repro: single LowCardinality sort key, LIMIT below row count,
--- two LEFT JOINs so the payload columns become ColumnReplicated.
+-- Single LowCardinality sort key, LIMIT below row count, two LEFT JOINs so the
+-- payload columns become ColumnReplicated.
 SELECT l.lc, l.s
 FROM
 (
@@ -25,7 +24,7 @@ LIMIT 5
 FORMAT Null;
 
 -- Same shape with the top-k-through-join optimization disabled and small blocks,
--- the settings under which the pre-fix binary threw deterministically.
+-- so the sort runs per block rather than once over the joined result.
 SELECT count()
 FROM
 (
