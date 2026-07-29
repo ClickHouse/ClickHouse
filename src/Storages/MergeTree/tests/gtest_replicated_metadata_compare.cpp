@@ -459,13 +459,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NestedQueryShapeIsSignificant)
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignificant)
 {
-    /// The children of an `ASTOrderByElement` carry different roles (collation, WITH FILL bounds)
-    /// recorded only in its `positions` map, so without the roles `WITH FILL FROM 1 TO 2` and
-    /// `WITH FILL FROM 1 STEP 2` hash equally.
-    ///
-    /// A constraint is the surface that reaches this: a projection rejects the clause, because
-    /// `ParserProjectionSelectQuery` parses its own ORDER BY with `allow_order = false` and so
-    /// never builds an `ASTOrderByElement` at all.
+    /// The roles of the children live in `positions`, not in the children themselves.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
@@ -484,15 +478,11 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignifi
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, CommonTableExpressionIdentityIsSignificant)
 {
-    /// `ASTWithElement` keeps the CTE name, `MATERIALIZED` and the column aliases outside its
-    /// children, so without hashing them a stored definition that resolves `FROM x` to a different
-    /// subquery compares equal.
+    /// The CTE name, `MATERIALIZED` and the column aliases are not children.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    /// Both hold the same `FROM x` reference and the same two subqueries in the same order, so the
-    /// only difference is which name each subquery is bound to. The same query yields `1` in the
-    /// first and `2` in the second.
+    /// Same `FROM x`, same subqueries in the same order: only the binding differs.
     MetadataFields x_is_one;
     x_is_one.constraints = "cc CHECK a IN (WITH x AS (SELECT 1 AS q), y AS (SELECT 2 AS q) SELECT q FROM x)";
     MetadataFields x_is_two;
@@ -514,15 +504,12 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, CommonTableExpressionIdentityIsSig
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, WindowNameIsSignificant)
 {
-    /// `ASTWindowListElement` keeps the window name outside its children, so without hashing it a
-    /// stored definition that resolves `OVER w` to a different frame compares equal.
+    /// The window name is not a child.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    /// Both hold the same `OVER w` reference and the same two frames in the same order, so the only
-    /// difference is which name each frame is bound to. `OVER w` is the ascending frame in the first
-    /// and the descending one in the second, which the same query over `numbers(4)` shows as
-    /// `[0, 1, 3, 6]` against `[3, 5, 6, 6]`.
+    /// Same `OVER w`, same frames in the same order: only the binding differs, so `OVER w` sums
+    /// ascending in the first and descending in the second.
     MetadataFields w_is_ascending;
     w_is_ascending.constraints
         = "cc CHECK a IN (SELECT sum(number) OVER w FROM numbers(4) WINDOW w AS (ORDER BY number), v AS (ORDER BY number DESC))";
