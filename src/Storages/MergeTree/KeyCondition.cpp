@@ -2660,14 +2660,67 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// `IDataType::equals` treats some parameterized attributes as interchangeable: the time zone of
+/// `DateTime`/`DateTime64` ("all types with different time zones are equivalent and may be used
+/// interchangingly", `DataTypeDateTime.cpp`) and the precision of `Decimal` (only the scale is
+/// compared, `DataTypesDecimal.cpp`). It also ignores custom names, so `Bool` is `equals`-equal to
+/// its underlying `DataTypeUInt8` (`DataTypesNumber.h`) - but a custom name installs its own cast
+/// wrapper, so `equals`-equal types are only interchangeable when they also agree on it.
+///
+/// Recurses because container `equals` recurses into elements, while `Tuple(Bool)` and
+/// `Tuple(UInt8)` differ only in a nested custom name.
+///
+/// Only ever called after `equals` returned true, which guarantees the two type trees have an
+/// identical shape and element order, so the two single-type walks visit structurally corresponding
+/// nodes and the flat signatures are directly comparable. `Object` is excluded by the caller
+/// because its `equals` matches `typed_paths` by lookup while its `forEachChild` iterates an
+/// unordered map, so for that one type the walk order is not guaranteed to correspond.
+static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
+{
+    auto custom_name_signature = [](const IDataType & type)
+    {
+        Strings out;
+        /// An empty entry for "no custom name" so a custom name can never alias a plain type's name.
+        auto note = [&](const IDataType & nested) { out.push_back(nested.hasCustomName() ? nested.getName() : String{}); };
+        note(type);
+        type.forEachChild(note);
+        return out;
+    };
+
+    return custom_name_signature(left) == custom_name_signature(right);
+}
+
+/// `forEachChild` walk order corresponds between two `equals`-equal types for every container
+/// except `DataTypeObject`, whose `equals` matches `typed_paths` by lookup while its `forEachChild`
+/// iterates an `unordered_map`. Fail closed on it rather than comparing signatures out of order.
+/// (`JSON`/`Object` cannot currently reach a key expression at all - `MergeTreeData` rejects it with
+/// `DATA_TYPE_CANNOT_BE_USED_IN_KEY` - so this is a guard against the assumption silently breaking,
+/// not a live path.)
+static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
+{
+    if (isObject(type))
+        return false;
+
+    bool stable = true;
+    type.forEachChild([&](const IDataType & nested)
+    {
+        if (isObject(nested))
+            stable = false;
+    });
+    return stable;
+}
+
 /// Index preparation casts the set values INTO the key type, while runtime membership casts the key
 /// INTO the set type (`Set::execute`; `FunctionArrayIndex::executeConst` compares with
 /// `accurateEquals` for `has`). An atom may only be used as an exact image of the predicate when
 /// both directions preserve equality, so both conversions must be checked, not just one.
 ///
 /// Two cases are proven exact:
-/// - identical types (no conversion runs in either direction), compared by canonical full type name
-///   so custom names (`Bool` over `UInt8`) and nested wrappers are covered;
+/// - `equals`-equal types that also agree on custom names. `castColumn` returns the argument
+///   unchanged for an `equals`-equal pair (`castColumn.cpp`), and where a cast does run it is
+///   between representations the type system declares interchangeable, so neither direction can
+///   change a value. Comparing canonical names instead would reject the very common case of a key
+///   that declares a time zone against a set element that does not;
 /// - two plain integers: an accurate cast takes the strict `accurate::convertNumeric` path exactly
 ///   when the source is int/uint/float (`can_apply_accurate_cast`), and that path yields NULL
 ///   instead of truncating, so neither direction can merge or lose a value.
@@ -2683,7 +2736,7 @@ static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, co
     const auto key = removeNullable(recursiveRemoveLowCardinality(key_type));
     const auto set = removeNullable(recursiveRemoveLowCardinality(set_element_type));
 
-    if (key->getName() == set->getName())
+    if (key->equals(*set) && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
         return true;
 
     const WhichDataType key_which(key);

@@ -421,3 +421,23 @@ arm2 Int256/Int32	1	1
 arm2 Int256/Int64	1	1
 arm2 Int256/Int128	1	1
 arm2 Int256/Int256	1	1
+--- attribute axis: parameters that `equals` treats as interchangeable stay exact ---
+attr DateTime(UTC)/DateTime prunes	1
+attr DateTime(UTC)/DateTime	1	1
+attr DateTime(UTC)/DateTime(Asia/Istanbul) prunes	1
+attr DateTime(UTC)/DateTime(Asia/Istanbul)	1	1
+attr DateTime64(3,UTC)/DateTime64(3) prunes	1
+attr DateTime64(3,UTC)/DateTime64(3)	1	1
+attr DateTime64(3,UTC)/DateTime64(6) declines	1
+attr Decimal(10,2)/Decimal(18,2) prunes	1
+attr Decimal(10,2)/Decimal(18,2)	1	1
+attr Decimal(10,2)/Decimal(20,2) declines	1
+attr Time64(3)/Time64(3) prunes	1
+attr Time64(3)/Time64(6) declines	1
+attr Bool/UInt8 declines	1
+attr UInt8/Bool declines	1
+attr UInt8/Bool	1	1
+attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8) declines	1
+attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8)	1
+attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8) declines	1
+attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)	1
