@@ -417,42 +417,6 @@ static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnU
     return merged_null_map_column;
 }
 
-void Set::applyLossyProbeNullMap(
-    const ColumnUInt8::Ptr & filtered_null_map_column,
-    ColumnPtr & result,
-    ColumnPtr & null_map_holder,
-    ConstNullMapPtr & null_map) const
-{
-    // Extract existing null map and nested column from the result
-    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
-    const IColumn * nested_result_column = result_nullable_column
-        ? &result_nullable_column->getNestedColumn()
-        : result.get();
-
-    ColumnPtr existing_null_map_column = result_nullable_column
-        ? result_nullable_column->getNullMapColumnPtr()
-        : nullptr;
-
-    if (transform_null_in)
-    {
-        if (!null_map_holder)
-            null_map_holder = filtered_null_map_column;
-        else
-            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
-
-        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
-        if (!null_map_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
-
-        null_map = &null_map_column->getData();
-    }
-    else
-    {
-        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
-        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
-    }
-}
-
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -492,6 +456,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     /// We will check existence in Set only for keys whose components do not contain any NULL value.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
+
+    /// Rows with DateTime64/Time64 values that would be cast lossily, accumulated across key columns.
+    ColumnUInt8::MutablePtr accumulated_lossy_null_map;
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
@@ -551,14 +518,24 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         // DateTime64/Time64 probe values (possibly nested in Array/Tuple/Map) that would be cast lossily must not match.
-        auto lossy_null_map_column = ColumnUInt8::create(column_to_cast.column->size(), static_cast<UInt8>(0));
-        markLossyProbeValues(column_to_cast.type, *column_to_cast.column, data_types[i], lossy_null_map_column->getData());
+        auto lossy_flags_column = ColumnUInt8::create(column_to_cast.column->size(), static_cast<UInt8>(0));
+        markLossyProbeValues(column_to_cast.type, *column_to_cast.column, data_types[i], lossy_flags_column->getData());
         bool has_lossy_values = false;
-        for (const auto flag : lossy_null_map_column->getData())
+        for (const auto flag : lossy_flags_column->getData())
             has_lossy_values |= flag != 0;
         if (has_lossy_values)
         {
-            applyLossyProbeNullMap(std::move(lossy_null_map_column), result, null_map_holder, null_map);
+            if (!accumulated_lossy_null_map)
+            {
+                accumulated_lossy_null_map = std::move(lossy_flags_column);
+            }
+            else
+            {
+                auto & accumulated = accumulated_lossy_null_map->getData();
+                const auto & current = lossy_flags_column->getData();
+                for (size_t row = 0; row < accumulated.size(); ++row)
+                    accumulated[row] |= current[row];
+            }
         }
 
         // Append the result to materialized columns
@@ -568,6 +545,14 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+
+    /// Lossy rows are treated like NULL keys: they cannot match any set element. This is done through the
+    /// final null map because the cast result cannot always be wrapped in Nullable (e.g. Array probes).
+    if (accumulated_lossy_null_map)
+    {
+        null_map_holder = mergeNullMaps(null_map_holder, std::move(accumulated_lossy_null_map));
+        null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+    }
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 

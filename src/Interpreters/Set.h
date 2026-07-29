@@ -65,8 +65,6 @@ public:
 
     void checkIsCreated() const;
 
-    void applyLossyProbeNullMap(const ColumnUInt8::Ptr & filtered_null_map_column, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
-
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
