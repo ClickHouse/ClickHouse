@@ -479,28 +479,29 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         throw;
     }
 
-    if (zero_copy_lock)
-        zero_copy_lock->lock->unlock();
-
-    /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
-     */
-
-    /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-     * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
-     */
-    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
-
-    finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
-    ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
-
-    /// From here the result part is committed (active). The cache prewarming below can still throw,
-    /// so it is guarded: on any failure we queue the part_log row before rethrowing. Otherwise the
-    /// part stays active with no part_log row, which would let SYSTEM SYNC MERGES return before
-    /// part_log is populated for this merge (the merge list entry is gone once the task unwinds).
+    /// From here the result part is committed (active), so every step up to `write_part_log` is
+    /// guarded: on any failure we queue the part_log row before rethrowing. Otherwise the part stays
+    /// active with no part_log row, which would let SYSTEM SYNC MERGES return before part_log is
+    /// populated for this merge (the merge list entry is gone once the task unwinds). The zero-copy
+    /// unlock talks to Keeper and can throw, so it has to be inside the guard too.
     try
     {
+        if (zero_copy_lock)
+            zero_copy_lock->lock->unlock();
+
+        /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
+         */
+
+        /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+         * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
+         */
+        UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+        ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
+
+        finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+
         fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
