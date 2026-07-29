@@ -170,3 +170,49 @@ ${CLICKHOUSE_CLIENT} \
 done
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_dedup"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dedup"
+
+# Case 9: concurrent ADD COLUMN must not corrupt a column-transformer INSERT (schema freeze,
+# async path). `* EXCEPT c` must resolve against the metadata frozen before the SELECT runs,
+# not a snapshot widened by the concurrent ADD COLUMN.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_transformer_single"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_transformer_single (a UInt32, b UInt32, c UInt32 DEFAULT 77)
+    ENGINE = MergeTree ORDER BY a
+"
+${CLICKHOUSE_CLIENT} \
+    --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 -q "
+    INSERT INTO test_async_sel_transformer_single (* EXCEPT c)
+    SELECT number AS a, number * 2 AS b
+    FROM numbers(200000)
+    WHERE sleepEachRow(0.000002) = 0
+" &
+INSERT_PID=$!
+sleep 0.2
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_single ADD COLUMN d UInt32 DEFAULT 99"
+wait "$INSERT_PID"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_single"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_single WHERE c = 77"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_single WHERE d = 99"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_transformer_single"
+
+# Case 10: same column-transformer race on the sync-fallback path (schema freeze, multi-block).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_transformer_multi"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_transformer_multi (a UInt32, b UInt32, c UInt32 DEFAULT 77)
+    ENGINE = MergeTree ORDER BY a
+"
+${CLICKHOUSE_CLIENT} \
+    --max_block_size=500000 --async_insert=1 --wait_for_async_insert=1 -q "
+    INSERT INTO test_async_sel_transformer_multi (* EXCEPT c)
+    SELECT number AS a, number * 2 AS b
+    FROM numbers(1000000)
+    WHERE sleepEachRow(0.000002) = 0
+" &
+INSERT_PID=$!
+sleep 0.5
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE test_async_sel_transformer_multi ADD COLUMN d UInt32 DEFAULT 99"
+wait "$INSERT_PID"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi WHERE c = 77"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi WHERE d = 99"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_transformer_multi"
