@@ -1,0 +1,97 @@
+empty INTERPOLATE
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+empty INTERPOLATE, one column selected without an alias
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+empty INTERPOLATE, aliases of one expression
+0	1	1
+0.5	1	1
+1	11	11
+1.5	11	11
+0	1	1
+0.5	1	1
+1	11	11
+1.5	11	11
+both targets interpolated by themselves
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+both targets interpolated by the same constant
+0	0	0
+0.5	1	1
+1	10	10
+1.5	1	1
+0	0	0
+0.5	1	1
+1	10	10
+1.5	1	1
+both targets interpolated by the same expression over both aliases
+0	0	0
+0.5	0	0
+1	10	10
+1.5	20	20
+0	0	0
+0.5	0	0
+1	10	10
+1.5	20	20
+targets interpolated by each other
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+expression over an alias and the column it is backed by
+0	0
+0.5	0
+1	10
+1.5	20
+0	0
+0.5	0
+1	10
+1.5	20
+different constants
+0	0	0
+0.5	1	2
+1	10	10
+1.5	1	2
+only the first alias is a target
+0	0	0
+0.5	1	0
+1	10	10
+1.5	11	0
+only the second alias is a target
+0	0	0
+0.5	0	7
+1	10	10
+1.5	0	7
+a target using a sibling alias that is not a target itself
+0	0	0
+0.5	0	0
+1	10	10
+1.5	20	0
+the column the target is backed by is also selected
+0	0	0
+0.5	1	0
+1	10	10
+1.5	1	0

@@ -1523,8 +1523,9 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
 }
 
 /// Name of the column the result column `result_name` is backed by in the block the filling transform
-/// works on. Without the new analyzer that block is the one before the final projection, where a column
-/// is known by the name of its expression and not by its alias. Must match `InterpolateDescription`.
+/// works on. With `enable_analyzer = 0` that block is the one before the final projection, where a
+/// column is known by the name of its expression and not by its alias. Must match
+/// `InterpolateDescription`.
 static String getBackingColumnName(const String & result_name, const Aliases & aliases)
 {
     if (const auto it = aliases.find(result_name); it != aliases.end())
@@ -1549,8 +1550,9 @@ static void rewriteAliasesToBackingColumnNames(ASTPtr & ast, const Aliases & ali
 /// Several result columns can be backed by one column, for example `SELECT x AS a, x AS b`. INTERPOLATE
 /// targets are named after the result columns, so such targets collapse into a single target once mapped
 /// to the backing column. Interpolating that column once is correct only if every result column backed by
-/// it is interpolated in the same way; otherwise the query is not executable without the new analyzer,
-/// which keeps the result columns separate. Drop the collapsed duplicates, reject the conflicts.
+/// it is interpolated in the same way; otherwise the query is not executable with `enable_analyzer = 0`,
+/// while the analyzer keeps the result columns separate. Drop the collapsed duplicates, reject the
+/// conflicts.
 static void deduplicateInterpolateTargets(
     ColumnsWithTypeAndName & result_columns, ASTPtr & exprs, const Block & result_block, const NameSet & order_by_names, const Aliases & aliases)
 {

@@ -1,5 +1,5 @@
 -- Several result columns backed by a single column, combined with ORDER BY ... WITH FILL ... INTERPOLATE.
--- Without the new analyzer the filling transform works on the block before the final projection, where
+-- With `enable_analyzer = 0` the filling transform works on the block before the final projection, where
 -- such result columns are one column, so INTERPOLATE targets naming them collapse into a single target.
 -- https://github.com/ClickHouse/ClickHouse/issues/111927
 
@@ -41,7 +41,7 @@ SELECT 'expression over an alias and the column it is backed by';
 SELECT n, x AS a FROM t_interpolate_aliases ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS a + x) SETTINGS enable_analyzer = 0;
 SELECT n, x AS a FROM t_interpolate_aliases ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS a + x) SETTINGS enable_analyzer = 1;
 
--- The collapsed targets would have to hold different values, which only the new analyzer can do.
+-- The collapsed targets would have to hold different values, which only the analyzer can do.
 
 SELECT 'different constants';
 SELECT n, x AS a, x AS b FROM t_interpolate_aliases ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS 1, b AS 2) SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
