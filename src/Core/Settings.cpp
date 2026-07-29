@@ -483,7 +483,7 @@ The maximum number of connection attempts with each replica for the Distributed 
     DECLARE(UInt64, distributed_query_retries, 0, R"(
 The maximum number of times a distributed query (e.g. a query to a `Distributed` table or the `remote` table function) is retried after a network error (`NETWORK_ERROR`, `SOCKET_TIMEOUT`, `ATTEMPT_TO_READ_AFTER_EOF`, e.g. when the remote server is stopped while the query is running) while waiting for the result.
 
-The query is retried on another available replica (or on the same replica if there is no other) and only if no result data has been received from the remote server yet, so the result never contains duplicated rows. Queries executed with parallel replicas and queries of cluster table functions that distribute work between replicas dynamically are not retried.
+The query is retried on another available replica (or on the same replica if there is no other) and only if neither result data nor the final statistics of the query (`Totals`, `Extremes`, `ProfileInfo`) have been received from the remote server yet, so the result and the reported statistics never account for a failed attempt. Queries executed with parallel replicas and queries of cluster table functions that distribute work between replicas dynamically are not retried.
 
 While a retry is still possible, the progress reported by the remote server is deferred until the first block of result data (or the completion of the query), so that the work replayed by a retry is not double-counted in the read limits (e.g. `max_rows_to_read`) and quotas on the initiator.
 

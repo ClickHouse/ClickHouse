@@ -768,6 +768,11 @@ bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
     if (got_data_from_replica)
         return false;
 
+    /// The same for the final statistics of the query: they are accumulated by `RemoteSource`,
+    /// so a retry would count the numbers of the failed attempt twice.
+    if (got_final_metadata_from_replica)
+        return false;
+
     /// Queries with parallel replicas and queries of cluster functions distribute work between replicas
     /// dynamically, and the work that was already assigned to the failed replica would be lost after a retry.
     if (extension || task_iterator)
@@ -784,6 +789,12 @@ void RemoteQueryExecutor::flushDeferredProgress()
     if (progress_callback)
         progress_callback(deferred_progress);
     deferred_progress.reset();
+}
+
+void RemoteQueryExecutor::finishRetryWindow()
+{
+    got_final_metadata_from_replica = true;
+    flushDeferredProgress();
 }
 
 void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
@@ -914,18 +925,26 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileInfo:
+            /// This packet is a part of the suffix of a completed query, so a retry is no longer
+            /// possible: `RemoteSource` accumulates the statistics, and a second execution would
+            /// add them for the second time.
+            finishRetryWindow();
             /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
             if (profile_info_callback)
                 profile_info_callback(packet.profile_info);
             break;
 
         case Protocol::Server::Totals:
+            /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
+            finishRetryWindow();
             totals = packet.block;
             if (!totals.empty())
                 totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
+            /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
+            finishRetryWindow();
             extremes = packet.block;
             if (!extremes.empty())
                 extremes = adaptBlockStructure(packet.block, *header);

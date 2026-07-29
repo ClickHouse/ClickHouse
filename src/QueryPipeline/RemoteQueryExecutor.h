@@ -390,8 +390,21 @@ private:
     /// Report the progress accumulated in `deferred_progress` and reset it.
     void flushDeferredProgress();
 
+    /// Report the progress accumulated in `deferred_progress` and reset it, and close the retry
+    /// window: the work reported by the remote server will not be replayed by a retry.
+    void finishRetryWindow();
+
     /// How many retries after a network error were done so far, see `distributed_query_retries`.
     size_t network_error_retries_count = 0;
+
+    /** Whether a packet carrying the final statistics of the query (`Totals`, `Extremes` or
+      * `ProfileInfo`) was received. Such packets are sent by the remote server in the suffix of a
+      * successful query, even if it returned no rows, and they are forwarded to the initiator's
+      * pipeline right away. `ProfileInfo` in particular is accumulated by `RemoteSource`, so a
+      * retry after it has been forwarded would double-count `rows_before_limit` and
+      * `rows_before_aggregation`.
+      */
+    bool got_final_metadata_from_replica = false;
 
     /** Progress received from the remote server while a retry after a network error is still
       * possible. It is deferred until a retry becomes impossible (the first data block, an
