@@ -98,7 +98,16 @@ namespace
             case NodeType::Offset:
             {
                 if (offset_node)
-                    return nullptr; /// Don't support peeling through more than one offset/@ modifier.
+                    return nullptr; /// Defensive: PromQL's grammar only allows an offset/@ modifier to attach
+                                     /// directly to a selector or a subquery (never to a function call, a
+                                     /// parenthesized expression, or any other operator's result - confirmed
+                                     /// against real Prometheus 3.5.0, which rejects e.g.
+                                     /// `timestamp(test offset 1m) @ 195` with "parse error: @ modifier must be
+                                     /// preceded by an instant vector selector or range vector selector or a
+                                     /// subquery"). So a second Offset node can never actually be reached here for
+                                     /// valid input - combining `@` and `offset` together (e.g. `test @ 100
+                                     /// offset 30s`) is parsed as a single Offset node with both fields set,
+                                     /// which is already handled below without hitting this branch at all.
                 const auto * offset = static_cast<const PQT::Offset *>(node);
                 offset_node = offset;
                 return peelToInstantSelector(offset->getExpression(), offset_node);

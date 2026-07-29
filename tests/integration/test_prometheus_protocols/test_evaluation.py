@@ -914,6 +914,41 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 120]],
     )
 
+    # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
+    # timestamp() call that itself has a modifier - are not valid PromQL syntax: the offset/@ modifier may only
+    # attach directly to a selector or a subquery, never to a function call's result. Real Prometheus rejects
+    # these with a parse error rather than evaluating them, so ClickHouse must reject them the same way (as a
+    # CANNOT_PARSE_PROMQL_QUERY parse error, "mismatched input ... while parsing PromQL query" from the ANTLR
+    # grammar) instead of falling through to NOT_IMPLEMENTED. Combining both modifiers on a *single* selector
+    # (e.g. `test @ 120 offset 30s`) is the only supported form and is already covered above.
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
 
 def test_literals():
     timestamp = 250
