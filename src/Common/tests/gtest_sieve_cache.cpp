@@ -279,3 +279,80 @@ TEST(SIEVECache, UpdateDoesNotProtectUnrelatedTail)
     ASSERT_FALSE(sieve_cache_policy.isVisited(11).has_value()); // key 11 was evicted
     ASSERT_TRUE(sieve_cache_policy.isVisited(3).has_value());   // the unrelated key 3 was retained
 }
+
+/// Removing the entry the hand currently points at must advance the hand to the following entry instead
+/// of leaving it dangling at the erased list node. Removing any other entry must not move the hand.
+TEST(SIEVECache, RemoveEntryUnderHand)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 10, /*size_ratio*/ 0.5);
+
+    for (int k = 1; k <= 5; ++k)
+        sieve_cache.set(k, std::make_shared<size_t>(2));
+
+    const auto & cache_policy = sieve_cache.getCachePolicy();
+    const auto & sieve_cache_policy = dynamic_cast<const DB::SIEVECachePolicy<int, size_t, std::hash<int>, ValueWeight> &>(cache_policy);
+
+    assertQueue(sieve_cache_policy.dumpQueue(), {1, 2, 3, 4, 5});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 1);
+
+    // The hand points at key 1: after its removal the hand must point at the next entry, key 2.
+    sieve_cache.remove(1);
+    assertQueue(sieve_cache_policy.dumpQueue(), {2, 3, 4, 5});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 2);
+    ASSERT_EQ(sieve_cache.count(), 4);
+
+    // Key 4 is not under the hand, so the hand must stay where it is.
+    sieve_cache.remove(4);
+    assertQueue(sieve_cache_policy.dumpQueue(), {2, 3, 5});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 2);
+
+    // The predicate overload of `remove` follows the same rule.
+    sieve_cache.remove([](const int & key, const SimpleCacheBase::MappedPtr &) { return key == 2; });
+    assertQueue(sieve_cache_policy.dumpQueue(), {3, 5});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 3);
+
+    // The hand is still usable for eviction: inserting key 6 overflows by 2 bytes and, as key 3 is
+    // unvisited and sits under the hand, key 3 is the one evicted.
+    sieve_cache.set(6, std::make_shared<size_t>(18));
+    assertQueue(sieve_cache_policy.dumpQueue(), {5, 6});
+    ASSERT_FALSE(sieve_cache_policy.isVisited(3).has_value());
+}
+
+/// Removing the last entry of the queue while the hand points at it must wrap the hand back to the
+/// beginning of the queue rather than leave it at `end`.
+TEST(SIEVECache, RemoveLastEntryUnderHand)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 3, /*size_ratio*/ 0.5);
+
+    for (int k = 1; k <= 3; ++k)
+        sieve_cache.set(k, std::make_shared<size_t>(2));
+    sieve_cache.get(1);
+    sieve_cache.get(2);
+
+    // Inserting key 4 overflows the count limit; the hand clears the visited flags of keys 1 and 2,
+    // evicts the unvisited key 3 and ends up at the tail of the queue, key 4.
+    sieve_cache.set(4, std::make_shared<size_t>(2));
+
+    const auto & cache_policy = sieve_cache.getCachePolicy();
+    const auto & sieve_cache_policy = dynamic_cast<const DB::SIEVECachePolicy<int, size_t, std::hash<int>, ValueWeight> &>(cache_policy);
+
+    assertQueue(sieve_cache_policy.dumpQueue(), {1, 2, 4});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 4);
+
+    sieve_cache.remove(4);
+    assertQueue(sieve_cache_policy.dumpQueue(), {1, 2});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 1);
+    ASSERT_EQ(sieve_cache.count(), 2);
+
+    // Removing everything leaves the hand at the empty queue, and the cache stays usable afterwards.
+    sieve_cache.remove(1);
+    sieve_cache.remove(2);
+    ASSERT_TRUE(sieve_cache_policy.dumpQueue().empty());
+    ASSERT_FALSE(sieve_cache_policy.getHand().has_value());
+
+    sieve_cache.set(5, std::make_shared<size_t>(2));
+    assertQueue(sieve_cache_policy.dumpQueue(), {5});
+    ASSERT_EQ(sieve_cache_policy.getHand().value(), 5);
+}
