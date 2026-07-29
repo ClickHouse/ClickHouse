@@ -30,7 +30,12 @@ SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_start
 SELECT count() = 1 FROM (EXPLAIN projections = 1 SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) = 8 ORDER BY ALL SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left') WHERE explain ILIKE '%does not match the structure it replaces%';
 1
 -- Skipping the projection on a structure mismatch must not drop rows: the regular read stays in the
--- plan and must still see all parts. Assert projection-on equals projection-off.
+-- plan and must still see all parts. Assert projection-on equals projection-off. The equality alone also
+-- holds when the projection is declined before the structure check, so pin the reachability for this
+-- statement too: its plan shape differs from the one above (aggregation over an unrestrictive predicate,
+-- 4 parts instead of 1), so the assertion above does not cover it. Settings match the statement below.
+SELECT count() = 1 FROM (EXPLAIN projections = 1 SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 1) WHERE explain ILIKE '%does not match the structure it replaces%';
+1
 SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 1;
 40	160	20
 SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 0;
