@@ -37,8 +37,8 @@ SELECT name FROM mergeTreeProjection(currentDatabase(), 'users_rls_proj', 'proj_
 DROP ROW POLICY rp_users_rls_proj ON users_rls_proj;
 DROP TABLE users_rls_proj;
 
--- A policy on an ALIAS column fails closed: the projection stores the alias's physical dependency
--- under a different name and does not expose the alias, so the policy cannot be evaluated here.
+-- A policy on an ALIAS column is enforced by expanding it to the physical dependency the projection
+-- stores (`c ALIAS b + 1` -> the filter reads `b`).
 DROP TABLE IF EXISTS alias_rls_proj;
 DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
 
@@ -50,8 +50,8 @@ ALTER TABLE alias_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
 CREATE ROW POLICY rp_alias_rls_proj ON alias_rls_proj FOR SELECT USING c > 21 TO ALL;
 
-SELECT '-- policy on an ALIAS column: read is refused';
-SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDER BY a; -- { serverError ACCESS_DENIED }
+SELECT '-- policy on an ALIAS column is enforced via its physical dependency (expect a=3)';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDER BY a;
 
 DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
 DROP TABLE alias_rls_proj;
@@ -76,8 +76,27 @@ PREWHERE throwIf(secret = 'private', 'row policy leak') = 0 ORDER BY id;
 DROP ROW POLICY rp_prewhere_rls_proj ON prewhere_rls_proj;
 DROP TABLE prewhere_rls_proj;
 
--- A policy on a virtual column fails closed: virtuals like `_part_offset` mean different rows on the
--- reordered projection, so they cannot be enforced there (a clean ACCESS_DENIED, not UNKNOWN_IDENTIFIER).
+-- A policy on `_part_offset` is enforced when the projection preserves the parent offset (it selects
+-- `_part_offset`, stored as `_parent_part_offset`), so parent-row semantics are kept.
+DROP TABLE IF EXISTS virt_ok_rls_proj;
+DROP ROW POLICY IF EXISTS rp_virt_ok_rls_proj ON virt_ok_rls_proj;
+
+CREATE TABLE virt_ok_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO virt_ok_rls_proj VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE virt_ok_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
+ALTER TABLE virt_ok_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_virt_ok_rls_proj ON virt_ok_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
+
+SELECT '-- policy on _part_offset enforced when the projection preserves the parent offset (expect id=1)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_ok_rls_proj', 'p') ORDER BY id;
+
+DROP ROW POLICY rp_virt_ok_rls_proj ON virt_ok_rls_proj;
+DROP TABLE virt_ok_rls_proj;
+
+-- A policy on `_part_offset` fails closed when the projection does not preserve the parent offset:
+-- the projection's own offset means different rows, so it cannot be enforced (clean ACCESS_DENIED).
 DROP TABLE IF EXISTS virt_rls_proj;
 DROP ROW POLICY IF EXISTS rp_virt_rls_proj ON virt_rls_proj;
 
@@ -89,7 +108,7 @@ ALTER TABLE virt_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
 CREATE ROW POLICY rp_virt_rls_proj ON virt_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
 
-SELECT '-- policy on a virtual column: read is refused';
+SELECT '-- policy on _part_offset without a preserved parent offset: read is refused';
 SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
 
 DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;

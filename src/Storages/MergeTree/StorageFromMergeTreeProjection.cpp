@@ -3,11 +3,14 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -34,6 +37,19 @@ struct MergeTreeProjectionRowPolicyFilter
     String filter_column_name;
     Names required_columns;
 };
+
+/// Rewrite references to the parent `_part_offset` into the projection's stored `_parent_part_offset`.
+static void remapPartOffsetToParent(ASTPtr & ast)
+{
+    if (auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() == "_part_offset")
+            ast = make_intrusive<ASTIdentifier>("_parent_part_offset");
+        return;
+    }
+    for (auto & child : ast->children)
+        remapPartOffsetToParent(child);
+}
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
@@ -138,15 +154,29 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
 
-    /// Resolve the policy against the parent's persistent columns. If it references anything the
-    /// projection cannot provide (e.g. a virtual column), fail closed with a clear ACCESS_DENIED
-    /// instead of a confusing UNKNOWN_IDENTIFIER from the resolver.
     ASTPtr expr = row_policy_filter->expression->clone();
+
+    /// Expand parent ALIAS/DEFAULT columns to their physical dependencies, which the projection may
+    /// store even though it does not expose the alias itself (e.g. `c ALIAS b + 1` -> reads `b`).
+    replaceAliasColumnsInQuery(expr, parent_metadata->getColumns(), {}, context);
+
+    /// The parent `_part_offset` is materialized as `_parent_part_offset` in projections that carry it,
+    /// so a policy on `_part_offset` keeps its parent-row semantics when read through such a projection.
+    if (projection->with_parent_part_offset)
+        remapPartOffsetToParent(expr);
+
+    /// Resolve against exactly what the projection read can serve: its physical columns plus the parent
+    /// offset when preserved. Anything else (a column not stored here, a virtual with no projection
+    /// equivalent) fails to resolve, and we fail closed with a clear ACCESS_DENIED.
+    auto available_columns = projection->metadata->getColumns().getAllPhysical();
+    if (projection->with_parent_part_offset)
+        available_columns.emplace_back("_parent_part_offset", std::make_shared<DataTypeUInt64>());
+
     ActionsDAG dag = [&]
     {
         try
         {
-            auto syntax_result = TreeRewriter(context).analyze(expr, parent_metadata->getColumns().getAll());
+            auto syntax_result = TreeRewriter(context).analyze(expr, available_columns);
             ExpressionAnalyzer analyzer(expr, syntax_result, context);
             return analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
         }
@@ -156,7 +186,7 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
                 throw;
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Cannot read from projection `{}` of table {} because its row policy references a column "
-                "the projection cannot provide (e.g. a virtual column), so the row policy cannot be enforced",
+                "that the projection does not store, so the row policy cannot be enforced",
                 projection->name, parent_storage_id.getNameForLogs());
         }
     }();
@@ -171,18 +201,6 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot determine row policy filter column for projection `{}` of table {}",
             projection->name, parent_storage_id.getNameForLogs());
-
-    /// Refuse the read when the policy needs a column the projection does not physically store, e.g.
-    /// an ALIAS/DEFAULT column (the projection keeps only its physical deps, under other names).
-    const auto & projection_columns = projection->metadata->getColumns();
-    for (const auto & column_name : filter_actions.getRequiredColumns())
-    {
-        if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Cannot read from projection `{}` of table {} because a row policy needs "
-                "column `{}`, which is not stored in the projection, so the row policy cannot be enforced",
-                projection->name, parent_storage_id.getNameForLogs(), column_name);
-    }
 
     /// record the applied policies so they show up in system.query_log, like a normal table read
     if (context->hasQueryContext())

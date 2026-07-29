@@ -13,8 +13,11 @@ Carol
 Alice	engineering
 Carol	engineering
 -- projection lacks the policy column: read is refused
--- policy on an ALIAS column: read is refused
+-- policy on an ALIAS column is enforced via its physical dependency (expect a=3)
+3
 -- user PREWHERE does not observe policy-hidden rows (expect 1, 3)
 1
 3
--- policy on a virtual column: read is refused
+-- policy on _part_offset enforced when the projection preserves the parent offset (expect id=1)
+1
+-- policy on _part_offset without a preserved parent offset: read is refused
