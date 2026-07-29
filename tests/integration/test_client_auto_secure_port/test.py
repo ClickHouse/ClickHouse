@@ -109,6 +109,33 @@ def redirect_plain_port_to_secure(add):
     )
 
 
+def firewall_secure_port(add):
+    """Reset connections from node_plain_only to the secure port (9440) of node_both_ports.
+    Unlike a plain REJECT, `tcp-reset` also tears down the already established connections
+    to that port, so an in-flight query fails and the client has to reconnect."""
+    node_both_ports.exec_in_container(
+        [
+            "iptables",
+            "--wait",
+            "-t",
+            "filter",
+            "-A" if add else "-D",
+            "INPUT",
+            "-p",
+            "tcp",
+            "--dport",
+            "9440",
+            "-s",
+            node_plain_only.ip_address,
+            "-j",
+            "REJECT",
+            "--reject-with",
+            "tcp-reset",
+        ],
+        user="root",
+    )
+
+
 def run_client(server, *args, from_node=None, nothrow=False):
     from_node = from_node or node_plain_only
     return from_node.exec_in_container(
@@ -220,6 +247,49 @@ def test_automatic_choice_is_not_applied_to_the_other_addresses():
         killer.join()
         unfirewall_plain_port("REJECT")
         node_both_ports.start_clickhouse()
+
+
+def test_automatic_choice_is_forgotten_after_a_failed_connection():
+    # The automatic choice is remembered for the address it was made for, so that a reconnect does not
+    # probe the ports again. But it is only valid while the same endpoints stay reachable: the host can
+    # re-resolve to another backend (`Connection::connect` drops the DNS cache entries for it after a
+    # connect-level failure) that serves the other port. Here the plain port is unreachable at first, so
+    # TLS on the secure port is chosen; then the transport changes underneath the session: the secure
+    # port starts resetting connections (which also breaks the running query) and the plain port becomes
+    # reachable. The client must forget the remembered secure port and rediscover the healthy plain one,
+    # instead of retrying TLS forever.
+    firewall_plain_port("REJECT")
+    plain_firewalled = True
+
+    def change_the_transport():
+        nonlocal plain_firewalled
+        time.sleep(5)
+        firewall_secure_port(add=True)
+        unfirewall_plain_port("REJECT")
+        plain_firewalled = False
+
+    switcher = threading.Thread(target=change_the_transport)
+    switcher.start()
+    try:
+        # The first query is interrupted by the reset of the secure connection; `--ignore-error` makes
+        # the client proceed to the next queries, each of which reconnects.
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"clickhouse client --host {node_both_ports.name}"
+                " --accept-invalid-certificate --ignore-error --max_block_size 1 --max_threads 1"
+                " --query \"SELECT sleepEachRow(1) FROM numbers(60) FORMAT Null;"
+                " SELECT 'first-retry'; SELECT 'reconnected'\" 2>&1 || true",
+            ]
+        )
+        assert "reconnected" in output
+        assert query_is_secure(node_both_ports) == 0
+    finally:
+        switcher.join()
+        firewall_secure_port(add=False)
+        if plain_firewalled:
+            unfirewall_plain_port("REJECT")
 
 
 def test_explicit_port_is_not_upgraded():

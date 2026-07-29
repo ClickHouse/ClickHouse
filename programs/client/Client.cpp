@@ -557,7 +557,7 @@ void Client::connect()
         std::optional<UInt16> port;
         if (config().has("port"))
             port = static_cast<UInt16>(config().getInt("port"));
-        hosts_and_ports.emplace_back(HostAndPort{host, port, {}});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, false});
     }
 
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
@@ -744,6 +744,8 @@ void Client::connect()
             /// answered on it.
             hosts_and_ports[attempted_address_index].port = connection_parameters.port;
             hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
+            if (port_unspecified && secure_unspecified)
+                hosts_and_ports[attempted_address_index].transport_auto_detected = true;
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
@@ -751,6 +753,19 @@ void Client::connect()
         }
         catch (Exception & e)
         {
+            /// Forget an automatically chosen transport after a failed connection attempt: it was only
+            /// valid for the endpoints this host resolved to when the ports were probed. `Connection::connect`
+            /// drops the `DNSResolver` cache entries for the host on a connect-level failure, so the next
+            /// attempt can resolve to another backend, e.g. a secure-only backend can be replaced by a
+            /// plain-only one; keeping the remembered port and TLS mode would make the client retry the
+            /// secure port forever and never rediscover the healthy plain port.
+            if (hosts_and_ports[attempted_address_index].transport_auto_detected)
+            {
+                hosts_and_ports[attempted_address_index].port.reset();
+                hosts_and_ports[attempted_address_index].secure.reset();
+                hosts_and_ports[attempted_address_index].transport_auto_detected = false;
+            }
+
             /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
                 throw;
@@ -1089,7 +1104,7 @@ void Client::processOptions(
         std::string host = host_and_port_options["host"].as<std::string>();
         std::optional<UInt16> port
             = !host_and_port_options["port"].empty() ? std::make_optional(host_and_port_options["port"].as<UInt16>()) : std::nullopt;
-        hosts_and_ports.emplace_back(HostAndPort{host, port, {}});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, false});
     }
 
     send_external_tables = true;

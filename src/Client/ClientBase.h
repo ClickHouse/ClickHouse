@@ -536,6 +536,11 @@ protected:
         /// secure port, which remembers its outcome here (and not in the global configuration,
         /// so that the other addresses keep choosing their transport on their own).
         std::optional<bool> secure;
+        /// Whether `port` and `secure` above were determined by the automatic choice between the plain
+        /// and the secure port rather than specified by the user. Such a choice is only valid for the
+        /// endpoints the host resolved to at the time of the probe, so it is forgotten after a failed
+        /// connection attempt to this address, and the next attempt probes the ports again.
+        bool transport_auto_detected = false;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};
