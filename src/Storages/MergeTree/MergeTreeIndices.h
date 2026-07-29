@@ -276,8 +276,10 @@ struct IMergeTreeIndex
     /// - getDeserializedFormat(): may this part's copy of the index be DESERIALIZED? Physical
     ///   discovery plus usability checks. Every read path must use this one.
     ///
-    /// Merge and mutate are outside that scope: they decide whether to carry a part's existing index
-    /// files forward from file existence (IMergeTreeDataPart::hasSecondaryIndex), not from this verdict.
+    /// Mutate decides whether to carry a part's existing index files forward from file existence
+    /// (IMergeTreeDataPart::hasSecondaryIndex), not from this verdict. Merge's two text-index sites
+    /// (MergeTask.cpp:2355, :2932) do consult it, so a part's stale text index is rebuilt during the
+    /// merge rather than carried forward.
     ///
     /// @part's storage is consulted so that packed substreams (whose virtual filenames are not in
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
