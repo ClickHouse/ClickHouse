@@ -1025,7 +1025,10 @@ public:
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
-        if (armed && path == fail_path)
+        /// Only a rewrite truncates, so only a rewrite leaves the torn file these tests are
+        /// about. An append open, which save_state also does to sync an existing file, must not
+        /// be the thing that fails, or the injection would land before the rewrite window.
+        if (armed && path == fail_path && mode == DB::WriteMode::Rewrite)
             throw std::runtime_error("Injected state write failure");
         return inner;
     }
@@ -1192,6 +1195,14 @@ TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
     disk->arm();
     ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
     disk->disarm();
+
+    /// The injection must have landed on the truncating rewrite, so the on-disk shape is the one
+    /// the backup exists for: a live file that lost its contents, and a valid backup beside it.
+    /// Asserting this keeps the test from silently retargeting if the failure point ever moves.
+    ASSERT_TRUE(std::filesystem::exists("./state"));
+    ASSERT_EQ(std::filesystem::file_size("./state"), 0);
+    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
 
     /// After the "crash" the previously committed state must still be recoverable: read_state
     /// must not return nullptr (which would reset the node to term 0 and lose the vote).
@@ -1447,9 +1458,13 @@ TEST_P(CoordinationTest, TestDurableStateRetryKeepsValidBackup)
     /// First attempt fails while rewriting the live file, leaving it torn and the backup valid.
     disk->arm();
     ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    ASSERT_EQ(std::filesystem::file_size("./state"), 0);
+    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
 
     /// The retry (no restart in between) must fail the same way without consuming the backup.
+    /// The live file is worthless now, so the retry must not let it overwrite the backup.
     ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
     disk->disarm();
 
     /// Term 1 must still be recoverable after both failures.
