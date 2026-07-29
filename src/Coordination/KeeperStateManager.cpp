@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/copyData.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
@@ -406,10 +407,27 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
         /// crash during the rewrite can always recover the previous state via read_state.
-        auto buf = disk->writeFile(copy_lock_file);
-        buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
+        auto lock_buf = disk->writeFile(copy_lock_file);
+        lock_buf->finalize();
+
+        /// The copy is not made through IDisk::copyFile because that only finalizes the
+        /// destination write, leaving the backup in the page cache. The backup must be durable
+        /// before the live state file is truncated below, otherwise a crash can lose both.
+        {
+            auto in = disk->readFile(server_state_file_name, getReadSettings());
+            auto out = disk->writeFile(old_path);
+            copyData(*in, *out);
+            out->finalize();
+            out->sync();
+        }
+
         disk->removeFile(copy_lock_file);
+
+        /// Contents of the backup are durable at this point, but its directory entry (and the
+        /// creation and removal of the copy lock) are not. The guard syncs the directory when it
+        /// is destroyed, which happens before the live state file is truncated below. On object
+        /// storage there are no directory entries and the guard is a no-op.
+        SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
     }
 
     auto server_state_file = disk->writeFile(server_state_file_name);
@@ -426,6 +444,13 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
     server_state_file->sync();
     server_state_file->finalize();
+
+    {
+        /// The new state file's contents are durable, but when it has just been created its
+        /// directory entry is not. Sync the directory before dropping the backup, so the backup
+        /// is only removed once the replacement is durable in full.
+        SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
+    }
 
     disk->removeFileIfExists(old_path);
 }
@@ -516,12 +541,11 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             auto state = try_read_file(old_path);
             if (state)
             {
-                /// Promote the backup to the live state file. Use copy + remove rather than
-                /// moveFile because moveFile is not implemented for plain (s3_plain) metadata,
-                /// which is a supported state disk; copyFile/removeFile are used by save_state
-                /// on the same disk and are supported everywhere.
-                disk->copyFile(old_path, *disk, server_state_file_name, ReadSettings{});
-                disk->removeFileIfExists(old_path);
+                /// The backup is left in place instead of being promoted to the live state file.
+                /// Copying it back would create a window where the copy is not yet durable and
+                /// the backup is already gone, so a second crash during startup could lose the
+                /// state again. The next successful save_state removes the backup once the new
+                /// state file is durable.
                 return state;
             }
             disk->removeFile(old_path);

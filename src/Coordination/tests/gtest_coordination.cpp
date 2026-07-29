@@ -23,11 +23,13 @@
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <algorithm>
 #include <sstream>
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
@@ -1035,6 +1037,77 @@ private:
     bool armed = false;
 };
 
+using DiskEvents = std::shared_ptr<std::vector<std::string>>;
+
+/// Records sync() on the file it wraps, so a test can tell a durable write from a write that
+/// only reached the page cache.
+class RecordingWriteBuffer : public DB::WriteBufferFromFileDecorator
+{
+public:
+    RecordingWriteBuffer(std::unique_ptr<DB::WriteBufferFromFileBase> impl_, std::string path_, DiskEvents events_)
+        : DB::WriteBufferFromFileDecorator(std::move(impl_)), path(std::move(path_)), events(std::move(events_))
+    {
+    }
+
+    void sync() override
+    {
+        DB::WriteBufferFromFileDecorator::sync();
+        events->push_back("sync:" + path);
+    }
+
+private:
+    std::string path;
+    DiskEvents events;
+};
+
+/// Test disk: records the order of the durability-relevant operations, so a test can assert that
+/// the backup is durable before the live state file is rewritten, and that the recovery path does
+/// not drop the backup.
+class RecordingStateDisk : public DB::DiskLocal
+{
+public:
+    RecordingStateDisk(const std::string & disk_name, const std::string & disk_path, DiskEvents events_)
+        : DB::DiskLocal(disk_name, disk_path), events(std::move(events_))
+    {
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        events->push_back("open:" + path);
+        auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+        return std::make_unique<RecordingWriteBuffer>(std::move(inner), path, events);
+    }
+
+    void removeFile(const String & path) override
+    {
+        events->push_back("remove:" + path);
+        DB::DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (existsFile(path))
+            events->push_back("remove:" + path);
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        events->push_back("dirsync");
+        return DB::DiskLocal::getDirectorySyncGuard(path);
+    }
+
+private:
+    DiskEvents events;
+};
+
+size_t indexOf(const std::vector<std::string> & events, const std::string & event)
+{
+    const auto it = std::find(events.begin(), events.end(), event);
+    return it == events.end() ? std::string::npos : static_cast<size_t>(it - events.begin());
+}
+
 }
 
 /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111454.
@@ -1098,6 +1171,96 @@ TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
     ASSERT_NE(final_state, nullptr);
     ASSERT_EQ(final_state->get_term(), 2);
     ASSERT_EQ(final_state->get_voted_for(), 3);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
+/// The backup only protects the state if it is durable before the live state file is truncated,
+/// and the recovery path must not drop it before a durable replacement exists.
+/// See https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto events = std::make_shared<std::vector<std::string>>();
+    auto disk = std::make_shared<RecordingStateDisk>("StateFile", ".", events);
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    /// Second save: "state" already exists, so it is backed up to "state-OLD" first.
+    events->clear();
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
+    state_manager->save_state(*new_state);
+
+    const auto backup_synced = indexOf(*events, "sync:state-OLD");
+    const auto live_opened = indexOf(*events, "open:state");
+    const auto backup_removed = indexOf(*events, "remove:state-OLD");
+
+    /// The backup must be synced at all, and synced before the live state file is reopened for
+    /// the rewrite that truncates it. Without the sync the backup can be page-cache-only, so a
+    /// crash in the rewrite window loses both copies.
+    ASSERT_NE(backup_synced, std::string::npos);
+    ASSERT_NE(live_opened, std::string::npos);
+    ASSERT_LT(backup_synced, live_opened);
+
+    /// The directory entry of the freshly created backup must be synced too, again before the
+    /// live file is truncated.
+    const auto first_dirsync = indexOf(*events, "dirsync");
+    ASSERT_NE(first_dirsync, std::string::npos);
+    ASSERT_LT(first_dirsync, live_opened);
+
+    /// The backup is only dropped after the replacement state file is durable.
+    ASSERT_NE(backup_removed, std::string::npos);
+    ASSERT_LT(indexOf(*events, "sync:state"), backup_removed);
+
+    /// Reconstruct the on-disk state left by a crash inside the rewrite window: the backup is
+    /// present and the live state file is lost. This is what the backup exists for.
+    ASSERT_TRUE(std::filesystem::exists("./state"));
+    ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+    std::filesystem::copy_file("./state", "./state-OLD");
+    std::filesystem::remove("./state");
+
+    /// Recovery must not delete the backup: promoting it with a copy that is not yet durable
+    /// would reopen the same window during startup.
+    events->clear();
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    ASSERT_EQ(recovered->get_term(), 2);
+    ASSERT_EQ(recovered->get_voted_for(), 3);
+    ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
+    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+
+    /// The next successful save re-establishes the live file and clears the backup.
+    state_manager->save_state(*new_state);
+    ASSERT_TRUE(std::filesystem::exists("./state"));
+    ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+
+    reload_state_manager();
+    auto final_state = state_manager->read_state();
+    ASSERT_NE(final_state, nullptr);
+    ASSERT_EQ(final_state->get_term(), 2);
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
