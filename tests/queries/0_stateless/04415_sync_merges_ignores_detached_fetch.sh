@@ -70,7 +70,7 @@ fi
 
 # SYSTEM SYNC MERGES must NOT wait on the detached fetch: the scheduled merge's part_log row is
 # already written and the detached fetch owes no DOWNLOAD_PART row. With the fix SYNC MERGES returns
-# promptly (SYNC_OK). Without it, hasInFlightFetchCoveringParts sees the detached fetch in
+# promptly (SYNC_OK). Without it, `hasInFlightFetchOfSourceParts` would see the detached fetch in
 # currently_fetching_parts and SYNC MERGES loops until it times out (SYNC_TIMEOUT).
 if $CLICKHOUSE_CLIENT --max_execution_time 5 -q "SYSTEM SYNC MERGES sm_b" 2>/dev/null; then
     echo "SYNC_OK"

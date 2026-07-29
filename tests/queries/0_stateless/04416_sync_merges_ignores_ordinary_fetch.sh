@@ -91,7 +91,7 @@ fetch_type=$($CLICKHOUSE_CLIENT -q "SELECT type FROM system.replication_queue WH
 # SYSTEM SYNC MERGES must NOT wait on the paused GET_PART fetch: the scheduled parts are already
 # covered, no merge is in the merge list, and the GET_PART fetch owes no DOWNLOAD_PART row for the
 # scheduled merge. With the fix SYNC MERGES returns promptly (SYNC_OK). Without it,
-# hasInFlightFetchCoveringParts sees all_0_1_1 in currently_fetching_merged_parts and SYNC MERGES
+# `hasInFlightFetchOfSourceParts` would see the GET_PART fetch tracked and SYNC MERGES
 # loops until it times out (SYNC_TIMEOUT).
 if $CLICKHOUSE_CLIENT --max_execution_time 5 -q "SYSTEM SYNC MERGES sm_b" 2>/dev/null; then
     echo "SYNC_OK"
