@@ -6,6 +6,9 @@
 -- Here `k = 0` fails `k > b` and `k = 1` matches.
 
 SET enable_analyzer = 1;
+-- Swapping the tables turns this into a RIGHT join, which is not promoted to RightAny and takes
+-- the need_replication path that always resized `filter`, so neither query would reproduce.
+SET query_plan_join_swap_table = false;
 
 -- Raised "Null map of size 2 at offset 0 does not match ColumnNullable of size 1".
 SELECT l.k, r.a
