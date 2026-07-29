@@ -147,22 +147,13 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
     if (settings[Setting::make_distributed_plan])
     {
-        /// Distributed query plans do not support several features yet. Instead of failing,
-        /// transparently adjust the settings that control them (issues #109476, #109329).
-        /// TODO: This is a temporary workaround. Remove each override once distributed plans
-        /// support the corresponding feature (and remove the counterpart in doExecuteTask()).
-        /// The values are overridden unconditionally: the `changed` flag cannot distinguish an
-        /// explicit user choice from a profile default or a randomized test value, and none of
-        /// these features can work together with a distributed plan anyway.
-        /// The worker-side counterpart of this switch lives in doExecuteTask()
-        /// (see DistributedPlanExecutor.cpp): worker task contexts are rebuilt from the
-        /// initiator's user-level settings changes and do not see these overrides.
+        /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override
+        /// once distributed plans support the corresponding feature (and remove the counterpart
+        /// in doExecuteTask() in DistributedPlanExecutor.cpp).
         Strings adjusted;
 
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
         {
-            /// Parallel replicas' plan switching and statistics collection interfere with the
-            /// distributed plan, which does its own static work distribution.
             result_context->setSetting("enable_parallel_replicas", Field(0));
             adjusted.emplace_back("enable_parallel_replicas = 0");
         }
@@ -173,16 +164,11 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         }
         if (!settings[Setting::rewrite_in_to_join] && settings[Setting::allow_experimental_correlated_subqueries])
         {
-            /// Distributed execution supports only some kinds of IN (subquery); the IN -> JOIN
-            /// rewrite makes them distributable. The rewrite requires correlated subqueries
-            /// support, so it is not enabled when that is disabled.
             result_context->setSetting("rewrite_in_to_join", true);
             adjusted.emplace_back("rewrite_in_to_join = 1");
         }
         if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
         {
-            /// The in-memory buffer for a decorrelated subquery result is a process-local step
-            /// that cannot be serialized for remote execution.
             result_context->setSetting("correlated_subqueries_use_in_memory_buffer", false);
             adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
         }
@@ -193,14 +179,11 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         }
         if (settings[Setting::compile_expressions])
         {
-            /// JIT-compiled expressions do not work with distributed plans yet.
             result_context->setSetting("compile_expressions", false);
             adjusted.emplace_back("compile_expressions = 0");
         }
         if (settings[Setting::query_plan_direct_read_from_text_index])
         {
-            /// The direct-read rewrite replaces text-search functions with index virtual columns
-            /// that a worker's freshly built storage snapshot does not provide (issue #109329).
             result_context->setSetting("query_plan_direct_read_from_text_index", false);
             adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
         }

@@ -628,21 +628,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// data for the same fragment.
     context->setSetting("use_query_condition_cache", false);
 
-    /// Counterpart of the make_distributed_plan auto-switch in
-    /// InterpreterSelectQueryAnalyzer::buildContext(). The task context is rebuilt from the
-    /// initiator's user-level settings changes, which do not carry those overrides, and the
-    /// defaults of these settings are enabled, so re-apply the ones consumed on the task side.
-    /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
-    /// distributed plans support the corresponding feature — e.g. for the text index direct read,
-    /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-    /// The settings re-applied here:
-    /// - use_skip_indexes_on_data_read is re-read from this context by ReadFromMergeTree when
-    ///   the fragment's pipeline is built;
-    /// - compile_expressions feeds BuildQueryPipelineSettings below;
-    /// - query_plan_direct_read_from_text_index would make the fragment re-optimization rewrite
-    ///   text-search functions into index virtual columns the storage snapshot does not provide;
-    /// - correlated_subqueries_use_in_memory_buffer and parallel replicas are disabled for
-    ///   consistency with the initiator (fragments are planned without them).
+    /// TODO: This is a temporary workaround, the counterpart of the make_distributed_plan
+    /// auto-switch in InterpreterSelectQueryAnalyzer::buildContext() (issues #109476, #109329).
+    /// Remove each override once distributed plans support the corresponding feature - e.g. for
+    /// the text index direct read, let the worker re-run the rewrite over its pinned part list
+    /// instead of disabling it.
     context->setSetting("use_skip_indexes_on_data_read", false);
     context->setSetting("compile_expressions", false);
     context->setSetting("query_plan_direct_read_from_text_index", false);
