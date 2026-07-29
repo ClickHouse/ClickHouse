@@ -2254,16 +2254,30 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
+///
+/// `out_conversion_target`, when given, reports the type the pre-DAG conversion of `in_column`
+/// targeted, or is left null when the input already has the DAG's input type. Which route runs
+/// depends on the data (the fast path can be structurally applicable and still fail on the values,
+/// falling through to the slow path), so a caller that needs the converted pair must take it from
+/// here rather than deriving it from the DAG's shape.
 static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    DataTypePtr * out_conversion_target = nullptr)
 {
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
+
+    /// Reported here rather than inside the `equals()` branch below, because `equals()` ignores custom
+    /// names: a `Bool` input over a `UInt8` DAG input skips that branch while the DAG output still
+    /// differs (`toString(true)` is `'true'`, not `'1'`). Compare by name and fail closed; the fast
+    /// path refines this with the type it actually casts to.
+    if (out_conversion_target)
+        *out_conversion_target = input_type->getName() == dag.input_type->getName() ? nullptr : dag.input_type;
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -2380,10 +2394,19 @@ static bool applyDeterministicDagToColumn(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
+            const bool conversion_runs = !input_type->equals(*cast_result_type);
+            if (conversion_runs && !cast_without_nulls(out_column, out_type, cast_result_type))
                 return false;
 
-            return finalize_output_column_and_type(out_column, out_type);
+            if (!finalize_output_column_and_type(out_column, out_type))
+                return false;
+
+            /// Refine the report above: this path converts to the CAST's own result type instead of to
+            /// `dag.input_type`, and converts nothing when the input already has that type. Assign
+            /// unconditionally, otherwise the coarser value from above would survive.
+            if (out_conversion_target)
+                *out_conversion_target = conversion_runs ? cast_result_type : nullptr;
+            return true;
         };
 
         if (try_apply_direct_cast_fast_path())
@@ -2651,7 +2674,8 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 ///
 /// Everything else fails closed. Floats are excluded from the cross-type case because the strictness
 /// argument does not extend to values whose equality differs between the two engines that have to
-/// agree (signed zeros, NaN payloads).
+/// agree (signed zeros, NaN payloads). A cross-type composite is exact only under the identity case,
+/// because the composite runtime cast can throw where the preparation cast merely returns NULL.
 static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
 {
     /// Apply both unwrappings here rather than relying on the caller: `LowCardinality` also has to be
@@ -2732,6 +2756,7 @@ static bool tryPrepareSetColumnsForIndex(
         {
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
+            DataTypePtr pre_transform_conversion_target;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -2739,12 +2764,18 @@ static bool tryPrepareSetColumnsForIndex(
                     set_transforming_dag.input_name,
                     set_transforming_dag,
                     transformed_set_column,
-                    transformed_set_type))
+                    transformed_set_type,
+                    &pre_transform_conversion_target))
                 return false;
 
-            /// The transform overwrites `set_element_type`, so the original pair is checked here while
-            /// it is still available; the transformed pair is checked below.
-            if (!setIndexConversionPreservesEquality(set_transforming_dag.input_type, set_element_type))
+            /// The transform can convert the set element before the key expression is applied, and such
+            /// a conversion may collapse two distinct values into one without producing a NULL (so the
+            /// helper's own NULL check does not catch it). The post-transform pair below cannot see it,
+            /// because by then both types are whatever the key expression produced. Check the original
+            /// element against the type the conversion actually targeted; when no conversion ran, the
+            /// target is null and there is nothing to check.
+            if (pre_transform_conversion_target
+                && !setIndexConversionPreservesEquality(pre_transform_conversion_target, set_element_type))
                 return false;
 
             set_column = transformed_set_column;
@@ -2935,6 +2966,59 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     return true;
 }
 
+/// `has` never casts the key at runtime: `FunctionArrayIndex::executeConst` compares `Field`s with
+/// `accurateEquals`, and `FieldVisitorAccurateEquals` has no `Tuple`/`Array` arm, so a composite array
+/// element is compared as ONE `Field` whose nested values must match by exact `Field` type (which
+/// collapses integer widths but not signedness). The per-column checks in
+/// `tryPrepareSetColumnsForIndex` see the UNPACKED scalars and would admit such a pair, so for a
+/// composite element the left expression additionally has to have the same type. A scalar element is
+/// left to those per-column checks. Returns false (decline) when the types differ or when the left
+/// expression's type cannot be reconstructed.
+static bool compositeHasArgumentsHaveSameType(
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
+    const DataTypes & data_types,
+    size_t key_args_count,
+    const DataTypePtr & array_element_type)
+{
+    auto normalize = [](const DataTypePtr & type) { return removeNullable(recursiveRemoveLowCardinality(type)); };
+
+    const auto element_type = normalize(array_element_type);
+    const WhichDataType element_which(element_type);
+    if (!element_which.isTuple() && !element_which.isArray() && !element_which.isMap())
+        return true;
+
+    DataTypePtr left_type;
+    if (key_args_count == 1)
+    {
+        /// A single composite argument (a packed tuple/array column). `data_types` holds the type of
+        /// the KEY column, which is the left expression's own type only when the key expression does
+        /// not transform it; with a transforming DAG present the two differ, so fail closed.
+        if (set_transforming_dags.size() != 1 || set_transforming_dags.front().has_value())
+            return false;
+        left_type = normalize(data_types.front());
+    }
+    else
+    {
+        /// A tuple expression that gets unpacked. Reconstruct its type from the per-position mapping;
+        /// if any position is missing or claimed twice, the type is unknown, so fail closed.
+        DataTypes elements(key_args_count);
+        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        {
+            const size_t tuple_index = indexes_mapping[i].tuple_index;
+            if (tuple_index >= key_args_count || elements[tuple_index])
+                return false;
+            elements[tuple_index] = normalize(data_types[i]);
+        }
+        for (const auto & element : elements)
+            if (!element)
+                return false;
+        left_type = std::make_shared<DataTypeTuple>(elements);
+    }
+
+    return left_type->getName() == element_type->getName();
+}
+
 bool KeyCondition::tryPrepareSetIndexForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2986,6 +3070,10 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
+
+    if (!compositeHasArgumentsHaveSameType(
+            indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type))
+        return false;
 
     if (!tryPrepareSetColumnsForIndex(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))

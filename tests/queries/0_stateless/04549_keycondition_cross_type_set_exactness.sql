@@ -469,6 +469,748 @@ CREATE TABLE ft_64 (a Float64, b UInt8) ENGINE = MergeTree ORDER BY (a, b) SETTI
 INSERT INTO ft_64 VALUES (-0.0, 1), (0.0, 1);
 SELECT 'float tuple key', count() FROM ft_64 WHERE (a, b) NOT IN (SELECT (toFloat64(0.0), toUInt8(1)));
 
+
+SELECT '--- v21 H1: composite has() through the UNPACKING path ---';
+
+DROP TABLE IF EXISTS h1; DROP TABLE IF EXISTS h1o;
+CREATE TABLE h1 (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE h1o (a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO h1 VALUES (1, 1);
+INSERT INTO h1 VALUES (2, 2);
+INSERT INTO h1o VALUES (1, 1), (2, 2);
+SELECT 'H1 composite has unpacked',
+    (SELECT count() FROM h1 WHERE NOT has([tuple(toInt32(1), toInt32(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toInt32(1), toInt32(1))], (a, b)));
+-- The one-line reason: a composite is compared as ONE Field, so cross-signedness nested values are
+-- unequal even though the unpacked scalars would be admitted.
+SELECT 'H1 composite Field compare', has([tuple(toInt32(1), toInt32(1))], tuple(toUInt32(1), toUInt32(1)));
+SELECT 'H1 scalar Field compare', has([toInt32(1)], toUInt32(1));
+SELECT 'H1 cross-signedness has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toInt32(1), toInt32(1))], (a, b))) WHERE explain ILIKE '%element set%';
+-- boundary: identical types keep pruning
+SELECT 'H1 same-type has result',
+    (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b)));
+SELECT 'H1 same-type has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%element set%';
+-- boundary: width-only pair is correct at runtime (Field collapses widths); it loses pruning here
+SELECT 'H1 width-only has result',
+    (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b)));
+-- boundary: composite NOT IN over the same pair stays exact, because runtime `IN` casts the key
+SELECT 'H1 composite IN result',
+    (SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) = (SELECT count() FROM h1o WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1))));
+SELECT 'H1 composite IN prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) WHERE explain ILIKE '%element set%';
+-- boundary: SCALAR has() is unaffected and must keep pruning
+DROP TABLE IF EXISTS h1s; DROP TABLE IF EXISTS h1so;
+CREATE TABLE h1s (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE h1so (k UInt64) ENGINE = Memory;
+INSERT INTO h1s VALUES (1), (2), (3);
+INSERT INTO h1so VALUES (1), (2), (3);
+SELECT 'H1 scalar has result',
+    (SELECT count() FROM h1s WHERE has([toInt32(1)], k)) = (SELECT count() FROM h1so WHERE has([toInt32(1)], k)),
+    (SELECT count() FROM h1s WHERE NOT has([toInt32(1)], k)) = (SELECT count() FROM h1so WHERE NOT has([toInt32(1)], k));
+SELECT 'H1 scalar has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1s WHERE has([toInt32(1)], k)) WHERE explain ILIKE '%element set%';
+SELECT 'H1 scalar NOT has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1s WHERE NOT has([toInt32(1)], k)) WHERE explain ILIKE '%element set%';
+-- boundary: a composite KEY EXPRESSION under a SCALAR has() is not a composite comparison at all
+DROP TABLE IF EXISTS h1x;
+CREATE TABLE h1x (p String) ENGINE = MergeTree ORDER BY reverse(tuple(reverse(p), hex(p))) SETTINGS index_granularity = 1;
+INSERT INTO h1x VALUES ('abc'), ('xyz');
+SELECT 'H1 composite key expr scalar has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1x WHERE has(['abc'], p) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%element set%';
+
+SELECT '--- v18 B1: a custom name over an integer must not skip the conversion-target check ---';
+
+DROP TABLE IF EXISTS b1; DROP TABLE IF EXISTS b1o;
+CREATE TABLE b1 (k UInt8) ENGINE = MergeTree ORDER BY toString(k) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE b1o (k UInt8) ENGINE = Memory;
+INSERT INTO b1 VALUES (0);
+INSERT INTO b1 VALUES (1);
+INSERT INTO b1o VALUES (0), (1);
+SELECT 'B1 Bool element over toString key',
+    (SELECT count() FROM b1 WHERE k IN (SELECT true)) = (SELECT count() FROM b1o WHERE k IN (SELECT true));
+-- the DAG output really differs, which is why a conversion runs and has to be checked
+SELECT 'B1 toString(Bool) differs', toString(true) != toString(toUInt8(1));
+-- localisation: without a key transform the same element is already correct
+DROP TABLE IF EXISTS b1n; DROP TABLE IF EXISTS b1no;
+CREATE TABLE b1n (k UInt8) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE b1no (k UInt8) ENGINE = Memory;
+INSERT INTO b1n VALUES (0);
+INSERT INTO b1n VALUES (1);
+INSERT INTO b1no VALUES (0), (1);
+SELECT 'B1 no key transform',
+    (SELECT count() FROM b1n WHERE k IN (SELECT true)) = (SELECT count() FROM b1no WHERE k IN (SELECT true));
+-- and the plain-integer twin on the SAME table keeps its atom, so this is not a blanket decline
+SELECT 'B1 UInt8 twin prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM b1 WHERE k IN (SELECT toUInt8(1))) WHERE explain ILIKE '%element set%';
+SELECT 'B1 UInt8 twin result',
+    (SELECT count() FROM b1 WHERE k IN (SELECT toUInt8(1))) = (SELECT count() FROM b1o WHERE k IN (SELECT toUInt8(1)));
+-- the scalar equals/notEquals path is a different atom kind and must not change
+SELECT 'B1 scalar notEquals unchanged', count() FROM b1 WHERE k != true;
+
+SELECT '--- v17 Z1/Z1b: a fast-path CAST that is injective on the key but collapses the element ---';
+
+DROP TABLE IF EXISTS z1; DROP TABLE IF EXISTS z1o;
+CREATE TABLE z1 (k UInt32) ENGINE = MergeTree ORDER BY (k::UInt64) PARTITION BY (k::UInt64);
+CREATE TABLE z1o (k UInt32) ENGINE = Memory;
+INSERT INTO z1 VALUES (1), (2);
+INSERT INTO z1o VALUES (1), (2);
+SELECT 'Z1 UInt32 key cast to UInt64',
+    (SELECT count() FROM z1 WHERE k NOT IN (SELECT '01')) = (SELECT count() FROM z1o WHERE k NOT IN (SELECT '01'));
+DROP TABLE IF EXISTS z1b; DROP TABLE IF EXISTS z1bo;
+CREATE TABLE z1b (k UInt64) ENGINE = MergeTree ORDER BY (k::String) PARTITION BY (k::String);
+CREATE TABLE z1bo (k UInt64) ENGINE = Memory;
+INSERT INTO z1b VALUES (1), (2);
+INSERT INTO z1bo VALUES (1), (2);
+SELECT 'Z1b UInt64 key cast to String',
+    (SELECT count() FROM z1b WHERE k NOT IN (SELECT '01')) = (SELECT count() FROM z1bo WHERE k NOT IN (SELECT '01'));
+
+SELECT '--- v17 Z2: a non-injective key transform still over-prunes the POSITIVE direction ---';
+
+-- `relaxed` only forces can_be_false, never widens can_be_true, so a relaxed atom does not protect
+-- `IN`. The two rows must be in separate granules and `length` must SEPARATE the round-trip pair.
+DROP TABLE IF EXISTS z2; DROP TABLE IF EXISTS z2o;
+CREATE TABLE z2 (s String) ENGINE = MergeTree ORDER BY length(s) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE z2o (s String) ENGINE = Memory;
+INSERT INTO z2 VALUES ('1');
+INSERT INTO z2 VALUES ('01');
+INSERT INTO z2o VALUES ('1'), ('01');
+SELECT 'Z2 non-injective key, positive IN',
+    (SELECT count() FROM z2 WHERE s IN (SELECT toUInt8(1))) = (SELECT count() FROM z2o WHERE s IN (SELECT toUInt8(1)));
+SELECT 'Z2 negative direction control',
+    (SELECT count() FROM z2 WHERE s NOT IN (SELECT toUInt8(1))) = (SELECT count() FROM z2o WHERE s NOT IN (SELECT toUInt8(1)));
+-- Z3 scope boundary: a transform that COLLAPSES the pair the same way the element cast does is
+-- not a carrier in either direction. This is why 03762's moved block is correctness-neutral.
+DROP TABLE IF EXISTS z3; DROP TABLE IF EXISTS z3o;
+CREATE TABLE z3 (s String) ENGINE = MergeTree ORDER BY (s::UInt64) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE z3o (s String) ENGINE = Memory;
+INSERT INTO z3 VALUES ('1');
+INSERT INTO z3 VALUES ('01');
+INSERT INTO z3o VALUES ('1'), ('01');
+SELECT 'Z3 collapsing transform both directions',
+    (SELECT count() FROM z3 WHERE s IN (SELECT toUInt8(1))) = (SELECT count() FROM z3o WHERE s IN (SELECT toUInt8(1))),
+    (SELECT count() FROM z3 WHERE s NOT IN (SELECT toUInt8(1))) = (SELECT count() FROM z3o WHERE s NOT IN (SELECT toUInt8(1)));
+
+SELECT '--- v15: the set-transforming DAG carrier, and the fast-path spelling that is not one ---';
+
+DROP TABLE IF EXISTS dg; DROP TABLE IF EXISTS dgo;
+CREATE TABLE dg (k UInt64) ENGINE = MergeTree ORDER BY toString(k) PARTITION BY toString(k);
+CREATE TABLE dgo (k UInt64) ENGINE = Memory;
+INSERT INTO dg VALUES (1), (2);
+INSERT INTO dgo VALUES (1), (2);
+SELECT 'DAG carrier toString(k)',
+    (SELECT count() FROM dg WHERE k NOT IN (SELECT '01')) = (SELECT count() FROM dgo WHERE k NOT IN (SELECT '01'));
+-- a bare CAST takes the fast path, which converts to the CAST result type instead, so no collapse
+-- happens and the atom must be KEPT
+DROP TABLE IF EXISTS dgc;
+CREATE TABLE dgc (k UInt64) ENGINE = MergeTree ORDER BY (k::String) PARTITION BY (k::String);
+INSERT INTO dgc VALUES (1), (2);
+SELECT 'DAG ::String twin prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM dgc WHERE k IN (SELECT 'x')) WHERE explain ILIKE '%element set%';
+
+SELECT '--- v14 has()/composite carriers: the same predicate fixes has() too ---';
+
+DROP TABLE IF EXISTS c_g_has; DROP TABLE IF EXISTS o_g_has;
+CREATE TABLE c_g_has (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE o_g_has (k UInt64) ENGINE = Memory;
+INSERT INTO c_g_has VALUES (1), (2);
+INSERT INTO o_g_has VALUES (1), (2);
+SELECT 'G-has UInt64/Decimal64(1)',
+    (SELECT count() FROM c_g_has WHERE NOT has([CAST(1.5, 'Decimal64(1)')], k)) = (SELECT count() FROM o_g_has WHERE NOT has([CAST(1.5, 'Decimal64(1)')], k));
+
+DROP TABLE IF EXISTS c_v_has; DROP TABLE IF EXISTS o_v_has;
+CREATE TABLE c_v_has (k Int64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE o_v_has (k Int64) ENGINE = Memory;
+INSERT INTO c_v_has VALUES (1), (2);
+INSERT INTO o_v_has VALUES (1), (2);
+SELECT 'V-has Int64/Decimal(10,2)',
+    (SELECT count() FROM c_v_has WHERE NOT has([CAST('1.50', 'Decimal(10,2)')], k)) = (SELECT count() FROM o_v_has WHERE NOT has([CAST('1.50', 'Decimal(10,2)')], k));
+
+DROP TABLE IF EXISTS c_cv; DROP TABLE IF EXISTS o_cv;
+CREATE TABLE c_cv (a Int64, b UInt8) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
+CREATE TABLE o_cv (a Int64, b UInt8) ENGINE = Memory;
+INSERT INTO c_cv VALUES (1, 1), (2, 1);
+INSERT INTO o_cv VALUES (1, 1), (2, 1);
+SELECT 'CV-has unpacked (Int64,UInt8)/(Decimal(10,2),UInt8)',
+    (SELECT count() FROM c_cv WHERE NOT has([(CAST('1.50', 'Decimal(10,2)'), toUInt8(1))], (a, b))) = (SELECT count() FROM o_cv WHERE NOT has([(CAST('1.50', 'Decimal(10,2)'), toUInt8(1))], (a, b)));
+SELECT 'CV-in unpacked',
+    (SELECT count() FROM c_cv WHERE (a, b) NOT IN (SELECT (CAST('1.50', 'Decimal(10,2)'), toUInt8(1)))) = (SELECT count() FROM o_cv WHERE (a, b) NOT IN (SELECT (CAST('1.50', 'Decimal(10,2)'), toUInt8(1))));
+
+DROP TABLE IF EXISTS c_cvp; DROP TABLE IF EXISTS o_cvp;
+CREATE TABLE c_cvp (kt Tuple(Int64, UInt8)) ENGINE = MergeTree ORDER BY kt PARTITION BY kt;
+CREATE TABLE o_cvp (kt Tuple(Int64, UInt8)) ENGINE = Memory;
+INSERT INTO c_cvp VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_cvp VALUES ((1, 1)), ((2, 1));
+SELECT 'CV-has packed Tuple(Int64,UInt8)',
+    (SELECT count() FROM c_cvp WHERE NOT has([(CAST('1.50', 'Decimal(10,2)'), toUInt8(1))], kt)) = (SELECT count() FROM o_cvp WHERE NOT has([(CAST('1.50', 'Decimal(10,2)'), toUInt8(1))], kt));
+
+DROP TABLE IF EXISTS c_cg; DROP TABLE IF EXISTS o_cg;
+CREATE TABLE c_cg (a UInt64, b UInt8) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
+CREATE TABLE o_cg (a UInt64, b UInt8) ENGINE = Memory;
+INSERT INTO c_cg VALUES (1, 1), (2, 1);
+INSERT INTO o_cg VALUES (1, 1), (2, 1);
+SELECT 'CG-has (UInt64,UInt8)/(Decimal64(1),UInt8)',
+    (SELECT count() FROM c_cg WHERE NOT has([(CAST(1.5, 'Decimal64(1)'), toUInt8(1))], (a, b))) = (SELECT count() FROM o_cg WHERE NOT has([(CAST(1.5, 'Decimal64(1)'), toUInt8(1))], (a, b)));
+
+DROP TABLE IF EXISTS c_cn6; DROP TABLE IF EXISTS o_cn6;
+CREATE TABLE c_cn6 (a Decimal(20, 4), b UInt8) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
+CREATE TABLE o_cn6 (a Decimal(20, 4), b UInt8) ENGINE = Memory;
+INSERT INTO c_cn6 VALUES (1.0001, 1), (2.0000, 1);
+INSERT INTO o_cn6 VALUES (1.0001, 1), (2.0000, 1);
+-- the truncating Decimal pair under-approximates, so it is the POSITIVE direction that over-prunes
+SELECT 'CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)',
+    (SELECT count() FROM c_cn6 WHERE (a, b) IN (SELECT (CAST('1.00', 'Decimal(10,2)'), toUInt8(1)))) = (SELECT count() FROM o_cn6 WHERE (a, b) IN (SELECT (CAST('1.00', 'Decimal(10,2)'), toUInt8(1))));
+SELECT 'N6-in scalar Decimal(20,4)/Decimal(10,2)',
+    (SELECT count() FROM c_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)'))) = (SELECT count() FROM o_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)')));
+
+SELECT '--- composite cross-type: has() declines, IN keeps pruning (the 03733 shapes) ---';
+
+DROP TABLE IF EXISTS t33; DROP TABLE IF EXISTS t33o;
+CREATE TABLE t33 (kt Tuple(UInt32, UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE t33o (kt Tuple(UInt32, UInt32)) ENGINE = Memory;
+INSERT INTO t33 VALUES ((10, 0));
+INSERT INTO t33 VALUES ((50000, 0));
+INSERT INTO t33 VALUES ((7, 7));
+INSERT INTO t33o VALUES ((10, 0)), ((50000, 0)), ((7, 7));
+SELECT 'T33 packed tuple has result',
+    (SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE has([(10, 0), (50000, 0)], kt));
+SELECT 'T33 packed tuple has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed tuple IN result',
+    (SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) = (SELECT count() FROM t33o WHERE kt IN (SELECT (toUInt16(10), toUInt8(0))));
+
+DROP TABLE IF EXISTS a33; DROP TABLE IF EXISTS a33o;
+CREATE TABLE a33 (ak Array(UInt32)) ENGINE = MergeTree ORDER BY ak SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE a33o (ak Array(UInt32)) ENGINE = Memory;
+INSERT INTO a33 VALUES ([10, 11]);
+INSERT INTO a33 VALUES ([50000, 50001]);
+INSERT INTO a33 VALUES ([7, 7]);
+INSERT INTO a33o VALUES ([10, 11]), ([50000, 50001]), ([7, 7]);
+SELECT 'A33 array key has result',
+    (SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE has([[10, 11], [50000, 50001]], ak));
+SELECT 'A33 array key has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+
+-- widths collapse in a Field, signedness does not: this is what makes the rule non-obvious
+SELECT 'Field width u8 vs u64', has([tuple(toUInt8(1))], tuple(toUInt64(1)));
+SELECT 'Field width i8 vs i64', has([tuple(toInt8(1))], tuple(toInt64(1)));
+SELECT 'Field signedness i32 vs u32', has([tuple(toInt32(1))], tuple(toUInt32(1)));
+
+SELECT '--- named tuples: the cast maps fields by name, so the pair must decline ---';
+
+DROP TABLE IF EXISTS nt; DROP TABLE IF EXISTS nto;
+CREATE TABLE nt (kt Tuple(a UInt8, b UInt8)) ENGINE = MergeTree ORDER BY kt PARTITION BY kt;
+CREATE TABLE nto (kt Tuple(a UInt8, b UInt8)) ENGINE = Memory;
+INSERT INTO nt VALUES ((1, 1));
+INSERT INTO nt VALUES ((2, 2));
+INSERT INTO nto VALUES ((1, 1)), ((2, 2));
+SELECT 'named tuple result',
+    (SELECT count() FROM nt WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)'))) = (SELECT count() FROM nto WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)')));
+SELECT 'named tuple declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nt WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)'))) WHERE explain ILIKE '%element set%';
+
+SELECT '--- composite IN over a narrowing element: pruning is withdrawn, matching the oracle ---';
+
+-- Pre-existing behaviour recorded for completeness: on a narrowing composite pair the runtime cast
+-- throws CANNOT_CONVERT_TYPE while master silently pruned instead. Declining the atom makes
+-- MergeTree agree with the ENGINE = Memory oracle, which also throws.
+DROP TABLE IF EXISTS d1;
+CREATE TABLE d1 (kt Tuple(UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO d1 VALUES (tuple(257));
+INSERT INTO d1 VALUES (tuple(1));
+SELECT count() FROM d1 WHERE kt IN (SELECT tuple(toUInt8(1))); -- { serverError CANNOT_CONVERT_TYPE }
+-- boundary: the WIDENING direction is unaffected and keeps its result
+DROP TABLE IF EXISTS w1; DROP TABLE IF EXISTS w1o;
+CREATE TABLE w1 (kt Tuple(UInt8, UInt8)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE w1o (kt Tuple(UInt8, UInt8)) ENGINE = Memory;
+INSERT INTO w1 VALUES ((1, 1));
+INSERT INTO w1 VALUES ((2, 2));
+INSERT INTO w1o VALUES ((1, 1)), ((2, 2));
+SELECT 'D1 widening direction',
+    (SELECT count() FROM w1 WHERE kt IN (SELECT (toUInt32(1), toUInt32(1)))) = (SELECT count() FROM w1o WHERE kt IN (SELECT (toUInt32(1), toUInt32(1))));
+-- boundary: the SCALAR narrowing case is unaffected at default settings; arm 2 stays intact
+DROP TABLE IF EXISTS s1; DROP TABLE IF EXISTS s1o;
+CREATE TABLE s1 (k UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE s1o (k UInt32) ENGINE = Memory;
+INSERT INTO s1 VALUES (257);
+INSERT INTO s1 VALUES (1);
+INSERT INTO s1o VALUES (257), (1);
+SELECT 'D1 scalar narrowing at default settings',
+    (SELECT count() FROM s1 WHERE k IN (SELECT toUInt8(1))) = (SELECT count() FROM s1o WHERE k IN (SELECT toUInt8(1)));
+
+SELECT '--- integer composites: pruning is withdrawn for both callers, results stay correct ---';
+
+-- 8x8 packed integer composites, plain and Nullable. Generated; do not thin.
+DROP TABLE IF EXISTS c_gc_uint8; DROP TABLE IF EXISTS o_gc_uint8;
+CREATE TABLE c_gc_uint8 (kt Tuple(UInt8, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_uint8 (kt Tuple(UInt8, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_uint8 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_uint8 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P UInt8/UInt8',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P UInt8/UInt16',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P UInt8/UInt32',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P UInt8/UInt64',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P UInt8/Int8',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P UInt8/Int16',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P UInt8/Int32',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P UInt8/Int64',
+    (SELECT count() FROM c_gc_uint8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_uint8; DROP TABLE o_gc_uint8;
+DROP TABLE IF EXISTS c_gc_uint16; DROP TABLE IF EXISTS o_gc_uint16;
+CREATE TABLE c_gc_uint16 (kt Tuple(UInt16, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_uint16 (kt Tuple(UInt16, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_uint16 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_uint16 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P UInt16/UInt8',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P UInt16/UInt16',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P UInt16/UInt32',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P UInt16/UInt64',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P UInt16/Int8',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P UInt16/Int16',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P UInt16/Int32',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P UInt16/Int64',
+    (SELECT count() FROM c_gc_uint16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_uint16; DROP TABLE o_gc_uint16;
+DROP TABLE IF EXISTS c_gc_uint32; DROP TABLE IF EXISTS o_gc_uint32;
+CREATE TABLE c_gc_uint32 (kt Tuple(UInt32, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_uint32 (kt Tuple(UInt32, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_uint32 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_uint32 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P UInt32/UInt8',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P UInt32/UInt16',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P UInt32/UInt32',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P UInt32/UInt64',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P UInt32/Int8',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P UInt32/Int16',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P UInt32/Int32',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P UInt32/Int64',
+    (SELECT count() FROM c_gc_uint32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_uint32; DROP TABLE o_gc_uint32;
+DROP TABLE IF EXISTS c_gc_uint64; DROP TABLE IF EXISTS o_gc_uint64;
+CREATE TABLE c_gc_uint64 (kt Tuple(UInt64, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_uint64 (kt Tuple(UInt64, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_uint64 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_uint64 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P UInt64/UInt8',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P UInt64/UInt16',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P UInt64/UInt32',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P UInt64/UInt64',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P UInt64/Int8',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P UInt64/Int16',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P UInt64/Int32',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P UInt64/Int64',
+    (SELECT count() FROM c_gc_uint64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_uint64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_uint64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_uint64; DROP TABLE o_gc_uint64;
+DROP TABLE IF EXISTS c_gc_int8; DROP TABLE IF EXISTS o_gc_int8;
+CREATE TABLE c_gc_int8 (kt Tuple(Int8, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_int8 (kt Tuple(Int8, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_int8 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_int8 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P Int8/UInt8',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P Int8/UInt16',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P Int8/UInt32',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P Int8/UInt64',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P Int8/Int8',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P Int8/Int16',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P Int8/Int32',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P Int8/Int64',
+    (SELECT count() FROM c_gc_int8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_int8; DROP TABLE o_gc_int8;
+DROP TABLE IF EXISTS c_gc_int16; DROP TABLE IF EXISTS o_gc_int16;
+CREATE TABLE c_gc_int16 (kt Tuple(Int16, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_int16 (kt Tuple(Int16, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_int16 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_int16 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P Int16/UInt8',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P Int16/UInt16',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P Int16/UInt32',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P Int16/UInt64',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P Int16/Int8',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P Int16/Int16',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P Int16/Int32',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P Int16/Int64',
+    (SELECT count() FROM c_gc_int16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_int16; DROP TABLE o_gc_int16;
+DROP TABLE IF EXISTS c_gc_int32; DROP TABLE IF EXISTS o_gc_int32;
+CREATE TABLE c_gc_int32 (kt Tuple(Int32, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_int32 (kt Tuple(Int32, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_int32 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_int32 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P Int32/UInt8',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P Int32/UInt16',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P Int32/UInt32',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P Int32/UInt64',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P Int32/Int8',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P Int32/Int16',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P Int32/Int32',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P Int32/Int64',
+    (SELECT count() FROM c_gc_int32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_int32; DROP TABLE o_gc_int32;
+DROP TABLE IF EXISTS c_gc_int64; DROP TABLE IF EXISTS o_gc_int64;
+CREATE TABLE c_gc_int64 (kt Tuple(Int64, UInt8)) ENGINE = MergeTree ORDER BY kt;
+CREATE TABLE o_gc_int64 (kt Tuple(Int64, UInt8)) ENGINE = Memory;
+INSERT INTO c_gc_int64 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gc_int64 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid P Int64/UInt8',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid P Int64/UInt16',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid P Int64/UInt32',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid P Int64/UInt64',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid P Int64/Int8',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid P Int64/Int16',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid P Int64/Int32',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid P Int64/Int64',
+    (SELECT count() FROM c_gc_int64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gc_int64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gc_int64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gc_int64; DROP TABLE o_gc_int64;
+DROP TABLE IF EXISTS c_gcn_uint8; DROP TABLE IF EXISTS o_gcn_uint8;
+CREATE TABLE c_gcn_uint8 (kt Tuple(Nullable(UInt8), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_uint8 (kt Tuple(Nullable(UInt8), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_uint8 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_uint8 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N UInt8/UInt8',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N UInt8/UInt16',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N UInt8/UInt32',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N UInt8/UInt64',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N UInt8/Int8',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N UInt8/Int16',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N UInt8/Int32',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N UInt8/Int64',
+    (SELECT count() FROM c_gcn_uint8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_uint8; DROP TABLE o_gcn_uint8;
+DROP TABLE IF EXISTS c_gcn_uint16; DROP TABLE IF EXISTS o_gcn_uint16;
+CREATE TABLE c_gcn_uint16 (kt Tuple(Nullable(UInt16), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_uint16 (kt Tuple(Nullable(UInt16), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_uint16 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_uint16 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N UInt16/UInt8',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N UInt16/UInt16',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N UInt16/UInt32',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N UInt16/UInt64',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N UInt16/Int8',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N UInt16/Int16',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N UInt16/Int32',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N UInt16/Int64',
+    (SELECT count() FROM c_gcn_uint16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_uint16; DROP TABLE o_gcn_uint16;
+DROP TABLE IF EXISTS c_gcn_uint32; DROP TABLE IF EXISTS o_gcn_uint32;
+CREATE TABLE c_gcn_uint32 (kt Tuple(Nullable(UInt32), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_uint32 (kt Tuple(Nullable(UInt32), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_uint32 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_uint32 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N UInt32/UInt8',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N UInt32/UInt16',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N UInt32/UInt32',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N UInt32/UInt64',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N UInt32/Int8',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N UInt32/Int16',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N UInt32/Int32',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N UInt32/Int64',
+    (SELECT count() FROM c_gcn_uint32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_uint32; DROP TABLE o_gcn_uint32;
+DROP TABLE IF EXISTS c_gcn_uint64; DROP TABLE IF EXISTS o_gcn_uint64;
+CREATE TABLE c_gcn_uint64 (kt Tuple(Nullable(UInt64), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_uint64 (kt Tuple(Nullable(UInt64), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_uint64 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_uint64 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N UInt64/UInt8',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N UInt64/UInt16',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N UInt64/UInt32',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N UInt64/UInt64',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N UInt64/Int8',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N UInt64/Int16',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N UInt64/Int32',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N UInt64/Int64',
+    (SELECT count() FROM c_gcn_uint64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_uint64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_uint64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_uint64; DROP TABLE o_gcn_uint64;
+DROP TABLE IF EXISTS c_gcn_int8; DROP TABLE IF EXISTS o_gcn_int8;
+CREATE TABLE c_gcn_int8 (kt Tuple(Nullable(Int8), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_int8 (kt Tuple(Nullable(Int8), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_int8 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_int8 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N Int8/UInt8',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N Int8/UInt16',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N Int8/UInt32',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N Int8/UInt64',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N Int8/Int8',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N Int8/Int16',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N Int8/Int32',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N Int8/Int64',
+    (SELECT count() FROM c_gcn_int8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int8 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_int8; DROP TABLE o_gcn_int8;
+DROP TABLE IF EXISTS c_gcn_int16; DROP TABLE IF EXISTS o_gcn_int16;
+CREATE TABLE c_gcn_int16 (kt Tuple(Nullable(Int16), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_int16 (kt Tuple(Nullable(Int16), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_int16 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_int16 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N Int16/UInt8',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N Int16/UInt16',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N Int16/UInt32',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N Int16/UInt64',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N Int16/Int8',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N Int16/Int16',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N Int16/Int32',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N Int16/Int64',
+    (SELECT count() FROM c_gcn_int16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int16 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_int16; DROP TABLE o_gcn_int16;
+DROP TABLE IF EXISTS c_gcn_int32; DROP TABLE IF EXISTS o_gcn_int32;
+CREATE TABLE c_gcn_int32 (kt Tuple(Nullable(Int32), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_int32 (kt Tuple(Nullable(Int32), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_int32 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_int32 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N Int32/UInt8',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N Int32/UInt16',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N Int32/UInt32',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N Int32/UInt64',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N Int32/Int8',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N Int32/Int16',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N Int32/Int32',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N Int32/Int64',
+    (SELECT count() FROM c_gcn_int32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int32 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_int32; DROP TABLE o_gcn_int32;
+DROP TABLE IF EXISTS c_gcn_int64; DROP TABLE IF EXISTS o_gcn_int64;
+CREATE TABLE c_gcn_int64 (kt Tuple(Nullable(Int64), Nullable(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS allow_nullable_key = 1;
+CREATE TABLE o_gcn_int64 (kt Tuple(Nullable(Int64), Nullable(UInt8))) ENGINE = Memory;
+INSERT INTO c_gcn_int64 VALUES ((1, 1)), ((2, 1));
+INSERT INTO o_gcn_int64 VALUES ((1, 1)), ((2, 1));
+SELECT 'grid N Int64/UInt8',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toUInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toUInt8(1), toUInt8(1))));
+SELECT 'grid N Int64/UInt16',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toUInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toUInt16(1), toUInt8(1))));
+SELECT 'grid N Int64/UInt32',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toUInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toUInt32(1), toUInt8(1))));
+SELECT 'grid N Int64/UInt64',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toUInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toUInt64(1), toUInt8(1))));
+SELECT 'grid N Int64/Int8',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toInt8(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toInt8(1), toUInt8(1))));
+SELECT 'grid N Int64/Int16',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toInt16(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toInt16(1), toUInt8(1))));
+SELECT 'grid N Int64/Int32',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toInt32(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toInt32(1), toUInt8(1))));
+SELECT 'grid N Int64/Int64',
+    (SELECT count() FROM c_gcn_int64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt IN (SELECT (toInt64(1), toUInt8(1)))),
+    (SELECT count() FROM c_gcn_int64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1)))) = (SELECT count() FROM o_gcn_int64 WHERE kt NOT IN (SELECT (toInt64(1), toUInt8(1))));
+DROP TABLE c_gcn_int64; DROP TABLE o_gcn_int64;
+
 SELECT '--- 12x12 integer cross product: every pair stays exact ---';
 -- 12x12 integer cross product (arm 2): every pair must stay EXACT.
 -- Generated; do not thin to a 'representative' subset.

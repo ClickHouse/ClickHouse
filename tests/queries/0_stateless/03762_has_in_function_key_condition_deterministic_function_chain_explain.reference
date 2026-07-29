@@ -310,11 +310,10 @@ Expression (Project names)
           PrimaryKey
             Keys:
               json.a
-              CAST(json.b, \'UInt64\')
-            Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
+            Condition: (json.a in [0, 0])
             Parts: 1/1
-            Granules: 3/8
-            Search Algorithm: generic exclusion search
+            Granules: 4/8
+            Search Algorithm: binary search
           Ranges: 1
 -- Not supported yet
 DROP TABLE IF EXISTS table_json_nested_cast;
