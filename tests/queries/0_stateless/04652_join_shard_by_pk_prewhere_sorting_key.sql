@@ -1,6 +1,8 @@
 -- The join is sharded by PK ranges, and the read is in order, so PREWHERE may prune a sorting-key
--- column that only the filter uses. Every query below threw NOT_FOUND_COLUMN_IN_BLOCK before the fix.
--- Each cell compares the sharded result against a hash-join oracle, so a silent wrong result fails too.
+-- column that only the filter uses. The defect cells threw NOT_FOUND_COLUMN_IN_BLOCK before the fix;
+-- the cells labelled `control` did not and must keep working. Result cells compare the sharded
+-- result against an unsharded oracle (hash where the algorithm can change), so a silent wrong
+-- result fails too; the rest are header and plan-shape guards.
 
 SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;
@@ -11,6 +13,10 @@ SET query_plan_optimize_prewhere = 1;
 SET optimize_read_in_order = 1;
 -- Parallel reading disables the sharding entirely.
 SET enable_parallel_replicas = 0;
+-- The correlated EXISTS cell needs the analyzer; the old analyzer rewrites EXISTS into a subquery
+-- with no outer scope, and `compatibility` randomization can revert both settings.
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS ok2;
 CREATE TABLE ok2 (a UInt32, b UInt32, c Int64, d String)
@@ -45,6 +51,12 @@ SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS
 -- The restored columns must not leak into the output header.
 SELECT 'output header';
 DESCRIBE (SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
+
+-- `DESCRIBE` only resolves the sample block, so it cannot see the pipeline-time conversion that
+-- drops the restored columns. `EXPLAIN PIPELINE` builds the pipeline; the unindented `Header:` row
+-- is the top-level one, and it must carry neither restored column.
+SELECT 'pipeline header', countIf(explain LIKE 'Header:%' AND (explain LIKE '%b UInt32%' OR explain LIKE '%c Int64%')) = 0
+FROM (EXPLAIN PIPELINE header = 1 SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
 -- The optimization must still be applied, not silently skipped.
 SELECT 'sharding applied', countIf(explain LIKE '%Sharding%') = 1
@@ -99,6 +111,7 @@ SELECT 'expression sorting key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS 
 DROP TABLE ex04652;
 
 -- A decorrelated correlated EXISTS under OR reaches the same branch, with the outer column pruned.
+-- `i.s = o.s` is the correlated reference; the unqualified `v >= n` binds to the inner table.
 DROP TABLE IF EXISTS t04652;
 CREATE TABLE t04652 (s String, n UInt32, v Int64) ENGINE = MergeTree ORDER BY (s, n);
 INSERT INTO t04652 SELECT toString(number % 10), number, number % 7 FROM numbers(1000);
