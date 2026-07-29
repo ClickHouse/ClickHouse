@@ -15,6 +15,14 @@ SET allow_experimental_correlated_subqueries = 1;
 -- Parallel replicas change the decorrelation execution path and row distribution; pin it off so the
 -- per-part _part_offset row counts are deterministic (same as the sibling decorrelation test 03734).
 SET enable_parallel_replicas = 0;
+-- Both settings the buffer decision reads changed defaults in 26.1, so a randomized `compatibility`
+-- below that version would build no buffer at all and the plan assertions at the end would see none.
+-- A manually changed setting is not overwritten by `compatibility`, so pin them for this test.
+SET correlated_subqueries_use_in_memory_buffer = 1;
+SET correlated_subqueries_default_join_kind = 'right';
+-- The join algorithm list also changed defaults; the pre-24.3 value is the single `default` entry,
+-- which cannot serve these decorrelation joins, so pin the list the decorrelated plan needs.
+SET join_algorithm = 'direct,parallel_hash,hash';
 
 DROP TABLE IF EXISTS t_chunk_buffer_set_op;
 
