@@ -37,4 +37,3 @@ bool isSerializablePlan(const QueryPlan & plan);
 void universalizePlan(QueryPlan & plan);
 
 }
-

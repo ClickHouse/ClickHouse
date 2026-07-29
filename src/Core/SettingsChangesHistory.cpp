@@ -52,12 +52,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting to allow the query plan cache feature"},
+            {"enable_query_plan_cache", false, false, "New setting to enable query plan cache for `SELECT` queries"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for query plan cache size quota"},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
-            {"allow_experimental_query_plan_cache", false, false, "New experimental setting to allow the query plan cache feature"},
-            {"enable_query_plan_cache", false, false, "New setting to enable query plan cache for SELECT queries"},
-            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for query plan cache size quota"},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
