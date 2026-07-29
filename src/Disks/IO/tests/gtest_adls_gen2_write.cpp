@@ -907,17 +907,25 @@ TEST(AdlsGen2Write, StagingDeleteIsEtagConditionalAndLeavesForeignObjects)
     EXPECT_NO_THROW(buffer.reset());
 }
 
-/// A lost response to the staging create leaves an object behind while the process is still alive: the
-/// retry is answered `PathAlreadyExists`, so this write never observed that object's ETag and cannot
-/// prove it owns it. It is left in place deliberately, because deleting an object of unknown ownership
-/// is the bug this whole change fixes. That residual is disclosed rather than papered over.
+/// A lost response to the staging create leaves an object behind while the process is still alive. The
+/// sequence that produces it: the create is answered `500`, which the SDK retries against the same path,
+/// and that retry is answered `PathAlreadyExists` because the first attempt had in fact taken effect. So
+/// two requests address one staging path, this write never observed that object's ETag, and it cannot
+/// prove it owns it. It is left in place deliberately, because deleting an object of unknown ownership is
+/// the bug this whole change fixes. That residual is disclosed rather than papered over. The two-request
+/// signature is what separates this from an ordinary name collision, which
+/// `StagingCollisionRegeneratesAndNeverOverwrites` covers.
 TEST(AdlsGen2Write, LostCreateResponseLeavesTheFirstStagingObjectAndNeverDeletesIt)
 {
     WriteFixture fixture;
-    /// The service saw the first create and answers the retry with a collision.
+    ASSERT_GT(fixture.sdk_max_retries, 0) << "the lost response needs the SDK to repeat the create";
+    /// The retry the SDK makes after the 500 lands on the same path, and the service reports the object
+    /// the lost attempt created. `CreateIfNotExists` turns that into `Created = false` without throwing,
+    /// so the writer regenerates the name rather than entering its own retry loop.
     fixture.transport->script(
         Op::Create,
-        {{Azure::Core::Http::HttpStatusCode::Conflict, "PathAlreadyExists", {}},
+        {{Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}},
+         {Azure::Core::Http::HttpStatusCode::Conflict, "PathAlreadyExists", {}},
          {Azure::Core::Http::HttpStatusCode::Created, {}, "\"e-second\""}});
     fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
 
@@ -927,13 +935,15 @@ TEST(AdlsGen2Write, LostCreateResponseLeavesTheFirstStagingObjectAndNeverDeletes
     EXPECT_NO_THROW(buffer.reset());
 
     const auto creates = fixture.requestsOf(Op::Create);
-    ASSERT_EQ(creates.size(), 2u);
-    ASSERT_NE(creates[0].path, creates[1].path);
+    ASSERT_EQ(creates.size(), 3u);
+    /// The lost response: the retry went back to the SAME path and was told it already exists.
+    EXPECT_EQ(creates[0].path, creates[1].path);
+    EXPECT_NE(creates[1].path, creates[2].path);
 
     /// The orphan: the first staging object is never deleted, and never written to either.
     const auto deletes = fixture.requestsOf(Op::Delete);
     ASSERT_EQ(deletes.size(), 1u);
-    EXPECT_EQ(deletes[0].path, creates[1].path) << "only the object whose ETag this write observed";
+    EXPECT_EQ(deletes[0].path, creates[2].path) << "only the object whose ETag this write observed";
     EXPECT_EQ(deletes[0].header("If-Match"), "\"e-second\"");
     for (const auto & request : fixture.transport->requests)
         if (request.path == creates[0].path)
@@ -1100,9 +1110,12 @@ TEST(AdlsGen2Write, KeyThatCannotBeStagedNamesTheParentDirectory)
 {
     WriteFixture fixture;
     /// A parent long enough that no file name fits beside it, and a short base name so the message
-    /// cannot be explained by the key as a whole being over the limit.
-    const String key = String(1010, 'd') + "/b";
+    /// cannot be explained by the key as a whole being over the limit. The path the writer measures is
+    /// the prefixed one, so both it and the key have to stay within the limit for the parent to be the
+    /// only possible explanation.
+    const String key = String(987, 'd') + "/b";
     ASSERT_LT(key.size(), 1024u) << "the key itself is within the limit; only staging does not fit";
+    ASSERT_LE(String("tables/mytable/").size() + key.size(), 1024u) << "and so is the prefixed path";
 
     auto buffer = std::make_unique<WriteBufferFromAzureDataLakeStorage>(
         fixture.endpoint,
