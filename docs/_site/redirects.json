@@ -54206,5 +54206,9 @@
   {
     "destination": "/zh/clickstack/demo-days/2026/2026-06-12",
     "source": "/zh/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/static-ips",
+    "source": "/integrations/clickpipes/static-ips"
   }
 ]

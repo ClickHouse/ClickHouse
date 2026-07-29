@@ -13,11 +13,11 @@ integration:
 import { Image } from "/snippets/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-You can use [AWS PrivateLink](https://aws.amazon.com/privatelink/) to establish secure connectivity between VPCs,
-AWS services, your on-premises systems, and ClickHouse Cloud without exposing traffic to the public Internet.
+You can use [AWS PrivateLink](https://aws.amazon.com/privatelink/) to establish a secure connection between ClickPipes and a data source hosted on AWS. ClickPipes creates a **reverse private endpoint (RPE)** in its VPC and points it at a private endpoint service published for your data source, so traffic is never exposed to the public internet.
 
-This document outlines the ClickPipes reverse private endpoint functionality
-that allows setting up an AWS PrivateLink VPC endpoint.
+<Note>
+Check the [supported AWS regions](#aws-privatelink-regions) before you start.
+</Note>
 
 ## Supported ClickPipes data sources {#supported-sources}
 
@@ -119,7 +119,7 @@ aws vpc-lattice create-resource-configuration \
 You can't create a resource configuration for a publicly accessible cluster.
 If your cluster is publicly accessible, you must modify the cluster
 to make it private before creating the resource configuration
-or use [IP allow list](/integrations/clickpipes/home#list-of-static-ips) instead.
+or use [IP allow list](/integrations/clickpipes/networking/static-ips) instead.
 For more information, see the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-configuration.html#resource-definition).
 </Note>
 
@@ -316,7 +316,7 @@ For same-region access, creating a VPC Resource is the recommended approach.
 
    To see a full list of DNS names, access it in the cloud service settings.
 
-## Managing existing reverse private endpoints {#managing-existing-endpoints}
+## Managing reverse private endpoints {#managing-rpes}
 
 You can manage existing reverse private endpoints in the ClickHouse Cloud service settings:
 
@@ -330,12 +330,12 @@ You can manage existing reverse private endpoints in the ClickHouse Cloud servic
 
    Reverse private endpoint extended information is shown in the flyout.
 
-   Endpoint can be removed from here. It will affect any ClickPipes using this endpoint.
+   An endpoint can't be edited after you create it. You can delete one by clicking the `×` on the endpoint and confirming — deletion is permanent and breaks any ClickPipe currently using that endpoint.
 
 ## Supported AWS regions {#aws-privatelink-regions}
 
 AWS PrivateLink support is limited to specific AWS regions for ClickPipes.
-Please refer to the [ClickPipes regions list](/integrations/clickpipes/home#list-of-static-ips) to see the available regions.
+Please refer to the [ClickPipes regions list](/integrations/clickpipes/networking/static-ips) to see the available regions.
 
 This restriction doesn't apply to PrivateLink VPC endpoint service with a cross-region connectivity enabled.
 
