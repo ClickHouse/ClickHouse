@@ -93,6 +93,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
+    extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -586,6 +587,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
+        log);
+    /// 0 leaves NuRaft deriving the budget from `raft_limits_response_limit` * `heart_beat_interval_ms`, which is a
+    /// per-round-trip responsiveness budget rather than an allowance for the time a follower needs to apply a snapshot.
+    params.snapshot_sync_ctx_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds(),
+        "nuraft_snapshot_sync_ctx_timeout_ms",
         log);
 
     params.return_method_ = nuraft::raft_params::async_handler;

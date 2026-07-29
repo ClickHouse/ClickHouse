@@ -64,6 +64,42 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "</coordination_settings></keeper_server></clickhouse>"));
 }
 
+TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return settings[DB::CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds();
+    };
+
+    /// The default must stay 0, which is what `raft_server::get_snapshot_sync_ctx_timeout` treats as
+    /// "derive from raft_limits_response_limit * heart_beat_interval_ms". Anything else would change
+    /// the snapshot-install budget of every existing installation on upgrade.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              0);
+
+    /// A configured value reaches the setting verbatim and in milliseconds, which is the unit
+    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Parsing it as seconds would silently
+    /// shorten the budget by a factor of 1000.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              60000);
+
+    /// `raft_params::snapshot_sync_ctx_timeout_` is an int32, but the setting itself is unbounded,
+    /// so an out-of-range value survives parsing and has to be clamped further along. That is why
+    /// `launchRaftServer` routes this setting through `getValueOrMaxInt32AndLogWarning` instead of
+    /// assigning it directly.
+    EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              std::numeric_limits<int32_t>::max());
+}
+
 TEST_P(CoordinationTest, RaftServerConfigParse)
 {
     auto parse = Coordination::RaftServerConfig::parse;
