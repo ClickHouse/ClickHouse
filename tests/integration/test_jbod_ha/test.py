@@ -1,3 +1,4 @@
+import random
 import time
 
 import pytest
@@ -7,15 +8,18 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def _umount_with_retry(node, mount_point, retries=15, delay=1.0):
+def _umount_with_retry(node, mount_point, retries=15, delay=0.1, jitter=1.0):
     """Run ``umount`` on a container mount point, retrying briefly on EBUSY.
 
     The disk health check thread (controlled by ``local_disk_check_period_ms``)
-    periodically opens directories under storage paths, so ``umount`` can
-    transiently fail with ``target is busy``. The descriptor is dropped at the
-    end of each polling cycle, so a short retry loop is sufficient. The final
-    attempt propagates its exception unchanged so that genuine failures still
-    surface.
+    periodically opens files under storage paths, so ``umount`` can transiently
+    fail with ``target is busy``. Only that error is retried; anything else, and
+    the final attempt, propagates unchanged so genuine failures still surface.
+
+    ``jitter`` must span a whole check period: sleeping a fixed amount would
+    keep every retry at the same phase of the checker loop, so a first collision
+    could repeat. Sleeping ``delay`` plus a uniform sample over one period makes
+    the next attempt's phase independent of the current one.
     """
     for _ in range(retries - 1):
         try:
@@ -28,7 +32,7 @@ def _umount_with_retry(node, mount_point, retries=15, delay=1.0):
         except Exception as e:
             if "target is busy" not in str(e):
                 raise
-            time.sleep(delay)
+            time.sleep(delay + random.uniform(0, jitter))
     node.exec_in_container(
         ["bash", "-c", "umount {}".format(mount_point)],
         privileged=True,
