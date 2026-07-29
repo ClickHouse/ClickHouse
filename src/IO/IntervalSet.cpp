@@ -77,6 +77,27 @@ void IntervalSet::remove(ByteRange r)
     intervals = std::move(next);
 }
 
+std::optional<ByteRange> IntervalSet::coveringInterval(size_t pos) const
+{
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it == intervals.begin())
+        return std::nullopt;
+    --it;
+    if (pos < it->end())
+        return *it;
+    return std::nullopt;
+}
+
+std::optional<ByteRange> IntervalSet::nextIntervalAfter(size_t pos) const
+{
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it == intervals.end())
+        return std::nullopt;
+    return *it;
+}
+
 size_t IntervalSet::totalBytes() const
 {
     size_t total = 0;

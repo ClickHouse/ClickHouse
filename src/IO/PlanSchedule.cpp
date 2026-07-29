@@ -144,7 +144,7 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
                         }
                 }
                 if (is_bottom)
-                    targets.push_back({ei, m});
+                    targets.push_back({ei, m, whole_block});
                 continue;
             }
 
@@ -164,7 +164,7 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
                     }
             }
             if (owns)
-                targets.push_back({ei, m});
+                targets.push_back({ei, m, whole_block});
         }
     }
     return targets;

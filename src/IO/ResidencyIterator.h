@@ -99,7 +99,10 @@ public:
         size_t object_file_offset_,
         ByteRange span_);
 
-    ChainResolution lookAt(size_t pos);
+    /// `demand_end` (exclusive, in file space) is the end of contiguous demand
+    /// from `pos` - the tiers tile their miss cells demand-shaped against it.
+    /// Callers without a request map pass the span end.
+    ChainResolution lookAt(size_t pos, size_t demand_end);
 
     ByteRange span() const { return probed_span; }
 

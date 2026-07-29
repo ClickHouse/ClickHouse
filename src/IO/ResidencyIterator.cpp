@@ -28,9 +28,10 @@ ResidencyIterator::ResidencyIterator(
     }
 }
 
-ChainResolution ResidencyIterator::lookAt(size_t pos)
+ChainResolution ResidencyIterator::lookAt(size_t pos, size_t demand_end)
 {
     chassert(pos >= probed_span.offset && pos < probed_span.end());
+    chassert(demand_end > pos);
 
     ChainResolution res;
     /// The stride ends at the nearest tier boundary at its TRUE extent, so the
@@ -45,7 +46,7 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
             && pos >= t.current.range.offset && pos < t.current.range.end();
         if (!inside_current)
         {
-            t.current = t.probe->lookAt(object, object_file_offset, pos);
+            t.current = t.probe->lookAt(object, object_file_offset, pos, demand_end);
             t.current_valid = true;
 
             /// Collect forward-new entries into the tier's assembled view (in
@@ -112,7 +113,7 @@ CacheViewPtr probeView(
     size_t pos = span.offset;
     while (pos < span.end())
     {
-        auto r = probe->lookAt(object, object_file_offset, pos);
+        auto r = probe->lookAt(object, object_file_offset, pos, span.end());
         if (r.kind == ICacheProvider::Resolution::Kind::End)
             break;
         if (r.range.end() > collected_until)

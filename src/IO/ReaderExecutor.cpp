@@ -436,10 +436,12 @@ void ReaderExecutor::seek(size_t new_position)
 
 void ReaderExecutor::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)
 {
+    /// Stored PHYSICAL: planning (`observeSpan`) works in physical space, and
+    /// `toPhys` is a constant shift, so sizes are preserved.
     request_map = {};
     for (const auto & [offset, size] : ranges)
         if (size)
-            request_map.add(ByteRange{offset, size});
+            request_map.add(ByteRange{toPhys(offset), size});
     request_map_set = !ranges.empty();
 }
 
@@ -910,6 +912,22 @@ static size_t cellFloor(const PlanSchedule::Retrieve & r, size_t pos)
     return off;
 }
 
+/// The fetch tail's cap at `end`: a WHOLE-CELL target (page cache) extends to
+/// its cell edge - a partial block cannot be put, so capping would lose the
+/// fill entirely; an incremental cell extends only while the overhang fits one
+/// window (the historical read-ahead), else the tail caps at `end` and the
+/// cell's remainder fills on later windows through the plan-held writer. With
+/// several straddling targets the widest required cap wins.
+static size_t cellTailCap(const PlanSchedule::Retrieve & r, size_t end, size_t window_size)
+{
+    size_t cap = end;
+    for (const auto & t : r.into)
+        if (t.cell.offset < end && end < t.cell.end())
+            if (t.whole_cell || t.cell.end() - end <= window_size)
+                cap = std::max(cap, t.cell.end());
+    return cap;
+}
+
 static size_t cellCeil(const PlanSchedule::Retrieve & r, size_t pos)
 {
     size_t end = pos;
@@ -1096,8 +1114,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         /// Clamp the run to the led prefix: an inline serve stops at `fetch_bound` (the first
         /// sibling); a pool worker has `fetch_bound == window.end()`, so this is a no-op for it.
         const size_t run_hi = std::min(led.end(), fetch_bound);
-        const size_t step = m.inline_serve ? std::max<size_t>(run_hi - led.offset, 1)
-                                            : std::max<size_t>(effectiveWindowSize(level), 1);
+        const size_t step = std::max<size_t>(effectiveWindowSize(level), 1);
         for (size_t off = led.offset; off < run_hi && !m.reached_eof; off += step)
         {
             const ByteRange piece{off, std::min(step, run_hi - off)};
@@ -2029,15 +2046,23 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     const size_t base = floor_off < missing
         ? fill_prefix_end(ByteRange{floor_off, missing - floor_off})
         : missing;
-    /// The piece: from the frontier to the end of the first run past it. The frontier can sit
-    /// in an inter-run resident hole (nothing writes a faster tier's bytes into the cell -
-    /// the cache-chain policy); the piece then reads THROUGH the hole from the source so the
-    /// cell still completes - display gaps stop at resident regions and would leave the cell
-    /// short.
+    /// The piece: from the frontier to the end of the first run past it, its tail capped
+    /// by `cellTailCap` - whole-cell targets extend it to their block edge, incremental
+    /// cells only while the overhang fits one window; a demand-shaped cell that dwarfs
+    /// the window caps AT the window (the consumer is waiting; the cell's tail fills on
+    /// later windows through the same plan-held writer). The frontier can sit in an
+    /// inter-run resident hole (nothing writes a faster tier's bytes into the cell - the
+    /// cache-chain policy); the piece then reads THROUGH the hole from the source so the
+    /// display has no gap.
+    const size_t cell_cap = cellTailCap(r, window_phys.end(), window_phys.size);
     for (const auto & fr : r.fetch_runs)
         if (fr.end() > base)
-            return ByteRange{base,
-                std::min(fr.end(), cellCeil(r, window_phys.end())) - base};
+        {
+            const size_t piece_end = std::min(fr.end(), std::max(cell_cap, base));
+            if (piece_end <= base)
+                return {};
+            return ByteRange{base, piece_end - base};
+        }
     return {};
 }
 
@@ -2120,14 +2145,14 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
         return true;
     }
 
-    /// The piece extends to the edges of the touched `into` cells, clamped into the job's
-    /// range (cell-fill granularity; identity for a bypass job - no cells). The cell head
-    /// can reach across a same-tier resident run - at most one cell, cache-served when
-    /// resident, once per plan.
+    /// The piece extends DOWN to the touched cell's floor (append-only: a writer fills
+    /// from its segment start), clamped into the job's range; the TAIL is capped by
+    /// `cellTailCap` (whole-cell targets extend to their edge, incremental cells cap at
+    /// the window once the overhang exceeds it - the tail fills on later windows).
     const size_t fetch_lo
         = std::min(window.offset, std::max(r.range.offset, cellFloor(r, window.offset)));
-    const size_t fetch_hi = std::max(window.end(),
-        std::min(r.range.end(), cellCeil(r, window.end())));
+    const size_t tail_cap = cellTailCap(r, window.end(), window.size);
+    const size_t fetch_hi = std::max(window.end(), std::min(r.range.end(), tail_cap));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
     /// 1) The wait step (`waitSiblingFills`) - bounded to the cursor WINDOW; the
@@ -2523,7 +2548,9 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
 VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::observeSpan(
     const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
     const OffsetMap & offset_map_,
-    ByteRange span)
+    ByteRange span,
+    const IntervalSet * request_map_,
+    std::optional<size_t> demand_ceiling_phys)
 {
     VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
     for (const auto & cache : caches_)
@@ -2539,11 +2566,30 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
         const ByteRange piece_span{piece_file_start, pr.size};
         ResidencyIterator iterator(caches_, piece.object, piece.object_file_offset, piece_span);
 
+        const size_t piece_object_end = piece.object_file_offset + pr.object.bytes_size;
         ResolutionFold fold(traits, piece_span);
         size_t pos = piece_span.offset;
         while (pos < piece_span.end())
         {
-            const auto res = iterator.lookAt(pos);
+            /// The demand from `pos`: the request-map range under it; in a map
+            /// hole, up to the next covered range; with no map, the whole file
+            /// stands in (the user rule). The read bound caps everything, and
+            /// the plan span does NOT - the plan edge is a knowledge horizon,
+            /// so an edge cell completes its grid cell when demand continues
+            /// (it overhangs the span; the cell closure fills it). RM2 shapes
+            /// tiles only - speculation over holes is unchanged.
+            size_t demand_end = piece_object_end;
+            if (request_map_)
+            {
+                if (const auto covering = request_map_->coveringInterval(pos))
+                    demand_end = covering->end();
+                else if (const auto next = request_map_->nextIntervalAfter(pos))
+                    demand_end = next->offset;
+            }
+            if (demand_ceiling_phys)
+                demand_end = std::min(demand_end, *demand_ceiling_phys);
+            demand_end = std::max(demand_end, pos + 1);
+            const auto res = iterator.lookAt(pos, demand_end);
             fold.add(res);
             pos = res.range.end();
         }
@@ -2663,7 +2709,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// no second probe. Cell segmentation is probe-range-independent (virgin
     /// holes tile on the absolute grid; existing segments report their true
     /// extents), so one span-sized observation per piece is the whole story.
-    auto pieces = observeSpan(caches, offset_map, plan_range);
+    auto pieces = observeSpan(caches, offset_map, plan_range, requestMapForPlanning(), boundCeilingPhys());
 
     /// The covered end, not the requested end: the walk's last resolution may
     /// overshoot the target, and that coverage is real plan knowledge.
@@ -2719,7 +2765,7 @@ void ReaderExecutor::extendPlan(size_t position_phys)
 
     stats.add(Stats::PlanExtensions);
 
-    auto pieces = observeSpan(caches, offset_map, ByteRange{old_end, target_end - old_end});
+    auto pieces = observeSpan(caches, offset_map, ByteRange{old_end, target_end - old_end}, requestMapForPlanning(), boundCeilingPhys());
 
     /// A cell straddling the old `plan_end` is already owned by an old entry's
     /// view (its writer was opened there); the extension derives the same
@@ -2748,8 +2794,29 @@ void ReaderExecutor::extendPlan(size_t position_phys)
                         if (tier == caches[ci]->tier()
                             && cells[i - 1].offset < owned.end() && owned.offset < cells[i - 1].end())
                         {
-                            chassert(cells[i - 1].offset == owned.offset && cells[i - 1].size == owned.size);
-                            cells.erase(cells.begin() + (i - 1));
+                            /// Same absolute grid + same demand snapshot derive the same
+                            /// cut, so overlap normally implies identity - drop the twin.
+                            /// A shifted demand edge (bound advance, re-announced request
+                            /// map) between the old plan and this extension can derive a
+                            /// DIFFERENT cell: TRIM it to the owned cell's remainder (the
+                            /// old writer keeps its cell; only uncovered territory stays
+                            /// planned) - in the folded geometry AND the held view, whose
+                            /// miss entries the writer upgrade exact-matches against.
+                            if (cells[i - 1].offset == owned.offset && cells[i - 1].size == owned.size)
+                                cells.erase(cells.begin() + (i - 1));
+                            else if (cells[i - 1].end() > owned.end())
+                            {
+                                const ByteRange trimmed{owned.end(), cells[i - 1].end() - owned.end()};
+                                for (auto & me : piece.views[ci]->miss_entries)
+                                    if (me.range.offset == cells[i - 1].offset && me.range.size == cells[i - 1].size)
+                                    {
+                                        me.range = trimmed;
+                                        break;
+                                    }
+                                cells[i - 1] = trimmed;
+                            }
+                            else
+                                cells.erase(cells.begin() + (i - 1));
                             break;
                         }
                     }

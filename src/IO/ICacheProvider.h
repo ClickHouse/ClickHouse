@@ -214,10 +214,15 @@ public:
 
         /// Resolve one position of `object`'s residency - THE read-only probe.
         /// EACH MISS IS ONE CELL of the tier: the provider owns the alignment
-        /// policy (boundary-aligned optimal cells for the filesystem cache;
-        /// whole blocks for the page cache) and the executor derives all fetch
-        /// shaping from the cell edges. MUST NOT mutate the cache.
-        virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file) = 0;
+        /// policy and the executor derives all fetch shaping from the cell
+        /// edges. `demand_end_in_file` is the exclusive end of CONTIGUOUS
+        /// DEMAND from `pos_in_file` (a request-map range clamped to the plan
+        /// ceiling; the ceiling itself when unmapped): the provider tiles miss
+        /// runs demand-shaped - interior cells up to the cache's own maximum
+        /// segment size, tapering to the boundary grid at the demand edge - so
+        /// segment sizes follow what will actually be read (page cache: whole
+        /// fixed blocks regardless). MUST NOT mutate the cache.
+        virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) = 0;
     };
 
     virtual std::unique_ptr<IProbeCursor> probe() = 0;

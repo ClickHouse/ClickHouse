@@ -2242,19 +2242,26 @@ TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
             result.append(node.data(), node.size);
     };
 
-    /// Window 1: [0,1000). The fetch extends to the CELL edge (cell-fill shaping), so
-    /// the whole segment fills at once - complete, hence unpinned and evictable.
-    auto w1 = executor->readNextWindow();
-    ASSERT_FALSE(w1.empty());
-    consume(std::move(w1));
-    ASSERT_EQ(cache->downloaded[0], 4000u) << "the touched cell is fetched whole";
+    /// Windows 1-4: [0,4000). The 4000-byte cell dwarfs the 1000-byte window, so the
+    /// fetch is window-capped and the cell fills PROGRESSIVELY through the plan-held
+    /// writer, completing with the fourth window - complete, hence unpinned and
+    /// evictable.
+    for (int w = 0; w < 4; ++w)
+    {
+        auto chain = executor->readNextWindow();
+        ASSERT_FALSE(chain.empty());
+        consume(std::move(chain));
+    }
+    ASSERT_EQ(cache->downloaded[0], 4000u) << "the cell completes across the windows";
+    EXPECT_EQ(result, content);
 
-    /// Eviction pressure drops the COMPLETE (unpinned) cell mid-read; the remaining
-    /// windows must heal by re-fetching, never truncate or serve stale bytes.
+    /// Eviction pressure drops the COMPLETE (unpinned) cell; re-reading must heal by
+    /// re-fetching, never truncate or serve stale bytes.
     cache->evictUnpinned();
     ASSERT_EQ(cache->downloaded[0], 0u) << "a complete cell is evictable";
 
-    /// Drain the rest sequentially.
+    executor->seek(0);
+    result.clear();
     while (true)
     {
         auto chain = executor->readNextWindow();
@@ -2263,7 +2270,7 @@ TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
         consume(std::move(chain));
     }
 
-    EXPECT_EQ(result, content);   /// no corruption / no missing bytes
+    EXPECT_EQ(result, content);   /// healed by refetch - no corruption / no missing bytes
     /// Destroy the executor so it flushes `stats` into the thread group's ProfileEvents.
     executor.reset();
 }

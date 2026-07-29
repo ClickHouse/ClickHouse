@@ -1,6 +1,8 @@
 #pragma once
 
 #include <IO/ChainedBuffers.h>
+
+#include <optional>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -25,6 +27,14 @@ public:
 
     /// Total bytes held (sum of the disjoint intervals' sizes).
     size_t totalBytes() const;
+
+    /// The interval containing `pos`, or nullopt (also when the set is empty).
+    std::optional<ByteRange> coveringInterval(size_t pos) const;
+
+    /// The first interval strictly after `pos` (its offset > pos), or nullopt.
+    std::optional<ByteRange> nextIntervalAfter(size_t pos) const;
+
+    bool empty() const { return intervals.empty(); }
 
 private:
     VectorWithMemoryTracking<ByteRange> intervals;

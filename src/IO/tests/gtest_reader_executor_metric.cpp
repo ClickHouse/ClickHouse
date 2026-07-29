@@ -627,7 +627,11 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
     EXPECT_EQ(live.requests, 16u) << "live: a reach-bounded GET per cold cell, cell-aligned";
     EXPECT_EQ(live.incomplete, 0u) << "live: the fixed small plan bounds each connection at the next cached cell, draining cleanly";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
-    EXPECT_LE(stateless.requests, live.requests) << "stateless: a connection per window; with full-segment fetch each cold segment is one GET either way";
+    /// Demand-shaped cells dwarf this harness's window (4x), so the stateless
+    /// one-shots pay per WINDOW while the live connections still coalesce each
+    /// cold segment - the arms are no longer tied by the cell==window
+    /// coincidence the old pin relied on.
+    EXPECT_GE(stateless.requests, live.requests) << "stateless: a connection per window; live coalesces per cold run";
 }
 
 /// Cold scan broken by alignment-sized FileCache holes. Each hole (4 MiB / 4 KiB

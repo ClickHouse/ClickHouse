@@ -732,7 +732,23 @@ private:
     static VectorWithMemoryTracking<PieceObservation> observeSpan(
         const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
         const OffsetMap & offset_map_,
-        ByteRange span);
+        ByteRange span,
+        const IntervalSet * request_map_ = nullptr,
+        std::optional<size_t> demand_ceiling_phys = std::nullopt);
+
+    /// The stored request map when it can shape planning, else nullptr.
+    const IntervalSet * requestMapForPlanning() const
+    {
+        return request_map_set && !request_map.empty() ? &request_map : nullptr;
+    }
+
+    /// The read bound as the demand ceiling for tiling (PHYSICAL), when declared.
+    std::optional<size_t> boundCeilingPhys() const
+    {
+        if (!read_bound)
+            return std::nullopt;
+        return toPhys(*read_bound);
+    }
 
     /// Translate an observation into 1:1 `GeometryEntry`/`PlanTier` pairs
     /// (pushed BOTH-or-NEITHER, cache-major fastest-first): the fold's prune is
@@ -917,8 +933,8 @@ private:
     /// `reader_executor_use_long_connections` setting).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
 
-    /// The stored request map (LOGICAL intervals; empty = absent = whole file).
-    /// See `setRequestMap`.
+    /// The stored request map (PHYSICAL intervals - converted at the feed;
+    /// empty = absent = whole file). See `setRequestMap`.
     IntervalSet request_map;
     bool request_map_set = false;
 

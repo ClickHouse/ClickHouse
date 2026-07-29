@@ -784,9 +784,9 @@ TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
         << "the outer claim's role must survive the nested claim's drop";
 }
 
-/// Virgin miss runs are TILED into optimal fill cells, one MissEntry per cell,
+/// Virgin miss runs are TILED into max-fill-cell tiles, one MissEntry per cell,
 /// so the cells `openWriter` opens coincide with the fetch tail grid.
-/// In this fixture boundary == max segment == 4 KiB, so the optimal cell is one
+/// In this fixture boundary == max segment == 4 KiB, so the tile is one
 /// segment and a 3-segment virgin probe yields exactly 3 single-segment tiles.
 TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
 {
@@ -814,11 +814,11 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
 
 /// A tile cut must never fall INSIDE an existing segment - two writers would
 /// alias it. A wide EMPTY segment (created by a concurrent reader, unwritten)
-/// straddling the optimal-grid cut swallows the cut: the run stays one range.
+/// straddling the grid cut swallows the cut: the run stays one range.
 TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
 {
-    /// A dedicated cache where cells can span the optimal grid: max segment
-    /// 16 KiB, boundary 4 KiB -> optimal cell 16 KiB.
+    /// A dedicated cache where cells can span the tile grid: max segment
+    /// 16 KiB, boundary 4 KiB -> tile 16 KiB.
     namespace fs = std::filesystem;
     auto wide_path = fs::temp_directory_path() / "disk_cache_buffers_wide";
     fs::remove_all(wide_path);
@@ -845,7 +845,7 @@ TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
     auto object = makeObject("obj_wide", object_size);
 
     /// A concurrent reader created (but never wrote) a wide segment
-    /// [1, 5) * kSegmentSize - it straddles the optimal-grid cut at 4 * kSegmentSize.
+    /// [1, 5) * kSegmentSize - it straddles the grid cut at 4 * kSegmentSize.
     auto concurrent = wide_cache->getOrSet(
         FileCacheKey::fromPath(object.remote_path),
         kSegmentSize,
@@ -860,8 +860,12 @@ TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
     auto view = probeView(*provider, object, /*object_file_offset=*/0, ByteRange{0, object_size});
     EXPECT_TRUE(view->allMiss());
     /// The cut at 4 * kSegmentSize is interior to the wide segment -> suppressed;
-    /// the next grid cut is the run end. One range, one future writer: no aliasing.
-    ASSERT_EQ(view->misses().size(), 1u);
+    /// the ask widens just past the CONFLICTING segment and the cut settles on
+    /// its (exclusive) end - never inside it, so no cell aliases the segment's
+    /// future writer. Two ranges: up to the segment end, and the tail.
+    ASSERT_EQ(view->misses().size(), 2u);
     EXPECT_EQ(view->misses()[0].range.offset, 0u);
-    EXPECT_EQ(view->misses()[0].range.size, object_size);
+    EXPECT_EQ(view->misses()[0].range.size, 5 * kSegmentSize);
+    EXPECT_EQ(view->misses()[1].range.offset, 5 * kSegmentSize);
+    EXPECT_EQ(view->misses()[1].range.size, object_size - 5 * kSegmentSize);
 }

@@ -679,14 +679,13 @@ size_t DiskCacheProvider::resolvedBoundaryAlignment() const
     return std::max<size_t>(1, cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment()));
 }
 
-size_t DiskCacheProvider::optimalFillCell() const
+size_t DiskCacheProvider::maxFillCell() const
 {
-    static constexpr size_t optimal_fill_cell_bytes = 8ULL * 1024 * 1024;
     const size_t boundary = resolvedBoundaryAlignment();
-    const size_t capped = std::min<size_t>(optimal_fill_cell_bytes, cache->getMaxFileSegmentSize());
-    if (capped <= boundary)
+    const size_t max_segment = cache->getMaxFileSegmentSize();
+    if (max_segment <= boundary)
         return boundary;
-    return capped / boundary * boundary;
+    return max_segment / boundary * boundary;
 }
 
 /// The disk tier's residency walk (see `ICacheProvider::IProbeCursor`): the
@@ -695,7 +694,7 @@ size_t DiskCacheProvider::optimalFillCell() const
 /// covering segments WHOLE, so a warm ask costs one metadata lock per
 /// segment, not per cell). `hits` are the committed pieces (full extents,
 /// split at the writer frontier); `cells` are the ask's raw miss runs
-/// boundary-aligned, merged, and tiled into optimal fill cells on the
+/// boundary-aligned, merged, and tiled into demand-shaped fill cells on the
 /// absolute grid - a cut that would land inside an existing segment is pushed
 /// past it, extending the ask when it crosses into unprobed territory. The
 /// holder pins the probed segments; the touch book carries the deferred LRU
@@ -706,10 +705,10 @@ public:
     explicit ProbeCursor(DiskCacheProvider & provider_) : provider(provider_) {}
 
     ICacheProvider::Resolution lookAt(
-        const StoredObject & object, size_t object_file_offset, size_t pos_in_file) override;
+        const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) override;
 
 private:
-    void roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file);
+    void roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file);
 
     DiskCacheProvider & provider;
     bool loaded = false;
@@ -722,24 +721,34 @@ private:
     size_t cell_idx = 0;
 };
 
-void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file)
+void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file)
 {
     auto resolved_key = provider.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = provider.custom_origin.value_or(provider.cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
     chassert(pos_in_file >= object_file_offset);
+    chassert(demand_end_in_file > pos_in_file);
     const size_t object_size = object.bytes_size;
     const size_t boundary_alignment = provider.cache_settings.boundary_alignment.value_or(provider.cache->getBoundaryAlignment());
-    const size_t opt_cell = provider.optimalFillCell();
+    const size_t opt_cell = provider.maxFillCell();
 
-    /// The ask: one fill cell's worth from the BOUNDARY-aligned floor of the
-    /// position - the head rule: a cold head cell starts at the alignment
-    /// boundary of the ask (a mid-cell point read must not fetch the whole
-    /// cell), while interior cuts sit on the absolute grid. Retried wider only
+    /// The ask: ONE `opt_cell` grid cell's worth from the BOUNDARY-aligned
+    /// floor of the position (the per-roll cost bound), tapered to the DEMAND
+    /// edge when the demand ends sooner - the head rule: a cold head cell
+    /// starts at the alignment boundary of the ask (a mid-cell point read must
+    /// not fetch the whole cell), interior cuts sit on the absolute `opt_cell`
+    /// grid, and the demand edge tapers the last cell to the boundary grid. A
+    /// demand that runs past the grid line keeps the cell FULL - the plan edge
+    /// is a knowledge horizon, not a demand edge, and cells may overhang it
+    /// (the schedule's cell closure fills the overhang). Retried wider only
     /// when a cut crosses the ask's end into unprobed territory.
     const size_t pos_obj = pos_in_file - object_file_offset;
+    const size_t demand_end_obj = std::min(demand_end_in_file - object_file_offset, object_size);
     const size_t ask_start = FileCacheUtils::roundDownToMultiple(pos_obj, boundary_alignment);
-    size_t ask_end = std::min(ask_start + opt_cell, object_size);
+    const size_t grid_line = FileCacheUtils::roundUpToMultiple(pos_obj + 1, opt_cell);
+    const size_t aligned_demand = std::max(
+        FileCacheUtils::roundUpToMultiple(demand_end_obj, boundary_alignment), ask_start + boundary_alignment);
+    size_t ask_end = std::min({object_size, aligned_demand, std::max(grid_line, ask_start + boundary_alignment)});
 
     while (true)
     {
@@ -823,7 +832,8 @@ void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t ob
 
         /// Boundary-align each raw miss (clamped to the object end), merge
         /// adjacent/overlapping aligned runs (in OBJECT-LOCAL space), then tile
-        /// into optimal fill cells on the absolute grid.
+        /// into fill cells on the absolute `maxFillCell` grid, tapered at
+        /// the demand edge.
         VectorWithMemoryTracking<ByteRange> merged_obj;
         for (const auto & m : raw_miss_obj)
         {
@@ -866,7 +876,13 @@ void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t ob
                 /// territory. Either way: widen the ask and re-derive.
                 if (cut >= ask_end && ask_end < object_size && inside_existing(cut))
                 {
-                    need_ask_end = std::min(object_size, FileCacheUtils::roundUpToMultiple(cut + 1, opt_cell));
+                    /// Widen just past the CONFLICTING segment (its true extent is
+                    /// residency knowledge) - a whole-cell jump would defeat the
+                    /// per-roll cost bound at every existing-segment boundary.
+                    const size_t conflicting_end = existing_obj[next_existing].end();
+                    need_ask_end = std::min(object_size,
+                        std::max(FileCacheUtils::roundUpToMultiple(conflicting_end, boundary_alignment),
+                                 ask_end + boundary_alignment));
                     break;
                 }
                 need_ask_end = std::max(need_ask_end, std::min(cut, object_size));
@@ -910,13 +926,13 @@ void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t ob
 }
 
 ICacheProvider::Resolution DiskCacheProvider::ProbeCursor::lookAt(
-    const StoredObject & object, size_t object_file_offset, size_t pos_in_file)
+    const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file)
 {
     if (pos_in_file >= object_file_offset + object.bytes_size)
         return {};
 
     if (!loaded || pos_in_file < span.offset || pos_in_file >= span.end())
-        roll(object, object_file_offset, pos_in_file);
+        roll(object, object_file_offset, pos_in_file, demand_end_in_file);
 
     auto & c = *this;
     /// A backward re-ask rewinds the walk cursors; forward asks advance them.

@@ -45,6 +45,9 @@ struct PlanSchedule
     {
         size_t entry = 0;
         ByteRange cell;
+        /// The tier's fill unit: a whole-cell tier (page cache) accepts only
+        /// full-cell puts, so a fetch touching the cell must cover it whole.
+        bool whole_cell = false;
     };
 
     /// One unit of background work: move `range` from `source` into the `into`

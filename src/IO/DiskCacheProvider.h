@@ -173,10 +173,11 @@ public:
     /// One `cache->get` (no segment creation): each resident sub-range becomes
     /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
     /// concurrently-DOWNLOADING segment credits its committed prefix as a hit
-    /// and misses only the tail. Miss runs are TILED into optimal fill cells
-    /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
-    /// EXISTING segment, so each emitted range maps to whole cells and
-    /// the writer upgrade never hands two writers the same segment.
+    /// and misses only the tail. Miss runs are TILED demand-shaped (interior
+    /// cells of `maxFillCell` on the absolute grid, tapering to the boundary
+    /// grid at the demand edge); a cut never falls inside an EXISTING segment,
+    /// so each emitted range maps to whole cells and the writer upgrade never
+    /// hands two writers the same segment.
     std::unique_ptr<IProbeCursor> probe() override;
 
 private:
@@ -194,11 +195,11 @@ private:
     /// The cache boundary grid: the quantum of segment starts/extents (as
     /// `getOrSet` resolves it).
     size_t resolvedBoundaryAlignment() const;
-    /// The extent virgin miss runs are tiled into: the S3-optimal request size
-    /// (~8 MiB - past it the per-request cost is amortized and larger cells
-    /// mostly risk dying partial at query end), clamped to the cache's max
-    /// segment size and kept a multiple of the boundary grid.
-    size_t optimalFillCell() const;
+    /// The tile unit for miss runs: the cache's own maximum segment size,
+    /// floored to a multiple of the boundary grid - demand-shaped tiling makes
+    /// the biggest segments the cache allows where the demand is known to run
+    /// through, and the demand edge tapers the last cell to the grid.
+    size_t maxFillCell() const;
 
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;

@@ -330,7 +330,10 @@ public:
         size_t pos = span.offset;
         while (pos < span.end())
         {
-            const auto res = it.lookAt(pos);
+            /// Mirror the executor's demand rule (no map, bound = FILE_SIZE):
+            /// the demand runs to the file end, not the span end - edge cells
+            /// complete their grid cell and overhang the span.
+            const auto res = it.lookAt(pos, FILE_SIZE);
             EXPECT_EQ(res.range.offset, pos) << "stride must start at the looked-at position";
             EXPECT_GT(res.range.size, 0u) << "stride must advance, pos=" << pos;
             EXPECT_EQ(res.tiers.size(), chain.size());
@@ -428,14 +431,14 @@ TEST_F(ResidencyEquivalence, StridesTileTheSpanAndRewind)
     size_t pos = span.offset;
     while (pos < span.end())
     {
-        forward.push_back(it.lookAt(pos));
+        forward.push_back(it.lookAt(pos, span.end()));
         pos = forward.back().range.end();
     }
     EXPECT_GT(forward.size(), 3u);
 
     for (auto walked = forward.rbegin(); walked != forward.rend(); ++walked)
     {
-        const auto again = it.lookAt(walked->range.offset);
+        const auto again = it.lookAt(walked->range.offset, span.end());
         EXPECT_EQ(again.range.offset, walked->range.offset);
         EXPECT_EQ(again.range.size, walked->range.size);
         ASSERT_EQ(again.tiers.size(), walked->tiers.size());
