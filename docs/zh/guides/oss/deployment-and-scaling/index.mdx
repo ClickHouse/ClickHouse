@@ -1,16 +1,44 @@
 ---
 slug: /deployment-guides/index
 title: '部署指南总览'
-description: '部署与扩缩容部分的入口页'
+description: '部署与扩缩容部分的总览页'
 keywords: ['部署指南', '扩缩容', '集群部署', '复制', '容错']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 本节涵盖以下主题：
 
-| 主题                                                                        |
-| ------------------------------------------------------------------------- |
-| [介绍](/zh/guides/oss/deployment-and-scaling/terminology)                      |
-| [横向扩展](/zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)    |
-| [用于容错的复制](/zh/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [集群部署](/zh/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)   |
+<CardGroup cols={2}>
+  <Card title="简介" icon="book-open" href="/zh/guides/oss/deployment-and-scaling/terminology">
+    介绍用于描述 ClickHouse 部署的相关术语。
+  </Card>
+
+  <Card title="表分片和副本" icon="table-cells-large" href="/zh/guides/oss/deployment-and-scaling/shards">
+    了解表分片和副本是什么，以及它们的用途。
+  </Card>
+
+  <Card title="数据再平衡" icon="scale-balanced" href="/zh/guides/oss/deployment-and-scaling/scaling-clusters">
+    介绍集群扩缩容时进行数据再平衡的方法。
+  </Card>
+
+  <Card title="存储与计算分离" icon="hard-drive" href="/zh/guides/oss/deployment-and-scaling/separation-storage-compute">
+    将 ClickHouse 与对象存储结合使用，实现存储与计算分离。
+  </Card>
+
+  <Card title="集群发现" icon="magnifying-glass" href="/zh/guides/oss/deployment-and-scaling/cluster-discovery">
+    让节点通过 ClickHouse Keeper 自动发现并注册自己。
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/zh/guides/oss/deployment-and-scaling/keeper/index">
+    配置 ClickHouse Keeper，即用于复制和分布式 DDL 的协调系统。
+  </Card>
+
+  <Card title="监控" icon="chart-line" href="/zh/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    监控 ClickHouse，并使用 OpenTelemetry 对其进行追踪。
+  </Card>
+
+  <Card title="示例" icon="server" href="/zh/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    部署示例：用于容错的复制、横向扩展，以及组合集群部署。
+  </Card>
+</CardGroup>

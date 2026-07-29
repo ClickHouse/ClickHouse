@@ -724,51 +724,50 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
-    QueryThreadLogElement elem;
-
-    // construct current_time and current_time_microseconds using the same time point
-    // so that the two times will always be equal up to a precision of a second.
-    TimePoint current_time;
-    current_time.setUp();
-
-    elem.event_time = current_time.seconds();
-    elem.event_time_microseconds = current_time.microseconds();
-    elem.query_start_time = thread_attach_time.seconds();
-    elem.query_start_time_microseconds = thread_attach_time.microseconds();
-    elem.query_duration_ms = thread_attach_time.elapsedMilliseconds(current_time);
-
-    elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
-    elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
-
-    elem.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
-    elem.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
-    elem.memory_usage = memory_tracker.get();
-    elem.peak_memory_usage = memory_tracker.getPeak();
-
-    elem.thread_name = getThreadName();
-    elem.thread_id = thread_id;
-
-    elem.current_database = current_database;
-    if (thread_group)
+    thread_log.add([&](QueryThreadLogElement & element)
     {
-        elem.master_thread_id = thread_group->master_thread_id;
-        elem.query = local_data.query_for_logs;
-        elem.normalized_query_hash = local_data.normalized_query_hash;
-    }
+        // construct current_time and current_time_microseconds using the same time point
+        // so that the two times will always be equal up to a precision of a second.
+        TimePoint current_time;
+        current_time.setUp();
 
-    auto query_context_ptr = query_context.lock();
-    if (query_context_ptr)
-    {
-        elem.client_info = query_context_ptr->getClientInfo();
+        element.event_time = current_time.seconds();
+        element.event_time_microseconds = current_time.microseconds();
+        element.query_start_time = thread_attach_time.seconds();
+        element.query_start_time_microseconds = thread_attach_time.microseconds();
+        element.query_duration_ms = thread_attach_time.elapsedMilliseconds(current_time);
 
-        if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
+        element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+        element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+
+        element.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
+        element.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
+        element.memory_usage = memory_tracker.get();
+        element.peak_memory_usage = memory_tracker.getPeak();
+
+        element.thread_name = getThreadName();
+        element.thread_id = thread_id;
+
+        element.current_database = current_database;
+        if (thread_group)
         {
-            /// NOTE: Here we are in the same thread, so we can make memcpy()
-            elem.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
+            element.master_thread_id = thread_group->master_thread_id;
+            element.query = local_data.query_for_logs;
+            element.normalized_query_hash = local_data.normalized_query_hash;
         }
-    }
 
-    thread_log.add(std::move(elem));
+        auto query_context_ptr = query_context.lock();
+        if (query_context_ptr)
+        {
+            element.client_info = query_context_ptr->getClientInfo();
+
+            if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
+            {
+                /// NOTE: Here we are in the same thread, so we can make memcpy()
+                element.profile_counters = performance_counters.getPartiallyAtomicSnapshot();
+            }
+        }
+    });
 }
 
 void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)
