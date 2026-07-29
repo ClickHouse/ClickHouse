@@ -13,7 +13,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using SizeAndChecksum = std::pair<UInt64, UInt128>;
+struct SizeAndChecksum
+{
+    UInt64 size;
+    UInt128 checksum;
+    UInt64 base_size;
+
+    bool operator<(const SizeAndChecksum & other) const
+    {
+        if (size < other.size) return true;
+        if (other.size < size) return false;
+        if (checksum < other.checksum) return true;
+        if (other.checksum < checksum) return false;
+        return base_size < other.base_size;
+    }
+};
 
 
 void BackupCoordinationFileInfos::addFileInfos(BackupFileInfos && file_infos_, const String & host_id_)
@@ -183,7 +197,7 @@ void BackupCoordinationFileInfos::prepare() const
             }
             else
             {
-                SizeAndChecksum size_and_checksum{info.size, info.checksum};
+                SizeAndChecksum size_and_checksum{info.size, info.checksum, info.base_size};
                 auto [it, inserted] = data_file_index_by_checksum.emplace(size_and_checksum, i);
                 if (inserted)
                 {
