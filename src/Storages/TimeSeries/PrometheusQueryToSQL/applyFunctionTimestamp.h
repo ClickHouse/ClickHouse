@@ -13,10 +13,12 @@ bool isFunctionTimestamp(std::string_view function_name);
 /// selected for its argument at each point of the query's grid.
 ///
 /// Only a narrow set of argument shapes is supported: a bare instant selector, optionally wrapped in a unary
-/// +/-, a binary operation against a scalar literal, and/or a nested timestamp() call - any combination of
-/// these that bottoms out at a bare instant selector. These are exactly the shapes for which the argument's
-/// samples keep the identity (and so the timestamp) of the underlying selector's samples; anything else (e.g.
-/// binary operations of two vectors, aggregations, other functions) throws NOT_IMPLEMENTED, same as before this
+/// +/-, a binary math operation (+, -, *, /, %, ^) against a scalar literal (a bare Scalar or a unary +/- over
+/// one), a `bool`-modified comparison operation against a scalar literal, an offset/@ modifier, and/or a nested
+/// timestamp() call - any combination of these that bottoms out at a bare instant selector. These are exactly
+/// the shapes for which the argument's samples keep the identity (and so the timestamp) of the underlying
+/// selector's samples; anything else (e.g. a comparison without `bool` - which filters out samples - binary
+/// operations of two vectors, aggregations, other functions) throws NOT_IMPLEMENTED, same as before this
 /// function existed.
 SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 

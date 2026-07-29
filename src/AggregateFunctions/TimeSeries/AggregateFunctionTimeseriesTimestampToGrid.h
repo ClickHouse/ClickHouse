@@ -29,6 +29,9 @@ struct AggregateFunctionTimeseriesTimestampToGridTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    /// The result is always a `DateTime64`-scaled timestamp expressed as seconds since epoch, regardless of the
+    /// input sample's `ValueType` - a `Float32` value column must not constrain the timestamp's precision.
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -105,14 +108,14 @@ struct AggregateFunctionTimeseriesTimestampToGridTraits
                 latest = Summary{};
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             if (!latest.has_value)
                 return std::nullopt;
 
             /// Convert the internal timestamp (ticks of `timestamp_scale_multiplier` per second, e.g. milliseconds
             /// for DateTime64(3)) to seconds since epoch, as PromQL's timestamp() function expects.
-            return static_cast<ValueType>(latest.first) / static_cast<ValueType>(timestamp_scale_multiplier);
+            return static_cast<ResultType>(latest.first) / static_cast<ResultType>(timestamp_scale_multiplier);
         }
     };
 

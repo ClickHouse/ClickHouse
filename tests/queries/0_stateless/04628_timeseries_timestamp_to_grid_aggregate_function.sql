@@ -86,3 +86,11 @@ SELECT timeSeriesTimestampToGrid(100, 150::Float32, 15, 50)(timestamp, value) AS
 
 SELECT timeSeriesTimestampToGrid(200, 100, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesTimestampToGrid(100, 150, 0, 50)(timestamp, value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+
+-- timeSeriesTimestampToGrid must always return an exact Float64 timestamp regardless of the input `value`
+-- column's type, matching its documented Array(Nullable(Float64)) result. It used to inherit its result type
+-- from `value` (an unrelated column, used only for tie-breaking), so a Float32 `value` column made it return
+-- Array(Nullable(Float32)): DateTime64 timestamps got rounded before the scale division, and even whole-second
+-- epoch values at current dates lost precision (they exceed Float32's 24-bit exact-integer range).
+SELECT toTypeName(timeSeriesTimestampToGrid(0, 0, 0, 0)(toDateTime(0, 'UTC'), 1::Float32));
+SELECT toTypeName(timeSeriesTimestampToGrid(0, 0, 0, 0)(toDateTime(0, 'UTC'), 1::Float64));

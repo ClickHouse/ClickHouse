@@ -856,6 +856,64 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 130]],
     )
 
+    # Scalar-literal arithmetic still preserves which sample is selected regardless of the scalar's sign -
+    # PromQL parses a signed scalar literal (e.g. `-1`, `+2`) as a UnaryOperator wrapping a Scalar, not as a bare
+    # Scalar node.
+    do_query_test(
+        "timestamp(test * -1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    do_query_test(
+        "timestamp(test / +2)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # A comparison operator with the `bool` modifier doesn't filter samples (it replaces the value with 0/1
+    # instead of dropping non-matches), so it preserves which sample is selected just like a math operator - the
+    # result here is the selected sample's own timestamp, regardless of whether the comparison itself is true or
+    # false (at t=135 `test` is 3, so `test > bool 10` is actually 0).
+    do_query_test(
+        "timestamp(test > bool 10)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # A comparison operator *without* `bool` filters out samples that don't match, so peeling through it would
+    # incorrectly bypass that filtering and always return the selector's raw timestamp even when the real
+    # comparison would have excluded the sample (as it does here: at t=135 `test` is 3, so `test > 10` is
+    # false). This must be rejected as not implemented rather than silently returning a wrong timestamp.
+    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
+        "timestamp(test > 10)", 135, expect_error=True
+    )
+
+    # Selector wrapped in an offset modifier: `test offset 1m` evaluates the instant selector as if the
+    # evaluation time were 60s earlier, so at evaluation time 195 it looks up `test` as of time 135 - selecting
+    # the sample at 130, same sample as the plain `timestamp(test)` case above at time 135. The returned value
+    # is that sample's own (real, un-shifted) timestamp - not the query's evaluation time (195) and not a
+    # synthetically shifted time.
+    do_query_test(
+        "timestamp(test offset 1m)",
+        195,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [195, "130"]}]}',
+        [["[]", "1970-01-01 00:03:15.000", 130]],
+    )
+
+    # Selector wrapped in an @ modifier: `test @ 120` always evaluates the instant selector as of the fixed time
+    # 120, regardless of the query's evaluation time - so it always selects the sample at 120 itself, and
+    # timestamp() reports 120 no matter what evaluation time is requested.
+    do_query_test(
+        "timestamp(test @ 120)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
 
 def test_literals():
     timestamp = 250
