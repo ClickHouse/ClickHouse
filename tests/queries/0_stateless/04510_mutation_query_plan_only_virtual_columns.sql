@@ -49,6 +49,8 @@ DROP TABLE t_mut_qp_subcol;
 -- so an alias over one of these virtuals reaches the read path unless the check follows the
 -- alias. Only `_table` and `_database` can be aliased at all: aliasing any part-derived
 -- virtual (`_part`, `_sample_factor`, ...) is already rejected when the table is created.
+-- Only the analyzer resolves an alias over a virtual column, so pin it for these cases.
+SET allow_experimental_analyzer = 1;
 DROP TABLE IF EXISTS t_mut_qp_alias;
 CREATE TABLE t_mut_qp_alias (c0 UInt32, v UInt32, a_tbl String ALIAS _table, a_db String ALIAS _database, a_chain String ALIAS a_tbl, a_real UInt32 ALIAS c0 + 1)
 ENGINE = MergeTree ORDER BY c0;
@@ -74,6 +76,7 @@ SELECT count() FROM t_mut_qp_alias_subcol;
 -- The alias itself is still rejected on the same table.
 ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE a_tbl != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP TABLE t_mut_qp_alias_subcol;
+SET allow_experimental_analyzer = DEFAULT;
 
 -- A lambda formal parameter that merely shares the name is not a reference to the virtual
 -- column and must be allowed (matching the raw identifier name would falsely reject it).
