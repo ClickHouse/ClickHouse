@@ -847,10 +847,16 @@ def test_function_over_time():
         eps=1e-9,
     )
 
+    # The `150` grid point's expected value is `1.6875000000000002`, not the mathematically exact `1.6875`,
+    # because real Prometheus' own single-pass Kahan/Welford `varianceOverTime` (promql/functions.go) is itself
+    # not portable bit-for-bit across architectures for this window: on amd64 (what CI's integration tests run
+    # on) it rounds the last operation to `1.6875000000000002`, confirmed by running the actual upstream
+    # `prometheus-3.5.0.darwin-amd64` binary against this exact series - on arm64 the same binary and query
+    # yield the exact `1.6875`. This is Prometheus' ground truth here, not a ClickHouse discrepancy.
     do_query_test(
         "stdvar_over_time(test[45s])[120s:15s]",
         210,
-        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.888888888888889"], [150, "1.6875"], [165, "0.25"], [180, "0"], [195, "0"], [210, "2"]]}]}',
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.888888888888889"], [150, "1.6875000000000002"], [165, "0.25"], [180, "0"], [195, "0"], [210, "2"]]}]}',
         [
             [
                 "[]",
