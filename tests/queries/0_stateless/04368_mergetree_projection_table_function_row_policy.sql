@@ -113,3 +113,44 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDE
 
 DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
 DROP TABLE virt_rls_proj;
+
+-- A bare-column policy (`USING flag`, where the predicate result is an existing column, not a new node).
+DROP TABLE IF EXISTS bare_rls_proj;
+DROP ROW POLICY IF EXISTS rp_bare_rls_proj ON bare_rls_proj;
+
+CREATE TABLE bare_rls_proj (id UInt64, visible UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bare_rls_proj VALUES (1, 1), (2, 0), (3, 1);
+
+ALTER TABLE bare_rls_proj ADD PROJECTION p (SELECT id, visible ORDER BY id);
+ALTER TABLE bare_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_bare_rls_proj ON bare_rls_proj FOR SELECT USING visible TO ALL;
+
+SELECT '-- bare-column policy is enforced when the filter column is not selected (expect 1, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'bare_rls_proj', 'p') ORDER BY id;
+
+SELECT '-- bare-column policy is enforced when the filter column is also selected (expect 1, 3)';
+SELECT id, visible FROM mergeTreeProjection(currentDatabase(), 'bare_rls_proj', 'p') ORDER BY id;
+
+DROP ROW POLICY rp_bare_rls_proj ON bare_rls_proj;
+DROP TABLE bare_rls_proj;
+
+-- A policy on `_part_starting_offset + _part_offset` (the global row index) is enforced: the projection
+-- preserves both the parent offset and the part starting offset.
+DROP TABLE IF EXISTS pso_rls_proj;
+DROP ROW POLICY IF EXISTS rp_pso_rls_proj ON pso_rls_proj;
+
+CREATE TABLE pso_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pso_rls_proj VALUES (1, 10), (2, 20);
+INSERT INTO pso_rls_proj VALUES (3, 30), (4, 40);
+
+ALTER TABLE pso_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
+ALTER TABLE pso_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_pso_rls_proj ON pso_rls_proj FOR SELECT USING _part_starting_offset + _part_offset < 3 TO ALL;
+
+SELECT '-- policy on global row index (_part_starting_offset + _part_offset < 3) enforced (expect 1, 2, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'pso_rls_proj', 'p') ORDER BY id;
+
+DROP ROW POLICY rp_pso_rls_proj ON pso_rls_proj;
+DROP TABLE pso_rls_proj;

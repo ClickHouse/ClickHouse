@@ -87,8 +87,11 @@ void StorageFromMergeTreeProjection::read(
 
         /// Apply as a row-level filter so it runs ahead of any user PREWHERE, exactly like a normal
         /// MergeTree read. A post-read FilterStep would let a PREWHERE predicate observe hidden rows first.
+        /// Keep the filter column if the query selects it too (a bare-column policy like `USING flag`).
+        const bool remove_filter_column
+            = std::find(column_names.begin(), column_names.end(), row_policy->filter_column_name) == column_names.end();
         query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
-            FilterDAGInfo{std::move(row_policy->dag), row_policy->filter_column_name, true /* do_remove_column */});
+            FilterDAGInfo{std::move(row_policy->dag), row_policy->filter_column_name, remove_filter_column});
     }
 
     /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
@@ -166,9 +169,11 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
         remapPartOffsetToParent(expr);
 
     /// Resolve against exactly what the projection read can serve: its physical columns plus the parent
-    /// offset when preserved. Anything else (a column not stored here, a virtual with no projection
-    /// equivalent) fails to resolve, and we fail closed with a clear ACCESS_DENIED.
+    /// offsets it preserves (`_part_starting_offset` from `part_starting_offset_in_query`, and the parent
+    /// `_part_offset` as `_parent_part_offset`). Anything else fails to resolve, and we fail closed with a
+    /// clear ACCESS_DENIED.
     auto available_columns = projection->metadata->getColumns().getAllPhysical();
+    available_columns.emplace_back("_part_starting_offset", std::make_shared<DataTypeUInt64>());
     if (projection->with_parent_part_offset)
         available_columns.emplace_back("_parent_part_offset", std::make_shared<DataTypeUInt64>());
 
@@ -191,13 +196,10 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
         }
     }();
 
-    /// the filter column is the single output added on top of the inputs
-    ExpressionActions filter_actions(dag.clone(), ExpressionActionsSettings(context));
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
-    filter_actions.getSampleBlock().getNamesAndTypesList().getDifference(
-        filter_actions.getRequiredColumnsWithTypes(), added, deleted);
-    if (!deleted.empty() || added.size() != 1)
+    /// The filter column is the policy expression's own output node (which may be a bare input column,
+    /// e.g. `USING c0`), mirroring `generateFilterActions`/`buildFilterInfo` rather than assuming a new node.
+    String filter_column_name = expr->getColumnName();
+    if (!dag.tryFindInOutputs(filter_column_name))
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot determine row policy filter column for projection `{}` of table {}",
             projection->name, parent_storage_id.getNameForLogs());
@@ -208,8 +210,8 @@ std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjecti
             context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
     auto result = std::make_unique<MergeTreeProjectionRowPolicyFilter>();
-    result->filter_column_name = added.front().name;
-    result->required_columns = filter_actions.getRequiredColumns();
+    result->required_columns = dag.getRequiredColumnsNames();
+    result->filter_column_name = std::move(filter_column_name);
     result->dag = std::move(dag);
     return result;
 }

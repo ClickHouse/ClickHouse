@@ -21,3 +21,13 @@ Carol	engineering
 -- policy on _part_offset enforced when the projection preserves the parent offset (expect id=1)
 1
 -- policy on _part_offset without a preserved parent offset: read is refused
+-- bare-column policy is enforced when the filter column is not selected (expect 1, 3)
+1
+3
+-- bare-column policy is enforced when the filter column is also selected (expect 1, 3)
+1	1
+3	1
+-- policy on global row index (_part_starting_offset + _part_offset < 3) enforced (expect 1, 2, 3)
+1
+2
+3
