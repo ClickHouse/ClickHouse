@@ -659,10 +659,13 @@ String getInsertDataSchemaMismatchDescription(
         format_name, format_structure(inferred), format_structure(expected));
 }
 
-std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
+namespace
 {
-    static constexpr std::string_view prefix = "(at row ";
 
+/// Reads a decimal number that follows `prefix` in `message`. When `terminator` is not empty,
+/// the number is required to be followed by it.
+std::optional<size_t> parseRowNumberAfter(std::string_view message, std::string_view prefix, std::string_view terminator)
+{
     size_t pos = message.find(prefix);
     if (pos == std::string_view::npos)
         return {};
@@ -677,11 +680,29 @@ std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view messa
         rows = rows * 10 + (message[pos] - '0');
     }
 
-    if (digits == 0 || pos == message.size() || message[pos] != ')')
+    if (digits == 0)
         return {};
 
-    /// The counter is incremented for the failing row itself, but be defensive about a zero.
-    return std::max<size_t>(rows, 1);
+    if (!terminator.empty() && !message.substr(pos).starts_with(terminator))
+        return {};
+
+    return rows;
+}
+
+}
+
+std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
+{
+    /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
+    if (auto rows = parseRowNumberAfter(message, "(at row ", ")"))
+        return std::max<size_t>(*rows, 1); /// Be defensive about a zero.
+
+    /// `ValuesBlockInputFormat` appends " at row N" where the counter is the number of rows that were
+    /// parsed completely, so the parser has reached one row more than that.
+    if (auto rows = parseRowNumberAfter(message, " at row ", ""))
+        return *rows + 1;
+
+    return {};
 }
 
 String getInsertDataSchemaMismatchDescriptionFromFile(
