@@ -11,6 +11,11 @@
 0
 -- disabled by the parent optimize_trivial_count_query = 0
 0
+-- disabled by the parent query_plan_direct_read_from_text_index = 0
+0
+750
+-- disabled for distributed plans (ReadFromTextIndexCount is not serializable)
+0
 -- fires: multi-token hasAnyTokens (union)
 └──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
 1500

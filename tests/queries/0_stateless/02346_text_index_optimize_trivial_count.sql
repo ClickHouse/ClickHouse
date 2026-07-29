@@ -35,6 +35,13 @@ SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text,
 SELECT '-- disabled by the parent optimize_trivial_count_query = 0';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%Trivial count from text index%';
 
+SELECT '-- disabled by the parent query_plan_direct_read_from_text_index = 0';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_direct_read_from_text_index = 0) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- disabled for distributed plans (ReadFromTextIndexCount is not serializable)';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS make_distributed_plan = 1) WHERE explain LIKE '%Trivial count from text index%';
+
 SELECT '-- fires: multi-token hasAnyTokens (union)';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']);

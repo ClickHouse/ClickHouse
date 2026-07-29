@@ -8337,6 +8337,7 @@ Allow to perform full text search filtering using only the inverted text index i
 )", 0) \
     DECLARE(Bool, query_plan_optimize_count_from_text_index, true, R"(
 Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
+Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
 )", 0) \
     DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
 Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.

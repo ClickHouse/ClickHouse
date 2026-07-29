@@ -212,9 +212,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
-    query_plan_optimize_count_from_text_index = from[Setting::query_plan_optimize_count_from_text_index]
-        && from[Setting::optimize_trivial_count_query]
-        && from[Setting::use_skip_indexes];
+    /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
+    /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
+    query_plan_optimize_count_from_text_index = direct_read_from_text_index
+        && from[Setting::query_plan_optimize_count_from_text_index]
+        && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
