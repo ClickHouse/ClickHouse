@@ -185,6 +185,8 @@ public:
         ) override;
 
     void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -224,6 +226,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;

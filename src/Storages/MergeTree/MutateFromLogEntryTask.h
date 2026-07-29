@@ -26,6 +26,7 @@ public:
             task_result_callback_)
         {}
 
+
     ~MutateFromLogEntryTask() override;
 
     Priority getPriority() const override { return priority; }

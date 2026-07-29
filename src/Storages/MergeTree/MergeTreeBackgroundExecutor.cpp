@@ -236,7 +236,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 
     /// At this point every active task for this storage is flagged is_currently_deleting, so when
     /// it resumes it is guaranteed to take the destruction path (cancel + destroy) rather than
-    /// being requeued and finalized normally. A test can synchronize here to be sure the paused
+    /// being requeued and finalized normally. A test can synchronize here to be sure a paused
     /// task will be torn down while still holding its resources (e.g. a zero-copy lock). Pause only
     /// when this executor actually owns a task being deleted, and outside the mutex.
     if (!tasks_to_wait.empty())

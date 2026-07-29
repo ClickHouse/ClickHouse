@@ -1,0 +1,40 @@
+sst_present_before_detach
+yes
+active_parts_after_attach
+1
+sst_present_after_attach
+yes
+rows_after_attach
+10	a
+20	b
+30	c
+sst_nonempty_before_corrupt_attach
+no
+active_parts_after_corrupt_attach
+1
+sst_present_after_corrupt_attach
+yes
+sst_nonempty_after_corrupt_attach
+yes
+rows_after_corrupt_attach
+10	a
+20	b
+30	c
+sst_full_size_after_partial_attach
+yes
+rows_after_partial_attach
+10	a
+20	b
+30	c
+wrongcount_sst_rebuilt
+yes
+rows_after_wrongcount_attach
+10	a
+20	b
+30	c
+readonly_attach_with_corrupt_sst_fails
+yes
+corrupt_sst_left_in_place
+yes
+readonly_attach_after_restore
+2

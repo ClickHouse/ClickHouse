@@ -4,12 +4,12 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Core/Settings.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace ProfileEvents
 {
@@ -44,12 +44,11 @@ namespace FailPoints
 
 MutateFromLogEntryTask::~MutateFromLogEntryTask()
 {
-    /// This task owns the zero-copy exclusive lock. If it is still held when the task is torn
-    /// down on a background executor thread, ~ZooKeeperLock issues Keeper requests to release
-    /// the ephemeral node while no component scope is set, which aborts the server under
-    /// enforce_keeper_component_tracking. This is the highest level that owns the section doing
-    /// those ZooKeeper requests, so set the Keeper component here and release the lock within
-    /// the guarded scope (the member itself is destroyed after this body, outside the guard).
+    /// zero_copy_lock's destructor can perform a real ZooKeeper request (releasing the exclusive
+    /// lock's ephemeral node) if the task is destroyed while still holding the lock, e.g. on
+    /// cancellation before the explicit unlock in prepare()/finalize() is reached. That request
+    /// has no component scope by default when this destructor runs from generic background-task
+    /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
     auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
     zero_copy_lock.reset();
 }

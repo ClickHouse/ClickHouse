@@ -11,7 +11,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 理解高效的 schema 设计是优化 ClickHouse 性能的关键。这涉及一系列往往需要权衡取舍的选择，而最佳方案取决于所处理的查询，以及数据更新频率、延迟要求和数据量等因素。本指南概述了优化 ClickHouse 性能时在 schema 设计和数据建模方面的最佳实践。
 
 <div id="stack-overflow-dataset">
-  ## Stack Overflow dataset
+  ## Stack Overflow 数据集
 </div>
 
 在本指南的示例中，我们使用 Stack Overflow 数据集的一个子集。它包含 2008 年至 2024 年 4 月期间 Stack Overflow 上产生的所有帖子、投票、用户、注释和徽章。这些数据以 Parquet 格式存储在 S3 bucket `s3://datasets-documentation/stackoverflow/parquet/` 中，其 schema 如下所示：
