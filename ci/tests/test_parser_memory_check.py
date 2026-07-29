@@ -20,7 +20,7 @@ def test_master_profiler_url_uses_clickhouse_examples(monkeypatch):
 
     url = parser_memory_check.get_merge_base_profiler_url()
 
-    assert url.endswith(f"/REFs/master/{sha}/build_arm_binary/clickhouse-examples")
+    assert url.endswith(f"/REFs/master/{sha}/build_arm_release/clickhouse-examples")
     assert url in checked_urls[0]
 
 

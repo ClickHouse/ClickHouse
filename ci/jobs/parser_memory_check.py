@@ -60,19 +60,16 @@ def get_merge_base_profiler_url() -> str:
     """Find the S3 URL for a recent master `clickhouse-examples` binary.
     Iterates master_track_commits_sha (like performance_tests.py) to find
     the closest available build. Returns empty string if none found."""
-    try:
-        info = Info()
-        commits = info.get_kv_data("master_track_commits_sha") or []
-        for sha in commits:
-            if not re.fullmatch(r"[0-9a-f]{40}", sha):
-                continue
-            url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_binary/clickhouse-examples"
-            if Shell.check(f"curl -sfI '{url}' > /dev/null"):
-                print(f"Using master binary from commit {sha[:12]}")
-                return url
-        print(f"No master binary found in {len(commits)} tracked commits")
-    except Exception as e:
-        print(f"Could not resolve master binary: {e}")
+    info = Info()
+    commits = info.get_kv_data("master_track_commits_sha") or []
+    for sha in commits:
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            continue
+        url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_release/clickhouse-examples"
+        if Shell.check(f"curl -sfI '{url}' > /dev/null"):
+            print(f"Using master binary from commit {sha[:12]}")
+            return url
+    print(f"No master binary found in {len(commits)} tracked commits")
     return ""
 
 
@@ -1037,16 +1034,16 @@ def main():
     Shell.check(f"chmod +x {pr_profiler}")
     results.append(Result(name="Check PR binary", status=Result.Status.OK))
 
-    # The first PR that publishes `clickhouse-examples` cannot compare itself with
-    # master yet. Skip it explicitly; later PRs run once a master build is available.
     master_profiler_url = get_merge_base_profiler_url()
     if not master_profiler_url:
-        Result.create_from(
-            results=results,
-            status=Result.Status.SKIPPED,
-            stopwatch=stop_watch,
-            info="No master `clickhouse-examples` artifact is published yet",
-        ).complete_job()
+        results.append(
+            Result(
+                name="Resolve master binary",
+                status=Result.Status.ERROR,
+                info="No master `clickhouse-examples` artifact was found",
+            )
+        )
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
         return
 
     # Download master binary
