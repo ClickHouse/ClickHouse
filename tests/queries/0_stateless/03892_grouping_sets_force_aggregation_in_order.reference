@@ -18,3 +18,7 @@
 3	4
 1	7
 3	4
+in-order forced for plain GROUP BY	1
+in-order forced for ROLLUP	1
+in-order forced for CUBE	1
+in-order not forced for GROUPING SETS	0
