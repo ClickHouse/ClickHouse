@@ -42,18 +42,20 @@ SET enable_cascades_optimizer = 0;
 
 SYSTEM FLUSH LOGS processors_profile_log, query_log;
 
+-- The `event_time` bound keeps the log scans cheap: without it every flaky-check rerun scans all
+-- the log rows accumulated by the earlier runs and the test can exceed the per-run time limit.
 SELECT 'memory_efficient=1:', countIf(name = 'GroupingAggregatedTransform') > 0
 FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND initial_query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND initial_query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
       AND log_comment = '04503_memory_efficient_on' AND type = 'QueryFinish');
 
 SELECT 'memory_efficient=0:', countIf(name = 'GroupingAggregatedTransform') > 0
 FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND initial_query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND initial_query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
       AND log_comment = '04503_memory_efficient_off' AND type = 'QueryFinish');
 
 DROP TABLE t_agg_settings;

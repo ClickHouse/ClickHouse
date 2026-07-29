@@ -45,18 +45,20 @@ SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS processors_profile_log, query_log;
 
+-- The `event_time` bound keeps the log scans cheap: without it every flaky-check rerun scans all
+-- the log rows accumulated by the earlier runs and the test can exceed the per-run time limit.
 SELECT 'single source spreads:', countIf(input_rows >= 100) >= 2
 FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND name = 'AggregatingTransform' AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND name = 'AggregatingTransform' AND query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
       AND log_comment = '04505_scatter_single_source' AND type = 'QueryFinish');
 
 SELECT 'multi source spreads:', countIf(input_rows >= 100) >= 2
 FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND name = 'AggregatingTransform' AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND name = 'AggregatingTransform' AND query_id IN (
     SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
       AND log_comment = '04505_scatter_multi_source' AND type = 'QueryFinish');
 
 DROP TABLE t_any_scatter;
