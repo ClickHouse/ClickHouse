@@ -2931,6 +2931,48 @@ TEST_F(FileCacheTest, RocksDBIndex)
         ASSERT_EQ(infos2[0].range_left, 0);
         ASSERT_EQ(infos2[0].range_right, 4);
         ASSERT_EQ(infos2[0].state, State::DOWNLOADED);
+
+        /// A fully downloaded regular segment carries its size in the file name, and the index load
+        /// path must look for exactly that name.
+        for (const auto & info : infos1)
+            ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key1, info.range_left, FileSegmentKind::Regular, user, info.size)));
+    }
+
+    /// Phase 2b: encoding the size into the name (`<offset>` -> `<offset>_<size>`) is best effort, so
+    /// an index row with a known size can also refer to a file which kept its legacy `<offset>` name.
+    /// Rename every segment file back to the legacy form and check that the index load still finds them.
+    {
+        for (const auto & dir_entry : fs::recursive_directory_iterator(cache_base_path))
+        {
+            if (!dir_entry.is_regular_file())
+                continue;
+
+            const auto name = dir_entry.path().filename().string();
+            /// Skip the cache status file and the internals of the RocksDB index (`.metadata_index`).
+            if (name == "status" || dir_entry.path().string().find("/.") != std::string::npos)
+                continue;
+
+            const auto delim_pos = name.find('_');
+            if (delim_pos == std::string::npos)
+                continue;
+
+            fs::rename(dir_entry.path(), dir_entry.path().parent_path() / name.substr(0, delim_pos));
+        }
+
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        settings[FileCacheSetting::use_rocksdb_metadata_index] = true;
+
+        auto cache = DB::FileCache("rocksdb_test", settings);
+        cache.initialize();
+
+        ASSERT_EQ(cache.getFileSegmentsNum(), 3);
+        ASSERT_EQ(cache.getUsedCacheSize(), 25);
     }
 
     /// Phase 3: Detach a segment, reload, verify it's gone.

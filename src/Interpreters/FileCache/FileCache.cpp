@@ -2188,82 +2188,118 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
 {
     chassert(rocksdb_index);
 
-    for (const auto & entry : entries)
+    /// All entries of one key must be processed together: dropping the last stale row of a key
+    /// removes its directory, and creating `KeyMetadata` for that key again afterwards would both
+    /// violate the `created_base_directory` invariant and remove sibling segments of the key that
+    /// have not been loaded yet.
+    std::sort(entries.begin(), entries.end(), [](const auto & lhs, const auto & rhs)
     {
-        if (stop_loading_metadata)
-            break;
+        return std::tie(lhs.key.key, lhs.offset) < std::tie(rhs.key.key, rhs.offset);
+    });
 
-        OriginInfo origin = entry.origin;
+    for (size_t i = 0; i < entries.size() && !stop_loading_metadata;)
+    {
+        size_t key_entries_end = i;
+        while (key_entries_end < entries.size() && entries[key_entries_end].key == entries[i].key)
+            ++key_entries_end;
+
+        const auto & key = entries[i].key;
+        OriginInfo origin = entries[i].origin;
 
         auto key_metadata = metadata.getKeyMetadata(
-            entry.key,
+            key,
             CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,
             origin,
             /* is_initial_load */ true);
 
-        auto cleanup_on_failure = [&]()
-        {
-            rocksdb_index->remove(entry.key, entry.offset);
-            /// Clean up the key metadata if it is empty (has no successfully loaded segments).
-            if (key_metadata->sizeUnlocked() == 0)
-                metadata.removeKey(entry.key, /* if_exists */ true, origin.user_id);
-        };
+        /// Rows of this key which do not correspond to a loadable segment on disk.
+        /// They are removed from the index only after every row of the key is processed.
+        std::vector<size_t> stale_offsets;
 
-        UInt64 size = 0;
-        if (entry.size >= 0)
+        for (; i < key_entries_end; ++i)
         {
-            size = static_cast<UInt64>(entry.size);
+            const auto & entry = entries[i];
 
-            /// Validate that the file exists and has the expected size.
-            /// A missing file or a size mismatch is a legitimate crash-recovery scenario
-            /// (e.g. process killed between index write and disk flush), so drop the stale row.
-            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
-            std::error_code ec;
-            auto actual_file_size = fs::file_size(path, ec);
-            if (ec || actual_file_size != size)
+            UInt64 size = 0;
+            /// Whether the size is encoded in the file name, i.e. the file is named `<offset>_<size>`
+            /// rather than just `<offset>`.
+            bool size_in_filename = false;
+            std::string path;
+
+            if (entry.size >= 0)
             {
-                LOG_WARNING(log, "File {} does not match index entry (size={}, actual={}, error={}), removing from index",
-                            path, size, ec ? 0 : actual_file_size, ec.message());
-                cleanup_on_failure();
+                size = static_cast<UInt64>(entry.size);
+
+                /// A fully downloaded regular segment is renamed to `<offset>_<size>`
+                /// (see `renameToIncludeSizeInNameUnlocked`), but that rename is best-effort and a
+                /// segment whose size was only shrunk keeps its legacy `<offset>` name, so a row with
+                /// a known size can refer to a file under either name.
+                path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin, size);
+                std::error_code ec;
+                auto actual_file_size = fs::file_size(path, ec);
+                if (ec)
+                {
+                    path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin);
+                    actual_file_size = fs::file_size(path, ec);
+                }
+                else
+                {
+                    size_in_filename = true;
+                }
+
+                /// Validate that the file exists and has the expected size.
+                /// A missing file or a size mismatch is a legitimate crash-recovery scenario
+                /// (e.g. process killed between index write and disk flush), so drop the stale row.
+                if (ec || actual_file_size != size)
+                {
+                    LOG_WARNING(log, "File {} does not match index entry (size={}, actual={}, error={}), removing from index",
+                                path, size, ec ? 0 : actual_file_size, ec.message());
+                    stale_offsets.push_back(entry.offset);
+                    continue;
+                }
+            }
+            else
+            {
+                /// Size unknown — segment was not fully downloaded, so its name carries no size. Stat the file.
+                path = metadata.getFileSegmentPath(key, entry.offset, FileSegmentKind::Regular, origin);
+                std::error_code ec;
+                auto file_size = fs::file_size(path, ec);
+                if (ec)
+                {
+                    /// A missing file is a legitimate crash-recovery scenario:
+                    /// the index entry may have been written just before a crash that prevented the file creation.
+                    /// Drop the stale index row and continue.
+                    LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
+                    stale_offsets.push_back(entry.offset);
+                    continue;
+                }
+                size = file_size;
+
+                /// Update RocksDB with the actual size so next startup does not need to stat again.
+                rocksdb_index->put(key, entry.offset, static_cast<Int64>(size), origin, /* is_new_entry */ false);
+            }
+
+            if (!size)
+            {
+                fs::remove(path);
+                stale_offsets.push_back(entry.offset);
                 continue;
             }
-        }
-        else
-        {
-            /// Size unknown — segment was not fully downloaded. Stat the file.
-            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
-            std::error_code ec;
-            auto file_size = fs::file_size(path, ec);
-            if (ec)
+
+            if (!loadFileSegment(key, entry.offset, size, key_metadata, origin, /* is_in_rocksdb_index */ true, size_in_filename))
             {
-                /// A missing file is a legitimate crash-recovery scenario:
-                /// the index entry may have been written just before a crash that prevented the file creation.
-                /// Drop the stale index row and continue.
-                LOG_WARNING(log, "Cannot stat {}: {}, removing from index", path, ec.message());
-                cleanup_on_failure();
-                continue;
+                LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", key, entry.offset, size, path);
+                fs::remove(path);
+                stale_offsets.push_back(entry.offset);
             }
-            size = file_size;
-
-            /// Update RocksDB with the actual size so next startup does not need to stat again.
-            rocksdb_index->put(entry.key, entry.offset, static_cast<Int64>(size), origin, /* is_new_entry */ false);
         }
 
-        if (!size)
-        {
-            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
-            fs::remove(path);
-            cleanup_on_failure();
-            continue;
-        }
+        for (auto offset : stale_offsets)
+            rocksdb_index->remove(key, offset);
 
-        if (!loadFileSegment(entry.key, entry.offset, size, key_metadata, origin, /* is_in_rocksdb_index */ true))
-        {
-            auto path = metadata.getFileSegmentPath(entry.key, entry.offset, FileSegmentKind::Regular, origin);
-            LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", entry.key, entry.offset, size, path);
-            fs::remove(path);
-            cleanup_on_failure();
-        }
+        /// Clean up the key metadata if it is empty (has no successfully loaded segments).
+        if (key_metadata->sizeUnlocked() == 0)
+            metadata.removeKey(key, /* if_exists */ true, origin.user_id);
     }
 
     assertCacheCorrectness();
@@ -2568,7 +2604,8 @@ bool FileCache::loadFileSegment(
     size_t size,
     const KeyMetadataPtr & key_metadata,
     const OriginInfo & origin,
-    bool is_in_rocksdb_index)
+    bool is_in_rocksdb_index,
+    bool size_in_filename)
 {
     bool limits_satisfied = false;
     IFileCachePriority::IteratorPtr cache_it;
@@ -2594,7 +2631,8 @@ bool FileCache::loadFileSegment(
             false,
             this,
             key_metadata,
-            cache_it);
+            cache_it,
+            size_in_filename);
 
 #if USE_ROCKSDB
         file_segment->added_to_rocksdb = is_in_rocksdb_index;

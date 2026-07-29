@@ -250,8 +250,11 @@ def test_cache_file_size_in_name(cluster, node_name):
     ).strip()
 
     def list_segment_files():
+        # Hidden directories hold cache-internal data, not segments: the RocksDB metadata index
+        # lives in `.metadata_index` (`use_rocksdb_metadata_index`), and its files are not named
+        # after segment offsets.
         out = node.exec_in_container(
-            ["bash", "-c", f"find {cache_path} -type f -printf '%f %s\\n'"]
+            ["bash", "-c", f"find {cache_path} -type f -not -path '*/.*' -printf '%f %s\\n'"]
         )
         files = []
         for line in out.splitlines():
@@ -297,7 +300,7 @@ def test_cache_file_size_in_name(cluster, node_name):
         [
             "bash",
             "-c",
-            f"find {cache_path} -type f -name '*_*' ! -name '*_temporary' "
+            f"find {cache_path} -type f -not -path '*/.*' -name '*_*' ! -name '*_temporary' "
             "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d_ -f1)\"' _ {} ';'",
         ]
     )
@@ -361,7 +364,7 @@ def test_cache_file_truncated_size_in_name(cluster, node_name):
 
     def list_suffixed_segment_files():
         out = node.exec_in_container(
-            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+            ["bash", "-c", f"find {cache_path} -type f -not -path '*/.*' -printf '%p %f %s\\n'"]
         )
         files = []
         for line in out.splitlines():
@@ -468,7 +471,7 @@ def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name
 
     def list_suffixed_segment_files():
         out = node.exec_in_container(
-            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+            ["bash", "-c", f"find {cache_path} -type f -not -path '*/.*' -printf '%p %f %s\\n'"]
         )
         files = []
         for line in out.splitlines():

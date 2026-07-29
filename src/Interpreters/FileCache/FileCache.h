@@ -413,7 +413,8 @@ private:
         size_t size,
         const KeyMetadataPtr & key_metadata,
         const OriginInfo & origin,
-        bool is_in_rocksdb_index);
+        bool is_in_rocksdb_index,
+        bool size_in_filename);
 
 #if USE_ROCKSDB
     void loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> entries);
