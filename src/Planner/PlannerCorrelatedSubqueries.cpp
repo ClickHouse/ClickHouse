@@ -207,14 +207,16 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
-        /// Remember whether the optimizer will buffer this referenced subplan. It applies the buffer
-        /// from the top-level query context (QueryPlanOptimizationSettings), which a set-operation
-        /// branch's own SETTINGS clause never reaches, so the decision must be read from there too.
+        /// Either context can be the one that builds the QueryPlanOptimizationSettings and creates the
+        /// buffer, so neither alone is authoritative: keep the protection when either would buffer.
+        auto would_buffer = [](const Settings & settings_to_check)
+        {
+            return settings_to_check[Setting::correlated_subqueries_use_in_memory_buffer]
+                && settings_to_check[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        };
         const auto top_level_context = context.planner_context->getQueryContext();
-        const auto & buffer_settings
-            = top_level_context->hasQueryContext() ? top_level_context->getQueryContext()->getSettingsRef() : settings;
-        context.uses_in_memory_buffer = buffer_settings[Setting::correlated_subqueries_use_in_memory_buffer]
-            && buffer_settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        context.uses_in_memory_buffer = would_buffer(settings)
+            || (top_level_context->hasQueryContext() && would_buffer(top_level_context->getQueryContext()->getSettingsRef()));
 
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;

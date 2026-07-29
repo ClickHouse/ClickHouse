@@ -214,4 +214,30 @@ SELECT count() FROM (
 
 SET join_algorithm = 'direct,parallel_hash,hash';
 
+-- ------------------------------------------------------------------------------------------------
+-- The reverse divergence: the session disables the buffer but the subquery's own SETTINGS clause
+-- re-enables it. An `IN` subplan cloned during primary-key analysis is optimized under that local
+-- context, so it gets a buffer even though the top-level context alone says otherwise, and the join
+-- must stay unreordered here too. `query_plan_optimize_join_order_randomize` is a seed rather than a
+-- flag, so a fixed value pins one join order: 2 is an order that reordered the buffered join and
+-- read the buffer before its writer finished.
+-- ------------------------------------------------------------------------------------------------
+SET correlated_subqueries_use_in_memory_buffer = 0;
+SET correlated_subqueries_default_join_kind = 'left';
+
+-- The `UNION ALL` branch is what makes the reordered plan read the buffer.
+SELECT c FROM (
+    SELECT count() AS c FROM t_chunk_buffer_set_op WHERE i IN (
+        SELECT i FROM t_chunk_buffer_set_op WHERE (SELECT _part_offset) >= 0)
+      SETTINGS correlated_subqueries_use_in_memory_buffer = 1,
+               correlated_subqueries_default_join_kind = 'right',
+               query_plan_optimize_join_order_randomize = 2
+    UNION ALL
+    SELECT 0
+)
+ORDER BY c;
+
+SET correlated_subqueries_use_in_memory_buffer = 1;
+SET correlated_subqueries_default_join_kind = 'right';
+
 DROP TABLE t_chunk_buffer_set_op;
