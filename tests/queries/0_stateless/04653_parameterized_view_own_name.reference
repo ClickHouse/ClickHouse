@@ -1,0 +1,21 @@
+-- a parameterized view may be joined without an alias
+1
+1
+1
+1
+-- its columns may be qualified with the view name
+1
+1
+t1
+1
+1
+1
+-- the parameter type is irrelevant
+1
+-- controls: an alias or no qualifier always worked
+1
+1
+-- controls: a real table function must not gain a bindable name
+-- a database-qualified call binds by the view name too
+1
+1
