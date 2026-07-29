@@ -231,3 +231,50 @@ SETTINGS optimize_use_projections = 0;
 SELECT count() FROM derived_materialized_projection_index WHERE m2 = 7;
 
 DROP TABLE derived_materialized_projection_index;
+
+-- The DELETE WHERE predicate may read the cleared base column directly, without a
+-- MATERIALIZED hop. A non-default DEFAULT pins which value the TTL is evaluated against:
+-- the post-clear default (7), not the stale stored value (5).
+DROP TABLE IF EXISTS clear_column_direct_ttl_recalc;
+
+CREATE TABLE clear_column_direct_ttl_recalc
+(
+    id UInt8,
+    d DateTime,
+    src UInt8 DEFAULT 7
+)
+ENGINE = MergeTree
+ORDER BY id
+TTL d + INTERVAL 1 SECOND DELETE WHERE src = 7
+SETTINGS min_bytes_for_wide_part = 0;
+
+-- id = 1 is expired and starts matching only after the clear; id = 2 is not expired;
+-- id = 3 is expired but already matches, so it is TTL-eligible before the clear.
+INSERT INTO clear_column_direct_ttl_recalc (id, d, src) VALUES
+    (1, '2000-01-01 00:00:00', 5), (2, '2099-01-01 00:00:00', 5), (3, '2000-01-01 00:00:00', 7);
+
+-- Clearing src resets it to 7, so id = 1 now matches DELETE WHERE and, being expired, must
+-- be dropped by the mutation. id = 2 must survive: it matches the predicate but is not
+-- expired, which also proves the TTL info was recalculated rather than blanket-applied.
+ALTER TABLE clear_column_direct_ttl_recalc CLEAR COLUMN src SETTINGS mutations_sync = 2;
+SELECT id, src FROM clear_column_direct_ttl_recalc ORDER BY id;
+
+-- A row matching neither the stored nor the default value must be retained even when expired.
+DROP TABLE IF EXISTS clear_column_direct_ttl_no_match;
+
+CREATE TABLE clear_column_direct_ttl_no_match
+(
+    d DateTime,
+    src UInt8 DEFAULT 7
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+TTL d + INTERVAL 1 SECOND DELETE WHERE src = 99
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO clear_column_direct_ttl_no_match (d, src) VALUES ('2000-01-01 00:00:00', 5);
+ALTER TABLE clear_column_direct_ttl_no_match CLEAR COLUMN src SETTINGS mutations_sync = 2;
+SELECT count() FROM clear_column_direct_ttl_no_match;
+
+DROP TABLE clear_column_direct_ttl_recalc;
+DROP TABLE clear_column_direct_ttl_no_match;
