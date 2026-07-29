@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <unordered_map>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
@@ -98,7 +99,9 @@ private:
 
     String getNullableString(const ColumnPtr & column, size_t index) const;
 
-    mutable bool types_loaded_from_db = false;
+    /// `ensureTypesLoaded` reads this flag before taking `mutex` (double-checked locking), so it has to
+    /// be atomic: `DataTypeFactory` consults this factory for every named data type, from any thread.
+    mutable std::atomic<bool> types_loaded_from_db = false;
 
     mutable SharedMutex mutex;
     std::unordered_map<String, TypeInfo> types;
