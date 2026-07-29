@@ -35,6 +35,8 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 ## auth_use_forwarded_address {#auth_use_forwarded_address}
 Use originating address for authentication for clients connected through proxy.
 
+- **Default:** `false`
+
 <Note>
 This setting should be used with extra caution since forwarded addresses can be easily spoofed - servers accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 </Note>
@@ -115,6 +117,8 @@ Contains information about all background tasks that are executed via various ba
 Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 The work factor defines the amount of computations and time needed to compute the hash and verify the password.
 
+- **Default:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
@@ -127,6 +131,8 @@ bcrypt's computational overhead at higher work factors.
 
 ## table_engines_require_grant {#table_engines_require_grant}
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+- **Default:** `false`
 
 <Note>
 By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
@@ -343,6 +349,8 @@ Hard limit is configured via system tools
 ## default_profile {#default_profile}
 Default settings profile. Settings profiles are located in the file specified in the setting `user_config`.
 
+- **Default:** `default`
+
 **Example**
 
 ```xml
@@ -511,6 +519,8 @@ Example:
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is "Ok." (with a line feed at the end)
 
+- **Default:** `"Ok.\n"`
+
 **Example**
 
 Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
@@ -566,6 +576,8 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## interserver_listen_host {#interserver_listen_host}
 Restriction on hosts that can exchange data between ClickHouse servers.
 If Keeper is used, the same restriction will be applied to the communication between different Keeper instances.
+
+- **Default:** `listen_host`
 
 <Note>
 By default, the value is equal to the [`listen_host`](#listen_host) setting.
@@ -1039,7 +1051,7 @@ Replica group name for database Replicated.
 The cluster created by Replicated database will consist of replicas in the same group.
 DDL queries will only wait for the replicas in the same group.
 
-Empty by default.
+- **Default:** `""`
 
 **Example**
 
@@ -1675,7 +1687,7 @@ Port for communicating with clients over the TCP protocol.
 ## tcp_port_secure {#tcp_port_secure}
 TCP port for secure communication with clients. Use it with [OpenSSL](#openSSL) settings.
 
-**Default value**
+- **Default:** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1951,12 +1963,16 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 ## allow_plaintext_password {#allow_plaintext_password}
 Sets whether plaintext-password types (insecure) are allowed or not.
 
+- **Default:** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
 ## allow_no_password {#allow_no_password}
 Sets whether an insecure password type of no_password is allowed or not.
+
+- **Default:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -1965,12 +1981,16 @@ Sets whether an insecure password type of no_password is allowed or not.
 ## allow_implicit_no_password {#allow_implicit_no_password}
 Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
 
+- **Default:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
 ## default_session_timeout {#default_session_timeout}
 Default session timeout, in seconds.
+
+- **Default:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -1984,6 +2004,8 @@ Accepted values are:
 - `sha256_password`
 - `double_sha1_password`
 - `bcrypt_password`
+
+- **Default:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2206,6 +2228,8 @@ This also allows a mix of resolver types can be used.
 ## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+- **Default:** `false`
+
 **no_proxy**
 
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
@@ -2232,6 +2256,8 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 
 ## workload_path {#workload_path}
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+- **Default:** `<path>/workload/`
 
 **Example**
 
