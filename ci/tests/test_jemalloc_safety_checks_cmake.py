@@ -431,9 +431,9 @@ def test_the_probe_answers_whether_each_gate_is_armed(
             (SAFETY, SIZE),
         ),
         # Every jemalloc TU is `.c`, so reading only that extension was enough for the
-        # arming half - but the leak half probes this tree's other 13344 sources, and all
-        # 130 of its prefilter candidates are `.cc`/`.cpp`. A left-in C++ operand costs
-        # 2.8s instead of 0.2s per probe, and for a source cmake has not generated yet
+        # arming half - but the leak half probes every distinct flag set among this tree's
+        # other 17217 entries, and 169 of its 255 keys are `clang++`. A left-in C++ operand
+        # costs 2.8s instead of 0.2s per probe, and for a source cmake has not generated yet
         # (both guards run in the CMAKE stage, before BUILD) it fails the probe with a
         # `no such file or directory` that carries no `#error` marker - i.e. the
         # inconclusive branch, on a perfectly clean compile line.
@@ -617,16 +617,23 @@ def test_missing_compile_commands_fails_closed(tmp_path):
 
 # --- the macros must stay PRIVATE to jemalloc -----------------------------------------
 #
-# The other direction, and - since r15 - the other half that asks the compiler. It used to
-# be a flag scan, on the grounds that a probe per entry over ~17k is not affordable; the
-# scan was then caught missing a real definition four times running, each time in a
-# strictly narrower spelling of the previous one (`-D X` split, `-Wp,`/`-Xpreprocessor`,
-# `-Xclang`). The defect was never the missing spelling: a scanner is only ever as complete
-# as the list of forms someone thought of, while `-Xclang -D`, an `@response` file and an
-# `-include`d header all define just as plainly. So the verdict moved onto the compiler and
-# the affordability argument moved onto `_may_define_either`, which admits only the entries
-# that could possibly carry a definition - 130 of a configured tree's 17217 non-jemalloc
-# entries, ~27s of probing against the ~40 minutes of compiling that follows.
+# The other direction, and the other half that asks the compiler. It used to be a flag scan,
+# on the grounds that a probe per entry over ~17k is not affordable; the scan was then caught
+# missing a real definition four times running, each time in a strictly narrower spelling of
+# the previous one (`-D X` split, `-Wp,`/`-Xpreprocessor`, `-Xclang`). The verdict therefore
+# moved onto the compiler, and the affordability argument onto a prefilter admitting only the
+# entries that could "possibly" define - which was then itself caught missing a real
+# definition twice more (`--config=<file>`, `--config-user-dir=<dir>`, `-include-pch <pch>`,
+# all measured to define with no macro name on the line). Same failure mode one layer up: a
+# clause list is only ever as complete as the routes someone thought of, and clang keeps
+# acquiring routes.
+#
+# So the prefilter is gone too, and the affordability argument is now a *fact about the
+# flags* rather than a claim about routes: the flags of interest are per-target, so deduping
+# by `(flag set, directory, language)` collapses a configured tree's 17217 non-jemalloc
+# entries to 255 keys, probed in 4.8s with nothing accepted unprobed. That is *less* probing
+# time than the prefiltered sweep spent (27.7s for 130 entries), because those 130 were only
+# 3 distinct keys - it re-ran the same three C++ probes ~43 times each.
 #
 # The cases below therefore assert the verdict the COMPILER gives, computed in the test by
 # running it, rather than a hardcoded expectation. Hardcoding is what let the scan's answer
@@ -778,17 +785,13 @@ def test_the_leak_probe_follows_the_entrys_language(compiler_probe, tmp_path, fi
     ordinary build. Every real candidate in a configured tree is `.cc`/`.cpp` and carries
     `-std=c++23`, so this is the common case, not an exotic one.
 
-    ⚠️ The must-accept arm has to be a line the prefilter actually **admits**, or the probe
-    never runs and the case is vacuous whatever language it would have chosen. An empty
-    pre-included header is the cheapest such line: it makes the entry a candidate without
-    defining anything.
+    The must-accept arm keeps its (empty) pre-included header: it used to be needed to get
+    the entry past the prefilter, and now that every entry is probed it is simply a second
+    inert flag, retained so the two arms differ in exactly the `-D` under test.
     """
     header = tmp_path / "empty-prefix.h"
     header.write_text("/* defines nothing */\n", encoding="utf-8")
     candidate = f"{std} -include {header}"
-    assert build_job._may_define_either(
-        f"{ToolSet.COMPILER_C} -c {candidate} {file}"
-    ), "the must-accept arm must be probed, or this case cannot see the language at all"
     assert _macros_stay_private([(JE, BOTH), (file, candidate)], directory=str(tmp_path)), (
         f"{file} compiled with {candidate!r} carries neither macro, so it must be accepted "
         "- if it is not, the probe is using the wrong language for this entry"
@@ -798,114 +801,239 @@ def test_the_leak_probe_follows_the_entrys_language(compiler_probe, tmp_path, fi
     ), f"{file} really does carry {REQUIRED_MACROS[0]}, so it must be reported"
 
 
-def test_a_leak_arriving_through_a_response_file_is_caught(compiler_probe, tmp_path):
-    """A `-D` inside an `@response` file defines without its name appearing on the line.
+# --- the indirect routes: a definition with no macro name on the compile line ----------
+#
+# The routes that killed the prefilter. Each builds its own files under `tmp_path`, so they
+# cannot live in `_LEAK_SPELLINGS`' static table; each is a *builder* returning the flags.
+#
+# `must_define` is the non-vacuity guard, and it is what makes these cases worth anything:
+# the expectation is measured by running the compiler, so a route clang silently ignores
+# (a config file under a name it does not look for, a stale PCH) would have the oracle and
+# the sweep agreeing on "not defined" and the row would pass having tested nothing. So each
+# route additionally asserts *which* way the compiler went.
 
-    One of the two indirect routes `_may_define_either` admits, and the reason a
-    macro-name-only prefilter would be incomplete.
-    """
+
+def _route_response_file(tmp_path, macro):
+    """`@response`: the driver expands the file's contents into argv."""
     response = tmp_path / "flags.rsp"
-    response.write_text(f"-D{REQUIRED_MACROS[0]}\n", encoding="utf-8")
-    assert not _macros_stay_private(
-        [(JE, BOTH), (OTHER, f"@{response}")], directory=str(tmp_path)
-    ), "a -D expanded out of a response file still reaches the translation unit"
+    response.write_text(f"-D{macro}\n", encoding="utf-8")
+    return f"@{response}"
 
 
-def test_a_leak_arriving_through_a_pre_included_header_is_caught(
-    compiler_probe, tmp_path
-):
-    """The other indirect route: `-include` a header that `#define`s the macro."""
+def _route_include_header(tmp_path, macro):
+    """`-include`: a pre-included header `#define`s it."""
     header = tmp_path / "prefix.h"
-    header.write_text(f"#define {REQUIRED_MACROS[1]} 1\n", encoding="utf-8")
-    assert not _macros_stay_private(
-        [(JE, BOTH), (OTHER, f"-include {header}")], directory=str(tmp_path)
-    ), "a macro defined by a pre-included header still reaches the translation unit"
+    header.write_text(f"#define {macro} 1\n", encoding="utf-8")
+    return f"-include {header}"
 
 
-@pytest.mark.parametrize(
-    "label, flags",
-    [
-        ("the macro's own name, in any spelling", f"-Xclang -D -Xclang {REQUIRED_MACROS[0]}"),
-        ("a response file", "@flags.rsp"),
-        ("a pre-included header", "-include prefix.h"),
-        ("-imacros, the other pre-inclusion flag", "-imacros prefix.h"),
-    ],
-)
-def test_the_prefilter_admits_every_route_a_definition_can_take(label, flags):
-    """`_may_define_either` must admit every command on which a definition is possible.
+def _route_imacros_header(tmp_path, macro):
+    """`-imacros`: the other pre-inclusion flag, macros only."""
+    header = tmp_path / "macros.h"
+    header.write_text(f"#define {macro} 1\n", encoding="utf-8")
+    return f"-imacros {header}"
 
-    The load-bearing half of the seam: entries it rejects are accepted **without a probe**,
-    so a route it does not know about passes silently - which is precisely the failure mode
-    the compile probe was introduced to end. A future exotic spelling has to fail here.
+
+def _route_config_file(tmp_path, macro):
+    """`--config=<file>`: an explicit configuration file holding the `-D`.
+
+    Route 1 of the two the prefilter missed. No macro name and no pre-inclusion flag appears
+    on the compile line, so the name-or-indirection clause list rejected it.
     """
-    assert build_job._may_define_either(
-        f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"
-    ), f"{label}: {flags!r} can carry a definition, so it must be probed"
+    config = tmp_path / "my.cfg"
+    config.write_text(f"-D{macro}\n", encoding="utf-8")
+    return f"--config={config}"
 
 
-@pytest.mark.parametrize(
-    "label, flags",
-    [
-        ("an ordinary compile line", "-O2 -std=c++23 -DSOME_OTHER_MACRO"),
-        # Deliberately rejected: a forwarding token is only interesting when a macro name
-        # is also present, which the first clause already covers. Listing these would
-        # re-create the spelling enumeration the seam exists to delete.
-        ("a forwarding token with no macro name", "-Wp,-MD -Xpreprocessor -v -Xclang -O2"),
-        ("a similarly-named but different macro", "-DJEMALLOC_OPT_OTHER_CHECKS"),
-    ],
-)
-def test_the_prefilter_rejects_lines_that_cannot_define(label, flags):
-    """... and it must reject the rest, or the affordability argument is gone.
+def _route_config_user_dir(tmp_path, macro):
+    """`--config-user-dir=<dir>`: the same, found by name inside a directory.
 
-    A prefilter that admits everything is a per-entry compile over ~17k entries.
+    Clang looks for `<triple>-<mode>.cfg` and `<mode>.cfg`, where the mode is the driver
+    name with version suffixes stripped - so `clang-21` reads `clang.cfg`, not
+    `clang-21.cfg`. Both candidate names are written rather than betting on one, and
+    `must_define` catches it if clang ever looks for neither.
     """
-    assert not build_job._may_define_either(
-        f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"
-    ), f"{label}: {flags!r} cannot define either macro, so probing it is wasted"
+    directory = tmp_path / "cfgdir"
+    directory.mkdir(exist_ok=True)
+    triple = subprocess.run(
+        [ToolSet.COMPILER_C, "-print-target-triple"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    for name in ("clang.cfg", f"{triple}-clang.cfg"):
+        (directory / name).write_text(f"-D{macro}\n", encoding="utf-8")
+    return f"--config-user-dir={directory}"
 
 
-@pytest.mark.parametrize(
-    "label, flags",
-    [
-        ("the name inside a -I path", f"-I/opt/{REQUIRED_MACROS[0]}/include"),
-        ("the name inside a -Wl, operand", f"-Wl,-rpath,/opt/{REQUIRED_MACROS[0]}/lib"),
-        ("a suffixed lookalike", f"-D{REQUIRED_MACROS[0]}_DISABLED"),
-    ],
-)
-def test_the_prefilter_over_admits_rather_than_narrowing_unsoundly(label, flags):
-    """A line merely *mentioning* a macro name is probed, and that is deliberate.
+def _route_include_pch(tmp_path, macro):
+    """`-include-pch=<pch>`: a precompiled header carrying the `#define`.
 
-    The obvious narrowing - require the name to appear as a whole identifier - is
-    **unsound**, because the spelling that matters most has no left word boundary:
-    in `-DJEMALLOC_OPT_SAFETY_CHECKS` the character before the name is `D`. A
-    word-boundary prefilter therefore rejects the plainest real definition there is, which
-    is far worse than probing a path that happens to contain the name.
-
-    So the prefilter is deliberately one-sided: it may admit a line that defines nothing,
-    and the compiler - never this helper - decides. The cost is nil in practice (measured
-    over a configured tree: 0 of 17217 non-jemalloc entries mention either macro at all),
-    and the corresponding must-accept verdicts are asserted against the real compiler in
-    `test_the_leak_sweep_agrees_with_the_compiler`.
+    Route 2 of the two the prefilter missed, and the one furthest from anything a scan could
+    see: the definition is inside a *binary* artefact.
     """
-    assert build_job._may_define_either(f"{ToolSet.COMPILER_C} {flags} -c {OTHER}"), (
-        f"{label}: narrowing the prefilter to exclude {flags!r} would also exclude the "
-        "joined -D spelling, which really defines"
+    header = tmp_path / "pch.h"
+    header.write_text(f"#define {macro} 1\n", encoding="utf-8")
+    pch = tmp_path / "pch.h.pch"
+    subprocess.run(
+        [ToolSet.COMPILER_C, "-x", "c-header", str(header), "-o", str(pch)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return f"-include-pch {pch}"
+
+
+def _route_clean_config(tmp_path, macro):
+    """A must-not-fire control: the same mechanism carrying no definition.
+
+    Without it, "the sweep rejects every line with a `--config`" would satisfy the rows
+    above just as well as asking the compiler does.
+    """
+    config = tmp_path / "clean.cfg"
+    config.write_text("-O2\n", encoding="utf-8")
+    return f"--config={config}"
+
+
+_INDIRECT_LEAK_ROUTES = [
+    ("@response file", _route_response_file, REQUIRED_MACROS[0], True),
+    ("-include header", _route_include_header, REQUIRED_MACROS[1], True),
+    ("-imacros header", _route_imacros_header, REQUIRED_MACROS[0], True),
+    ("--config=<file>", _route_config_file, REQUIRED_MACROS[0], True),
+    ("--config-user-dir=<dir>", _route_config_user_dir, REQUIRED_MACROS[0], True),
+    ("-include-pch <pch>", _route_include_pch, REQUIRED_MACROS[1], True),
+    ("--config=<file> defining nothing", _route_clean_config, REQUIRED_MACROS[0], False),
+]
+
+
+@pytest.mark.parametrize("label, builder, macro, must_define", _INDIRECT_LEAK_ROUTES)
+def test_the_sweep_catches_every_indirect_definition_route(
+    compiler_probe, tmp_path, label, builder, macro, must_define
+):
+    """A definition reaching a TU with no macro name on the line must still be caught.
+
+    The prefilter this replaces claimed exactly two indirect routes existed (`@response`,
+    pre-inclusion) and enforced that claim with a completeness test. The claim was false:
+    `--config`, `--config-user-dir` and `-include-pch` all define, all with no name on the
+    line, and the prefilter rejected all three - so the sweep accepted them *unprobed*.
+    Now nothing is accepted unprobed, and these rows are the regression pins.
+    """
+    flags = builder(tmp_path, macro)
+    defined = _compiler_defines(tmp_path, flags, macro)
+    assert defined is must_define, (
+        f"{label}: this case is only meaningful if the compiler really "
+        f"{'defines' if must_define else 'does not define'} {macro} for {flags!r}; it "
+        f"{'defined' if defined else 'did not define'} it. The route changed shape - "
+        "re-derive it, do not relax the row"
+    )
+    accepted = _macros_stay_private([(JE, BOTH), (OTHER, flags)], directory=str(tmp_path))
+    assert accepted is not defined, (
+        f"{label}: the compiler leaves {macro} "
+        f"{'defined' if defined else 'undefined'} for {flags!r}, so the leak sweep must "
+        f"{'reject' if defined else 'accept'} the entry; it "
+        f"{'accepted' if accepted else 'rejected'} it"
     )
 
 
-def test_the_prefilter_admits_nothing_in_a_real_tree_it_need_not(compiler_probe):
-    """Every candidate the prefilter admits must be one the tree really could define on.
+def test_the_leak_sweep_probes_every_distinct_key(compiler_probe, tmp_path):
+    """Deduping by flag set must not collapse a *diverging* one.
 
-    Asserted as the two counts the affordability argument rests on: clause 1 (the macro's
-    own name) admits nothing in a clean tree, and the indirect clauses admit only the
-    entries that genuinely pre-include or expand flags.
+    The dedup is what replaced the prefilter as the affordability argument, so it has to be
+    an optimization and not a second filter: a leaking entry that shares neither flag set nor
+    language with the clean majority must still be probed. Both a flag-set divergence and a
+    language divergence are exercised, since the key carries all three components.
     """
-    clean = f"{ToolSet.COMPILER_C} -O2 -DFOO=1 -I/x -o a.o -c {OTHER}"
-    assert not build_job._may_define_either(clean)
-    for token in ("@x.rsp", "-include x.h", "-imacros x.h", f"-D{REQUIRED_MACROS[0]}"):
-        assert build_job._may_define_either(
-            f"{ToolSet.COMPILER_C} -O2 {token} -o a.o -c {OTHER}"
-        ), f"{token!r} must be admitted"
+    assert not _macros_stay_private(
+        [(JE, BOTH), (OTHER, ""), (OTHER_C, ""), (OTHER_CC, f"-std=c++23 {SAFETY}")],
+        directory=str(tmp_path),
+    ), (
+        "the leaking entry differs from the clean ones in both flags and language, so "
+        "deduping must keep it as its own key rather than folding it into theirs"
+    )
+    assert _macros_stay_private(
+        [(JE, BOTH), (OTHER, ""), (OTHER_C, ""), (OTHER_CC, "-std=c++23")],
+        directory=str(tmp_path),
+    ), "the same shape without the -D must be accepted, or the row proves nothing"
+
+
+def test_the_sweep_probes_every_entry_no_prefilter_remains(compiler_probe, tmp_path):
+    """No entry may be accepted without asking the compiler.
+
+    The property the deleted prefilter violated, asserted directly rather than through a
+    clause list: an entry whose compile line looks utterly ordinary - no macro name, no
+    pre-inclusion flag, nothing a scan would flag - must still be probed. The `-D` here
+    arrives through a `--config` file, which every version of the prefilter rejected.
+    """
+    config = tmp_path / "ordinary-looking.cfg"
+    config.write_text(f"-D{REQUIRED_MACROS[0]}\n", encoding="utf-8")
+    ordinary = f"-O2 -std=c++23 -DSOME_OTHER_MACRO -I/x --config={config}"
+    assert not _macros_stay_private(
+        [(JE, BOTH), (OTHER, ordinary)], directory=str(tmp_path)
+    ), (
+        "an entry carrying neither macro name nor a pre-inclusion flag still defined the "
+        "macro, so it must be probed rather than accepted on the strength of its text"
+    )
+
+
+@pytest.mark.parametrize(
+    "label, compiler, expected_skip",
+    [
+        ("the assembler", "/usr/bin/nasm", True),
+        ("a versioned clang", ToolSet.COMPILER_C, False),
+        ("a versioned clang++", ToolSet.COMPILER_CPP, False),
+        ("clang under an absolute path", "/usr/lib/llvm-21/bin/clang", False),
+    ],
+)
+def test_the_sweep_skips_only_the_assembler(label, compiler, expected_skip):
+    """The one skip left must be narrow, and keyed on the compiler, not the file.
+
+    `nasm` is skipped because it is not a C preprocessor - it cannot hand these macros to a
+    jemalloc TU even in principle (measured: 124 `nasm` entries, all `.asm`; jemalloc's own
+    67 entries are all `.c`) - and because it rejects `-fsyntax-only` outright, so probing it
+    would raise *inconclusive* forever. That is a statement about the tool, so a `.asm`
+    handed to clang is still probed and only the tool's own name is matched.
+    """
+    assert (
+        build_job._cannot_define_by_construction([compiler, "-c", "x.asm"])
+        is expected_skip
+    ), (
+        f"{label}: {compiler!r} must "
+        f"{'be skipped' if expected_skip else 'be probed'} - the skip is keyed on the "
+        "compiler basename, never on the source extension"
+    )
+
+
+def test_the_assembler_skip_is_the_only_thing_standing_between_leak_and_inconclusive(
+    compiler_probe, tmp_path, monkeypatch
+):
+    """Dropping the skip must yield *inconclusive*, never *leak*.
+
+    The two channels have to stay distinguishable: a tool that cannot answer the probe is
+    not evidence about the macros either way, and reporting it as a leak would blame the
+    macros for `nasm` not understanding `-fsyntax-only`.
+    """
+    asm = tmp_path / "x.asm"
+    asm.write_text("nop\n", encoding="utf-8")
+    entry = {
+        "directory": str(tmp_path),
+        "file": str(asm),
+        "command": f"/usr/bin/nasm -f elf64 -o out.o {asm}",
+    }
+    jemalloc_entry = {
+        "directory": str(tmp_path),
+        "file": JE,
+        "command": f"{ToolSet.COMPILER_C} -c {BOTH} {JE}",
+    }
+    assert_jemalloc_macros_stay_private([jemalloc_entry, entry])
+
+    monkeypatch.setattr(build_job, "NON_PREPROCESSING_COMPILERS", ())
+    with pytest.raises(AssertionError) as raised:
+        assert_jemalloc_macros_stay_private([jemalloc_entry, entry])
+    message = str(raised.value)
+    assert "inconclusive" in message and "reaches" not in message, (
+        "an assembler that cannot run the probe is inconclusive, not a leak; got:\n"
+        f"{message}"
+    )
 
 
 def test_an_inconclusive_leak_probe_raises_without_claiming_a_leak(tmp_path):
