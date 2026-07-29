@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -95,39 +97,69 @@ UInt64 computeCountForPart(
     if (query_builder.is_failed)
         return 0;
 
-    std::optional<PostingList> merged_postings;
     const RowsRange full_range(0, data_part->rows_count - 1);
     auto postings_serialization = PostingsSerialization(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
         granule->getSerializationVersion());
 
-    for (const auto & [_, token_info] : query_builder.tokens)
+    /// Reads and unions the token's posting blocks that overlap `range`.
+    /// With `candidates`, additionally skips blocks whose row range contains no candidate rows.
+    auto read_postings = [&](const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates)
     {
-        PostingList token_postings;
-        if (token_info->embedded_postings)
-        {
-            token_postings = *token_info->embedded_postings;
-        }
-        else
-        {
-            for (size_t block_idx : token_info->getBlocksToRead(full_range))
-            {
-                auto block = MergeTreeIndexGranuleText::readPostingsBlock(
-                    *postings_stream, state, *token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
-                if (block)
-                    token_postings |= *block;
-            }
-        }
+        if (token_info.embedded_postings)
+            return *token_info.embedded_postings;
 
-        if (!merged_postings)
-            merged_postings = std::move(token_postings);
-        else if (resolved.query->getSearchMode() == TextSearchMode::All)
-            *merged_postings &= token_postings;
-        else
-            *merged_postings |= token_postings;
+        PostingList postings;
+        for (size_t block_idx : token_info.getBlocksToRead(range))
+        {
+            if (candidates)
+            {
+                const auto & block_range = token_info.ranges[block_idx];
+                UInt64 up_to_end = candidates->rank(static_cast<UInt32>(block_range.end));
+                UInt64 before_begin = block_range.begin == 0 ? 0 : candidates->rank(static_cast<UInt32>(block_range.begin - 1));
+                if (up_to_end == before_begin)
+                    continue;
+            }
+
+            auto block = MergeTreeIndexGranuleText::readPostingsBlock(
+                *postings_stream, state, token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
+            if (block)
+                postings |= *block;
+        }
+        return postings;
+    };
+
+    if (resolved.query->getSearchMode() != TextSearchMode::All)
+    {
+        std::optional<PostingList> merged_postings;
+        for (const auto & [_, token_info] : query_builder.tokens)
+        {
+            auto token_postings = read_postings(*token_info, full_range, nullptr);
+            if (!merged_postings)
+                merged_postings = std::move(token_postings);
+            else
+                *merged_postings |= token_postings;
+        }
+        return merged_postings ? merged_postings->cardinality() : 0;
     }
 
-    return merged_postings ? merged_postings->cardinality() : 0;
+    /// Candidate-driven intersection: start from the rarest token (cardinalities are known from
+    /// the dictionary before any posting I/O) and read the other tokens' posting blocks only
+    /// where candidates survive, mirroring the reader's lazy intersection.
+    std::vector<const TokenPostingsInfo *> token_infos;
+    token_infos.reserve(query_builder.tokens.size());
+    for (const auto & [_, token_info] : query_builder.tokens)
+        token_infos.push_back(token_info.get());
+    std::sort(token_infos.begin(), token_infos.end(), [](const auto * lhs, const auto * rhs) { return lhs->cardinality < rhs->cardinality; });
+
+    PostingList candidates = read_postings(*token_infos.front(), full_range, nullptr);
+    for (size_t i = 1; i < token_infos.size() && !candidates.isEmpty(); ++i)
+    {
+        const RowsRange candidate_range(candidates.minimum(), candidates.maximum());
+        candidates &= read_postings(*token_infos[i], candidate_range, &candidates);
+    }
+
+    return candidates.cardinality();
 }
 
 /// Emits one chunk with a single `count()` aggregate state per part, claiming parts from a shared queue.

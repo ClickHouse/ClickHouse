@@ -15,10 +15,12 @@
 └──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
 1500
 1500
--- does not fire: multi-token hasAllTokens (intersection) uses the reader
+-- fires: multi-token hasAllTokens (intersection)
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'beta\']))
+500
+500
 0
-500
-500
+0
 -- does not fire: residual non-text predicate
 0
 741

@@ -254,11 +254,6 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
         if (query->getTokens().empty())
             return {};
 
-        /// Multi-token intersection would eagerly read common tokens' postings the reader skips lazily (regression).
-        /// TODO(ahmadov): handle the multi-token ALL/AND case.
-        if (query->getTokens().size() > 1 && query->getSearchMode() == TextSearchMode::All)
-            return {};
-
         return ResolvedQuery{.index = task.index, .condition = std::move(condition), .query = std::move(query)};
     }
 

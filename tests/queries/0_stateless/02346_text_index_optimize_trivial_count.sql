@@ -40,10 +40,12 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAnyToken
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']);
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 
-SELECT '-- does not fire: multi-token hasAllTokens (intersection) uses the reader';
-SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta'])) WHERE explain LIKE '%Trivial count from text index%';
+SELECT '-- fires: multi-token hasAllTokens (intersection)';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
 SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']);
 SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'zeta']);
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'zeta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT '-- does not fire: residual non-text predicate';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND id > 10) WHERE explain LIKE '%Trivial count from text index%';
