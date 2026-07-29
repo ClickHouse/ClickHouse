@@ -1597,177 +1597,84 @@ def test_platform_header_search_detects_both_directions(
         )
 
 
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
+# --- the compiled preamble, judged by the compiler ------------------------------------
+#
+# `jemalloc_preamble.h` is the sole place each `-D` becomes the boolean the detector sites
+# read, and it is the last layer at which the option can be silently lost: narrow
+# `config_opt_size_checks` to `#if defined(JEMALLOC_DEBUG)`, turn its `||` into `&&`,
+# invert it or swap its arms, and the `"mismatch in slab bit"` check is disarmed while the
+# compile line, the platform headers and the build all stay green. The size gate is the one
+# worth pinning hardest: it has no mallctl, so no runtime observable can notice.
+#
+# The question is put to clang, over the initializers extracted from the real header, for
+# the reason recorded across this PR's history: an earlier version of this layer evaluated
+# the conditions with a hand-rolled preprocessor (arm selection, continuation splicing,
+# comment stripping, a `defined()`-to-Python translator, prior-state `#define`/`#undef`
+# detection, `eval`), and five consecutive review rounds each found a *narrower* syntactic
+# shape that evaded it - each fix correct, each evaded. The evaluator's shape space is
+# unbounded, so no finite set of pins closes it; its own docstring conceded as much by
+# raising on any nested conditional, which meant the real header gaining one would have
+# redded the guard rather than answering it. Compiling has no such boundary.
 
 
-def _preprocessor_expr_to_python(expr: str) -> str:
-    """`defined(X) || defined(Y)` -> a Python expression over `D('X')`.
+def _compiled_flag_value(preamble_text, flag, defines, prologue=""):
+    """Clang's value for `flag`, compiling the initializers extracted from `preamble_text`.
 
-    Only the operators these conditions actually use are translated. Anything else
-    (arithmetic comparison, a macro used as a value) survives into `eval` and raises
-    there, which is the intended fail-closed behaviour: the guard must not silently
-    approximate a condition it does not understand.
+    `prologue` is emitted immediately before the initializers, which is how a directive
+    reaching them through one of the header's own includes is modelled. It is passed
+    separately rather than spliced into `preamble_text` because only the two initializer
+    blocks are extracted: text placed before them in the header would be dropped on the
+    way to the compiler, and a `#undef` that never reaches the probe would read as "the
+    `#undef` did not disarm the gate".
+
+    Returns True/False; raises when the probe is inconclusive, so a header this cannot be
+    asked about fails closed rather than passing.
     """
-    expr = re.sub(r"defined\s*\(\s*([A-Za-z_]\w*)\s*\)", r"D('\1')", expr)
-    expr = re.sub(r"defined\s+([A-Za-z_]\w*)", r"D('\1')", expr)
-    expr = expr.replace("&&", " and ").replace("||", " or ")
-    expr = re.sub(r"!(?=\s*[D(])", " not ", expr)
-    return expr
-
-
-_PRIOR_STATE_DIRECTIVE_RE_TEMPLATE = r"^[ \t]*#[ \t]*(?:{kinds})[ \t]+{macro}\b.*$"
-
-
-def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) -> bool:
-    """Value of `static const bool <flag> = #if ... ;` under `defined_macros`.
-
-    Walks the initializer's `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else` arms and returns
-    the `true`/`false` literal of the first arm whose condition holds, so the assertion
-    is about what the compiler computes rather than about which identifiers appear. A
-    condition can name the right macro and still not be armed by it - `&&` instead of
-    `||`, an inverted test, swapped arms - and each of those disarms the detector while
-    a text search for the macro stays satisfied.
-
-    Backslash continuations are spliced first (the preprocessor's own rule) so a
-    condition legitimately reflowed across physical lines is read whole. C block
-    comments are stripped *before* the initializer is located: the safety block's own
-    `#elif` arm contains a comment whose `;` would otherwise truncate the non-greedy
-    match mid-comment.
-
-    `macro` is the compile-time macro whose state the caller is modelling. Anything in
-    this header that already changed that macro's state before the initializer is read
-    makes `defined_macros` a fiction, so such a directive fails the guard closed rather
-    than being modelled: an earlier `#undef` cancels the `-D` the lane passes exactly as
-    a platform header's bare `#undef` would, and a `#define` arms the flag independently
-    of the lane - both are changes this guard must not silently bless, and for the size
-    gate nothing else can notice (`config_opt_size_checks` has no mallctl).
-
-    `JEMALLOC_DEBUG` is scanned for as well, but for `#define` only, because both
-    initializers accept it as an *alternative* (`:191`, `:208`): defining it arms either
-    flag on its own, so `defined_macros` would no longer decide the outcome and the
-    caller's `disarmed is False` half - the PR's premise that no ClickHouse build arms
-    these flags today - would be satisfied while the preprocessor computes true.
-    Undefining it changes neither modelled outcome, since nothing in this repo defines it
-    (no `JEMALLOC_DEBUG` in the jemalloc cmake file, and no active directive for it in
-    any reachable platform header), so a preceding `#undef JEMALLOC_DEBUG` removes a
-    macro that was never there and is treated as inert.
-
-    Fails closed - an unknown directive, a nested conditional, a non-literal arm, or no
-    arm selected raises rather than guessing.
-    """
-    text = re.sub(r"\\\n", " ", text)
-    text = _BLOCK_COMMENT_RE.sub("", text)
-    match = re.search(rf"static const bool\s+{flag}\s*=(.*?);", text, re.S)
-    assert match, (
-        f"{JEMALLOC_PREAMBLE_REL}: no `static const bool {flag} = ...;` initializer "
-        "found. This header is the only place the compile-time macro becomes the "
-        "boolean jemalloc's detector sites read - re-derive this assertion against "
-        "whatever replaced it before deleting it."
+    blocks = _extract_config_flag_blocks(preamble_text)
+    source = (
+        # The real preamble gets `bool` from headers it includes first; the initializers
+        # are extracted without them, so declare it here.
+        "#include <stdbool.h>\n"
+        + prologue
+        + "\n".join(blocks[name] for name in sorted(blocks))
+        + f'\n_Static_assert({flag}, "{_FLAG_IS_FALSE}");\n'
     )
-    # Block comments are already stripped, so the commented-out placeholder spelling
-    # (`/* #undef JEMALLOC_OPT_SIZE_CHECKS */`) cannot reach this. `\b` on the
-    # identifier so `JEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count. The other
-    # *option* macro is deliberately not scanned for: it is inert for this flag. The
-    # directive kinds differ per macro: the option macro's state is what `defined_macros`
-    # models, so either direction breaks the model, while `JEMALLOC_DEBUG` is only an
-    # alternative enabling condition - defining it arms the flag, undefining an absent
-    # macro changes nothing.
-    prior_state = [
-        directive
-        for scanned, kinds in ((macro, "undef|define"), (DEBUG_MACRO, "define"))
-        for directive in re.findall(
-            _PRIOR_STATE_DIRECTIVE_RE_TEMPLATE.format(
-                kinds=kinds, macro=re.escape(scanned)
-            ),
-            text[: match.start()],
-            re.M,
-        )
-    ]
-    assert not prior_state, (
-        f"{JEMALLOC_PREAMBLE_REL}: an active `#undef`/`#define` of `{macro}`, or a "
-        f"`#define` of `{DEBUG_MACRO}`, precedes "
-        f"the `{flag}` initializer, so its condition is no longer decided by "
-        f"the lane's `-D{macro}`. An earlier `#undef` cancels that `-D` just as a bare "
-        "`#undef` in a platform header would, and a `#define` of either macro arms the "
-        f"flag in builds that never asked for it ({DEBUG_MACRO} is an alternative in "
-        "both initializers, so it arms the flag on its own). Either way this guard's "
-        f"model of the macro state is "
-        f"wrong, and for `config_opt_size_checks` there is no mallctl, so the AST "
-        "fuzzer job's runtime preflight cannot see it. Re-derive this guard against "
-        "the new shape rather than letting it report a state the preprocessor does not "
-        f"compute.\ndirectives found: {prior_state}"
+    process = subprocess.run(
+        [ToolSet.COMPILER_C, "-fsyntax-only", "-x", "c", "-"]
+        + [f"-D{macro}" for macro in sorted(defines)],
+        input=source,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    initializer = match.group(1)
-
-    def defined(name: str) -> bool:
-        return name in defined_macros
-
-    arms: list[tuple[str, str]] = []
-    condition = None
-    body: list[str] = []
-    conditional_open = False
-    for line in initializer.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            directive = stripped[1:].strip()
-            if condition is not None:
-                arms.append((condition, "\n".join(body)))
-            body = []
-            if directive.startswith(("ifdef", "ifndef", "if")) and conditional_open:
-                raise AssertionError(
-                    f"{JEMALLOC_PREAMBLE_REL}: the `{flag}` initializer nests a "
-                    f"conditional ({stripped!r}). This evaluator tracks one arm at a "
-                    "time, so a nested arm's value would be reported without its "
-                    "enclosing condition - a nested `true` under an outer arm the "
-                    "preprocessor never selects would be read as arming the gate. "
-                    "Re-derive this guard against the nested shape rather than letting "
-                    "it approximate it."
-                )
-            if directive.startswith("ifdef"):
-                condition = _preprocessor_expr_to_python(
-                    f"defined({directive.split(None, 1)[1].strip()})"
-                )
-                conditional_open = True
-            elif directive.startswith("ifndef"):
-                condition = _preprocessor_expr_to_python(
-                    f"!defined({directive.split(None, 1)[1].strip()})"
-                )
-                conditional_open = True
-            elif directive.startswith("elif"):
-                condition = _preprocessor_expr_to_python(directive[len("elif") :])
-            elif directive.startswith("if"):
-                condition = _preprocessor_expr_to_python(directive[len("if") :])
-                conditional_open = True
-            elif directive.startswith("else"):
-                condition = "True"
-            elif directive.startswith("endif"):
-                condition = None
-                conditional_open = False
-            else:
-                raise AssertionError(
-                    f"{JEMALLOC_PREAMBLE_REL}: unhandled preprocessor directive "
-                    f"{stripped!r} inside the `{flag}` initializer; extend this guard "
-                    "rather than letting it approximate the condition"
-                )
-        elif condition is not None:
-            body.append(line)
-    if condition is not None:
-        arms.append((condition, "\n".join(body)))
-
-    for expression, arm in arms:
-        if eval(expression, {"__builtins__": {}}, {"D": defined}):  # noqa: S307
-            value = arm.strip()
-            assert value in ("true", "false"), (
-                f"{JEMALLOC_PREAMBLE_REL}: the selected arm of `{flag}` is "
-                f"{value!r}, not a `true`/`false` literal - the initializer changed "
-                "shape, so re-derive this guard instead of trusting it"
-            )
-            return value == "true"
+    if process.returncode == 0:
+        return True
+    if _FLAG_IS_FALSE in process.stderr:
+        return False
     raise AssertionError(
-        f"{JEMALLOC_PREAMBLE_REL}: no arm of the `{flag}` initializer is selected with "
-        f"{sorted(defined_macros)} defined; the initializer lost its `#else`, so the "
-        "flag's value is no longer determined by this guard"
+        f"{JEMALLOC_PREAMBLE_REL}: the `{flag}` initializer cannot be compiled with "
+        f"{sorted(defines)} defined, so its value cannot be decided. An inconclusive "
+        f"probe must not pass.\n{process.stderr.strip()}"
     )
+
+
+# The `_Static_assert` text, matched in stderr so a false flag is told apart from a probe
+# that failed for some unrelated reason.
+_FLAG_IS_FALSE = "the config flag is false"
+
+
+def _extract_config_flag_blocks(preamble_text):
+    """The two `config_opt_*` initializers, verbatim, out of the real header."""
+    text = re.sub(r"/\*.*?\*/", "", preamble_text, flags=re.S)
+    blocks = {
+        match.group(1): match.group(0)
+        for match in _CONFIG_FLAG_BLOCK_RE.finditer(text)
+    }
+    assert set(blocks) == {"config_opt_safety_checks", "config_opt_size_checks"}, (
+        f"{JEMALLOC_PREAMBLE_REL}: expected both `config_opt_*` initializers to extract; "
+        f"got {sorted(blocks)}. Re-derive this guard against the current header."
+    )
+    return blocks
 
 
 @pytest.mark.parametrize(
@@ -1777,24 +1684,17 @@ def _config_flag_value(text: str, flag: str, defined_macros: set, macro: str) ->
         ("JEMALLOC_OPT_SIZE_CHECKS", "config_opt_size_checks"),
     ],
 )
-def test_compiled_preamble_maps_each_macro_to_its_config_flag(macro, flag):
+def test_compiled_preamble_maps_each_macro_to_its_config_flag(
+    compiler_probe, macro, flag
+):
     """Defining each `-D` must still make the flag the detector sites test true.
 
-    This is the last layer at which the option can be silently lost. The two above pin
-    that the `-D` is in effect on the compile line and not cancelled by a platform
-    header; this one pins that it is *consumed*, by evaluating the initializer rather
-    than searching it for the macro's name. Narrow `config_opt_size_checks` to
-    `#if defined(JEMALLOC_DEBUG)`, or turn its `||` into `&&`, or swap its arms, and the
-    `"mismatch in slab bit"` check is disarmed while the compile line, the platform
-    headers and the build all stay green - and for the size gate there is no runtime
-    observable either (no mallctl), so nothing else can notice.
-
-    The `set()` half is the PR's own premise: no ClickHouse build arms these flags
-    today, since `JEMALLOC_DEBUG` is not defined either.
+    The `set()` half is this PR's own premise: no ClickHouse build arms these flags today,
+    since `JEMALLOC_DEBUG` is not defined either.
     """
     preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
-    armed = _config_flag_value(preamble, flag, {macro}, macro)
-    disarmed = _config_flag_value(preamble, flag, set(), macro)
+    armed = _compiled_flag_value(preamble, flag, {macro})
+    disarmed = _compiled_flag_value(preamble, flag, set())
     context = (
         f"This header is the sole conversion of `-D{macro}` into the boolean the "
         "detector sites read, and it is the one that gets compiled because "
@@ -1805,22 +1705,20 @@ def test_compiled_preamble_maps_each_macro_to_its_config_flag(macro, flag):
         "the AST fuzzer job's runtime preflight cannot see it."
     )
     assert armed is True, (
-        f"{JEMALLOC_PREAMBLE_REL}: with only `{macro}` defined, `{flag}` evaluates to "
-        f"{armed!r}; the lane's `-D{macro}` no longer arms the gate. {context}"
+        f"{JEMALLOC_PREAMBLE_REL}: with only `{macro}` defined, `{flag}` compiles to "
+        f"false; the lane's `-D{macro}` no longer arms the gate. {context}"
     )
     assert disarmed is False, (
-        f"{JEMALLOC_PREAMBLE_REL}: with no macros defined, `{flag}` evaluates to "
-        f"{disarmed!r} rather than false, so this guard can no longer tell an armed "
-        f"build from an unarmed one. {context}"
+        f"{JEMALLOC_PREAMBLE_REL}: with no macros defined, `{flag}` compiles to true, so "
+        f"this guard can no longer tell an armed build from an unarmed one. {context}"
     )
 
 
 # --- the mapping assertion's own negative cases ---------------------------------------
 #
-# Driven through the same helper the assertion uses, over the real preamble with only the
+# The same table as before, with clang as the judge: the real preamble with only the
 # `config_opt_size_checks` initializer substituted, so the ways a condition can name the
 # right macro while not being armed by it stay pinned without mutating the real file.
-# The size gate is the one worth pinning: it has no mallctl, so nothing else can notice.
 
 _REAL_SIZE_BLOCK = """static const bool config_opt_size_checks =
 #if defined(JEMALLOC_OPT_SIZE_CHECKS) || defined(JEMALLOC_DEBUG)
@@ -1848,13 +1746,13 @@ _SIZE_ARMS_SWAPPED = _REAL_SIZE_BLOCK.replace(
 _SIZE_MACRO_REMOVED = _REAL_SIZE_BLOCK.replace(
     "defined(JEMALLOC_OPT_SIZE_CHECKS) || ", ""
 )
-# Legitimate reflow across physical lines: must keep passing (continuations are spliced).
+# Legitimate reflow across physical lines: must keep passing.
 _SIZE_REFLOWED = _REAL_SIZE_BLOCK.replace(
     "#if defined(JEMALLOC_OPT_SIZE_CHECKS) || defined(JEMALLOC_DEBUG)",
     "#if defined(JEMALLOC_DEBUG) \\\n    || defined(JEMALLOC_OPT_SIZE_CHECKS)",
 )
 # The `#ifdef`/`#elif` shape the *safety* flag already uses: must keep passing, and
-# doubles as proof the helper handles both of the real file's two spellings.
+# doubles as coverage of both spellings the real file uses.
 _SIZE_IFDEF_ELIF_FORM = (
     "static const bool config_opt_size_checks =\n"
     "#ifdef JEMALLOC_OPT_SIZE_CHECKS\n"
@@ -1866,21 +1764,45 @@ _SIZE_IFDEF_ELIF_FORM = (
     "#endif\n"
     "    ;"
 )
+# A nested conditional. The deleted evaluator raised on this shape - it tracked one arm at
+# a time - so the real header gaining one would have redded the guard instead of answering
+# it. clang simply answers: the inner `true` is under an outer arm that is never selected,
+# so the gate is disarmed.
+_SIZE_NESTED_UNDER_FALSE_OUTER = (
+    "static const bool config_opt_size_checks =\n"
+    "#ifdef JEMALLOC_NEVER_DEFINED\n"
+    "#  if defined(JEMALLOC_OPT_SIZE_CHECKS)\n"
+    "    true\n"
+    "#  else\n"
+    "    false\n"
+    "#  endif\n"
+    "#else\n"
+    "    false\n"
+    "#endif\n"
+    "    ;"
+)
 
 
-def _size_flag_armed_with(block: str) -> bool:
-    """`config_opt_size_checks` under only its own macro, with `block` substituted in."""
+def _compiled_size_flag_armed_with(block, prologue=""):
+    """`config_opt_size_checks` as clang computes it, with `block` substituted.
+
+    The staleness guard is what keeps the mutations exercising real text: if the real
+    block is no longer in the header verbatim, the substitutions would silently stop
+    mutating anything. `prologue` is handed to `_compiled_flag_value`, which emits it
+    directly before the initializers - see its docstring for why it cannot simply be
+    spliced into the header text here.
+    """
     preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
     assert _REAL_SIZE_BLOCK in preamble, (
         f"{JEMALLOC_PREAMBLE_REL}: the `config_opt_size_checks` initializer no longer "
-        "matches the text these negative cases substitute; re-derive them against the "
-        "current initializer so they keep exercising the real shape"
+        "matches _REAL_SIZE_BLOCK verbatim, so these mutations would not be mutating "
+        "the real text. Re-derive the block against the current header."
     )
-    return _config_flag_value(
+    return _compiled_flag_value(
         preamble.replace(_REAL_SIZE_BLOCK, block),
         "config_opt_size_checks",
         {"JEMALLOC_OPT_SIZE_CHECKS"},
-        "JEMALLOC_OPT_SIZE_CHECKS",
+        prologue=prologue,
     )
 
 
@@ -1894,137 +1816,54 @@ def _size_flag_armed_with(block: str) -> bool:
         ("condition negated", _SIZE_NEGATED, False),
         ("true/false arms swapped", _SIZE_ARMS_SWAPPED, False),
         ("macro dropped from the condition", _SIZE_MACRO_REMOVED, False),
+        ("nested under a never-selected outer arm", _SIZE_NESTED_UNDER_FALSE_OUTER, False),
     ],
 )
-def test_size_flag_evaluation_detects_disarming_edits(label, block, armed_expected):
-    assert _size_flag_armed_with(block) is armed_expected, (
-        f"{label}: expected `config_opt_size_checks` to evaluate to "
-        f"{armed_expected} with only JEMALLOC_OPT_SIZE_CHECKS defined. A False here "
-        "for one of the mutated shapes is what makes "
-        "test_compiled_preamble_maps_each_macro_to_its_config_flag fail on it; a True "
-        "for one of the legitimate shapes is what keeps that test from failing "
-        "spuriously."
-    )
+def test_size_flag_detects_disarming_edits(
+    compiler_probe, label, block, armed_expected
+):
+    """Each way of disarming the size gate while still naming its macro must be caught.
 
-
-# --- the mapping assertion's own negative cases, part two: prior macro state ----------
-#
-# A directive earlier in the same header that changes the macro's state makes the
-# modelled `defined_macros` a fiction: an active `#undef` cancels the lane's `-D` (the
-# platform-header hazard, reappearing inside the compiled preamble), a `#define` arms the
-# flag in builds that never asked for it. Both must fail closed. The commented-out
-# placeholder spelling and a suffixed identifier must not fire.
-
-
-def _size_flag_armed_with_prologue(prologue: str) -> bool:
-    """`config_opt_size_checks` with `prologue` inserted above its initializer."""
-    preamble = JEMALLOC_PREAMBLE.read_text(encoding="utf-8")
-    assert _REAL_SIZE_BLOCK in preamble, (
-        f"{JEMALLOC_PREAMBLE_REL}: the `config_opt_size_checks` initializer no longer "
-        "matches the text these negative cases substitute; re-derive them against the "
-        "current initializer"
-    )
-    return _config_flag_value(
-        preamble.replace(_REAL_SIZE_BLOCK, prologue + _REAL_SIZE_BLOCK),
-        "config_opt_size_checks",
-        {"JEMALLOC_OPT_SIZE_CHECKS"},
-        "JEMALLOC_OPT_SIZE_CHECKS",
+    The two must-pass rows are what keep this from being satisfied by a guard that calls
+    every edit disarming.
+    """
+    assert _compiled_size_flag_armed_with(block) is armed_expected, (
+        f"{label}: with `-DJEMALLOC_OPT_SIZE_CHECKS`, `config_opt_size_checks` compiles "
+        f"to {not armed_expected} but must be {armed_expected}. This is the sole "
+        "conversion of that `-D` into the boolean `maybe_check_alloc_ctx` reads, and the "
+        "size gate has no mallctl, so nothing at runtime can notice it being disarmed."
     )
 
 
 @pytest.mark.parametrize(
-    "label, prologue",
+    "label, prologue, armed_expected",
     [
-        ("active #undef", "#undef JEMALLOC_OPT_SIZE_CHECKS\n"),
-        ("active #define", "#define JEMALLOC_OPT_SIZE_CHECKS\n"),
-        ("indented #undef", "#  undef JEMALLOC_OPT_SIZE_CHECKS\n"),
-        # `JEMALLOC_DEBUG` is an alternative in both initializers, so defining it arms
-        # the flag on its own: without it in the fail-closed set the helper reports
-        # `armed=True, disarmed=False` (both assertions of the mapping test satisfied)
-        # while `clang -E` computes the flag true with no option macro defined at all.
-        ("active #define JEMALLOC_DEBUG", "#define JEMALLOC_DEBUG\n"),
+        # A `#undef` arriving before the initializer cancels the `-D` with every other
+        # layer still green. This is a real header-level property, so it is asserted as a
+        # value rather than as something the guard refuses to answer.
+        ("active #undef of our macro", "#undef JEMALLOC_OPT_SIZE_CHECKS\n", False),
+        ("active #undef of JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG\n", True),
+        # Inert text that must not be mistaken for a directive.
+        ("commented-out #undef", "/* #undef JEMALLOC_OPT_SIZE_CHECKS */\n", True),
+        ("a suffixed identifier", "#undef JEMALLOC_OPT_SIZE_CHECKS_DISABLED\n", True),
+        ("the other gate's macro", "#undef JEMALLOC_OPT_SAFETY_CHECKS\n", True),
     ],
 )
-def test_prior_macro_state_directives_fail_closed(label, prologue):
-    with pytest.raises(AssertionError, match="precedes the"):
-        _size_flag_armed_with_prologue(prologue)
+def test_directives_before_the_initializer_are_honoured(
+    compiler_probe, label, prologue, armed_expected
+):
+    """A `#undef`/`#define` reaching the initializer decides the gate, and inert text does not.
 
-
-@pytest.mark.parametrize(
-    "label, prologue",
-    [
-        # The spelling every reachable platform header uses for its placeholder.
-        ("commented-out placeholder", "/* #undef JEMALLOC_OPT_SIZE_CHECKS */\n"),
-        # A different identifier that merely has the macro's name as a prefix.
-        ("suffixed identifier", "#undef JEMALLOC_OPT_SIZE_CHECKS_DISABLED\n"),
-        # The other gate's macro: unrelated to this flag's state.
-        ("the other gate's macro", "#undef JEMALLOC_OPT_SAFETY_CHECKS\n"),
-        # The widening to `JEMALLOC_DEBUG` must not over-fire on the inert forms.
-        ("commented-out JEMALLOC_DEBUG", "/* #undef JEMALLOC_DEBUG */\n"),
-        ("suffixed JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG_SOMETHING\n"),
-        # Nothing in this repo defines `JEMALLOC_DEBUG`, so undefining it removes a macro
-        # that was never there: both modelled outcomes are unchanged. It is the spelling
-        # all 12 platform headers use for their inert placeholders, so a legitimate
-        # tidy-up adding it here must not be reported as a broken guard model. A
-        # `#define` of it is the real hazard and still fails closed above.
-        ("active #undef JEMALLOC_DEBUG", "#undef JEMALLOC_DEBUG\n"),
-    ],
-)
-def test_prior_state_guard_does_not_fire_on_inert_directives(label, prologue):
-    assert _size_flag_armed_with_prologue(prologue) is True, (
-        f"{label}: this directive does not change `JEMALLOC_OPT_SIZE_CHECKS`' state, so "
-        "the prior-state guard must not fire on it"
+    The deleted evaluator could only refuse to answer these; the compiler gives the real
+    value, so the assertion is now about the header rather than about a parser.
+    """
+    assert (
+        _compiled_size_flag_armed_with(_REAL_SIZE_BLOCK, prologue=prologue)
+        is armed_expected
+    ), (
+        f"{label}: with `-DJEMALLOC_OPT_SIZE_CHECKS` and {prologue!r} before the "
+        f"initializer, `config_opt_size_checks` must compile to {armed_expected}"
     )
-
-
-# --- the mapping assertion's own negative cases, part three: nested conditionals ------
-#
-# The evaluator tracks one arm at a time, so a `#if` nested inside another one would have
-# its value reported without the enclosing condition. Measured against `cc -E`: with the
-# real size condition nested under an outer arm the preprocessor never selects, the helper
-# reports armed while the compiler computes false in every case - satisfying both
-# assertions of the mapping test while the gate is unconditionally disarmed. The shape
-# must therefore fail closed rather than be modelled.
-
-_SIZE_NESTED_UNDER_FALSE_OUTER = (
-    "static const bool config_opt_size_checks =\n"
-    "#if defined(UNRELATED_MACRO)\n"
-    "#  if defined(JEMALLOC_OPT_SIZE_CHECKS) || defined(JEMALLOC_DEBUG)\n"
-    "    true\n"
-    "#  else\n"
-    "    false\n"
-    "#  endif\n"
-    "#else\n"
-    "    false\n"
-    "#endif\n"
-    "    ;"
-)
-
-_SIZE_NESTED_UNDER_IFDEF_OUTER = (
-    "static const bool config_opt_size_checks =\n"
-    "#ifdef JEMALLOC_OPT_SIZE_CHECKS\n"
-    "#  if defined(JEMALLOC_DEBUG)\n"
-    "    true\n"
-    "#  else\n"
-    "    false\n"
-    "#  endif\n"
-    "#else\n"
-    "    false\n"
-    "#endif\n"
-    "    ;"
-)
-
-
-@pytest.mark.parametrize(
-    "label, block",
-    [
-        ("nested under a false outer arm", _SIZE_NESTED_UNDER_FALSE_OUTER),
-        ("nested under an armed #ifdef", _SIZE_NESTED_UNDER_IFDEF_OUTER),
-    ],
-)
-def test_nested_initializer_conditionals_fail_closed(label, block):
-    with pytest.raises(AssertionError, match="nests a"):
-        _size_flag_armed_with(block)
 
 
 def test_ci_tests_digest_covers_the_jemalloc_cmake_file():
