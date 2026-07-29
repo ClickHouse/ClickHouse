@@ -3,6 +3,7 @@
 -- hasAnyTokens
 -- hasAllTokens
 -- hasToken in PREWHERE and WHERE
+-- text index read under a join
 -- single stage: still runs
 1
 -- broadcast-sized read: still runs

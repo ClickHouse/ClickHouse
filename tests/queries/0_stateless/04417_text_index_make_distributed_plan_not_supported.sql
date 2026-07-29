@@ -48,6 +48,16 @@ PREWHERE (materialize(65537) >= k) AND hasToken(s, 'uniform')
 WHERE xor(hasToken(s, 'uniform'), (k >= 65537))
 ORDER BY k LIMIT 3; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A text index read reached through a subquery is shipped too, once the outer plan is split. The guard
+-- runs on the whole plan after the subplans are attached, so it sees this read as well.
+DROP TABLE IF EXISTS t_text_dist_outer;
+CREATE TABLE t_text_dist_outer (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_text_dist_outer SELECT number FROM numbers(200000);
+
+SELECT '-- text index read under a join';
+SELECT count() FROM t_text_dist_outer AS o
+JOIN (SELECT k FROM t_text_dist_guard PREWHERE hasToken(s, 'uniform') WHERE k < 2) AS t ON o.k = t.k; -- { serverError SUPPORT_IS_DISABLED }
+
 -- A single-stage plan is executed locally, so the synthetic column never has to be reconstructed and the
 -- query must keep running. This is the exact shape the AST fuzzer produced: the negative LIMIT prunes all
 -- parts, so no exchange is created. The plan oracle proves direct read really was applied, i.e. the query
@@ -83,3 +93,4 @@ SELECT count() FROM t_text_dist_guard WHERE hasToken(s, 'uniform');
 SELECT k FROM t_text_dist_guard PREWHERE hasToken(s, 'uniform') WHERE hasToken(s, 'uniform') AND k < 3 ORDER BY k;
 
 DROP TABLE t_text_dist_guard;
+DROP TABLE t_text_dist_outer;
