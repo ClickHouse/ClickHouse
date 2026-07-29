@@ -83,8 +83,9 @@ SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(1, sumMap, Array(
 -- Reading a written `Native` file back through `file()` takes the type from the header rather than from any
 -- stored declaration, so this is where a header that lost the element name becomes observable: the
 -- element would come back positional and the accessor on x.y would no longer resolve.
--- The accessor is spelled `tupleElement`, which resolves by name under both analyzers; the dotted
--- subcolumn spelling resolves under the new analyzer only.
+-- The accessor is spelled `tupleElement` because the old analyzer resolves a dotted subcolumn only
+-- when the storage reports `supportsSubcolumns`, which `StripeLog` does not; `tupleElement` resolves
+-- by name on any storage, so the name assertion holds under both analyzers.
 INSERT INTO FUNCTION file(concat(currentDatabase(), '_04648_named_tuple.native'), Native) SELECT v FROM sl_named_tuple_value SETTINGS engine_file_truncate_on_insert = 1;
 SELECT toTypeName(v) FROM file(concat(currentDatabase(), '_04648_named_tuple.native'), Native);
 SimpleAggregateFunction(anyLast, Tuple(`x.y` AggregateFunction(sumMap, Array(UInt64), Array(Decimal(9, 2)))))
