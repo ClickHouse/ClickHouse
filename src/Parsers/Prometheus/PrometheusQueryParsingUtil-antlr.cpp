@@ -71,7 +71,7 @@ namespace
 
             size_t pos = 0;
             if (offending_symbol)
-                pos = offending_symbol->getStartIndex();
+                pos = convertCodePointPositionToByteOffset(offending_symbol->getStartIndex());
             else  /// `offending_symbol` can be null if `recognizer` is a lexer.
                 pos = convertLineAndPositionInLine(line, position_in_line);
 
@@ -79,7 +79,7 @@ namespace
         }
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
-        /// we need to convert them to a char index.
+        /// we need to convert them to a byte offset.
         size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
@@ -100,6 +100,12 @@ namespace
             auto line_suffix = promql_query.substr(char_index);
             return char_index + UTF8::computeBytesBeforeCodePoint(
                 reinterpret_cast<const UInt8 *>(line_suffix.data()), line_suffix.size(), position_in_line);
+        }
+
+        size_t convertCodePointPositionToByteOffset(size_t position) const
+        {
+            return UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(promql_query.data()), promql_query.size(), position);
         }
 
     private:
