@@ -20,3 +20,16 @@ false
 SELECT * FROM values('x UInt8', true, false);
 1
 0
+-- Non-literal `Bool`-typed constants (wrapped in CAST / Nullable / LowCardinality) also produce
+-- 'true'/'false'. This is a behavior change: previously (via `evaluateConstantExpression` +
+-- `convertFieldToType`) these non-literal constants had their `Bool` tag collapsed to `UInt64` and
+-- rendered as '1'/'0'; the column-native path keeps the `Bool` type, matching direct literals and CAST.
+SELECT * FROM values('x String', CAST(true, 'Nullable(Bool)'), CAST(false, 'Nullable(Bool)'));
+true
+false
+SELECT * FROM values('x String', toLowCardinality(CAST(true, 'Bool')));
+true
+-- but a computed comparison is `UInt8`, not `Bool`, so it is unchanged ('1'/'0')
+SELECT * FROM values('x String', 1 > 0, 2 < 0);
+1
+0
