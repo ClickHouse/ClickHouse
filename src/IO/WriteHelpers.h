@@ -14,6 +14,7 @@
 #include <Common/LocalTime.h>
 #include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
+#include <base/itoa.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -1241,11 +1242,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     chassert(scale <= max_digits);
     chassert(fractional_length <= max_digits);
 
-    char buf[max_digits];
-    memset(buf, '0', std::max(scale, fractional_length));
-
     T value = x;
-    Int32 last_nonzero_pos = 0;
+    UInt32 digits_to_write = scale;
 
     if (fixed_fractional_length && fractional_length < scale)
     {
@@ -1254,21 +1252,37 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
         value = new_value / 10;
         if (round_carry >= 5)
             value += 1;
+        digits_to_write = fractional_length;
     }
 
-    for (Int32 pos = fixed_fractional_length ? std::min(scale - 1, fractional_length - 1) : scale - 1; pos >= 0; --pos)
+    char buf[max_digits];
+    if constexpr (sizeof(T) <= sizeof(UInt64))
+        writeFixedDigits(static_cast<UInt64>(value), digits_to_write, buf);
+    else if constexpr (sizeof(T) <= sizeof(UInt128))
+        writeFixedDigits(static_cast<UInt128>(value), digits_to_write, buf);
+    else
+        writeFixedDigits(static_cast<UInt256>(value), digits_to_write, buf);
+
+    size_t length = 0;
+    if (fixed_fractional_length)
     {
-        auto remainder = value % 10;
-        value /= 10;
-
-        if (remainder != 0 && last_nonzero_pos == 0)
-            last_nonzero_pos = pos;
-
-        buf[pos] += static_cast<char>(remainder);
+        if (fractional_length > digits_to_write)
+            memset(buf + digits_to_write, '0', fractional_length - digits_to_write);
+        length = fractional_length;
+    }
+    else if (trailing_zeros)
+    {
+        length = scale;
+    }
+    else
+    {
+        length = scale;
+        while (length > 1 && buf[length - 1] == '0')
+            --length;
     }
 
     writeChar('.', ostr);
-    ostr.write(buf, fixed_fractional_length ? fractional_length : (trailing_zeros ? scale : last_nonzero_pos + 1));
+    ostr.write(buf, length);
 }
 
 template <typename T>
