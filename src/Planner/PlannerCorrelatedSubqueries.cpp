@@ -146,9 +146,6 @@ struct DecorrelationContext
     /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
     std::vector<EquivalenceClasses<String>> equivalence_class_stack;
-    /// Whether the input subplan is referenced during decorrelation.
-    /// This is necessary to identify if in-memory buffer would be used.
-    bool referenced_input_subplan = false;
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
@@ -210,9 +207,6 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
-        /// JOIN reordering might be disabled in such case.
-        context.referenced_input_subplan = true;
-
         /// Remember whether the optimizer will buffer this referenced subplan. It applies the buffer
         /// from the top-level query context (QueryPlanOptimizationSettings), which a set-operation
         /// branch's own SETTINGS clause never reaches, so the decision must be read from there too.

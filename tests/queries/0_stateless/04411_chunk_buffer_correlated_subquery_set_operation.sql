@@ -18,7 +18,10 @@ SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_chunk_buffer_set_op;
 
-CREATE TABLE t_chunk_buffer_set_op (i Int32) ENGINE = MergeTree ORDER BY i SETTINGS index_granularity = 1;
+-- `max_bytes_to_merge_at_max_space_in_pool = 1` keeps the two parts apart: a background merge would
+-- turn the two independent `_part_offset` ranges into one and no row would satisfy the predicates.
+CREATE TABLE t_chunk_buffer_set_op (i Int32) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
 -- Two separate inserts so the table has two parts and _part_offset is exercised per part.
 INSERT INTO t_chunk_buffer_set_op SELECT number FROM numbers(5);
 INSERT INTO t_chunk_buffer_set_op SELECT number FROM numbers(5);
