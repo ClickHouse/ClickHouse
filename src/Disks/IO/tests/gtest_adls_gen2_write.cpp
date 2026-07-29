@@ -517,7 +517,7 @@ TEST(AdlsGen2Write, AmbiguousPublishYieldsCommitStatusUnknown)
         }
         catch (const DB::Exception & e)
         {
-            const String message = e.message();
+            const String & message = e.message();
             EXPECT_NE(message.find("commit status unknown"), String::npos) << message;
             EXPECT_NE(message.find("never a partial object"), String::npos) << message;
         }
@@ -608,6 +608,8 @@ TEST(AdlsGen2Write, CancelAfterSuccessfulPreFinalizeReportsThePublishedFile)
 /// and why, as above, nothing fatal may be asserted while the buffer is alive.
 TEST(AdlsGen2Write, DroppingAfterSuccessfulPreFinalizeDoesNotClaimTheFileWasNotWritten)
 {
+    static constexpr auto caller_failure = "the caller failed after the file was published";
+
     String log_text;
     size_t renames_before_drop = 0;
     std::vector<RecordedRequest> deletes;
@@ -621,10 +623,12 @@ TEST(AdlsGen2Write, DroppingAfterSuccessfulPreFinalizeDoesNotClaimTheFileWasNotW
             writeSomeData(*buffer);
             buffer->preFinalize();
             renames_before_drop = fixture.requestsOf(Op::Rename).size();
-            throw std::runtime_error("the caller failed after the file was published");
+            throw std::runtime_error(caller_failure);
         }
-        catch (const std::runtime_error &)
+        catch (const std::runtime_error & e)
         {
+            /// Only this test's own failure may be swallowed; anything else came from the writer.
+            EXPECT_EQ(String(e.what()), caller_failure);
         }
 
         log_text = captured.text();
@@ -977,7 +981,8 @@ TEST(AdlsGen2Write, LostFlushResponseLeavesStagingInPlaceRatherThanDeletingIt)
         << "the delete is pinned to the ETag this write observed, which the flush has moved past";
 
     EXPECT_NO_THROW(buffer.reset());
-    /// Still refused after the destructor's second attempt, and the target was never touched.
+    /// A refusal is final: it clears `file_created`, so the destructor does not try again.
+    EXPECT_EQ(fixture.requestsOf(Op::Delete).size(), 1u);
     EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
 }
 
@@ -1058,9 +1063,13 @@ TEST(AdlsGen2Write, WriteOnlyCredentialCompletesSuccessfully)
 
 /// A caller that throws between `next` and `finalize` never reaches either `finalize` or `cancel`, so
 /// the destructor is the only place left to remove staging. `WriteBuffer`'s own destructor tolerates
-/// this case precisely because an exception is in flight.
+/// this case precisely because an exception is in flight. As in the `preFinalize` tests above, the
+/// staging path is only recorded while the buffer is alive and asserted once it is gone: a failing
+/// `ASSERT_` returns without throwing, so the destructor would abort instead of failing this test.
 TEST(AdlsGen2Write, DestructorCleansStagingWhenCallerThrows)
 {
+    static constexpr auto caller_failure = "the caller failed after writing";
+
     WriteFixture fixture;
     String staging;
 
@@ -1069,12 +1078,15 @@ TEST(AdlsGen2Write, DestructorCleansStagingWhenCallerThrows)
         auto buffer = fixture.makeBuffer();
         writeSomeData(*buffer);
         staging = fixture.stagingPath();
-        ASSERT_FALSE(staging.empty());
-        throw std::runtime_error("the caller failed after writing");
+        throw std::runtime_error(caller_failure);
     }
-    catch (const std::runtime_error &)
+    catch (const std::runtime_error & e)
     {
+        /// Only this test's own failure may be swallowed; anything else came from the writer.
+        EXPECT_EQ(String(e.what()), caller_failure);
     }
+
+    ASSERT_FALSE(staging.empty()) << "a staging object must have been created for this to test anything";
 
     const auto deletes = fixture.requestsOf(Op::Delete);
     ASSERT_EQ(deletes.size(), 1u);
@@ -1179,7 +1191,7 @@ TEST(AdlsGen2Write, KeyThatCannotBeStagedNamesTheParentDirectory)
     }
     catch (const DB::Exception & e)
     {
-        const String message = e.message();
+        const String & message = e.message();
         EXPECT_NE(message.find("parent directory"), String::npos) << message;
         EXPECT_NE(message.find("sibling"), String::npos) << message;
     }
