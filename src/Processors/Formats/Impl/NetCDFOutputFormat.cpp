@@ -151,7 +151,7 @@ String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T pr
 
     /// Zero means that the domain of the type does not fit in the counter, and then it is larger
     /// than the number of values that any column can hold, so it never runs out.
-    static constexpr UInt64 domain_size = sizeof(Bits) >= sizeof(UInt64) ? 0 : (UInt64(1) << (sizeof(Bits) * 8));
+    static constexpr UInt64 domain_size = UInt64(std::numeric_limits<Bits>::max()) + 1;
     static constexpr size_t initial_window_size = 64;
     static constexpr size_t max_window_size = 4096;
 
@@ -338,7 +338,9 @@ void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
     {
         /// A NULL is written as an empty string. The column under a `ColumnNullable` is allowed to
         /// hold arbitrary garbage in the rows that are NULL, so it must not be looked at.
-        std::string_view value = null_map && null_map[i] ? std::string_view{} : column.getDataAt(i).toView();
+        std::string_view value;
+        if (!null_map || !null_map[i])
+            value = column.getDataAt(i);
         UInt64 to_write = std::min<UInt64>(value.size(), string_length);
         writeString(value.substr(0, to_write), out);
 
