@@ -11,6 +11,7 @@
 
 #include <sstream>
 
+#include <base/EnumReflection.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -36,6 +37,7 @@ namespace
 struct RecordedRequest
 {
     String method;
+    String host;
     String path;
     String query;
     Azure::Core::CaseInsensitiveMap headers;
@@ -110,6 +112,7 @@ public:
     {
         RecordedRequest recorded;
         recorded.method = request.GetMethod().ToString();
+        recorded.host = request.GetUrl().GetHost();
         recorded.path = request.GetUrl().GetPath();
         recorded.query = request.GetUrl().GetRelativeUrl();
         recorded.headers = request.GetHeaders();
@@ -1101,6 +1104,48 @@ TEST(AdlsGen2Write, PublishTargetsTheContainerWhenTheUrlCarriesTheAccount)
     ASSERT_EQ(renames.size(), 1u);
     EXPECT_EQ(renames[0].path, "myaccount/mycontainer/tables/mytable/data/data-0.parquet");
     EXPECT_EQ(renames[0].header("x-ms-rename-source"), "/" + creates[0].path);
+}
+
+/// Production's default OneLake endpoint is the Blob host (`onelake_use_blob_endpoint` defaults to
+/// true), which does not serve the DFS API. Both filesystem clients are built from the same container
+/// URL, so every request the writer issues depends on that host being retargeted to DFS.
+TEST(AdlsGen2Write, BlobHostEndpointIsRetargetedToDfsForEveryRequest)
+{
+    WriteFixture fixture;
+    fixture.endpoint.storage_account_url = "https://onelake.blob.fabric.microsoft.com";
+
+    auto buffer = fixture.makeBuffer();
+    writeSomeData(*buffer);
+    buffer->finalize();
+
+    /// Pin the sequence too, so the host assertions cannot pass on a write that never happened.
+    std::vector<String> ops;
+    for (const auto & request : fixture.transport->requests)
+        ops.push_back(String{magic_enum::enum_name(classifyRequest(request))});
+    const std::vector<String> expected{"Create", "Append", "Flush", "Rename"};
+    ASSERT_EQ(ops, expected);
+
+    /// Per request, so a change that retargets only some of the clients is localized.
+    for (const auto & request : fixture.transport->requests)
+        EXPECT_EQ(request.host, "onelake.dfs.fabric.microsoft.com")
+            << String{magic_enum::enum_name(classifyRequest(request))} << " " << request.path;
+}
+
+/// A regular Azure account is already on a .dfs host, so the retargeting has to stay keyed on the
+/// Fabric Blob suffix instead of rewriting every host.
+TEST(AdlsGen2Write, NonFabricDfsHostIsNotRetargeted)
+{
+    WriteFixture fixture;
+    fixture.endpoint.storage_account_url = "https://myacct.dfs.core.windows.net";
+
+    auto buffer = fixture.makeBuffer();
+    writeSomeData(*buffer);
+    buffer->finalize();
+
+    ASSERT_FALSE(fixture.transport->requests.empty());
+    for (const auto & request : fixture.transport->requests)
+        EXPECT_EQ(request.host, "myacct.dfs.core.windows.net")
+            << String{magic_enum::enum_name(classifyRequest(request))} << " " << request.path;
 }
 
 /// The error for a key that cannot be staged has to be actionable. Since only the file name may be
