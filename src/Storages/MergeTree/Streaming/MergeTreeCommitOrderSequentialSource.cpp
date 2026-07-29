@@ -28,6 +28,7 @@
 #include <Core/SortDescription.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <memory>
@@ -487,7 +488,16 @@ void MergeTreeCommitOrderSequentialSource::onUpdatePorts()
 
 void MergeTreeCommitOrderSequentialSource::onCancel() noexcept
 {
-    subscription->disable();
+    /// disable() notifies through the wakeup pipe and may throw (e.g. on fd corruption);
+    /// propagating from noexcept would terminate the server.
+    try
+    {
+        subscription->disable();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 }
