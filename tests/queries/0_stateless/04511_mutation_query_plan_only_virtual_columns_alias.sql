@@ -37,6 +37,10 @@ ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE tup.a_tbl = 'missing' AND c0 < 2;
 SELECT count() FROM t_mut_qp_alias_subcol;
 -- The alias itself is still rejected on the same table.
 ALTER TABLE t_mut_qp_alias_subcol DELETE WHERE a_tbl != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- The rejection happens before the mutation is queued, so it left no failed mutation behind
+-- (the one entry here is the valid mutation above, which succeeded).
+SELECT countIf(latest_fail_reason != '') FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_qp_alias_subcol';
 DROP TABLE t_mut_qp_alias_subcol;
 
 -- An alias may be named like one of these virtuals while being defined over another one.
@@ -46,6 +50,8 @@ CREATE TABLE t_mut_qp_alias_shadow (c0 UInt32, `_table` String ALIAS _database)
 ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_qp_alias_shadow SELECT number FROM numbers(4);
 ALTER TABLE t_mut_qp_alias_shadow DELETE WHERE `_table` != '' AND c0 < 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT countIf(latest_fail_reason != '') FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_qp_alias_shadow';
 DROP TABLE t_mut_qp_alias_shadow;
 
 -- A member access rooted at a lambda parameter belongs to that parameter, not to the virtual
