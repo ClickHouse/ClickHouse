@@ -45,7 +45,7 @@ namespace DB::QueryPlanOptimizations
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we check that the table has a vector similarity index built on vec or an expression based
 ///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -115,6 +115,12 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
+
+    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
+    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
+    /// are never retrieved. Skip the optimization and fall back to brute force.
+    if (limit_step->withTies())
+        return no_layers_updated;
 
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
@@ -245,7 +251,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     return no_layers_updated;
 }
 
-bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
 
@@ -382,17 +388,10 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring;
-    if (optimize_plan)
-    {
-        /// If `_distance` is already requested explicitly, do not rewrite the
-        /// read step by adding `_distance` again. Keep the original distance
-        /// expression and let the reader populate the explicitly requested
-        /// virtual column from vector-search hints.
-        if (read_from_mergetree_step->isVectorColumnReplaced())
-            optimize_plan = false;
-    }
-
+    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
+    /// vector row hints only describe the original candidates and must not filter
+    /// rows added for the final merge.
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -532,7 +531,11 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
         }
     }
 
-    return optimize_plan || apply_row_filter_for_rescoring;
+    const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
+    if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
+        optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
+
+    return vector_optimization_applied;
 }
 
 }

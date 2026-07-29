@@ -1,0 +1,88 @@
+---
+date: 2023-03-24
+title: "Comment effectuer des écritures partitionnées par année et par mois sur S3 ?"
+description: "Découvrez comment écrire des données partitionnées par année et par mois dans un bucket S3 avec ClickHouse, en utilisant une structure de chemin personnalisée pour organiser les données."
+tags: ['Export de données', 'Clients natifs et interfaces']
+keywords: ['S3', 'Écritures partitionnées']
+---
+
+<div id="learn-how-to-do-partitioned-writes-by-year-and-month-on-s3">
+  ## Découvrez comment effectuer des écritures partitionnées par année et par mois sur S3
+</div>
+
+Je souhaite exporter des données en organisant le chemin dans le bucket S3 afin d&#39;obtenir une structure comme :
+
+* 2022
+  * 1
+  * 2
+  * ...
+  * 12
+* 2021
+  * 1
+  * 2
+  * ...
+  * 12
+
+et ainsi de suite...
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Étant donné la table ClickHouse :
+
+```sql
+CREATE TABLE sample_data (
+    `name` String,
+    `age` Int,
+    `time` DateTime
+) ENGINE = MergeTree
+ORDER BY
+    name
+```
+
+Ajoutez 10 000 entrées :
+
+```sql
+INSERT INTO
+    sample_data
+SELECT
+    *
+FROM
+    generateRandom(
+        'name String, age Int, time DateTime',
+        10,
+        10,
+        10
+    )
+LIMIT
+    10000;
+```
+
+Exécutez cette commande pour créer la structure souhaitée dans le bucket S3 `my_bucket` (notez que cet exemple écrit des fichiers au format Parquet) :
+
+```sql
+INSERT INTO
+    FUNCTION s3(
+        'https://s3-host:4321/my_bucket/{_partition_id}/file.parquet.gz',
+        's3-access-key',
+        's3-secret-access-key',
+        Parquet,
+        'name String, age Int, time DateTime'
+    ) PARTITION BY concat(
+        formatDateTime(time, '%Y'),
+        '/',
+        formatDateTime(time, '%m')
+    )
+SELECT
+    name,
+    age,
+    time
+FROM
+    sample_data
+Query id: 55adcf22-f6af-491e-b697-d09694bbcc56
+
+Ok.
+
+0 rows in set. Elapsed: 15.579 sec. Processed 10.00 thousand rows, 219.93 KB (641.87 rows/s., 14.12 KB/s.)
+```
