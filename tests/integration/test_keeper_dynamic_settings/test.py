@@ -15,6 +15,14 @@ node = cluster.add_instance(
     ],
     stay_alive=True,
 )
+node_ttl = cluster.add_instance(
+    "node_ttl",
+    main_configs=[
+        "configs/keeper_config_ttl.xml",
+        "configs/keeper_dynamic_ttl.xml",
+    ],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -196,3 +204,43 @@ def test_write_snapshot_version_hot_reload(started_cluster):
 
         # 3. The next snapshot must be written with the new version.
         assert create_snapshot_and_get_version("after_reload") == 9
+
+
+DYNAMIC_TTL_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_dynamic_ttl.xml"
+
+DOWNGRADED_SNAPSHOT_VERSION_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <write_snapshot_version>6</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def test_write_snapshot_version_reload_rejected(started_cluster):
+    """write_snapshot_version must not be hot-reloadable below what the enabled
+    feature flags require: node_ttl has CREATE_TTL enabled, which needs snapshot
+    version >= 8, so a reload lowering it to 6 must be rejected and the old
+    value kept."""
+
+    keeper_utils.wait_until_connected(cluster, node_ttl)
+
+    settings = get_coordination_settings(node_ttl)
+    assert settings["write_snapshot_version"] == "8"
+
+    with node_ttl.with_replace_config(
+        DYNAMIC_TTL_CONFIG_PATH, DOWNGRADED_SNAPSHOT_VERSION_CONFIG, reload_after=True
+    ):
+        # The config reloader picks up the change, the validation throws and the
+        # new settings are discarded.
+        node_ttl.wait_for_log_line(
+            "Feature flag CREATE_TTL requires write_snapshot_version"
+        )
+
+        settings = get_coordination_settings(node_ttl)
+        assert settings["write_snapshot_version"] == "8", (
+            "write_snapshot_version incompatible with CREATE_TTL was accepted "
+            f"on reload: {settings['write_snapshot_version']}"
+        )
