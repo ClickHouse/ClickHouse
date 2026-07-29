@@ -108,7 +108,7 @@ ingress:
   ### إعدادات مصدر البيانات
 </div>
 
-تتطلب واجهة ClickStack UI من المستخدم تحديد مصدر لكل نوع/ركيزة من أنواع بيانات Observability:
+تعتمد واجهة ClickStack UI على أن يحدد المستخدم مصدرًا لكل نوع/ركيزة من أنواع بيانات Observability:
 
 * `Logs`
 * `Traces`
@@ -224,44 +224,44 @@ ingress:
 | `Implicit Column Expression`     | العمود المستخدم في البحث النصي الكامل عند عدم تحديد حقل (على سبيل المثال، تحليل الاستعلامات على نمط Lucene).                            | نعم   | نعم                         | `Body`               |
 
 <div id="highlighted-attributes">
-  #### السمات المميزة
+  #### Highlighted Attributes
 </div>
 
-يمكن تهيئة السمات المميزة وسمات التتبّع المميزة في مصادر بيانات السجلات والتتبّعات.
+يمكن تهيئة Highlighted Attributes وHighlighted Trace Attributes في مصادر بيانات السجلات والتتبّعات.
 
-* السمات المميزة هي أعمدة أو تعبيرات تُعرض لكل سجل أو `span` عند عرض تفاصيل السجل أو `span`.
-* سمات التتبّع المميزة هي أعمدة أو تعبيرات يتم الاستعلام عنها من كل سجل أو `span` ضمن تتبّع، وتُعرض فوق trace waterfall.
+* Highlighted Attributes هي أعمدة أو تعبيرات تُعرض لكل سجل أو `span` عند عرض تفاصيل السجل أو `span`.
+* Highlighted Trace Attributes هي أعمدة أو تعبيرات يتم الاستعلام عنها من كل سجل أو `span` ضمن تتبّع، وتُعرض فوق trace waterfall.
 
 تُعرَّف هذه السمات في تهيئة المصدر، ويمكن أن تكون أي تعبيرات SQL. إذا أعاد تعبير SQL قيمة بتنسيق URL، فستُعرض السمة كرابط. ولا تُعرض القيم الفارغة.
 
-على سبيل المثال، تم إعداد مصدر التتبّع هذا بسمة مميزة وسمة تتبّع مميزة:
+على سبيل المثال، تم إعداد مصدر التتبّع هذا بسمة Highlighted Attributes وسمة Highlighted Trace Attributes:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="تهيئة السمات المميزة" size="md" />
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="تهيئة Highlighted Attributes" size="md" />
 
 تُعرض هذه السمات في اللوحة الجانبية بعد النقر على سجل أو `span`:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="السمات المميزة" size="md" />
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md" />
 
 يؤدي النقر على سمة إلى إتاحة خيارات لاستخدامها كقيمة بحث. وإذا تم توفير تعبير Lucene اختياري في تهيئة السمة، فسيُستخدم تعبير Lucene للبحث بدلًا من تعبير SQL.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="بحث السمات المميزة" size="md" />
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="بحث Highlighted Attributes" size="md" />
 
 <div id="correlated-sources">
-  ### المصادر المترابطة
+  ### المصادر المرتبطة
 </div>
 
-لتمكين الترابط الكامل بين المصادر في ClickStack، يجب عليك تكوين مصادر مترابطة للسجلات والتتبعات والمقاييس والجلسات. يتيح ذلك لـ HyperDX ربط البيانات ذات الصلة وتوفير سياق غني عند عرض الأحداث.
+لتمكين الربط الكامل بين المصادر في ClickStack، يجب عليك تكوين مصادر مرتبطة للسجلات والتتبعات والمقاييس والجلسات. يتيح ذلك لـ HyperDX ربط البيانات ذات الصلة وتوفير سياق غني عند عرض الأحداث.
 
 * `Logs`: يمكن ربطها بالتتبعات والمقاييس.
 * `Traces`: يمكن ربطها بالسجلات والجلسات والمقاييس.
 * `Metrics`: يمكن ربطها بالسجلات.
 * `Sessions`: يمكن ربطها بالتتبعات.
 
-يؤدي إعداد هذه الارتباطات إلى تمكين العديد من الميزات. على سبيل المثال، يمكن لـ HyperDX عرض السجلات ذات الصلة إلى جانب تتبّع معيّن أو إبراز شذوذات المقاييس المرتبطة بجلسة.
+يؤدي إعداد هذه الارتباطات إلى تمكين العديد من الميزات. على سبيل المثال، يمكن لـ HyperDX عرض السجلات ذات الصلة إلى جانب تتبّع معيّن أو إظهار شذوذات المقاييس المرتبطة بجلسة.
 
-على سبيل المثال، يوضّح الشكل أدناه مصدر السجلات بعد تهيئته بمصادر مترابطة:
+على سبيل المثال، يوضّح الشكل أدناه مصدر السجلات بعد تهيئته بمصادر مرتبطة:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="مصدر HyperDX المترابط" size="md" />
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="مصدر HyperDX المرتبط" size="md" />
 
 <div id="application-configuration-settings">
   ### إعدادات تكوين التطبيق

@@ -15,7 +15,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse 是原生支持 SQL 的引擎，从底层起就专为高性能分析型工作负载而设计。相比之下，Elasticsearch 提供的是类 SQL 接口，会将 SQL 转换到底层的 Elasticsearch 查询 DSL——这意味着 SQL 并非其原生能力，而且其[功能一致性](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)也比较有限。
 
-ClickHouse 不仅支持完整的 SQL，还扩展了一系列面向可观测性的函数，例如 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)、[`histogram`](/zh/reference/functions/aggregate-functions/parametric-functions#histogram) 和 [`quantileTiming`](/zh/reference/functions/aggregate-functions/quantileTiming)，从而简化了对结构化日志、指标和链路追踪数据的查询。
+ClickHouse 不仅支持完整的 SQL，还扩展了一系列面向可观测性的函数，例如 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)、[`histogram`](/zh/reference/functions/aggregate-functions/parametric-functions#histogram) 和 [`quantileTiming`](/zh/reference/functions/aggregate-functions/quantileTiming)，从而简化了对结构化日志、指标和trace数据的查询。
 
 对于简单的日志和 trace 探索，ClickStack UI (HyperDX) 提供了[Lucene 风格语法](/zh/clickstack/features/search)，支持通过直观的文本过滤来执行字段-值查询、范围查询、通配符匹配等操作。这与 Elasticsearch 中的 [Lucene 语法](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)以及 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) 的部分元素相似。
 
