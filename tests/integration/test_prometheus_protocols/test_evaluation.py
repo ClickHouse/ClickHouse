@@ -1282,6 +1282,9 @@ def test_date_time_functions():
 # this used to round the evaluation time by up to ~64 seconds before minute()/hour()/etc. ever saw it - enough
 # to flip which minute (or hour, etc.) it falls into near a boundary. This must return the exact calendar value
 # regardless of the table's scalar type, both for a single evaluation time and for a range of evaluation times.
+# The same used to be true for the explicit `vector(time())` carrier (which `f()` is documented to be equivalent
+# to): only the implicit zero-argument branch kept the evaluation time in native precision, so
+# `minute(vector(time()))` still rounded it through the table's Float32 scalar type and disagreed with `minute()`.
 def test_date_time_functions_zero_arg_with_float32_scalar():
     node.query(
         "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
@@ -1298,6 +1301,16 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
             [["[]", "2026-02-08 20:31:40.000", 31]],
         )
 
+        assert execute_query_in_prometheus("minute(vector(time()))", 1770582700) == (
+            '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582700, "31"]}]}'
+        )
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(time()))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
         assert execute_range_query_in_prometheus(
             "minute()", 1770582580, 1770582700, 60
         ) == (
@@ -1307,6 +1320,24 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         assert tsv_close_to(
             node.query(
                 "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute()', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert execute_range_query_in_prometheus(
+            "minute(vector(time()))", 1770582580, 1770582700, 60
+        ) == (
+            '{"resultType": "matrix", "result": [{"metric": {}, "values": '
+            '[[1770582580, "29"], [1770582640, "30"], [1770582700, "31"]]}]}'
+        )
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(time()))', 1770582580, 1770582700, 60)"
             ),
             [
                 [

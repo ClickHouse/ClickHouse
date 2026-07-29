@@ -111,6 +111,27 @@ namespace
 
         return &it->second;
     }
+
+    /// If `node` is exactly `vector(time())`, returns the inner `time()` function node; otherwise returns nullptr.
+    const PQT::Function * asVectorOfTime(const Node * node)
+    {
+        if (node->node_type != NodeType::Function)
+            return nullptr;
+
+        const auto * outer = static_cast<const PQT::Function *>(node);
+        if ((outer->function_name != "vector") || (outer->getArguments().size() != 1))
+            return nullptr;
+
+        const Node * inner_node = outer->getArguments()[0];
+        if (inner_node->node_type != NodeType::Function)
+            return nullptr;
+
+        const auto * inner = static_cast<const PQT::Function *>(inner_node);
+        if (!isFunctionTime(inner->function_name) || !inner->getArguments().empty())
+            return nullptr;
+
+        return inner;
+    }
 }
 
 
@@ -140,6 +161,17 @@ SQLQueryPiece applyDateTimeFunction(
         auto time_argument = makeTimeQueryPieceNative(function_node, context);
         time_argument.type = ResultType::INSTANT_VECTOR;
         arguments.push_back(std::move(time_argument));
+    }
+    else if (const auto * time_node = asVectorOfTime(function_node->getArguments()[0]))
+    {
+        /// The argument is exactly `vector(time())`, which the PromQL spec says a 0-argument call like `f()` is
+        /// equivalent to. The generic conversion path already ran for this argument (fromFunctionTime() ->
+        /// makeTimeQueryPiece()), which represents the evaluation time via `context.scalar_data_type` - the same
+        /// Float32-losing-precision path described above. Rebuild the argument with makeTimeQueryPieceNative()
+        /// instead, exactly like the 0-argument branch above, so that `f(vector(time()))` and `f()` always agree.
+        auto time_argument = makeTimeQueryPieceNative(time_node, context);
+        time_argument.type = ResultType::INSTANT_VECTOR;
+        arguments[0] = std::move(time_argument);
     }
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
