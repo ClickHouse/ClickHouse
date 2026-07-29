@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: '朴素贝叶斯字典'
+sidebarTitle: '朴素贝叶斯'
+description: '配置用于文本分类的 NAIVE_BAYES 字典。'
+doc_type: 'reference'
+---
+
+`naive_bayes` (`NAIVE_BAYES`) 字典使用多项式 [朴素贝叶斯](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) 模型对文本进行分类，这是文本分类中的标准事件模型：它根据输入中各个 n-gram 在每个类别中出现的频次为其评分。你需要提供一张按类别统计的 **n-gram 计数** 表，字典会在加载时一次性将其编译为模型，随后用该模型对你传入的任意文本进行分类。
+
+它适用于快速、轻量级的文本分类任务，例如情感分析、topic 或垃圾信息标注，以及语言或文字系统检测。
+
+你可以使用以下三个函数查询该字典：
+
+* [`naiveBayesClassifier`](/zh/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) 返回预测的类别 ID。
+* [`naiveBayesClassifierWithProb`](/zh/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb) 返回预测的类别及其概率。
+* [`naiveBayesClassifierWithAllProbs`](/zh/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) 返回所有类别及其概率。
+
+普通的 [`dictGet`](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet) 也能用于分类 (参见[说明](#notes)) 。还有一个函数 [`naiveBayesNgrams`](/zh/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 不执行分类——它会以与该字典相同的方式将文本拆分为 n-gram，因此你可以从原始文本构建训练数据 (参见[从原始文本构建训练数据](#build-training-data-from-raw-text)) 。
+
+<div id="quickstart">
+  ## 快速入门
+</div>
+
+这里我们构建一个用于情感分析的、基于标记模式的 unigram (`n = 1`) 模型。
+
+**1. 创建一个源表**，用于存储各类别的 n-gram 计数：
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. 插入训练数据** —— 单个词 (unigram) 及其在正类 (`1`) 和负类 (`0`) 中各自的出现频次：
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. 创建使用 `NAIVE_BAYES` 布局的字典**：
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+`PRIMARY KEY ngram` 将 `ngram` 列设为键——但对 `NAIVE_BAYES` 字典来说，这个“键”是你传入用于分类的文本，而不是可供查找的存储值 (参见 [字典结构](#dictionary-structure)) 。`LAYOUT` 用于配置模型：`class_attribute 'class_id'` 将 `class_id` 标记为类别标签 (因此，另一个属性 `count` 表示每个类别的出现次数) ，`n 1` 使用 unigram，`mode 'token'` 会将文本拆分为按空白分隔的词 (参见 [布局参数](#layout-parameters)) 。
+
+**4. 分类** — `naiveBayesClassifier` 返回类别 id：
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+`1` 对应正类，这是根据我们在步骤 2 中插入的训练数据得出的。
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+同样，`0` 对应负类。
+
+通过 `dictGet` 也能得到相同的结果：
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+获取该预测结果的概率，或各类别的概率：
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+预测结果为类别 `0` (负类) ，概率为 `0.64`。
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+`naiveBayesClassifierWithAllProbs` 返回所有类别，并按可能性从高到低排序，各类别概率之和为 `1.0`——此处负类为 `0.64`，正类为 `0.36`。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+**训练 (在加载时) 。** 每个源行都是一个 `(n-gram, class, count)` 观测值。字典加载时，这些行会被一次性编译进模型中。重复的 `(n-gram, class)` 行会被累加，`count = 0` 的行则会被忽略。
+
+**分类 (在查询时) 。** 要对字符串进行分类，模型会：
+
+1. 根据 `mode` 和 `n` 将其拆分为 n-gram (请参见[标记化模式](#tokenization-modes)) 。
+2. 结合类别先验以及输入中各个 n-gram 在该类别中出现的频次，为每个类别打分。
+3. 按得分对类别排序。得分最高的类别就是 `naiveBayesClassifier` 返回的预测结果；`naiveBayesClassifierWithProb` 和 `naiveBayesClassifierWithAllProbs` 还会返回概率——分别是该类别的概率，或全部类别的概率。
+
+影响每个类别得分的因素有两个。第一个是 `alpha`，用于平滑处理。平滑可以防止模型仅仅因为某个 n-gram 在训练时未出现在某个类别中，就给该类别打零分。较小的 `alpha` 会让模型更依赖训练数据，因此某个类别的得分可能远高于其他类别；但当训练数据较少或分布不均时，也可能使模型过于敏感。较大的 `alpha` 会降低 n-gram 计数的影响，因此不同类别的得分会更接近。如果 `alpha` 非常大，n-gram 信息几乎不起作用，得分主要由类别先验决定 (下一段会介绍) 。
+
+第二个因素是类别先验——也就是模型在查看文本之前，对每个类别可能性的预先假设。它相当于在考虑任何 n-gram 之前，每个类别已有的初始得分，因此先验越高，该类别就越可能被预测出来。其设置方式取决于 `priors_mode`。默认情况下 (`proportional`) ，训练数据中 n-gram 总数更多的类别会以更高的初始得分起步。使用 `uniform` 时，每个类别的起点都相同，因此结果仅由 n-gram 决定。使用 `explicit` 时，你可以自行设置每个类别的初始值。请参见[先验模式](#prior-modes)。
+
+如果某个 n-gram 从未在训练数据中出现过，它会被忽略：它不属于模型的词汇表，因此既不会对任何类别有利，也不会对任何类别不利。
+
+该算法遵循用于文本分类的多项式朴素贝叶斯模型；请参见 [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html)。
+
+<div id="dictionary-structure">
+  ## 字典结构
+</div>
+
+`NAIVE_BAYES` 字典具有固定的结构：
+
+* `PRIMARY KEY` 是单个 `String` 列——即 n-gram。在查询时，这个&quot;key&quot;是你传入用于分类的文本，而不是存储的查找键。
+* 此外，必须声明**恰好两个无符号整数属性**：类标签和出现次数。类别 ID 在内部始终使用 `UInt32`，因此类标签必须能放入 `UInt32` (最大为 `4294967295`) ，即使你将其属性声明为 `UInt64` 也是如此。超出范围的值会在字典加载时被拒绝，而不是在创建字典时。声明的类型也是一样：如果源类别 ID 或计数无法放入所声明的属性类型，加载会失败，而不会被静默截断。
+* `class_attribute` 布局参数用于指定哪个属性是类标签；另一个属性会自动视为计数。这两个属性可以按任意顺序声明。
+
+源表保存的是**预聚合**计数：每个 `(n-gram, class)` 一行，表示该 n-gram 在该类中出现了多少次。你可以通过对语料库进行标记化并对结果分组来生成这些计数，可以在你自己的训练管道中完成，也可以在 ClickHouse 中基于原始已标注文本完成 (参见 [Build training data from raw text](#build-training-data-from-raw-text)) 。字典只使用这些计数。
+
+**更新模型。** 由于该模型是由表支撑的字典，因此可通过更新表并重新加载来重新训练：
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## 布局参数
+</div>
+
+| 参数                | 描述                                                                                                                 | 示例                     | 默认值              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------- | ---------------- |
+| `class_attribute` | 保存类别标签的属性名称；另一个属性表示计数。                                                                                             | `'class_id'`           | *必需*             |
+| `n`               | N-gram 大小：`1` = unigram，`2` = bigram，`3` = trigram，… (1–1024) 。                                                    | `2`                    | *必需*             |
+| `mode`            | 标记化方式：`byte`、`codepoint` 或 `token`。参见[标记化模式](#tokenization-modes)。                                                 | `'token'`              | *必需*             |
+| `alpha`           | 用于 n-gram 似然的加性 (Lidstone) 平滑；`alpha = 1` 即拉普拉斯平滑 (必须是有限值且 `> 0`) 。                                                | `0.5`                  | `1.0`            |
+| `priors_mode`     | 确定类别先验的方式：`uniform`、`proportional` 或 `explicit`。参见[先验模式](#prior-modes)。                                            | `'uniform'`            | `'proportional'` |
+| `priors`          | 显式指定的各类别先验：由 `(class, probability)` 对组成的集合。仅在 `priors_mode 'explicit'` 时有效，并且在该模式下为必需；在其他任何模式下提供它都会报错。总和必须为 `1.0`。 | `[(0, 0.6), (1, 0.4)]` | —                |
+| `store_source`    | 保留源数据行，以便 `SELECT * FROM dictionary` 能正常工作。内存占用大致会翻倍。                                                              | `1`                    | `0`              |
+| `start_token`     | 在输入前添加 `(n-1)` 次边界标记。参见[边界标记](#boundary-tokens-padding)。                                                           | `'0x01'` / `'<s>'`     | — (无填充)          |
+| `end_token`       | 在输入后添加 `(n-1)` 次边界标记。                                                                                              | `'0xFF'` / `'</s>'`    | — (无填充)          |
+
+你可以使用 `CREATE DICTIONARY` DDL (如上面的快速入门所示) 或在 XML 配置文件中定义字典；关于该文件应放在哪里，请参见[字典布局](/zh/reference/statements/create/dictionary/layouts/overview)。下面的示例设置了所有布局选项，方便你查看完整配置——只有 `class_attribute`、`n` 和 `mode` 是必需的，其余项的默认值见上表。在配置文件中，先验会写成重复的 `prior` 元素 (每个类一个，如下所示) ；`byte` 和 `codepoint` 的填充标记写成数字 (配置无法承载原始字节) ；而 `token` 字面量会在需要时进行 XML 转义，因此 `<s>` 会变成 `&lt;s&gt;`。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## 标记化模式
+</div>
+
+`mode` 决定什么是“标记”，因此也决定 n-gram 的具体形式。源 n-gram 必须由**相同的** `mode` 和 `n` 生成。
+
+* `byte` — 每个标记都是单个字节；不假定输入为 UTF-8。设 `n = 2`，`'abc'` 会生成字节二元组 `'ab'`、`'bc'`。*适用于* 对任意字节序列进行语言或编码检测，以及任何子字符层面特征很重要的数据。通常与 `n >= 2` 搭配使用。
+* `codepoint` — 每个标记都是一个 Unicode 码点；输入会按 UTF-8 解释。设 `n = 1`，`'café'` 会生成码点 `'c'`、`'a'`、`'f'`、`'é'`。*适用于* 文字系统和语言检测，以及在空白词边界不可靠时的短文本或 CJK 文本。 (源 n-gram 必须是有效的 UTF-8；查询输入会以宽松方式解码——参见 [说明](#notes)。)
+* `token` — 每个标记都是一个由 **ASCII 空白字符** (空格、制表符、换行符、回车符、换页符、垂直制表符；连续出现会合并为一个分隔符) 分隔的单词。非 ASCII 的 Unicode 空白字符，如 `U+00A0` (不间断空格) 或 `U+2003` (em 空格) ，**不**会作为分隔符，而是保留在标记内部。只有空白字符会触发拆分——不会转为小写，也不会去掉任何字符——因此 `'Hello, World!'` 会变成标记 `'Hello,'` 和 `'World!'` (逗号、`!` 和大写字母都会保留) ，在 `n = 2` 时，它们会组成唯一的二元组 `'Hello, World!'`。*适用于* 以空格分词的语言中的词级分类——情感、topic、垃圾信息、句子语言识别。
+
+<div id="prior-modes">
+  ## 先验模式
+</div>
+
+先验是模型在查看文本*之前*对每个类的预先判断。`priors_mode` 用于选择如何设置先验。
+
+* `proportional` (默认) — 每个类的先验与其在训练数据中的 n-gram 总计数成正比——也就是该类 `count` 列的总和，而不是其行数或训练文档数——因此，出现越频繁的类，初始概率就越高。**在以下情况下选择它**：训练时各类的占比 (按 n-gram 总计数计算) 与您预期在查询时出现的频率一致。**无需额外提供任何内容**——它会根据源计数自动推导得出。
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — 开始时每个类的可能性都完全相同，因此没有哪个类会先天占优，预测结果完全由输入中的 n-gram 决定。**在以下情况下选择它**：各类分布均衡，或者训练频率并不能反映每个类在查询时的实际出现频率。**无需提供任何内容。**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — 您通过 `priors [(0, 0.6), (1, 0.4)]` 显式提供先验：每个类对应一个 `(class, probability)` 对，每个概率都大于 0 且不超过 1，并且总和为 `1.0`。**在以下情况下选择它**：您知道真实的基础比例，并且它们与训练数据不同——例如，即使训练集是均衡的，生产环境流量中也只有 1% 是垃圾信息。**请根据各类在真实场景中的预期占比来计算它们。**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## 边界标记 (padding)
+</div>
+
+默认情况下，padding 处于关闭状态。它只在 `n > 1` 时才有意义，因为它能让模型利用文本开头和结尾的信号，从而提高准确性。
+
+**为什么有帮助。** 当 `n > 1` 时，文本中间的 n-gram 同时具有完整的左侧和右侧上下文，但第一个和最后一个标记则没有。加入边界标记后，会生成用于表示“文本开始”和“文本结束”的 n-gram，这样模型就能学习与位置相关的模式——例如，某个词在消息*开头*时特别有辨识度，或者某个字符在词语*末尾*时更常见。
+
+**你必须这样做：**
+
+1. **分别决定两侧是否启用。** `start_token` 和 `end_token` 是相互独立的——可以只设置其中一个、同时设置两个，或者两个都不设置。空值表示该侧不进行填充。
+2. **选择不常见的值**，避免与真实数据冲突，例如 `byte` 使用 `0x01` / `0xFF`，`codepoint` 使用 `U+10FFFE` / `U+10FFFF`，或 `token` 使用 `<s>` / `</s>`。
+3. **用相同的填充方式生成训练 n-gram。** 字典会对查询输入进行填充，但绝不会对你的源数据做填充，因此边界标记必须预先包含在你加载的 n-gram 中。要最简单地确保两者一致，可以用 [`naiveBayesNgrams`](/zh/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 构建源数据，并传入与 layout 相同的 `start_token` 和 `end_token` (以及 `n` 和 `mode`) ——它生成的正是字典在查询时产生的带填充 n-gram。
+
+填充标记的格式取决于 mode：
+
+* `byte` — 表示字节值的数字，可用十进制或 `0x` 十六进制表示 (因此 `'1'` 和 `'0x01'` 相同) ：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — 表示 UTF-8 码点的数字，可用十进制或 `0x` 十六进制表示 (因此 `'1114110'` 和 `'0x10FFFE'` 相同) ：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — 标记字符串的字面值：
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## 从原始文本构建训练数据
+</div>
+
+如果你是从已标注的原始文本开始，而不是从预聚合计数开始，请使用 [`naiveBayesNgrams`](/zh/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 函数将其拆分为 n-gram。为它提供与字典 布局 相同的 `n`、`mode`、`start_token` 和 `end_token`，它就会精确生成字典所需的 n-gram，因此训练数据会与模型在查询时看到的内容一致。
+
+给定一个由 `(class_id, text)` 行组成的表，只需一次 `GROUP BY` 就能构建出 `(ngram, class_id, count)` 输入：
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+`training_data` 现在可作为 `NAIVE_BAYES` 字典的有效源 (这里使用的是标记 unigram；请调整 `n` 和 `mode` 参数以匹配你的布局) 。该字典会完全按输入原样对查询内容进行分词，因此如果训练文本是小写，而查询文本不是小写，它们的 n-gram 就不会匹配，模型准确性也会受到影响。
+
+<Info>
+  **先验和文档计数**
+
+  `proportional` 先验 (默认值) 是按每个类别的**n-gram 总数**加权的，而不是按其文档数加权。如果你想使用经典的文档频率先验 (`documents_in_class / total_documents`) ，请从原始 `docs` 表中计算，并通过 `priors_mode 'explicit'` 传入：
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+然后，从 `training_data` 创建字典，传入上面计算出的显式先验，并对新的评论进行分类：
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+类别 `1` 表示正类，`0` 表示负类，因此这两条评论都被正确分类。
+
+<div id="more-examples">
+  ## 更多示例
+</div>
+
+**字节模式** — 字节二元组 (`n = 2`，`mode 'byte'`；类 `0` = 由字母 `a`–`d` 构成的字符串，类 `1` = 字母 `x`–`z`) ：
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**码位模式** — 逐字符检测书写系统 (`n = 1`，`mode 'codepoint'`；类 `0` = Latin，`1` = Cyrillic) ：
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**使用 `store_source` 读回训练数据**：
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**基于原始文本的语言检测** —— 对带边界填充的短词进行检测 (`n = 2`、`mode 'codepoint'`；类 `0` = 英语，`1` = 西班牙语) 。训练用的 `n-grams` 通过 [`naiveBayesNgrams`](/zh/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 基于原始单词构建，而边界标记——同时传递给该函数和 布局——可让模型利用每个单词的首尾字母：
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* **计算型字典语义。** 这是一个*计算型*字典：`dictGet(dict, '<class_attribute>', text)` 会对 `text` 进行分类 (键是待分类的输入，而不是存储的键) ，`count` 属性无法查询，且 `dictHas` 始终返回 `1`。
+* **加载时的源数据验证。** 每个源 n-gram 都必须与配置的 `n` 和 `mode` 匹配 (在 `codepoint` 模式下，还必须是有效的 UTF-8) ；只要不匹配，加载就会失败。由于零计数行会被忽略 (参见[工作原理](#how-it-works)) ，如果源数据为空，或只包含零计数行，就没有可用于训练的数据，因此会加载失败。
+* **查询时的分词较为宽松。** 与源数据验证不同，查询输入永远不会被拒绝。在 `codepoint` 模式下，无效的 UTF-8 字节会按尽力而为的方式解码，而不会导致查询失败；在 `token` 模式下，只有 ASCII 空白字符才会分隔单词 (如 `U+00A0` 这类 Unicode 空白仍会保留在标记内部) 。即使输入格式不合法，也仍然会进行分类——通常会依据先验概率，因为其中的 n-grams 不会与已训练的内容匹配。
