@@ -17,6 +17,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -2660,7 +2662,7 @@ struct Transformer
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDateTime, DataTypeTime>)
+            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>)
             {
                 if constexpr (is_any_of<Additions, DateTimeAccurateConvertStrategyAdditions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
@@ -2685,6 +2687,26 @@ struct Transformer
                             is_valid_input = vec_from[i] >= -MAX_TIME_TIMESTAMP && vec_from[i] <= MAX_TIME_TIMESTAMP;
                         else
                             is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_TIME_TIMESTAMP);
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                    {
+                        /// `Date32` spans `[1900-01-01, 2299-12-31]`, and a numeric source is read either as an
+                        /// extended day number or as a unix timestamp, so its representable window is
+                        /// `[-getDayNumOffsetEpoch(), MAX_DATE32_TIMESTAMP]`. Anything outside is silently clamped
+                        /// by the transform below, which is exactly what the accurate cast must reject.
+                        static constexpr Int64 lower_bound = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
+                        if constexpr (is_floating_point<FromValueType>)
+                        {
+                            /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
+                            /// Every comparison with a NaN is false, so a NaN is rejected as well.
+                            const Float64 value = static_cast<Float64>(vec_from[i]);
+                            is_valid_input = value >= static_cast<Float64>(lower_bound)
+                                && value <= static_cast<Float64>(MAX_DATE32_TIMESTAMP);
+                        }
+                        else if constexpr (is_signed_v<FromValueType>)
+                            is_valid_input = vec_from[i] >= lower_bound && vec_from[i] <= MAX_DATE32_TIMESTAMP;
+                        else
+                            is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_DATE32_TIMESTAMP);
                     }
                     else
                     {
