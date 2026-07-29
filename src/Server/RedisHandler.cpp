@@ -165,7 +165,7 @@ bool RedisHandler::processRequest()
             resp.serialize(*out);
             return true;
         }
-        case RedisProtocol::CommandType::ECHO:
+        case RedisProtocol::CommandType::ECHO_COMMAND:
         {
             LOG_DEBUG(log, "ECHO request");
             RedisProtocol::EchoRequest echo_request(req);

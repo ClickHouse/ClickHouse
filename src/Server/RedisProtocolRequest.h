@@ -34,7 +34,8 @@ namespace Command
     const String COMMAND = "COMMAND";
     const String CLIENT = "CLIENT";
     const String AUTH = "AUTH";
-    const String ECHO = "ECHO";
+    /// Named `ECHO_COMMAND` rather than `ECHO`, because `<termios.h>` defines an `ECHO` macro on some platforms (e.g. ppc64le).
+    const String ECHO_COMMAND = "ECHO";
     const String PING = "PING";
     const String QUIT = "QUIT";
     const String SELECT = "SELECT";
@@ -51,7 +52,7 @@ enum class CommandType : uint8_t
     COMMAND,
     CLIENT,
     AUTH,
-    ECHO,
+    ECHO_COMMAND,
     PING,
     QUIT,
     SELECT,
@@ -69,8 +70,8 @@ inline String toString(CommandType cmd_type)
     {
         case CommandType::AUTH:
             return Command::AUTH;
-        case CommandType::ECHO:
-            return Command::ECHO;
+        case CommandType::ECHO_COMMAND:
+            return Command::ECHO_COMMAND;
         case CommandType::PING:
             return Command::PING;
         case CommandType::QUIT:
@@ -122,8 +123,8 @@ public:
             command = CommandType::COMMAND;
         else if (cmd == Command::AUTH)
             command = CommandType::AUTH;
-        else if (cmd == Command::ECHO)
-            command = CommandType::ECHO;
+        else if (cmd == Command::ECHO_COMMAND)
+            command = CommandType::ECHO_COMMAND;
         else if (cmd == Command::PING)
             command = CommandType::PING;
         else if (cmd == Command::QUIT)
