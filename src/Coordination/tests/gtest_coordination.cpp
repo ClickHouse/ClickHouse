@@ -7,6 +7,7 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
@@ -82,22 +83,45 @@ TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
                    "</coordination_settings></keeper_server></clickhouse>"),
               0);
 
-    /// A configured value reaches the setting verbatim and in milliseconds, which is the unit
-    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Parsing it as seconds would silently
-    /// shorten the budget by a factor of 1000.
+    /// A bare number in the config is milliseconds, which is the unit
+    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Had the setting been declared with a
+    /// coarser unit, the same config would mean a budget 1000 times larger.
     EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               60000);
 
-    /// `raft_params::snapshot_sync_ctx_timeout_` is an int32, but the setting itself is unbounded,
-    /// so an out-of-range value survives parsing and has to be clamped further along. That is why
-    /// `launchRaftServer` routes this setting through `getValueOrMaxInt32AndLogWarning` instead of
-    /// assigning it directly.
+    /// The setting itself is unbounded, so an operator can configure more milliseconds than the
+    /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
+    /// must be narrowed by `launchRaftServer` rather than wrapping - see the test below.
     EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               std::numeric_limits<int32_t>::max());
+}
+
+/// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
+/// function, so a value that does not fit must be reported and capped instead of wrapping to a
+/// negative timeout or gap.
+TEST(CoordinationSettingsParse, ValueOrMaxInt32)
+{
+    auto log = getLogger("CoordinationSettingsParse");
+
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(0, "test", log), 0);
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(60000, "test", log), 60000);
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<int32_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
+
+    /// Above the range it caps rather than wrapping negative.
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) + 1, "test", log),
+        std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(3000000000, "test", log), std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<uint64_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
 }
 
 TEST_P(CoordinationTest, RaftServerConfigParse)

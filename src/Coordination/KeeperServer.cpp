@@ -6,6 +6,7 @@
 #include "config.h"
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -257,22 +258,6 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
             ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
 
     return user_and_digest;
-}
-
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
-{
-    if (value > std::numeric_limits<int32_t>::max())
-    {
-        LOG_WARNING(
-            log,
-            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
-            value,
-            name,
-            std::numeric_limits<int32_t>::max());
-        return std::numeric_limits<int32_t>::max();
-    }
-
-    return static_cast<int32_t>(value);
 }
 
 }
