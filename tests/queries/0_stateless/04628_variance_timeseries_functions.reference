@@ -21,3 +21,7 @@ Row 1:
 ──────
 stddev_large: [(100,0),(110,0.5)]
 stdvar_large: [(100,0),(110,0.25)]
+Row 1:
+──────
+stddev_nan: [(100,0),(110,nan),(120,nan)]
+stdvar_nan: [(100,0),(110,nan),(120,nan)]

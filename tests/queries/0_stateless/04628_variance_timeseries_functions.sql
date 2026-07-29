@@ -75,3 +75,21 @@ SELECT
 FROM ts_large_magnitude FORMAT Vertical;
 
 DROP TABLE ts_large_magnitude;
+
+-- Regression: a NaN sample anywhere in the window must make stddev/stdvar propagate NaN, not silently
+-- clamp to a valid-looking 0 (`std::max(0.0, NaN)` returns `0.0`, since any comparison against NaN is
+-- false). The Prometheus storage path stores raw Float64 sample values in this column unfiltered, so a
+-- NaN sample (e.g. a staleness marker or bad input) must not be hidden as clean zero-variance data.
+CREATE TABLE ts_non_finite(timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
+
+INSERT INTO ts_non_finite VALUES (100, 1), (110, nan), (120, 3);
+
+WITH
+    100 AS start, 120 AS end, 10 AS step, 20 AS window,
+    range(start, end + 1, step) as grid
+SELECT
+    arrayZip(grid, timeSeriesStddevToGrid(start, end, step, window)(toUnixTimestamp(timestamp), value)) as stddev_nan,
+    arrayZip(grid, timeSeriesStdvarToGrid(start, end, step, window)(toUnixTimestamp(timestamp), value)) as stdvar_nan
+FROM ts_non_finite FORMAT Vertical;
+
+DROP TABLE ts_non_finite;
