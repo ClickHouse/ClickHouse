@@ -48,7 +48,11 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
-    if (!offsets_concrete->empty() && data && !data->empty())
+    /// The nested column and the offsets are expected to be fully populated before the array is created,
+    /// so the consistency of the offsets is checked for an empty nested column as well:
+    /// otherwise a column with, say, offsets = [1] and no elements at all passes unnoticed,
+    /// and then sizeAt returns a size that is not there and the consumers read the nested column out of bounds.
+    if (!offsets_concrete->empty() && data)
     {
         Offset last_offset = offsets_concrete->getData().back();
 

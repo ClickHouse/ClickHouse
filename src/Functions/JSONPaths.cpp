@@ -134,9 +134,10 @@ private:
             return ColumnArray::create(shared_data_paths, shared_data_array.getOffsetsPtr());
         }
 
-        auto res = ColumnArray::create(ColumnString::create());
-        auto & offsets = res->getOffsets();
-        ColumnString & data = assert_cast<ColumnString &>(res->getData());
+        auto data_column = ColumnString::create();
+        auto offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & data = *data_column;
+        auto & offsets = offsets_column->getData();
 
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
@@ -161,7 +162,7 @@ private:
                 }
                 offsets.push_back(data.size());
             }
-            return res;
+            return ColumnArray::create(std::move(data_column), std::move(offsets_column));
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
@@ -210,7 +211,7 @@ private:
             offsets.push_back(data.size());
         }
 
-        return res;
+        return ColumnArray::create(std::move(data_column), std::move(offsets_column));
     }
 
     ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
