@@ -1,8 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/111788
--- A text index is matched to the query expression by column name. Queries are analyzed with
--- `optimize_empty_string_comparisons` (enabled by default), which rewrites `s = ''` to `empty(s)`,
--- while the index expression is not, so an index whose expression contains an empty string
--- comparison was never used. The index must be used with and without the optimization.
+-- Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not.
+-- So a text index whose expression compares to an empty string was never matched by name.
 
 SET enable_analyzer = 1; -- `optimize_empty_string_comparisons` is an analyzer pass
 SET use_skip_indexes = 1;

@@ -93,7 +93,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
-        const NameSet & rewritten_index_column_names_,
+        const String & rewritten_index_column_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -189,8 +189,7 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    /// Checks the header, including the rewritten names.
-    bool hasHeaderColumn(const String & column_name) const;
+    bool hasHeaderColumn(const String & column_name) const { return header.has(column_name) || column_name == rewritten_index_column_name; }
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
@@ -198,8 +197,7 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
-    /// See MergeTreeIndexText::rewritten_index_column_names.
-    NameSet rewritten_index_column_names;
+    String rewritten_index_column_name;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;

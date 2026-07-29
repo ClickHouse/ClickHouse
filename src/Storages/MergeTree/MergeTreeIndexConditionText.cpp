@@ -127,14 +127,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    const NameSet & rewritten_index_column_names_,
+    const String & rewritten_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , rewritten_index_column_names(rewritten_index_column_names_)
+    , rewritten_index_column_name(rewritten_index_column_name_)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
@@ -306,11 +306,6 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     return TextIndexDirectReadMode::None;
-}
-
-bool MergeTreeIndexConditionText::hasHeaderColumn(const String & column_name) const
-{
-    return header.has(column_name) || rewritten_index_column_names.contains(column_name);
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
