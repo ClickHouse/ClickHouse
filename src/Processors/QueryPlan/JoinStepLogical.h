@@ -169,11 +169,6 @@ public:
         return {std::cref(left_relation.name), std::cref(right_relation.name)};
     }
 
-    std::pair<std::reference_wrapper<const RelationEstimateInfo>, std::reference_wrapper<const RelationEstimateInfo>> getInputRelations() const
-    {
-        return {std::cref(left_relation), std::cref(right_relation)};
-    }
-
     String getReadableRelationName() const;
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
