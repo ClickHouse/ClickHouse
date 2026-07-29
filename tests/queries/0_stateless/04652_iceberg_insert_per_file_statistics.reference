@@ -40,3 +40,7 @@ id=3 rows=1/1 score_nulls=1/1 paired=yes lower=[] upper=[]
 id=1 lower=[(1,1),(2,100)] upper=[(1,1),(2,100)] bounds_are_own_row=yes
 id=2 lower=[(1,2),(2,200)] upper=[(1,2),(2,200)] bounds_are_own_row=yes
 id=3 lower=[(1,3),(2,300)] upper=[(1,3),(2,300)] bounds_are_own_row=yes
+--- per-entry column_sizes describe only their own file ---
+id=1 width=4 id_size=4 s_size=12
+id=2 width=8 id_size=4 s_size=16
+id=3 width=12 id_size=4 s_size=20

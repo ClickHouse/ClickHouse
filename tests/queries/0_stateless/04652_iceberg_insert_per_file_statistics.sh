@@ -11,8 +11,9 @@ TYPES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_types"
 PART_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_part"
 PAIRED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_paired"
 BOUNDED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_bounded"
+SIZED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_sized"
 
-rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}"
+rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}" "${SIZED_PATH}"
 
 # One row per data file, so the number of data files does not depend on randomized block sizes.
 ONE_ROW_PER_FILE="
@@ -231,4 +232,47 @@ for manifest in $(find "${BOUNDED_PATH}/metadata" -maxdepth 1 -name '*.avro' -no
     "
 done
 
-rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}"
+# The two scenarios above pin `record_count`, `null_value_counts` and the bounds to the file each
+# entry names, but not `column_sizes`, whose only other assertion is a cross-table `max()` inequality
+# that constrains no individual entry. Both of their fixtures also give every file the same per-file
+# sizes, so a permutation cannot move a size value there. This scenario gives each file a `String` of
+# a different width, which makes the sizes distinct and therefore permutation-sensitive. The values
+# are in-memory `IColumn::byteSize` sums, not Parquet file sizes, so they are deterministic:
+# `ColumnString::byteSize` is `chars.size() + offsets.size() * sizeof(offsets[0])`, and `insertData`
+# appends exactly `length` bytes with no terminator.
+${CLICKHOUSE_CLIENT} --query "
+    ${ONE_ROW_PER_FILE}
+    CREATE TABLE sized (id Int32, s String)
+    ENGINE = IcebergLocal('${SIZED_PATH}', 'Parquet') ORDER BY (id);
+    INSERT INTO sized SELECT number + 1, repeat('x', (number + 1) * 4) FROM numbers(3);
+"
+
+echo '--- per-entry column_sizes describe only their own file ---'
+for manifest in $(find "${SIZED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
+    ${CLICKHOUSE_CLIENT} --query "
+        WITH entries AS (
+            SELECT
+                replaceRegexpOne(tupleElement(data_file, 'file_path'), '^.*/', '')          AS base,
+                CAST(tupleElement(data_file, 'column_sizes'), 'Map(Int32, Int64)') AS entry_sizes
+            FROM file('${manifest}', Avro)
+        ),
+        files AS (
+            SELECT
+                replaceRegexpOne(_path, '^.*/', '') AS base,
+                any(id)                             AS own_id,
+                any(length(s))                      AS own_width
+            FROM file('${SIZED_PATH}/data/*.parquet', Parquet)
+            GROUP BY base
+        )
+        SELECT
+            'id=' || toString(f.own_id)
+              || ' width=' || toString(f.own_width)
+              || ' id_size=' || toString(e.entry_sizes[1])
+              || ' s_size=' || toString(e.entry_sizes[2]) AS entry
+        FROM entries AS e INNER JOIN files AS f ON e.base = f.base
+        ORDER BY f.own_id
+        FORMAT TSV;
+    "
+done
+
+rm -rf "${MULTI_PATH}" "${SINGLE_PATH}" "${TYPES_PATH}" "${PART_PATH}" "${PAIRED_PATH}" "${BOUNDED_PATH}" "${SIZED_PATH}"
