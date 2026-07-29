@@ -14,6 +14,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
@@ -23,6 +26,8 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+
+#include "config.h"
 
 using namespace DB;
 
@@ -252,6 +257,71 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
 }
 
 }
+
+#if USE_DATASKETCHES
+TEST(Statistics, CountMinSketchSerializedSizeMatchesPayload)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+    auto column = data_type->createColumn();
+    for (UInt64 value : {1, 2, 3, 3, 5, 8, 13, 13, 13, 21})
+        column->insert(value);
+    const size_t row_count = column->size();
+
+    auto stats = createTestStats({StatisticsType::CountMinSketch}, data_type);
+    stats->build(std::move(column));
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    stats->serialize(out);
+    out.finalize();
+
+    ReadBufferFromString parser(serialized);
+
+    UInt16 version_raw = 0;
+    readIntBinary(version_raw, parser);
+    ASSERT_EQ(static_cast<StatisticsFileVersion>(version_raw), StatisticsFileVersion::V4);
+
+    UInt64 stat_types_mask = 0;
+    readIntBinary(stat_types_mask, parser);
+    ASSERT_EQ(stat_types_mask, 1ULL << static_cast<UInt8>(StatisticsType::CountMinSketch));
+
+    String stored_type_name;
+    readStringBinary(stored_type_name, parser);
+    ASSERT_EQ(stored_type_name, data_type->getName());
+
+    UInt64 rows = 0;
+    readIntBinary(rows, parser);
+    ASSERT_EQ(rows, row_count);
+
+    UInt64 outer_stat_size = 0;
+    readIntBinary(outer_stat_size, parser);
+    const auto payload_start = parser.count();
+
+    UInt64 sketch_size = 0;
+    readIntBinary(sketch_size, parser);
+    EXPECT_EQ(outer_stat_size, sizeof(UInt64) + sketch_size);
+    EXPECT_EQ(static_cast<UInt64>(serialized.size() - payload_start), outer_stat_size);
+
+    ReadBufferFromString in(serialized);
+    auto deserialized = ColumnStatistics::deserialize(in, data_type);
+    ASSERT_TRUE(deserialized);
+    EXPECT_EQ(in.count(), serialized.size());
+    ASSERT_TRUE(deserialized->getStats().contains(StatisticsType::CountMinSketch));
+    EXPECT_EQ(deserialized->getNumRows(), row_count);
+
+    auto original_existing_estimate = stats->estimateEqual(Field(UInt64(13)));
+    auto deserialized_existing_estimate = deserialized->estimateEqual(Field(UInt64(13)));
+    ASSERT_TRUE(original_existing_estimate.has_value());
+    ASSERT_TRUE(deserialized_existing_estimate.has_value());
+    EXPECT_EQ(*deserialized_existing_estimate, *original_existing_estimate);
+
+    auto original_missing_estimate = stats->estimateEqual(Field(UInt64(4)));
+    auto deserialized_missing_estimate = deserialized->estimateEqual(Field(UInt64(4)));
+    ASSERT_TRUE(original_missing_estimate.has_value());
+    ASSERT_TRUE(deserialized_missing_estimate.has_value());
+    EXPECT_EQ(*deserialized_missing_estimate, *original_missing_estimate);
+}
+#endif
 
 TEST(Statistics, NullableEstimatorWithBasic)
 {
