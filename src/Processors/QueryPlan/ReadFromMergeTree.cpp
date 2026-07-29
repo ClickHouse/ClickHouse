@@ -1124,8 +1124,8 @@ Pipe ReadFromMergeTree::readByLayers(
     if (reader_settings.read_in_order)
     {
         /// PREWHERE runs before the sorting expression added below and may have removed an input
-        /// column that the sorting key needs. Prohibit removing those inputs; the extra columns are
-        /// dropped again when the pipe header is converted to the step header.
+        /// column that the sorting key needs. Prohibit removing those inputs; the restored columns
+        /// are consumed by that same sorting expression, so they do not reach the step header.
         /// Same reasoning as in spreadMarkRangesAmongStreamsWithOrder.
         if (query_info.prewhere_info || query_info.row_level_filter)
         {

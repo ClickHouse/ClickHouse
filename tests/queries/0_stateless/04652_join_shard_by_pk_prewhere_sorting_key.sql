@@ -10,6 +10,9 @@ SET query_plan_join_shard_by_pk_ranges = 1;
 -- Either prewhere setting at 0 stops the PREWHERE move and makes every assertion below vacuous.
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+-- At 0 the filtered column is never pruned from the read output, so there is nothing to restore and
+-- most cells below pass vacuously; `compatibility` draws below 25.12 revert this setting.
+SET query_plan_remove_unused_columns = 1;
 -- 0 routes to the branch that applies no sorting expression.
 SET optimize_read_in_order = 1;
 -- Parallel reading disables the sharding entirely.
@@ -58,21 +61,17 @@ SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELEC
 SELECT 'output header';
 DESCRIBE (SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
--- No step declares a restored column: with everything but step names and headers suppressed, neither
--- may appear anywhere in the dump. `query_plan_remove_unused_columns = 0` keeps the filtered column
--- on every step above the read, sharded or not, so it is pinned rather than asserted around.
-SELECT 'rfmt step header', countIf(explain LIKE '%b UInt32%' OR explain LIKE '%c Int64%') = 0
-FROM (EXPLAIN header = 1, actions = 0, description = 0, indexes = 0, pretty = 0
-      SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94)
-SETTINGS query_plan_remove_unused_columns = 1;
-
 -- All three preconditions of the fixed branch must hold, or every cell above passes vacuously.
 -- `pretty = 0` pins the renderer: `compatibility` randomization can select the legacy one, which
 -- spells the read type `ReadType:` rather than `Read type:`.
+-- Exact counts, not `> 0`. The restore is gated per read step and this query has two of them, so
+-- `ReadType: InOrder` must appear twice; one line per step, and `> 0` would still pass if one step
+-- silently stopped reading in order. The two `Prewhere filter` lines are the name and the column of
+-- the single PREWHERE, so `= 2` also pins that exactly one of them is pushed into a read.
 SELECT 'plan shape',
        countIf(explain LIKE '%Sharding%') = 1
-   AND countIf(explain LIKE '%Prewhere filter%') > 0
-   AND countIf(explain LIKE '%ReadType: InOrder%') > 0
+   AND countIf(explain LIKE '%Prewhere filter%') = 2
+   AND countIf(explain LIKE '%ReadType: InOrder%') = 2
 FROM (EXPLAIN actions = 1, pretty = 0
       SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
@@ -106,7 +105,7 @@ DROP TABLE ok2;
 -- the underlying column rather than the key name.
 DROP TABLE IF EXISTS lc04652;
 CREATE TABLE lc04652 (a UInt32, b LowCardinality(String), c Int64, d String)
-ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 64, allow_suspicious_low_cardinality_types = 1;
+ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 64;
 INSERT INTO lc04652 SELECT number % 50, toString(number % 200), toInt64(number), toString(number % 7) FROM numbers(2000);
 
 SELECT 'LowCardinality key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM lc04652 AS l INNER JOIN lc04652 AS r ON l.a = r.a WHERE r.b = '94'))
