@@ -8,6 +8,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -184,7 +185,20 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        query_plan_optimize_join_order_randomize = randomSeed();
+        /// One query must get one seed. This constructor runs once per query plan construction, and a query builds
+        /// several plans (scalar subqueries, `Merge` children, and, under parallel replicas, one per replica because
+        /// `serialize_query_plan` is off by default and every replica re-plans the query text it receives). Rolling a
+        /// fresh seed here would let those plans pick different join orders, which makes the run irreproducible and can
+        /// make two replicas announce different read modes for one stream. `initial_query_id` is stable for the whole
+        /// query and is propagated to remote replicas in `ClientInfo`, so deriving the seed from it keeps every plan of
+        /// one query consistent while different queries still explore different orderings.
+        /// The value is forced above 1 so it can never read back as the sentinel (1) or as disabled (0).
+        if (initial_query_id_.empty())
+            query_plan_optimize_join_order_randomize = randomSeed(); /// No query to be consistent with (internal or background plan).
+        else
+            query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
+        if (query_plan_optimize_join_order_randomize <= 1)
+            query_plan_optimize_join_order_randomize = 2;
     }
     if (query_plan_optimize_join_order_randomize)
     {

@@ -1,0 +1,11 @@
+200	200	200
+cell A one seed per query	1
+cell A saw several plan constructions	1
+200
+cell B explicit seed used verbatim	1
+cell B distinct seeds still reorder	1
+200
+cell B2 randomize=0 derives no seed	1
+200
+cell C one seed across replicas	1
+cell C fanned out to several replicas	1
