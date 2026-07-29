@@ -687,12 +687,35 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+static void collectExpressionAliases(const IAST * ast, NameSet & aliases);
+
+static void rejectQueryPlanOnlyVirtualColumnsImpl(
+    const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress);
+
 /// Throw if a mutation expression references a query-plan-only virtual column, which the
 /// per-part read path cannot materialize. `shadowed` holds names that are defined by the
 /// expression itself (lambda parameters, expression aliases) and so are not references to a
 /// virtual column; `aliases_in_progress` guards against a cyclic `ALIAS` definition.
 /// Keyed on the short name, so a qualified `t._sample_factor` is recognized too.
 static void rejectQueryPlanOnlyVirtualColumns(
+    const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
+{
+    if (!ast)
+        return;
+
+    /// An alias is not visible inside the subtree that defines it: in `(length(_table) AS _table)`
+    /// the resolvers bind the inner `_table` to the virtual column, not to the alias. So hide the
+    /// name while walking its own defining subtree and restore it afterwards.
+    const auto & own_alias = ast->tryGetAlias();
+    bool restore_own_alias = !own_alias.empty() && shadowed.erase(own_alias) > 0;
+
+    rejectQueryPlanOnlyVirtualColumnsImpl(ast, columns, shadowed, aliases_in_progress);
+
+    if (restore_own_alias)
+        shadowed.insert(own_alias);
+}
+
+static void rejectQueryPlanOnlyVirtualColumnsImpl(
     const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
 {
     if (!ast)
@@ -720,6 +743,14 @@ static void rejectQueryPlanOnlyVirtualColumns(
         for (const auto & param : params)
             if (shadowed.insert(param).second)
                 newly_shadowed.push_back(param);
+
+        /// A lambda body is its own alias scope, so an alias it defines is visible inside the
+        /// body but must not hide a reference in the enclosing expression.
+        NameSet body_aliases;
+        collectExpressionAliases(function->arguments->children[1].get(), body_aliases);
+        for (const auto & body_alias : body_aliases)
+            if (shadowed.insert(body_alias).second)
+                newly_shadowed.push_back(body_alias);
 
         rejectQueryPlanOnlyVirtualColumns(function->arguments->children[1].get(), columns, shadowed, aliases_in_progress);
 
@@ -785,21 +816,26 @@ static void rejectQueryPlanOnlyVirtualColumns(
         rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
-/// Collect the expression aliases defined in `ast` (`1 AS _table`). A subquery is its own scope,
-/// so stop there: its aliases must not hide a reference in the enclosing expression.
-static void collectExpressionAliases(const IAST * ast, NameSet & shadowed)
+/// Collect the expression aliases that `ast` contributes to its enclosing scope (`1 AS _table`).
+/// A subquery and a lambda body are each their own scope, so do not descend into them: an alias
+/// defined inside must not hide a reference in the enclosing expression. An alias attached to
+/// such a node itself does belong to the enclosing scope, so take it before stopping.
+static void collectExpressionAliases(const IAST * ast, NameSet & aliases)
 {
     if (!ast)
         return;
 
+    if (const auto & alias = ast->tryGetAlias(); !alias.empty())
+        aliases.insert(alias);
+
     if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
         return;
 
-    if (const auto & alias = ast->tryGetAlias(); !alias.empty())
-        shadowed.insert(alias);
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+        return;
 
     for (const auto & child : ast->children)
-        collectExpressionAliases(child.get(), shadowed);
+        collectExpressionAliases(child.get(), aliases);
 }
 
 /// Reject query-plan-only virtual columns referenced by a mutation command's expressions:

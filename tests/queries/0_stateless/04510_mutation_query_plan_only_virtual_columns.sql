@@ -58,6 +58,20 @@ SELECT DISTINCT u FROM t_mut_qp_virtuals;
 -- An alias is visible to the whole command, so one assignment may use what another defines.
 ALTER TABLE t_mut_qp_virtuals UPDATE u = (3 AS _table), arr = [toUInt32(_table)] WHERE c0 > 0;
 SELECT DISTINCT u, arr FROM t_mut_qp_virtuals;
+-- An alias is not visible inside the subtree that defines it, so this inner reference is the
+-- virtual column: `SELECT (length(_table) AS _table)` returns the length of the table name.
+-- The second condition must match only some rows, otherwise the whole part is dropped without
+-- being read and the missing rejection would go unnoticed.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE (length(_table) AS _table) > 0 AND c0 > 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- A lambda body is its own alias scope, so an alias defined there must not hide the reference
+-- in the enclosing predicate, which is still the virtual column.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE arrayExists(x -> (x AS _table) > 0, [1]) AND _table != '' AND c0 > 2; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- Inside that lambda body the alias is visible, so this reference binds to it and is allowed.
+ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(x -> (1 AS _table) + _table, arr) WHERE c0 > 0;
+SELECT DISTINCT arr FROM t_mut_qp_virtuals;
+-- An alias attached to a subquery node itself belongs to the enclosing scope, so it does hide
+-- the name and the following reference is that alias, not the virtual column.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE ((SELECT 7) AS _table) > 0 AND _table > 6 AND c0 > 2;
 
 -- A subquery is evaluated as its own SELECT and can materialize these virtuals.
 ALTER TABLE t_mut_qp_virtuals DELETE WHERE c0 IN (SELECT c0 FROM t_mut_qp_virtuals WHERE _sample_factor > 100);
@@ -72,6 +86,11 @@ SELECT count() FROM t_mut_qp_virtuals WHERE _sample_factor >= 1.0;
 -- Virtual columns that the mutation read path can materialize are still usable.
 ALTER TABLE t_mut_qp_virtuals DELETE WHERE _part = 'nonexistent_part';
 SELECT count() FROM t_mut_qp_virtuals;
+
+-- Every rejection above happened before the mutation was queued, so none of them left a failed
+-- mutation behind: an alias-scope regression that let one through would show up here.
+SELECT countIf(latest_fail_reason != '') FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_qp_virtuals';
 
 DROP TABLE t_mut_qp_virtuals;
 
