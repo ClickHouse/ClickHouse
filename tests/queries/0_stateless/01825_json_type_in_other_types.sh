@@ -5,12 +5,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested"
-
 # `basic` is pinned because `with_buckets` reassembles a Map in bucket order, so `SELECT *`
 # would print the keys in a run-dependent order. `t_json_nested_buckets` below keeps
 # `with_buckets` covered for this column type using order-independent queries.
 ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_json_nested;
+
     CREATE TABLE t_json_nested
     (
         id UInt32,
@@ -97,9 +97,16 @@ echo "============="
 # `serialization_info_version` and `max_buckets_in_map` are pinned as well: the first
 # downgrades Map serialization to `basic` and the second collapses the column to a
 # single bucket, and either one would silently skip the split/reassembly path.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested_buckets"
-
+#
+# 4 is the smallest `max_buckets_in_map` that puts `aa` and `bb` in different buckets
+# *and* reassembles them in the swapped order, i.e. exactly the layout that made the
+# order-sensitive assertions above flaky. The default 32 adds no coverage here and
+# writes 2801 substreams for this column instead of 393; re-reading all of them once
+# per query costs ~53s of the test's ~65s under ASan + UBSan with S3 storage and meta
+# in Keeper, which trips the flaky check's 180s-per-run limit.
 ${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_json_nested_buckets;
+
     CREATE TABLE t_json_nested_buckets
     (
         id UInt32,
@@ -108,12 +115,12 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY id
     SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
              serialization_info_version = 'with_types', map_buckets_strategy = 'constant',
-             max_buckets_in_map = 32, map_buckets_min_avg_size = 1" --enable_json_type 1
+             max_buckets_in_map = 4, map_buckets_min_avg_size = 1;
 
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_json_nested_buckets SELECT * FROM t_json_nested"
+    INSERT INTO t_json_nested_buckets SELECT * FROM t_json_nested" --enable_json_type 1
 
 # The queries below normalize key order, so they would still pass if the Map had been
-# written without bucketing. Assert the part really has 32 key buckets first.
+# written without bucketing. Assert the part really has 4 key buckets first.
 $CLICKHOUSE_CLIENT -q "
     SELECT countDistinct(extract(s, '^data%2E2\.([0-9]+)%2Ekeys\$')) AS buckets
     FROM (SELECT arrayJoin(substreams) AS s FROM system.parts_columns
@@ -128,5 +135,6 @@ $CLICKHOUSE_CLIENT -q "
     SELECT (data.2)['aa'] AS aa, (data.2)['bb'] AS bb
     FROM t_json_nested_buckets ORDER BY id FORMAT JSONEachRow"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested_buckets"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested"
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t_json_nested_buckets;
+    DROP TABLE IF EXISTS t_json_nested"
