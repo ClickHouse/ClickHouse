@@ -19,6 +19,7 @@
 #    include <Common/CurrentThread.h>
 #    include <Common/Exception.h>
 #    include <Common/NaNUtils.h>
+#    include <Common/Stopwatch.h>
 #    include <Common/ThreadStatus.h>
 
 #    include <base/sleep.h>
@@ -162,13 +163,27 @@ inline SQLiteStatementPtr prepareSQLiteStatement(sqlite3 * db, const String & qu
 /// matching the retry back-off of the scan paths (`SQLiteSource`, `SQLiteStatementReader`).
 constexpr UInt64 sqlite_busy_retry_sleep_ms = 10;
 
-/// Whether to keep waiting for a locked database. Metadata lookups run on a query thread (schema
-/// inference, `DESCRIBE`, the existence checks of the `SQLite` database engine), so a `KILL QUERY`
-/// stops the wait; the retry then surfaces the underlying SQLITE_BUSY error to the caller.
-inline bool keepWaitingForSQLiteLock()
+/// How long to keep waiting for a locked database when the wait cannot be cancelled (see
+/// `keepWaitingForSQLiteLock`), after which the underlying SQLITE_BUSY error is surfaced.
+constexpr UInt64 sqlite_busy_retry_timeout_ms = 10000;
+
+/// Whether to keep waiting for a locked database. Most metadata lookups run on a query thread (schema
+/// inference, `DESCRIBE`, the existence checks of the `SQLite` database engine), so a `KILL QUERY` or
+/// `max_execution_time` stops the wait. Some of them run without a query - `ATTACH TABLE ... ENGINE =
+/// SQLite(...)` reaches `fetchSQLiteTableStructure` while the server is starting up and loading table
+/// metadata - and there is nothing to cancel such a wait, so it is bounded by a deadline instead of
+/// blocking startup for as long as an external writer holds an exclusive lock. Either way the retry
+/// then surfaces the underlying SQLITE_BUSY error to the caller.
+inline bool keepWaitingForSQLiteLock(const Stopwatch & watch)
 {
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+    if (CurrentThread::isInitialized() && !CurrentThread::getQueryId().empty())
+    {
+        if (CurrentThread::get().isQueryCanceled())
+            return false;
+    }
+    else if (watch.elapsedMilliseconds() >= sqlite_busy_retry_timeout_ms)
         return false;
+
     sleepForMilliseconds(sqlite_busy_retry_sleep_ms);
     return true;
 }
@@ -178,11 +193,12 @@ inline bool keepWaitingForSQLiteLock()
 /// Used by the metadata paths that run before a scan starts, mirroring the retry loop of the scan paths.
 inline SQLiteStatementPtr prepareSQLiteStatementRetryOnBusy(sqlite3 * db, const String & query)
 {
+    Stopwatch watch;
     while (true)
     {
         sqlite3_stmt * statement = nullptr;
         int status = sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size() + 1), &statement, nullptr);
-        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock())
+        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock(watch))
             continue;
         checkSQLiteStatus(db, status, fmt::format("Cannot prepare SQLite query: {}", query));
         return SQLiteStatementPtr(statement, sqlite3_finalize);
@@ -193,10 +209,11 @@ inline SQLiteStatementPtr prepareSQLiteStatementRetryOnBusy(sqlite3 * db, const 
 /// SQLITE_BUSY (normally SQLITE_ROW or SQLITE_DONE); the caller interprets and reports other statuses.
 inline int stepSQLiteStatementRetryOnBusy(sqlite3_stmt * statement)
 {
+    Stopwatch watch;
     while (true)
     {
         int status = sqlite3_step(statement);
-        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock())
+        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock(watch))
             continue;
         return status;
     }
