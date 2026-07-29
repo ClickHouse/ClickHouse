@@ -69,10 +69,12 @@ std::optional<TimeOfDay> parseTimeOfDay(std::string_view date, size_t pos)
 
 std::optional<time_t> makeTimestamp(UInt32 year, UInt8 month, UInt32 day, TimeOfDay time)
 {
-    if (day < 1 || day > 31)
+    const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+
+    if (day < 1 || day > date_lut.daysInMonth(static_cast<Int16>(year), month))
         return std::nullopt;
 
-    return DateLUT::instance("UTC").tryToMakeDateTime(
+    return date_lut.tryToMakeDateTime(
         static_cast<Int16>(year), month, static_cast<UInt8>(day), time.hour, time.minute, time.second);
 }
 

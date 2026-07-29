@@ -148,6 +148,32 @@ TEST(ParseHTTPDate, Invalid)
     EXPECT_EQ(parse("Sun, 06 Nov 1994 08:49:61 GMT"), std::nullopt);
 }
 
+TEST(ParseHTTPDate, InvalidCalendarDate)
+{
+    /// A day of month that does not exist in the given month must be rejected, not folded into the next
+    /// month. Otherwise a malformed header would be reported as a real modification time.
+    EXPECT_EQ(parse("Mon, 29 Feb 2021 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun, 31 Apr 2026 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun, 30 Feb 2026 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun, 31 Jun 2026 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun, 31 Sep 2026 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun, 31 Nov 2026 00:00:00 GMT"), std::nullopt);
+
+    /// The century of a two-digit year decides whether 29 February exists.
+    EXPECT_EQ(parse("Sunday, 29-Feb-00 00:00:00 GMT"), 951782400);
+    EXPECT_EQ(tryParseHTTPDate("Sunday, 29-Feb-00 00:00:00 GMT", -2208988800), std::nullopt);
+
+    /// The obsolete forms are validated too.
+    EXPECT_EQ(parse("Monday, 29-Feb-21 00:00:00 GMT"), std::nullopt);
+    EXPECT_EQ(parse("Sun Apr 31 00:00:00 2026"), std::nullopt);
+
+    /// The last day of every month is still accepted.
+    EXPECT_EQ(parse("Sun, 31 Jan 2026 00:00:00 GMT"), 1769817600);
+    EXPECT_EQ(parse("Sat, 28 Feb 2026 00:00:00 GMT"), 1772236800);
+    EXPECT_EQ(parse("Sat, 29 Feb 2020 00:00:00 GMT"), 1582934400);
+    EXPECT_EQ(parse("Thu, 30 Apr 2026 00:00:00 GMT"), 1777507200);
+}
+
 TEST(ParseHTTPDate, LeapSecond)
 {
     /// A leap second is representable in all three forms and folds into the next minute.
