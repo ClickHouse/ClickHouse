@@ -187,6 +187,14 @@ Two predicate shapes are rewritten before index analysis:
 
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting that lets if\/multiIf\/coalesce\/ifNull\/array\/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."}]}]}/>
+
+When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
+
 ## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
