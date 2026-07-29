@@ -219,3 +219,133 @@ SELECT position(prewhere_line, 'b.null') < position(prewhere_line, 'a.null') AS 
 );
 
 DROP TABLE test_const_null;
+
+-- =============================================================================
+-- Bool predicates: the selectivity estimator should treat real Bool columns as
+-- boolean predicates (including NOT and SQL truth-value predicates), while a
+-- bare UInt8 column must keep the generic unknown-condition fallback.
+-- =============================================================================
+DROP TABLE IF EXISTS test_bool_prewhere;
+
+CREATE TABLE test_bool_prewhere (
+    id UInt64,
+    flag Bool STATISTICS(tdigest, uniq),
+    nullable_flag Nullable(Bool) STATISTICS(basic),
+    nullable_flag_exact Nullable(Bool) STATISTICS(basic, tdigest, uniq),
+    lc_nullable_flag LowCardinality(Nullable(Bool)) STATISTICS(basic),
+    u8 UInt8 STATISTICS(tdigest, uniq),
+    range_probe UInt64 STATISTICS(basic)
+) Engine = MergeTree() ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+-- flag/u8: 100 true/1 rows and 900 false/0 rows.
+-- nullable_flag/nullable_flag_exact/lc_nullable_flag: 100 TRUE, 800 FALSE, 100 NULL.
+INSERT INTO test_bool_prewhere
+SELECT
+    number,
+    number < 100,
+    if(number < 100, true, if(number < 900, false, NULL)),
+    if(number < 100, true, if(number < 900, false, NULL)),
+    if(number < 100, true, if(number < 900, false, NULL)),
+    number < 100,
+    number
+FROM numbers(1000);
+
+SELECT 'Bool predicate: bare Bool uses true-value statistics before range';
+SELECT position(prewhere_line, 'flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'flag') < position(prewhere_line, 'less') AS bool_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE flag AND range_probe < 200
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: NOT Bool uses false-value statistics after range';
+SELECT position(prewhere_line, 'flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'flag') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE NOT flag AND range_probe < 750
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: Nullable Bool IS TRUE uses null-safe equality estimate';
+SELECT position(prewhere_line, 'nullable_flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'nullable_flag') < position(prewhere_line, 'less') AS nullable_bool_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE nullable_flag IS TRUE AND range_probe < 200
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: Nullable Bool IS NOT TRUE includes NULL rows';
+-- The range threshold separates false-only from false-or-NULL estimates for basic-only Bool stats.
+SELECT position(prewhere_line, 'nullable_flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'nullable_flag') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE nullable_flag IS NOT TRUE AND range_probe < 950
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: Nullable Bool IS FALSE uses exact false-value statistics';
+SELECT position(prewhere_line, 'nullable_flag_exact') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'nullable_flag_exact') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE nullable_flag_exact IS FALSE AND range_probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: Nullable Bool IS NOT FALSE includes NULL rows';
+SELECT position(prewhere_line, 'nullable_flag_exact') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'nullable_flag_exact') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE nullable_flag_exact IS NOT FALSE AND range_probe < 150
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: explicit isNotDistinctFrom uses Bool statistics';
+SELECT position(prewhere_line, 'nullable_flag_exact') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'nullable_flag_exact') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE isNotDistinctFrom(nullable_flag_exact, false) AND range_probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: explicit isDistinctFrom includes NULL rows';
+SELECT position(prewhere_line, 'nullable_flag_exact') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'nullable_flag_exact') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE isDistinctFrom(nullable_flag_exact, false) AND range_probe < 150
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: flag AND NOT flag estimated as contradiction';
+SELECT position(prewhere_line, 'flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'flag') < position(prewhere_line, 'less') AS bool_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE flag AND NOT flag AND range_probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: flag OR NOT flag estimated as tautology';
+SELECT position(prewhere_line, 'flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'flag') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE (flag OR NOT flag) AND range_probe < 950
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: LowCardinality Nullable Bool is recognized as Bool';
+SELECT position(prewhere_line, 'lc_nullable_flag') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'lc_nullable_flag') < position(prewhere_line, 'less') AS lc_nullable_bool_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE lc_nullable_flag IS TRUE AND range_probe < 200
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Bool predicate: bare UInt8 does not use Bool sugar';
+SELECT position(prewhere_line, 'u8') > 0 AND position(prewhere_line, 'less') > 0 AND position(prewhere_line, 'less') < position(prewhere_line, 'u8') AS range_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_bool_prewhere
+        WHERE u8 AND range_probe < 200
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_bool_prewhere;
