@@ -310,3 +310,77 @@ def test_drop_resolves_against_persistent_state(started_cluster):
             retry_count=30,
             sleep_time=0.5,
         )
+
+
+def test_reload_never_installs_mixed_handler_snapshot(started_cluster):
+    # A reloading replica must install the handler set as it existed at one Keeper root version, never a
+    # mixed old/new map assembled from a stale child list plus freshly-read children. Two successive
+    # `ALTER HANDLER` commits that *move a URL from one handler to another* are the case that exposes it:
+    # starting from `{swap_a=/swap_a, swap_b=/swap_b}`, committing `swap_a -> /swap_c` and then
+    # `swap_b -> /swap_a`, a reader that listed before the first commit and read `swap_a` before it but
+    # `swap_b` after the second would build `{swap_a=/swap_a, swap_b=/swap_a}` - two handlers on one URL,
+    # a state that never existed in Keeper - and route `/swap_a` to the handler Keeper already moved away.
+    for n in (replica1, replica2):
+        n.query("DROP HANDLER IF EXISTS swap_a")
+        n.query("DROP HANDLER IF EXISTS swap_b")
+
+    replica1.query("CREATE HANDLER swap_a URL '/swap_a' AS SELECT 'A' FORMAT TSV")
+    replica1.query("CREATE HANDLER swap_b URL '/swap_b' AS SELECT 'B' FORMAT TSV")
+    for n in (replica1, replica2):
+        n.query_with_retry(
+            "SELECT uniqExact(url) FROM system.handlers WHERE name IN ('swap_a', 'swap_b')",
+            check_callback=lambda res: res.strip() == "2",
+            retry_count=30,
+            sleep_time=0.5,
+        )
+
+    stop = threading.Event()
+    torn = []
+    torn_lock = threading.Lock()
+
+    def observe():
+        # `system.handlers` reports the replica's in-memory snapshot, so a torn install is visible here.
+        # In every committed Keeper state the two handlers sit on two distinct URLs.
+        while not stop.is_set():
+            urls = replica2.query(
+                "SELECT url FROM system.handlers WHERE name IN ('swap_a', 'swap_b') ORDER BY name"
+            ).split()
+            if len(urls) == 2 and urls[0] == urls[1]:
+                with torn_lock:
+                    torn.append(urls)
+
+    observer = threading.Thread(target=observe)
+    observer.start()
+    try:
+        for _ in range(10):
+            # Free `/swap_a`, then hand it over to the other handler; then undo, so the next round starts
+            # from the same state. Every step is a separate commit that bumps the Keeper root version.
+            replica1.query("ALTER HANDLER swap_a URL '/swap_c'")
+            replica1.query("ALTER HANDLER swap_b URL '/swap_a'")
+            # After the hand-over the URL must serve the new owner's query on the observing replica.
+            replica2.query_with_retry(
+                "SELECT name FROM system.handlers WHERE url = '/swap_a'",
+                check_callback=lambda res: res.strip() == "swap_b",
+                retry_count=30,
+                sleep_time=0.5,
+            )
+            assert http_get(replica2, "swap_a") == "B"
+
+            replica1.query("ALTER HANDLER swap_b URL '/swap_b'")
+            replica1.query("ALTER HANDLER swap_a URL '/swap_a'")
+            replica2.query_with_retry(
+                "SELECT name FROM system.handlers WHERE url = '/swap_a'",
+                check_callback=lambda res: res.strip() == "swap_a",
+                retry_count=30,
+                sleep_time=0.5,
+            )
+            assert http_get(replica2, "swap_a") == "A"
+    finally:
+        stop.set()
+        observer.join()
+
+    assert not torn, f"observed handler sets that never existed in Keeper: {torn}"
+
+    for n in (replica1, replica2):
+        n.query("DROP HANDLER IF EXISTS swap_a")
+        n.query("DROP HANDLER IF EXISTS swap_b")
