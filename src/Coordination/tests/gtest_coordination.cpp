@@ -1060,6 +1060,24 @@ private:
     DiskEvents events;
 };
 
+/// Records the point at which the wrapped directory sync guard is destroyed, which is when the
+/// directory is actually synced.
+class RecordingSyncGuard : public DB::ISyncGuard
+{
+public:
+    RecordingSyncGuard(DB::SyncGuardPtr impl_, DiskEvents events_) : impl(std::move(impl_)), events(std::move(events_)) { }
+
+    ~RecordingSyncGuard() override
+    {
+        impl.reset();
+        events->push_back("dirsync");
+    }
+
+private:
+    DB::SyncGuardPtr impl;
+    DiskEvents events;
+};
+
 /// Test disk: records the order of the durability-relevant operations, so a test can assert that
 /// the backup is durable before the live state file is rewritten, and that the recovery path does
 /// not drop the backup.
@@ -1094,17 +1112,22 @@ public:
 
     DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
     {
-        events->push_back("dirsync");
-        return DB::DiskLocal::getDirectorySyncGuard(path);
+        auto inner = DB::DiskLocal::getDirectorySyncGuard(path);
+        /// The directory sync happens when the guard is destroyed, so the event is recorded then
+        /// rather than here. Recording acquisition would also accept a guard that is kept alive
+        /// past the operation it is supposed to make durable.
+        return std::make_unique<RecordingSyncGuard>(std::move(inner), events);
     }
 
 private:
     DiskEvents events;
 };
 
-size_t indexOf(const std::vector<std::string> & events, const std::string & event)
+size_t indexOf(const std::vector<std::string> & events, const std::string & event, size_t from = 0)
 {
-    const auto it = std::find(events.begin(), events.end(), event);
+    if (from >= events.size())
+        return std::string::npos;
+    const auto it = std::find(events.begin() + from, events.end(), event);
     return it == events.end() ? std::string::npos : static_cast<size_t>(it - events.begin());
 }
 
@@ -1224,15 +1247,25 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_NE(live_opened, std::string::npos);
     ASSERT_LT(backup_synced, live_opened);
 
-    /// The directory entry of the freshly created backup must be synced too, again before the
-    /// live file is truncated.
+    /// The directory entry of the freshly created backup must be synced too, and the sync must
+    /// have completed before the live file is truncated.
     const auto first_dirsync = indexOf(*events, "dirsync");
     ASSERT_NE(first_dirsync, std::string::npos);
     ASSERT_LT(first_dirsync, live_opened);
 
-    /// The backup is only dropped after the replacement state file is durable.
+    /// The backup is only dropped after the replacement state file is durable in full: both its
+    /// contents and, since it may have just been created, its directory entry.
     ASSERT_NE(backup_removed, std::string::npos);
-    ASSERT_LT(indexOf(*events, "sync:state"), backup_removed);
+    const auto live_synced = indexOf(*events, "sync:state");
+    ASSERT_NE(live_synced, std::string::npos);
+    ASSERT_LT(live_synced, backup_removed);
+
+    /// Two directory syncs must complete, one before the truncation and one after the new state
+    /// file is written, both before the backup is removed.
+    const auto second_dirsync = indexOf(*events, "dirsync", first_dirsync + 1);
+    ASSERT_NE(second_dirsync, std::string::npos);
+    ASSERT_GT(second_dirsync, live_synced);
+    ASSERT_LT(second_dirsync, backup_removed);
 
     /// Reconstruct the on-disk state left by a crash inside the rewrite window: the backup is
     /// present and the live state file is lost. This is what the backup exists for.
