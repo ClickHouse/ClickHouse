@@ -38,10 +38,12 @@ remove_all_marks_files() {
 # ratio_of_defaults_for_sparse_serialization = 1: keep dense per-column marks. With sparse
 # serialization a column gains a .sparse.idx substream and the missing main marks file is caught
 # by the checksum consistency check (a different, already-typed error) instead of the marks loader.
+# min_bytes_for_full_part_storage = 0: keep Full part storage. Packed storage bundles the whole
+# part into one data.packed archive, leaving no separate marks file for this test to remove.
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_full_part_storage = 0"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_marks SELECT number, number FROM numbers(1000)"
 
@@ -77,7 +79,7 @@ $CLICKHOUSE_CLIENT --send_logs_level=none -q "drop table t_missing_marks sync;"
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_granularity_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_granularity_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_full_part_storage = 0"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_granularity_marks SELECT number, number FROM numbers(1000)"
 
@@ -125,7 +127,7 @@ $CLICKHOUSE_CLIENT -q "drop table t_missing_granularity_marks sync;"
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_compact_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_compact_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1, min_bytes_for_full_part_storage = 0"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_compact_marks SELECT number, number FROM numbers(1000)"
 
