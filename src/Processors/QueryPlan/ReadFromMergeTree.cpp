@@ -193,11 +193,12 @@ bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
 bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info, const NameSet & inputs)
 {
     bool added = false;
+    /// Both DAGs must be visited: `||` would short-circuit and skip the prewhere restore.
     if (row_level_filter)
-        added = added || restoreDAGInputs(row_level_filter->actions, inputs);
+        added |= restoreDAGInputs(row_level_filter->actions, inputs);
 
     if (info)
-        added = added || restoreDAGInputs(info->prewhere_actions, inputs);
+        added |= restoreDAGInputs(info->prewhere_actions, inputs);
 
     return added;
 }
@@ -1122,6 +1123,19 @@ Pipe ReadFromMergeTree::readByLayers(
 
     if (reader_settings.read_in_order)
     {
+        /// PREWHERE runs before the sorting expression added below and may have removed an input
+        /// column that the sorting key needs. Prohibit removing those inputs; the extra columns are
+        /// dropped again when the pipe header is converted to the step header.
+        /// Same reasoning as in spreadMarkRangesAmongStreamsWithOrder.
+        if (query_info.prewhere_info || query_info.row_level_filter)
+        {
+            NameSet sorting_key_columns;
+            for (const auto & column : storage_snapshot->metadata->getSortingKey().expression->getRequiredColumnsWithTypes())
+                sorting_key_columns.insert(column.name);
+
+            restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_key_columns);
+        }
+
         NameSet column_names_set(column_names.begin(), column_names.end());
         in_order_column_names_to_read = column_names;
 
