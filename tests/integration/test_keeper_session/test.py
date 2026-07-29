@@ -1,4 +1,5 @@
 import struct
+import threading
 import time
 import uuid
 
@@ -356,3 +357,74 @@ def test_create2_errors_existing_and_missing_parent(started_cluster):
             except NoNodeError:
                 pass
             destroy_zk_client(node1_zk)
+
+
+def test_no_logical_error_on_shutdown_with_late_commit(started_cluster):
+    """No thread may still be producing responses when the dispatcher checks its byte counters.
+
+    keeper_shutdown_delay_before_queue_check widens the window between draining the queues and
+    checking that they accounted for zero bytes. Writes are kept in flight while the node is
+    stopped, so any producer that outlives the drain lands inside that window. Before the
+    shutdown phase split the nuraft commit thread was one, because it is only joined by
+    KeeperServer::shutdown, which used to run after the check.
+    """
+    wait_nodes()
+
+    # Must be the leader: a follower forwards writes, so its own commit thread would not be
+    # publishing responses for the in-flight writes when it shuts down.
+    node = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    node_zk = None
+    base = f"/test_late_commit_{uuid.uuid4().hex}"
+    stop = threading.Event()
+    issued = [0]
+
+    try:
+        node_zk = get_fake_zk(node.name)
+        node_zk.create(base)
+
+        node.query("SYSTEM ENABLE FAILPOINT keeper_shutdown_delay_before_queue_check")
+
+        def writer():
+            i = 0
+            while not stop.is_set():
+                try:
+                    node_zk.create_async(f"{base}/n{i}", b"payload" * 8)
+                    issued[0] += 1
+                    i += 1
+                except Exception:
+                    return
+                time.sleep(0.005)
+
+        threads = [threading.Thread(target=writer, daemon=True) for _ in range(4)]
+        for t in threads:
+            t.start()
+
+        # Let enough writes pile up that some are still uncommitted when shutdown starts.
+        time.sleep(3)
+        assert issued[0] > 0, "no write requests were issued"
+
+        node.stop_clickhouse()
+        stop.set()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert not node.contains_in_log(
+            "Logical error: 'response_bytes_in_all_queues.load() == 0'"
+        ), "Keeper hit the response byte accounting assertion during shutdown"
+        assert not node.contains_in_log(
+            "Logical error: 'requests_queue_bytes.load() == 0'"
+        ), "Keeper hit the request byte accounting assertion during shutdown"
+    finally:
+        stop.set()
+        destroy_zk_client(node_zk)
+        node.start_clickhouse()
+        node.query("SYSTEM DISABLE FAILPOINT keeper_shutdown_delay_before_queue_check")
+        wait_nodes()
+        cleanup_zk = None
+        try:
+            cleanup_zk = get_fake_zk(node1.name)
+            cleanup_zk.delete(base, recursive=True)
+        except NoNodeError:
+            pass
+        finally:
+            destroy_zk_client(cleanup_zk)
