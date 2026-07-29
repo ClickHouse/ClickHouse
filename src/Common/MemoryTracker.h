@@ -89,6 +89,12 @@ private:
 
         /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
         /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
+        /// Requires acquire-release:
+        /// 1. Thread A constructs MemoryTracker object and attaches MemoryTracker pointer
+        ///    (e.g. ProcessList::insert where the user's MemoryTracker is constructed right before calling setParent).
+        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
+        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
+        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
         std::atomic<MemoryTracker *> parent {};
 
         /// You could specify custom metric to track memory usage.
@@ -232,7 +238,7 @@ public:
                 probability,
                 min_allocation_size_bytes.load(std::memory_order_relaxed),
                 max_allocation_size_bytes.load(std::memory_order_relaxed)};
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
             return loaded_next->getResolvedSampleConfig();
         return {};
     }
@@ -268,7 +274,7 @@ public:
 
     MemoryTracker * getParent()
     {
-        return parent.load(std::memory_order_relaxed);
+        return parent.load(std::memory_order_acquire);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
