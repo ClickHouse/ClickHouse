@@ -179,6 +179,24 @@ done
 [ -L /etc/clickhouse-client/config.xml ]
 [ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
 [ -s /shared/config.xml ]""",
+        f"Install tgz over a hard-linked config in {image}": r"""#!/bin/bash -ex
+# An installed file may have other hard links to it, and replacing the destination by a
+# rename would leave them pointing at the pre-upgrade contents. The installer has to write
+# through such a destination so that every link sees the new contents.
+mkdir -p /etc/clickhouse-client /backup
+echo "<clickhouse></clickhouse>" > /etc/clickhouse-client/config.xml
+ln /etc/clickhouse-client/config.xml /backup/config.xml
+inode=$(stat -c %i /etc/clickhouse-client/config.xml)
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ "$(stat -c %i /etc/clickhouse-client/config.xml)" = "$inode" ]
+[ "$(stat -c %h /etc/clickhouse-client/config.xml)" = "2" ]
+diff /etc/clickhouse-client/config.xml /backup/config.xml
+[ "$(cat /etc/clickhouse-client/config.xml)" != "<clickhouse></clickhouse>" ]""",
     }
     return test_install(image, tests)
 
