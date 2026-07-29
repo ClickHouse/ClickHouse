@@ -5,6 +5,7 @@ SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;
 SET query_plan_optimize_count_from_text_index = 1;
+SET max_rows_to_group_by = 0; -- make_distributed_plan rejects a nonzero limit
 
 SELECT 'Inject trivial count optimization from the text index into the query plan';
 
