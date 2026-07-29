@@ -1,9 +1,15 @@
 SET enable_analyzer = 1;
--- Substring search must find needle bytes above 0x7F. StringZilla's SWAR byte broadcast
--- sign-extended the needle byte before splatting it across a 64-bit word, so `sz_find_byte_serial`
--- never matched a byte in 0x80..0xFF. The `westmere`, `haswell`, `neon` and `sve` kernels all
--- delegate short inputs and their tails to that serial code, so only the AVX-512 tiers were
--- unaffected - which is why this reproduced on some machines and not others.
+-- Substring search must find needle bytes above 0x7F. StringZilla's SWAR byte broadcast widened the
+-- needle byte through a plain `char` before splatting it across a 64-bit word, so `sz_find_byte_serial`
+-- and `sz_rfind_byte_serial` matched a byte in 0x80..0xFF only at word-relative offset 0.
+--
+-- The window where this is reachable is narrow, which is why it reproduced on some machines and not
+-- others. Plain `char` is signed only on x86-64; the AArch64 ABI makes it unsigned, so the broadcast
+-- there was always correct and the bug never existed. And on x86-64 the `skylake` and `icelake`
+-- kernels handle their tails with masked AVX-512 loads instead of delegating to the serial kernel,
+-- so with `SZ_DYNAMIC_DISPATCH` an AVX-512 machine never reaches the broken code either. Only the
+-- `westmere` and `haswell` tiers hand short inputs and tails to the serial kernel, so the bug needed
+-- x86-64 hardware below Skylake - which no CI runner is, hence `Bugfix validation` cannot catch it.
 -- https://github.com/ClickHouse/ClickHouse/issues/111232
 -- https://github.com/ashvardanian/StringZilla/issues/306
 
