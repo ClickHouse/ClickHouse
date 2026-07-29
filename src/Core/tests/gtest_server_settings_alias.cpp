@@ -8,6 +8,7 @@
 
 #include <Poco/AutoPtr.h>
 #include <Poco/DOM/DOMParser.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
@@ -62,6 +63,48 @@ TEST(ServerSettingsAlias, RejectBothCanonicalAndAlias)
 
     ServerSettings settings;
     ASSERT_THROW(settings.loadSettingsFromConfig(*config), Exception);
+}
+
+/// A deployment that keeps the shipped main config (which does not set the canonical name, see
+/// `programs/server/config.xml` and `programs/server/config.yaml.example`) and adds the alias in an
+/// override file must load the alias: the two config layers are merged before settings are loaded.
+TEST(ServerSettingsAlias, LoadViaAliasFromOverrideLayer)
+{
+    auto main_config = configFromString(R"(<clickhouse>
+    <total_memory_profiler_step>4194304</total_memory_profiler_step>
+</clickhouse>)");
+    auto override_config = configFromString(R"(<clickhouse>
+    <total_memory_profiler_sample_probability>0.5</total_memory_profiler_sample_probability>
+</clickhouse>)");
+
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> layered = new Poco::Util::LayeredConfiguration;
+    /// Overrides have higher priority, exactly as `config.d`/`*.yaml` overrides do in the server.
+    layered->add(override_config, /* priority= */ 0);
+    layered->add(main_config, /* priority= */ 1);
+
+    ServerSettings settings;
+    settings.loadSettingsFromConfig(*layered);
+
+    ASSERT_EQ(settings.get("total_memory_tracker_sample_probability").safeGet<Float64>(), 0.5);
+}
+
+/// If the main config still sets the canonical name, adding the alias in an override is ambiguous
+/// and must be rejected rather than silently picking one of the two values.
+TEST(ServerSettingsAlias, RejectAliasInOverrideLayerAndCanonicalInMainConfig)
+{
+    auto main_config = configFromString(R"(<clickhouse>
+    <total_memory_tracker_sample_probability>0</total_memory_tracker_sample_probability>
+</clickhouse>)");
+    auto override_config = configFromString(R"(<clickhouse>
+    <total_memory_profiler_sample_probability>0.5</total_memory_profiler_sample_probability>
+</clickhouse>)");
+
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> layered = new Poco::Util::LayeredConfiguration;
+    layered->add(override_config, /* priority= */ 0);
+    layered->add(main_config, /* priority= */ 1);
+
+    ServerSettings settings;
+    ASSERT_THROW(settings.loadSettingsFromConfig(*layered), Exception);
 }
 
 /// The alias must be enumerable and resolvable, so that user-facing surfaces (e.g. `system.documentation`)
