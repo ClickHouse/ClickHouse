@@ -1301,6 +1301,68 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         std::filesystem::remove("./state-OLD");
 }
 
+/// NuRaft keeps the server alive after save_state throws, so a peer retry re-enters save_state
+/// while the live state file is still torn from the failed attempt. The retry must not copy that
+/// unusable file over the backup, which at that point holds the only recoverable state.
+/// See https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStateRetryKeepsValidBackup)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto disk = std::make_shared<ThrowingStateDisk>("StateFile", ".", "state");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+
+    /// Persist term 1 successfully; this is the state that must survive both failed attempts.
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
+
+    /// First attempt fails while rewriting the live file, leaving it torn and the backup valid.
+    disk->arm();
+    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+
+    /// The retry (no restart in between) must fail the same way without consuming the backup.
+    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    disk->disarm();
+
+    /// Term 1 must still be recoverable after both failures.
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    ASSERT_EQ(recovered->get_term(), 1);
+    ASSERT_EQ(recovered->get_voted_for(), 2);
+
+    /// A later successful save still works and clears the backup.
+    state_manager->save_state(*new_state);
+    reload_state_manager();
+    auto final_state = state_manager->read_state();
+    ASSERT_NE(final_state, nullptr);
+    ASSERT_EQ(final_state->get_term(), 2);
+    ASSERT_EQ(final_state->get_voted_for(), 3);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;

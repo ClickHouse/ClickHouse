@@ -394,6 +394,70 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
+/// Reads a serialized state file and verifies its checksum. Returns nullptr if the file is
+/// empty, truncated or otherwise unusable, which is the on-disk shape left behind by a save
+/// that was interrupted while rewriting it.
+/// throw_on_corrupted_checksum distinguishes the two callers: read_state must keep failing loudly
+/// on a checksum mismatch in debug builds, while save_state has to tolerate an unusable live file
+/// because tolerating it is the whole point of the backup step.
+nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
+    const DiskPtr & disk, const String & path, bool throw_on_corrupted_checksum, LoggerPtr logger)
+{
+    try
+    {
+        auto read_buf = disk->readFile(path, getReadSettings());
+        auto content_size = read_buf->getFileSize();
+
+        if (content_size == 0)
+            return nullptr;
+
+        uint64_t read_checksum{0};
+        readIntBinary(read_checksum, *read_buf);
+
+        uint8_t version = 0;
+        readIntBinary(version, *read_buf);
+
+        auto buffer_size = content_size - sizeof read_checksum - sizeof version;
+
+        auto state_buf = nuraft::buffer::alloc(buffer_size);
+        read_buf->readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+
+        SipHash hash;
+        hash.update(version);
+        hash.update(reinterpret_cast<const char *>(state_buf->data_begin()), state_buf->size());
+
+        if (read_checksum != hash.get64())
+        {
+            constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+            if (throw_on_corrupted_checksum)
+            {
+#ifdef NDEBUG
+                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
+                return nullptr;
+#else
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
+#endif
+            }
+
+            LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
+            return nullptr;
+        }
+
+        return nuraft::srv_state::deserialize(*state_buf);
+    }
+    catch (const std::exception & e)
+    {
+        if (const auto * exception = dynamic_cast<const Exception *>(&e);
+            throw_on_corrupted_checksum && exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
+        {
+            throw;
+        }
+
+        LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
+        return nullptr;
+    }
+}
+
 }
 
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
@@ -402,7 +466,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     auto disk = getStateFileDisk();
 
-    if (disk->existsFile(server_state_file_name))
+    /// Only a live state file that reads back and verifies may become the backup: an interrupted
+    /// save leaves it empty or torn, and copying that over a still-valid state-OLD would destroy
+    /// the last state that can still be recovered.
+    if (disk->existsFile(server_state_file_name)
+        && readAndVerifyStateFile(disk, server_state_file_name, /*throw_on_corrupted_checksum=*/false, logger) != nullptr)
     {
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
@@ -461,55 +529,10 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
-        try
-        {
-            auto read_buf = disk->readFile(path, getReadSettings());
-            auto content_size = read_buf->getFileSize();
-
-            if (content_size == 0)
-                return nullptr;
-
-            uint64_t read_checksum{0};
-            readIntBinary(read_checksum, *read_buf);
-
-            uint8_t version = 0;
-            readIntBinary(version, *read_buf);
-
-            auto buffer_size = content_size - sizeof read_checksum - sizeof version;
-
-            auto state_buf = nuraft::buffer::alloc(buffer_size);
-            read_buf->readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
-
-            SipHash hash;
-            hash.update(version);
-            hash.update(reinterpret_cast<const char *>(state_buf->data_begin()), state_buf->size());
-
-            if (read_checksum != hash.get64())
-            {
-                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
-#ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
-                return nullptr;
-#else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
-#endif
-            }
-
-            auto state = nuraft::srv_state::deserialize(*state_buf);
+        auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
+        if (state)
             LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
-            return state;
-        }
-        catch (const std::exception & e)
-        {
-            if (const auto * exception = dynamic_cast<const Exception *>(&e);
-                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
-            {
-                throw;
-            }
-
-            LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
-            return nullptr;
-        }
+        return state;
     };
 
     if (disk->existsFile(server_state_file_name))
