@@ -5,6 +5,10 @@
 #include <Common/QueryFuzzer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -75,6 +79,19 @@ String rootClassOf(const ASTPtr & type_ast)
     if (id.starts_with("EnumDataType"))
         return "EnumDataType";
     return "DataType";
+}
+
+/// `DataTypes` is a vector of shared pointers, so its `==` compares POINTER identity, not the types. Every
+/// rebuild allocates fresh type objects, so a pointer comparison reports "changed" even when the types are
+/// identical. Compare the rendered names instead.
+bool sameTypes(const DataTypes & left, const DataTypes & right)
+{
+    if (left.size() != right.size())
+        return false;
+    for (size_t i = 0; i < left.size(); ++i)
+        if (left[i]->getName() != right[i]->getName())
+            return false;
+    return true;
 }
 
 /// (column name, declared type node) for every column of a CREATE query.
@@ -224,7 +241,7 @@ TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
         /// fuzzTypeWrapping can replace the source with an unrelated (naturally versionless) aggregate, which
         /// would satisfy the rename assertion without the structured arm ever running. Credit only rebuilds that
         /// kept the source's argument types, i.e. that came out of the aggregate arm.
-        if (fuzzed_aggr->getArgumentsDataTypes() != arg_types)
+        if (!sameTypes(fuzzed_aggr->getArgumentsDataTypes(), arg_types))
             continue;
 
         if (fuzzed_aggr->getFunctionName() != source_type->getFunctionName())
@@ -265,7 +282,7 @@ TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
 
         const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
         if (!aggr || aggr->getFunctionName() != source_type->getFunctionName()
-            || aggr->getArgumentsDataTypes() == arg_types)
+            || sameTypes(aggr->getArgumentsDataTypes(), arg_types))
             continue;
 
         saw_same_name_rebuild = true;
@@ -333,7 +350,7 @@ TEST(QueryFuzzer, AggregateParameterKeepsNameReconstructible)
         /// so the flag stayed set even with fuzzAggregateParameters removed.
         const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
         if (aggr && aggr->getFunctionName() == source_type->getFunctionName()
-            && aggr->getArgumentsDataTypes() == arg_types && aggr->getParameters() != numeric_parameters)
+            && sameTypes(aggr->getArgumentsDataTypes(), arg_types) && aggr->getParameters() != numeric_parameters)
             saw_parameter_change = true;
     }
     /// Guard against the loop passing vacuously: the parameter mutator must have fired at least once.
@@ -642,33 +659,87 @@ TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
 {
     tryRegisterAggregateFunctions();
 
-    /// (source type, predicate for a mutation attributable to this type's own arm, minimum count over 4000 seeds)
-    struct Arm
+    /// A CARRIER is one mutation an arm performs. Witnesses inspect the rebuilt type STRUCTURALLY (accessors on
+    /// the custom name / data type), not its printed name: a name-shaped witness is satisfied by whichever
+    /// sibling carrier happens to fire, so removing any single one leaves it green.
+    struct Carrier
     {
         String type_name;
-        std::function<bool(const String &)> is_own_arm_mutation;
-        size_t min_rate;
-    };
-    const std::vector<Arm> arms = {
-        /// Not reachable from getRandomType, so any returned SimpleAggregateFunction came from its arm.
-        {"SimpleAggregateFunction(sum, UInt64)", [](const String & name) { return name.starts_with("SimpleAggregateFunction"); }, 1},
-        /// Likewise for Nested, which the fuzzer can only rebuild, never invent.
-        {"Nested(a UInt32, b Array(Nullable(Int64)))", [](const String & name) { return name.starts_with("Nested"); }, 1},
-        /// A random JSON has no SKIP list; only the arm rebuilds one while keeping the source's.
-        {"JSON(max_dynamic_paths=8, p1 UInt32, SKIP s)",
-         [](const String & name) { return name.starts_with("JSON") && name.find("SKIP s") != String::npos; },
-         1},
-        /// Rate-separated: DateTime must not be credited for becoming a DateTime64.
-        {"DateTime('Asia/Istanbul')",
-         [](const String & name) { return name.starts_with("DateTime") && !name.starts_with("DateTime64"); },
-         1000},
-        {"DateTime64(3, 'UTC')", [](const String & name) { return name.starts_with("DateTime64"); }, 1000},
-        {"QBit(Float32, 16)", [](const String & name) { return name.starts_with("QBit"); }, 1000},
+        String carrier; /// which mutation of that type must be observed
+        std::function<bool(const DataTypePtr &)> observed;
+        size_t min_rate; /// minimum count over 4000 seeds (1 = exact witness, 1000 = rate-separated)
     };
 
-    for (const auto & arm : arms)
+    /// The SimpleAggregateFunction custom name, or nullptr if the fuzzer returned something else entirely.
+    const auto as_simple_aggr = [](const DataTypePtr & type) -> const DataTypeCustomSimpleAggregateFunction *
     {
-        const auto source = DataTypeFactory::instance().get(arm.type_name);
+        return type->hasCustomName() ? typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName())
+                                     : nullptr;
+    };
+    const auto as_nested = [](const DataTypePtr & type) -> const DataTypeNestedCustomName *
+    { return type->hasCustomName() ? typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName()) : nullptr; };
+
+    const DataTypes simple_aggr_args = {std::make_shared<DataTypeUInt64>()};
+    const Names nested_names = {"a", "b"};
+
+    const std::vector<Carrier> carriers = {
+        /// SimpleAggregateFunction is absent from getRandomType, so any such result came from its own arm. One
+        /// witness per carrier: name, argument types, parameters. `quantileExact` is used where a parameter has
+        /// to exist at all.
+        {"SimpleAggregateFunction(sum, UInt64)", "aggregate name",
+         [&](const DataTypePtr & t)
+         { const auto * s = as_simple_aggr(t); return s && s->getFunctionName() != "sum"; }, 1},
+        /// `any` is used here rather than `sum`: SimpleAggregateFunction requires the aggregate's return type to
+        /// equal the storage type, and `sum` accepts only a narrow numeric set, so nearly every fuzzed argument is
+        /// rejected and the arm falls back. `any` returns its own argument type, so any fuzzed type survives and
+        /// the carrier is actually observable.
+        {"SimpleAggregateFunction(any, UInt64)", "argument types",
+         [&](const DataTypePtr & t)
+         { const auto * s = as_simple_aggr(t); return s && !sameTypes(s->getArgumentsDataTypes(), simple_aggr_args); }, 1},
+        /// SimpleAggregateFunction only accepts a fixed function list (checkSupportedFunctions); groupArrayArray
+        /// is the one on it that takes a parameter, so it is the only fixture that can witness this carrier.
+        {"SimpleAggregateFunction(groupArrayArray(3), Array(UInt64))", "aggregate parameters",
+         [&](const DataTypePtr & t)
+         {
+             const auto * s = as_simple_aggr(t);
+             return s && s->getFunctionName() == "groupArrayArray" && s->getParameters() != Array{Field(UInt64(3))};
+         }, 1},
+        /// Nested is likewise unreachable from getRandomType; its arm fuzzes the elements and keeps the names.
+        {"Nested(a UInt32, b Array(Nullable(Int64)))", "element types",
+         [&](const DataTypePtr & t)
+         {
+             const auto * n = as_nested(t);
+             return n && n->getNames() == nested_names
+                 && (n->getElements().size() != 2 || n->getElements()[0]->getName() != "UInt32"
+                     || n->getElements()[1]->getName() != "Array(Nullable(Int64))");
+         }, 1},
+        /// The JSON arm recurses into the typed paths and rebuilds via makeRandomObject, which keeps the SKIP
+        /// list a random JSON never has. Witness the typed-path TYPE, so randomized numeric parameters alone
+        /// (which also change the name) cannot satisfy it.
+        {"JSON(max_dynamic_paths=8, p1 UInt32, SKIP s)", "typed-path types",
+         [](const DataTypePtr & t)
+         {
+             const auto * o = typeid_cast<const DataTypeObject *>(t.get());
+             if (!o || !o->getPathsToSkip().contains("s"))
+                 return false;
+             const auto it = o->getTypedPaths().find("p1");
+             return it != o->getTypedPaths().end() && it->second->getName() != "UInt32";
+         }, 1},
+        /// DateTime / DateTime64 / QBit are value-indistinguishable: getRandomType builds them with the very
+        /// same helpers. Their RATE separates instead - the arm fires on 3 of 4 seeds, the replacement tail
+        /// lands on the family only by chance (measured: ~3000/4000 with the arm, 6-18/4000 without it).
+        {"DateTime('Asia/Istanbul')", "timezone/default",
+         [](const DataTypePtr & t)
+         { const String n = t->getName(); return n.starts_with("DateTime") && !n.starts_with("DateTime64"); }, 1000},
+        {"DateTime64(3, 'UTC')", "scale/timezone",
+         [](const DataTypePtr & t) { return t->getName().starts_with("DateTime64"); }, 1000},
+        {"QBit(Float32, 16)", "element type/dimension",
+         [](const DataTypePtr & t) { return typeid_cast<const DataTypeQBit *>(t.get()) != nullptr; }, 1000},
+    };
+
+    for (const auto & c : carriers)
+    {
+        const auto source = DataTypeFactory::instance().get(c.type_name);
         size_t witnessed = 0;
         for (UInt64 seed = 0; seed < 4000; ++seed)
         {
@@ -685,15 +756,14 @@ TEST(QueryFuzzer, StructuredTypeArmsMutateTheirOwnType)
             }
 
             const String fuzzed_name = fuzzed->getName();
-            if (fuzzed_name == arm.type_name || !arm.is_own_arm_mutation(fuzzed_name))
+            if (fuzzed_name == c.type_name || !c.observed(fuzzed))
                 continue;
             ++witnessed;
 
             /// The mutated type is fed back through ParserDataType by the fuzzer, so it must reconstruct.
-            EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(fuzzed_name)) << arm.type_name << " -> " << fuzzed_name;
+            EXPECT_NE(nullptr, DataTypeFactory::instance().tryGet(fuzzed_name)) << c.type_name << " -> " << fuzzed_name;
         }
-        EXPECT_GE(witnessed, arm.min_rate)
-            << "only " << witnessed << " mutations of " << arm.type_name
-            << " attributable to its own arm (expected at least " << arm.min_rate << ") - the arm may be dead";
+        EXPECT_GE(witnessed, c.min_rate) << "only " << witnessed << " mutations of the " << c.carrier << " of "
+                                         << c.type_name << " (expected at least " << c.min_rate << ") - carrier may be dead";
     }
 }
