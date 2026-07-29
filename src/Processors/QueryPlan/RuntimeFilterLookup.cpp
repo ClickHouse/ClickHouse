@@ -57,13 +57,24 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
 }
 }
 
+namespace
+{
+/// `Object` (JSON) does not statically enumerate its dynamic paths, so "contains a float" is
+/// undecidable for it: forEachChild only visits typed_paths. Answer yes so the fast path is declined.
+bool typeIsFloatOrUndecidable(const IDataType & type)
+{
+    WhichDataType which(type);
+    /// isFloat() also covers BFloat16, unlike isNativeFloat().
+    return which.isFloat() || which.isObject();
+}
+}
+
 bool runtimeFilterTypeContainsFloat(const DataTypePtr & type)
 {
     if (!type)
         return false;
 
-    /// isFloat() also covers BFloat16, unlike isNativeFloat().
-    if (WhichDataType(*type).isFloat())
+    if (typeIsFloatOrUndecidable(*type))
         return true;
 
     /// forEachChild walks the whole type tree, not only the immediate children, so a float nested at any
@@ -71,7 +82,7 @@ bool runtimeFilterTypeContainsFloat(const DataTypePtr & type)
     bool contains_float = false;
     type->forEachChild([&contains_float](const IDataType & child)
     {
-        if (!contains_float && WhichDataType(child).isFloat())
+        if (!contains_float && typeIsFloatOrUndecidable(child))
             contains_float = true;
     });
     return contains_float;

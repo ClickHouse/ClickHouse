@@ -20,4 +20,12 @@ control decimal inner	1
 control int inner	1
 control negzero inner	0
 control nan anti	0
+json anti negzero	1
+tuple json anti negzero	1
+json declared path anti negzero	1
 has-filter	1
+has-filter anti	1
+has-filter tuple	1
+has-filter parallel_hash	1
+has-filter grace_hash	1
+has-filter json	1

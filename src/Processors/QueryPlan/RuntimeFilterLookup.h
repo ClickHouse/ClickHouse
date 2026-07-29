@@ -25,7 +25,8 @@ extern const int LOGICAL_ERROR;
 
 }
 
-/// True if `type` is a float or contains one at any nesting depth.
+/// True if `type` is a float or contains one at any nesting depth, and also for `JSON`, whose dynamic
+/// paths are not part of the static type so a float in one cannot be ruled out.
 bool runtimeFilterTypeContainsFloat(const DataTypePtr & type);
 
 class IRuntimeFilter;

@@ -24,14 +24,14 @@ CREATE TABLE l_f32 (k Float32) ENGINE = Log;  INSERT INTO l_f32 VALUES (nan);
 CREATE TABLE r_f32 (k Float32) ENGINE = Log;  INSERT INTO r_f32 VALUES (nan);
 CREATE TABLE l_bf16 (k BFloat16) ENGINE = Log; INSERT INTO l_bf16 VALUES (nan);
 CREATE TABLE r_bf16 (k BFloat16) ENGINE = Log; INSERT INTO r_bf16 VALUES (nan);
-CREATE TABLE l_lc (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO l_lc VALUES (nan);
-CREATE TABLE r_lc (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO r_lc VALUES (nan);
+CREATE TABLE l_lc_f64 (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO l_lc_f64 VALUES (nan);
+CREATE TABLE r_lc_f64 (k LowCardinality(Float64)) ENGINE = Log; INSERT INTO r_lc_f64 VALUES (nan);
 
 -- 1. NaN INNER JOIN NaN: the JOIN matches the identical bit patterns, `nan = nan` does not.
 SELECT 'f64 inner nan', count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'hash';
 SELECT 'f32 inner nan', count() FROM l_f32 JOIN r_f32 ON l_f32.k = r_f32.k SETTINGS join_algorithm = 'hash';
 SELECT 'bf16 inner nan', count() FROM l_bf16 JOIN r_bf16 ON l_bf16.k = r_bf16.k SETTINGS join_algorithm = 'hash';
-SELECT 'lc f64 inner nan', count() FROM l_lc JOIN r_lc ON l_lc.k = r_lc.k SETTINGS join_algorithm = 'hash';
+SELECT 'lc f64 inner nan', count() FROM l_lc_f64 JOIN r_lc_f64 ON l_lc_f64.k = r_lc_f64.k SETTINGS join_algorithm = 'hash';
 -- mixed widths: the filter target type is the Float64 supertype
 SELECT 'mixed f32 f64 inner nan', count() FROM l_f32 JOIN r_f64 ON l_f32.k = r_f64.k SETTINGS join_algorithm = 'hash';
 
@@ -104,8 +104,31 @@ SELECT 'control int inner', count() FROM l_int JOIN r_int ON l_int.k = r_int.k S
 SELECT 'control negzero inner', count() FROM l_negzero_f64 JOIN r_zero_f64 ON l_negzero_f64.k = r_zero_f64.k SETTINGS join_algorithm = 'hash';
 SELECT 'control nan anti', count() FROM l_f64 LEFT ANTI JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'hash';
 
--- 9. Anti-vacuity: everything above only tests something while the plan actually installs a runtime
--- filter for this shape. EXPLAIN PLAN checks the whole subtree, so it is insensitive to the plan
--- output format.
+-- 9. A JSON key keeps its floats in dynamic paths, which are not part of the static type, so the type
+-- cannot say whether a float is present and the fast path must be declined. Subquery sources because
+-- Log rejects columns with dynamic structure.
+SELECT 'json anti negzero', count() FROM (SELECT '{"a":-0.0}'::JSON AS k) AS t1
+LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash';
+SELECT 'tuple json anti negzero', count() FROM (SELECT tuple('{"a":-0.0}'::JSON) AS k) AS t1
+LEFT ANTI JOIN (SELECT tuple('{"a":0.0}'::JSON) AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash';
+-- A DECLARED path is part of the static type, so the plain type walk already covered this one.
+SELECT 'json declared path anti negzero', count() FROM (SELECT '{"a":-0.0}'::JSON(a Float64) AS k) AS t1
+LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON(a Float64) AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash';
+
+-- 10. Anti-vacuity: every assertion above only tests something while the plan actually installs a
+-- runtime filter for that shape. EXPLAIN PLAN checks the whole subtree, so it is insensitive to the
+-- plan output format. One row per planner branch, since they are selected separately: per-column
+-- filters for INNER, one tuple filter for multi-key ANTI, and the two other hash algorithms.
 SELECT 'has-filter', countIf(explain ILIKE '%RuntimeFilter%') > 0
 FROM (EXPLAIN PLAN SELECT count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'hash');
+SELECT 'has-filter anti', countIf(explain ILIKE '%RuntimeFilter%') > 0
+FROM (EXPLAIN PLAN SELECT count() FROM l_negzero_f64 LEFT ANTI JOIN r_zero_f64 ON l_negzero_f64.k = r_zero_f64.k SETTINGS join_algorithm = 'hash');
+SELECT 'has-filter tuple', countIf(explain ILIKE '%RuntimeFilter%') > 0
+FROM (EXPLAIN PLAN SELECT count() FROM l_multi_negzero LEFT ANTI JOIN r_multi_zero ON l_multi_negzero.k = r_multi_zero.k AND l_multi_negzero.j = r_multi_zero.j SETTINGS join_algorithm = 'hash');
+SELECT 'has-filter parallel_hash', countIf(explain ILIKE '%RuntimeFilter%') > 0
+FROM (EXPLAIN PLAN SELECT count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'parallel_hash');
+SELECT 'has-filter grace_hash', countIf(explain ILIKE '%RuntimeFilter%') > 0
+FROM (EXPLAIN PLAN SELECT count() FROM l_f64 JOIN r_f64 ON l_f64.k = r_f64.k SETTINGS join_algorithm = 'grace_hash');
+SELECT 'has-filter json', countIf(explain ILIKE '%RuntimeFilter%') > 0
+FROM (EXPLAIN PLAN SELECT count() FROM (SELECT '{"a":-0.0}'::JSON AS k) AS t1
+LEFT ANTI JOIN (SELECT '{"a":0.0}'::JSON AS k) AS t2 USING (k) SETTINGS join_algorithm = 'hash');
