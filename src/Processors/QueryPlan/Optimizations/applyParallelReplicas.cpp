@@ -2,6 +2,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -305,6 +306,29 @@ static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
     return false;
 }
 
+/// Plan-based parallel replicas cannot yet ship a `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`):
+/// the shipped fragment is captured while the subquery's query plan is still populated, but the later
+/// `addStepsToBuildSets` pass calls `FutureSetFromSubquery::build`, which moves that plan out, so
+/// serializing the fragment at execution time finds a null plan and throws a `LOGICAL_ERROR` (issue
+/// #111876). Until that is fixed, detect the still-intact `DelayedCreatingSetsStep` (planted by
+/// `addBuildSubqueriesForSetsStepIfNeeded` and only converted away by `addStepsToBuildSets`, which runs
+/// after this pass) and execute the whole query locally, like the FINAL case above.
+/// TODO(#111876): serialize the subquery set's plan at fragment-capture time (in
+/// `createRemotePlanFragmentForParallelReplicas`, during `optimizeTreeSecondPass`, before
+/// `addStepsToBuildSets` empties the plan) so `IN (subquery)` can be distributed.
+static bool planHasSubquerySet(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get());
+        delayed && !delayed->getSets().empty())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasSubquerySet(child))
+            return true;
+    return false;
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -315,6 +339,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         return;
 
     if (planHasFinalMergeTreeRead(root))
+        return;
+
+    if (planHasSubquerySet(root))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;
