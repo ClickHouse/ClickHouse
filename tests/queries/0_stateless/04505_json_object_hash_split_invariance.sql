@@ -9,7 +9,6 @@
 -- "Invalid state transition" logical error.
 
 SET allow_experimental_json_type = 1;
-SET allow_dynamic_type_in_join_keys = 1;
 SET allow_suspicious_types_in_group_by = 1;
 SET allow_suspicious_types_in_order_by = 1;
 
@@ -153,6 +152,10 @@ DROP TABLE t_spill;
 -- silently dropped matches (and a backward re-hash after a spill risks the FileBucket assertion).
 
 SET allow_experimental_dynamic_type = 1;
+-- A bare `Dynamic` join key requires this; a `JSON` key does not, which is why the JSON cases above
+-- run without it. `DataTypeObject::forEachChild` visits only typed paths, so `hasDynamicType` never
+-- sees a `JSON` column's inner `Dynamic` and the join-key gates do not fire.
+SET allow_dynamic_type_in_join_keys = 1;
 
 DROP TABLE IF EXISTS d_typed;
 DROP TABLE IF EXISTS d_shared;

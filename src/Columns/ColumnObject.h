@@ -148,9 +148,10 @@ public:
     /// distribution between dynamic paths and shared data.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Typed-path hashes chain first and are unchanged from master: a typed path is a fixed sorted set
-    /// that can never move between sections. Everything else is folded over the sorted UNION of the
-    /// dynamic paths and `shared_data`, so the result does not depend on which section holds a path.
+    /// Typed-path hashes chain first, in sorted order: a typed path is a fixed sorted set that can
+    /// never move between sections, so it needs no per-path fold. Everything else is folded over the
+    /// sorted UNION of the dynamic paths and `shared_data`, so the result does not depend on which
+    /// section holds a path.
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
 
