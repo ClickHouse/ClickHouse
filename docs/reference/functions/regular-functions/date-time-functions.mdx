@@ -2382,7 +2382,7 @@ FORMAT PrettyCompactMonoBlock
 
 Introduced in: v23.6.0
 
-Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings#timezone) setting.
+Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings/other#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     
 
@@ -3806,7 +3806,7 @@ Introduced in: v1.1.0
 Rounds up a date or date with time to the last day of the month.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -3847,7 +3847,7 @@ Introduced in: v23.5.0
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4081,7 +4081,7 @@ Introduced in: v1.1.0
 Rounds down a date or date with time to the Monday of the same week. Returns the date.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4598,7 +4598,7 @@ Introduced in: v1.1.0
 Rounds down a date with time to the start of the day.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4637,7 +4637,7 @@ Introduced in: v1.1.0
 Rounds down the date with time to the start of the fifteen-minute interval.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4682,7 +4682,7 @@ Introduced in: v22.6.0
 Rounds down a date with time to the start of the nearest five-minute interval.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4729,7 +4729,7 @@ Introduced in: v1.1.0
 Rounds down a date with time to the start of the hour.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4769,7 +4769,7 @@ Introduced in: v1.1.0
 Rounds down a date or date with time to the first day of the ISO year, which can be different than a regular year. See [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -4987,7 +4987,7 @@ Introduced in: v1.1.0
 Rounds down a date with time to the start of the minute.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -5030,7 +5030,7 @@ Introduced in: v1.1.0
 Rounds down a date or date with time to the first day of the month.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -5119,7 +5119,7 @@ Introduced in: v1.1.0
 Rounds down a date or date with time to the first day of the quarter. The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -5208,7 +5208,7 @@ Introduced in: v20.1.0
 Rounds down a date with time to the start of the nearest ten-minute interval.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -5253,7 +5253,7 @@ Introduced in: v20.1.0
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 
@@ -5302,7 +5302,7 @@ Introduced in: v1.1.0
 Rounds down a date or date with time to the first day of the year. Returns the date as a `Date` object.
 
 <Note>
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
     
 

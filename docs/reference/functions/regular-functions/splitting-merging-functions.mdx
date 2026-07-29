@@ -6,7 +6,7 @@ title: 'Functions for splitting strings'
 doc_type: 'reference'
 ---
 
-import DeprecatedBadge from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <Note>
 The documentation below is generated from the `system.functions` system table.
@@ -137,7 +137,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Introduced in: v26.7.0
 
-Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the [`NAIVE_BAYES`](/en/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produces at query time.
+Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the [`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produces at query time.
 
 **Syntax**
 
@@ -331,7 +331,7 @@ Splits a string separated by a specified constant string `separator` of exactly 
 Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 <Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 </Note>
 
 Empty substrings may be selected when:
@@ -376,7 +376,7 @@ Introduced in: v21.9.0
 Splits a string separated by whitespace and punctuation characters into an array of substrings.
 
 <Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 </Note>
 
 **Syntax**
@@ -420,7 +420,7 @@ Empty substrings may be selected when:
 - the original string string is empty while the regular expression is not empty.
 
 <Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 </Note>
 
 **Syntax**
@@ -478,7 +478,7 @@ Empty substrings may be selected when:
 - The original string `s` is empty while the separator is not empty
 
 <Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 </Note>
 
 **Syntax**
@@ -530,7 +530,7 @@ Introduced in: v21.9.0
 Splits a string which is separated by whitespace characters into an array of substrings.
 
 <Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 </Note>
 
 **Syntax**
