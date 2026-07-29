@@ -1770,12 +1770,11 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->result_rows_estimation = result_rows_estimation;
-    result_step->left_rows_estimation = left_rows_estimation;
-    result_step->right_rows_estimation = right_rows_estimation;
+    result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
-    result_step->left_table_label = left_table_label;
-    result_step->right_table_label = right_table_label;
+    result_step->left_relation = left_relation;
+    result_step->right_relation = right_relation;
     result_step->dummy_stats = dummy_stats;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
 
@@ -1793,9 +1792,9 @@ void JoinStepLogical::addConditions(ActionsDAG actions_dag)
 std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
-        return left_rows_estimation;
+        return left_relation.estimated_rows;
     else
-        return right_rows_estimation;
+        return right_relation.estimated_rows;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry);
