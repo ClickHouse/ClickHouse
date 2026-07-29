@@ -8,6 +8,11 @@
 -- only on the finalizing node over the merged stream, so the result matches the plain query. The two
 -- shards read the same table, so real rows are doubled while the fill rows (g = 0 and g = 4) appear once.
 --
+-- The WITH FILL query is wrapped in an outer ORDER BY g, id: StorageMerge over Distributed does not
+-- guarantee a stable row order across configurations, so the outer sort makes the reference
+-- deterministic. The bug still shows through as a different multiset (per-node filling duplicates the
+-- fill rows: 12 rows instead of 10) or as the logical error, both independent of ordering.
+--
 -- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
 -- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
 -- serialize_query_plan on globally; this test exercises the (nested) shard read, not plan serialization.
@@ -24,7 +29,11 @@ CREATE TABLE merge_04648 ENGINE = Merge(currentDatabase(), '^dist_04648$');
 SET serialize_query_plan = 0;
 SET prefer_localhost_replica = 0;
 
-SELECT g, id FROM merge_04648 ORDER BY g WITH FILL FROM 0 TO 6 INTERPOLATE (id AS id + 1);
+SELECT g, id FROM
+(
+    SELECT g, id FROM merge_04648 ORDER BY g WITH FILL FROM 0 TO 6 INTERPOLATE (id AS id + 1)
+)
+ORDER BY g, id;
 
 DROP TABLE merge_04648;
 DROP TABLE dist_04648;
