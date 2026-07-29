@@ -87,7 +87,7 @@ private:
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
-    String getFormattedTablesList(const String & except = {}) const;
+    String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 
     bool is_attach;
     String remote_database_name;
@@ -95,8 +95,19 @@ private:
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
-    std::map<std::string, StoragePtr> materialized_tables;
+
     mutable std::mutex tables_mutex;
+
+    /// Wrappers over the nested `ReplacingMergeTree` tables. `tables_mutex` is the only mutex that
+    /// guards this map. Readers - `tryGetTable`, `getTablesIterator`, `getTablesForBackup` -
+    /// dereference the stored `StorageMaterializedPostgreSQL` pointers while holding it, so every
+    /// writer must hold it as well. Guarding the writes with `handler_mutex` instead used to let
+    /// `DROP DATABASE` destroy a wrapper while another thread was walking the map, which the
+    /// sanitizers reported as a heap use-after-free. `ServerAsynchronousMetrics` enumerates the
+    /// tables of every database once per second, so the window was hit routinely.
+    /// When both mutexes are needed, `handler_mutex` is taken first.
+    std::map<std::string, StoragePtr> materialized_tables TSA_GUARDED_BY(tables_mutex);
+
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePoolTaskHolder startup_task;

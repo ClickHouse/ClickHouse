@@ -586,6 +586,58 @@ def test_merge_table_over_materialized_postgresql_database(started_cluster):
     assert instance.query(merge_query) == expected
 
 
+def test_drop_database_while_enumerating_tables(started_cluster):
+    """
+    `DROP DATABASE` clears the map of `StorageMaterializedPostgreSQL` wrappers that
+    `getTablesIterator` walks, so both sides have to hold the same mutex. Otherwise the drop
+    destroys a wrapper while a reader is still dereferencing it, which is a use-after-free that
+    the sanitizer builds turn into an aborted server.
+
+    `ServerAsynchronousMetrics` enumerates the tables of every database once per second, so this
+    used to be hit by the metrics thread rather than by a query. Here `system.tables` is read in a
+    loop instead, to drive the same code path from the test itself.
+    """
+    table_names = [f"postgresql_replica_drop_race_{i}" for i in range(2)]
+    for table_name in table_names:
+        pg_manager.create_postgres_table(table_name)
+        instance.query(
+            f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(10)"
+        )
+
+    stop_reading = threading.Event()
+
+    def keep_enumerating_tables():
+        while not stop_reading.is_set():
+            try:
+                instance.query(
+                    "SELECT count() FROM system.tables WHERE database = 'test_database'"
+                )
+            except Exception:
+                # The database being dropped from under the query is expected. What must not
+                # happen is the server going away, which the assertions below check for.
+                pass
+
+    readers = [threading.Thread(target=keep_enumerating_tables) for _ in range(4)]
+    for reader in readers:
+        reader.start()
+
+    try:
+        for _ in range(10):
+            pg_manager.create_materialized_db(
+                ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+            )
+            for table_name in table_names:
+                check_tables_are_synchronized(instance, table_name)
+            pg_manager.drop_materialized_db()
+    finally:
+        stop_reading.set()
+        for reader in readers:
+            reader.join()
+
+    # The server is still up - it did not abort on a sanitizer report.
+    assert instance.query("SELECT 1") == "1\n"
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
