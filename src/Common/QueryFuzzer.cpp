@@ -47,6 +47,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -2765,8 +2767,24 @@ bool QueryFuzzer::fuzzDataTypes(DataTypes & types)
     return changed;
 }
 
+const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
+{
+    /// Geometry is registered as a Variant over every geo alias, so its variants are the authoritative set.
+    static const std::unordered_set<String> names = []
+    {
+        std::unordered_set<String> result{"Geometry"};
+        const auto geometry = DataTypeFactory::instance().get("Geometry");
+        if (const auto * variant = typeid_cast<const DataTypeVariant *>(geometry.get()))
+            for (const auto & alternative : variant->getVariants())
+                result.insert(alternative->getName());
+        return result;
+    }();
+    return names;
+}
+
 DataTypePtr QueryFuzzer::fuzzContainerChildren(const DataTypePtr & type)
 {
+    ++container_rebuild_count;
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
         return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -2858,13 +2876,12 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             return type;
         }
 
-        /// Geo aliases (Point/Ring/Polygon/MultiPolygon/LineString/MultiLineString/Geometry) are fixed-name types
-        /// whose storage carries nested structure (Tuple / Array / Variant). getName() emits the alias regardless
-        /// of the storage, so a mutated storage cannot round-trip under the alias. To still fuzz that structure,
-        /// occasionally emit the fuzzed storage type (dropping the alias -- a valid, round-trippable mutation).
-        static const std::unordered_set<String> geo_alias_names
-            = {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"};
-        if (geo_alias_names.contains(type->getCustomName()->getName()) && fuzz_rand() % 4 == 0)
+        /// Geo aliases (Point/MultiPoint/Ring/Polygon/MultiPolygon/LineString/MultiLineString/Geometry) are
+        /// fixed-name types whose storage carries nested structure (Tuple / Array / Variant). getName() emits the
+        /// alias regardless of the storage, so a mutated storage cannot round-trip under the alias. To still fuzz
+        /// that structure, occasionally emit the fuzzed storage type (dropping the alias -- a valid,
+        /// round-trippable mutation).
+        if (geoAliasNames().contains(type->getCustomName()->getName()) && fuzz_rand() % 4 == 0)
         {
             try
             {
@@ -2878,7 +2895,11 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         }
 
         /// Any other custom-named type (Bool, ...) is a parameterless fixed alias with no child types to fuzz.
-        return type;
+        /// Skip the structural arms below, which match its storage type and would silently strip the name, and
+        /// go straight to the wrapping/replacement mutations at the end: wrapping keeps the alias as the child
+        /// (Array(Bool)), and replacement drops it for an unrelated type, which is a legitimate mutation for a
+        /// leaf. Returning here instead would freeze such a type for every seed.
+        return fuzzTypeWrapping(type);
     }
 
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
@@ -3078,6 +3099,13 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         return type;
     }
 
+    return fuzzTypeWrapping(type);
+}
+
+DataTypePtr QueryFuzzer::fuzzTypeWrapping(const DataTypePtr & type)
+{
+    /// Wrap the type, or replace it with a random one. Wrapping keeps a custom name as the child, unlike the
+    /// structural arms which rebuild from the storage type and strip the name while claiming to be that type.
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
         return std::make_shared<DataTypeArray>(type);
@@ -3294,7 +3322,11 @@ DataTypePtr QueryFuzzer::getRandomType()
             if (auto random = makeAggregateFunctionType(name, arg_types, Array{}, /*simple=*/false))
                 return random;
             /// The random aggregate rejected the random argument types: fall back to argument-less count.
-            return makeAggregateFunctionType("count", DataTypes{}, Array{}, /*simple=*/false);
+            /// Built directly rather than through the helper, which swallows exceptions and returns null -
+            /// getRandomType must never hand a null type to its callers.
+            AggregateFunctionProperties properties;
+            auto count = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+            return std::make_shared<DataTypeAggregateFunction>(count, DataTypes{}, Array{});
         }
         default: break;
     }
@@ -7284,17 +7316,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             hypo_index->if_exists = !hypo_index->if_exists;
         fuzz(hypo_index->children);
     }
-    else if (typeid_cast<ASTDataType *>(ast.get()))
+    else if (
+        typeid_cast<ASTDataType *>(ast.get()) || typeid_cast<ASTTupleDataType *>(ast.get())
+        || typeid_cast<ASTEnumDataType *>(ast.get()))
     {
-        /// A data type is only ever fuzzed via the DataType layer, which produces structurally
-        /// valid mutations (nullable wrappers, array nesting, precision changes, etc.). We must
-        /// NOT recurse into its argument list with the generic expression fuzzer: that list is
-        /// parsed by ParserDataType, which does not accept operator/function expressions, so
-        /// injecting e.g. multiply()/if()/multiIf() into it produces an ASTDataType whose
-        /// argument is an ASTFunction. Such a node cannot be produced by parsing, so
-        /// ASTDataType::formatImpl emits text that ParserDataType parses back into a different
-        /// AST, tripping the format-parse-format consistency check in executeQuery
-        /// (LOGICAL_ERROR "Inconsistent AST formatting", aborts on DEBUG/sanitizer builds; #109706).
+        /// A data type must be fuzzed only through the DataType layer, never by recursing into its argument
+        /// list with the generic expression fuzzer: ParserDataType does not accept function expressions, so an
+        /// injected one cannot be parsed back and trips the format-parse-format check (#109706).
+        /// typeid_cast and IAST::as match exactly, so every subclass has to be named above.
         if (fuzz_rand() % 10 == 0)
         {
             if (const auto old_type = DataTypeFactory::instance().tryGet(ast))

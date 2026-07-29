@@ -4,6 +4,10 @@
 #include <Common/Exception.h>
 #include <Common/QueryFuzzer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ASTDataType.h>
@@ -12,6 +16,14 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Defines.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserQuery.h>
+
+#include <map>
+#include <vector>
+
+#include <vector>
 
 #include "gtest_global_register.h"
 
@@ -52,6 +64,31 @@ namespace
     return ::testing::AssertionSuccess();
 }
 
+/// The class of a data-type root node, keyed on getID() so it does not depend on the exact-match casts
+/// (typeid_cast / IAST::as) that the test exercises.
+String rootClassOf(const ASTPtr & type_ast)
+{
+    const String id = type_ast->getID();
+    if (id.starts_with("TupleDataType"))
+        return "TupleDataType";
+    if (id.starts_with("EnumDataType"))
+        return "EnumDataType";
+    return "DataType";
+}
+
+/// (column name, declared type node) for every column of a CREATE query.
+std::vector<std::pair<String, ASTPtr>> collectColumnTypes(const ASTPtr & create)
+{
+    std::vector<std::pair<String, ASTPtr>> result;
+    const auto * query = create->as<ASTCreateQuery>();
+    if (!query || !query->columns_list || !query->columns_list->columns)
+        return result;
+    for (const auto & child : query->columns_list->columns->children)
+        if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+            result.emplace_back(column->name, column->getType());
+    return result;
+}
+
 }
 
 /// Deterministic regression test for #109706, independent of the global server-side fuzzer RNG.
@@ -74,9 +111,7 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
     /// A structurally valid data type of the same shape (Nullable of a plain type) round-trips.
     EXPECT_TRUE(dataTypeRoundTrips(makeASTDataType("Nullable", makeASTDataType("Int32"))));
 
-    /// The fix makes fuzzDataType own every ASTDataType node and mutate only via the DataType layer,
-    /// which yields structurally valid, round-trippable types across all parametric families - the
-    /// complex parsers included. Assert those name forms round-trip through ParserDataType.
+    /// Every parametric family must round-trip through ParserDataType.
     const std::vector<String> valid_type_names = {
         "Nullable(Int32)",
         "Array(Nullable(UInt64))",
@@ -100,6 +135,7 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "Nested(a UInt32, b String)",
         "Nested(a UInt32, b Array(Nullable(Int64)))",
         "Point",
+        "MultiPoint",
         "Ring",
         "Polygon",
         "MultiPolygon",
@@ -153,14 +189,9 @@ TEST(QueryFuzzer, AggregateFunctionVersionPreserved)
     EXPECT_EQ(std::nullopt, aggr->getVersionIfExplicit());
 }
 
-/// Regression test for the follow-up #109713 review point: preserving the source serialization version
-/// unconditionally is unsafe once the fuzzer changes the aggregate name. A version is function-specific
-/// (e.g. -Map aggregates only accept 0/1; AggregateFunction(2, quantiles(...)) rebuilt as
-/// AggregateFunction(2, sumMap, ...) round-trips through ParserDataType but sumMap::serialize throws on
-/// version 2 as soon as a state is materialized). fuzzDataType must therefore drop the explicit version
-/// whenever it renames the aggregate. Driving fuzzDataType over many deterministic seeds, every rebuilt
-/// AggregateFunction whose name changed must carry no explicit version (so serialize falls back to the
-/// new function's own default), while an unchanged name keeps the source version verbatim.
+/// A serialization version is function-specific: AggregateFunction(2, quantiles(...)) rebuilt as
+/// AggregateFunction(2, sumMap, ...) parses back fine but sumMap::serialize throws on version 2. So a rename
+/// must drop the explicit version, while an unchanged name keeps it verbatim.
 TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
 {
     tryRegisterAggregateFunctions();
@@ -195,6 +226,12 @@ TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
         if (!fuzzed_aggr)
             continue; /// wrapped in Array/Nullable/... - not the arm under test.
 
+        /// fuzzTypeWrapping can replace the source with an unrelated (naturally versionless) aggregate, which
+        /// would satisfy the rename assertion without the structured arm ever running. Credit only rebuilds that
+        /// kept the source's argument types, i.e. that came out of the aggregate arm.
+        if (fuzzed_aggr->getArgumentsDataTypes() != arg_types)
+            continue;
+
         if (fuzzed_aggr->getFunctionName() != source_type->getFunctionName())
         {
             saw_name_change = true;
@@ -211,4 +248,312 @@ TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
 
     /// Sanity: the chosen seed range actually exercises the rename path (otherwise the test proves nothing).
     EXPECT_TRUE(saw_name_change);
+
+    /// The forwarding itself: a rebuild that KEPT the name but changed the argument types must carry the source
+    /// version. Filtered out above (a same-name, same-argument result is just the unchanged source object), so
+    /// assert it here or nothing covers the wiring between fuzzDataType and makeAggregateFunctionType.
+    bool saw_same_name_rebuild = false;
+    for (UInt64 seed = 0; seed < 4000 && !saw_same_name_rebuild; ++seed)
+    {
+        QueryFuzzer fuzzer;
+        fuzzer.setSeed(seed);
+        auto source_type = std::make_shared<DataTypeAggregateFunction>(source_func, arg_types, Array{}, size_t(1));
+        DataTypePtr fuzzed;
+        try
+        {
+            fuzzed = fuzzer.fuzzDataType(source_type);
+        }
+        catch (const Exception &)
+        {
+            continue;
+        }
+
+        const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
+        if (!aggr || aggr->getFunctionName() != source_type->getFunctionName()
+            || aggr->getArgumentsDataTypes() == arg_types)
+            continue;
+
+        saw_same_name_rebuild = true;
+        EXPECT_EQ(std::optional<size_t>(1), aggr->getVersionIfExplicit())
+            << "seed=" << seed << " lost the source version on a same-name rebuild";
+    }
+    EXPECT_TRUE(saw_same_name_rebuild) << "no same-name, changed-argument rebuild was observed";
+}
+
+/// Every geo alias the factory reports must actually have its storage fuzzed, and every rebuild must stay
+/// parser-reconstructible. Enumerating from Geometry's variants covers a newly registered alias for free.
+TEST(QueryFuzzer, GeoAliasStorageIsFuzzed)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto geometry = DataTypeFactory::instance().get("Geometry");
+    const auto * geometry_variant = typeid_cast<const DataTypeVariant *>(geometry.get());
+    ASSERT_NE(nullptr, geometry_variant) << "Geometry is expected to be a Variant over the geo aliases";
+
+    const auto & selected = QueryFuzzer::geoAliasNames();
+
+    /// Non-geo fixed-name aliases have no nested structure to fuzz and must not be selected.
+    EXPECT_FALSE(selected.contains("Bool"));
+
+    std::vector<String> aliases{"Geometry"};
+    for (const auto & alternative : geometry_variant->getVariants())
+        aliases.push_back(alternative->getName());
+
+    for (const String & alias : aliases)
+    {
+        /// Every registered geo alias must reach the arm; MultiPoint was missing from the hardcoded list.
+        ASSERT_TRUE(selected.contains(alias)) << "geo alias not covered: " << alias;
+
+        /// And the rebuild the arm performs must actually fuzz the nested structure. Drive it directly: going
+        /// through fuzzDataType cannot isolate it, because an unselected alias continues into the
+        /// wrapping/replacement tail whose output is indistinguishable from a rebuild by name alone.
+        const auto plain = DataTypeFactory::instance().get(alias);
+
+        /// The storage rendered with NO child mutation. plain->getName() is the ALIAS ("MultiPoint"), so it
+        /// cannot serve as the baseline: every rebuild strips the alias and would differ from it trivially.
+        String unmutated;
+        if (const auto * v = typeid_cast<const DataTypeVariant *>(plain.get()))
+            unmutated = std::make_shared<DataTypeVariant>(v->getVariants())->getName();
+        else if (const auto * a = typeid_cast<const DataTypeArray *>(plain.get()))
+            unmutated = std::make_shared<DataTypeArray>(a->getNestedType())->getName();
+        else if (const auto * t = typeid_cast<const DataTypeTuple *>(plain.get()))
+            unmutated = std::make_shared<DataTypeTuple>(t->getElements())->getName();
+        ASSERT_FALSE(unmutated.empty()) << alias << " has no fuzzable container storage";
+
+        bool saw_child_mutation = false;
+        for (UInt64 seed = 0; seed < 4000 && !saw_child_mutation; ++seed)
+        {
+            QueryFuzzer fuzzer;
+            fuzzer.setSeed(seed);
+
+            DataTypePtr rebuilt;
+            try
+            {
+                rebuilt = fuzzer.fuzzContainerChildren(plain);
+            }
+            catch (const Exception &)
+            {
+                continue; /// a fuzzed storage type may violate a container invariant; the arm catches this too.
+            }
+            ASSERT_NE(nullptr, rebuilt) << alias << " has no fuzzable container storage";
+
+            if (rebuilt->getName() == unmutated)
+                continue; /// rebuilt, but every child mutation was a no-op this seed.
+            saw_child_mutation = true;
+
+            /// The result must be parseable, else the fuzzer would trip the #109706 consistency check.
+            const String rebuilt_name = rebuilt->getName();
+            ParserDataType parser;
+            ASTPtr parsed = parseQuery(
+                parser, rebuilt_name.data(), rebuilt_name.data() + rebuilt_name.size(), "",
+                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            ASSERT_NE(nullptr, parsed) << alias << " -> " << rebuilt_name;
+            EXPECT_TRUE(dataTypeRoundTrips(parsed)) << alias << " -> " << rebuilt_name;
+        }
+
+        EXPECT_TRUE(saw_child_mutation) << "fuzzContainerChildren never fuzzed a child of " << alias;
+
+        /// And the production dispatch must route the alias there. No property of the output identifies the
+        /// rebuild - getRandomType can return another geo alias of the same kind, and even an exact name match
+        /// with a replayed rebuild happens by coincidence - so observe the branch itself.
+        bool saw_dispatch = false;
+        for (UInt64 seed = 0; seed < 4000 && !saw_dispatch; ++seed)
+        {
+            QueryFuzzer fuzzer;
+            fuzzer.setSeed(seed);
+            DataTypePtr fuzzed;
+            try
+            {
+                fuzzed = fuzzer.fuzzDataType(plain);
+            }
+            catch (const Exception &)
+            {
+                continue;
+            }
+            if (fuzzer.getContainerRebuildCount() == 0)
+                continue;
+            saw_dispatch = true;
+
+            /// Entering the helper is not enough: the arm must RETURN its result. A rebuild's output carries no
+            /// custom name and keeps the storage's kind, so a returned alias means the value was discarded.
+            EXPECT_EQ(plain->getTypeId(), fuzzed->getTypeId()) << alias << " seed=" << seed;
+            EXPECT_FALSE(fuzzed->hasCustomName()) << alias << " -> " << fuzzed->getName() << " seed=" << seed;
+        }
+        EXPECT_TRUE(saw_dispatch) << "fuzzDataType never dispatched " << alias << " to the container rebuild";
+    }
+}
+
+/// `typeid_cast` and `IAST::as` both match the exact type, so an `ASTDataType` SUBCLASS
+/// (`ASTTupleDataType`, `ASTEnumDataType`) is not caught by a check naming only the base and falls through to
+/// the generic expression fuzzer - which injects functions into the type's argument list, i.e. the #109706 bug
+/// this PR exists to prevent. Fuzz whole CREATE queries carrying those shapes and require every data type in
+/// the result to stay parseable.
+TEST(QueryFuzzer, DataTypeSubclassesAreNotFuzzedAsExpressions)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const String query = "CREATE TABLE t ("
+                         "a Tuple(x Point, y String), "
+                         "b Tuple(UInt8, String), "
+                         "c Tuple(m MultiPoint, n Int64), "
+                         "d Enum8('a' = 1, 'b' = 2), "
+                         "e Array(Nullable(UInt64))"     /// a plain ASTDataType root
+                         ") ENGINE = Memory";
+
+    size_t types_checked = 0;
+    /// Per class of datatype root, whether that column's declared type was mutated at all - a guard against a
+    /// vacuously green run in which the fuzzer happened to change nothing.
+    std::map<String, bool> mutated{{"DataType", false}, {"TupleDataType", false}, {"EnumDataType", false}};
+    /// The declared type of every column in the UNFUZZED query, keyed by column name, plus the class of its
+    /// root node. A mutation is only credited when a column's own type text changed.
+    std::map<String, std::pair<String, String>> baseline; /// column -> (class, type text)
+    {
+        ParserQuery p(query.data() + query.size());
+        const ASTPtr base = parseQuery(p, query.data(), query.data() + query.size(), "",
+                                       DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                                       DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        for (const auto & col : collectColumnTypes(base))
+            baseline[col.first] = {rootClassOf(col.second), col.second->formatWithSecretsOneLine()};
+        ASSERT_EQ(5u, baseline.size());
+    }
+    for (UInt64 seed = 0; seed < 2000; ++seed)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast;
+        try
+        {
+            ast = parseQuery(
+                parser, query.data(), query.data() + query.size(), "",
+                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            QueryFuzzer fuzzer;
+            fuzzer.setSeed(seed);
+            fuzzer.fuzzMain(ast);
+        }
+        catch (const Exception &)
+        {
+            continue; /// the fuzzer legitimately rejects some shapes; not the arm under test.
+        }
+
+        /// Every data-type node left in the tree must be reconstructible by ParserDataType. getID() is the
+        /// discriminator that does not depend on the exact-match casts under test.
+        std::vector<ASTPtr> stack{ast};
+        while (!stack.empty())
+        {
+            const ASTPtr node = stack.back();
+            stack.pop_back();
+            if (!node)
+                continue;
+            const String id = node->getID();
+            if (id.starts_with("DataType") || id.starts_with("TupleDataType") || id.starts_with("EnumDataType"))
+            {
+                ++types_checked;
+                EXPECT_TRUE(dataTypeRoundTrips(node)) << "seed=" << seed << " id=" << id;
+
+            }
+            for (const auto & child : node->children)
+                stack.push_back(child);
+        }
+
+        /// Liveness: a column whose own declared type text changed. Note fuzzColumnDeclaration also mutates the
+        /// type, so this only guards against a vacuously green run; the guard itself is isolated by the
+        /// standalone-root loop below.
+        for (const auto & col : collectColumnTypes(ast))
+        {
+            const auto it = baseline.find(col.first);
+            if (it == baseline.end())
+                continue; /// the fuzzer renamed/dropped the column - not evidence either way.
+            if (col.second->formatWithSecretsOneLine() != it->second.second)
+                mutated[it->second.first] = true;
+        }
+    }
+
+    EXPECT_GT(types_checked, 0u) << "no data-type nodes were inspected - the walk proves nothing";
+
+    for (const auto & [cls, seen] : mutated)
+        EXPECT_TRUE(seen) << "no mutation reached any " << cls << " root - the seed range proves nothing";
+
+    /// Isolate the guard: drive a STANDALONE data-type root through fuzzMain, so fuzzColumnDeclaration (which
+    /// mutates a column's type independently) is not in the picture and the guarded branch in fuzz() is the only
+    /// thing that can act. Each class must be mutated, and every result must still be parseable.
+    for (const String & type_name : {"Array(Nullable(UInt64))", "Tuple(a UInt8, b String)", "Tuple(UInt8, String)",
+                                     "Enum8('a' = 1, 'b' = 2)", "MultiPoint"})
+    {
+        size_t mutations = 0;
+        for (UInt64 seed = 0; seed < 2000; ++seed)
+        {
+            ParserDataType type_parser;
+            ASTPtr root;
+            try
+            {
+                root = parseQuery(
+                    type_parser, type_name.data(), type_name.data() + type_name.size(), "",
+                    DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+                QueryFuzzer fuzzer;
+                fuzzer.setSeed(seed);
+                fuzzer.fuzzMain(root);
+            }
+            catch (const Exception &)
+            {
+                continue;
+            }
+
+            if (root->formatWithSecretsOneLine() != type_name)
+                ++mutations;
+
+            /// Whatever it became must round-trip: this is the #109706 invariant.
+            EXPECT_TRUE(dataTypeRoundTrips(root)) << type_name << " seed=" << seed;
+        }
+
+        /// A guard whose mutation body is a no-op leaves the root untouched for every seed.
+        EXPECT_GT(mutations, 0u) << "no mutation reached the standalone root " << type_name;
+    }
+}
+
+/// The custom-name block must not become a dead end. `Bool` is a fixed alias over `UInt8` with no children, so
+/// it has nothing structural to fuzz - but returning it unchanged there froze it for every seed, silently
+/// removing it from fuzzer coverage. It has to reach the wrapping/replacement mutations, which keep the alias
+/// intact. `UInt8` is the control: a plain type takes the same tail, so the rates must be comparable.
+TEST(QueryFuzzer, CustomNamedLeafAliasIsStillFuzzed)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto mutation_rate = [](const String & type_name)
+    {
+        size_t changed = 0;
+        for (UInt64 seed = 0; seed < 2000; ++seed)
+        {
+            QueryFuzzer fuzzer;
+            fuzzer.setSeed(seed);
+            DataTypePtr fuzzed;
+            try
+            {
+                fuzzed = fuzzer.fuzzDataType(DataTypeFactory::instance().get(type_name));
+            }
+            catch (const Exception &)
+            {
+                continue;
+            }
+
+            const String fuzzed_name = fuzzed->getName();
+            if (fuzzed_name == type_name)
+                continue;
+            ++changed;
+
+            /// Whatever it became must be a real type: the fuzzer feeds these names back through ParserDataType.
+            ParserDataType parser;
+            ASTPtr parsed = parseQuery(
+                parser, fuzzed_name.data(), fuzzed_name.data() + fuzzed_name.size(), "",
+                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            EXPECT_NE(nullptr, parsed) << type_name << " -> " << fuzzed_name;
+            EXPECT_TRUE(dataTypeRoundTrips(parsed)) << type_name << " -> " << fuzzed_name;
+        }
+        return changed;
+    };
+
+    const size_t control = mutation_rate("UInt8");
+    ASSERT_GT(control, 0u) << "the control type was never fuzzed - the measurement proves nothing";
+
+    /// Was 0 before the fix, against ~1000 for the control.
+    EXPECT_GT(mutation_rate("Bool"), control / 2) << "Bool is frozen in the custom-name block";
 }

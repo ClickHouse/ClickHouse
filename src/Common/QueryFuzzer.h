@@ -22,6 +22,9 @@
 
 class QueryFuzzer_AggregateFunctionVersionPreserved_Test;
 class QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
+class QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
+class QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
+class QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
 
 namespace DB
 {
@@ -55,6 +58,9 @@ class QueryFuzzer
     /// Grant the regression tests access to makeAggregateFunctionType / fuzzDataType (see #109713 review).
     friend class ::QueryFuzzer_AggregateFunctionVersionPreserved_Test;
     friend class ::QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
+    friend class ::QueryFuzzer_GeoAliasStorageIsFuzzed_Test;
+    friend class ::QueryFuzzer_CustomNamedLeafAliasIsStillFuzzed_Test;
+    friend class ::QueryFuzzer_DataTypeSubclassesAreNotFuzzedAsExpressions_Test;
 
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
@@ -173,6 +179,7 @@ public:
 private:
     UInt64 seed;
     pcg64 fuzz_rand;
+    size_t container_rebuild_count = 0;
 
     std::ostream * out_stream = nullptr;
     std::ostream * debug_stream = nullptr;
@@ -248,6 +255,13 @@ private:
     bool fuzzDataTypes(DataTypes & types);
     /// If `type` is an Array/Tuple/Variant, rebuild it with its children fuzzed; otherwise return nullptr.
     DataTypePtr fuzzContainerChildren(const DataTypePtr & type);
+    /// How many times fuzzContainerChildren has been entered; lets a test observe the dispatch branch itself
+    /// rather than inferring it from the output, which other paths can coincidentally reproduce.
+    size_t getContainerRebuildCount() const { return container_rebuild_count; }
+    /// Wrap or replace a type without touching its children; safe for a custom-named leaf alias.
+    DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
+    /// Every registered geo alias name, read out of Geometry's Variant storage.
+    static const std::unordered_set<String> & geoAliasNames();
     /// Occasionally swap an aggregate's name for a compatible candidate (same arity). Returns true if changed.
     bool fuzzAggregateName(String & name, size_t nargs);
     /// Occasionally fuzz an aggregate's literal parameters in place. Returns true if changed.
