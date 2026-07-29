@@ -771,6 +771,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 
 UInt8。false の場合は 0、true の場合は 1
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+2 つのジオメトリが交差し、共通の Point、line、または領域を持つ場合に true を返します。
+
+[`polygonsIntersectCartesian`](#polygonsintersectcartesian) とは異なり、任意の ジオメトリデータ型
+(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
+[`Geometry`](/ja/reference/data-types/geo#geometry) 型も含まれます。さらに、2 つの argument は異なる型でもかまいません。
+
+座標はデカルト座標系です。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 入力パラメータ
+</div>
+
+任意のジオメトリデータ型 (または `Geometry`) のジオメトリを2つ指定します。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+UInt8。false の場合は 0、true の場合は 1
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+2 つのジオメトリが交差し (共通の点、線、または領域を持つ場合) 、true を返します。
+
+[`polygonsIntersectSpherical`](#polygonsintersectspherical) とは異なり、任意のジオメトリデータ型
+(`Point`、`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) を受け付け、共通の
+[`Geometry`](/ja/reference/data-types/geo#geometry) 型も含まれます。また、2 つの引数は異なる型でもかまいません。
+
+座標は理想的な球面上にあるものとして解釈されます。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 入力パラメータ
+</div>
+
+任意の ジオメトリデータ型 (または `Geometry`) に属する 2 つのジオメトリ。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+UInt8。false の場合は 0、true の場合は 1
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>
