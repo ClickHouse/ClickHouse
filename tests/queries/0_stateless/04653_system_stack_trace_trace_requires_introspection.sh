@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT --query "GRANT SELECT ON system.stack_trace TO $user"
 
 echo 'without INTROSPECTION:'
 $CLICKHOUSE_CLIENT --user "$user" --query "SELECT max(thread_id) > 0 FROM system.stack_trace"
-$CLICKHOUSE_CLIENT --user "$user" --query "SELECT trace FROM system.stack_trace LIMIT 1 FORMAT Null" 2>&1 | grep -o -m1 'ACCESS_DENIED\|Not enough privileges'
+$CLICKHOUSE_CLIENT --user "$user" --query "SELECT trace FROM system.stack_trace LIMIT 1 FORMAT Null" 2>&1 | grep -o 'ACCESS_DENIED' | head -n 1
 
 $CLICKHOUSE_CLIENT --query "GRANT INTROSPECTION ON *.* TO $user"
 
