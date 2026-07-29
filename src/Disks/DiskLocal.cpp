@@ -101,7 +101,7 @@ void createDirectoriesDurably(const String & path, LoggerPtr log)
 
     fs::create_directories(path);
 
-    /// Deepest first: a level must exist before synchronizing the directory that holds its entry.
+    /// Deepest first, so a partial failure still leaves the shallowest levels durable.
     for (const auto & level : created_levels)
     {
         try

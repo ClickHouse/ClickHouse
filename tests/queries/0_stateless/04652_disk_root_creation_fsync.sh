@@ -8,7 +8,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-BASE="${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# Unique per run: a custom disk is cached under a name hashed from its definition, and nothing
+# evicts it, so a rerun against the same server with a fixed database would reuse the disk, create
+# no root and measure zero. A fixed query_id would likewise match the older run's query_log row,
+# and the multi-line result then breaks the numeric comparisons below.
+RUN_ID="$(random_str 10)"
+BASE="${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_${RUN_ID}"
 ENC_BASE="disk(type=local, path='${BASE}/enc_base/')"
 
 directory_syncs()
@@ -16,17 +21,25 @@ directory_syncs()
     $CLICKHOUSE_CLIENT -m --param_query_id "$1" -q "
         system flush logs query_log;
         select ProfileEvents['DirectorySync'] from system.query_log
-        where query_id = {query_id:String} and current_database = currentDatabase() and type = 'QueryFinish';
+        where query_id = {query_id:String} and current_database = currentDatabase() and type = 'QueryFinish'
+        order by event_time_microseconds desc limit 1;
     "
 }
 
+# An empty result must never satisfy a comparison: `[[ "" -eq 0 ]]` is true.
+synced_at_least()
+{
+    local actual="$1" expected="$2"
+    [[ -n "$actual" && "$actual" -ge "$expected" ]]
+}
+
 # A newly created local disk root: every created level's parent must be synced.
-qid="local-$CLICKHOUSE_DATABASE"
+qid="local-$CLICKHOUSE_DATABASE-$RUN_ID"
 $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_local (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=local, path='${BASE}/a/b/');
 "
-[[ "$(directory_syncs "$qid")" -ge 2 ]] && echo 'local root synced' || echo 'local root NOT synced'
+synced_at_least "$(directory_syncs "$qid")" 2 && echo 'local root synced' || echo 'local root NOT synced'
 
 # Create the disk wrapped by the encrypted disks below, so the counts that follow
 # only contain the syncs done for the encrypted prefix itself.
@@ -36,30 +49,31 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # A one-level encrypted prefix: the directory that holds its entry is the wrapped disk's root.
-qid="enc-one-level-$CLICKHOUSE_DATABASE"
+qid="enc-one-level-$CLICKHOUSE_DATABASE-$RUN_ID"
 $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_enc_one (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=encrypted, key='1234567812345678', disk=${ENC_BASE}, path='enc1/');
 "
-[[ "$(directory_syncs "$qid")" -ge 1 ]] && echo 'encrypted root synced' || echo 'encrypted root NOT synced'
+synced_at_least "$(directory_syncs "$qid")" 1 && echo 'encrypted root synced' || echo 'encrypted root NOT synced'
 
 # A nested encrypted prefix: both the prefix and the wrapped disk's root hold a new entry.
-qid="enc-nested-$CLICKHOUSE_DATABASE"
+qid="enc-nested-$CLICKHOUSE_DATABASE-$RUN_ID"
 $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_enc_nested (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=encrypted, key='1234567812345678', disk=${ENC_BASE}, path='enc2/sub/');
 "
-[[ "$(directory_syncs "$qid")" -ge 2 ]] && echo 'encrypted nested synced' || echo 'encrypted nested NOT synced'
+synced_at_least "$(directory_syncs "$qid")" 2 && echo 'encrypted nested synced' || echo 'encrypted nested NOT synced'
 
 # A remote wrapped disk cannot synchronize a directory, so nothing is attempted for it.
-qid="enc-remote-$CLICKHOUSE_DATABASE"
+qid="enc-remote-$CLICKHOUSE_DATABASE-$RUN_ID"
 $CLICKHOUSE_CLIENT --query_id "$qid" -q "
     create table t_enc_remote (a Int32) engine = MergeTree order by tuple()
     settings disk = disk(type=encrypted, key='1234567812345678',
         disk=disk(type=object_storage, object_storage_type=local_blob_storage, path='${BASE}/obj/'),
         path='enc/sub/');
 "
-[[ "$(directory_syncs "$qid")" -eq 0 ]] && echo 'remote delegate not synced' || echo 'remote delegate synced'
+remote_syncs="$(directory_syncs "$qid")"
+[[ -n "$remote_syncs" && "$remote_syncs" -eq 0 ]] && echo 'remote delegate not synced' || echo 'remote delegate synced'
 
 # Every disk is still usable.
 $CLICKHOUSE_CLIENT -m -q "

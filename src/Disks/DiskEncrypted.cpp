@@ -286,10 +286,9 @@ namespace
         return typeid(one) == typeid(another);
     }
 
-    /// Create the encrypted disk prefix inside the wrapped disk and make every level it creates
-    /// durable. `mkdir` only writes the new entry into the parent directory, so it is the parent
-    /// that has to be synchronized, and for a one-level prefix that parent is the wrapped disk's
-    /// own root (the empty path). Best-effort: failing to synchronize must not prevent startup.
+    /// The prefix levels live inside the wrapped disk, so it is that disk which synchronizes the
+    /// directory holding each created level - for a one-level prefix its own root, i.e. the empty
+    /// path. A remote wrapped disk cannot synchronize a directory at all and is skipped.
     void createDirectoriesDurably(IDisk & delegate, const String & path, LoggerPtr log)
     {
         /// Revisit if a remote disk ever implements getDirectorySyncGuard: today it cannot
@@ -311,7 +310,7 @@ namespace
 
         delegate.createDirectories(path);
 
-        /// Deepest first: a level must exist before synchronizing the directory that holds its entry.
+        /// Deepest first, so a partial failure still leaves the shallowest levels durable.
         for (const auto & level : created_levels)
         {
             try

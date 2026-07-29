@@ -12,8 +12,12 @@
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/TemporaryFile.h>
+#include <base/scope_guard.h>
+
+#include <unistd.h> /// for ::geteuid
 
 #include <filesystem>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -80,17 +84,15 @@ TEST_F(DiskRootCreationFsyncTest, ExistingRootIsNotSynced)
 /// topmost level has an empty parent, which cannot be opened.
 TEST_F(DiskRootCreationFsyncTest, RelativeRootIsSynced)
 {
+    /// Other tests resolve relative paths against the process working directory, so it has to be
+    /// restored on every exit path - including a throw from the filesystem calls below.
     auto previous_working_directory = fs::current_path();
+    SCOPE_EXIT({ fs::current_path(previous_working_directory); });
     fs::current_path(base());
 
     auto disk = std::make_shared<DiskLocal>("test_disk", "relative/root/");
-    auto syncs = startupAndCountSyncs(disk);
-    auto created = fs::is_directory(base() + "relative/root");
-
-    fs::current_path(previous_working_directory);
-
-    EXPECT_EQ(syncs, 2);
-    EXPECT_TRUE(created);
+    EXPECT_EQ(startupAndCountSyncs(disk), 2);
+    EXPECT_TRUE(fs::is_directory(base() + "relative/root"));
     EXPECT_FALSE(disk->isBroken());
 }
 
@@ -129,10 +131,37 @@ TEST_F(DiskRootCreationFsyncTest, RootResolvingToRegularFileBreaksTheDisk)
     }
 }
 
+/// What is synchronized must be the directory that HOLDS a created level's entry, not the level
+/// itself - counting the fsyncs cannot tell the two apart, because either way there is one per
+/// created level. Opening for fsync needs read permission while creating a subdirectory does not,
+/// so a write-and-search-only topmost parent is skipped: exactly the levels below it are counted.
+/// Synchronizing the levels themselves would instead find all three of them freshly readable.
+TEST_F(DiskRootCreationFsyncTest, SyncTargetIsTheOwningParent)
+{
+    /// Running as root bypasses permission bits, so EACCES would never trigger.
+    if (::geteuid() == 0)
+        GTEST_SKIP() << "must not run as root (permission checks are bypassed)";
+
+    auto hardened = base() + "hardened/";
+    fs::create_directories(hardened);
+    fs::permissions(hardened, fs::perms::owner_exec | fs::perms::owner_write);
+    SCOPE_EXIT({ fs::permissions(hardened, fs::perms::owner_all); });
+
+    auto disk = std::make_shared<DiskLocal>("test_disk", hardened + "a/b/c/");
+    /// `a/b` and `a` are synchronized; `hardened`, which holds `a`, cannot be opened.
+    EXPECT_EQ(startupAndCountSyncs(disk), 2);
+    EXPECT_TRUE(fs::is_directory(hardened + "a/b/c"));
+    EXPECT_FALSE(disk->isBroken());
+}
+
 /// A parent that is searchable but not readable cannot be opened for fsync. Creating the root there
 /// still works, so the disk must start normally instead of failing.
 TEST_F(DiskRootCreationFsyncTest, UnreadableParentDoesNotBreakTheDisk)
 {
+    /// Running as root bypasses permission bits, so EACCES would never trigger.
+    if (::geteuid() == 0)
+        GTEST_SKIP() << "must not run as root (permission checks are bypassed)";
+
     auto parent = base() + "unreadable/";
     fs::create_directories(parent);
     fs::permissions(parent, fs::perms::owner_exec | fs::perms::owner_write);
@@ -185,34 +214,62 @@ public:
     mutable size_t directory_lookups = 0;
 };
 
+/// Records which directory each fsync targets and still performs it. Counting the fsyncs cannot
+/// tell "synchronized the directory holding the new entry" from "synchronized the new directory
+/// itself" - both produce one event per created level - so the paths have to be asserted.
+class SyncPathRecordingDisk : public DiskLocal
+{
+public:
+    using DiskLocal::DiskLocal;
+
+    SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        synced_paths.push_back(path);
+        return DiskLocal::getDirectorySyncGuard(path);
+    }
+
+    mutable std::vector<String> synced_paths;
+};
+
 }
 
 /// The prefix of an encrypted disk lives inside the wrapped disk, so it is the wrapped disk that
 /// has to synchronize the directories holding the created levels - including its own root, which
-/// holds the entry of a one-level prefix.
+/// holds the entry of a one-level prefix. The recorded paths are what pins the target: each is the
+/// directory that OWNS a created level's entry, never the created level itself.
 TEST_F(DiskRootCreationFsyncTest, EncryptedPrefixIsSynced)
 {
-    auto wrapped_disk = std::make_shared<DiskLocal>("test_disk", base());
+    auto wrapped_disk = std::make_shared<SyncPathRecordingDisk>("test_disk", base());
+    auto & synced_paths = wrapped_disk->synced_paths;
 
+    /// The wrapped disk's own root (the empty path) holds the entry of a one-level prefix.
     auto before_one_level = directorySyncs();
     makeEncryptedDisk(wrapped_disk, "one/");
     EXPECT_EQ(directorySyncs() - before_one_level, 1);
+    EXPECT_EQ(synced_paths, std::vector<String>({""}));
     EXPECT_TRUE(fs::is_directory(base() + "one"));
 
+    /// Deepest first: `nested` holds `prefix`, the wrapped disk's root holds `nested`.
+    synced_paths.clear();
     auto before_nested = directorySyncs();
     makeEncryptedDisk(wrapped_disk, "nested/prefix/");
     EXPECT_EQ(directorySyncs() - before_nested, 2);
+    EXPECT_EQ(synced_paths, std::vector<String>({"nested", ""}));
     EXPECT_TRUE(fs::is_directory(base() + "nested/prefix"));
 
     /// The prefix may be the wrapped disk's root itself, which always exists already.
+    synced_paths.clear();
     auto before_empty = directorySyncs();
     makeEncryptedDisk(wrapped_disk, "");
     EXPECT_EQ(directorySyncs() - before_empty, 0);
+    EXPECT_TRUE(synced_paths.empty());
 
     /// An existing prefix costs nothing.
+    synced_paths.clear();
     auto before_existing = directorySyncs();
     makeEncryptedDisk(wrapped_disk, "nested/prefix/");
     EXPECT_EQ(directorySyncs() - before_existing, 0);
+    EXPECT_TRUE(synced_paths.empty());
 }
 
 /// A remote wrapped disk cannot synchronize a directory, so the missing levels must not even be
