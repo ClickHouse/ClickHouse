@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 * На вашем компьютере установлен Docker
 
 <Steps>
-  <Step>
-    ## Настройка структуры каталогов и тестовой среды
-
+  <Step title="Настройка структуры каталогов и тестовой среды" id="set-up">
     <ExampleFiles />
 
     В этом руководстве вы будете использовать [Docker compose](https://docs.docker.com/compose/) для
@@ -53,12 +51,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # Создать директории clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Создать директории clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -164,14 +162,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Настройка узлов ClickHouse
-
+  <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
     ### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
-    необходимо изменить так, чтобы они соответствовали параметрам конкретного узла:
+    необходимо изменить, чтобы они были специфичны для каждого узла:
 
     ```xml highlight={9,54-57}
     <clickhouse replace="true">
@@ -399,9 +395,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## Настройка ClickHouse Keeper
-
+  <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Настройка Keeper
 
     <KeeperConfig />
@@ -417,9 +411,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Проверьте настройку
-
+  <Step title="Проверьте настройку" id="test-the-setup">
     Убедитесь, что на вашем компьютере запущен Docker.
     Запустите кластер командой `docker-compose up` из корневого каталога `cluster_2S_1R`:
 
@@ -444,7 +436,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     следующий запрос. Ниже показана команда для подключения к первому узлу:
 
     ```bash
-    # Подключитесь к любому узлу
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -498,9 +490,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     На следующем шаге вы создадите таблицу в кластере.
   </Step>
 
-  <Step>
-    ## Создайте базу данных
-
+  <Step title="Создайте базу данных" id="creating-a-database">
     Теперь, когда вы убедились, что кластер правильно настроен и работает, вы
     воссоздадите ту же таблицу, которая используется в руководстве по работе с [UK property prices](/ru/get-started/sample-datasets/uk-price-paid)
     — демонстрационным набором данных. Она содержит около 30 миллионов строк с ценами сделок
@@ -557,9 +547,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Создайте таблицу в кластере
-
+  <Step title="Создайте таблицу в кластере" id="creating-a-table">
     Теперь, когда база данных создана, создайте таблицу.
     Выполните следующий запрос с любого из хост-клиентов:
 
@@ -636,33 +624,31 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     Теперь на `clickhouse-01` или `clickhouse-02` выполните следующий запрос:
 
     ```sql
-    -- из clickhouse-01
+    -- from clickhouse-01
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    --из clickhouse-02
+    --from clickhouse-02
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
     --   └────┴────────────────────┘
     ```
 
-    Вы заметите, что в отличие от таблицы `ReplicatedMergeTree` возвращается только та строка, которая была вставлена в таблицу на
+    Вы заметите, что, в отличие от таблицы `ReplicatedMergeTree`, возвращается только строка, вставленная в таблицу на
     этом конкретном хосте, а не обе строки.
 
-    Чтобы читать данные из двух сегментов, нам нужен интерфейс, который может обрабатывать запросы
-    во всех сегментах, объединяя данные из обоих сегментов, когда мы выполняем SELECT-запросы
-    к ней, или вставляя данные в оба сегмента, когда мы выполняем запросы INSERT.
+    Чтобы читать данные из двух сегментов, нам нужен интерфейс, способный обрабатывать запросы
+    ко всем сегментам, объединяя данные из обоих сегментов, когда мы выполняем SELECT-запросы
+    к этой таблице, или выполняя вставку данных в оба сегмента, когда мы выполняем запросы INSERT.
 
-    В ClickHouse этот интерфейс называется **distributed таблица** и создаётся с помощью
+    В ClickHouse такой интерфейс называется **distributed таблица** и создаётся с помощью
     движка таблицы [`Distributed`](/ru/reference/engines/table-engines/special/distributed). Давайте посмотрим, как это работает.
   </Step>
 
-  <Step>
-    ## Создание distributed таблицы
-
+  <Step title="Создание distributed таблицы" id="create-distributed-table">
     Создайте distributed таблицу, выполнив следующий запрос:
 
     ```sql
@@ -698,9 +684,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Вставка данных в distributed таблицу
-
+  <Step title="Вставка данных в distributed таблицу" id="inserting-data-into-distributed-table">
     Теперь подключитесь к любому из хостов и вставьте данные:
 
     ```sql
@@ -751,26 +735,26 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 миллиона
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
 
     Если вы выполните следующий запрос на любом из хостов, то увидите, что данные более или менее равномерно распределены по сегментам (имейте в виду, что выбор сегмента для вставки определялся с помощью `rand()`, поэтому результаты могут отличаться):
 
     ```sql
-    -- из clickhouse-01
+    -- from clickhouse-01
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 15,11 миллиона
+    -- 1. │ 15107353 │ -- 15.11 million
     --    └──────────┘
 
-    -- из clickhouse-02
+    --from clickhouse-02
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 15,11 миллиона
+    -- 1. │ 15105202 │ -- 15.11 million
     --    └──────────┘
     ```
 

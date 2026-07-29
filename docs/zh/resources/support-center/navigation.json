@@ -1,0 +1,259 @@
+{
+  "groups": [
+    {
+      "group": "知识库",
+      "pages": [
+        {
+          "group": "性能与优化",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+            "zh/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+            "zh/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+            "zh/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries",
+            "zh/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+            "zh/resources/support-center/knowledge-base/performance-optimization/improve-map-performance",
+            "zh/resources/support-center/knowledge-base/performance-optimization/memory-limit-exceeded-for-query",
+            "zh/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+            "zh/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+            "zh/resources/support-center/knowledge-base/performance-optimization/tips-tricks-optimizing-basic-data-types-in-clickhouse",
+            "zh/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used"
+          ]
+        },
+        {
+          "group": "Cloud",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
+            "zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes",
+            "zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+            "zh/resources/support-center/knowledge-base/cloud-services/change-billing-email",
+            "zh/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+            "zh/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+            "zh/resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
+            "zh/resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
+            "zh/resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",
+            "zh/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys",
+            "zh/resources/support-center/knowledge-base/cloud-services/ingest-failures-23-9-release",
+            "zh/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
+            "zh/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+            "zh/resources/support-center/knowledge-base/cloud-services/unable-to-access-cloud-service"
+          ]
+        },
+        {
+          "group": "数据导入与导出",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
+            "zh/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
+            "zh/resources/support-center/knowledge-base/data-import-export/file-export",
+            "zh/resources/support-center/knowledge-base/data-import-export/importing-geojason-with-nested-object-array",
+            "zh/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+            "zh/resources/support-center/knowledge-base/data-import-export/ingest-parquet-files-in-s3",
+            "zh/resources/support-center/knowledge-base/data-import-export/json-import",
+            "zh/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+            "zh/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+            "zh/resources/support-center/knowledge-base/data-import-export/kafka-clickhouse-json",
+            "zh/resources/support-center/knowledge-base/data-import-export/kafka-to-clickhouse-setup",
+            "zh/resources/support-center/knowledge-base/data-import-export/mysql-to-parquet-csv-json",
+            "zh/resources/support-center/knowledge-base/data-import-export/parquet-to-csv-json",
+            "zh/resources/support-center/knowledge-base/data-import-export/postgresql-to-parquet-csv-json",
+            "zh/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders"
+          ]
+        },
+        {
+          "group": "配置与设置",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
+            "zh/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
+            "zh/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
+            "zh/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
+            "zh/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+            "zh/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
+            "zh/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
+          ]
+        },
+        {
+          "group": "集成与客户端库",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/integrations/node-js-example",
+            "zh/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
+            "zh/resources/support-center/knowledge-base/integrations/oracle-odbc",
+            "zh/resources/support-center/knowledge-base/integrations/how-to-set-up-ch-on-docker-odbc-connect-mssql",
+            "zh/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example",
+            "zh/resources/support-center/knowledge-base/integrations/python-http-requests",
+            "zh/resources/support-center/knowledge-base/integrations/terraform-example"
+          ]
+        },
+        {
+          "group": "故障排查与错误",
+          "pages": [
+            "zh/resources/support-center/troubleshooting/troubleshooting",
+            "zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+            "zh/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+            "zh/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+            "zh/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type",
+            "zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+            "zh/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos",
+            "zh/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+            "zh/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+            "zh/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
+          ],
+          "root": "zh/resources/support-center/troubleshooting/index"
+        },
+        {
+          "group": "表与 schema",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/tables-schema/add-column",
+            "zh/resources/support-center/knowledge-base/tables-schema/delete-old-data",
+            "zh/resources/support-center/knowledge-base/tables-schema/exchangeStatementToSwitchTables",
+            "zh/resources/support-center/knowledge-base/tables-schema/how-to-create-table-to-query-multiple-remote-clusters",
+            "zh/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+            "zh/resources/support-center/knowledge-base/tables-schema/runbook-json",
+            "zh/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+            "zh/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard"
+          ]
+        },
+        {
+          "group": "查询与 SQL",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
+            "zh/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+            "zh/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
+            "zh/resources/support-center/knowledge-base/queries-sql/filtered-aggregates",
+            "zh/resources/support-center/knowledge-base/queries-sql/how-to-filter-a-clickhouse-table-by-an-array-column",
+            "zh/resources/support-center/knowledge-base/queries-sql/how-to-insert-all-rows-from-another-table",
+            "zh/resources/support-center/knowledge-base/queries-sql/pivot",
+            "zh/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting",
+            "zh/resources/support-center/knowledge-base/queries-sql/using-array-join-to-extract-and-query-attributes"
+          ]
+        },
+        {
+          "group": "物化视图与投影",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+            "zh/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+            "zh/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+            "zh/resources/support-center/knowledge-base/materialized-views/projection-example"
+          ]
+        },
+        {
+          "group": "监控与调试",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/generate-har-file",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/mapping-of-system-metrics-to-prometheus-metrics",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/outputSendLogsLevelTracesToFile",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+            "zh/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose"
+          ]
+        },
+        {
+          "group": "安全与访问控制",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/security/check-users-roles",
+            "zh/resources/support-center/knowledge-base/security/common-rbac-queries",
+            "zh/resources/support-center/knowledge-base/security/remove-default-user",
+            "zh/resources/support-center/knowledge-base/security/row-column-policy",
+            "zh/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
+          ]
+        },
+        {
+          "group": "数据管理",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+            "zh/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+            "zh/resources/support-center/knowledge-base/data-management/dictionaries-consistent-state",
+            "zh/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+            "zh/resources/support-center/knowledge-base/data-management/read-consistency",
+            "zh/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+            "zh/resources/support-center/knowledge-base/data-management/when-is-ttl-applied"
+          ]
+        },
+        {
+          "group": "设置和安装",
+          "pages": [
+            "zh/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+            "zh/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
+            "zh/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
+            "zh/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
+            "zh/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
+            "zh/resources/support-center/knowledge-base/setup-installation/production"
+          ]
+        },
+        {
+          "group": "常规与 FAQ",
+          "pages": [
+            {
+              "group": "常规",
+              "pages": [
+                "zh/resources/support-center/knowledge-base/general-faqs/columnar-database",
+                "zh/resources/support-center/knowledge-base/general-faqs/concurrency",
+                "zh/resources/support-center/knowledge-base/general-faqs/cost-based",
+                "zh/resources/support-center/knowledge-base/general-faqs/datalake",
+                "zh/resources/support-center/knowledge-base/general-faqs/dbms-naming",
+                "zh/resources/support-center/knowledge-base/general-faqs/dependencies",
+                "zh/resources/support-center/knowledge-base/general-faqs/distributed-join",
+                "zh/resources/support-center/knowledge-base/general-faqs/federated",
+                "zh/resources/support-center/knowledge-base/general-faqs/how-do-i-contribute-code-to-clickhouse",
+                "zh/resources/support-center/knowledge-base/general-faqs/mapreduce",
+                "zh/resources/support-center/knowledge-base/general-faqs/ne-tormozit",
+                "zh/resources/support-center/knowledge-base/general-faqs/olap",
+                "zh/resources/support-center/knowledge-base/general-faqs/sql",
+                "zh/resources/support-center/knowledge-base/general-faqs/updates",
+                "zh/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
+                "zh/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
+              ],
+              "root": "zh/resources/support-center/knowledge-base/general-faqs/index"
+            },
+            {
+              "group": "用例",
+              "pages": [
+                "zh/resources/support-center/knowledge-base/general-faqs/key-value",
+                "zh/resources/support-center/knowledge-base/general-faqs/time-series",
+                "zh/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
+                "zh/resources/support-center/knowledge-base/general-faqs/vector-search"
+              ],
+              "root": "zh/resources/support-center/knowledge-base/general-faqs/use-cases-index"
+            },
+            {
+              "group": "集成",
+              "pages": [
+                "zh/resources/support-center/knowledge-base/data-import-export/json-import",
+                "zh/resources/support-center/knowledge-base/integrations/oracle-odbc"
+              ],
+              "root": "zh/resources/support-center/knowledge-base/integrations/index"
+            },
+            {
+              "group": "运维",
+              "pages": [
+                "zh/resources/support-center/knowledge-base/tables-schema/delete-old-data",
+                "zh/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
+                "zh/resources/support-center/knowledge-base/setup-installation/production",
+                "zh/resources/support-center/knowledge-base/general-faqs/separate-storage"
+              ],
+              "root": "zh/resources/support-center/knowledge-base/general-faqs/operations-index"
+            }
+          ],
+          "root": "zh/resources/support-center/knowledge-base/general-faqs/faq-index"
+        },
+        {
+          "group": "技巧与窍门",
+          "pages": [
+            "zh/resources/support-center/tips-and-tricks/community-wisdom",
+            "zh/resources/support-center/tips-and-tricks/cost-optimization",
+            "zh/resources/support-center/tips-and-tricks/debugging-insights",
+            "zh/resources/support-center/tips-and-tricks/materialized-views",
+            "zh/resources/support-center/tips-and-tricks/performance-optimization",
+            "zh/resources/support-center/tips-and-tricks/success-stories",
+            "zh/resources/support-center/tips-and-tricks/too-many-parts"
+          ]
+        }
+      ],
+      "root": "zh/resources/support-center/home"
+    }
+  ],
+  "icon": "/images/icons/icon-support-center.svg",
+  "item": "支持中心"
+}
