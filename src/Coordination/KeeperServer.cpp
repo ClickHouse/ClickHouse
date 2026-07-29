@@ -505,10 +505,8 @@ void KeeperServer::forceRecovery()
     raft_instance->update_params(params);
 }
 
-void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log)
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -581,6 +579,15 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
+
+    return params;
+}
+
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+{
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+
+    nuraft::raft_params params = buildRaftParams(coordination_settings, log);
 
     nuraft::asio_service::options asio_opts{};
 

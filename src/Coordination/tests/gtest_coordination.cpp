@@ -8,6 +8,7 @@
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
@@ -93,11 +94,56 @@ TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 
     /// The setting itself is unbounded, so an operator can configure more milliseconds than the
     /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
-    /// must be narrowed by `launchRaftServer` rather than wrapping - see the test below.
+    /// must be narrowed by `buildRaftParams` rather than wrapping - covered by the tests below.
     EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               std::numeric_limits<int32_t>::max());
+}
+
+/// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
+/// Parsing and narrowing are pinned separately below, but only this test would notice the timeout
+/// being handed over in the wrong unit or bypassing the narrowing.
+TEST(CoordinationSettingsParse, BuildRaftParams)
+{
+    auto build = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return DB::buildRaftParams(settings, getLogger("CoordinationSettingsParse"));
+    };
+
+    /// 0 is what makes `raft_server::get_snapshot_sync_ctx_timeout` fall back to
+    /// `raft_limits_response_limit * heart_beat_interval_`, i.e. today's behaviour.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              0);
+
+    /// Milliseconds all the way through: 60000 in the config must be 60000 in `raft_params`, not
+    /// 60 and not 60000000.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              60000);
+
+    /// The field is an int32, so an operator value beyond its range must be narrowed here rather
+    /// than wrapping to a negative timeout.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              std::numeric_limits<int32_t>::max());
+
+    /// Neighbouring millisecond settings go through the same conversion, so pin one of them too.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<heart_beat_interval_ms>250</heart_beat_interval_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .heart_beat_interval_,
+              250);
 }
 
 /// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
