@@ -763,7 +763,6 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
-    String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
@@ -847,7 +846,6 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
-    void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
