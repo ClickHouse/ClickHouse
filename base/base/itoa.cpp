@@ -585,6 +585,23 @@ ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t
     return q;
 }
 
+/// Divide a 256-bit value by 10^18 in place and return the remainder, one limb at a time from the
+/// most significant one down. `wide::integer` divides bit by bit, which is ~70 times slower.
+/// The quotient of every step fits into a limb because the previous remainder is below 10^18.
+ALWAYS_INLINE inline uint64_t divmod_1e18(UInt256 & value)
+{
+    uint64_t remainder = 0;
+    for (unsigned i = 4; i > 0; --i)
+    {
+        unsigned __int128 current
+            = (static_cast<unsigned __int128>(remainder) << 64) | value.items[UInt256::_impl::little(i - 1)];
+        value.items[UInt256::_impl::little(i - 1)]
+            = static_cast<uint64_t>(current / max_multiple_of_hundred_that_fits_in_64_bits);
+        remainder = static_cast<uint64_t>(current % max_multiple_of_hundred_that_fits_in_64_bits);
+    }
+    return remainder;
+}
+
 ALWAYS_INLINE inline char * writeEighteenFixedDigits(char * p, UInt64 value)
 {
     writeEightFixedDigits(p + 10, static_cast<uint32_t>(value % 100000000ULL));
@@ -860,12 +877,9 @@ char * writeFixedDigits(UInt256 value, UInt32 width, char * p)
         return end;
     }
 
-    constexpr UInt256 large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-
     while (width > 18)
     {
-        uint64_t block = static_cast<uint64_t>(value % large_divisor);
-        value /= large_divisor;
+        uint64_t block = divmod_1e18(value);
         writeFixedDigits(block, 18, p + width - 18);
         width -= 18;
 
@@ -883,7 +897,11 @@ char * writeFixedDigits(UInt256 value, UInt32 width, char * p)
     }
 
     if (unlikely(value > UInt256(std::numeric_limits<uint64_t>::max())))
-        value %= large_divisor;
+    {
+        uint64_t block = divmod_1e18(value);
+        writeFixedDigits(block, width, p);
+        return end;
+    }
 
     writeFixedDigits(static_cast<uint64_t>(value), width, p);
     return end;
