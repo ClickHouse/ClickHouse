@@ -293,8 +293,8 @@ private:
                 Int64 result = 0;
                 if (common::addOverflow(origin, offset, result))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The result of function {} for the time argument ({}) and the origin ({}) does not fit into Int64",
-                        getName(), time_arg, origin);
+                        "The result of function {} for the origin ({}) and the rounding offset ({}) does not fit into Int64",
+                        getName(), origin, offset);
 
                 result_data[i] = static_cast<ResultDataType::FieldType>(result);
             }

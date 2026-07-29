@@ -12,7 +12,13 @@ SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775807), 'DateTime64(
 -- The same origin in UTC has a zero offset, so it must keep working.
 SELECT toStartOfInterval(reinterpret(toInt64(-9223372036854775807), 'DateTime64(9, \'UTC\')'), toIntervalHour(3), reinterpret(toInt64(-9223372036854775807), 'DateTime64(9, \'UTC\')'));
 
--- Ordinary values must be unaffected.
+-- Ordinary values must be unaffected. These pin the behaviour as it is today; the results of the
+-- `SECOND`, `HOUR` and `DAY` units of this overload are rounded on the grid anchored at the local
+-- midnight (see `toStartOfHourInterval` and `toStartOfDayInterval`), not on the grid anchored at the
+-- origin, so `result - origin` is not necessarily a multiple of the interval in a time zone whose
+-- offset is not a whole number of intervals. That is a separate question from the overflow fixed
+-- here, and if these buckets are ever made strictly periodic from the origin, the second reference
+-- value below changes.
 SELECT toStartOfInterval(toDateTime64('2026-07-27 13:45:12.345', 3, 'UTC'), toIntervalHour(3), toDateTime64('2026-07-01 00:00:00.000', 3, 'UTC'));
 SELECT toStartOfInterval(toDateTime64('2026-07-27 13:45:12.345', 3, 'Asia/Istanbul'), toIntervalDay(2), toDateTime64('2026-07-01 00:00:00.000', 3, 'Asia/Istanbul'));
 SELECT toStartOfInterval(toDateTime('2026-07-27 13:45:12', 'Asia/Istanbul'), toIntervalMonth(1), toDateTime('2026-01-15 00:00:00', 'Asia/Istanbul'));
