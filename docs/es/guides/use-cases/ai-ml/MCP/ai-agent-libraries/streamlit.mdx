@@ -28,9 +28,7 @@ En esta guía aprenderás a crear un AI Agent web con [Streamlit](https://stream
 Puedes seguir estos pasos para crear tu aplicación de Streamlit.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instale las bibliotecas necesarias ejecutando los siguientes comandos:
 
     ```bash
@@ -38,9 +36,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Crear archivo de utilidades
-
+  <Step title="Crear archivo de utilidades" id="create-utilities">
     Crea un archivo `utils.py` con dos funciones de utilidad. La primera es una
     función generadora asíncrona para gestionar respuestas en streaming del
     agente Agno. La segunda es una función para aplicar estilos a la
@@ -68,9 +64,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciales
-
+  <Step title="Configurar credenciales" id="setup-credentials">
     Configura tu clave de API de Anthropic como una variable de entorno:
 
     ```bash
@@ -85,9 +79,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     </Info>
   </Step>
 
-  <Step>
-    ## Importa las bibliotecas necesarias
-
+  <Step title="Importa las bibliotecas necesarias" id="import-libraries">
     Empieza creando el archivo principal de tu aplicación de Streamlit (por ejemplo, `app.py`) y añade las importaciones:
 
     ```python
@@ -111,9 +103,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Defina la función de transmisión del agente
-
+  <Step title="Defina la función de transmisión del agente" id="define-agent-function">
     Agregue la función principal del agente que se conecta al [Playground de SQL de ClickHouse](https://sql.clickhouse.com/) y transmite las respuestas:
 
     ```python
@@ -163,9 +153,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Añade funciones envoltorio síncronas
-
+  <Step title="Añade funciones envoltorio síncronas" id="add-wrapper-functions">
     Añade funciones auxiliares para gestionar el streaming asíncrono en Streamlit:
 
     ```python
@@ -173,7 +161,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
         queue = Queue()
         def run():
             asyncio.run(_agent_stream_to_queue(message, queue))
-            queue.put(None)  # Centinela para finalizar el stream
+            queue.put(None)  # Sentinel to end stream
         threading.Thread(target=run, daemon=True).start()
         while True:
             chunk = queue.get()
@@ -187,9 +175,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Crear la interfaz de Streamlit
-
+  <Step title="Crear la interfaz de Streamlit" id="create-interface">
     Añade los componentes de la UI de Streamlit y la funcionalidad de chat:
 
     ```python
@@ -218,9 +204,7 @@ Puedes seguir estos pasos para crear tu aplicación de Streamlit.
     ```
   </Step>
 
-  <Step>
-    ## Ejecuta la aplicación
-
+  <Step title="Ejecuta la aplicación" id="run-application">
     Para iniciar la aplicación web del agente de IA de ClickHouse, puedes ejecutar el
     siguiente comando en tu terminal:
 

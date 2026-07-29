@@ -252,8 +252,8 @@ SELECT accurateCast(42, 'UInt16')
 
 ```response title=Response
 ┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
+│                         42 │
+└────────────────────────────┘
 ```
 
 **字符串转为数字**
@@ -425,12 +425,9 @@ FROM numbers(3)
 
 ```response title=Response
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
+│ 0,"good"                        ↴│
+│ 1,"good"                        ↴│
+│ 2,"good"                        ↴│
 └──────────────────────────────────┘
 ```
 
@@ -444,15 +441,15 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
 ```response title=Response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
+│ <prefix>                                    ↴│
+│↳0	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳1	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳2	good                                     ↴│
+│↳<suffix>                                     │
 └──────────────────────────────────────────────┘
 ```
 
@@ -854,7 +851,7 @@ SELECT
 按照 MySQL 日期格式字符串，解析带有子秒级精度的日期时间字符串。
 
 对于 DateTime64，此函数是 [`formatDateTime`](/zh/reference/functions/regular-functions/date-time-functions) 的逆操作。
-它使用 格式 String 解析一个 String 参数。返回 DateTime64 类型，可表示 1900 年到 2299 年之间、具有子秒级精度的日期时间值。
+它使用 格式 String 解析一个 String 参数。返回 DateTime64 类型，可表示 0000 年到 9999 年之间、具有子秒级精度的日期时间值 (较高精度覆盖的范围更窄，因为该值以 `Int64` tick 数存储：精度 8 可到约 4892 年，精度 9 覆盖 1677 年到 2262 年) 。
 
 **语法**
 
@@ -882,8 +879,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                       2025-01-04 23:00:00.123       │
-└─────────────────────────────────────────────────────────────────────┘
+│                                         2025-01-04 23:00:00.123000 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64BestEffort">
@@ -1138,7 +1135,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 根据 Joda 日期格式字符串，解析具有子秒级精度的日期和时间字符串。
 
 对于 DateTime64，此函数是 [`formatDateTimeInJodaSyntax`](/zh/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) 的逆操作。
-它使用 Joda 风格的格式 String 解析一个 String 类型的参数。返回 DateTime64 类型，可表示 1900 年至 2299 年间且具有子秒级精度的日期和时间。
+它使用 Joda 风格的格式 String 解析一个 String 类型的参数。返回 DateTime64 类型，可表示 0000 年至 9999 年间且具有子秒级精度的日期和时间 (较高精度覆盖的范围更窄，因为该值以 `Int64` tick 数存储：精度 8 最远可达约 4892 年，精度 9 的范围为 1677 年至 2262 年) 。
 
 有关格式模式，请参阅 [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)。
 
@@ -1168,8 +1165,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                          2025-01-04 23:00:00.123   │
-└────────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00.123 │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrNull">
@@ -1206,8 +1203,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                             2025-01-04 23:00:00.123      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrZero">
@@ -1244,8 +1241,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                              2025-01-04 23:00:00.123     │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrNull">
@@ -1282,8 +1279,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                            2025-01-04 23:00:00.123        │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrZero">
@@ -1320,8 +1317,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                             2025-01-04 23:00:00.123       │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeBestEffort">
@@ -1659,8 +1656,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                      2025-01-04 23:00:00 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                                     2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrNull">
@@ -1697,8 +1694,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                         2025-01-04 23:00:00    │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrZero">
@@ -1735,8 +1732,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                          2025-01-04 23:00:00   │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeOrNull">
@@ -1824,6 +1821,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 引入版本：v1.1.0
 
 对给定的值 `x`，使用其在内存中的同一源字节序列，并将其重新解释为目标类型。
+当目标类型为 `String` 时，仅当源 `Array` 的元素类型为定长且在内存中连续存放时才支持 (例如，`Array(UInt8)` 或 `Array(FixedString(2))`) ；其元素字节会按照其原生内存顺序原样复制，因此在任何架构上，都可以将结果重新解释回原始 `Array` 类型。元素为变长 (例如，`Array(String)`) 或 Nullable (例如，`Array(Nullable(Int32))`) 的数组不受支持。
 
 **语法**
 
@@ -1833,7 +1831,7 @@ reinterpret(x, type)
 
 **参数**
 
-* `x` — 任意类型。[`Any`](/zh/reference/data-types/index)
+* `x` — 要重新解释的值。重新解释为 `String` 时，源 `Array` 的元素必须是定长且连续存储的。[`Any`](/zh/reference/data-types/index)
 * `type` — 目标类型。若为数组，则其元素类型必须为定长类型。[`String`](/zh/reference/data-types/string)
 
 **返回值**
@@ -1866,6 +1864,18 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
+```
+
+**Array 到 String 示例**
+
+```sql title=Query
+SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 <div id="reinterpretAsDate">
@@ -2305,8 +2315,9 @@ SELECT
 
 引入版本：v1.1.0
 
-将输入值重新解释为字符串 (假设采用小端字节序) 。
-末尾的空字节会被忽略。例如，对于值为 255 的 UInt32，该函数会返回一个仅包含单个字符的字符串。
+将输入值重新解释为字符串。
+对于标量值，字节顺序会归一化为小端字节序，且末尾的空字节会被忽略。例如，对于值为 255 的 UInt32，该函数会返回一个仅包含单个字符的字符串。
+对于由固定大小元素组成的 `Array`，元素字节会按其原生内存顺序原样复制，不会裁剪末尾的零字节，也不会归一化为小端字节序，因此结果可以在任何架构上重新解释回原始 `Array` 类型。
 
 **语法**
 
@@ -2316,7 +2327,7 @@ reinterpretAsString(x)
 
 **参数**
 
-* `x` — 要重新解释为字符串的值。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `x` — 要重新解释为字符串的值。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`Array`](/zh/reference/data-types/array)
 
 **返回值**
 
@@ -2336,6 +2347,18 @@ SELECT
 ┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
 │ A                                                      │ A                                         │
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+**Array 转 String 示例**
+
+```sql title=Query
+SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 <div id="reinterpretAsUInt128">
@@ -2712,9 +2735,9 @@ toBFloat16OrNull(x)
 **用法示例**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- 不支持的参数
-       toBFloat16OrNull('12.3'), -- 典型用法
-       toBFloat16OrNull('12.3456789') -- 精度静默丢失
+SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
+       toBFloat16OrNull('12.3'), -- typical use
+       toBFloat16OrNull('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -2769,9 +2792,9 @@ toBFloat16OrZero(x)
 **使用示例**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- 不支持的参数
-       toBFloat16OrZero('12.3'), -- 典型用法
-       toBFloat16OrZero('12.3456789') -- 静默精度损失
+SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
+       toBFloat16OrZero('12.3'), -- typical use
+       toBFloat16OrZero('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -3113,6 +3136,7 @@ SELECT toDateOrDefault('', CAST('2023-01-01', 'Date'))
 
 将输入值转换为 `Date` 类型的值；如果参数无效，则返回 `NULL`。
 与 [`toDate`](#toDate) 相同，但在参数无效时返回 `NULL`。
+整数参数的解释方式与 `toDate` 相同 (如果不超过 65535，则表示自 1970-01-01 起的天数，否则表示 Unix 时间戳) ；如果超出 `Date` 类型的取值范围，则返回 `NULL`。
 
 **语法**
 
@@ -3122,7 +3146,7 @@ toDateOrNull(x)
 
 **参数**
 
-* `x` — 日期的字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 日期的字符串表示形式，或以天数表示的整数，或 Unix 时间戳。[`String`](/zh/reference/data-types/string) 或 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -3138,8 +3162,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
 
 ```response title=Response
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                   ᴺᵁᴸᴸ │
-└────────────────────────────┴────────────────────────┘
+│                 2025-12-30 │                    ᴺᵁᴸᴸ │
+└────────────────────────────┴─────────────────────────┘
 ```
 
 <div id="toDateOrZero">
@@ -3195,7 +3219,7 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
 <Note>
   如果 `expr` 是数值，则会将其解释为自 Unix 纪元开始以来的秒数 (即 Unix timestamp) 。
-  如果 `expr` 是 [String](/zh/reference/data-types/string)，则可能会将其解释为 Unix timestamp，或解释为日期 / 日期时间的字符串表示形式。
+  如果 `expr` 是 [String](/zh/reference/data-types/string)，则可能会被解释为 Unix timestamp，或者解释为日期 / 日期时间的字符串表示形式。
   因此，由于存在歧义，较短数字的字符串表示形式 (最多 4 位) 会明确禁用解析。例如，字符串 `'1999'` 既可能表示年份 (Date / DateTime 的不完整字符串表示形式) ，也可能是 Unix timestamp。更长的数字字符串则允许解析。
 </Note>
 
@@ -3264,26 +3288,26 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **作为指定精度的 Decimal 值**
 
 ```sql title=Query
 SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- 没有小数点时，该值仍被视为以秒为单位的 Unix 时间戳
+-- without the decimal point the value is still treated as Unix Timestamp in seconds
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **指定时区**
@@ -3419,16 +3443,19 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 
 将输入值转换为 `DateTime64` 类型的值；如果接收到无效参数，则返回 `NULL`。
 与 `toDateTime64` 相同，但如果接收到无效参数，则返回 `NULL`。
+整数参数会被解释为以整秒表示的 Unix 时间戳；如果超出 `DateTime64` 类型的取值范围，则返回 `NULL`。
 
 **语法**
 
 ```sql
-toDateTime64OrNull(x)
+toDateTime64OrNull(x[, precision[, timezone]])
 ```
 
 **参数**
 
-* `x` — 带有子秒级精度的日期时间字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 带有子秒级精度的日期时间字符串表示形式，或整数 Unix 时间戳。[`String`](/zh/reference/data-types/string) 或 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `precision` — 可选。返回值的子秒级精度。[`UInt8`](/zh/reference/data-types/int-uint)
+* `timezone` — 可选。返回值的时区。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -3444,8 +3471,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 ```response title=Response
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────────┴───────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTime64OrZero">
@@ -3487,8 +3514,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
 
 ```response title=Response
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
-└─────────────────────────────────────────────────┴─────────────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTimeOrDefault">
@@ -3545,16 +3572,18 @@ SELECT toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))
 
 将输入值转换为 `DateTime` 类型的值；如果接收到无效参数，则返回 `NULL`。
 与 [`toDateTime`](#toDateTime) 相同，但在接收到无效参数时会返回 `NULL`。
+整数参数会被解释为 Unix 时间戳；如果超出 `DateTime` 类型的取值范围，则返回 `NULL`。
 
 **语法**
 
 ```sql
-toDateTimeOrNull(x)
+toDateTimeOrNull(x[, timezone])
 ```
 
 **参数**
 
-* `x` — 日期时间的字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 日期时间的字符串表示形式，或整数 Unix 时间戳。[`String`](/zh/reference/data-types/string) 或 [`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
+* `timezone` — 可选。返回值的时区。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -3572,6 +3601,18 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
+```
+
+**带有时区的整数参数**
+
+```sql title=Query
+SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
+```
+
+```response title=Response
+┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
+│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 <div id="toDateTimeOrZero">
@@ -3650,7 +3691,7 @@ toDecimal128(expr, S)
 
 **参数**
 
-* `expr` — 返回数值或数值字符串表示形式的表达式。[`表达式`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数值或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 * `S` — 取值范围为 0 到 38 的 scale 参数，用于指定数值的小数部分可以有多少位。[`UInt8`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -3871,7 +3912,7 @@ toDecimal256(expr, S)
 
 **参数**
 
-* `expr` — 返回数值或数值字符串表示形式的表达式。[`表达式`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数值或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 * `S` — 介于 0 到 76 之间的 scale 参数，指定数值的小数部分可包含的位数。[`UInt8`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -4243,7 +4284,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 * (U)Int* 类型的值或其字符串表示形式。
 * Float* 类型的值或其字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值 `NaN` 和 `Inf`，以及它们的字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式。
@@ -4307,7 +4348,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 </Note>
 
 <Warning>
-  转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，结果可能会出现意外情况。
+  转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，结果可能不符合预期。
   例如：`toDecimal64(1.15, 2)` 等于 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
   你可以改用 String 输入，这样操作将使用底层整数类型：`toDecimal64('1.15', 2) = 1.15`
 </Warning>
@@ -5100,7 +5141,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行：
+Row 1:
 ──────
 toInt128(-128):   -128
 toInt128(-128.8): -128
@@ -5397,7 +5438,7 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值无法表示为 [Int16](/zh/reference/data-types/int-uint) 范围内的值，结果会发生上溢或下溢。
+  如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的范围内，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5457,7 +5498,7 @@ toInt16OrNull('abc'): \N
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrZero('0xc0fe');`。
 
 <Note>
-  如果输入值无法在 [Int16](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+  如果输入值超出 [Int16](/zh/reference/data-types/int-uint) 的取值范围，结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -5493,7 +5534,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行:
+Row 1:
 ──────
 toInt16OrZero('16'): 16
 toInt16OrZero('abc'): 0
@@ -5622,7 +5663,7 @@ SELECT toInt256OrDefault('abc', CAST('-1', 'Int256'))
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `NULL`) ：
+不支持的参数 (返回 `NULL`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt256OrNull('0xc0fe');`。
@@ -5848,7 +5889,7 @@ SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `NULL`) ：
+不支持的参数 (返回 `NULL`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32OrNull('0xc0fe');`。
@@ -5908,7 +5949,7 @@ toInt32OrNull('abc'): \N
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32OrZero('0xc0fe');`。
@@ -6369,7 +6410,7 @@ toInt8OrNull('abc'): \N
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt8OrZero('0xc0fe');`。
@@ -7049,7 +7090,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
 ```
@@ -7061,7 +7102,7 @@ SELECT
 引入版本：v1.1.0
 
 将输入值转换为 [Time](/zh/reference/data-types/time) 类型。
-支持从 String、FixedString、DateTime 或表示自午夜起经过秒数的数值类型进行转换。
+支持从 String、FixedString、DateTime、DateTime64 或表示自午夜起经过秒数的数值类型进行转换。
 
 **语法**
 
@@ -7071,7 +7112,7 @@ toTime(x)
 
 **参数**
 
-* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
@@ -7079,10 +7120,12 @@ toTime(x)
 
 **示例**
 
-**String 转换为 Time**
+**DateTime64 转换为 Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7135,8 @@ SELECT toTime('14:30:25')
 **DateTime 转换为 Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7144,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**将整数转换为时间**
+**将整数 (表示自纪元以来的秒数) 转换为时间**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,29 +7163,31 @@ SELECT toTime(52225)
 引入版本：v25.6.0
 
 将输入值转换为 [Time64](/zh/reference/data-types/time64) 类型。
-支持从 String、FixedString、DateTime64，或表示自午夜起微秒数的数值类型进行转换。
-为时间值提供微秒级精度。
+支持从 String、FixedString、DateTime64，或表示自午夜起经过秒数的数值类型进行转换。
+可为时间值提供子秒级精度，最多支持 `scale` 位小数。
 
 **语法**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **参数**
 
 * `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `scale` — 结果 `Time64` 的精度 (小数位数，`0`–`9`) 。[`(U)Int*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回转换后的输入值，精度为微秒。[`Time64(6)`](/zh/reference/data-types/time64)
+返回按请求的 `scale` 转换后的值。[`Time64`](/zh/reference/data-types/time64)
 
 **示例**
 
-**String 转换为 Time64**
+**将 String 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7197,19 @@ SELECT toTime64('14:30:25.123456')
 **DateTime64 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**整数转换为 Time64**
+**Float (自午夜起的秒数) 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7240,8 +7291,8 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 
 ```response title=Response
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │             00:00:00.000 │
-└────────────────────────────────┴──────────────────────────┘
+│                   12:30:45.123 │              00:00:00.000 │
+└────────────────────────────────┴───────────────────────────┘
 ```
 
 <div id="toTimeOrNull">
@@ -7470,7 +7521,7 @@ toUInt128OrNull(x)
 
 **参数**
 
-* `x` — 数字的 String 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数字的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -7506,7 +7557,7 @@ toUInt128OrNull('abc'): \N
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt128OrZero('0xc0fe');`。
@@ -7530,7 +7581,7 @@ toUInt128OrZero(x)
 
 **参数**
 
-* `x` — 数字的 String 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数字的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -7580,7 +7631,7 @@ toUInt128OrZero('abc'): 0
 </Note>
 
 <Note>
-  该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
+  该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
 </Note>
 
 另请参见：
@@ -7616,7 +7667,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行:
+Row 1:
 ──────
 toUInt16(16):    16
 toUInt16(16.16): 16
@@ -7705,7 +7756,7 @@ toUInt16OrNull(x)
 
 **参数**
 
-* `x` — 数字的 String 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 数字的字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -7847,7 +7898,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toUInt256(256):     256
 toUInt256(256.256): 256
@@ -7918,7 +7969,7 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toUInt256OrNull('0xc0fe');`。
 
 <Note>
-  如果输入值超出 [`UInt256`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
+  如果输入值无法在 [`UInt256`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -7996,7 +8047,7 @@ toUInt256OrZero(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8171,7 +8222,7 @@ toUInt32OrNull(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8201,7 +8252,7 @@ toUInt32OrNull('abc'): \N
 
 引入版本：v1.1.0
 
-与 [`toUInt32`](#toUInt32) 类似，此函数会将输入值转换为 [`UInt32`](/zh/reference/data-types/int-uint) 类型的值，但如果发生错误，则返回 `0`。
+与 [`toUInt32`](#toUInt32) 类似，此函数将输入值转换为 [`UInt32`](/zh/reference/data-types/int-uint) 类型的值，但如果发生错误，则返回 `0`。
 
 支持的参数：
 
@@ -8231,7 +8282,7 @@ toUInt32OrZero(x)
 
 **参数**
 
-* `x` — 数值的 String 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8406,7 +8457,7 @@ toUInt64OrNull(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8516,7 +8567,7 @@ Introduced in: v1.1.0
 </Note>
 
 <Note>
-  该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截断数字的小数位。
+  该函数采用 [向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截断数字的小数位。
 </Note>
 
 另请参见：
@@ -8641,7 +8692,7 @@ toUInt8OrNull(x)
 
 **参数**
 
-* `x` — 数字的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8683,7 +8734,7 @@ toUInt8OrNull('abc'): \N
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt8OrZero('0xc0fe');`。
 
 <Note>
-  如果输入值超出 [`UInt8`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
+  如果输入值无法在 [`UInt8`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
   这不视为错误。
 </Note>
 
@@ -8701,7 +8752,7 @@ toUInt8OrZero(x)
 
 **参数**
 
-* `x` — 数字的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8848,8 +8899,8 @@ SELECT toUnixTimestamp64Micro(dt64);
 
 ```response title=Response
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│               1739489491011123 │
-└────────────────────────────────┘
+│             1739489491011123 │
+└──────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Milli">
