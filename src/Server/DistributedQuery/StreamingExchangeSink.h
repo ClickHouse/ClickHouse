@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Logger.h>
 #include <Core/Types.h>
@@ -28,7 +28,7 @@ public:
     String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
     Status prepare() override;
-    std::pair<int, uint32_t> scheduleForEvent() override;
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
 
 private:
     void consume(Chunk chunk) override;

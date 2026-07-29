@@ -34,6 +34,8 @@ Examples:
 """
 
 import argparse
+import gzip
+import io
 import json
 import os
 import re
@@ -41,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs
 from urllib.request import urlopen
@@ -51,22 +54,132 @@ from urllib.error import HTTPError
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+def maybe_decompress(data):
+    """Transparently decompress `data` (bytes) if it is zstd- or gzip-framed.
+
+    CI uploads text artifacts larger than a threshold as zstd (see
+    ci/praktika/s3.py), so the same object can arrive either plain or compressed.
+    Detected by magic bytes, so it works regardless of the URL suffix.
+    """
+    if data[:4] == b"\x28\xb5\x2f\xfd":  # zstd magic
+        try:
+            import zstandard  # optional dependency
+            return zstandard.ZstdDecompressor().stream_reader(io.BytesIO(data)).read()
+        except ImportError:
+            proc = subprocess.run(["zstd", "-dcq"], input=data, capture_output=True, timeout=120)
+            if proc.returncode != 0:
+                raise RuntimeError(f"zstd decompression failed: {proc.stderr.decode('utf-8', 'replace')}")
+            return proc.stdout
+    if data[:2] == b"\x1f\x8b":  # gzip magic
+        return gzip.decompress(data)
+    return data
+
+
+def _read_url_bytes(url):
+    """GET `url`, falling back to `url + '.zst'` on 404/403, and return decompressed bytes."""
+    candidates = [url] if url.endswith(".zst") else [url, url + ".zst"]
+    last_error = None
+    for candidate in candidates:
+        try:
+            with urlopen(candidate, timeout=60) as resp:
+                return maybe_decompress(resp.read())
+        except HTTPError as e:
+            last_error = f"HTTP {e.code}: {e.reason} for {candidate}"
+    raise RuntimeError(last_error)
+
+
 def fetch_url(url):
-    """Fetch a URL and return its body as text."""
-    try:
-        with urlopen(url, timeout=60) as resp:
-            return resp.read().decode("utf-8")
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code}: {e.reason} for {url}")
+    """Fetch a URL and return its body as text (transparently decompressed)."""
+    return _read_url_bytes(url).decode("utf-8")
+
+
+class _PrefixedReader:
+    """File-like wrapper that yields `prefix` bytes before the rest of `stream`.
+
+    Lets us peek at the magic bytes for format detection and still stream the whole
+    body through a decompressor without ever holding it fully in memory.
+    """
+
+    def __init__(self, prefix, stream):
+        self._prefix = prefix
+        self._stream = stream
+
+    def read(self, size=-1):
+        if not self._prefix:
+            return self._stream.read(size)
+        if size is None or size < 0:
+            data, self._prefix = self._prefix + self._stream.read(), b""
+            return data
+        if size <= len(self._prefix):
+            data, self._prefix = self._prefix[:size], self._prefix[size:]
+            return data
+        data, self._prefix = self._prefix + self._stream.read(size - len(self._prefix)), b""
+        return data
+
+
+_ZSTD_CLI_TIMEOUT_SEC = 120  # watchdog bound for the zstd-CLI decompression fallback
+
+
+def _stream_to_file(resp, dest):
+    """Stream `resp` to `dest`, transparently decompressing zstd/gzip by magic bytes.
+
+    Compressed perf artifacts exist precisely for the large shards, and several shards
+    download in parallel, so the body is streamed in chunks rather than buffered.
+    """
+    header = resp.read(4)
+    source = _PrefixedReader(header, resp)
+    with open(dest, "wb") as f:
+        if header == b"\x28\xb5\x2f\xfd":  # zstd magic
+            try:
+                import zstandard  # optional dependency
+                shutil.copyfileobj(zstandard.ZstdDecompressor().stream_reader(source), f)
+            except ImportError:
+                proc = subprocess.Popen(["zstd", "-dcq"], stdin=subprocess.PIPE, stdout=f,
+                                        stderr=subprocess.PIPE)
+                # A watchdog bounds the whole exchange: both the stdin write and the stderr read
+                # block indefinitely if the child wedges, so wait(timeout=) alone never fires.
+                # Killing the child unblocks both and turns a stuck shard into a normal error.
+                # (communicate() is unusable here: it flushes the already-closed stdin, which
+                # raises ValueError on most Python versions.)
+                watchdog = threading.Timer(_ZSTD_CLI_TIMEOUT_SEC, proc.kill)
+                watchdog.start()
+                try:
+                    try:
+                        shutil.copyfileobj(source, proc.stdin)
+                        proc.stdin.close()
+                    except BrokenPipeError:
+                        pass  # zstd exited early (corrupt input or killed); real error is on stderr
+                    stderr = proc.stderr.read()
+                    proc.stderr.close()
+                    rc = proc.wait()
+                finally:
+                    watchdog.cancel()
+                if rc != 0:
+                    raise RuntimeError(f"zstd decompression failed (exit {rc}): "
+                                       f"{stderr.decode('utf-8', 'replace')}")
+        elif header[:2] == b"\x1f\x8b":  # gzip magic
+            with gzip.GzipFile(fileobj=source) as gz:
+                shutil.copyfileobj(gz, f)
+        else:
+            shutil.copyfileobj(source, f)
 
 
 def download_url(url, dest):
-    """Download a URL to a file using curl. Returns True on success."""
-    result = subprocess.run(
-        ["curl", "-sfL", "-o", dest, url],
-        capture_output=True, timeout=120,
-    )
-    return result.returncode == 0
+    """Download a URL to a file, transparently decompressing. Raises on failure.
+
+    Falls back to `url + '.zst'` on 404/403. Shard-local failures are isolated by the
+    `download_shard` worker, not here.
+    """
+    candidates = [url] if url.endswith(".zst") else [url, url + ".zst"]
+    last_error = None
+    for candidate in candidates:
+        try:
+            with urlopen(candidate, timeout=60) as resp:
+                _stream_to_file(resp, dest)
+                return
+        except HTTPError as e:
+            last_error = f"HTTP {e.code}: {e.reason} for {candidate}"
+    raise RuntimeError(last_error)
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +353,13 @@ def download_shard(shard, tmpdir):
     shard_num = shard["shard_num"]
     dest = os.path.join(tmpdir, f"{arch}_{shard_num}.tsv")
 
-    if not download_url(shard["tsv_url"], dest):
-        return shard, None, f"Failed to download {shard['tsv_url']}"
+    # Isolate all shard-local download/decompress failures (HTTP, network, timeout, missing zstd,
+    # corrupt archive, ...) as a per-shard error so one bad shard warns and the report continues
+    # with the rest rather than aborting the whole run.
+    try:
+        download_url(shard["tsv_url"], dest)
+    except Exception as e:
+        return shard, None, f"Failed to download {shard['tsv_url']}: {e}"
 
     # Prepend arch and shard_num columns so clickhouse-local can distinguish shards
     enriched = os.path.join(tmpdir, f"{arch}_{shard_num}_enriched.tsv")
@@ -665,11 +783,6 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Verify clickhouse is available
-    if shutil.which("clickhouse") is None:
-        print("Error: clickhouse not found in PATH.", file=sys.stderr)
-        sys.exit(1)
-
     # Resolve URL
     url = args.url
     if "github.com" in url and "/pull/" in url:
@@ -699,6 +812,25 @@ def main():
 
     if not shards:
         print("No matching shards found", file=sys.stderr)
+        sys.exit(1)
+
+    # Jobs that didn't run (e.g. the amd perf comparison only runs on 'pr-performance' PRs) have no
+    # artifacts, so report them cleanly instead of attempting a download that 403s.
+    skipped = [s for s in shards if str(s.get("status", "")).upper() == "SKIPPED"]
+    for s in skipped:
+        print(f"  Skipped: {s['name']} ({s.get('info') or 'not run'})", file=sys.stderr)
+    shards = [s for s in shards if str(s.get("status", "")).upper() != "SKIPPED"]
+
+    if not shards:
+        # All matching jobs were intentionally skipped: no perf data to analyze, but not a
+        # tool failure, so exit successfully.
+        print("No shards to fetch (all matching jobs were skipped)", file=sys.stderr)
+        sys.exit(0)
+
+    # clickhouse (used for local classification of the downloaded data) is only needed once we
+    # know there is at least one shard to analyze.
+    if shutil.which("clickhouse") is None:
+        print("Error: clickhouse not found in PATH.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Fetching {len(shards)} performance shard(s)...\n", file=sys.stderr)
