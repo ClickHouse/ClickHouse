@@ -128,7 +128,7 @@ function stop_threads()
 }
 trap stop_threads EXIT
 
-# Each status is checked separately: `wait A && wait B` skips B when A fails.
+# One wait per worker, so the first failure becomes the exit status.
 wait $PID_3
 wait $PID_4
 
