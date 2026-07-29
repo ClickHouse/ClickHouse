@@ -23,7 +23,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
-    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    /// Only a signed integer `A` is checked: `std::numeric_limits<Float>::min()` is the smallest
+    /// positive value, not the domain minimum, and dividing a float by -1 cannot overflow (cf. `moduloLeadsToFPE`).
+    if constexpr (is_integer<A> && is_signed_v<A> && is_signed_v<B>)
     {
         if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
@@ -41,7 +43,8 @@ inline bool divisionLeadsToFPE(A a, B b)
     if (b == 0) [[unlikely]]
         return true;
 
-    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    /// Kept in sync with `throwIfDivisionLeadsToFPE`: a floating `A` must not be tested here.
+    if constexpr (is_integer<A> && is_signed_v<A> && is_signed_v<B>)
     {
         if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
             return true;
