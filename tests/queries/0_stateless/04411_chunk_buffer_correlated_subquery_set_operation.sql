@@ -9,7 +9,7 @@
 --   * session-level SET ... = 0: no buffer (the reference is materialized);
 --   * per-branch SETTINGS ... = 0 (the #108521 shape): a buffer is still created.
 
--- Correlated subqueries are only supported by the new analyzer.
+-- Correlated subqueries are only supported by the analyzer.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- Parallel replicas change the decorrelation execution path and row distribution; pin it off so the
