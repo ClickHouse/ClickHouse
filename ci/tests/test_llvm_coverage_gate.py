@@ -1,27 +1,14 @@
 """
 Regression tests for the LLVM Coverage diff gate tolerance check.
 
-Background
-----------
-`llvm_coverage_job.py` fails a PR when line coverage drops by more than
-0.3 pp. `get_lcov_summary` parses lcov's one-decimal percentages, so the
-drop was a binary float subtraction of two decimal values, and for many
-pairs the result lands just above the tolerance:
-
-    84.4 - 84.1 == 0.30000000000001137   ->  > 0.3 is True
-
-A drop exactly equal to the tolerance therefore failed the gate, contrary
-to the message it prints ("dropped 0.30 pp, tolerance 0.3 pp"). Observed on
-21 of 80 `Coverage degraded` rows over 90 days, across 21 distinct PRs.
-
-Fix
----
-`coverage_drop` rounds the difference to two decimals, which is finer than
-lcov's own one-decimal reporting, so no drop lcov can distinguish is masked.
+A drop exactly equal to the 0.3 pp tolerance must pass, as the gate's own
+message states. `coverage_drop` rounds the difference so the binary-float
+representation of a decimal subtraction cannot push it over the threshold.
 """
 
 import os
 import sys
+import textwrap
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -31,10 +18,64 @@ from ci.jobs.llvm_coverage_job import (
     coverage_drop,
 )
 
+_JOB = os.path.join(os.path.dirname(__file__), "..", "jobs", "llvm_coverage_job.py")
+
 
 def _degraded(baseline: float, current: float) -> bool:
     """The gate's verdict, driving both production helpers rather than a copy."""
     return coverage_degraded(coverage_drop(baseline, current))
+
+
+def _gate_snippet() -> str:
+    """The verdict block from llvm_coverage_job.py, verbatim.
+
+    The gate lives inside `if __name__ == "__main__":`, so it cannot be imported;
+    exec'ing its own source keeps this test honest about what the job really does.
+    """
+    lines = open(_JOB, encoding="utf-8").read().splitlines(True)
+    start = next(i for i, l in enumerate(lines) if "_drop = coverage_drop(" in l)
+    end = next(i for i, l in enumerate(lines) if "diff_res.set_failed()" in l)
+    return textwrap.dedent("".join(lines[start : end + 1]))
+
+
+class _ResultStub:
+    """Captures the three side effects the gate has on its Result."""
+
+    def __init__(self):
+        self.info = None
+        self.comment = None
+        self.failed = False
+
+    def set_comment(self, msg):
+        self.comment = msg
+
+    def set_failed(self):
+        self.failed = True
+
+
+def _run_gate(baseline: float, current: float) -> _ResultStub:
+    """Execute the job's own verdict block and report what it did to the Result."""
+    res = _ResultStub()
+    ns = {
+        "coverage_drop": coverage_drop,
+        "coverage_degraded": coverage_degraded,
+        "COVERAGE_DROP_TOLERANCE": COVERAGE_DROP_TOLERANCE,
+        "b_line_cov": baseline,
+        "c_line_cov": current,
+        "diff_res": res,
+        "print": lambda *a, **k: None,
+    }
+    exec(_gate_snippet(), ns)  # noqa: S102 - trusted first-party source
+    return res
+
+
+def test_gate_snippet_is_the_real_verdict_block():
+    # Without this the extraction could silently degenerate and make every
+    # _run_gate assertion below vacuous.
+    src = _gate_snippet()
+    assert "coverage_drop(" in src
+    assert "coverage_degraded(" in src
+    assert "diff_res.set_failed()" in src
 
 
 def test_tolerance_is_unchanged():
@@ -89,3 +130,25 @@ def test_message_reports_the_value_it_compared():
     # The gate interpolates this same value, so the printed number cannot
     # disagree with the number judged.
     assert f"{drop:.2f}" == "0.31"
+
+
+def test_gate_passes_a_drop_equal_to_tolerance():
+    # Drives the production call site, not just the helpers it wires together.
+    assert _run_gate(84.4, 84.1).failed is False
+    assert _run_gate(85.4, 85.1).failed is False
+
+
+def test_gate_fails_a_drop_above_tolerance_with_the_value_it_judged():
+    res = _run_gate(86.30, 85.99)
+    assert res.failed is True
+    assert res.comment == (
+        "Coverage degraded: master 86.30% \u2192 PR 85.99%"
+        " (dropped 0.31 pp, tolerance 0.3 pp)"
+    )
+    assert res.info == res.comment
+
+
+def test_gate_still_fails_the_large_drop():
+    res = _run_gate(86.20, 28.60)
+    assert res.failed is True
+    assert "dropped 57.60 pp" in res.comment

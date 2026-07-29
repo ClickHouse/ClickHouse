@@ -74,11 +74,13 @@ COVERAGE_DROP_TOLERANCE = 0.3
 
 
 def coverage_drop(baseline_cov: float, current_cov: float) -> float:
-    """Return the line coverage drop in pp, rounded to lcov's reporting precision.
+    """Return the line coverage drop in pp, rounded to two decimals.
 
-    lcov reports percentages with one decimal, so subtracting two of them can
-    land just above the tolerance: `84.4 - 84.1 == 0.30000000000001137`, which
-    made a drop exactly equal to the tolerance fail the check below.
+    In practice lcov reports these percentages with one decimal, so subtracting
+    two of them can land just above the tolerance:
+    `84.4 - 84.1 == 0.30000000000001137`, which made a drop exactly equal to the
+    tolerance fail the check below. Rounding to two decimals is finer than the
+    reported precision, so a drop lcov can actually express is never masked.
     """
     return round(baseline_cov - current_cov, 2)
 
