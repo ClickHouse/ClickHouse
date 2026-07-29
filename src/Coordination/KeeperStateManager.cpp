@@ -398,8 +398,7 @@ constexpr auto current_server_state_version = ServerStateVersion::V1;
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is
 /// propagated instead, because callers act on nullptr by deleting or truncating the file.
 /// throw_on_corrupted_checksum keeps read_state failing loudly on a bad checksum in debug builds.
-/// corrupted_path, when given, records a checksum mismatch instead of throwing, so the caller can
-/// finish trying the other copies before deciding that nothing is recoverable.
+/// corrupted_path, when given, records a checksum mismatch for the caller to report later.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
     const DiskPtr & disk,
     const String & path,
@@ -541,9 +540,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     /// A read failure is deliberately not caught: every nullptr below deletes the file just read,
     /// and no state at all makes NuRaft restart from term 0 with an empty vote.
-    /// A checksum mismatch is remembered rather than thrown, because a torn live file is exactly
-    /// what the backup exists to survive: recovering from state-OLD has to be tried first, and the
-    /// mismatch is only surfaced (in debug builds) if nothing could be recovered at all.
+    /// A checksum mismatch is only remembered here, so that the backup is still tried.
     std::optional<String> corrupted_path;
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
