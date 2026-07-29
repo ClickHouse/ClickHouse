@@ -35,7 +35,7 @@ SETTINGS enable_materialized_cte = 0;
 -- Two consumers of the same materialized CTE: the second reference reuses the
 -- storage created by the first, and that path resolves its own copy of the body.
 -- Without the guard there, the body's `FROM test1` bound back to the CTE and
--- recursed until TOO_DEEP_SUBQUERIES. A single consumer cannot catch this.
+-- recursed until `TOO_DEEP_SUBQUERIES`. A single consumer cannot catch this.
 -- The counts below match the non-materialized CTE, so first assert the CTE really
 -- is materialized once - otherwise they would also pass if it were inlined.
 SELECT 'is materialized';
