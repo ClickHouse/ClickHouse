@@ -196,7 +196,8 @@ public:
 private:
     struct ForwardedForCache;
 
-    /// The immutable cache can be shared by copies. The raw source remains the cache key when a copy changes it.
+    /// `ClientInfo::getLastForwardedFor` can be called several times while processing one HTTP request.
+    /// Cache successful and rejected parses so the header is parsed once and an invalid value is logged once.
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();

@@ -33,16 +33,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// Parse an "ip:port" string into a `SocketAddress` WITHOUT resolving.
-/// ClientInfo::write always serializes the address as an IP literal plus a numeric port ("ip:port" or
-/// "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled and may be
-/// corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a non-numeric port
-/// via getservbyname() and a non-IP host via DNS::hostByName() - both reach a non-reentrant libc
-/// resolver family that base/harmful traps to an uncatchable SIGILL in debug/sanitizer builds. We split
-/// host and port exactly as Poco::Net::SocketAddress::init() does, require a numeric port <= 65535 and a
-/// host that parses as an IP literal, and build the address directly from the parsed IPAddress. Returns
-/// nullopt for anything else (empty, a leading-'/' UNIX-local form, a non-numeric/out-of-range port, or
-/// a non-IP host), so the caller decides whether to reject it or fall back to a default - never resolving.
+/// Parse a numeric IP endpoint with a numeric port without hostname or service-name resolution.
+/// Expected forms are "ipv4:port" and "[ipv6]:port". A hostname or symbolic port can appear in the
+/// same syntax, but is rejected. Constructing `Poco::Net::SocketAddress` from a string would resolve
+/// these through DNS or `getservbyname`; instead, split the endpoint, parse the host as
+/// `Poco::Net::IPAddress`, and require a numeric port not exceeding 65535.
+///
+/// This helper is shared by `ClientInfo::read`, for untrusted `initial_address` values received over
+/// the native protocol, and `ClientInfo::getLastForwardedFor`, for `X-Forwarded-For` elements that
+/// contain a port. `ClientInfo::write` produces only the accepted numeric forms. Empty input,
+/// UNIX-local paths, malformed or out-of-range ports, and non-IP hosts return `nullopt`.
 std::optional<Poco::Net::SocketAddress> tryParseIpEndpoint(const String & host_and_port)
 {
     /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later.
@@ -143,6 +143,10 @@ String detectClientAgent()
 
 }
 
+/// `source` identifies the `forwarded_for` value that was parsed, so direct changes to the public field
+/// invalidate the cache. `address` stores either the parsed endpoint or `nullopt` for rejected input,
+/// allowing repeated calls to reuse successful and failed results and log an invalid value only once
+/// while the source is unchanged.
 struct ClientInfo::ForwardedForCache
 {
     String source;
@@ -161,9 +165,12 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     if (forwarded_for.empty())
         return {};
 
+    /// Reuse successful and rejected results while the source value is unchanged.
     if (last_forwarded_for_cache && last_forwarded_for_cache->source == forwarded_for)
         return last_forwarded_for_cache->address;
 
+    /// Proxies append addresses to the comma-separated chain. Use the last element because it was added
+    /// by the proxy closest to ClickHouse; earlier elements may come from the client or other intermediaries.
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
@@ -171,12 +178,16 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     if (!last.empty())
     {
         const auto colons = std::count(last.begin(), last.end(), ':');
+        /// Brackets denote IPv6 with a port; one colon denotes IPv4 or a hostname with a port.
+        /// `tryParseIpEndpoint` rejects hostnames and non-numeric ports.
         if (last.front() == '[' || colons == 1)
         {
             address = tryParseIpEndpoint(last);
         }
         else
         {
+            /// Multiple colons denote unbracketed IPv6 without a port; no colon denotes IPv4 or a hostname
+            /// without a port. `Poco::Net::IPAddress::tryParse` rejects hostnames.
             Poco::Net::IPAddress ip;
             if (Poco::Net::IPAddress::tryParse(last, ip))
                 address.emplace(ip, 0);

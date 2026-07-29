@@ -248,6 +248,8 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTripsSecondaryQuery)
     }
 }
 
+/// Numeric IPv4 and IPv6 addresses, with or without numeric ports, must be accepted. For a
+/// comma-separated `X-Forwarded-For` chain, the last proxy-appended element is used after trimming.
 TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
 {
     const auto check_address = [](const String & value, const String & expected_host, UInt16 expected_port)
@@ -268,6 +270,8 @@ TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
     check_address("not-used.example," + String(2, ' ') + "203.0.113.7:65535" + String(2, ' '), "203.0.113.7", 65535);
 }
 
+/// Hostnames and malformed endpoints must be rejected without resolver calls. Empty input and an empty
+/// last chain element are also rejected, and `getLastForwardedForHost` returns an empty string.
 TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
 {
     for (const String & bad : {
@@ -300,6 +304,8 @@ TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
     EXPECT_EQ(hostname.getLastForwardedForHost(), "");
 }
 
+    /// Successful and rejected results are reused while `forwarded_for` is unchanged,
+    /// including by copies sharing the cache, so repeated access logs an invalid value once.
 TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
 {
     std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -315,8 +321,8 @@ TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
     EXPECT_EQ(info.getLastForwardedForHost(), "");
     EXPECT_FALSE(info.getLastForwardedFor());
 
-    /// A copy shares the immutable cache. Replacing its public raw field must create a new cache
-    /// without changing the cache still used by the original object.
+    /// Copies initially share the cached result. Changing `forwarded_for` on a copy causes its next lookup
+    /// to install a new cache entry without affecting the entry used by the original object.
     ClientInfo copied_info = info;
     EXPECT_FALSE(copied_info.getLastForwardedFor());
     copied_info.forwarded_for = "second-attacker.example";
