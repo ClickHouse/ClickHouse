@@ -35,12 +35,12 @@ ScopedThreadAttributes::ScopedThreadAttributes(ThreadGroupPtr thread_group_, Thr
     {
         try
         {
-            /// Save the raw OS name, not the ThreadName enum: for a thread that was never
+            /// Save the raw OS name, not just the ThreadName enum: for a thread that was never
             /// renamed the OS reports the binary name (e.g. "clickhouse" for the server's
             /// main thread), which has no enum value. Restoring through the enum would write
             /// "Unknown" as the comm, permanently breaking tools that match the process by
             /// its original comm, such as `pkill clickhouse` and `ps -C clickhouse`.
-            prev_thread_name = getThreadNameRaw();
+            prev_thread_name = saveThreadName();
             should_restore_prev_thread_name = true;
             setThreadName(thread_name);
         }
@@ -154,7 +154,7 @@ ScopedThreadAttributes::~ScopedThreadAttributes()
         try
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            setThreadNameRaw(prev_thread_name);
+            restoreThreadName(prev_thread_name);
         }
         catch (...)
         {

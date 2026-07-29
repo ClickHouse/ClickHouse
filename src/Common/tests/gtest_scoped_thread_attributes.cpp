@@ -168,6 +168,11 @@ TEST(ScopedThreadAttributes, SwitchesNameIndependentlyOfGroup)
 /// restore that name verbatim: collapsing it through the enum would write "Unknown" as the
 /// comm, permanently breaking tools that match the process by its original comm, such as
 /// `pkill clickhouse` and `ps -C clickhouse` (integration tests restart the server that way).
+///
+/// FreeBSD and illumos cannot read the OS-level name back (getThreadNameRaw returns an empty
+/// string there), so a comm absent from the enum cannot round-trip at all - those platforms use
+/// the cached-ThreadName fallback covered by the next test instead.
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
 TEST(ScopedThreadAttributes, RestoresNameAbsentFromEnum)
 {
     std::thread t([&]
@@ -184,6 +189,32 @@ TEST(ScopedThreadAttributes, RestoresNameAbsentFromEnum)
 
         EXPECT_EQ(getThreadNameRaw(), "clickhouse")
             << "a comm absent from the ThreadName enum must be restored verbatim, not as 'Unknown'";
+    });
+    t.join();
+}
+#endif
+
+/// When the raw OS-level name cannot be read - FreeBSD and illumos have no raw read, and on Linux
+/// `prctl(PR_GET_NAME)` can be blocked in a restricted sandbox - the snapshot carries an empty raw
+/// name. The restore must then fall back to the cached ThreadName instead of doing nothing:
+/// setThreadName always updates the cache (and the jemalloc profile name), which is what the logs
+/// and traces report, so a no-op restore would leak the temporary name past the scope.
+TEST(ScopedThreadAttributes, RestoresFromCachedNameWhenRawReadUnavailable)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        setThreadName(ThreadName::TCP_HANDLER);
+
+        /// As returned by saveThreadName when the raw read is unavailable.
+        ThreadNameSnapshot snapshot{.raw = "", .cached = ThreadName::TCP_HANDLER};
+
+        setThreadName(ThreadName::S3_COPY_POOL);
+        ASSERT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
+
+        restoreThreadName(snapshot);
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+            << "with no raw name available the restore must fall back to the cached ThreadName";
     });
     t.join();
 }

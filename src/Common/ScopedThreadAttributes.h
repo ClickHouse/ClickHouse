@@ -52,10 +52,10 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
-    /// Raw OS name before the rename, restored in the destructor. Raw, not a ThreadName:
-    /// a thread that was never renamed carries the binary name (e.g. "clickhouse" for the
-    /// server's main thread), which has no enum value and must be restored verbatim.
-    std::string prev_thread_name;
+    /// The name before the rename, restored in the destructor. Not just a ThreadName: a thread
+    /// that was never renamed carries the binary name (e.g. "clickhouse" for the server's main
+    /// thread), which has no enum value and must be restored verbatim.
+    ThreadNameSnapshot prev_thread_name;
     bool should_restore_prev_thread_name = false;
 };
 

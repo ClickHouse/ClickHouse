@@ -189,8 +189,11 @@ std::string getThreadNameRaw()
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
     return std::string(tmp_thread_name);
 #elif defined(OS_SUNOS) || defined(OS_FREEBSD)
-    /// The OS-level name is not read on these systems (see getThreadName); fall back to the cache.
-    return std::string(toString(thread_name));
+    /// There is no raw read on these systems (see getThreadName): illumos deliberately skips the
+    /// OS-level name, and FreeBSD can set it but not read it back. Returning the cached ThreadName
+    /// here would not be raw - a comm absent from the enum would round-trip as "Unknown" - so
+    /// report "unavailable" instead and let the caller fall back to the cache explicitly.
+    return {};
 #else
     char tmp_thread_name[THREAD_NAME_SIZE] = {};
     if (0 != prctl(PR_GET_NAME, tmp_thread_name, 0, 0, 0))
@@ -202,10 +205,8 @@ std::string getThreadNameRaw()
 
 void setThreadNameRaw(const std::string & name)
 {
-    /// The raw read can return an empty name in restricted environments where prctl is
-    /// unavailable; there is nothing meaningful to restore then.
     if (name.empty())
-        return;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be empty");
 
     if (name.size() >= THREAD_NAME_SIZE)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be longer than 15 bytes");
@@ -229,6 +230,40 @@ void setThreadNameRaw(const std::string & name)
 
 #if USE_JEMALLOC
     DB::Jemalloc::setValue("thread.prof.name", name.c_str());
+#endif
+}
+
+ThreadNameSnapshot saveThreadName()
+{
+    return ThreadNameSnapshot{.raw = getThreadNameRaw(), .cached = thread_name};
+}
+
+void restoreThreadName(const ThreadNameSnapshot & snapshot)
+{
+    if (!snapshot.raw.empty())
+    {
+        setThreadNameRaw(snapshot.raw);
+        return;
+    }
+
+    /// The raw name is unavailable: FreeBSD and illumos have no raw read, and on Linux
+    /// prctl(PR_GET_NAME) can be blocked in restricted environments. The OS-level name was most
+    /// likely not changed either (prctl(PR_SET_NAME) is blocked in the very same environments),
+    /// but setThreadName always updates the ThreadName cache and the jemalloc profile name, so
+    /// those still have to be moved back - otherwise the temporary name leaks past the scope into
+    /// the logs, traces and the heap profile attribution.
+    if (snapshot.cached != ThreadName::UNKNOWN)
+    {
+        setThreadName(snapshot.cached);
+        return;
+    }
+
+    /// Nothing is known about the previous name: the thread carried a comm absent from the enum
+    /// (or none at all). Forget the cache so getThreadName re-reads the OS name instead of
+    /// reporting the temporary one, and stop attributing allocations to the temporary name.
+    thread_name = ThreadName::UNKNOWN;
+#if USE_JEMALLOC
+    DB::Jemalloc::setValue("thread.prof.name", std::string(toString(ThreadName::UNKNOWN)).c_str());
 #endif
 }
 
