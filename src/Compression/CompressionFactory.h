@@ -46,11 +46,20 @@ public:
     /// Return default codec (currently LZ4)
     CompressionCodecPtr getDefaultCodec() const;
 
+    /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
+    /// A compound such as CODEC(Delta, Default) would return false.
+    static bool isDefaultCodec(const ASTPtr & codec);
+
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const;
+
+    /// Validate a full codec expression given as a string, e.g. "ZSTD(3)" or "Delta, LZ4", without a column
+    /// data type. This is the form stored in the codec-valued MergeTree settings (`marks_compression_codec`,
+    /// `primary_key_compression_codec`, `default_compression_codec`).
+    void validateCodecString(const String & compression_codec, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
