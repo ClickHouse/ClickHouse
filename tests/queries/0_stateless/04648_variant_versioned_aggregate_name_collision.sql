@@ -30,6 +30,18 @@ CREATE TABLE t_collision_6 (k UInt8, v Tuple(a Variant(AggregateFunction(0, sumM
 CREATE TABLE t_collision_9 (k UInt8, v AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 CREATE TABLE t_collision_10 (k UInt8, v Array(AggregateFunction(any, Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))))) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
 
+-- A column with no physical storage is not part of the set the settings gated check reads, so a plain
+-- CREATE carrying one is covered by the ungated integrity pass instead. Such a column carries its type
+-- into the persisted definition like any other and so loses an element on reload just the same.
+CREATE TABLE t_collision_13 (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) ALIAS NULL) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE t_collision_14 (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) EPHEMERAL NULL) ENGINE = MergeTree ORDER BY k; -- { serverError ILLEGAL_COLUMN }
+-- Those kinds are not refused as such on this arm either: the same statements with distinct element
+-- names are created, on the same code path.
+CREATE TABLE t_alias_ok (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), UInt8) ALIAS NULL) ENGINE = MergeTree ORDER BY k;
+SELECT 'alias_ok', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alias_ok' AND name = 'v';
+CREATE TABLE t_ephemeral_ok (k UInt8, v Variant(AggregateFunction(1, minMap, Array(UInt64), Array(UInt64)), UInt8) EPHEMERAL NULL) ENGINE = MergeTree ORDER BY k;
+SELECT 'ephemeral_ok', type FROM system.columns WHERE database = currentDatabase() AND table = 't_ephemeral_ok' AND name = 'v';
+
 -- A name is re-parsed at fixed limits, so an element whose own nesting is deeper than what the stricter
 -- limit of DataTypeFactory allows is checked like any other. Below that depth the elements here collide
 -- just the same, and skipping them would have made the rejection depend on the build, because that
@@ -98,6 +110,12 @@ CREATE TABLE t_collision_8 (k UInt8, v Map(String, Variant(AggregateFunction(0, 
 -- if the exemption is dropped from the gated branch as well.
 CREATE MATERIALIZED VIEW mv_gated TO mv_tgt (k UInt8, v Variant(UInt8, Int64)) AS SELECT k, 1 AS v FROM mv_src;
 SELECT 'mv_gated', type FROM system.columns WHERE database = currentDatabase() AND table = 'mv_gated' AND name = 'v';
+-- The other direction of the same split: the suspicious type policy reads only the physical columns of a
+-- plain CREATE, so a suspicious type it refuses as an ordinary column is accepted as a column with no
+-- physical storage. That is unchanged behaviour, and this is the line that fails if the gated pass is
+-- widened to all columns along with the ungated one.
+CREATE TABLE t_gated_alias (k UInt8, v Variant(UInt8, Int64) ALIAS NULL) ENGINE = MergeTree ORDER BY k;
+SELECT 'gated_alias', type FROM system.columns WHERE database = currentDatabase() AND table = 't_gated_alias' AND name = 'v';
 SET allow_suspicious_variant_types = 1, validate_experimental_and_suspicious_types_inside_nested_types = 1;
 
 -- Every Variant whose element names stay distinct keeps working, including a version 0 element paired
@@ -149,6 +167,14 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached (k UInt8, v Variant(A
 -- carries its type into the persisted definition just like any other, so those kinds are covered too.
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_alias (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) ALIAS NULL) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_ephemeral (k UInt8, v Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))) EPHEMERAL NULL) ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+-- The stored spelling of a column that collapsed before this fix is degenerate: version 0 is omitted
+-- from the name, so re-executing that text builds one element whose version is empty and one pinned to
+-- 1, and both resolve to the default version. The pair is already collapsed by the constructor of the
+-- type before anything validates it, so no check can observe the collision here and the statement is
+-- accepted with a single element. Repairing such a column needs the raw stored declaration to be
+-- validated instead of the built type, which is out of the scope of this change.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_attached_stored (k UInt8, v Variant(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)), AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))) ENGINE = Memory;
+SELECT 'attached_stored_spelling', type FROM system.columns WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't_attached_stored' AND name = 'v';
 -- An ATTACH whose columns the engine infers has no column list at all, so nothing checked them before
 -- the storage was built, and its strictness level is ATTACH even though the definition is fresh. The
 -- colliding payload is the same one the inference cases below use.
@@ -237,6 +263,9 @@ DROP TABLE t_alter_add;
 DROP TABLE t_alter_add_alias;
 DROP TABLE t_alter_modify;
 DROP TABLE t_control;
+DROP TABLE t_alias_ok;
+DROP TABLE t_ephemeral_ok;
+DROP TABLE t_gated_alias;
 
 -- No-ops with the fix in place: they only clean up after a run against a build that still accepts
 -- these types, so such a run reports the missing errors rather than a leftover table.
@@ -252,6 +281,8 @@ DROP TABLE IF EXISTS t_collision_9;
 DROP TABLE IF EXISTS t_collision_10;
 DROP TABLE IF EXISTS t_collision_11;
 DROP TABLE IF EXISTS t_collision_12;
+DROP TABLE IF EXISTS t_collision_13;
+DROP TABLE IF EXISTS t_collision_14;
 DROP TABLE IF EXISTS mv_collision;
 DROP TABLE IF EXISTS mv_collision_alias;
 DROP TABLE IF EXISTS mv_collision_ephemeral;

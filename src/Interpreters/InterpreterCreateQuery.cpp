@@ -1060,6 +1060,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The two passes below have different scopes on purpose. The suspicious type policy is a CREATE
+    /// only, physical columns only matter and stays exactly as narrow as it has always been. The
+    /// integrity check, which refuses a type that cannot be read back, covers every persisted
+    /// declaration of every fresh definition, so it runs for an ATTACH carrying a whole definition and
+    /// for a materialized view as well, and over columns of every kind. A definition read back from
+    /// stored metadata is marked `attach_short_syntax` and is checked by neither.
+
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
     if (!create.attach && !create.is_materialized_view)
@@ -1068,11 +1075,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
     }
-    else if (!create.attach_short_syntax && (create.attach || create.is_materialized_view))
+
+    if (!create.attach_short_syntax)
     {
-        /// A fresh definition whose type cannot be read back is refused; a definition loaded from stored
-        /// metadata is marked `attach_short_syntax` and is not re-checked. Only the ungated checks apply,
-        /// so the suspicious type policy stays a CREATE-only matter.
         DataTypeValidationSettings integrity_checks_only;
         for (const auto & name_and_type_pair : properties.columns.getAll())
             validateDataType(name_and_type_pair.type, integrity_checks_only);
