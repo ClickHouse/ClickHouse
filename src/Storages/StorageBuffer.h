@@ -121,6 +121,11 @@ public:
         return true;
     }
     bool supportsPrewhere() const override;
+    /// read() hands the already-built PREWHERE straight to the destination (same-structure fast
+    /// path), so only columns the destination itself allows are safe. Fails closed like
+    /// supportsPrewhere(): no destination means nothing is supported.
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool canMoveConditionsToPrewhere() const override;
     /// read() forwards the already-analyzed query straight to the destination table, so the
     /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.

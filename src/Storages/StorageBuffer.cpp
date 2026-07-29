@@ -913,6 +913,20 @@ bool StorageBuffer::supportsPrewhere() const
     return false;
 }
 
+std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportedPrewhereColumns();
+    return NameSet{};
+}
+
+bool StorageBuffer::canMoveConditionsToPrewhere() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->canMoveConditionsToPrewhere();
+    return false;
+}
+
 bool StorageBuffer::supportsOptimizationToSubcolumns() const
 {
     if (auto destination = getDestinationTable())

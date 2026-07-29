@@ -1,5 +1,6 @@
--- Tags: no-replicated-database
---       ^^^^^^^^^^^^^^^^^^^^^^^ for the lazy_load_tables section below.
+-- Tags: no-replicated-database, shard
+--       no-replicated-database: for the lazy_load_tables section below.
+--       shard: the Remote-engine section needs a second server address.
 
 -- `StorageMerge::supportedPrewhereColumns` compares the root type only against each child's
 -- *declared* columns. A nested `Merge` can declare a matching type while its own leaf differs, so
@@ -104,6 +105,102 @@ DROP TABLE mvm_merge;
 DROP VIEW mvm_view;
 DROP TABLE mvm_dst;
 DROP TABLE mvm_src;
+
+-- `StorageBuffer` forwards `supportsPrewhere()` to its destination but did not forward
+-- `supportedPrewhereColumns()`, and its read() hands the already-built PREWHERE straight to the
+-- destination (the Buffer and the Merge declare identical structures, so this is the
+-- same-structure fast path). The same abort was reachable through the Buffer wrapper.
+
+DROP TABLE IF EXISTS buf_leaf;
+DROP TABLE IF EXISTS buf_merge;
+DROP TABLE IF EXISTS buf_top;
+
+CREATE TABLE buf_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO buf_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE buf_merge (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^buf_leaf$');
+-- Flush thresholds far above anything this test does: all rows stay in buf_leaf, none in the buffer.
+CREATE TABLE buf_top (x Nullable(UInt64), y UInt64)
+    ENGINE = Buffer(currentDatabase(), buf_merge, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+
+SELECT '-- Buffer over a Merge with a mismatched leaf must be rejected too --';
+SELECT x, y FROM buf_top PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a matching column still supports PREWHERE through the Buffer --';
+SELECT count() FROM buf_top PREWHERE y != 0;
+SELECT x, y FROM buf_top PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working --';
+SELECT count() FROM buf_top WHERE x != 0;
+SELECT count() FROM buf_top WHERE y != 0;
+SELECT x, y FROM buf_top WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP TABLE buf_top;
+DROP TABLE buf_merge;
+DROP TABLE buf_leaf;
+
+-- `StorageAlias` forwards the whole PREWHERE contract to its target, so an alias over a nested
+-- `Merge` must reject the mismatched column exactly like the target itself does (transitively).
+
+DROP TABLE IF EXISTS ali_leaf;
+DROP TABLE IF EXISTS ali_inner;
+DROP TABLE IF EXISTS ali_outer;
+DROP TABLE IF EXISTS ali;
+
+CREATE TABLE ali_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ali_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE ali_inner (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^ali_leaf$');
+CREATE TABLE ali_outer (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^ali_inner$');
+CREATE TABLE ali ENGINE = Alias(ali_outer);
+
+SELECT '-- Alias over a nested Merge must be rejected too --';
+SELECT x, y FROM ali PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a matching column still supports PREWHERE through the Alias --';
+SELECT count() FROM ali PREWHERE y != 0;
+SELECT x, y FROM ali PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working --';
+SELECT count() FROM ali WHERE x != 0;
+SELECT count() FROM ali WHERE y != 0;
+SELECT x, y FROM ali WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP TABLE ali;
+DROP TABLE ali_outer;
+DROP TABLE ali_inner;
+DROP TABLE ali_leaf;
+
+-- `ENGINE = Remote` builds a `Distributed` over an ad-hoc cluster, so the shard re-plans the query
+-- from its text rather than receiving a built PREWHERE. That re-planning happens against the real
+-- nested `Merge`, so the abort was reachable there too and the rejection must survive the round trip.
+
+DROP TABLE IF EXISTS rem_leaf;
+DROP TABLE IF EXISTS rem_inner;
+DROP TABLE IF EXISTS rem_outer;
+DROP TABLE IF EXISTS rem;
+
+CREATE TABLE rem_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO rem_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE rem_inner (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^rem_leaf$');
+CREATE TABLE rem_outer (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^rem_inner$');
+-- No port: the address resolves to this server's own tcp_port, as the other Remote-engine tests do.
+CREATE TABLE rem (x Nullable(UInt64), y UInt64) ENGINE = Remote('127.0.0.1', currentDatabase(), rem_outer);
+
+SELECT '-- Remote over a nested Merge must be rejected too --';
+SELECT x, y FROM rem PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a matching column still supports PREWHERE through Remote --';
+SELECT count() FROM rem PREWHERE y != 0;
+SELECT x, y FROM rem PREWHERE y != 0 ORDER BY y LIMIT 3;
+
+SELECT '-- the same predicates as WHERE keep working --';
+SELECT count() FROM rem WHERE x != 0;
+SELECT count() FROM rem WHERE y != 0;
+SELECT x, y FROM rem WHERE x != 0 ORDER BY x LIMIT 3;
+
+DROP TABLE rem;
+DROP TABLE rem_outer;
+DROP TABLE rem_inner;
+DROP TABLE rem_leaf;
 
 -- With `lazy_load_tables = 1`, a re-attached table is a `StorageTableProxy` wrapping the real
 -- storage. `StorageProxy` forwards `supportsPrewhere()` but did not forward `supportedPrewhereColumns()`

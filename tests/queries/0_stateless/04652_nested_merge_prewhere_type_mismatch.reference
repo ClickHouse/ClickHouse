@@ -36,6 +36,42 @@
 1	2
 2	3
 3	4
+-- Buffer over a Merge with a mismatched leaf must be rejected too --
+-- a matching column still supports PREWHERE through the Buffer --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- Alias over a nested Merge must be rejected too --
+-- a matching column still supports PREWHERE through the Alias --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- Remote over a nested Merge must be rejected too --
+-- a matching column still supports PREWHERE through Remote --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
 -- re-attached tables are lazy proxies --
 lazy_inner	TableProxy
 lazy_leaf	TableProxy
