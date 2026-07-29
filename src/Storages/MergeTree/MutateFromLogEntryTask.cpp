@@ -84,6 +84,17 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             mutation_ids_for_log, {});
     };
 
+    /// This mutation was admitted at selection time as one that only hardlinks the files it does not
+    /// touch, and the little space it needs was reserved there rather than here (see
+    /// ReplicatedMergeTreeQueue::selectEntryToProcess): reserving at selection time lets an entry that
+    /// cannot get its space stay queued and be retried, instead of failing the mutation.
+    /// Take ownership before any early return below: selected_entry outlives this task, and a
+    /// not-prepared result is executed as a fetch in this same thread - a fetch that reserves the
+    /// sender's whole part on the disk this reservation would otherwise still be charged to.
+    ReservationSharedPtr hardlink_only_reservation = std::move(selected_entry->hardlink_only_reservation);
+    const bool hardlink_only = hardlink_only_reservation != nullptr;
+    future_mutated_part->hardlink_only = hardlink_only;
+
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
@@ -118,14 +129,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// TODO - some better heuristic?
     size_t estimated_space_for_result = CompactionStatistics::estimateNeededDiskSpace({source_part}, false);
-
-    /// This mutation was admitted at selection time as one that only hardlinks the files it does not
-    /// touch, and the little space it needs was reserved there rather than here (see
-    /// ReplicatedMergeTreeQueue::selectEntryToProcess): reserving at selection time lets an entry that
-    /// cannot get its space stay queued and be retried, instead of failing the mutation.
-    ReservationSharedPtr hardlink_only_reservation = std::move(selected_entry->hardlink_only_reservation);
-    const bool hardlink_only = hardlink_only_reservation != nullptr;
-    future_mutated_part->hardlink_only = hardlink_only;
 
     /// Selection reserved on the disk of the part it saw, while the source part was resolved again just
     /// above. A move that passed its own checks before this entry existed commits at an arbitrary later
