@@ -126,6 +126,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
+            reading_row = true;
             skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
@@ -141,6 +142,8 @@ Chunk ValuesBlockInputFormat::read()
             throw;
         }
     }
+
+    reading_row = false;
 
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
 
@@ -738,6 +741,7 @@ void ValuesBlockInputFormat::resetParser()
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
     total_rows = 0;
+    reading_row = false;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
