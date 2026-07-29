@@ -376,13 +376,6 @@ void copyDataToAzureBlobStorageFile(
 }
 
 
-static bool azureCopyShouldTryNativeCopy(bool use_native_copy, size_t offset)
-{
-    /// Server-side CopyFromUri copies the whole source blob, so native copy is valid only for a
-    /// full-object copy; a ranged copy (offset>0) must go via read+write.
-    return use_native_copy && offset == 0;
-}
-
 void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
@@ -401,7 +394,9 @@ void copyAzureBlobStorageFile(
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
 
-    if (azureCopyShouldTryNativeCopy(settings->use_native_copy, offset))
+    /// Server-side CopyFromUri copies the whole source blob, so native copy is valid only for a
+    /// full-object copy; a ranged copy (offset > 0) must go via read+write.
+    if (settings->use_native_copy && offset == 0)
     {
         /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
