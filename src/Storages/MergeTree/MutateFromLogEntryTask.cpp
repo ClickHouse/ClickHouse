@@ -123,7 +123,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// touch, and the little space it needs was reserved there rather than here (see
     /// ReplicatedMergeTreeQueue::selectEntryToProcess): reserving at selection time lets an entry that
     /// cannot get its space stay queued and be retried, instead of failing the mutation.
-    ReservationSharedPtr hardlink_only_reservation = selected_entry->hardlink_only_reservation;
+    ReservationSharedPtr hardlink_only_reservation = std::move(selected_entry->hardlink_only_reservation);
     const bool hardlink_only = hardlink_only_reservation != nullptr;
     future_mutated_part->hardlink_only = hardlink_only;
 
@@ -132,10 +132,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// time (MergeTreePartsMover::swapClonedPart only re-checks that an active part of that name still
     /// exists), so the two disks can differ - and this reservation is what decides the result part's
     /// path, which a hardlink cannot cross.
-    /// This narrows that window rather than closing it: once the entry exists the part is a queue virtual
-    /// part, which both move paths refuse (MergeTreeData::checkPartsForMove, selectPartsForMove's
-    /// can_move), so at most one already-in-flight move can still commit - and only a swap landing after
-    /// this read escapes the check.
+    /// One read is enough: the source part was resolved once above and is retained, and a later
+    /// swapActivePart replaces the indexed part with a new object rather than moving this one
+    /// (MergeTreeData::swapActivePart), so both the hardlink source and the result path stay on the
+    /// disk this reservation names.
     if (hardlink_only)
     {
         const String reserved_disk_name = hardlink_only_reservation->getDisk()->getName();
