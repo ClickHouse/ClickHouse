@@ -199,7 +199,7 @@ DROP TABLE pid_rls_proj;
 -- offset remap, so the parent offset semantics are preserved (reordered projection, expect id=1).
 DROP TABLE IF EXISTS udf_rls_proj;
 DROP ROW POLICY IF EXISTS rp_udf_rls_proj ON udf_rls_proj;
-DROP FUNCTION IF EXISTS rp_visible_04368;
+DROP FUNCTION IF EXISTS rp_visible_{database};
 
 CREATE TABLE udf_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO udf_rls_proj VALUES (1, 30), (2, 20), (3, 10);
@@ -207,12 +207,12 @@ INSERT INTO udf_rls_proj VALUES (1, 30), (2, 20), (3, 10);
 ALTER TABLE udf_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
 ALTER TABLE udf_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
-CREATE FUNCTION rp_visible_04368 AS (x) -> x < 1;
-CREATE ROW POLICY rp_udf_rls_proj ON udf_rls_proj FOR SELECT USING rp_visible_04368(_part_offset) TO ALL;
+CREATE FUNCTION rp_visible_{database} AS (x) -> x < 1;
+CREATE ROW POLICY rp_udf_rls_proj ON udf_rls_proj FOR SELECT USING rp_visible_{database}(_part_offset) TO ALL;
 
 SELECT '-- UDF-wrapped _part_offset policy is enforced with parent semantics (expect id=1)';
 SELECT id FROM mergeTreeProjection(currentDatabase(), 'udf_rls_proj', 'p') ORDER BY id;
 
 DROP ROW POLICY rp_udf_rls_proj ON udf_rls_proj;
-DROP FUNCTION rp_visible_04368;
+DROP FUNCTION rp_visible_{database};
 DROP TABLE udf_rls_proj;
