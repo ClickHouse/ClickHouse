@@ -12,10 +12,10 @@ set -e
 
 # The window requires the RENAME mutation to stay unselected while `OPTIMIZE ... FINAL` merges the
 # parts, so the parts still store the old column name while the metadata already carries the new
-# one. `mt_select_parts_to_mutate_no_free_threads` is the only mechanism that opens it: `SYSTEM STOP
-# MERGES` aborts the explicit OPTIMIZE too ("Cancelled merging parts"), and the pool-size thresholds
-# are bypassed on an idle server by the `occupied <= 1` short circuit in
-# CompactionStatistics::getMaxSourcePartBytesForMutation.
+# one. `mt_select_parts_to_mutate_no_free_threads` is the only mechanism that opens it: the pool-size
+# thresholds are bypassed on an idle server by the `occupied <= 1` short circuit in
+# CompactionStatistics::getMaxSourcePartBytesForMutation, and `SYSTEM STOP MERGES` cannot substitute
+# for it because it aborts the explicit OPTIMIZE too ("Cancelled merging parts").
 #
 # The failpoint is server-global, but no assertion waits for the mutation, so a concurrent test
 # toggling it cannot make this test fail: `system.parts_columns` records whether the merge kept a
@@ -23,6 +23,9 @@ set -e
 # moment OPTIMIZE returns. If the failpoint is cleared mid-window the rename materializes early and
 # the merge no longer sees the race, which costs coverage for that run but cannot turn a correct
 # server red. Same trade-off as 03830_vertical_merge_inject_column_after_drop, which is untagged.
+#
+# Every assertion here is about what a merge decided, so each OPTIMIZE runs with
+# `optimize_throw_if_noop = 1`: a silently skipped merge would otherwise read as a lost column.
 disable_failpoint() {
     ${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null || true
 }
@@ -59,7 +62,7 @@ ${CLICKHOUSE_CLIENT} --query="
     INSERT INTO t_rename_no_default SELECT number, 'payload_value_' || toString(number) FROM numbers(500, 500);
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
-    OPTIMIZE TABLE t_rename_no_default FINAL;
+    OPTIMIZE TABLE t_rename_no_default FINAL SETTINGS optimize_throw_if_noop = 1;
 "
 assert_kept t_rename_no_default d1 5000 "String, no default"
 disable_failpoint
@@ -80,7 +83,7 @@ ${CLICKHOUSE_CLIENT} --query="
     INSERT INTO t_rename_no_default_dynamic SELECT number, number, NULL FROM numbers(9, 3);
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
-    OPTIMIZE TABLE t_rename_no_default_dynamic FINAL;
+    OPTIMIZE TABLE t_rename_no_default_dynamic FINAL SETTINGS optimize_throw_if_noop = 1;
 "
 assert_kept t_rename_no_default_dynamic d1 1 "Dynamic, no default"
 disable_failpoint
@@ -98,11 +101,17 @@ ${CLICKHOUSE_CLIENT} --query="
     SETTINGS min_bytes_for_wide_part = 0;
     INSERT INTO t_rename_no_default_reuse VALUES (1, 'AAA'), (2, 'BBB');
     INSERT INTO t_rename_no_default_reuse VALUES (3, 'CCC'), (4, 'DDD');
+    SYSTEM STOP MERGES t_rename_no_default_reuse;
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default_reuse RENAME COLUMN a TO b SETTINGS alter_sync = 0;
     ALTER TABLE t_rename_no_default_reuse ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0;
-    OPTIMIZE TABLE t_rename_no_default_reuse FINAL;
+    SYSTEM START MERGES t_rename_no_default_reuse;
+    OPTIMIZE TABLE t_rename_no_default_reuse FINAL SETTINGS optimize_throw_if_noop = 1;
 "
+# The two ALTERs have to take effect as one step. A merge that runs between them sees no live a, so it
+# correctly materializes a physical b that the later re-add cannot remove, and the assertion below
+# would then read ['a','b'] on a correct server. STOP MERGES closes that window, as in phases 4 and 5.
+#
 # This is the only negative assertion, so it holds only while the rename is genuinely still pending:
 # once it materializes, a physical b is correct. Skip it in that case rather than fail, so a
 # concurrent test clearing the failpoint costs coverage instead of turning a correct server red.
@@ -141,7 +150,7 @@ ${CLICKHOUSE_CLIENT} --query="
 "
 ${CLICKHOUSE_CLIENT} --enable_lightweight_update=1 --query="UPDATE t_rename_no_default_patch SET a = 'patched' WHERE id = 2"
 ${CLICKHOUSE_CLIENT} --query="SYSTEM START MERGES t_rename_no_default_patch"
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_no_default_patch FINAL"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_no_default_patch FINAL SETTINGS optimize_throw_if_noop = 1"
 
 count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_no_default_patch WHERE a = if(id = 2, 'patched', '')")
 if [ "$count" != "4" ]; then
@@ -171,7 +180,7 @@ ${CLICKHOUSE_CLIENT} --query="
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default_patch_rename RENAME COLUMN a TO b SETTINGS alter_sync = 0;
     SYSTEM START MERGES t_rename_no_default_patch_rename;
-    OPTIMIZE TABLE t_rename_no_default_patch_rename FINAL;
+    OPTIMIZE TABLE t_rename_no_default_patch_rename FINAL SETTINGS optimize_throw_if_noop = 1;
 "
 assert_kept t_rename_no_default_patch_rename b 1 "patch-only column, rename target"
 disable_failpoint
