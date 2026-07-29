@@ -22,9 +22,7 @@ user="u_04403_${CLICKHOUSE_DATABASE}"
 quota="q_04403_${CLICKHOUSE_DATABASE}"
 table="t_04403_${CLICKHOUSE_DATABASE}"
 
-# The quota accounting does not depend on how long inserts are batched, so the busy wait is pinned to the
-# smallest possible value. Otherwise every insert waits for the adaptive busy timeout, whose upper bound is
-# raised to 5 seconds by the CI test config, and whose value is shared by all queries on the same queue shard.
+# Pin the busy wait: the quota accounting does not depend on how long inserts are batched.
 async_insert_opts="--async_insert 1 --wait_for_async_insert 1 --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_ms 1"
 
 # shellcheck disable=SC2086  # CLICKHOUSE_CLIENT and the options must be word-split.
