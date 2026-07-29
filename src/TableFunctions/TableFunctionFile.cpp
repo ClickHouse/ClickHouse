@@ -3,7 +3,6 @@
 #include <TableFunctions/TableFunctionFile.h>
 
 #include <TableFunctions/registerTableFunctions.h>
-#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -106,9 +105,6 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
-
-        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
-            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
 
         Strings paths;
         std::optional<StorageFile::ArchiveInfo> archive_info;
