@@ -1,0 +1,16 @@
+--- DESCRIBE ---
+result	UInt8					
+--- CREATE TABLE ... AS ---
+result	UInt8					
+result	UInt8					
+--- A scalar subquery without FROM is accepted ---
+1
+--- An empty result counts as "not satisfied yet" ---
+0
+0
+--- A scalar subquery with an explicit LIMIT 1 is accepted ---
+0
+1
+0
+--- More than one row is rejected ---
+--- UNION is rejected ---

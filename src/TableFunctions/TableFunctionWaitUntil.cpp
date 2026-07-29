@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ProcessList.h>
@@ -37,6 +36,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -49,6 +49,14 @@ namespace
         UInt64 max_tries = 10;
         UInt64 sleep_microseconds = 1000000;
     };
+
+    /// The result structure is fixed and does not depend on the arguments. It is shared between
+    /// `StorageWait` and `TableFunctionWaitUntil::getActualTableStructure`, so that `DESCRIBE TABLE`
+    /// and `CREATE TABLE ... AS waitUntil(...)` report the same single `result` column that is read.
+    ColumnsDescription getResultStructure()
+    {
+        return ColumnsDescription({{"result", std::make_shared<DataTypeUInt8>()}});
+    }
 }
 
 class WaitSource final : public ISource
@@ -85,9 +93,31 @@ public:
 
             QueryPipeline & pipeline = block_io.pipeline;
             PullingPipelineExecutor executor(pipeline);
+
+            /// The condition is evaluated with the scalar subquery contract: it must return at most one
+            /// row. More than one row is an invalid condition and is rejected instead of silently using
+            /// the first row. No rows is equivalent to `NULL`, i.e. the condition is not satisfied yet -
+            /// this is what makes `waitUntil((SELECT ready FROM tab LIMIT 1))` wait for the row to appear.
             Chunk chunk;
-            if (executor.pull(chunk) && !chunk.empty())
+            while (chunk.getNumRows() == 0 && executor.pull(chunk))
             {
+            }
+
+            if (chunk.getNumRows() > 1)
+                throw Exception(
+                    ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "`condition` of `waitUntil` returned more than one row");
+
+            if (chunk.getNumRows() == 1)
+            {
+                Chunk excessive_chunk;
+                while (excessive_chunk.getNumRows() == 0 && executor.pull(excessive_chunk))
+                {
+                }
+
+                if (excessive_chunk.getNumRows() != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "`condition` of `waitUntil` returned more than one row");
+
                 const auto & column = chunk.getColumns()[0];
                 satisfied = !column->isNullAt(0) && column->getUInt(0) != 0;
                 if (satisfied)
@@ -135,7 +165,7 @@ public:
         , wait_args(wait_args_)
     {
         StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(ColumnsDescription({{"result", std::make_shared<DataTypeUInt8>()}}));
+        storage_metadata.setColumns(getResultStructure());
         setInMemoryMetadata(storage_metadata);
     }
 
@@ -183,38 +213,17 @@ static Float64 parseLiteralAsFloat64(const ASTPtr & ast)
     return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value);
 }
 
-class HasArrayJoinVisitor
-{
-public:
-    bool has_array_join = false;
-
-    void visit(const ASTPtr & ast)
-    {
-        if (!ast || has_array_join)
-            return;
-
-        if (const auto * func = ast->as<ASTFunction>())
-        {
-            if (func->name == "arrayJoin")
-            {
-                has_array_join = true;
-                return;
-            }
-        }
-
-        for (const auto & child : ast->children)
-            visit(child);
-    }
-};
-
-static bool containsArrayJoin(const ASTPtr & ast)
-{
-    HasArrayJoinVisitor visitor;
-    visitor.visit(ast);
-    return visitor.has_array_join;
-}
-
-/// Check whether the AST returns only one row
+/// Check that the AST is a single `SELECT` of one numeric column.
+///
+/// The number of rows is deliberately NOT checked here. A static AST approximation of "returns
+/// exactly one row" cannot be both correct and useful:
+///  - it lets through queries that return no rows (`SELECT count() FROM tab HAVING 0`), and
+///  - it rejects perfectly valid conditions such as `SELECT ready FROM tab ORDER BY id DESC LIMIT 1`.
+/// Worse, the AST inspected here is not the one the user wrote: with the analyzer enabled the
+/// argument is rebuilt from the query tree, which materializes an implicit `FROM system.one`, so
+/// even `waitUntil((SELECT 1))` would fail a `tables() == nullptr` test.
+/// The cardinality is therefore enforced on the executed result in `WaitSource::generate`, which
+/// follows the scalar subquery contract.
 static void checkASTSelectWithUnionQuery(const ContextPtr & context, const ASTPtr & ast)
 {
     const auto * union_query = ast->as<ASTSelectWithUnionQuery>();
@@ -223,31 +232,10 @@ static void checkASTSelectWithUnionQuery(const ContextPtr & context, const ASTPt
 
     const auto & selects = union_query->list_of_selects->children;
     if (selects.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`condition` must be `SELECT ... FROM tab`");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`condition` must be a single `SELECT`, without `UNION`");
 
-    const auto * select_query = selects[0]->as<ASTSelectQuery>();
-    if (unlikely(!select_query))
+    if (unlikely(!selects[0]->as<ASTSelectQuery>()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`condition` must be ASTSelectQuery");
-
-    /// no from table, e.g. SELECT 1 + 1
-    const bool no_from = select_query->tables() == nullptr;
-
-    /// aggregate without group by, e.g. SELECT count() FROM tab
-    bool has_aggregates = false;
-    {
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor visitor(data);
-        visitor.visit(select_query->select());
-        has_aggregates = !data.aggregates.empty();
-    }
-    const bool has_group_by = select_query->groupBy() && !select_query->groupBy()->children.empty();
-    const bool aggregate_without_group_by = has_aggregates && !has_group_by;
-
-    const bool has_array_join = containsArrayJoin(selects[0]);
-    const bool returns_single_row = !has_array_join && (no_from || aggregate_without_group_by);
-
-    if (!returns_single_row)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`condition` must return one Number row");
 
     const auto condition_header = InterpreterSelectWithUnionQuery(ast, context, SelectQueryOptions().subquery()).getSampleBlock();
     if (condition_header->columns() != 1)
@@ -270,8 +258,10 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const override
     {
-        return ColumnsDescription();
+        return getResultStructure();
     }
+
+    bool hasStaticStructure() const override { return true; }
 
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const override
     {
@@ -361,7 +351,7 @@ result indicating whether the condition was satisfied within the allowed attempt
 )",
             .syntax = "waitUntil(condition[, max_tries[, sleep_seconds]])",
             .arguments
-            = {{"condition", "An expression or a scalar subquery that evaluates to a single boolean value."},
+            = {{"condition", "An expression or a scalar subquery that evaluates to a single numeric value. It must return at most one row on every attempt: returning more than one row throws `INCORRECT_RESULT_OF_SCALAR_SUBQUERY`, while returning no rows (or `NULL`) counts as not yet satisfied, so `waitUntil((SELECT ready FROM tab LIMIT 1))` waits for the row to appear."},
                {"max_tries", "Maximum number of evaluation attempts. Defaults to 10."},
                {"sleep_seconds", "Number of seconds to sleep between attempts. Defaults to 1."}},
             .returned_value = FunctionDocumentation::ReturnedValue{.description = R"(The function returns a single-column table:
@@ -411,7 +401,10 @@ FROM waitUntil((SELECT count() > 10 FROM tab), 10, 2.5);
 
 1 row in set. Elapsed: 22.613 sec.
 )"}},
-            .category = FunctionDocumentation::Category::TableFunction});
+            .category = FunctionDocumentation::Category::TableFunction},
+        /// The function does not create anything: it only evaluates the condition with the privileges of the
+        /// invoking user, so it does not need the `CREATE TEMPORARY TABLE` grant on top of that.
+        {.allow_readonly = true});
 }
 
 }

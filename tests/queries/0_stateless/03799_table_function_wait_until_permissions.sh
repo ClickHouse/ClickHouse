@@ -26,9 +26,10 @@ ${CLICKHOUSE_CLIENT} --user $user --server_logs_file=/dev/null --query "SELECT *
   2>&1 | grep -c 'Code: 497. DB::Exception: .* DB::Exception: .* Not enough privileges'
 
 echo "--- Grant to user ---"
+# Only the privileges of the inner query are granted on purpose: `waitUntil` is registered with
+# `allow_readonly`, so it must not additionally require `CREATE TEMPORARY TABLE`.
 ${CLICKHOUSE_CLIENT} <<EOF
 GRANT SELECT ON $db.secret TO $user;
-GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 EOF
 
 echo "--- Direct SELECT (has privileges) ---"
