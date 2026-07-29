@@ -67,3 +67,28 @@ SELECT n, x AS a, x FROM t_interpolate_aliases ORDER BY n WITH FILL FROM 0 TO 2 
 SELECT n AS m, n AS k, x FROM t_interpolate_aliases ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (m AS 5) SETTINGS enable_analyzer = 0; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 DROP TABLE t_interpolate_aliases;
+
+-- The same, with a sorting prefix before the filled column.
+
+DROP TABLE IF EXISTS t_interpolate_aliases_prefix;
+CREATE TABLE t_interpolate_aliases_prefix (g UInt8, n Float32, x UInt64) ENGINE = Memory;
+INSERT INTO t_interpolate_aliases_prefix VALUES (0, 0, 0), (0, 1, 20), (1, 0, 10), (1, 1, 30);
+
+SELECT 'sorting prefix, empty INTERPOLATE';
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE () SETTINGS enable_analyzer = 0, use_with_fill_by_sorting_prefix = 1;
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE () SETTINGS enable_analyzer = 1, use_with_fill_by_sorting_prefix = 1;
+
+SELECT 'sorting prefix, both targets interpolated by the same expression';
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS a + 1, b AS a + 1) SETTINGS enable_analyzer = 0, use_with_fill_by_sorting_prefix = 1;
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS a + 1, b AS a + 1) SETTINGS enable_analyzer = 1, use_with_fill_by_sorting_prefix = 1;
+
+SELECT 'sorting prefix, different constants';
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS 1, b AS 2) SETTINGS enable_analyzer = 0, use_with_fill_by_sorting_prefix = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT g, n, x AS a, x AS b FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (a AS 1, b AS 2) SETTINGS enable_analyzer = 1, use_with_fill_by_sorting_prefix = 1;
+
+-- Aliases of the sorting prefix column are not interpolated, and cannot be an INTERPOLATE target.
+SELECT g AS g1, g AS g2, n, x FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE () SETTINGS enable_analyzer = 0, use_with_fill_by_sorting_prefix = 1;
+SELECT g AS g1, g AS g2, n, x FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE () SETTINGS enable_analyzer = 1, use_with_fill_by_sorting_prefix = 1;
+SELECT g AS g1, g AS g2, n, x FROM t_interpolate_aliases_prefix ORDER BY g, n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE (g1 AS 9) SETTINGS enable_analyzer = 0, use_with_fill_by_sorting_prefix = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+DROP TABLE t_interpolate_aliases_prefix;
