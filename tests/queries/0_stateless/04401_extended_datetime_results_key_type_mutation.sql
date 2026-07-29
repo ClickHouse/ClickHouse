@@ -4,7 +4,8 @@
 -- A storage key or skip-index expression type must be stable and independent of the session settings
 -- that change the RESULT TYPE of a key expression (enable_extended_results_for_datetime_functions,
 -- cast_keep_nullable, geo_distance_returns_float64_on_float64_arguments,
--- function_json_value_return_type_allow_nullable, function_date_trunc_return_type_behavior). Previously,
+-- function_json_value_return_type_allow_nullable, function_date_trunc_return_type_behavior,
+-- allow_lossy_numeric_supertype, use_variant_as_common_type). Previously,
 -- running a mutation (or any metadata-changing ALTER) with such a setting at a non-default value
 -- recomputed the key/index type to a different type, diverging from the column the storage actually
 -- produces and aborting with e.g. 'Bad cast from ColumnVector<UInt32> to ColumnDecimal<DateTime64>'.
@@ -232,6 +233,41 @@ INSERT INTO th3 SELECT geoToH3(lon, lat, 5) FROM values('lat Float64, lon Float6
 SELECT round(h3ToGeo(h).1, 1) FROM th3 ORDER BY _part_offset SETTINGS max_threads = 1;
 
 DROP TABLE th3;
+
+-- allow_lossy_numeric_supertype (default 0) and use_variant_as_common_type are the two knobs that decide
+-- how if/multiIf/ifNull/coalesce/array/map resolve branches with no lossless common type. With
+-- allow_lossy_numeric_supertype = 1 an all-numeric pair like Decimal64 and Float64 resolves to Float64,
+-- so a skip index over if(c, dec, f64) is accepted and its serializer is fixed to Float64, while the
+-- baseline resolves the same expression to Variant(Decimal(18, 3), Float64) and the produced column has
+-- that type. Pinning the setting makes the recorded index type follow the baseline, so a later write in a
+-- session without the setting keeps working.
+DROP TABLE IF EXISTS tlossy;
+SET allow_lossy_numeric_supertype = 0;
+CREATE TABLE tlossy (dec Decimal64(3), f64 Float64, c UInt8) ENGINE = MergeTree() ORDER BY c;
+SET allow_lossy_numeric_supertype = 1;
+ALTER TABLE tlossy ADD INDEX idx if(c, dec, f64) TYPE set(0) GRANULARITY 1;
+SET allow_lossy_numeric_supertype = 0;
+INSERT INTO tlossy VALUES (1.5, 2.5, 1);
+SELECT count() FROM tlossy;
+
+DROP TABLE tlossy;
+
+-- Same for use_variant_as_common_type, the other argument the supertype helpers take. Its built-in
+-- default is 1, so here the divergent session value is 0: without the pin the index type is resolved
+-- without the Variant fallback and the ALTER is rejected outright, while a reload of the same metadata
+-- (which runs under the baseline) resolves it to Variant(Decimal(18, 3), Float64). Pinning makes the
+-- ALTER resolve the type the same way the reload does. Only the `set` index accepts a Variant column
+-- (minmax rejects it as BAD_ARGUMENTS and bloom_filter as ILLEGAL_COLUMN), hence `set` here.
+-- With a baseline that has the setting off (a server under an older `compatibility`) the pin works in the
+-- opposite direction and rejects the ALTER, which is what keeps the table loadable: recording a Variant
+-- index type there makes every later ATTACH of the table fail with NO_COMMON_TYPE.
+DROP TABLE IF EXISTS tvar;
+CREATE TABLE tvar (dec Decimal64(3), f64 Float64, c UInt8) ENGINE = MergeTree() ORDER BY c;
+ALTER TABLE tvar ADD INDEX idx if(c, dec, f64) TYPE set(0) GRANULARITY 1 SETTINGS use_variant_as_common_type = 0;
+INSERT INTO tvar VALUES (1.5, 2.5, 1);
+SELECT count() FROM tvar;
+
+DROP TABLE tvar;
 
 -- The sampling key is the one key that must NOT be canonicalized: its runtime filter (greaterOrEquals/
 -- less on the sampling expression) is re-analyzed in the query context at read time

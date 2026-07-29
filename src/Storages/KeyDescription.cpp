@@ -29,6 +29,8 @@ namespace Setting
     extern const SettingsBool function_json_value_return_type_allow_nullable;
     extern const SettingsBool least_greatest_legacy_null_behavior;
     extern const SettingsBool h3togeo_lon_lat_result_order;
+    extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool use_variant_as_common_type;
     extern const SettingsUInt64 function_date_trunc_return_type_behavior;
 }
 
@@ -56,11 +58,18 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     ///     Nullable(T) (the NULL is ignored) instead of the legacy short-circuited type;
     ///   - h3togeo_lon_lat_result_order: h3ToGeo returns Tuple(longitude, latitude) instead of the
     ///     canonical Tuple(latitude, longitude) - same top-level type but the two Float64 elements are
-    ///     swapped, so it silently reorders the produced key column rather than aborting with a Bad cast.
+    ///     swapped, so it silently reorders the produced key column rather than aborting with a Bad cast;
+    ///   - allow_lossy_numeric_supertype and use_variant_as_common_type: the two knobs that decide how
+    ///     if/multiIf/ifNull/coalesce/array/map resolve branches with no lossless common type (they are
+    ///     the only arguments getLeastSupertype/getLeastSupertypeOrVariant take besides the types), so
+    ///     e.g. if(c, dec, f64) over Decimal64 and Float64 resolves as Float64, as
+    ///     Variant(Decimal(18, 3), Float64), or raises NO_COMMON_TYPE depending on them.
     /// If a CREATE/ALTER runs with any of them at a value that differs from the server baseline, the
     /// recomputed KeyDescription::data_types diverge from the column the storage actually produces for
     /// the key (which is analyzed elsewhere with the baseline), aborting the next write with a Bad cast
-    /// or (for h3togeo_lon_lat_result_order) silently swapping the key tuple elements.
+    /// or (for h3togeo_lon_lat_result_order) silently swapping the key tuple elements. For the two
+    /// supertype knobs the recorded type can also be one the baseline cannot resolve at all, which makes
+    /// the table fail to attach on reload rather than only failing the write.
     /// Pin exactly these type-affecting settings to the baseline so the key type is deterministic. This
     /// is not a general "make everything session-independent" guarantee: only the settings listed above
     /// are neutralized. New type-affecting settings must be added here explicitly.
@@ -90,6 +99,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     bool json_null = false;
     bool least_greatest_legacy = false;
     bool h3togeo_lon_lat = false;
+    bool lossy_numeric_supertype = false;
+    bool variant_as_common_type = false;
     UInt64 date_trunc = 0;
     if (context->hasGlobalContext())
     {
@@ -100,6 +111,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         json_null = baseline[Setting::function_json_value_return_type_allow_nullable];
         least_greatest_legacy = baseline[Setting::least_greatest_legacy_null_behavior];
         h3togeo_lon_lat = baseline[Setting::h3togeo_lon_lat_result_order];
+        lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
+        variant_as_common_type = baseline[Setting::use_variant_as_common_type];
         date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
     }
     else
@@ -111,6 +124,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         json_null = default_settings[Setting::function_json_value_return_type_allow_nullable];
         least_greatest_legacy = default_settings[Setting::least_greatest_legacy_null_behavior];
         h3togeo_lon_lat = default_settings[Setting::h3togeo_lon_lat_result_order];
+        lossy_numeric_supertype = default_settings[Setting::allow_lossy_numeric_supertype];
+        variant_as_common_type = default_settings[Setting::use_variant_as_common_type];
         date_trunc = default_settings[Setting::function_date_trunc_return_type_behavior];
     }
 
@@ -121,6 +136,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         && static_cast<bool>(settings[Setting::function_json_value_return_type_allow_nullable]) == json_null
         && static_cast<bool>(settings[Setting::least_greatest_legacy_null_behavior]) == least_greatest_legacy
         && static_cast<bool>(settings[Setting::h3togeo_lon_lat_result_order]) == h3togeo_lon_lat
+        && static_cast<bool>(settings[Setting::allow_lossy_numeric_supertype]) == lossy_numeric_supertype
+        && static_cast<bool>(settings[Setting::use_variant_as_common_type]) == variant_as_common_type
         && static_cast<UInt64>(settings[Setting::function_date_trunc_return_type_behavior]) == date_trunc)
         return context;
 
@@ -131,6 +148,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     key_context->setSetting("function_json_value_return_type_allow_nullable", Field(json_null));
     key_context->setSetting("least_greatest_legacy_null_behavior", Field(least_greatest_legacy));
     key_context->setSetting("h3togeo_lon_lat_result_order", Field(h3togeo_lon_lat));
+    key_context->setSetting("allow_lossy_numeric_supertype", Field(lossy_numeric_supertype));
+    key_context->setSetting("use_variant_as_common_type", Field(variant_as_common_type));
     key_context->setSetting("function_date_trunc_return_type_behavior", Field(date_trunc));
     return key_context;
 }
