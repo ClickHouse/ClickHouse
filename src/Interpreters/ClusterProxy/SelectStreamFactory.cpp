@@ -297,11 +297,12 @@ void SelectStreamFactory::createForShardImpl(
             /// unknown dictionary as `BAD_ARGUMENTS` ("... not found") and has no dedicated error code, so
             /// `BAD_ARGUMENTS` counts as "backing object missing" only for the `dictionary` table function.
             ///
-            /// `TableFunctionFactory::get` runs `parseArguments`, which rewrites the AST in place (arguments are
-            /// literalized, and `TableFunctionObjectStorage` even erases an inline `SETTINGS` clause). Here the AST
-            /// is the target definition owned by `StorageDistributed`, which is reused to build the shard query of
-            /// every later read, so probe (and materialize) a copy of it instead - a health check must never
-            /// rewrite the stored definition.
+            /// `TableFunctionFactory::get` runs `parseArguments`, which resolves the arguments to literals in the
+            /// AST it is given. Here that AST is the target definition owned by `StorageDistributed`, and this is
+            /// a read, running under the querying session - resolving it again here would rewrite the stored
+            /// definition according to whoever happens to read the table first. It is already self-contained:
+            /// the arguments were resolved once, on the initiator, when the definition was introduced
+            /// (`registerStorageDistributed` -> `getStructureOfRemoteTable`). So probe - and materialize - a copy.
             ASTPtr local_table_func_ptr = table_func_ptr->clone();
 
             TableFunctionPtr table_function_ptr;

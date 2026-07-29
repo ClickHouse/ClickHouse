@@ -80,10 +80,12 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     chassert(cluster);
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+    /// Forward the mode: for a table-function target resolved on a local shard it selects a read-only or a
+    /// writable client of the underlying storage, so a read must not ask for a writable one.
+    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr, is_insert_query);
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)

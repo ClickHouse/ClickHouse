@@ -52,11 +52,13 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            /// `TableFunctionFactory::get` runs `parseArguments`, which rewrites the AST in place: arguments are
-            /// literalized and some functions even erase parts of the definition (`TableFunctionObjectStorage`
-            /// removes an inline `SETTINGS` clause). The AST here can be owned by a storage that keeps reusing it
-            /// for later queries (`StorageDistributed::remote_table_function_ptr`), so analyze a copy of it.
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr->clone(), context);
+            /// `TableFunctionFactory::get` runs `parseArguments`, which resolves the arguments to literals in
+            /// place, and that is load-bearing: the same AST is later formatted and sent to the other shards
+            /// (the `DESC TABLE` of the function below, and the shard query of every read), so an argument that
+            /// depends on the session - `remote('127.0.0.{1,2}', merge(currentDatabase(), '^t'))` - has to be
+            /// resolved here, on the initiator, or the other shards would resolve it against their own default
+            /// database. Do not analyze a copy: the definition must become self-contained.
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
             return table_function_ptr->getActualTableStructureWithAccess(context, is_insert_query);
         }
 

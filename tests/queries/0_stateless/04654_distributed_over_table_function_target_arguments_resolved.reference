@@ -1,0 +1,5 @@
+Distributed(\'test_shard_localhost\', merge(\'_db_\', \'^res_src$\'))
+6
+Distributed(\'test_shard_localhost\', merge(\'_db_\', \'^res_src$\'))
+6
+12
