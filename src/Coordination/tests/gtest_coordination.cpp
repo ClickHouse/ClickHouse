@@ -1017,8 +1017,8 @@ TEST_P(CoordinationTest, TestDurableState)
 namespace
 {
 
-/// Test disk: throws when the given file is (re)opened for writing, and rejects moveFile
-/// (as plain/s3_plain metadata does).
+/// Test disk: throws when the given file is (re)opened for writing, and rejects `moveFile`
+/// (as plain and `s3_plain` metadata do).
 class ThrowingStateDisk : public DB::DiskLocal
 {
 public:
@@ -1216,7 +1216,7 @@ TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
     ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
     ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
 
-    /// After the "crash" the previously committed state must still be recoverable: read_state
+    /// After the "crash" the previously committed state must still be recoverable: `read_state`
     /// must not return nullptr (which would reset the node to term 0 and lose the vote).
     reload_state_manager();
     auto recovered = state_manager->read_state();
@@ -1287,24 +1287,33 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_LT(backup_synced, live_opened);
 
     /// The directory entry of the freshly created backup must be synced too, and the sync must
-    /// have completed before the live file is truncated.
-    const auto first_dirsync = indexOf(*events, "dirsync");
-    ASSERT_NE(first_dirsync, std::string::npos);
-    ASSERT_LT(first_dirsync, live_opened);
+    /// have completed before the live file is truncated. `save_state` also syncs the live file
+    /// and its directory before taking the backup, so this one is the sync that follows the
+    /// backup rather than simply the first one recorded.
+    const auto backup_dirsync = indexOf(*events, "dirsync", backup_synced + 1);
+    ASSERT_NE(backup_dirsync, std::string::npos);
+    ASSERT_LT(backup_dirsync, live_opened);
 
     /// The backup is only dropped after the replacement state file is durable in full: both its
-    /// contents and, since it may have just been created, its directory entry.
+    /// contents and, since it may have just been created, its directory entry. Both must be
+    /// looked for after the truncating open, or the pre-backup sync of the old contents would
+    /// pass for the sync of the replacement.
     ASSERT_NE(backup_removed, std::string::npos);
-    const auto live_synced = indexOf(*events, "sync:state");
+    const auto live_synced = indexOf(*events, "sync:state", live_opened + 1);
     ASSERT_NE(live_synced, std::string::npos);
     ASSERT_LT(live_synced, backup_removed);
 
-    /// Two directory syncs must complete, one before the truncation and one after the new state
-    /// file is written, both before the backup is removed.
-    const auto second_dirsync = indexOf(*events, "dirsync", first_dirsync + 1);
-    ASSERT_NE(second_dirsync, std::string::npos);
-    ASSERT_GT(second_dirsync, live_synced);
-    ASSERT_LT(second_dirsync, backup_removed);
+    const auto live_dirsync = indexOf(*events, "dirsync", live_synced + 1);
+    ASSERT_NE(live_dirsync, std::string::npos);
+    ASSERT_LT(live_dirsync, backup_removed);
+
+    /// Three directory syncs in total: the live file before the backup, the new backup, and the
+    /// replacement, each distinct and in that order.
+    const auto pre_backup_dirsync = indexOf(*events, "dirsync");
+    ASSERT_NE(pre_backup_dirsync, std::string::npos);
+    ASSERT_LT(pre_backup_dirsync, backup_synced);
+    ASSERT_LT(pre_backup_dirsync, backup_dirsync);
+    ASSERT_LT(backup_dirsync, live_dirsync);
 
     /// Reconstruct the on-disk state left by a crash inside the rewrite window: the backup is
     /// present and the live state file is lost. This is what the backup exists for.
@@ -1434,7 +1443,7 @@ TEST_P(CoordinationTest, TestDurableStatePartialWriteRecoversFromBackup)
         std::filesystem::remove("./state-OLD");
 }
 
-/// NuRaft keeps the server alive after save_state throws, so a peer retry re-enters save_state
+/// NuRaft keeps the server alive after `save_state` throws, so a peer retry re-enters `save_state`
 /// while the live state file is still torn from the failed attempt. The retry must not copy that
 /// unusable file over the backup, which at that point holds the only recoverable state.
 /// See https://github.com/ClickHouse/ClickHouse/issues/111454.
@@ -1501,7 +1510,7 @@ TEST_P(CoordinationTest, TestDurableStateRetryKeepsValidBackup)
 }
 
 /// Validating the live state file before backing it up must not turn a transient read error into
-/// the verdict "this file holds nothing worth keeping": save_state truncates the live file right
+/// the verdict "this file holds nothing worth keeping": `save_state` truncates the live file right
 /// after, so skipping the backup on an unread file would recreate the term/vote-loss window.
 /// See https://github.com/ClickHouse/ClickHouse/issues/111454.
 TEST_P(CoordinationTest, TestDurableStateReadErrorDoesNotDropBackup)
@@ -1532,7 +1541,7 @@ TEST_P(CoordinationTest, TestDurableStateReadErrorDoesNotDropBackup)
     new_state->set_voted_for(3);
     new_state->allow_election_timer(true);
 
-    /// The live state file cannot be read, so save_state cannot know whether it is worth backing
+    /// The live state file cannot be read, so `save_state` cannot know whether it is worth backing
     /// up. It must fail instead of truncating the only durable copy.
     disk->armReads();
     ASSERT_THROW(state_manager->save_state(*new_state), std::exception);

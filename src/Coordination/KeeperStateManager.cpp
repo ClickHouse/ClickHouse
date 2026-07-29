@@ -426,7 +426,7 @@ void syncExistingFile(const DiskPtr & disk, const String & path)
 /// Returns nullptr only when the content is provably unusable; a failure to read the file is
 /// propagated instead, because callers act on nullptr by deleting or truncating the file.
 /// A bad checksum never throws here, because the backup must still be tried; it is recorded in
-/// corrupted_path and read_state re-raises it at its tail once nothing was recoverable.
+/// corrupted_path and `read_state` re-raises it at its tail once nothing was recoverable.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
     const DiskPtr & disk,
     const String & path,
@@ -507,11 +507,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
-        /// crash during the rewrite can always recover the previous state via read_state.
+        /// crash during the rewrite can always recover the previous state via `read_state`.
         auto lock_buf = disk->writeFile(copy_lock_file);
         lock_buf->finalize();
 
-        /// Not IDisk::copyFile: it only finalizes the write, so the backup would stay in the
+        /// Not `IDisk::copyFile`: it only finalizes the write, so the backup would stay in the
         /// page cache. It must be durable before the live file is truncated below.
         {
             auto in = disk->readFile(server_state_file_name, getReadSettings());
@@ -523,7 +523,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
         disk->removeFile(copy_lock_file);
 
-        /// state-OLD is newly created, so its directory entry needs a sync too. The guard syncs
+        /// `state-OLD` is newly created, so its directory entry needs a sync too. The guard syncs
         /// on destruction, i.e. still before the truncation below; a no-op on object storage.
         SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
     }
