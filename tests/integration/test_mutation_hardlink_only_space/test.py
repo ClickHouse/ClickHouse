@@ -122,7 +122,7 @@ def assert_dropped_and_partial(table, mutation_count_before):
     ).split()
     assert int(routes[0]) > mutation_count_before, "the mutation must take the partial route"
     assert int(routes[1]) == 0, "the mutation must not rewrite the whole part"
-    assert "1" in node.query(f"CHECK TABLE {table}")
+    assert node.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1") == "1\n"
 
 
 def test_drop_index_on_a_nearly_full_disk(start_cluster):
@@ -296,7 +296,7 @@ def test_source_part_moved_between_admission_and_execution(start_cluster):
         ).strip()
         == other
     )
-    assert "1" in node.query("CHECK TABLE rmt_moved")
+    assert node.query("CHECK TABLE rmt_moved SETTINGS check_query_single_value_result = 1") == "1\n"
 
     # The load-bearing assertion. Without the re-validation the entry hardlinks from the disk the
     # reservation named, which the part has left, and the attempt fails with CANNOT_LINK / ENOENT. That
