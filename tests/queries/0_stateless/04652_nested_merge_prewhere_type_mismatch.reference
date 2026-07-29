@@ -59,6 +59,10 @@
 0	1
 1	2
 2	3
+-- a policy on a destination-drifted column is filtered above the read, not pushed --
+1	2
+2	3
+3	4
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10
@@ -109,6 +113,32 @@ lazy_outer	TableProxy
 -- the same predicates as WHERE keep working through the proxy --
 9
 10
+1	2
+2	3
+3	4
+-- row policy on a mismatched column must not abort: single level --
+1	2
+2	3
+3	4
+-- and nested, under both analyzers --
+1	2
+2	3
+3	4
+1	2
+2	3
+3	4
+-- a policy on a matching column keeps working --
+3	4
+4	5
+5	6
+-- row policy on a view whose type drifts from the target must not abort --
+1	2
+2	3
+3	4
+-- and through a view over a view, where the drift is one level down --
+1	2
+2	3
+3	4
 1	2
 2	3
 3	4

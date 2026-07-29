@@ -45,4 +45,19 @@ SELECT '-- the same predicates as WHERE keep working --';
 SELECT count() FROM tf_drift WHERE x != 0;
 SELECT count() FROM tf_drift WHERE y != 0;
 
+-- A row policy rides the same carrier as PREWHERE and was pushed into the nested read
+-- unconditionally, hitting the same abort. The planner now pushes it only when the policy's
+-- columns are in the PREWHERE contract; the drifted column filters above the read instead.
+
+SELECT '-- a row policy on the drifted column is filtered above the read, not pushed --';
+CREATE ROW POLICY rp_04653 ON tf_drift FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM tf_drift ORDER BY x LIMIT 3;
+SELECT x, y FROM tf_drift ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04653 ON tf_drift;
+
+SELECT '-- a policy on the non-drifted column is still pushed down and works --';
+CREATE ROW POLICY rp_04653_y ON tf_drift FOR SELECT USING y > 3 TO CURRENT_USER;
+SELECT x, y FROM tf_drift ORDER BY y LIMIT 3;
+DROP ROW POLICY rp_04653_y ON tf_drift;
+
 DROP TABLE tf_drift;

@@ -162,6 +162,11 @@ CREATE ROW POLICY rp_04652 ON buf_partial FOR SELECT USING y != 0 TO CURRENT_USE
 SELECT x, y FROM buf_partial ORDER BY y LIMIT 3;
 DROP ROW POLICY rp_04652 ON buf_partial;
 
+SELECT '-- a policy on a destination-drifted column is filtered above the read, not pushed --';
+CREATE ROW POLICY rp_04652_x ON buf_partial FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM buf_partial ORDER BY y LIMIT 3;
+DROP ROW POLICY rp_04652_x ON buf_partial;
+
 DROP TABLE buf_partial;
 DROP TABLE buf_bad;
 DROP TABLE buf_top;
@@ -303,3 +308,69 @@ SELECT count() FROM lazy_outer WHERE y != 0;
 SELECT x, y FROM lazy_outer WHERE x != 0 ORDER BY x LIMIT 3;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+USE {CLICKHOUSE_DATABASE:Identifier};
+
+-- A row policy is built against the outer schema like PREWHERE, but was pushed into read()
+-- unconditionally, so it reached the differently-typed leaf and hit the same `Unexpected return
+-- type` abort. The planner now pushes it only when every column it consumes is in the PREWHERE
+-- contract; otherwise the policy filters above the read.
+
+DROP TABLE IF EXISTS rp_leaf;
+DROP TABLE IF EXISTS rp_inner;
+DROP TABLE IF EXISTS rp_outer;
+
+CREATE TABLE rp_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO rp_leaf SELECT number, number + 1 FROM numbers(10);
+CREATE TABLE rp_inner (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^rp_leaf$');
+CREATE TABLE rp_outer (x Nullable(UInt64), y UInt64) ENGINE = Merge(currentDatabase(), '^rp_inner$');
+
+SELECT '-- row policy on a mismatched column must not abort: single level --';
+CREATE ROW POLICY rp_04652_single ON rp_inner FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM rp_inner ORDER BY x LIMIT 3;
+DROP ROW POLICY rp_04652_single ON rp_inner;
+
+SELECT '-- and nested, under both analyzers --';
+CREATE ROW POLICY rp_04652_nested ON rp_outer FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM rp_outer ORDER BY x LIMIT 3;
+SELECT x, y FROM rp_outer ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04652_nested ON rp_outer;
+
+SELECT '-- a policy on a matching column keeps working --';
+CREATE ROW POLICY rp_04652_match ON rp_outer FOR SELECT USING y > 3 TO CURRENT_USER;
+SELECT x, y FROM rp_outer ORDER BY y LIMIT 3;
+DROP ROW POLICY rp_04652_match ON rp_outer;
+
+DROP TABLE rp_outer;
+DROP TABLE rp_inner;
+DROP TABLE rp_leaf;
+
+-- The same carrier reaches a MaterializedView, which forwards it to the target untouched. The
+-- guard must hold there too, including transitively through a view over a view.
+
+DROP TABLE IF EXISTS rp_mv_src;
+DROP TABLE IF EXISTS rp_mv_dst;
+DROP VIEW IF EXISTS rp_mv_one;
+DROP VIEW IF EXISTS rp_mv_two;
+
+CREATE TABLE rp_mv_src (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE rp_mv_dst (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW rp_mv_one TO rp_mv_dst AS SELECT CAST(x, 'Nullable(UInt64)') AS x, y FROM rp_mv_src;
+CREATE MATERIALIZED VIEW rp_mv_two TO rp_mv_one AS SELECT CAST(x, 'Nullable(UInt64)') AS x, y FROM rp_mv_src;
+INSERT INTO rp_mv_dst SELECT number, number + 1 FROM numbers(10);
+
+SELECT '-- row policy on a view whose type drifts from the target must not abort --';
+CREATE ROW POLICY rp_04652_mv1 ON rp_mv_one FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM rp_mv_one ORDER BY x LIMIT 3;
+DROP ROW POLICY rp_04652_mv1 ON rp_mv_one;
+
+SELECT '-- and through a view over a view, where the drift is one level down --';
+CREATE ROW POLICY rp_04652_mv2 ON rp_mv_two FOR SELECT USING x != 0 TO CURRENT_USER;
+SELECT x, y FROM rp_mv_two ORDER BY x LIMIT 3;
+SELECT x, y FROM rp_mv_two ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04652_mv2 ON rp_mv_two;
+
+DROP VIEW rp_mv_two;
+DROP VIEW rp_mv_one;
+DROP TABLE rp_mv_dst;
+DROP TABLE rp_mv_src;

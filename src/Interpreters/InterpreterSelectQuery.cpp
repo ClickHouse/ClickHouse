@@ -1941,7 +1941,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            if (expressions.row_policy_info && !shouldPushRowLevelFilterToStorage())
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -2464,6 +2464,26 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
+bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
+{
+    if (input_pipe || !storage || !storage->supportsPrewhere())
+        return false;
+
+    /// The filter is built against this table's schema, but read() hands it to wrapper
+    /// storages' children (Merge, Buffer), which re-derive it against their own types.
+    /// Push it down only if every column it consumes is in the PREWHERE contract.
+    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
+    {
+        for (const auto & column_name : analysis_result.row_policy_info->actions.getRequiredColumnsNames())
+        {
+            if (!supported_prewhere_columns->contains(column_name))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
     auto & row_level_filter = analysis_result.row_policy_info;
@@ -2871,7 +2891,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+        if (analysis_result.row_policy_info && shouldPushRowLevelFilterToStorage())
             query_info.row_level_filter = analysis_result.row_policy_info;
 
         if (analysis_result.prewhere_info)

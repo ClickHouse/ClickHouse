@@ -14,3 +14,14 @@ y	UInt64
 -- the same predicates as WHERE keep working --
 9
 10
+-- a row policy on the drifted column is filtered above the read, not pushed --
+1	2
+2	3
+3	4
+1	2
+2	3
+3	4
+-- a policy on the non-drifted column is still pushed down and works --
+3	4
+4	5
+5	6

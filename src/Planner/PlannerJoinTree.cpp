@@ -1720,8 +1720,28 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
+
+                    /// The filter is built against this table's schema, but read() hands it to wrapper
+                    /// storages' children (Merge, Buffer), which re-derive it against their own types.
+                    /// Push it down only if every column it consumes is in the PREWHERE contract.
+                    bool can_push_down_filter = storage->supportsPrewhere();
+                    if (can_push_down_filter)
+                    {
+                        if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
+                        {
+                            for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
+                            {
+                                if (!supported_prewhere_columns->contains(column_name))
+                                {
+                                    can_push_down_filter = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (storage->supportsPrewhere())
+                    if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
@@ -2608,7 +2628,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
-
+ 
             // save join positions for later check
             if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
                 first_join_pos = static_cast<int>(i);
