@@ -73,7 +73,9 @@ void appendLambdaColumnName(
     }
     writeString("), ", out);
 
-    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+    /// The lambda body is a value expression whose reconstructed name must match the original
+    /// expression exactly, so truthiness-only rewrites must not apply.
+    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context, /* boolean_context */ false);
     appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
     writeChar(')', out);
 }

@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableNameHints.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/IdentifierNode.h>
@@ -33,6 +34,7 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <base/scope_guard.h>
 #include <ranges>
 
 
@@ -53,6 +55,8 @@ namespace ErrorCodes
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int TABLE_UUID_MISMATCH;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -310,7 +314,31 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     {
         /// If table is the target of a refreshable materialized view, it needs additional
         /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        try
+        {
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        }
+        catch (const Exception & e)
+        {
+            /// `EXCHANGE TABLES` + `DROP` during refresh can race with this resolution:
+            /// `resolveStorageID` above stamps the original UUID onto `storage_id`, then the
+            /// refresh swaps the target slot and drops the old table. Inside
+            /// `getAndLockTargetTable`, `DatabaseCatalog::getTable` takes the UUID shortcut in
+            /// `getTableImpl` and either throws `UNKNOWN_TABLE` (after the old UUID is fully
+            /// removed) or `TABLE_UUID_MISMATCH` (post-EXCHANGE but pre-DROP, when the UUID
+            /// still resolves to the now-renamed old storage). Either way, the retry loop
+            /// inside `getAndLockTargetTable` never gets a chance to run.
+            ///
+            /// Mirror the established UUID -> name fallback at the if-block below: when the
+            /// original UUID is unusable, retry against the current table at the same name.
+            /// Re-entering `getAndLockTargetTable` (instead of plain `tryGetTable`) preserves
+            /// the retry loop and the `SYSTEM SYNC REPLICA` call that this path needs.
+            if ((e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::TABLE_UUID_MISMATCH)
+                || !storage_id.hasUUID())
+                throw;
+            StorageID name_only_id(storage_id.database_name, storage_id.table_name);
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(name_only_id, context);
+        }
     }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
@@ -333,7 +361,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
@@ -350,6 +379,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};
+}
+
+std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifier & table_identifier, const ContextPtr & context)
+{
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1 || parts_size > 2)
+        return {};
+
+    String database_name;
+    String table_name;
+    if (table_identifier.isCompound())
+    {
+        database_name = table_identifier[0];
+        table_name = table_identifier[1];
+    }
+    else
+    {
+        table_name = table_identifier[0];
+    }
+
+    /// Resolve the database the same way table resolution does, so the hint search starts from
+    /// the right database (the current one for a bare name) and can fall back to other databases.
+    if (database_name.empty())
+        database_name = context->getCurrentDatabase();
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    TableNameHints hints(database, context);
+    return hints.getHintForTable(table_name);
 }
 
 /// Resolve identifier from compound expression
@@ -1093,13 +1150,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
+        /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
+        /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
+        /// statically-dead if/multiIf branch is caught and swallowed during resolution, and a
+        /// leftover pointer would dangle once this frame unwinds.
+        bool pushed = false;
         if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+        {
             scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
+            pushed = true;
+        }
+        SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
-
-        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
-            scope.join_using_columns.pop_back();
 
         return std::move(res.resolved_identifier);
     };
@@ -1239,10 +1302,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         auto current_type = resolved_column.getColumnType();
         auto result_type = using_column_node_it->second->getColumnType();
 
-        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
-        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
+        /// Current column is Nullable from a previous OUTER JOIN but the USING supertype is not:
+        /// keep the supertype's value type and re-apply nullability. Safe variant leaves a type
+        /// that cannot be inside Nullable (e.g. Dynamic) as-is instead of throwing.
         if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
-            result_type = makeNullableOrLowCardinalityNullable(current_type);
+            result_type = makeNullableOrLowCardinalityNullableSafe(result_type);
 
         if (!result_type->equals(*current_type))
         {
