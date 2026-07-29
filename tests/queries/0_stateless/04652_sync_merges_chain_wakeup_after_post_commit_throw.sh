@@ -81,4 +81,33 @@ else
 fi
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
+
+# SYNC_OK on its own would also be produced if the failpoint silently stopped firing, because then
+# both merges just succeed and each arms the wakeup on its normal success path. So assert that both
+# merges of the chain really did throw in the post-commit window (the failpoint is server-wide, so it
+# fires for the dependent merge too): each leaves exactly one MergeParts row and it carries a non-zero
+# error. Neither part gets a successful row, because the retry finds the part already committed and
+# retires the queue entry via checkExistingPart without re-running the merge -- which is exactly why
+# the wakeup has to be armed before the throw rather than after it.
+#
+# The dependent merge's result part being active is the independent confirmation that the chain
+# completed rather than SYNC MERGES returning on a partial state.
+#
+# enable_parallel_replicas is pinned off only for these part_log counts: reading system.part_log over
+# parallel replicas changes the aggregation and is unrelated to what is under test.
+$CLICKHOUSE_CLIENT -m -q "
+    SYSTEM FLUSH LOGS part_log;
+    SELECT
+        countIf(part_name = 'all_0_1_1' AND error > 0) AS first_merge_threw,
+        countIf(part_name = 'all_0_1_1' AND error = 0) AS first_merge_success_rows,
+        countIf(part_name = 'all_0_2_2' AND error > 0) AS dependent_merge_threw,
+        countIf(part_name = 'all_0_2_2' AND error = 0) AS dependent_merge_success_rows
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 'sm_chain' AND event_type = 'MergeParts'
+    SETTINGS enable_parallel_replicas = 0;
+
+    SELECT name FROM system.parts
+    WHERE database = currentDatabase() AND table = 'sm_chain' AND active AND level > 0;
+"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE sm_chain SYNC"
