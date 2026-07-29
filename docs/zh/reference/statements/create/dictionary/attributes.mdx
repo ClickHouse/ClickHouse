@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 对于 `dictGet*` 函数的查询，键会以元组形式传入。示例：`dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`。
 
+当复合键仅由一个属性组成时，可以直接传递键值，而无需将其包装在 `tuple` 中。例如，`dictGetString('dict_name', 'attr_name', 'key')` 和 `dictGetString('dict_name', 'attr_name', tuple('key'))` 都是有效的。
+
 <div id="attributes">
   ## 属性
 </div>
