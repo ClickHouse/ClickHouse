@@ -12,9 +12,12 @@ SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS t_106533_stats;
 
-CREATE TABLE t_106533_stats (id UInt64, val Float64 STATISTICS(minmax))
+-- `minmax` is requested through `auto_statistics_types` rather than a column `STATISTICS(minmax)`
+-- clause: both build the same StatisticsMinMax, but an explicit clause is deprecated and logs a
+-- warning that the Fast test harness treats as a failure (it runs with send_logs_level=warning).
+CREATE TABLE t_106533_stats (id UInt64, val Float64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS auto_statistics_types = 'minmax', index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 -- Part 1 mixes a NaN with finite values; part 2 is entirely finite.
 INSERT INTO t_106533_stats VALUES (1, 1.0), (2, nan), (3, 3.0);
@@ -46,8 +49,8 @@ SELECT count() FROM t_106533_stats_basic WHERE NOT ((val >= 0.) AND (val <= 3.))
 
 DROP TABLE t_106533_stats_basic;
 
--- Auto statistics via the default auto_statistics_types (no explicit STATISTICS clause on the column):
--- materialize_statistics_on_insert = 1 builds minmax/uniq automatically, so the same bug must not recur.
+-- Auto statistics left at the default auto_statistics_types ('basic, uniq_v2'): materialize_statistics_on_insert = 1
+-- builds them without any statistics clause on the column, so the same bug must not recur out of the box.
 DROP TABLE IF EXISTS t_106533_stats_auto;
 
 CREATE TABLE t_106533_stats_auto (id UInt64, val Float64)
