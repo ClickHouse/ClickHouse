@@ -516,12 +516,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.make_distributed_plan)
         materializeConstantsForSetOperationBranches(root, nodes);
 
-    /// Runs here, not next to checkDistributedReadSupported above: whether a read ends up inside a
-    /// shipped fragment is only decided by the tryMakeDistributed* transforms and the exchange
-    /// optimization, both of which run after that check. Gated on the raw setting, not on the local
-    /// `make_distributed_plan`: a plan that already carries exchanges is re-optimized (StorageMerge
-    /// pushes a filter into a child plan and re-runs this pass), and the direct read can be applied
-    /// for the first time during that later run.
+    /// Must run after the tryMakeDistributed* transforms and optimizeExchanges: only they decide whether
+    /// a read ends up in a shipped fragment. Uses the raw setting, not the local `make_distributed_plan`,
+    /// which is false on a re-optimized plan that already carries exchanges.
     if (optimization_settings.make_distributed_plan)
         checkDistributedTextIndexReadSupported(root, optimization_settings.distributed_plan_single_stage);
 
