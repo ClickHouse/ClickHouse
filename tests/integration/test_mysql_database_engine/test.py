@@ -1063,7 +1063,8 @@ def test_restart_server_with_unreachable_mysql(started_cluster):
 
         with PartitionManager() as pm:
             # DROP (not REJECT) silently black-holes packets so a connect hangs until timeout
-            # instead of failing fast, reproducing the real CI condition (a non-routable host).
+            # instead of failing fast, which is what a startup connect must not do. Only the
+            # restart needs this; the access path below switches to a fast-failing reset.
             pm.partition_instances(clickhouse_node, mysql_node, action="DROP")
 
             start = time.time()
@@ -1077,6 +1078,13 @@ def test_restart_server_with_unreachable_mysql(started_cluster):
             # The database is still attached after restart; its table list was not needed to start.
             assert "test_unreachable_mysql" in clickhouse_node.query("SHOW DATABASES")
             assert elapsed < 110, f"server restart took {elapsed:.1f}s, startup blocked on unreachable MySQL host"
+
+            # Swap the silent black-hole for a TCP reset before the access path, which retries
+            # connect_timeout * connection_max_tries and would otherwise cost ~180s under DROP.
+            pm.heal_all()
+            pm.partition_instances(
+                clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
+            )
             # Accessing the database now forces a live fetch, which fails while the host is
             # unreachable -- proving the fetch is lazy (on access), not done at startup.
             clickhouse_node.query_and_get_error("SHOW TABLES FROM test_unreachable_mysql")
