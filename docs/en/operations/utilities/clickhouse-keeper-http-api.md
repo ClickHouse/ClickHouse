@@ -83,7 +83,7 @@ Response (CLI commands):
 }
 ```
 
-`cwd` is the working directory after the command runs (so clients can track `cd` without reimplementing path checks). Four-letter-word commands do not include `cwd`.
+`cwd` is the working directory after the command finishes. It is present for Keeper Client CLI commands and omitted for Four-Letter Word commands.
 
 Examples:
 ```bash
