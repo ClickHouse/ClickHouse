@@ -703,9 +703,7 @@ static void rejectQueryPlanOnlyVirtualColumns(
     if (!ast)
         return;
 
-    /// An alias is not visible inside the subtree that defines it: in `(length(_table) AS _table)`
-    /// the resolvers bind the inner `_table` to the virtual column, not to the alias. So hide the
-    /// name while walking its own defining subtree and restore it afterwards.
+    /// An alias is not visible inside the subtree that defines it.
     const auto & own_alias = ast->tryGetAlias();
     bool restore_own_alias = !own_alias.empty() && shadowed.erase(own_alias) > 0;
 
@@ -744,8 +742,7 @@ static void rejectQueryPlanOnlyVirtualColumnsImpl(
             if (shadowed.insert(param).second)
                 newly_shadowed.push_back(param);
 
-        /// A lambda body is its own alias scope, so an alias it defines is visible inside the
-        /// body but must not hide a reference in the enclosing expression.
+        /// A lambda body is its own alias scope: visible inside, not outside.
         NameSet body_aliases;
         collectExpressionAliases(function->arguments->children[1].get(), body_aliases);
         for (const auto & body_alias : body_aliases)
@@ -794,8 +791,7 @@ static void rejectQueryPlanOnlyVirtualColumnsImpl(
             if (auto column_default = columns.getDefault(short_name);
                 column_default && column_default->kind == ColumnDefaultKind::Alias && column_default->expression)
             {
-                /// The defining expression is its own scope, so the aliases it defines shadow
-                /// names within it, just like the ones collected over a mutation command.
+                /// The defining expression is its own scope too.
                 NameSet definition_scope = shadowed;
                 collectExpressionAliases(column_default->expression.get(), definition_scope);
 
@@ -821,10 +817,9 @@ static void rejectQueryPlanOnlyVirtualColumnsImpl(
         rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
-/// Collect the expression aliases that `ast` contributes to its enclosing scope (`1 AS _table`).
-/// A subquery and a lambda body are each their own scope, so do not descend into them: an alias
-/// defined inside must not hide a reference in the enclosing expression. An alias attached to
-/// such a node itself does belong to the enclosing scope, so take it before stopping.
+/// Collect the expression aliases `ast` contributes to its enclosing scope (`1 AS _table`). A
+/// subquery and a lambda body are each their own scope, so stop there - but an alias attached to
+/// such a node belongs to the enclosing scope, hence taken before stopping.
 static void collectExpressionAliases(const IAST * ast, NameSet & aliases)
 {
     if (!ast)
