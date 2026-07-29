@@ -55,17 +55,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size < 1)
             return 0;
 
-        /// Use the first byte to toggle decode_types_in_binary_format:
+        /// `NativeReader` has two independent switches, so use one selector bit for each.
+        ///
+        /// Bit 0 toggles the type encoding (a format setting):
         ///   0 = text type names (classic protocol)
-        ///   1 = binary-encoded type names (DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION+)
+        ///   1 = binary-encoded type names (`BinaryTypeIndex`)
         bool use_binary_type_encoding = (data[0] & 1) != 0;
 
-        /// Pick a server_revision that enables/disables binary type encoding.
-        /// DBMS_TCP_PROTOCOL_VERSION is a recent revision that enables custom serialization.
-        /// DBMS_MIN_REVISION_WITH_CLIENT_INFO is an older revision that predates it.
-        UInt64 server_revision = use_binary_type_encoding
-            ? DBMS_TCP_PROTOCOL_VERSION
-            : DBMS_MIN_REVISION_WITH_CLIENT_INFO;
+        /// Bit 1 toggles the protocol revision, which gates the `has_custom` /
+        /// `SerializationInfo` payload independently of the type encoding:
+        ///   0 = a recent revision (>= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        ///   1 = a legacy revision that predates custom serialization
+        /// Both type encodings are exercised with both revisions this way.
+        bool use_legacy_revision = (data[0] & 2) != 0;
+
+        UInt64 server_revision = use_legacy_revision
+            ? DBMS_MIN_REVISION_WITH_CLIENT_INFO
+            : DBMS_TCP_PROTOCOL_VERSION;
 
         FormatSettings format_settings;
         format_settings.native.decode_types_in_binary_format = use_binary_type_encoding;
@@ -73,15 +79,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         DB::ReadBufferFromMemory in(data + 1, size - 1);
         NativeReader reader(in, server_revision, std::make_optional(format_settings));
 
-        while (true)
+        /// An empty `Block` is not an end-of-stream marker: a well-formed block with
+        /// zero columns and zero rows also reads as empty. Consume the whole input
+        /// instead, so that blocks following an empty one are parsed as well.
+        while (!in.eof())
         {
-            Block block = reader.read();
-            if (block.empty())
+            const auto position_before = in.count();
+            reader.read();
+            /// Defensive stop: `read` always consumes at least the block header,
+            /// but never loop forever if it somehow does not advance.
+            if (in.count() == position_before)
                 break;
         }
     }
     catch (...)
     {
+        /// Ok: malformed input is expected to throw.
     }
 
     return 0;

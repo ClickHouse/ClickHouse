@@ -41,6 +41,8 @@ SANITIZER_RULES: List[Tuple[str, str, str]] = [
     (r"heap-buffer-overflow.*WRITE",    "CRITICAL",  "heap-buffer-overflow (write)"),
     (r"heap-use-after-free.*WRITE",     "CRITICAL",  "heap-use-after-free (write)"),
     (r"use-after-free.*WRITE",          "CRITICAL",  "use-after-free (write)"),
+    (r"heap-use-after-free.*READ",      "HIGH",      "heap-use-after-free (read)"),
+    # The access direction is unknown here, so stay conservative: CRITICAL.
     (r"heap-use-after-free",            "CRITICAL",  "heap-use-after-free"),
     (r"heap-buffer-overflow.*READ",     "HIGH",      "heap-buffer-overflow (read)"),
     (r"heap-buffer-overflow",           "HIGH",      "heap-buffer-overflow"),
@@ -454,6 +456,33 @@ def _run_self_tests() -> int:
     severity, crash_type = _classify_from_sanitizer_text(sample)
     assert severity == "CRITICAL", f"write overflow misclassified as {severity}"
     assert crash_type == "heap-buffer-overflow (write)", crash_type
+
+    # A READ use-after-free is HIGH, not CRITICAL: the read-specific rule must win
+    # over the generic `heap-use-after-free` one.
+    sample = (
+        "==123==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+        "READ of size 4 at 0x1 thread T0\n"
+        "    #0 0xdead in foo\n"
+    )
+    severity, crash_type = _classify_from_sanitizer_text(sample)
+    assert severity == "HIGH", f"read use-after-free misclassified as {severity}"
+    assert crash_type == "heap-use-after-free (read)", crash_type
+
+    # A WRITE use-after-free stays CRITICAL.
+    sample = (
+        "==123==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+        "WRITE of size 4 at 0x1 thread T0\n"
+        "    #0 0xdead in foo\n"
+    )
+    severity, crash_type = _classify_from_sanitizer_text(sample)
+    assert severity == "CRITICAL", f"write use-after-free misclassified as {severity}"
+    assert crash_type == "heap-use-after-free (write)", crash_type
+
+    # Without a direction line the severity stays conservative.
+    sample = "==123==ERROR: AddressSanitizer: heap-use-after-free\n    #0 0xdead in foo\n"
+    severity, crash_type = _classify_from_sanitizer_text(sample)
+    assert severity == "CRITICAL", f"directionless use-after-free: {severity}"
+    assert crash_type == "heap-use-after-free", crash_type
 
     print("All self-tests passed.", file=sys.stderr)
     return 0
