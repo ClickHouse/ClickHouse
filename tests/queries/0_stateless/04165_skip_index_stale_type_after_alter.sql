@@ -396,6 +396,9 @@ SELECT '-- 21. over-fire control: a subcolumn the part list cannot describe keep
 -- part's own parent type offers no such subcolumn once the part is reloaded from disk. That is an
 -- unrepresentable-in-columns.txt fact, not a type difference, so pruning must survive the reload -
 -- a refusal here would answer differently before and after a restart.
+-- Independently of that, no stale-type shape is constructible for this carrier at all:
+-- MergeTreeData::checkAlterIsPossible rejects adding, removing or changing a Quantized(...) codec and
+-- restating the type of a Quantized-coded column ("The Quantized(...) codec is immutable via ALTER").
 SET allow_experimental_codecs = 1;
 DROP TABLE IF EXISTS t_keep_quantized;
 CREATE TABLE t_keep_quantized (k UInt64, vec Array(Float32) CODEC(Quantized('int8', 8)),
@@ -506,10 +509,12 @@ SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150;
 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 150 SETTINGS use_skip_indexes = 0;
 
 SELECT '-- 24. a SERIALIZATION-DEFINED subcolumn whose parent the part does not carry refuses too';
--- Case 22 for the subcolumns case 21 lets through: `vec.8` is a `QBit` bit plane, which only the
--- parent's custom serialization defines, so no part list can express it - but this part holds no
--- `vec` at all, and its granule was written for `QBit(Float32, 4)`. Reading the part's silence as
--- unrepresentable here would skip the type check and prune with a stale granule.
+-- Case 22 for the subcolumns case 21 lets through: `vec.8` is a `QBit` bit plane, defined by the
+-- parent's custom serialization - which columns.txt DOES round-trip here, because QBit sets it from
+-- its own type (unlike Quantized, whose serialization comes from the codec that columns.txt drops).
+-- So the reason to refuse is not unrepresentability but parent ABSENCE: this part holds no `vec` at
+-- all, and its granule was written for `QBit(Float32, 4)`. Waving the subcolumn through on the
+-- strength of its parent's serialization would skip the type check and prune with a stale granule.
 -- The backticked spelling is what makes the index require the SUBCOLUMN `vec.8`: it is one
 -- identifier, so it resolves against the subcolumn-aware column list, while an unbackticked `vec.8`
 -- is the dot operator and requires the physical parent `vec` instead.
@@ -527,6 +532,22 @@ ALTER TABLE t_absent_qbit_sub MODIFY COLUMN vec QBit(Float64, 4);
 KILL MUTATION WHERE table = 't_absent_qbit_sub' AND database = currentDatabase() FORMAT Null;
 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)');
 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)') SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 25. over-fire control: a backticked QBit subcolumn index prunes when the part carries the parent';
+-- The other side of case 24: same backticked `vec.8` index, but the parent is present and no type is
+-- stale, so the index must still prune. Case 24 alone cannot tell a correct refusal apart from this
+-- spelling never pruning at all - only the pair does. `04403` covers the UNBACKTICKED `vec.8`, which
+-- is the dot operator and so requires the physical parent instead of this subcolumn.
+DROP TABLE IF EXISTS t_keep_qbit_sub;
+CREATE TABLE t_keep_qbit_sub (k UInt64, vec QBit(Float32, 4),
+    INDEX idx `vec.8` TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_qbit_sub SELECT number, arrayMap(x -> toFloat32(number + x), range(4))::QBit(Float32, 4) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_qbit_sub;
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_keep_qbit_sub' AND active AND column = 'vec';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_qbit_sub WHERE `vec.8` = CAST(unhex('02'), 'FixedString(1)')) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_keep_qbit_sub WHERE `vec.8` = CAST(unhex('02'), 'FixedString(1)');
+SELECT count() FROM t_keep_qbit_sub WHERE `vec.8` = CAST(unhex('02'), 'FixedString(1)') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
@@ -569,3 +590,4 @@ DROP TABLE t_absent_sub;
 DROP TABLE t_absent_bool_prefix;
 DROP TABLE t_absent_bool_dotted;
 DROP TABLE t_absent_qbit_sub;
+DROP TABLE t_keep_qbit_sub;
