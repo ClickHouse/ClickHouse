@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# - no-fasttest: requires IcebergLocal (USE_AVRO build option)
+# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # `getIcebergType` recursed into tuple elements through `getNormalizedType`, which
 # renames a named tuple's elements to "1", "2", ... So a tuple nested inside a
@@ -88,7 +88,7 @@ roundtrip unnamed  'Tuple(o Tuple(UInt32))' 'VALUES (((7)))' 'Avro'
 echo "avro innermost name: $(innermost_name avro)"
 echo "unnamed innermost name: $(innermost_name unnamed)"
 
-# ALTER ... ADD COLUMN publishes a schema through generateAddColumnMetadata, a
+# ALTER ... ADD COLUMN publishes a schema through `generateAddColumnMetadata`, a
 # second call site that a CREATE-only test would miss. Iceberg refuses adding a
 # non-nullable column, hence Nullable.
 ${CH} -q "
