@@ -246,12 +246,12 @@ void buildAsyncInsertSelectPipeline(
             /* no_destination */ false,
             settings[Setting::insert_allow_materialized_columns]);
 
-        if (!insert_query.columns)
-        {
-            insert_query.columns = make_intrusive<ASTExpressionList>();
-            for (const auto & col : insert_schema.getColumnsWithTypeAndName())
-                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
-        }
+        /// Rebuild unconditionally: a column transformer (e.g. `* EXCEPT b`) re-resolves against
+        /// whatever metadata is current whenever it is next evaluated, so leaving it in place here
+        /// would defeat the freeze above for transformer-based column lists.
+        insert_query.columns = make_intrusive<ASTExpressionList>();
+        for (const auto & col : insert_schema.getColumnsWithTypeAndName())
+            insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
     }
 
     if (!insert_query.table_function)
