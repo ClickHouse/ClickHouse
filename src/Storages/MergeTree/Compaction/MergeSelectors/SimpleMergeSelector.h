@@ -170,6 +170,13 @@ public:
           * even though they get age = 0). max_age acts as a safety valve: as soon as any
           * part in the range ages past the limit, the restriction is lifted so backlogs of
           * stale small parts can still merge. Zero small_parts_min_count = disabled.
+          *
+          * Scope of the guarantee: the gate only ever removes candidate ranges, it never
+          * introduces one, so every emitted range is a range the selector could also emit
+          * with the gate disabled. It is not a "defer only" guarantee at the level of a
+          * single selection round: `Estimator` keeps one global best candidate per
+          * partition, so rejecting the top-scoring small batch can hand that round to
+          * another already-eligible range instead of producing no merge at all.
           */
         size_t small_parts_threshold = 10 * 1024 * 1024;   /// 10 MB
         size_t small_parts_min_count = 0;                   /// 0 = disabled
