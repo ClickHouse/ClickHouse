@@ -80,7 +80,7 @@ namespace DB
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, "If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.", 0) \
-    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \
+    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](/reference/statements/select/join) queries.", 0) \
     DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, "Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.", 0) \
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \

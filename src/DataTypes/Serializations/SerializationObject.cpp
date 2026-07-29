@@ -7,7 +7,11 @@
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 
 
+#include <algorithm>
+
 #include <Columns/ColumnObject.h>
+#include <Core/Defines.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadBufferFromString.h>
@@ -26,6 +30,49 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+/// The number of paths in a `JSON` / `Object` column is read from a possibly-untrusted stream
+/// (e.g. `Native` input, or the statistics of a corrupted on-disk part) and used only as a sizing
+/// hint before the actual paths are read one by one. It must not be handed to a container's
+/// `resize` / `reserve` directly:
+///   * A count the container cannot hold (`> max_size()`, e.g. close to `SIZE_MAX`) escapes as an
+///     uncaught non-`DB::Exception` (`std::length_error`, `std::bad_array_new_length` or, for a
+///     hash table, `std::bad_alloc`), so reject it as corruption up front.
+///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
+///     `std::vector<String>`, yet handing it to `resize` / `reserve` would allocate gigabytes
+///     before a single path byte is read and fail as `std::bad_alloc` / OOM.
+/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
+/// path as it is decoded (growing the container on demand for a legitimately large count), while a
+/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
+template <typename Container>
+void reserveOrThrowTooManyPaths(Container & container, size_t num_paths)
+{
+    if (num_paths > container.max_size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON/Object column has too many paths: {}", num_paths);
+    container.reserve(std::min(num_paths, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
+}
+
+/// `shared_data_buckets` in a V3 `Object` prefix is another raw count from a possibly-untrusted
+/// stream, later used to size per-bucket state vectors and `Columns`. Unlike the path / type counts,
+/// this one has a tight writer-side invariant: the number of buckets is chosen from the small
+/// MergeTree settings `object_shared_data_buckets_for_{compact,wide}_part`, which are non-zero and
+/// capped at `MAX_OBJECT_SHARED_DATA_BUCKETS`. So the only legitimate on-wire range is
+/// `1 .. MAX_OBJECT_SHARED_DATA_BUCKETS`; any value outside it (including a large-but-representable
+/// count such as `100000`, which the generic `Native` column-count cap would let through) can only
+/// be corruption and must be rejected up front, before it is used to size the per-bucket state.
+void throwIfInvalidNumberOfBuckets(size_t num_buckets)
+{
+    if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "JSON/Object column has an invalid number of shared data buckets: {} (must be in the range [1, {}])",
+            num_buckets, MAX_OBJECT_SHARED_DATA_BUCKETS);
+}
+
 }
 
 SerializationObject::SerializationObject(
@@ -689,12 +736,18 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
         if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
         {
-            /// Read the list of flattened paths.
+            /// Read the list of flattened paths. Append one path at a time (with a capped `reserve`
+            /// hint) rather than pre-sizing to the untrusted `paths_size`, so a corrupted count
+            /// cannot drive a huge allocation before any path is read (see `reserveOrThrowTooManyPaths`).
             size_t paths_size = 0;
             readVarUInt(paths_size, *structure_stream);
-            structure_state->flattened_paths.resize(paths_size);
+            reserveOrThrowTooManyPaths(structure_state->flattened_paths, paths_size);
             for (size_t i = 0; i != paths_size; ++i)
-                readStringBinary(structure_state->flattened_paths[i], *structure_stream);
+            {
+                String path;
+                readStringBinary(path, *structure_stream);
+                structure_state->flattened_paths.push_back(std::move(path));
+            }
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
         {
@@ -709,13 +762,17 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 readVarUInt(max_dynamic_paths, *structure_stream);
             }
 
-            /// Read the sorted list of dynamic paths.
+            /// Read the sorted list of dynamic paths (same append-on-demand handling as flattened paths).
             size_t dynamic_paths_size = 0;
             readVarUInt(dynamic_paths_size, *structure_stream);
             structure_state->sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
-            structure_state->sorted_dynamic_paths->resize(dynamic_paths_size);
+            reserveOrThrowTooManyPaths(*structure_state->sorted_dynamic_paths, dynamic_paths_size);
             for (size_t i = 0; i != dynamic_paths_size; ++i)
-                readStringBinary((*structure_state->sorted_dynamic_paths)[i], *structure_stream);
+            {
+                String path;
+                readStringBinary(path, *structure_stream);
+                structure_state->sorted_dynamic_paths->push_back(std::move(path));
+            }
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
 
             /// If we have V3 Object serialization, read shared data serialization version.
@@ -729,6 +786,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
+                    throwIfInvalidNumberOfBuckets(structure_state->shared_data_buckets);
                 }
             }
 
@@ -750,7 +808,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     /// Second, read shared data paths statistics.
                     size_t size = 0;
                     readVarUInt(size, *structure_stream);
-                    statistics.shared_data_paths_statistics.reserve(size);
+                    reserveOrThrowTooManyPaths(statistics.shared_data_paths_statistics, size);
                     String path;
                     for (size_t i = 0; i != size; ++i)
                     {

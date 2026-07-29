@@ -251,6 +251,8 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
         flags = CreateMode::EPHEMERAL;
     else if (is_sequential)
         flags = CreateMode::PERSISTENT_SEQUENTIAL;
+    else if (is_container)
+        flags = CreateMode::CONTAINER;
     else
         flags = CreateMode::PERSISTENT;
 
@@ -283,8 +285,10 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     /// that disagree with the wire create-mode (e.g. Create2 carrying a TTL flag would
     /// otherwise pass feature-gating as Create2 yet create a TTL node here).
     const bool from_create_ttl_opnum = include_ttl;
+    const bool from_create_container_opnum = is_container;
     is_ephemeral = false;
     is_sequential = false;
+    is_container = false;
     include_ttl = false;
 
     /// org.apache.zookeeper.CreateMode.fromFlag — reject unknown flags rather than
@@ -310,8 +314,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
             is_sequential = true;
             break;
         case CreateMode::CONTAINER:
-            throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
-                "Container nodes are not supported");
+            is_container = true;
+            break;
         case CreateMode::PERSISTENT_WITH_TTL:
             include_ttl = true;
             break;
@@ -326,10 +330,18 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
             "CreateTTL opnum and create-mode flag disagree on TTL");
 
-    /// Create2 sets include_stats; that must not coexist with a TTL create mode.
-    if (include_stats && include_ttl)
+    /// Similarly expect containerness to match between opnum and flags.
+    /// (Vanilla zookeeper server also accepts requests with `opnum == Create && flags == CONTAINER`,
+    ///  handles them incorrectly: it silently ignores the CONTAINER flag and creates a non-container
+    ///  node: https://github.com/go-zookeeper/zk/issues/165 . So let's reject such requests.)
+    if (from_create_container_opnum != is_container)
         throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
-            "Create2 must not carry a TTL create-mode flag");
+            "CreateContainer opnum and create-mode flag disagree on CONTAINER-ness");
+
+    /// Create2 sets include_stats; that must not coexist with a TTL or CONTAINER create mode.
+    if (include_stats && (include_ttl || is_container))
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Create2 must not carry a TTL or CONTAINER create-mode flag");
 
     if (include_ttl)
         Coordination::read(ttl, in);
@@ -340,10 +352,12 @@ std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
     return fmt::format(
         "path = {}\n"
         "is_ephemeral = {}\n"
-        "is_sequential = {}",
+        "is_sequential = {}\n"
+        "is_container = {}",
         path,
         is_ephemeral,
-        is_sequential);
+        is_sequential,
+        is_container);
 }
 
 void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
@@ -359,6 +373,12 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreate2Response::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path_created, in);
+    Coordination::read(zstat, in);
 }
 
 void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
@@ -1437,6 +1457,9 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
     if (op_num == OpNum::CreateTTL)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
 
+    if (op_num == OpNum::CreateContainer)
+        return std::make_shared<ZooKeeperCreateContainerResponse>();
+
     if (op_num == OpNum::Create2)
         return std::make_shared<ZooKeeperCreate2Response>();
 
@@ -1765,6 +1788,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->include_stats = true;
         else if constexpr (num == OpNum::CreateTTL)
             res->include_ttl = true;
+        else if constexpr (num == OpNum::CreateContainer)
+            res->is_container = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1790,6 +1815,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateContainer, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);

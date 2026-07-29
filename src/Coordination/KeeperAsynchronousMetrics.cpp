@@ -42,15 +42,15 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
         const auto & state_machine = keeper_dispatcher.getStateMachine();
-        const auto & storage_stats = state_machine.getStorageStats();
-        zxid = storage_stats.last_zxid.load(std::memory_order_relaxed);
-        znode_count = storage_stats.nodes_count.load(std::memory_order_relaxed);
-        watch_count = storage_stats.total_watches_count.load(std::memory_order_relaxed);
-        ephemerals_count = storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed);
-        approximate_data_size = storage_stats.approximate_data_size.load(std::memory_order_relaxed);
+        const auto storage_stats = state_machine.getStorageStats();
+        zxid = storage_stats.last_committed_zxid;
+        znode_count = storage_stats.nodes_count;
+        watch_count = storage_stats.total_watches_count;
+        ephemerals_count = storage_stats.total_emphemeral_nodes_count;
+        approximate_data_size = storage_stats.approximate_data_size;
         key_arena_size = 0;
-        session_with_watches = storage_stats.sessions_with_watches_count.load(std::memory_order_relaxed);
-        paths_watched = storage_stats.watched_paths_count.load(std::memory_order_relaxed);
+        session_with_watches = storage_stats.sessions_with_watches_count;
+        paths_watched = storage_stats.watched_paths_count;
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -123,7 +123,12 @@ KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
     bool update_rss_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, context_)
+    : AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        context_)
     , context(std::move(context_))
 {
 }
