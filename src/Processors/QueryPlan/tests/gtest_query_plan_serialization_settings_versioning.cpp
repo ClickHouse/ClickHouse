@@ -12,6 +12,8 @@ extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
 extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
 extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
 extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;
+extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_join;
 }
 
 namespace
@@ -181,6 +183,80 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         settings.join_kind_consumes_in_memory_compression = false;
         settings[QueryPlanSerializationSetting::join_algorithm] = std::vector<JoinAlgorithm>{JoinAlgorithm::HASH};
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+    }
+
+    /// `prefer_partial_merge` and `partial_merge` build a `MergeJoin` for every shape it supports (the
+    /// serializing step flags that via join_shape_supports_merge_join), and `MergeJoin` consumes neither
+    /// version-4 setting. The hash fallback that makes `prefer_partial_merge` hash-capable is only
+    /// reached for a shape `MergeJoin` does not support, so a supported shape must stay on the baseline
+    /// version - otherwise a version-3 receiver rejects a fragment it would execute identically.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings.max_memory_usage_is_step_local = true;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::PREFER_PARTIAL_MERGE};
+
+        settings.join_shape_supports_merge_join = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings.join_shape_supports_merge_join = false;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        /// A lone `partial_merge` has no hash fallback at all: an unsupported shape makes the query
+        /// fail with NOT_IMPLEMENTED instead of building a hash join, so the shape does not matter.
+        settings[QueryPlanSerializationSetting::join_algorithm] = std::vector<JoinAlgorithm>{JoinAlgorithm::PARTIAL_MERGE};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings.join_shape_supports_merge_join = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+    }
+
+    /// An algorithm that always builds a hash-family join shadows a later merge one, so the shape does
+    /// not matter; and a hash algorithm listed after `partial_merge` is reached exactly when the shape
+    /// is unsupported.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings.join_shape_supports_merge_join = true;
+
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::HASH, JoinAlgorithm::PREFER_PARTIAL_MERGE};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::HASH};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings.join_shape_supports_merge_join = false;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+
+    /// `auto` on a shape `MergeJoin` supports builds a `JoinSwitcher`, which inserts into its `HashJoin`
+    /// with the limit check disabled: that `HashJoin` never runs the `max_memory_usage` trigger, so a
+    /// step-local override stays on the baseline version. Compression, in contrast, is consumed there
+    /// (`JoinSwitcher` forces one pass over the stored blocks before switching to the disk-based join).
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::join_algorithm] = std::vector<JoinAlgorithm>{JoinAlgorithm::AUTO};
+        settings.join_shape_supports_merge_join = true;
+        settings.max_memory_usage_is_step_local = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        /// Once spilling is allowed, `auto` builds a `SpillingHashJoin` instead, which consumes both
+        /// settings. Either threshold is enough: the ratio one is resolved on the receiver.
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
+        settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = 1000000000;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = 0;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] = 0.5;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 }
 

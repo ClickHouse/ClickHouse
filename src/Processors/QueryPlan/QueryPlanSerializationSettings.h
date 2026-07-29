@@ -94,6 +94,16 @@ struct QueryPlanSerializationSettings
     /// joins. Not a serialized setting; it only feeds getMinRequiredVersion.
     bool join_executes_as_constant_join = false;
 
+    /// Whether `MergeJoin` supports the serializing join step's shape (its kind, strictness and
+    /// single-clause ON expression), i.e. whether `join_algorithm = 'partial_merge'` /
+    /// `'prefer_partial_merge'` really builds a `MergeJoin` for it and `'auto'` really builds a
+    /// `JoinSwitcher`. Those implementations consume none of the version-4 settings (a `JoinSwitcher`
+    /// only the compression one), so such a fragment must not be raised to version 4 just because the
+    /// `join_algorithm` set also contains a hash fallback that will never be reached. Not a serialized
+    /// setting; it only feeds getMinRequiredVersion. Defaults to false so a step that does not know
+    /// its shape keeps the conservative version bump.
+    bool join_shape_supports_merge_join = false;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

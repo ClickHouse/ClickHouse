@@ -31,6 +31,7 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -1122,6 +1123,23 @@ static bool willExecuteAsConstantJoin(const JoinOperator & join_operator)
     return isCrossOrComma(join_operator.kind) || tryGetConstantJoinPredicateValue(join_operator).has_value();
 }
 
+/// Whether `MergeJoin` supports this join's shape, i.e. whether `join_algorithm = 'partial_merge'` or
+/// `'prefer_partial_merge'` will really build a `MergeJoin` for it and `'auto'` will really build a
+/// `JoinSwitcher` (see tryCreateJoin in Planner/PlannerJoins.cpp). Mirrors
+/// `MergeJoin::isSupported(table_join)`: the kind and strictness predicate, plus `oneDisjunct`. The join
+/// gets more than one `TableJoin` clause only when its whole ON expression is a single top-level `OR`
+/// (see tryAddDisjunctiveConditions), so anything else is single-clause; a single top-level `OR` either
+/// resolves to one clause per disjunct - which `MergeJoin` does not support - or, when the disjuncts
+/// yield no keys, becomes a CROSS join executed by `ConstantJoin`.
+static bool shapeSupportsMergeJoin(const JoinOperator & join_operator)
+{
+    if (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    const auto & join_expression = join_operator.expression;
+    return !(join_expression.size() == 1 && join_expression.front().isFunction(JoinConditionOperator::Or));
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1675,6 +1693,10 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     settings.join_executes_as_constant_join = willExecuteAsConstantJoin(join_operator);
     settings.join_kind_consumes_in_memory_compression
         = !settings.join_executes_as_constant_join && !isPaste(join_operator.kind);
+    /// Which implementation the enabled `join_algorithm` set resolves to also depends on the join's
+    /// shape: with a shape `MergeJoin` supports, `prefer_partial_merge` never reaches its hash
+    /// fallback and `auto` builds a `JoinSwitcher`, and neither consumes `max_memory_usage`.
+    settings.join_shape_supports_merge_join = shapeSupportsMergeJoin(join_operator);
 }
 
 static void serializeNodeList(

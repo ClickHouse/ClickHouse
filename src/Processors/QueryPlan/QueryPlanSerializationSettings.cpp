@@ -135,6 +135,7 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
     : max_memory_usage_is_step_local(settings.max_memory_usage_is_step_local)
     , join_kind_consumes_in_memory_compression(settings.join_kind_consumes_in_memory_compression)
     , join_executes_as_constant_join(settings.join_executes_as_constant_join)
+    , join_shape_supports_merge_join(settings.join_shape_supports_merge_join)
     , impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
 {
 }
@@ -177,31 +178,71 @@ bool QueryPlanSerializationSettings::isChanged(std::string_view name) const
     return impl->isChanged(name);
 }
 
-/// Whether the enabled `join_algorithm` set may resolve to a hash-family join implementation
-/// (see tryCreateJoin in Planner/PlannerJoins.cpp): those are the only ones that consume
-/// `enable_join_in_memory_compression`. `prefer_partial_merge` counts because it falls back to
-/// hash when partial merge does not support the join kind; `direct`, `partial_merge` and
-/// `full_sorting_merge` never construct a hash join.
-static bool canChooseHashFamilyJoin(const std::vector<JoinAlgorithm> & algorithms)
+/// Which of the version-4 settings the join implementation that a step will really run can consume.
+struct JoinSettingsConsumption
 {
+    bool in_memory_compression = false;
+    bool step_local_max_memory_usage = false;
+};
+
+/// Resolve the enabled `join_algorithm` set to what the implementation chosen for the step actually
+/// consumes (see tryCreateJoin and chooseJoinAlgorithm in Planner/PlannerJoins.cpp). The algorithms are
+/// tried in order and the first one that supports the step's shape wins, so the scan stops at the first
+/// algorithm that always builds something: a later hash fallback in the list is never reached and must
+/// not raise the fragment's version.
+static JoinSettingsConsumption getJoinSettingsConsumption(
+    const std::vector<JoinAlgorithm> & algorithms, bool shape_supports_merge_join, bool spilling_to_disk_allowed)
+{
+    /// A hash-family implementation (`HashJoin`, `ConcurrentHashJoin`, `SpillingHashJoin`,
+    /// `GraceHashJoin`) consumes both settings: `enable_join_in_memory_compression` directly, and
+    /// `max_memory_usage` as the `shrinkStoredBlocksToFit` trigger.
+    static constexpr JoinSettingsConsumption hash_family
+        = {.in_memory_compression = true, .step_local_max_memory_usage = true};
+
     for (const auto algorithm : algorithms)
     {
         switch (algorithm)
         {
             case JoinAlgorithm::DEFAULT:
-            case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:
-            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
             case JoinAlgorithm::PARALLEL_HASH:
+                /// Always build a hash-family join, so nothing after them in the list is reached.
+                return hash_family;
             case JoinAlgorithm::GRACE_HASH:
-                return true;
+                /// Builds `GraceHashJoin` for the kinds it supports and falls through otherwise, but
+                /// both flags are already set, so there is nothing left to learn from the rest.
+                return hash_family;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                /// Builds `MergeJoin` whenever the shape allows, and that consumes neither setting.
+                /// Only an unsupported shape falls back to a hash join.
+                if (shape_supports_merge_join)
+                    return {};
+                return hash_family;
             case JoinAlgorithm::PARTIAL_MERGE:
+                /// `MergeJoin` or nothing: an unsupported shape falls through to the next algorithm.
+                if (shape_supports_merge_join)
+                    return {};
+                break;
+            case JoinAlgorithm::AUTO:
+                /// Builds `SpillingHashJoin` when spilling is allowed, a `JoinSwitcher` for a shape
+                /// `MergeJoin` supports, and a plain `HashJoin` otherwise. Only `JoinSwitcher` differs:
+                /// it inserts with the limit check disabled, so its `HashJoin` never runs the
+                /// `max_memory_usage` trigger on its own - the only pass over the stored blocks is the
+                /// one `enable_join_in_memory_compression` forces before switching to the disk-based
+                /// join, and that one ignores the memory thresholds.
+                if (!spilling_to_disk_allowed && shape_supports_merge_join)
+                    return {.in_memory_compression = true, .step_local_max_memory_usage = false};
+                return hash_family;
             case JoinAlgorithm::DIRECT:
+                /// `DirectKeyValueJoin` or nothing, and it consumes neither setting (see
+                /// getMinRequiredVersion on why such a step is never serialized anyway).
+                break;
             case JoinAlgorithm::FULL_SORTING_MERGE:
+                /// `FullSortingMergeJoin` or nothing, and it consumes neither setting.
                 break;
         }
     }
-    return false;
+    return {};
 }
 
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
@@ -221,11 +262,12 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// by JoinSettings::updatePlanSettings): the receiver's query context carries only the outer
     /// query's value, so an omitted step-local value cannot be restored and the stream must carry it.
     /// Both cases are keyed on the implementation the step will actually run, not on the settings
-    /// alone. A step whose `join_algorithm` cannot pick a hash-family implementation (e.g. one
-    /// restricted to `full_sorting_merge` or `partial_merge`) consumes neither setting, so its
-    /// fragment stays readable by older receivers - unless it is a `ConstantJoin` step, which is
-    /// chosen regardless of `join_algorithm` (join_executes_as_constant_join) and consumes
-    /// `max_memory_usage` as its plain shrink trigger.
+    /// alone (getJoinSettingsConsumption): a step whose `join_algorithm` resolves to an implementation
+    /// that reads neither setting - `full_sorting_merge` or `partial_merge`, a `MergeJoin` built for a
+    /// shape `prefer_partial_merge` supports, or the `JoinSwitcher` that `auto` builds for such a shape
+    /// (which consumes only the compression setting) - keeps its fragment readable by older receivers.
+    /// A `ConstantJoin` step is the exception: it is chosen regardless of `join_algorithm`
+    /// (join_executes_as_constant_join) and consumes `max_memory_usage` as its plain shrink trigger.
     /// The compression case is additionally keyed on the step's join kind
     /// (join_kind_consumes_in_memory_compression): a `ConstantJoin` (a CROSS JOIN or a join with a
     /// constant predicate) keeps its own threshold-based compression path and never consults
@@ -237,13 +279,21 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// when the right side is a `JoinStepLogicalLookup` (see `buildQueryPlanForJoinNode`), a step
     /// that is not serializable, so a fragment that would rebuild as a direct join can never be sent
     /// to a receiver of any version in the first place.
-    const bool can_choose_hash_family_join = canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]);
+    /// Whether `join_algorithm = 'auto'` can end up in `SpillingHashJoin` instead of `JoinSwitcher`.
+    /// The absolute threshold and the ratio-of-available-memory one are both taken into account: the
+    /// ratio is resolved against the receiver's own memory, so a non-zero ratio can allow spilling
+    /// there even when the absolute threshold is unset.
+    const bool spilling_to_disk_allowed = (*this)[QueryPlanSerializationSetting::max_bytes_before_external_join] != 0
+        || (*this)[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] != 0.;
+
+    const auto consumption = getJoinSettingsConsumption(
+        (*this)[QueryPlanSerializationSetting::join_algorithm], join_shape_supports_merge_join, spilling_to_disk_allowed);
 
     const bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
-        && join_kind_consumes_in_memory_compression && can_choose_hash_family_join;
+        && join_kind_consumes_in_memory_compression && consumption.in_memory_compression;
 
     const bool step_local_max_memory_usage_matters = max_memory_usage_is_step_local
-        && (can_choose_hash_family_join || join_executes_as_constant_join);
+        && (consumption.step_local_max_memory_usage || join_executes_as_constant_join);
 
     if (compression_matters || step_local_max_memory_usage_matters)
         return 4;
