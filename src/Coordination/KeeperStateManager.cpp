@@ -395,20 +395,13 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
-/// Reads a serialized state file and verifies its checksum. Returns nullptr only when the content
-/// is provably unusable (empty, too short, bad checksum, undeserializable), which is the on-disk
-/// shape left behind by a save that was interrupted while rewriting the file.
-/// Failing to read the file at all is NOT such a verdict and is propagated: save_state must not
-/// mistake a transient IO error for "this file holds nothing worth keeping" and drop the backup
-/// step, because it truncates the live file immediately afterwards.
-/// throw_on_corrupted_checksum distinguishes the two callers: read_state must keep failing loudly
-/// on a checksum mismatch in debug builds, while save_state has to tolerate an unusable live file
-/// because tolerating it is the whole point of the backup step.
+/// Returns nullptr only when the content is provably unusable; a failure to read the file is
+/// propagated instead, because callers act on nullptr by deleting or truncating the file.
+/// throw_on_corrupted_checksum keeps read_state failing loudly on a bad checksum in debug builds.
 nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
     const DiskPtr & disk, const String & path, bool throw_on_corrupted_checksum, LoggerPtr logger)
 {
-    /// Read the file first and parse only from memory, so that IO failures cannot be confused
-    /// with a content verdict.
+    /// Read first, parse from memory, so an IO failure cannot be read as a content verdict.
     String content;
     {
         auto read_buf = disk->readFile(path, getReadSettings());
@@ -477,9 +470,8 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     auto disk = getStateFileDisk();
 
-    /// Only a live state file that reads back and verifies may become the backup: an interrupted
-    /// save leaves it empty or torn, and copying that over a still-valid state-OLD would destroy
-    /// the last state that can still be recovered.
+    /// Only a live file that reads back and verifies may become the backup, so that a torn one
+    /// cannot overwrite a still-valid state-OLD.
     if (disk->existsFile(server_state_file_name)
         && readAndVerifyStateFile(disk, server_state_file_name, /*throw_on_corrupted_checksum=*/false, logger) != nullptr)
     {
@@ -538,10 +530,8 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
     auto disk = getStateFileDisk();
 
-    /// A read failure is deliberately not caught here. Every nullptr below leads to deleting the
-    /// file that was just read, and returning nullptr makes NuRaft start from term 0 with an empty
-    /// vote, so treating "could not read it" as "it is worthless" would destroy recoverable state.
-    /// Letting the error out leaves both files in place and fails startup instead.
+    /// A read failure is deliberately not caught: every nullptr below deletes the file just read,
+    /// and no state at all makes NuRaft restart from term 0 with an empty vote.
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
         auto state = readAndVerifyStateFile(disk, path, /*throw_on_corrupted_checksum=*/true, logger);
@@ -556,11 +546,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
         if (state)
         {
-            /// The backup is left in place even though the live file is usable. Parsing proves the
-            /// bytes are complete, not that they reached the disk: sync() flushes and only then
-            /// calls fdatasync, so a kill in between leaves a valid live file whose contents are
-            /// still only in the page cache, with state-OLD the sole durable copy. It is dropped by
-            /// the next successful save_state, which syncs the replacement first.
+            /// The backup is kept even though the live file parsed: parsing proves the bytes are
+            /// complete, not that they reached the disk. save_state drops it once it has synced a
+            /// replacement.
             return state;
         }
 
