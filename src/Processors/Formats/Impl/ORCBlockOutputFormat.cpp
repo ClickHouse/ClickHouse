@@ -235,11 +235,14 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         }
         case TypeIndex::Variant:
         {
-            const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*unwrapped);
             auto union_type = orc::createUnionType();
+            /// A union child is addressed by its type name, the way a `Variant` subcolumn is
+            /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
             for (const auto & nested_type : variant_type.getVariants())
-                union_type->addUnionChild(getORCType(nested_type));
-            return union_type;
+                union_type->addUnionChild(getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName())));
+            result = std::move(union_type);
+            break;
         }
         default:
         {
