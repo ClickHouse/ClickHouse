@@ -1,6 +1,6 @@
 /// Cost of obtaining the current CPU id by different mechanisms:
 ///   - `sched_getcpu`: whatever the libc in this build provides (rseq TLS read, vDSO, or syscall)
-///   - rseq: direct read of `cpu_id` from the libc-registered rseq area (glibc >= 2.35)
+///   - rseq: direct read of `cpu_id` from the libc-registered rseq area (glibc >= 2.35, or our musl)
 ///   - vDSO: `__vdso_getcpu` resolved from the vDSO (x86_64 only; other architectures skip)
 ///   - syscall: raw `SYS_getcpu`
 ///
@@ -34,7 +34,8 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 extern "C"
 {
-    /// The rseq area location of the libc registration, exported by glibc >= 2.35.
+    /// The rseq area location of the libc registration, exported by glibc >= 2.35 and by
+    /// our musl (see `contrib/musl/src/sched/rseq.c`).
     /// Weak so the binary links against libcs without them; the address is then null.
     extern const ptrdiff_t __rseq_offset __attribute__((weak));
     extern const unsigned int __rseq_size __attribute__((weak));

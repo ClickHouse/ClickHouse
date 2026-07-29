@@ -872,8 +872,8 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "making these counters more expensive and slightly degrading performance. "
                 "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
                 "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
-                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
-                "other libraries, such as musl, do not register it); "
+                "the sandbox this process runs in blocks the rseq system call; "
+                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help); "
                 "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
 
     try
