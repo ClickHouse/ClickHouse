@@ -111,8 +111,12 @@ echo 'after cross-db exchange the policies followed their data: name xa now hold
 run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.xa ORDER BY id"
 run_user "SELECT id FROM ${DB2}.xb ORDER BY id"
 echo 'and both bindings moved to the other database:'
-${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpa'"
-${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpb'"
+# system.row_policies is server-wide, so every read of it has to be scoped to the databases this copy
+# of the test owns. The flaky check runs 50 copies of a changed test concurrently and does NOT pass
+# --no-self-parallel (only the `targeted` flavor does), so a sibling copy's identically named policy
+# would otherwise appear here. The database set is still asserted, because it is printed.
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpa' AND database IN ('${CLICKHOUSE_DATABASE}', '${DB2}')"
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'xpb' AND database IN ('${CLICKHOUSE_DATABASE}', '${DB2}')"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xpa ON ${DB2}.xb"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xpb ON ${CLICKHOUSE_DATABASE}.xa"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.xa"
@@ -136,7 +140,7 @@ echo 'after rejected exchange nothing moved: ya still holds its own {1,2} unfilt
 run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.ya ORDER BY id"
 run_user "SELECT id FROM ${DB2}.yb ORDER BY id"
 echo 'and the db-wide policy is still bound to its own database:'
-${CLICKHOUSE_CLIENT} --query "SELECT database FROM system.row_policies WHERE short_name = 'yp'"
+${CLICKHOUSE_CLIENT} --query "SELECT database FROM system.row_policies WHERE short_name = 'yp' AND database IN ('${CLICKHOUSE_DATABASE}', '${DB2}')"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY yp ON ${DB2}.*"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.ya"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB2}.yb"
@@ -161,7 +165,7 @@ run_user "SELECT id FROM ${DB2}.t ORDER BY id"
 echo 'and the per-table policy followed too, so t2 shows eng (3) plus the id=4 row it permits:'
 run_user "SELECT id FROM ${DB2}.t2 ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "SELECT database FROM system.row_policies WHERE short_name = 'dbp' AND database = '${DB2}'"
-${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'tbp'"
+${CLICKHOUSE_CLIENT} --query "SELECT database, table FROM system.row_policies WHERE short_name = 'tbp' AND database IN ('${CLICKHOUSE_DATABASE}_src', '${DB2}')"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY dbp ON ${DB2}.*"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY tbp ON ${DB2}.t2"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB2}"
