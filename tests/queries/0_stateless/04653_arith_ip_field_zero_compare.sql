@@ -5,6 +5,13 @@
 -- a keyed `MergeTree` against an `ENGINE = Log` oracle; a `1` means key analysis agrees with
 -- execution. `prune_` rows assert the granule counts, so a change that quietly degrades the
 -- optimization also fails.
+--
+-- Coverage invariant: every IP-carrying arithmetic shape asserted here has EITHER a granule row
+-- (`prune_`/`noprune_`) OR a single-granule fixture that makes such a row vacuous. A result-only
+-- `oracle_` row cannot see a fix that avoids the exception by refusing to report monotonicity, so
+-- the granule rows below are what separate this fix from that weaker one. Every granule literal is
+-- measured, and each IP shape is paired with a numeric-constant control at the same threshold and
+-- table so a count that merely reflects predicate selectivity cannot pass for preserved pruning.
 
 DROP TABLE IF EXISTS u32g1 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS u32g4 SETTINGS ignore_drop_queries_probability = 0;
@@ -22,6 +29,7 @@ DROP TABLE IF EXISTS ip4n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS ip6be SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS oip6be SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS oip4n SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS u32g2 SETTINGS ignore_drop_queries_probability = 0;
 
 -- Numeric key, IP constant. Granularity 1 makes every granule a min == max interval, which is the
 -- only way `plus`/`minus` reach the equal-endpoints fast path.
@@ -31,6 +39,12 @@ CREATE TABLE ou32 (a UInt32) ENGINE = Log;
 INSERT INTO u32g1 VALUES (10), (20), (30), (40);
 INSERT INTO u32g4 VALUES (10), (20), (30), (40);
 INSERT INTO ou32 VALUES (10), (20), (30), (40);
+
+-- A second, non-vacuous granularity for the numeric-key control. `u32g4` holds four rows at
+-- granularity 4, i.e. a single granule, so a granule assertion there could only ever read `1/1`;
+-- eight rows at granularity 2 give four real granules instead.
+CREATE TABLE u32g2 (a UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
+INSERT INTO u32g2 VALUES (10), (20), (30), (40), (50), (60), (70), (80);
 
 -- IP key, numeric constant.
 CREATE TABLE ip4g1 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
@@ -159,6 +173,43 @@ SELECT 'oracle_plus_ip4key', (SELECT count() FROM ip4 WHERE plus(a, 10) > 300000
 SELECT 'prune_minus_ip4key_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE minus(a, 10) > 3000000000) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'oracle_minus_ip4key', (SELECT count() FROM ip4 WHERE minus(a, 10) > 3000000000) = (SELECT count() FROM oip4 WHERE minus(a, 10) > 3000000000);
 
+-- Granule assertions for every remaining IP-carrying shape that had only an `oracle_` row. These
+-- are the rows a numeric type gate cannot survive: gating on the constant's declared type avoids
+-- the exception without normalizing the value, which leaves every `oracle_` row green and silently
+-- drops pruning. `multiply` is the discriminating function here because its arm is the one that
+-- reads the constant AND both endpoints; `plus`/`minus` reach the comparison only through the
+-- equal-endpoints fast path, so their counts are unchanged by such a gate and their rows below are
+-- must-not-regress controls rather than discriminators.
+SELECT '-- every IP-carrying arithmetic shape keeps its measured granule count';
+-- multiply x IPv4 constant x numeric key, BOTH operand roles: `const_side` picks whichever side is
+-- constant, so the role is a real axis. `< 45` is required: at `< 40` only one granule survives and
+-- at `>= 145` all four do, so neither threshold separates the fix from the gate.
+SELECT 'prune_multiply_ip4const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, toIPv4('0.0.0.2')) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_ip4const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(toIPv4('0.0.0.2'), a) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_numconst_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, toUInt32(2)) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_numconst_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(toUInt32(2), a) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+-- multiply x IPv6 constant x numeric key, both roles: the byte-order path.
+SELECT 'oracle_multiply_ip6const_right_g1', (SELECT count() FROM u32g1 WHERE multiply(a, toIPv6('::2')) < 45) = (SELECT count() FROM ou32 WHERE multiply(a, toIPv6('::2')) < 45);
+SELECT 'prune_multiply_ip6const_right_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(a, toIPv6('::2')) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'oracle_multiply_ip6const_left_g1', (SELECT count() FROM u32g1 WHERE multiply(toIPv6('::2'), a) < 45) = (SELECT count() FROM ou32 WHERE multiply(toIPv6('::2'), a) < 45);
+SELECT 'prune_multiply_ip6const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE multiply(toIPv6('::2'), a) < 45) WHERE explain ILIKE '%Granules: 2/4%';
+-- multiply x numeric constant x numeric key at the second, non-vacuous granularity: the
+-- must-not-regress control proving the normalization did not perturb the plain numeric path.
+SELECT 'prune_multiply_ip4const_right_g2_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g2 WHERE multiply(a, toIPv4('0.0.0.2')) < 65) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_numconst_right_g2_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g2 WHERE multiply(a, toUInt32(2)) < 65) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_multiply_numconst_left_g2_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g2 WHERE multiply(toUInt32(2), a) < 65) WHERE explain ILIKE '%Granules: 2/4%';
+-- minus x IPv4 constant, left role. The right role is already pinned above; this is the mirror.
+SELECT 'prune_minus_ip4const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(toIPv4('0.0.0.2'), a) > -25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_minus_numconst_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(toUInt32(2), a) > -25) WHERE explain ILIKE '%Granules: 2/4%';
+-- Two IP operands at once, granule half: the constant and both endpoints are IP-tagged in the same
+-- call, so both normalization statements fire together. `multiply` here is the shape Gate B named.
+SELECT 'prune_multiply_ip4key_ip4const_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE multiply(a, toIPv4('0.0.0.2')) > 6000000000) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_plus_ip4key_ip4const_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE plus(a, toIPv4('0.0.0.2')) > 3000000000) WHERE explain ILIKE '%Granules: 2/4%';
+-- Wrapper constants over a numeric key: `Nullable` and `LowCardinality` must reach the same
+-- normalization as the bare IP constant, so they get the granule row their oracles lacked.
+SELECT 'prune_plus_nullable_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, CAST(toIPv4('0.0.0.2') AS Nullable(IPv4))) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+SELECT 'prune_plus_lc_ip4const_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE plus(a, toLowCardinality(toIPv4('0.0.0.2'))) < 25) WHERE explain ILIKE '%Granules: 2/4%';
+
 SELECT '-- numeric constants stay unaffected';
 SELECT 'oracle_multiply_zero', (SELECT count() FROM u32g4 WHERE multiply(a, 0) > 0) = (SELECT count() FROM ou32 WHERE multiply(a, 0) > 0);
 SELECT 'oracle_multiply_negative', (SELECT count() FROM u32g4 WHERE multiply(CAST(a AS Int64), -3) > -70) = (SELECT count() FROM ou32 WHERE multiply(CAST(a AS Int64), -3) > -70);
@@ -182,3 +233,4 @@ DROP TABLE ip4n SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE ip6be SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE oip6be SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE oip4n SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE u32g2 SETTINGS ignore_drop_queries_probability = 0;

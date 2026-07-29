@@ -3887,7 +3887,8 @@ public:
     /// accurate-comparison arm against a number, so it must be converted before it is compared here.
     /// `IPv6` is stored big-endian and the substitution casts it through `convertFromIPv6ToUInt128`,
     /// which swaps the limbs and byte-swaps each, so a raw `toUnderType()` bit copy would yield a
-    /// different number; reuse the same cast the substitution in `executeImpl` performs.
+    /// different number; reuse the same cast the substitution in `executeImpl2` performs, whose
+    /// type-side twin is `getReturnTypeImplStatic`.
     static Field substituteIPField(const Field & field)
     {
         const bool is_ipv4 = field.getType() == Field::Types::IPv4;
