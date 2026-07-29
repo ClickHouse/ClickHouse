@@ -28,7 +28,7 @@ CREATE TABLE o_kv (k UInt64, jv Int64) ENGINE = Memory;
 INSERT INTO o_kv VALUES (2, 10), (4, 20);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN o_kv AS r USING (k);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k);
-SELECT count() FROM (EXPLAIN PLAN description = 1
+SELECT count() FROM (EXPLAIN PLAN actions = 1
     SELECT sum(r.jv) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k))
 WHERE explain ILIKE '%accurateCastOrNull%';
 

@@ -28,7 +28,7 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOI
 30	[(2,10),(4,20),(4294967298,0)]
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k);
 30	[(2,10),(4,20),(4294967298,0)]
-SELECT count() FROM (EXPLAIN PLAN description = 1
+SELECT count() FROM (EXPLAIN PLAN actions = 1
     SELECT sum(r.jv) FROM l_kv AS l ANY LEFT JOIN kv AS r USING (k))
 WHERE explain ILIKE '%accurateCastOrNull%';
 0

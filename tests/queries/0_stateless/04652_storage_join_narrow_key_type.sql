@@ -135,7 +135,7 @@ SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_u64_oor AS l ANY LEF
 CREATE TABLE l_nu32 (k Nullable(UInt32)) ENGINE = Memory;
 INSERT INTO l_nu32 VALUES (2), (NULL);
 SELECT sum(r.jv), arraySort(groupArray((l.k, r.jv))) FROM l_nu32 AS l ANY LEFT JOIN s_u32 AS r USING (k);
-SELECT count() FROM (EXPLAIN PLAN description = 1
+SELECT count() FROM (EXPLAIN PLAN actions = 1
     SELECT sum(r.jv) FROM l_nu32 AS l ANY LEFT JOIN s_u32 AS r USING (k))
 WHERE explain ILIKE '%accurateCastOrNull%';
 -- the mirrored shape a RIGHT join produces (a Nullable left key against a non-Nullable storage key)
@@ -143,7 +143,7 @@ CREATE TABLE s_rj (x UInt32, s String) ENGINE = Join(ALL, RIGHT, x);
 INSERT INTO s_rj VALUES (1, 'a');
 CREATE TABLE l_rj (x Nullable(UInt32), str String) ENGINE = Memory;
 INSERT INTO l_rj VALUES (1, 'l');
-SELECT count() FROM (EXPLAIN PLAN description = 1
+SELECT count() FROM (EXPLAIN PLAN actions = 1
     SELECT * FROM l_rj ALL RIGHT JOIN s_rj USING (x))
 WHERE explain ILIKE '%accurateCastOrNull%';
 -- FixedString left key against a String storage key
