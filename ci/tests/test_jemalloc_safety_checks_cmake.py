@@ -1302,8 +1302,10 @@ def _macros_absent(tmp_path, entries) -> str | None:
     ],
 )
 def test_a_build_that_did_not_request_the_option_carries_neither_macro(
-    tmp_path, label, entries, carried_macro
+    compiler_probe, tmp_path, label, entries, carried_macro
 ):
+    # Compiler-gated since the negative direction stopped parsing the compile line and
+    # started compiling a probe against it.
     verdict = _macros_absent(tmp_path, entries)
     if carried_macro is None:
         assert verdict is None, f"{label}: expected to be accepted, got:\n{verdict}"
