@@ -453,14 +453,17 @@ nuraft::ptr<nuraft::srv_state> readAndVerifyStateFile(
 
         return nuraft::srv_state::deserialize(*state_buf);
     }
-    catch (const std::exception & e)
+    /// Only the exceptions that constitute a verdict about the content are caught, so that anything
+    /// else (an allocation failure, say) cannot be mistaken for "this file holds nothing worth
+    /// keeping". NuRaft reports a buffer read that runs past the end, which is what a truncated
+    /// state file causes, with these two types.
+    catch (const std::overflow_error &)
     {
-        if (const auto * exception = dynamic_cast<const Exception *>(&e);
-            throw_on_corrupted_checksum && exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
-        {
-            throw;
-        }
-
+        LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
+        return nullptr;
+    }
+    catch (const std::out_of_range &)
+    {
         LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
         return nullptr;
     }
