@@ -6,15 +6,13 @@ title: 'system.masking_policies'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
-<CloudOnlyBadge />
-
 <div id="description">
   ## Описание
 </div>
 
 Содержит сведения обо всех политиках маскирования, определённых в системе.
+
+Политики маскирования можно создавать и применять только в ClickHouse Cloud. В сборках с открытым исходным кодом таблица `system.masking_policies` всегда пуста, но она всё равно присутствует, чтобы работали запросы интроспекции, такие как `SHOW MASKING POLICIES`, и возвращали пустой результат, а не генерировали исключение.
 
 <div id="columns">
   ## Столбцы

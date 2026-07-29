@@ -27,7 +27,7 @@ All the settings of the original ClickPipe are retained in the resync ClickPipe.
 Here are a few scenarios:
 
 1. You may need to perform major schema changes on the source tables which would break the existing ClickPipe and you would need to restart. You can just click Resync after performing the changes.
-2. Specifically for Clickhouse, maybe you needed to change the ORDER BY keys on the target tables. You can Resync to re-populate data into the new table with the right sorting key.
+2. Specifically for Clickhouse, maybe you needed to update the values in ORDER BY columns on the target tables. You can Resync to re-populate data into the new table with the right sorting key.
 3. The replication slot of the ClickPipe is invalidated: Resync creates a new ClickPipe and a new slot on the source database.
 
 <Note>

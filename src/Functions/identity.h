@@ -37,6 +37,12 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// executeImpl returns the argument column verbatim, so the result type must be exactly the argument
+    /// type. The default LowCardinality implementation strips (nested) LowCardinality from the declared
+    /// result type while the passthrough column keeps it, yielding a type/column mismatch that later
+    /// aborts during serialization (e.g. WITH TOTALS const key). Keep the type identical to the column.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front();
@@ -74,6 +80,11 @@ class FunctionIdentity final : public FunctionIdentityBase
 public:
     FunctionIdentity() : FunctionIdentityBase("identity", true) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
+
+    /// Only used as the internal impl of mapKeys/mapValues (FunctionMapToArrayAdapter), whose
+    /// array-subcolumn convention deliberately strips nested LowCardinality. Restore the default
+    /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 };
 
 

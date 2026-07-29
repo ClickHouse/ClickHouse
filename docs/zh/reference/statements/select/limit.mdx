@@ -147,9 +147,26 @@ SELECT * FROM (
 
 跳过前 2 行并取 3 行通常会返回 `1, 1, 2`，但由于第二个 `2` 与最后一行并列，因此也会包含在结果中。
 
-<Note>
-  `WITH TIES` 不支持负数限制。
-</Note>
+`WITH TIES` 也适用于负数限制和偏移量。它会包含与所选第一行具有相同 `ORDER BY` 值的其他行：
+
+```sql
+SELECT number % 3 AS n FROM numbers(15)
+ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+不使用 `WITH TIES` 时，结果将是 `1, 1, 2, 2`。使用 `WITH TIES` 时，会额外包含三个值为 `1` 的行，因为它们与选中的第一行并列。
 
 此修饰符可与 [`ORDER BY ... WITH FILL`](/zh/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 修饰符结合使用。
 
