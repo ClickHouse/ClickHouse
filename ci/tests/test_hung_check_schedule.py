@@ -25,7 +25,9 @@ import ast
 import contextlib
 import inspect
 import io
+import re
 import runpy
+import signal
 import textwrap
 import types
 from pathlib import Path
@@ -344,6 +346,25 @@ class _Suite:
         self.sequential_tests = []
 
 
+class _FakeManager:
+    """Stand-in for `multiprocessing.Manager()`.
+
+    A real `Manager` forks a server process and binds an AF_UNIX listener at
+    `$TMPDIR/pymp-*/listener-*`, against a 108-byte path cap - so under a long
+    `TMPDIR` the whole behavioural half of this file dies with `OSError: AF_UNIX
+    path too long` before `do_run_tests` even runs. The IPC buys nothing here:
+    `do_run_tests` only calls `.list()` and `.extend()` on the result
+    (tests/clickhouse-test:5103-5105) before handing it to the workers, and the
+    fake workers here never read the queue.
+    """
+
+    def __call__(self):
+        return self
+
+    def list(self, iterable=()):
+        return list(iterable)
+
+
 def run_loop(
     *,
     alive,
@@ -352,18 +373,30 @@ def run_loop(
     deadline=None,
     wall_limit=None,
     model_memory=True,
+    pressure=None,
+    stop_at=None,
 ):
     """Run the real `do_run_tests` against a fake clock and a stubbed probe.
 
     `alive(t)` decides whether the server answers at fake-run-time `t`.
     `workers_done` is when the fake workers exit (None: they never do).
+    `pressure` is the memory fraction the stub reports (None: the healthy 0.1 /
+    unreachable-server model); `stop_at` sets `stop_testing` from outside once
+    that much fake run-time has passed, modelling a worker or signal handler
+    requesting a stop.
     Returns a dict describing what the run did.
     """
     ct = _load()
     fn = ct["do_run_tests"]
     g = fn.__globals__
     clock = _Clock()
-    state = {"attempts": [], "max_retries": set(), "verdict": None, "blocked": 0.0}
+    state = {
+        "attempts": [],
+        "max_retries": set(),
+        "verdict": None,
+        "blocked": 0.0,
+        "memory_calls": [],
+    }
 
     def elapsed():
         return clock.t - _T0
@@ -411,6 +444,14 @@ def run_loop(
         return False
 
     def memory_fraction(_args):
+        state["memory_calls"].append(round(elapsed(), 3))
+        if pressure is not None:
+            # A saturated server can report pressure while failing the liveness
+            # probe: the fraction comes from /proc/<pid>/statm and `_max_memory`
+            # is cached once fetched, so neither read needs the server to answer
+            # `SELECT 1` (tests/clickhouse-test:4776-4818).
+            clock.sleep(0.05)
+            return pressure
         if alive(elapsed()):
             clock.sleep(0.05)
             return 0.1
@@ -433,10 +474,23 @@ def run_loop(
             "get_server_memory_fraction",
         )
     }
+    stop_testing = mp.Event()
+
+    def sleep(seconds):
+        clock.sleep(seconds)
+        # Model an external stop request (a worker's KeyboardInterrupt handler, a
+        # signal handler, or a `--max-failures` abort) arriving while the parent
+        # is inside a failure sequence.
+        if stop_at is not None and elapsed() >= stop_at:
+            stop_testing.set()
+
     g["time"] = clock.time
-    g["sleep"] = clock.sleep
+    g["sleep"] = sleep
+    # `Value` and `Event` are sharedctypes/synchronize objects needing no server
+    # process, and the code under test reads them through `.value`/`get_lock()`;
+    # only `Manager` is replaced (see `_FakeManager`).
     g["multiprocessing"] = types.SimpleNamespace(
-        Process=_Process, Value=mp.Value, Manager=mp.Manager, Event=mp.Event
+        Process=_Process, Value=mp.Value, Manager=_FakeManager(), Event=mp.Event
     )
     g["check_server_liveness"] = liveness
     g["print_c_stacktraces"] = lambda _args: state.__setitem__(
@@ -450,6 +504,12 @@ def run_loop(
         no_self_parallel=False,
     )
     outcome = "returned"
+    message = ""
+    # `do_run_tests`' graceful-deadline paths install SIG_IGN process-wide
+    # (tests/clickhouse-test:5220, :5349) and never restore it - it is not a
+    # module global, so `saved` above cannot cover it. Leaking it would break
+    # every later test in this pytest process that SIGTERMs a child.
+    saved_sigterm = signal.getsignal(signal.SIGTERM)
     try:
         with contextlib.redirect_stdout(io.StringIO()) as out:
             fn(
@@ -457,8 +517,8 @@ def run_loop(
                 _Suite(4),
                 args,
                 mp.Value("i", 0),
-                mp.Manager().list(),
-                mp.Event(),
+                [],
+                stop_testing,
                 mp.Event(),
             )
     except ct["StopTesting"] as exc:
@@ -467,11 +527,14 @@ def run_loop(
             ct["STOP_TESTING_EXIT_CODE"]: "server-died",
             ct["GLOBAL_TIME_LIMIT_EXIT_CODE"]: "graceful",
         }.get(code, f"other({code})")
+        message = str(exc)
     finally:
         g.update(saved)
+        signal.signal(signal.SIGTERM, saved_sigterm)
 
     return {
         "outcome": outcome,
+        "message": message,
         "verdict": state["verdict"],
         "attempts": state["attempts"],
         "n_attempts": len(state["attempts"]),
@@ -479,6 +542,7 @@ def run_loop(
         "wall": round(elapsed(), 2),
         "ticks": clock.ticks,
         "blocked": state["blocked"],
+        "memory_calls": state["memory_calls"],
         "stdout": out.getvalue(),
     }
 
@@ -493,6 +557,19 @@ def down_from(start):
 
 def down_between(start, end):
     return lambda t: not (start <= t < end)
+
+
+def test_run_loop_does_not_leak_the_sigterm_disposition():
+    # do_run_tests' graceful-deadline paths install SIG_IGN
+    # (tests/clickhouse-test:5220, :5349). SIG_IGN survives exec - CPython's
+    # _Py_RestoreSignals resets only SIGPIPE/SIGXFZ/SIGXFSZ - so leaking it would
+    # stop every later test in this pytest process from being able to SIGTERM a
+    # child (ci/praktika/utils.py:291 kills via killpg(SIGTERM), and
+    # ci/tests/test_teepopen_timeout_kills_process.py asserts rc == -SIGTERM).
+    before = signal.getsignal(signal.SIGTERM)
+    result = run_loop(alive=HEALTHY, deadline=10.0, wall_limit=900.0)
+    assert result["outcome"] == "graceful"  # the SIG_IGN path really ran
+    assert signal.getsignal(signal.SIGTERM) is before
 
 
 # ---------------------------------------------------------------------------
@@ -732,6 +809,101 @@ def test_drain_adds_no_wall_clock_to_a_healthy_run():
         result = run_loop(alive=HEALTHY, workers_done=workers_done)
         assert result["outcome"] == "returned"
         assert result["wall"] - workers_done <= 1.0, (workers_done, result["wall"])
+
+
+# ---------------------------------------------------------------------------
+# behavioural: the parent keeps working while a failure sequence is pending
+# ---------------------------------------------------------------------------
+
+
+def test_memory_shed_still_runs_while_a_failure_sequence_is_pending():
+    # The whole point of owning the retry window in the loop: a saturated server
+    # can fail `SELECT 1` while its RSS is still readable, and shedding a worker
+    # is the one mechanism that could relieve the pressure. Master spends the
+    # entire window inside one blocking probe call, so it performs ZERO memory
+    # checks and sheds nothing (measured on pristine master: 0 checks, 0 shed
+    # lines).
+    result = run_loop(alive=DEAD, attempt_cost=10.0, pressure=0.95)
+    assert result["outcome"] == "server-died", result["outcome"]
+
+    failures = [t for t, ok in result["attempts"] if not ok]
+    assert len(failures) >= 2, failures
+    inside = [t for t in result["memory_calls"] if failures[0] <= t <= failures[-1]]
+    assert len(inside) >= 2, (result["memory_calls"], failures)
+
+    shed_at = result["stdout"].find("signalling one worker to stop")
+    verdict_at = result["stdout"].find(VERDICT)
+    assert shed_at >= 0, result["stdout"]
+    assert verdict_at >= 0, result["stdout"]
+    assert shed_at < verdict_at, (
+        shed_at,
+        verdict_at,
+        "the worker shed must run DURING the failure sequence, not after the "
+        "verdict - after it there is nothing left to relieve",
+    )
+    # The shed must be REACHED from inside the sequence, not merely printed
+    # before the verdict: pin the memory check that produced it as one of the
+    # in-window ones, so gating the shed on `hung_check_failures == 0` (which
+    # only ever lets the very first, pre-failure check shed) is caught.
+    assert any(t > failures[0] for t in inside), (inside, failures)
+
+    # The shed REQUEST, not just the message. `workers_to_shed` is created
+    # inside `do_run_tests`, so the counter is read back from the line's own
+    # "(N tracked, M pending shed)" tail - and it is the counter, not the print,
+    # that the workers act on. Without this the message can be emitted while the
+    # request is never actually recorded, in which case the same check sheds over
+    # and over (measured: 4 identical lines, all "0 pending shed") because the
+    # cap `len(processes) - workers_to_shed.value > 1` never tightens.
+    pending = re.findall(r"\((\d+) tracked, (\d+) pending shed\)", result["stdout"])
+    assert pending, result["stdout"]
+    assert [int(m) for _, m in pending] == [1], (
+        pending,
+        "the shed must record exactly one pending request; a message printed "
+        "without incrementing workers_to_shed sheds nothing and repeats",
+    )
+
+
+def test_an_external_stop_is_honoured_between_failed_probes():
+    # A worker hitting --max-failures, a signal handler, or any other stop
+    # request must be seen while the probe ladder is still running. Master blocks
+    # in one call for the whole window, so it only notices at the verdict
+    # (measured on pristine master: wall 170.1 s, and it condemns the server on
+    # the way out).
+    result = run_loop(alive=DEAD, attempt_cost=10.0, stop_at=20.0)
+    assert result["message"] == "test run was stopped (see earlier output for the cause)"
+    assert result["wall"] < 60.0, (
+        result["wall"],
+        "the external stop must be honoured before the 65 s failure budget elapses",
+    )
+    assert VERDICT not in result["stdout"], (
+        "the run stopped for an external reason, so the hung check must not have "
+        "condemned the server"
+    )
+
+
+def test_the_parent_is_not_starved_during_a_failure_sequence():
+    # `blocked` is the time spent inside the probe. Master: 0.93 (instant
+    # refusal) to 0.97 (socket timeout) - one call spans the whole window, so
+    # nothing else in the loop runs at all. The fix: 0.00 to 0.59.
+    #
+    # The fix cannot reach 0 in the socket-timeout band because each of the ten
+    # attempts genuinely waits out the callee's own 10 s socket timeout; what
+    # changed is that the parent regains control between them (max contiguous
+    # block 165 s -> 10 s). 0.70 therefore sits between the two designs with
+    # margin on both sides: 0.11 above the fix's worst measured case, 0.23 below
+    # master's best. A regression handing the retry window back to the callee
+    # would land at >= 0.93 and fail this by a wide margin.
+    for label, kwargs in (
+        ("instant-cached", dict(alive=DEAD, model_memory=False)),
+        ("instant-uncached", dict(alive=DEAD, model_memory=True)),
+        ("timeout-cached", dict(alive=DEAD, attempt_cost=10.0, model_memory=False)),
+        ("timeout-uncached", dict(alive=DEAD, attempt_cost=10.0, model_memory=True)),
+        ("under-pressure", dict(alive=DEAD, attempt_cost=10.0, pressure=0.95)),
+    ):
+        result = run_loop(**kwargs)
+        assert result["outcome"] == "server-died", (label, result["outcome"])
+        duty = result["blocked"] / result["wall"]
+        assert duty < 0.70, (label, duty, result["blocked"], result["wall"])
 
 
 def test_workers_stopping_at_the_deadline_still_report_the_benign_code():
