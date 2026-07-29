@@ -3,11 +3,18 @@
 
 # Regression test for a post-auth out-of-bounds read over the native TCP protocol.
 #
-# A crafted `REPLICATED`-serialized column carries per-row indexes that point past the
-# nested ("elements") column. Before the fix SerializationReplicated validated only the
-# index row count, not the index values, so materializing the column dereferenced
-# nested[index] out of bounds. The server must now reject the block with INCORRECT_DATA
-# (code 117) and stay alive.
+# A crafted `REPLICATED`-serialized column can trigger the same out-of-bounds read
+# (nested_column[index]) via two independent paths that SerializationReplicated must
+# reject with INCORRECT_DATA (code 117), while the server stays alive:
+#
+# 1. out-of-bounds index: per-row indexes point past the nested ("elements") column.
+#    Before the fix, only the index row count was validated, not the index values.
+# 2. truncated elements: indexes are all in range for the advertised num_elements, but
+#    the elements payload is cut short. Bulk readers of primitive types (e.g.
+#    SerializationNumber::deserializeBinaryBulk) short-read on EOF instead of throwing,
+#    and NativeReader only checks the top-level column size (the index count for
+#    ColumnReplicated, not the nested column size), so without an explicit post-read
+#    size check the nested column would silently end up smaller than num_elements.
 #
 # The client speaks the raw native protocol pinned to revision 54482
 # (DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION, the minimum that enables REPLICATED),
@@ -274,35 +281,96 @@ def sendCraftedReplicatedBlock(s):
     s.sendall(ba)
 
 
-def main():
+def connectAndStartInsert(s):
+    sendHello(s)
+    receiveHello(s)
+    sendAddendum(s)
+    # input_format_defaults_for_omitted_fields=0 suppresses the TableColumns packet
+    # (mirrors 02010_lc_native); async_insert=0 forces the synchronous insert path so the
+    # crafted block is deserialized immediately.
+    sendQuery(
+        s,
+        "INSERT INTO {}.tab "
+        "SETTINGS input_format_defaults_for_omitted_fields = 0, async_insert = 0 "
+        "FORMAT Native".format(CLICKHOUSE_DATABASE),
+    )
+
+    # Finish external tables and read the insert sample-block header.
+    sendEmptyBlock(s)
+    readHeader(s)
+
+
+def expectIncorrectData(s, must_contain):
+    packet_type = readVarUInt(s)
+    assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
+    code, text = readException(s)
+    assert code == 117, "Expected INCORRECT_DATA (117), got {}: {}".format(code, text)
+    assert must_contain in text, text
+
+
+def outOfBoundsIndexScenario():
+    # Every index points past the (single-element) nested column: must be rejected before
+    # any ColumnReplicated accessor can dereference nested_column[index] out of bounds.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        sendHello(s)
-        receiveHello(s)
-        sendAddendum(s)
-        # input_format_defaults_for_omitted_fields=0 suppresses the TableColumns packet
-        # (mirrors 02010_lc_native); async_insert=0 forces the synchronous insert path so the
-        # crafted block is deserialized immediately.
-        sendQuery(
-            s,
-            "INSERT INTO {}.tab "
-            "SETTINGS input_format_defaults_for_omitted_fields = 0, async_insert = 0 "
-            "FORMAT Native".format(CLICKHOUSE_DATABASE),
-        )
-
-        # Finish external tables and read the insert sample-block header.
-        sendEmptyBlock(s)
-        readHeader(s)
-
+        connectAndStartInsert(s)
         sendCraftedReplicatedBlock(s)
+        expectIncorrectData(s, "ColumnReplicated")
+        print("out-of-bounds index: caught expected exception INCORRECT_DATA")
 
-        packet_type = readVarUInt(s)
-        assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
-        code, text = readException(s)
-        assert code == 117, "Expected INCORRECT_DATA (117), got {}: {}".format(code, text)
-        assert "ColumnReplicated" in text, text
-        print("caught expected exception: INCORRECT_DATA")
+
+def sendReplicatedBlockWithTruncatedElements(s):
+    # All indexes are in range for the advertised num_elements, but the elements payload
+    # is cut short. Bulk readers of primitive types (e.g. SerializationNumber::deserializeBinaryBulk)
+    # short-read on EOF instead of throwing, so without an explicit post-read size check the
+    # nested column would silently end up smaller than num_elements while in-range indexes still
+    # reference the missing rows -- the same out-of-bounds read via a different path.
+    limit = 4
+    num_elements = 4
+    sent_elements = 2
+
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(1)  # has_custom serialization
+    ba.append(4)  # KindStackBinarySerializationType::REPLICATED
+
+    # ReplicatedIndexes substream: all indexes are in [0, num_elements).
+    writeVarUInt(limit, ba)
+    ba.append(1)  # size_of_index_type = sizeof(UInt8)
+    for i in range(limit):
+        ba.append(i)
+
+    # ReplicatedElements substream: advertise num_elements, but send fewer values.
+    writeVarUInt(num_elements, ba)
+    for _ in range(sent_elements):
+        ba.extend(struct.pack("<Q", 42))
+
+    s.sendall(ba)
+    # Signal EOF on the read side of the server's connection so the truncated read
+    # returns a short read instead of blocking for the missing bytes.
+    s.shutdown(socket.SHUT_WR)
+
+
+def truncatedElementsScenario():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        connectAndStartInsert(s)
+        sendReplicatedBlockWithTruncatedElements(s)
+        expectIncorrectData(s, "Cannot read all elements")
+        print("truncated elements: caught expected exception INCORRECT_DATA")
+
+
+def main():
+    outOfBoundsIndexScenario()
+    truncatedElementsScenario()
 
 
 if __name__ == "__main__":

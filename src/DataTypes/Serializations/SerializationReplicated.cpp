@@ -290,6 +290,17 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     column_replicated.getIndexes().attachIndexes(std::move(indexes));
 
     nested->deserializeBinaryBulkWithMultipleStreams(column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
+
+    /// Bulk readers of primitive types (e.g. `SerializationNumber::deserializeBinaryBulk`) short-read on EOF
+    /// instead of throwing, so a truncated elements stream would otherwise leave the nested column smaller
+    /// than num_elements while already-validated indexes still reference the missing rows. `NativeReader`
+    /// only checks `column->size()`, which for `ColumnReplicated` is the index count, not the nested column
+    /// size, so this must be verified explicitly here.
+    if (column_replicated.getNestedColumn()->size() != num_elements)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot read all elements of ColumnReplicated in Native format: read {} of {}",
+            column_replicated.getNestedColumn()->size(), num_elements);
 }
 
 void SerializationReplicated::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
