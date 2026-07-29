@@ -437,7 +437,7 @@ Une fois les requêtes à optimiser identifiées, vous pouvez commencer à trava
 
 L’optimisation des requêtes exige de la méthode. Je ne parle pas de benchmarking avancé, mais le fait de disposer d’un processus simple pour comprendre comment vos modifications affectent les performances des requêtes peut faire une vraie différence. 
 
-Commencez par identifier vos requêtes lentes à partir des journaux de requêtes, puis examinez les améliorations possibles de manière isolée. Lors du test de la requête, veillez à désactiver le cache du système de fichiers. 
+Commencez par identifier vos requêtes lentes à partir du journal des requêtes, puis examinez les améliorations possibles de manière isolée. Lors du test de la requête, veillez à désactiver le cache du système de fichiers. 
 
 > ClickHouse s’appuie sur la [mise en cache](/fr/concepts/features/performance/caches/caches) pour accélérer les performances des requêtes à différentes étapes. C’est bénéfique pour les performances des requêtes, mais pendant le dépannage, cela peut masquer d’éventuels goulots d’étranglement d’E/S ou un schéma de table inadéquat. C’est pourquoi je recommande de désactiver le cache du système de fichiers pendant les tests. Assurez-vous qu’il reste activé en production.
 
@@ -857,6 +857,6 @@ Grâce à la clé primaire, seul un sous-ensemble des granules de la table a ét
   ## Étapes suivantes
 </div>
 
-Nous espérons que ce guide vous a permis de bien comprendre comment analyser les requêtes lentes avec ClickHouse et comment les accélérer. Pour aller plus loin sur ce sujet, vous pouvez consulter la documentation sur l’[analyseur de requêtes](/fr/guides/clickhouse/performance-and-monitoring/analyzer) et le [profilage](/fr/concepts/features/performance/troubleshoot/sampling-query-profiler) afin de mieux comprendre comment ClickHouse exécute précisément votre requête.
+Nous espérons que ce guide vous a aidé à bien comprendre comment analyser les requêtes lentes avec ClickHouse et comment les accélérer. Pour approfondir ce sujet, vous pouvez consulter la documentation sur l’[analyseur de requêtes](/fr/guides/clickhouse/performance-and-monitoring/analyzer) et le [profilage](/fr/concepts/features/performance/troubleshoot/sampling-query-profiler) afin de mieux comprendre comment ClickHouse exécute votre requête.
 
-À mesure que vous vous familiarisez avec les spécificités de ClickHouse, je vous recommande également de lire la documentation sur les [clés de partitionnement](/fr/concepts/best-practices/partitioning-keys) et les [index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes) pour découvrir des techniques plus avancées permettant d’accélérer vos requêtes.
+À mesure que vous vous familiariserez avec les spécificités de ClickHouse, nous vous recommandons également de lire la documentation sur les [clés de partitionnement](/fr/concepts/best-practices/partitioning-keys) et les [index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes) pour découvrir des techniques plus avancées permettant d’accélérer vos requêtes.

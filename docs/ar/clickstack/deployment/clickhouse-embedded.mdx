@@ -36,9 +36,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step>
-        ### ابدأ ClickHouse
-
+      <Step title="ابدأ ClickHouse" id="start-clickhouse-docker">
         اسحب صورة خادم ClickHouse وشغّلها مع تعيين كلمة مرور:
 
         ```shell
@@ -56,9 +54,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         </Tip>
       </Step>
 
-      <Step>
-        ### افتح واجهة ClickStack
-
+      <Step title="افتح واجهة مستخدم ClickStack" id="open-clickstack-ui-docker">
         افتح [http://localhost:8123](http://localhost:8123) في المتصفح وانقر على **ClickStack**.
 
         أدخل اسم المستخدم `default` وكلمة المرور `password` للاتصال بالمثيل المحلي.
@@ -66,9 +62,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="المصادقة" size="lg" />
       </Step>
 
-      <Step>
-        ### أنشئ مصدرًا
-
+      <Step title="أنشئ مصدرًا" id="create-a-source-docker">
         إذا كانت لديك جداول OpenTelemetry موجودة، فسيكتشفها ClickStack وينشئ المصادر تلقائيًا.
 
         في التثبيت الجديد، سيُطلب منك إنشاء مصدر. املأ حقل **Table** باسم الجدول المناسب (مثل `otel_logs`) ثم انقر على **Save New Source**.
@@ -82,9 +76,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   <Tab title="الملف التنفيذي">
     <Steps>
-      <Step>
-        ### ابدأ ClickHouse
-
+      <Step title="ابدأ ClickHouse" id="start-clickhouse-binary">
         نزّل ClickHouse وابدأ تشغيله:
 
         ```shell
@@ -139,15 +131,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         ```
       </Step>
 
-      <Step>
-        ### افتح واجهة ClickStack
-
+      <Step title="افتح واجهة مستخدم ClickStack" id="open-clickstack-ui-binary">
         افتح [http://localhost:8123](http://localhost:8123) في المتصفح وانقر على **ClickStack**. سيُنشأ اتصال بالمثيل المحلي تلقائيًا.
       </Step>
 
-      <Step>
-        ### أنشئ مصدرًا
-
+      <Step title="أنشئ مصدرًا" id="create-a-source-binary">
         إذا كانت لديك جداول OpenTelemetry موجودة، فسيكتشفها ClickStack وينشئ المصادر تلقائيًا.
 
         إذا لم تكن لديك بيانات بعد، فراجع [إدخال البيانات](/ar/clickstack/ingesting-data/index) للاطلاع على الخيارات المتاحة.
@@ -162,9 +150,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الخطوات التالية
 </div>
 
-إذا كنت مستعدًا للانتقال إلى ما بعد مرحلة التقييم، ففكّر في نشرٍ جاهزٍ للإنتاج:
+إذا كنت مستعدًا للانتقال إلى ما بعد مرحلة التقييم، ففكّر في نشر جاهز لبيئة الإنتاج:
 
-* [All-in-One](/ar/clickstack/deployment/all-in-one) — حاوية واحدة تضم جميع المكونات، بما في ذلك التخزين الدائم والمصادقة
+* [الكل في واحد](/ar/clickstack/deployment/all-in-one) — حاوية واحدة تضم جميع المكونات، بما في ذلك التخزين الدائم والمصادقة
 * [Docker Compose](/ar/clickstack/deployment/docker-compose) — مكونات منفصلة لمزيد من التحكم
-* [Helm](/ar/clickstack/deployment/helm) — موصى به لعمليات النشر على Kubernetes في بيئات الإنتاج
+* [Helm](/ar/clickstack/deployment/helm) — موصى به لعمليات النشر على Kubernetes في بيئة الإنتاج
 * [Managed ClickStack](/ar/clickstack/getting-started/managed) — مُدار بالكامل على ClickHouse Cloud

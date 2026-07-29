@@ -110,6 +110,7 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_etag` — ETag of the file. Type: `LowCardinality(String)`. HDFS has no native ETag, so the value is synthesized from the file's modification time and size as `<mtime_seconds>_<size>`. Because `libhdfs3` exposes the modification time only at one-second precision, a rewrite within the same second that keeps the same size yields the same value; for that reason this synthesized ETag is not used as a content-cache key.
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 
