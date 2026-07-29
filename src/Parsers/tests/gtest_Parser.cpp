@@ -616,6 +616,14 @@ static ASTPtr makeRenameDatabaseAST(bool from_null, bool to_null)
     return query;
 }
 
+/// gtest's death-test macros expand to a bare `stderr`, which on musl is defined as
+/// `#define stderr (stderr)` (see contrib/musl/include/stdio.h) so that its address can be taken;
+/// clang's -Wdisabled-macro-expansion flags this self-referential (but valid) expansion.
+#if defined(USE_MUSL)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 TEST(ParserRenameQueryDeathTest, FormatNullFromDatabaseAborts)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -629,6 +637,10 @@ TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
     ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/false, /*to_null=*/true);
     EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).to.database");
 }
+
+#if defined(USE_MUSL)
+#pragma clang diagnostic pop
+#endif
 #endif
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
