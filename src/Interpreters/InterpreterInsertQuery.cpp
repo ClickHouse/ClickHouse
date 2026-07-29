@@ -1325,12 +1325,13 @@ BlockIO InterpreterInsertQuery::execute()
             /// local INSERT ... SELECT. Route it through the async insert queue when async inserts
             /// are enabled, otherwise build the normal synchronous pipeline.
             auto * async_insert_queue = context->tryGetAsynchronousInsertQueue();
-            // Transactions and non-parallel quorum cannot be served by the async queue -
-            // queue flushes are not transactional, and non-parallel quorum requires
-            // synchronous coordination. The async queue also cannot honor
-            // skip_target_insert_access_check (the CREATE TABLE ... AS SELECT populate into a
-            // temporary _tmp_replace_* table), so it would re-check INSERT on the temporary name
-            // and fail with ACCESS_DENIED. Fall back to the synchronous pipeline silently.
+            // Transactions and non-parallel quorum cannot be served by the async queue: queue flushes
+            // are not transactional, and non-parallel quorum requires synchronous coordination. The
+            // async queue also cannot honor skip_target_insert_access_check (the CREATE TABLE ... AS
+            // SELECT populate into a temporary _tmp_replace_* table), so it would re-check INSERT on
+            // the temporary name and fail with ACCESS_DENIED. A remote destination (isRemote(), e.g.
+            // Distributed) needs its own write handling rather than a single local sink, so it is
+            // excluded too. Fall back to the synchronous pipeline silently.
             const bool in_transaction =
                 context->getCurrentTransaction() != nullptr
                 || settings[Setting::implicit_transaction];
@@ -1342,7 +1343,8 @@ BlockIO InterpreterInsertQuery::execute()
                 && (settings[Setting::async_insert] || table->areAsynchronousInsertsEnabled())
                 && !in_transaction
                 && !non_parallel_quorum
-                && !skip_target_insert_access_check;
+                && !skip_target_insert_access_check
+                && !table->isRemote();
             if (async_insert_select)
                 buildAsyncInsertSelectPipeline(res, query, query_ptr, table, async_insert_queue, context, settings, logger);
             else
