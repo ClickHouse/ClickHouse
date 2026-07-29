@@ -19,6 +19,15 @@ def load_module():
     return mod
 
 
+def load_migrate_module():
+    spec = importlib.util.spec_from_file_location(
+        "docs_migrate", HERE.parents[4] / "docs/_migration/migrate.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def generated_page(names, body_h1=None):
     sections = []
     for setting in names:
@@ -81,9 +90,61 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
+    migrate = load_migrate_module()
     mod.SESSION_SETTINGS_MAX_PER_PAGE = 20
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
+
+    generator_order = [
+        generator["name"] for generator in mod.SETTINGS_GENERATORS
+    ]
+    assert generator_order.index("beta-and-experimental") > max(
+        generator_order.index(family_name)
+        for family_name in mod.SETTINGS_SPLIT_FAMILIES
+    )
+
+    for badge in (
+        "CloudNotSupportedBadge",
+        "CloudSupportedBadge",
+        "VersionBadge",
+    ):
+        migrated, _ = migrate.transform_imports(
+            f"import {badge} from '@theme/badges/{badge}';\n\n"
+            f"<{badge} />\n\n"
+            "Content after the badge.\n",
+            migrate.Lookups(),
+            [],
+        )
+        assert migrated == (
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n"
+        )
+
+    migrated_namespace, _ = migrate.transform_imports(
+        "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
+        "<BadgeNS.CloudNotSupportedBadge />\n",
+        migrate.Lookups(),
+        [],
+    )
+    assert migrated_namespace == (
+        "import * as BadgeNS from "
+        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
+        "<BadgeNS.CloudNotSupportedBadge />\n"
+    )
+
+    for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
+        import_line = (
+            f'import {badge} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";'
+        )
+        assert mod._component_imports_for_page(
+            import_line, f"<{badge}/>"
+        ) == [
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";'
+        ]
 
     version_history_import = (
         'import VersionHistory from '
@@ -152,6 +213,45 @@ def main():
     ) in complex_explorer
     assert complex_anchor_routes["openssl.client.caconfig"] == \
         "/reference/settings/server-settings/settings/other"
+
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        for family in mod.SETTINGS_SPLIT_FAMILIES.values():
+            manifest_path = (
+                docs / family["base_route"].lstrip("/") / "manifest.json"
+            )
+            manifest_path.parent.mkdir(parents=True)
+            anchor = (
+                "unique_key_max_encoded_size"
+                if family["base_route"] == mod.SESSION_SETTINGS_BASE_ROUTE
+                else "unrelated_setting"
+            )
+            target = family["base_route"] + (
+                "/unique-key"
+                if anchor == "unique_key_max_encoded_size"
+                else "/other"
+            )
+            manifest_path.write_text(json.dumps({
+                "routes": [{
+                    "prefix": anchor.rsplit("_", 1)[0],
+                    "mode": "raw",
+                    "target": target,
+                }],
+                "anchorRoutes": {anchor: target},
+            }), encoding="utf-8")
+
+        stale_link = (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/other"
+            "#unique_key_max_encoded_size)"
+        )
+        assert mod._rewrite_setting_links_from_manifests(
+            stale_link, docs
+        ) == (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/unique-key"
+            "#unique_key_max_encoded_size)"
+        )
 
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
@@ -583,6 +683,25 @@ def main():
                     else None,
                 )
             )
+            if family_name == "mergetree-settings":
+                content = content.replace(
+                    'import SettingsInfoBlock from '
+                    '"/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";\n\n',
+                    "",
+                    1,
+                )
+                content = content.replace(
+                    '<SettingsInfoBlock type="Bool" default_value="0" />',
+                    '<ExperimentalBadge/>\n'
+                    '<SettingsInfoBlock type="Bool" default_value="0" />\n'
+                    '<VersionHistory rows={[]}/>',
+                    1,
+                )
+                explorer = (
+                    f"\n## {family['browse_title']}\n\n"
+                    f"<{family['component_name']} />\n"
+                )
+                content += explorer + explorer
             artifacts = mod.split_settings_page(
                 dest, content, docs, family_name)
             by_path = {artifact.path: artifact.content for artifact in artifacts}
@@ -590,6 +709,8 @@ def main():
             root = by_path[dest]
             assert f"<{family['component_name']} />" in root
             assert f"## {family['browse_title']}" in root
+            assert root.count(f"<{family['component_name']} />") == 1
+            assert root.count(f"## {family['browse_title']}") == 1
             assert "## filesystem_cache_alpha" not in root
             routes_script_path = (
                 docs / "_site/customizations/settings-legacy-routes"
@@ -647,8 +768,14 @@ def main():
             navigation_path = dest.with_suffix("") / "navigation.json"
             navigation = json.loads(by_path[navigation_path])
             assert navigation["group"] == family["navigation_group"]
-            assert navigation["root"] == family["base_route"].lstrip("/")
             assert navigation["directory"] == "none"
+            base_route = family["base_route"].lstrip("/")
+            if family.get("overview_as_page", False):
+                assert "root" not in navigation
+                assert navigation["pages"][0] == base_route
+            else:
+                assert navigation["root"] == base_route
+                assert base_route not in navigation["pages"]
 
             manifest_path = dest.with_suffix("") / "manifest.json"
             manifest = json.loads(by_path[manifest_path])
@@ -666,10 +793,140 @@ def main():
 
             cache_path = docs / (
                 family["base_route"].lstrip("/") + "/filesystem-cache.mdx")
+            cache_page = by_path[cache_path]
             assert (
                 f"title: 'filesystem_cache_* {family['detail_title_suffix']}'"
-                in by_path[cache_path]
+                in cache_page
             )
+            if family_name == "mergetree-settings":
+                assert (
+                    'import { ExperimentalBadge } from '
+                    '"/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";'
+                    in cache_page
+                )
+                assert (
+                    'import SettingsInfoBlock from '
+                    '"/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";'
+                    in cache_page
+                )
+                assert (
+                    'import { VersionHistory } from '
+                    '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+                    in cache_page
+                )
+                prefetch_page = by_path[
+                    docs
+                    / "reference/settings/merge-tree-settings/filesystem-prefetch.mdx"
+                ]
+                assert "import SettingsInfoBlock from " in prefetch_page
+                assert "import ExperimentalBadge from " not in prefetch_page
+                assert "import VersionHistory from " not in prefetch_page
+
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        current_manifests = {}
+        for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
+            anchor = (
+                "unique_key_max_encoded_size"
+                if family_name == "session-settings"
+                else "unrelated_setting"
+            )
+            target = family["base_route"] + (
+                "/unique-key"
+                if family_name == "session-settings"
+                else "/other"
+            )
+            current_manifests[family_name] = {
+                "routes": [{
+                    "prefix": anchor.rsplit("_", 1)[0],
+                    "mode": "raw",
+                    "target": target,
+                }],
+                "anchorRoutes": {anchor: target},
+            }
+
+        stale_session_manifest = {
+            "routes": [{
+                "prefix": "unique_key_max_encoded",
+                "mode": "raw",
+                "target": "/reference/settings/session-settings/other",
+            }],
+            "anchorRoutes": {
+                "unique_key_max_encoded_size":
+                    "/reference/settings/session-settings/other",
+            },
+        }
+        session_manifest_path = mod._settings_manifest_path(
+            docs, mod.SETTINGS_SPLIT_FAMILIES["session-settings"])
+        session_manifest_path.parent.mkdir(parents=True)
+        session_manifest_path.write_text(
+            json.dumps(stale_session_manifest), encoding="utf-8")
+        current_session_artifact = mod.GeneratedArtifact(
+            session_manifest_path,
+            json.dumps(current_manifests["session-settings"]),
+        )
+        assert mod.reconcile_generated_artifacts(
+            [current_session_artifact], [], docs, check=True) == 1
+        assert json.loads(session_manifest_path.read_text(
+            encoding="utf-8")) == stale_session_manifest
+
+        stale_link = (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/other"
+            "#unique_key_max_encoded_size)"
+        )
+        assert mod._rewrite_setting_links_from_manifests(
+            stale_link, docs, current_manifests
+        ) == (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/unique-key"
+            "#unique_key_max_encoded_size)"
+        )
+
+        observed_beta_rewrite = []
+
+        def fake_generate_artifacts(
+                gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+                generated_manifests=None):
+            del binary, repo_root, migrate, lk, file_map, remap
+            if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
+                family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
+                return [mod.GeneratedArtifact(
+                    mod._settings_manifest_path(docs_dir, family),
+                    json.dumps(current_manifests[gen["name"]]),
+                )]
+            if gen["name"] == "beta-and-experimental":
+                observed_beta_rewrite.append(
+                    mod._rewrite_setting_links_from_manifests(
+                        stale_link, docs_dir, generated_manifests)
+                )
+            return []
+
+        mod.ALL_GENERATORS = mod.SETTINGS_GENERATORS
+        mod.aggregate_generators = lambda docs_dir: []
+        mod.table_engine_generators = lambda docs_dir, file_map: []
+        mod.database_engine_generators = lambda docs_dir, file_map: []
+        mod.data_type_generators = lambda docs_dir, file_map: []
+        mod.format_generators = lambda docs_dir, file_map: []
+        mod.table_function_generators = lambda docs_dir, file_map: []
+        mod.window_function_generators = lambda docs_dir, file_map: []
+        mod.import_migrate = lambda docs_dir: object()
+        mod.build_file_map = lambda migrate, slug_map: (object(), {})
+        mod.generate_artifacts = fake_generate_artifacts
+        mod.stale_settings_page_paths = (
+            lambda family_name, artifacts, docs_dir: []
+        )
+        mod.reconcile_generated_artifacts = (
+            lambda artifacts, stale_paths, docs_dir, **kwargs: 0
+        )
+        assert mod.main(["--docs-dir", str(docs), "--check"]) == 0
+        assert observed_beta_rewrite == [
+            (
+                "[unique_key_max_encoded_size]"
+                "(/reference/settings/session-settings/unique-key"
+                "#unique_key_max_encoded_size)"
+            )
+        ]
 
     print("OK: flat settings prefixes preserve coverage and top-level fragment routing")
     return 0
