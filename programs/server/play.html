@@ -512,8 +512,14 @@
             justify-content: center;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
+            /* Inherit the page font, not just its size: a native <button> otherwise falls
+               back to the system button font (see #databases-hide), whose `normal`
+               line-height differs from the .tab divs' page font. In Firefox that makes the
+               [+] glyph's line box taller, so the button — aligned to flex-end like the
+               tabs — sticks up above them. Inheriting the font makes its height match the
+               tabs exactly, as it already does in Chromium. */
+            font: inherit;
             font-weight: bold;
-            font-size: 100%;
             background: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--border-color);
