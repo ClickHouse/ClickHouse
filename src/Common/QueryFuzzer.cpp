@@ -2977,7 +2977,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
@@ -3484,7 +3484,11 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         /// arbitrary expressions — doing so breaks the order_by_all formatting invariant
         /// (ASTSelectQuery::formatImpl assumes children[0] is ASTOrderByElement when
         /// order_by_all == true) and causes a null-pointer crash in format().
-        if (!typeid_cast<ASTOrderByElement *>(child.get()))
+        /// `WINDOW` lists likewise contain `ASTWindowListElement` nodes: the analyzer and query
+        /// tree builder cast every `window()` child to `ASTWindowListElement`, so replacing one
+        /// with a plain expression breaks that node-type invariant. We still recurse into the
+        /// element below (via `fuzz(child)`) so the window definition is fuzzed in place.
+        if (!typeid_cast<ASTOrderByElement *>(child.get()) && !typeid_cast<ASTWindowListElement *>(child.get()))
         {
             if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
             {
@@ -3883,6 +3887,13 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     {
         if (func->name == op && func->arguments)
         {
+            /// A degenerate call such as `and()` has nothing to flatten, so it contributes one
+            /// opaque leaf instead of nothing, keeping the extraction non-empty
+            if (func->arguments->children.empty())
+            {
+                predicates.emplace_back(node);
+                return;
+            }
             /// Recursively extract predicates from children
             for (const auto & entry : func->arguments->children)
             {
@@ -3908,11 +3919,14 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
     {
         if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
+            /// Nothing to permute in a degenerate call such as `and()`
+            if (!func->arguments || func->arguments->children.empty())
+                return tryNegateNextPredicate(predicate, negProb);
+
             ASTs predicates;
 
             /// Extract all predicates under the current logical operator
             extractPredicates(predicate, predicates, func->name, negProb);
-            chassert(!predicates.empty());
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
             for (auto & entry : predicates)
@@ -6735,6 +6749,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::STOP_REPLICATED_VIEW, Type::START_REPLICATED_VIEW},
                 {Type::STOP_VIRTUAL_PARTS_UPDATE, Type::START_VIRTUAL_PARTS_UPDATE},
                 {Type::STOP_REDUCE_BLOCKING_PARTS, Type::START_REDUCE_BLOCKING_PARTS},
+                {Type::STOP, Type::START},
+                {Type::STOP_ALL_BACKGROUND, Type::START_ALL_BACKGROUND},
                 {Type::STOP_LISTEN, Type::START_LISTEN},
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
@@ -6799,6 +6815,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (system_query->type == t && fuzz_rand() % 10 == 0)
                 {
                     system_query->type = view_cmd_types[fuzz_rand() % std::size(view_cmd_types)];
+                    break;
+                }
+            }
+        }
+        /// Rotate among background control commands that all take a table argument
+        {
+            static const Type background_cmd_types[] = {
+                Type::STOP,
+                Type::START,
+                Type::PAUSE,
+                Type::CANCEL,
+                Type::REFRESH,
+            };
+            for (const auto & t : background_cmd_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = background_cmd_types[fuzz_rand() % std::size(background_cmd_types)];
                     break;
                 }
             }
