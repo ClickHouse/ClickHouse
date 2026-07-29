@@ -31,6 +31,7 @@
 #include <optional>
 #include <string>
 #include <cstring>
+#include <latch>
 #include <thread>
 
 namespace DB::FileCacheSetting
@@ -440,6 +441,82 @@ TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
     EXPECT_GE(view->misses()[0].range.end(), kSegmentSize);
 }
 
+
+/// RM1 pin: a SECOND writer opened for the same cell while the first is gone
+/// mid-fill (plan restart) continues at the live committed frontier - `getOrSet`
+/// returns the existing PARTIALLY-filled segment, `write` appends at `cwo`, and
+/// the segment completes across the two writer lifetimes. This is the coupling
+/// the request map's demand-shaped tiles rely on: attaching to a partial
+/// segment needs no cell<->extent exact match, only the claim and the frontier.
+TEST_F(DiskCacheBuffers, SecondWriterContinuesFromCommittedFrontier)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_rm1a", kSegmentSize);
+
+    const size_t half = kSegmentSize / 2;
+    auto first = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    ASSERT_EQ(claimedWrite(*first->misses()[0].writer, makeChain(0, half, 'A')), half);
+
+    /// Second writer on the same cell while the first is still HELD: the
+    /// provider hands back the same segment; writes serialize via claims.
+    auto second = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    auto & writer2 = *second->misses()[0].writer;
+    ASSERT_EQ(claimedWrite(writer2, makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
+    /// `complete()` is WRITER-LOCAL by design (its own committed ledger vs its
+    /// cell), so a continuation writer never reports the sibling's prefix; the
+    /// segment truth is the probe's (`allHit` below). Nothing in the engine
+    /// gates on `complete()`.
+    EXPECT_FALSE(writer2.complete());
+
+    first->miss_entries.clear();
+    second->miss_entries.clear();
+
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
+    ASSERT_TRUE(view->allHit());
+    ChainedBuffers got = view->hits()[0].reader->read(ByteRange{0, kSegmentSize});
+    ASSERT_TRUE(got.covers(ByteRange{0, kSegmentSize}));
+    std::string bytes = flatten(got);
+    EXPECT_EQ(bytes.substr(0, half), std::string(half, 'A'));
+    EXPECT_EQ(bytes.substr(half), std::string(kSegmentSize - half, 'B'));
+}
+
+/// RM1 pin: while a sibling HOLDS the claim, a second writer's write is a
+/// graceful no-op (role not adopted, nothing thrown, 0 bytes); once the claim
+/// releases, the same writer object continues from the frontier.
+TEST_F(DiskCacheBuffers, SecondWriterYieldsToHeldClaimThenContinues)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_rm1b", kSegmentSize);
+
+    const size_t half = kSegmentSize / 2;
+    auto first = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    auto & writer1 = *first->misses()[0].writer;
+
+    auto second = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    auto & writer2 = *second->misses()[0].writer;
+
+    /// Claims are identity-keyed per THREAD, so the sibling must be one: it
+    /// claims, commits the prefix, HOLDS the claim until released, then exits.
+    std::latch prefix_committed(1);
+    std::latch release_sibling(1);
+    std::thread sibling([&]
+    {
+        auto sibling_claim = writer1.claim(writer1.range());
+        ASSERT_EQ(writer1.write(makeChain(0, half, 'A')), half);
+        prefix_committed.count_down();
+        release_sibling.wait();
+    });
+
+    prefix_committed.wait();
+    EXPECT_EQ(claimedWrite(writer2, makeChain(half, kSegmentSize - half, 'B')), 0u)
+        << "the role is held by the sibling's open claim - no adoption, no exception";
+
+    release_sibling.count_down();
+    sibling.join();
+
+    /// Claim released: the second writer wins the role and completes the segment.
+    ASSERT_EQ(claimedWrite(writer2, makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
+}
 
 /// (h) a single aligned miss range spanning TWO segments → ONE write buffer fills
 /// both, advancing across the segment boundary; complete() flips only once both
