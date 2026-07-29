@@ -449,7 +449,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -936,7 +936,10 @@ def test_optimize_manifest_with_catalog(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        ["snapshots", "metadata-log", "snapshot-log"],
+        # `refs` is likewise optional (an object, not an array): e.g. empty-table metadata
+        # created by external engines may omit it entirely.
+        ["refs"],
+        ["refs", "snapshots", "metadata-log", "snapshot-log"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
@@ -1940,3 +1943,60 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
     assert old_token not in engine_full_with_secrets
 
     node.query(f"DROP DATABASE {db_name}")
+
+
+def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
+    """
+    Regression test: an error from the catalog while listing tables (e.g. expired
+    catalog credentials) must not be silently turned into an empty listing when the
+    user explicitly opted into showing datalake catalogs in system tables with
+    show_data_lake_catalogs_in_system_tables=1. Without the opt-in the old tolerant
+    behaviour is kept (system tables must not fail because of one broken catalog).
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_listing_error"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "table_x")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_get_tables_throw")
+    try:
+        assert (
+            node.query(
+                f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}'"
+            ).strip()
+            == "0"
+        )
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_get_tables_throw")
+
+    result = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert "table_x" in result
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
