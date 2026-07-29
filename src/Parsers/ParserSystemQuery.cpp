@@ -795,6 +795,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->schema_cache_storage = toStringView(Keyword::URL);
                 else if (ParserKeyword{Keyword::AZURE}.ignore(pos, expected))
                     res->schema_cache_storage = toStringView(Keyword::AZURE);
+                else if (ParserKeyword{Keyword::GCS}.ignore(pos, expected))
+                    res->schema_cache_storage = toStringView(Keyword::GCS);
                 else
                     return false;
             }

@@ -106,3 +106,37 @@ def test_mergetree_on_gcs_disk(started_cluster):
     assert node.query("SELECT sum(a) FROM gcs_mt").strip() == str(sum(range(2000)))
 
     node.query("DROP TABLE gcs_mt SYNC")
+
+
+def test_schema_inference_cache(started_cluster):
+    """The native `gcs` schema cache must be visible in `system.schema_inference_cache` and
+    clearable with `SYSTEM DROP SCHEMA CACHE FOR GCS` (otherwise a stale inferred schema
+    could only be purged by restarting the server)."""
+    node = started_cluster.instances["node"]
+    url = gcs_url("schema_cache/data.tsv")
+
+    node.query("SYSTEM DROP SCHEMA CACHE FOR GCS")
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64, b String') "
+        f"SELECT number, toString(number) FROM numbers(10) "
+        f"SETTINGS use_native_gcs = 1"
+    )
+
+    # Reading without an explicit structure infers the schema and caches it.
+    node.query(f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV') SETTINGS use_native_gcs = 1")
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.schema_inference_cache "
+            f"WHERE storage = 'GCS' AND source LIKE '%schema_cache/data.tsv'"
+        ).strip()
+        == "1"
+    )
+
+    node.query("SYSTEM DROP SCHEMA CACHE FOR GCS")
+    assert (
+        node.query(
+            "SELECT count() FROM system.schema_inference_cache WHERE storage = 'GCS'"
+        ).strip()
+        == "0"
+    )
