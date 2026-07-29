@@ -1,0 +1,271 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse 가이드",
+      "pages": [
+        {
+          "group": "데이터 포맷",
+          "pages": [
+            "ko/guides/clickhouse/data-formats/csv-tsv",
+            "ko/guides/clickhouse/data-formats/parquet",
+            "ko/guides/clickhouse/data-formats/arrow-avro-orc",
+            "ko/guides/clickhouse/data-formats/binary",
+            "ko/guides/clickhouse/data-formats/sql",
+            "ko/guides/clickhouse/data-formats/templates-regex",
+            {
+              "group": "JSON",
+              "pages": [
+                "ko/guides/clickhouse/data-formats/json/loading",
+                "ko/guides/clickhouse/data-formats/json/inference",
+                "ko/guides/clickhouse/data-formats/json/schema",
+                "ko/guides/clickhouse/data-formats/json/formats",
+                "ko/guides/clickhouse/data-formats/json/exporting",
+                "ko/guides/clickhouse/data-formats/json/other"
+              ],
+              "root": "ko/guides/clickhouse/data-formats/json/intro"
+            }
+          ],
+          "root": "ko/guides/clickhouse/data-formats/intro"
+        },
+        {
+          "group": "데이터 모델링",
+          "pages": [
+            "ko/guides/clickhouse/data-modelling/schema-design",
+            "ko/guides/clickhouse/data-modelling/sparse-primary-indexes",
+            "ko/guides/clickhouse/data-modelling/denormalization",
+            "ko/guides/clickhouse/data-modelling/backfilling",
+            "ko/guides/clickhouse/data-modelling/merge-table-function",
+            "ko/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements",
+            "ko/guides/clickhouse/data-modelling/generating-test-data",
+            {
+              "expanded": false,
+              "group": "압축",
+              "pages": [
+                "ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
+                "ko/guides/clickhouse/data-modelling/compression/compression-modes"
+              ]
+            },
+            "ko/guides/clickhouse/working-with-arrays",
+            "ko/guides/clickhouse/working-with-joins"
+          ],
+          "root": "ko/guides/clickhouse/data-modelling/index"
+        },
+        {
+          "group": "성능 및 모니터링",
+          "pages": [
+            "ko/guides/clickhouse/performance-and-monitoring/query-optimization",
+            "ko/guides/clickhouse/performance-and-monitoring/analyzer",
+            "ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
+            "ko/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "집계 함수 조합자 예시",
+          "pages": [
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/argMinIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgMap",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgMerge",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgMergeState",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgResample",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/avgState",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/countIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/countResample",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/groupArrayDistinct",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/groupArrayResample",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/maxMap",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/maxSimpleState",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/minMap",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/minSimpleState",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingArrayIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/sumArray",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/sumForEach",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/sumIf",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/sumMap",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/sumSimpleState",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/uniqArray",
+            "ko/guides/clickhouse/examples/aggregate-function-combinators/uniqArrayIf"
+          ]
+        },
+        "ko/guides/oss/update",
+        {
+          "group": "OSS 모범 사례",
+          "pages": [
+            "ko/guides/oss/best-practices/sizing-and-hardware-recommendations",
+            "ko/guides/oss/best-practices/tips"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "배포 및 스케일링",
+          "pages": [
+            "ko/guides/oss/deployment-and-scaling/terminology",
+            "ko/guides/oss/deployment-and-scaling/shards",
+            "ko/guides/oss/deployment-and-scaling/scaling-clusters",
+            "ko/guides/oss/deployment-and-scaling/separation-storage-compute",
+            "ko/guides/oss/deployment-and-scaling/cluster-discovery",
+            {
+              "expanded": false,
+              "group": "Keeper",
+              "pages": [
+                "ko/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
+              ],
+              "root": "ko/guides/oss/deployment-and-scaling/keeper/index"
+            },
+            {
+              "expanded": false,
+              "group": "모니터링",
+              "pages": [
+                "ko/guides/oss/deployment-and-scaling/monitoring/monitoring",
+                "ko/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "예시",
+              "pages": [
+                "ko/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
+                "ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
+                "ko/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
+              ]
+            }
+          ],
+          "root": "ko/guides/oss/deployment-and-scaling/index"
+        }
+      ],
+      "root": "ko/guides/clickhouse/index"
+    },
+    {
+      "expanded": true,
+      "group": "사용 사례 가이드",
+      "pages": [
+        {
+          "group": "실시간 분석",
+          "pages": [
+            {
+              "expanded": false,
+              "group": "시계열",
+              "pages": [
+                "ko/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
+                "ko/guides/use-cases/real-time-analytics/time-series/basic-operations",
+                "ko/guides/use-cases/real-time-analytics/time-series/analysis-functions",
+                "ko/guides/use-cases/real-time-analytics/time-series/storage-efficiency",
+                "ko/guides/use-cases/real-time-analytics/time-series/query-performance",
+                "ko/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
+                "ko/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
+              ],
+              "root": "ko/guides/use-cases/real-time-analytics/time-series/index"
+            }
+          ]
+        },
+        {
+          "group": "관측성",
+          "pages": [
+            "ko/guides/use-cases/observability/cloud-monitoring",
+            "ko/guides/use-cases/observability/self-managed-monitoring",
+            {
+              "group": "직접 구축하기",
+              "pages": [
+                "ko/guides/use-cases/observability/build-your-own/introduction",
+                "ko/guides/use-cases/observability/build-your-own/schema-design",
+                "ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
+                "ko/guides/use-cases/observability/build-your-own/managing-data",
+                "ko/guides/use-cases/observability/build-your-own/grafana",
+                "ko/guides/use-cases/observability/build-your-own/demo-application"
+              ],
+              "root": "ko/guides/use-cases/observability/build-your-own/index"
+            }
+          ],
+          "root": "ko/guides/use-cases/observability/index"
+        },
+        {
+          "group": "데이터 웨어하우징",
+          "pages": [
+            {
+              "group": "시작하기",
+              "pages": [
+                "ko/guides/use-cases/data-warehousing/getting-started/querying-directly",
+                "ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
+                "ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
+                "ko/guides/use-cases/data-warehousing/getting-started/writing-data",
+                "ko/guides/use-cases/data-warehousing/getting-started/best-practices"
+              ],
+              "root": "ko/guides/use-cases/data-warehousing/getting-started/overview"
+            },
+            {
+              "group": "카탈로그",
+              "pages": [
+                "ko/guides/use-cases/data-warehousing/glue-catalog",
+                "ko/guides/use-cases/data-warehousing/lakekeeper-catalog",
+                "ko/guides/use-cases/data-warehousing/nessie-catalog",
+                "ko/guides/use-cases/data-warehousing/onelake-catalog",
+                "ko/guides/use-cases/data-warehousing/polaris-catalog",
+                "ko/guides/use-cases/data-warehousing/rest-catalog",
+                "ko/guides/use-cases/data-warehousing/unity-catalog",
+                "ko/guides/use-cases/data-warehousing/biglake-catalog"
+              ],
+              "root": "ko/guides/use-cases/data-warehousing/reference/index"
+            },
+            "ko/guides/use-cases/data-warehousing/support-matrix"
+          ],
+          "root": "ko/guides/use-cases/data-warehousing/index"
+        },
+        {
+          "group": "AI/ML",
+          "pages": [
+            "ko/guides/use-cases/ai-ml/vector-search",
+            "ko/guides/use-cases/ai-ml/ai-powered-sql-generation",
+            {
+              "group": "데이터 탐색",
+              "pages": [
+                "ko/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
+                "ko/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
+              ]
+            },
+            {
+              "group": "MCP",
+              "pages": [
+                "ko/guides/use-cases/ai-ml/MCP/claude-desktop",
+                "ko/guides/use-cases/ai-ml/MCP/librechat",
+                "ko/guides/use-cases/ai-ml/MCP/anythingllm",
+                "ko/guides/use-cases/ai-ml/MCP/open-webui",
+                "ko/guides/use-cases/ai-ml/MCP/ollama",
+                "ko/guides/use-cases/ai-ml/MCP/janai",
+                {
+                  "group": "AI Agent 라이브러리",
+                  "pages": [
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
+                    "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                  ],
+                  "root": "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                }
+              ],
+              "root": "ko/guides/use-cases/ai-ml/MCP/index"
+            }
+          ],
+          "root": "ko/guides/use-cases/ai-ml/index"
+        }
+      ],
+      "root": "ko/guides/use-cases/index"
+    }
+  ],
+  "icon": "/images/icons/icon-guides.svg",
+  "item": "가이드"
+}

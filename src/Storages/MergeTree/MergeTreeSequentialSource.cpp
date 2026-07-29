@@ -148,9 +148,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
+    const bool read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
+    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
+#if ENABLE_DISTRIBUTED_CACHE
+    read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
+#endif
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
@@ -439,9 +442,8 @@ public:
         if (filter && metadata_snapshot->hasPrimaryKey())
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            const Names & primary_key_column_names = primary_key.column_names;
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
-            KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
+            KeyCondition key_condition(filter_dag, context, primary_key);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
@@ -449,8 +451,8 @@ public:
                     data_part,
                     metadata_snapshot,
                     key_condition,
-                    /*part_offset_condition=*/{},
-                    /*total_offset_condition=*/{},
+                    /*part_offset_condition=*/nullptr,
+                    /*total_offset_condition=*/nullptr,
                     /*exact_ranges=*/nullptr,
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),

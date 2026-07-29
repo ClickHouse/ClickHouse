@@ -143,6 +143,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
+    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
+    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
+    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
+    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
+    std::optional<Settings> settingsWithoutCompatibilityDerived() const;
+
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -211,6 +217,17 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
+    /// Remap the underscore XML spellings of some boolean keys (e.g. <echo_query_id/>) to the
+    /// dashed keys the read sites use, unless the dashed key is already set (e.g. by a CLI
+    /// flag). Call it right after the config file is merged into the client configuration,
+    /// before validateClientConfiguration.
+    void remapClientConfigurationAliases();
+    /// Fail-fast validation of option values that may come from the client config file rather
+    /// than the command line. The config file is loaded after the command line is processed,
+    /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these
+    /// values. Call it right after the config file is merged into the client configuration,
+    /// so that an invalid value cannot let a query start before the error is reported.
+    void validateClientConfiguration();
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -336,6 +353,11 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
+
+    /// The client local time zone, captured on the first connect() before it may switch the
+    /// process default to the server time zone. Used to seed `session_timezone` per query when
+    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
+    String client_local_timezone;
 
     String default_database;
     String query_id;
@@ -465,6 +487,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 

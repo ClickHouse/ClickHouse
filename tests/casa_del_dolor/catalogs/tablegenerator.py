@@ -22,6 +22,49 @@ Parameter = typing.Callable[[], int | float | str]
 true_false_lambda = lambda: random.choice(["false", "true"])
 
 
+# Delta liquid clustering (CLUSTER BY) and data skipping only support scalar
+# types Delta collects min/max statistics for: numeric, date, timestamp
+# (including TimestampNTZ) and string. This mirrors Delta's
+# `SkippingEligibleDataType`. Boolean, binary and container types
+# (Array/Map/Struct) are rejected at DDL time with
+# `DELTA_CLUSTERING_COLUMNS_DATATYPE_NOT_SUPPORTED`, so they must never be
+# chosen as clustering keys. `CharType`/`VarcharType` are string-like and
+# eligible (Delta materialises them as string). `TimestampNTZType` is absent
+# from older PySpark versions, hence the feature probe.
+_DELTA_SKIPPING_ELIGIBLE_TYPES = (
+    sp.NumericType,
+    sp.DateType,
+    sp.TimestampType,
+    sp.StringType,
+    sp.CharType,
+    sp.VarcharType,
+) + ((sp.TimestampNTZType,) if hasattr(sp, "TimestampNTZType") else ())
+
+
+def delta_skipping_eligible(dtype) -> bool:
+    return isinstance(dtype, _DELTA_SKIPPING_ELIGIBLE_TYPES)
+
+
+_TEMPORAL_TYPES = (sp.DateType, sp.TimestampType) + (
+    (sp.TimestampNTZType,) if hasattr(sp, "TimestampNTZType") else ()
+)
+_STRINGY_TYPES = (sp.StringType, sp.CharType, sp.VarcharType)
+
+
+def spark_scalar_castable(src: sp.DataType, dst: sp.DataType) -> bool:
+    """Conservative analysis-time validity of ``CAST(src AS dst)`` for the scalar leaf
+    types a Delta generated column may use. A generated-column expression must both match
+    the declared column type AND be a legal cast from its source, otherwise CREATE fails
+    (e.g. Spark rejects `boolean -> date` at analysis time)."""
+    if isinstance(dst, _STRINGY_TYPES):
+        return True  # any scalar casts to string
+    if isinstance(dst, (sp.NumericType, sp.BooleanType)):
+        return isinstance(src, (sp.NumericType, sp.BooleanType) + _STRINGY_TYPES)
+    if isinstance(dst, _TEMPORAL_TYPES):
+        return isinstance(src, _TEMPORAL_TYPES + _STRINGY_TYPES)
+    return type(src) is type(dst)
+
+
 def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
     items = random.sample(list(d.items()), sample)
     return dict(items)
@@ -99,7 +142,12 @@ class LakeTableGenerator:
     def _rand_comment() -> str:
         from .datagenerator import SOME_STRINGS
 
-        return random.choice(SOME_STRINGS).replace("'", "\\'")
+        # Escape backslashes BEFORE quotes: an entry like `\'` would otherwise become
+        # `\\'` in the literal, where `\\` parses as a backslash and the quote then
+        # terminates the string early -> PARSE_SYNTAX_ERROR on the rest of the DDL
+        return (
+            random.choice(SOME_STRINGS).replace("\\", "\\\\").replace("'", "\\'")
+        )
 
     @staticmethod
     def _refresh_table_model(spark: SparkSession, table: SparkTable):
@@ -111,11 +159,40 @@ class LakeTableGenerator:
                 or "delta.identity.start" in field.metadata
                 or (field.name in table.columns and table.columns[field.name].generated)
             )
+            prev = table.columns.get(field.name)
+            # Only inherit the recorded ClickHouse type while the Spark type is unchanged; an
+            # ALTER COLUMN ... TYPE makes the old clickhouse_type stale, which would mislead the
+            # _LOSSY_CH_INT_RE hash-comparability check. Clear it on a type change (no CH origin).
+            inherited_ch_type = prev.clickhouse_type if prev and prev.spark_type == field.dataType else ""
             new_columns[field.name] = SparkColumn(
-                field.name, field.dataType, field.nullable, generated
+                field.name,
+                field.dataType,
+                field.nullable,
+                generated,
+                inherited_ch_type,
             )
         table.columns = new_columns
         table.check_constraints.clear()
+        # RESTORE can roll back CLUSTER BY / partitioning changes, so re-sync the clustering
+        # and partition state that OPTIMIZE generation relies on. DESCRIBE DETAIL exposes both
+        # for Delta; guard on the column being present so an older Delta that omits
+        # `clusteringColumns` leaves the create/alter-tracked value untouched rather than
+        # wrongly clearing it.
+        if table.lake_format == LakeFormat.DeltaLake:
+            detail = spark.sql(
+                f"DESCRIBE DETAIL {table.get_table_full_path()}"
+            ).collect()
+            if detail:
+                row = detail[0].asDict()
+                if "clusteringColumns" in row:
+                    table.clustered = len(row["clusteringColumns"] or []) > 0
+                if "partitionColumns" in row:
+                    flat_cols = table.flat_columns()
+                    part_cols = row["partitionColumns"] or []
+                    table.partition_keys = [c for c in part_cols if c in flat_cols]
+                    # Delta only has plain partition columns, so partitionColumns is an
+                    # authoritative partitioned-vs-unpartitioned signal here.
+                    table.partitioned = len(part_cols) > 0
 
     def generate_common_alter_statements(
         self,
@@ -203,6 +280,9 @@ class LakeTableGenerator:
                     from pyspark.sql.types import _parse_datatype_string
 
                     sc.spark_type = _parse_datatype_string(new_type_str)
+                    # The Spark type changed, so the recorded ClickHouse type is stale; clear it so
+                    # _LOSSY_CH_INT_RE no longer treats a widened column as a CH-origin lossy int.
+                    sc.clickhouse_type = ""
                     return ""
         return ""
 
@@ -321,7 +401,7 @@ class LakeTableGenerator:
                 f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}{col_comment}"
             )
             columns_spark[val["name"]] = SparkColumn(
-                val["name"], spark_type, nullable, len(generated) > 0
+                val["name"], spark_type, nullable, len(generated) > 0, next_ch_type
             )
             first = False
         ddl += ",".join(columns_def)
@@ -346,14 +426,16 @@ class LakeTableGenerator:
         # PARTITIONED BY and is Delta-only. It takes up to 4 keys, each a
         # stats-eligible scalar leaf - top-level or a nested struct field by
         # dotted path (same flattened, backtick-quoted form the Iceberg
-        # transforms use). Excludes container leaves (Array/Map/Struct) and any
-        # column produced by a generated expression.
+        # transforms use). Only data-skipping-eligible scalar leaves qualify
+        # (see `delta_skipping_eligible`); this excludes container leaves
+        # (Array/Map/Struct), Boolean and Binary, plus any column produced by a
+        # generated expression.
         clustered = False
         if self.get_format() == "delta" and random.randint(1, 5) == 1:
             cluster_cols = [
                 path
                 for path, dtype in res.flat_columns().items()
-                if not isinstance(dtype, (sp.ArrayType, sp.MapType, sp.StructType))
+                if delta_skipping_eligible(dtype)
                 and not columns_spark[path.split(".", 1)[0]].generated
             ]
             if cluster_cols:
@@ -361,6 +443,7 @@ class LakeTableGenerator:
                 chosen = cluster_cols[: random.randint(1, min(4, len(cluster_cols)))]
                 ddl += f" CLUSTER BY ({','.join(chosen)})"
                 clustered = True
+                res.clustered = True
 
         # Add Partition by, can't partition by all columns. Identity columns
         # cannot be Delta partition columns; other formats have none, so the
@@ -369,13 +452,30 @@ class LakeTableGenerator:
             partition_clauses = [
                 c for c in self.add_partition_clauses(res) if c not in identity_cols
             ]
-            if partition_clauses:
+            # Delta rejects covering every column (ALL_PARTITION_COLUMNS_NOT_ALLOWED),
+            # so keep at least one non-partition column there. Iceberg (transforms) and
+            # Paimon accept all-column partitioning.
+            max_partitions = min(3, len(partition_clauses))
+            if self.get_format() == "delta":
+                max_partitions = min(max_partitions, len(columns_spark) - 1)
+            if partition_clauses and max_partitions > 0:
                 random.shuffle(partition_clauses)
                 random_subset = random.sample(
                     partition_clauses,
-                    k=random.randint(1, min(3, len(partition_clauses))),
+                    k=random.randint(1, max_partitions),
                 )
                 ddl += f" PARTITIONED BY ({','.join(random_subset)})"
+                res.partitioned = True
+                # Iceberg: remember the active partition-transform clauses so ALTER
+                # DROP/REPLACE PARTITION FIELD can target a field that actually exists.
+                if self.get_format() == "iceberg":
+                    res.partition_fields = list(random_subset)
+                # Remember plain partition columns for Delta OPTIMIZE ... WHERE (which only
+                # accepts partition predicates). Non-Delta formats emit transform expressions
+                # here (e.g. bucket(n, col)), which are not usable as a WHERE column, so keep
+                # only real column names.
+                flat_cols = res.flat_columns()
+                res.partition_keys = [c for c in random_subset if c in flat_cols]
 
         # ddl += self.set_table_location(next_location) no location needed yet
 
@@ -430,29 +530,50 @@ class IcebergTableGenerator(LakeTableGenerator):
         if random.randint(1, 2) == 1:
             return self.generate_common_alter_statements(spark, table)
 
-        next_operation = random.randint(1, 12)
+        next_operation = random.randint(1, 14)
         tpath = table.get_table_full_path()
 
         if next_operation <= 2:
-            # Add or drop partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {tpath} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
+            # Add or drop a partition field. Executed inline so the tracked state is updated only
+            # after the ALTER succeeds (the caller swallows ALTER errors, so mutating first would
+            # desync the model from Spark). DROP targets a field that exists.
+            if table.partition_fields and random.randint(1, 2) == 1:
+                victim = random.choice(table.partition_fields)
+                spark.sql(f"ALTER TABLE {tpath} DROP PARTITION FIELD {victim}")
+                table.partition_fields.remove(victim)
+                table.partitioned = len(table.partition_fields) > 0
+                return ""
+            # ADD a field not already in the spec (exact-string match; the random bucket/truncate
+            # width makes two clauses on the same column distinct, which Iceberg allows).
+            candidates = [
+                c
+                for c in self.add_partition_clauses(table)
+                if c not in table.partition_fields
+            ]
+            if candidates:
+                added = random.choice(candidates)
+                spark.sql(f"ALTER TABLE {tpath} ADD PARTITION FIELD {added}")
+                table.partition_fields.append(added)
+                table.partitioned = True
+            return ""
         elif next_operation <= 4:
-            # Replace partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset1 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            random.shuffle(partition_clauses)
-            random_subset2 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {tpath} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+            # Replace an existing field (`old`) with a different one (`new`). Executed inline so
+            # the tracked spec is updated only after the ALTER succeeds (see ADD/DROP above).
+            if table.partition_fields:
+                new_candidates = [
+                    c
+                    for c in self.add_partition_clauses(table)
+                    if c not in table.partition_fields
+                ]
+                if new_candidates:
+                    old = random.choice(table.partition_fields)
+                    new = random.choice(new_candidates)
+                    spark.sql(
+                        f"ALTER TABLE {tpath} REPLACE PARTITION FIELD {old} WITH {new}"
+                    )
+                    table.partition_fields.remove(old)
+                    table.partition_fields.append(new)
+            return ""
         elif next_operation <= 6:
             # Set ORDER BY
             if random.randint(1, 2) == 1:
@@ -475,6 +596,22 @@ class IcebergTableGenerator(LakeTableGenerator):
                     return f"ALTER TABLE {tpath} ALTER COLUMN {col} FIRST;"
                 other = random.choice([c for c in cols if c != col])
                 return f"ALTER TABLE {tpath} ALTER COLUMN {col} AFTER {other};"
+        elif next_operation <= 14:
+            # Branch / tag DDL (branch names match the ones `insert_into_branch` writes to)
+            kind = random.choice(["BRANCH", "TAG"])
+            name = (
+                f"b_{random.randint(1, 3)}"
+                if kind == "BRANCH"
+                else f"tag_{random.randint(1, 1000)}"
+            )
+            if random.randint(1, 3) == 1:
+                return f"ALTER TABLE {tpath} DROP {kind} IF EXISTS {name}"
+            res = f"ALTER TABLE {tpath} CREATE {kind} IF NOT EXISTS {name}"
+            if random.randint(1, 3) == 1:
+                res += f" RETAIN {random.randint(1, 30)} DAYS"
+            if kind == "BRANCH" and random.randint(1, 3) == 1:
+                res += f" WITH SNAPSHOT RETENTION {random.randint(1, 5)} SNAPSHOTS"
+            return res
         return ""
 
     def set_basic_properties(self) -> dict[str, str]:
@@ -488,23 +625,30 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
+        timestamp_types = (sp.TimestampType,) + (
+            (sp.TimestampNTZType,) if hasattr(sp, "TimestampNTZType") else ()
+        )
         flattened_columns = table.flat_columns()
         for k, val in flattened_columns.items():
+            # Iceberg cannot partition by container types
+            if isinstance(val, (sp.ArrayType, sp.MapType, sp.StructType)):
+                continue
             res.append(k)
+            is_timestamp = isinstance(val, timestamp_types)
             if (
-                isinstance(val, sp.TimestampType)
+                is_timestamp
                 or isinstance(val, sp.DateType)
                 or random.randint(0, 9) == 0
             ):
                 res.append(f"year({k})")
                 res.append(f"month({k})")
                 res.append(f"day({k})")
-                res.append(f"hour({k})")
-            res.append(f"bucket({random.randint(0, 1000)}, {k})")
-            res.append(f"truncate({random.randint(0, 1000)}, {k})")
-            # void() always yields null partition values (the transform Iceberg
-            # uses to retire a partition field); valid in the Spark SQL spec.
-            res.append(f"void({k})")
+                # `hour` is invalid on DATE columns
+                if is_timestamp or not isinstance(val, sp.DateType):
+                    res.append(f"hour({k})")
+            # bucket count and truncate width must be positive
+            res.append(f"bucket({random.randint(1, 1000)}, {k})")
+            res.append(f"truncate({random.randint(1, 1000)}, {k})")
         return res
 
     def add_generated_col(
@@ -539,8 +683,10 @@ class IcebergTableGenerator(LakeTableGenerator):
             # Sometimes skip columns to create more variety in partitioning and properties
             if not first and not table.deterministic and random.randint(1, 11) == 1:
                 continue
-            # Convert columns
+            # Convert columns. Consume the top-level field's ID before converting:
+            # the conversion allocates IDs for nested elements from the same counter
             next_field_id = self.type_mapper.field_id
+            self.type_mapper.increment()
             next_ch_type = val["type"]
             if not table.deterministic and random.randint(1, 5) == 1:
                 next_ch_type = self.type_mapper.generate_random_clickhouse_type(
@@ -558,19 +704,25 @@ class IcebergTableGenerator(LakeTableGenerator):
                     required=not nullable,
                 )
             )
-            self.type_mapper.increment()
             first = False
         nschema = Schema(*fields)
 
         if random.randint(1, 2) == 1:
             nproperties.update(self.generate_table_properties(table))
+        npartition_spec, npartition_clauses = (
+            self.type_mapper.generate_random_iceberg_partition_spec(nschema)
+        )
+        # This catalog path never populates partition_keys (those are plain SQL DDL
+        # partition columns); track the active partition fields (as Spark clauses) and the
+        # partitioned flag so ALTER DROP/REPLACE and the unpartitioned-only operations gate
+        # correctly.
+        table.partition_fields = npartition_clauses
+        table.partitioned = len(npartition_clauses) > 0
         ctable = catalog_impl.create_table(
             identifier=("test", table.table_name),
             location=f"s3{'a' if table.catalog == LakeCatalogs.Hive else ''}://warehouse-{'rest' if table.catalog == LakeCatalogs.REST else ('hms' if table.catalog == LakeCatalogs.Hive else 'glue')}/data",
             schema=nschema,
-            partition_spec=self.type_mapper.generate_random_iceberg_partition_spec(
-                nschema
-            ),
+            partition_spec=npartition_spec,
             sort_order=self.type_mapper.generate_random_iceberg_sort_order(nschema),
             properties=nproperties,
         )
@@ -822,8 +974,10 @@ class IcebergTableGenerator(LakeTableGenerator):
                             [1048576, 2097152, 4194304, 8388608]
                         )  # 1MB, 2MB, 4MB, 8MB
                     ),
+                    # No 'brotli': it needs org.apache.hadoop.io.compress.BrotliCodec,
+                    # an external jar that is not on the Spark classpath
                     "write.parquet.compression-codec": lambda: random.choice(
-                        ["zstd", "brotli", "lz4", "gzip", "snappy", "uncompressed"]
+                        ["zstd", "lz4", "gzip", "snappy", "uncompressed"]
                     ),
                     "write.parquet.compression-level": lambda: str(
                         random.randint(1, 9)
@@ -876,7 +1030,30 @@ class IcebergTableGenerator(LakeTableGenerator):
                     )
                 }
             )
+        # `write.metadata.delete-after-commit.enabled` deletes old `vN.metadata.json`
+        # files after each commit. That is safe with a real metastore catalog (Glue/Hive/
+        # REST/Nessie), which stores the current-metadata pointer externally, but it
+        # corrupts a Hadoop catalog: `HadoopTableOperations` tracks the current version via
+        # `version-hint.text` + `vN.metadata.json`, and on refresh it fails with
+        # "Metadata file for version N is missing" once those files are deleted (worse on
+        # object stores, which lack atomic rename). The Iceberg fallback catalog
+        # (`LakeCatalogs.NoCatalog`) is exactly the Hadoop catalog, so drop the property
+        # there to avoid self-corrupting the table.
+        if table.catalog == LakeCatalogs.NoCatalog:
+            next_properties.pop("write.metadata.delete-after-commit.enabled", None)
         return next_properties
+
+    def generate_table_properties(
+        self,
+        table: SparkTable,
+    ) -> dict[str, str]:
+        properties = super().generate_table_properties(table)
+        if (
+            "write.parquet.compression-level" in properties
+            and properties.get("write.parquet.compression-codec") != "zstd"
+        ):
+            del properties["write.parquet.compression-level"]
+        return properties
 
     def get_snapshots(self, spark: SparkSession, table: SparkTable):
         result = spark.sql(
@@ -902,7 +1079,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 15)
+        next_option = random.randint(1, 16)
 
         if next_option == 1:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
@@ -960,6 +1137,8 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", use_caching => {random.choice(['true', 'false'])}"
+            if random.randint(1, 4) == 1:
+                res += f", spec_id => {random.randint(0, 2)}"
             res += ")"
             return res
         if next_option == 4:
@@ -967,6 +1146,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             timestamps = self.get_timestamps(spark, table)
             if len(timestamps) > 0 and random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
+            snapshots = self.get_snapshots(spark, table)
+            if len(snapshots) > 0 and random.randint(1, 3) == 1:
+                res += f", snapshot_ids => ARRAY({random.choice(snapshots)})"
             if random.randint(1, 2) == 1:
                 res += f", stream_results => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
@@ -978,15 +1160,27 @@ class IcebergTableGenerator(LakeTableGenerator):
             res += ")"
             return res
         if next_option in (5, 6, 7, 8):
+            snapshots = self.get_snapshots(spark, table)
+            # These three take an OPTIONAL snapshot_id.
             calls = [
                 "ancestors_of",
                 "compute_partition_stats",
                 "compute_table_stats",
-                "set_current_snapshot",
             ]
-            res = f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
+            # set_current_snapshot REQUIRES exactly one of snapshot_id / ref on every
+            # call, so only offer it when a concrete snapshot_id is available, and then
+            # always pass one of the required arguments (`main` always exists once the
+            # table has a snapshot).
+            if len(snapshots) > 0:
+                calls.append("set_current_snapshot")
+            chosen = random.choice(calls)
+            res = f"CALL `{table.catalog_name}`.system.{chosen}(table => '{table.get_namespace_path()}'"
+            if chosen == "set_current_snapshot":
+                if random.randint(1, 2) == 1:
+                    res += f", snapshot_id => {random.choice(snapshots)}"
+                else:
+                    res += ", ref => 'main'"
+            elif len(snapshots) > 0 and random.randint(1, 2) == 1:
                 res += f", snapshot_id => {random.choice(snapshots)}"
             res += ")"
             return res
@@ -1008,6 +1202,17 @@ class IcebergTableGenerator(LakeTableGenerator):
         timestamps = self.get_timestamps(spark, table)
         if len(timestamps) > 0 and next_option in (12, 13):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
+        if next_option == 14:
+            # Fast-forward `main` up to one of the branches `insert_into_branch` writes to.
+            # `insert_into_branch` only ever advances `b_1..b_3` and leaves `main` untouched, so
+            # `b_n` is always the descendant. `fast_forward` requires `to` to be a descendant of
+            # `branch`, so the direction must stay branch => 'main', to => 'b_n'; reversing it
+            # (branch => 'b_n', to => 'main') is a guaranteed failure once the branch exists.
+            other = f"b_{random.randint(1, 3)}"
+            return f"CALL `{table.catalog_name}`.system.fast_forward(table => '{table.get_namespace_path()}', branch => 'main', to => '{other}')"
+        # `publish_changes` was intentionally dropped: it only succeeds for a wap_id staged by an
+        # earlier write with `spark.wap.id` set, which this generator never does, so every call
+        # failed with an unknown WAP ID. Restore it once WAP writes can be staged under a tracked id.
         # Call rewrite_data_files when there is no other option
         zorder = False
         next_strategy = random.choice(["sort", "binpack"])
@@ -1098,29 +1303,66 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
-        # No partition by subcolumns in delta
-        for k in table.columns.keys():
-            res.append(k)
+        # No partition by subcolumns in delta, and no partitioning by container types
+        for k, sc in table.columns.items():
+            if not isinstance(sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)):
+                res.append(k)
         return res
+
+    # DISABLED: OSS delta-spark's `DeltaCatalog` does not declare Spark 4's
+    # `SUPPORTS_CREATE_TABLE_WITH_GENERATED_COLUMNS` / `..._IDENTITY_COLUMNS`
+    # capabilities, so every SQL CREATE TABLE with a generated or identity
+    # column fails analysis with `UNSUPPORTED_FEATURE.TABLE_OPERATION`
+    # ("does not support generated columns"). Only the `DeltaTableBuilder`
+    # API can create them; re-enable if the create path moves to that API
+    # or delta-spark implements the capability.
+    SUPPORTS_SQL_GENERATED_COLUMNS = False
 
     def add_generated_col(
         self, columns: dict[str, SparkColumn], col: sp.DataType
     ) -> str:
+        if not self.SUPPORTS_SQL_GENERATED_COLUMNS:
+            return ""
+        # IDENTITY is valid only on BIGINT (Long) columns.
         if isinstance(col, sp.LongType) and random.randint(1, 10) < 3:
             return f" GENERATED {random.choice(['ALWAYS', 'BY DEFAULT'])} AS IDENTITY"
-        if len(columns) > 0 and random.randint(1, 10) < 3:
-            flattened = {}
-            for _, val in columns.items():
-                val.flat_column(flattened)
-            if (
-                isinstance(
-                    col, (sp.ByteType, sp.ShortType, sp.IntegerType, sp.LongType)
-                )
-                and random.randint(1, 2) == 1
-            ):
-                return f" GENERATED ALWAYS AS ({random.choice(['year', 'month', 'day', 'hour'])}({random.choice(list(flattened.keys()))}))"
-            return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
-        return ""
+        if len(columns) == 0 or random.randint(1, 10) >= 3:
+            return ""
+        # A Delta generated column may reference only already-defined, NON-generated,
+        # scalar TOP-LEVEL columns (never Array/Map/Struct, nested paths, or another
+        # generated column), and its expression's result type must EXACTLY match the
+        # declared column type -- otherwise CREATE TABLE fails.
+        scalar = {
+            name: sc.spark_type
+            for name, sc in columns.items()
+            if not sc.generated
+            and not isinstance(sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType))
+        }
+        if not scalar:
+            return ""
+        # year/month/day/hour return INT and require a DATE/TIMESTAMP argument (hour needs
+        # a TIMESTAMP). Only usable when this column is exactly INT and a temporal source
+        # exists -- applying them to a non-temporal column or a non-INT target both fail.
+        if isinstance(col, sp.IntegerType):
+            dates = [n for n, t in scalar.items() if isinstance(t, sp.DateType)]
+            stamps = [
+                n
+                for n, t in scalar.items()
+                if isinstance(t, _TEMPORAL_TYPES) and not isinstance(t, sp.DateType)
+            ]
+            kinds = ([("date", dates)] if dates else []) + (
+                [("ts", stamps)] if stamps else []
+            )
+            if kinds and random.randint(1, 2) == 1:
+                kind, srcs = random.choice(kinds)
+                fns = ["year", "month", "day"] + (["hour"] if kind == "ts" else [])
+                return f" GENERATED ALWAYS AS ({random.choice(fns)}({random.choice(srcs)}))"
+        # Otherwise CAST a scalar source to THIS column's own type: the target must equal
+        # the declared type, and the source must be castable to it.
+        castable = [n for n, t in scalar.items() if spark_scalar_castable(t, col)]
+        if not castable:
+            return ""
+        return f" GENERATED ALWAYS AS (CAST({random.choice(castable)} AS {col.simpleString()}))"
 
     def create_catalog_table(
         self,
@@ -1167,9 +1409,10 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 [f"{i}" for i in range(1, 8)]
             ),
             "delta.checkpointPolicy": lambda: random.choice(["classic", "v2"]),
-            # Parquet compression
+            # Parquet compression. No 'lzo': it needs the separately-installed
+            # hadoop-lzo codec, which is not on the Spark classpath
             "spark.sql.parquet.compression.codec": lambda: random.choice(
-                ["snappy", "gzip", "lzo", "lz4", "zstd", "uncompressed"]
+                ["snappy", "gzip", "lz4", "zstd", "uncompressed"]
             ),
             # Statistics columns
             "delta.dataSkippingNumIndexedCols": lambda: str(
@@ -1256,6 +1499,42 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "spark.databricks.delta.stats.skipping": true_false_lambda,
         }
 
+    def generate_table_properties(
+        self,
+        table: SparkTable,
+    ) -> dict[str, str]:
+        properties = super().generate_table_properties(table)
+        if (
+            properties.get("delta.enableDeletionVectors") == "true"
+            and properties.get("delta.compatibility.symlinkFormatManifest.enabled")
+            == "true"
+        ):
+            # Delta rejects persistent deletion vectors combined with incremental
+            # symlink manifest generation, so keep only one of them enabled
+            properties[
+                random.choice(
+                    [
+                        "delta.enableDeletionVectors",
+                        "delta.compatibility.symlinkFormatManifest.enabled",
+                    ]
+                )
+            ] = "false"
+        if (
+            properties.get("delta.columnMapping.mode") in ("name", "id")
+            and properties.get("delta.compatibility.symlinkFormatManifest.enabled")
+            == "true"
+        ):
+            # Writes fail with DELTA_UNSUPPORTED_MANIFEST_GENERATION_WITH_COLUMN_MAPPING:
+            # symlink manifests are for external readers, which cannot resolve
+            # column-mapped tables. Keep only one of the two features
+            if random.randint(1, 2) == 1:
+                properties["delta.columnMapping.mode"] = "none"
+            else:
+                properties[
+                    "delta.compatibility.symlinkFormatManifest.enabled"
+                ] = "false"
+        return properties
+
     def generate_alter_table_statements(
         self,
         spark: SparkSession,
@@ -1288,18 +1567,32 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 7)
+        next_option = random.randint(1, 9)
 
         if next_option == 1:
             # Vacuum
-            return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
+            res = f"VACUUM {table.get_table_full_path()}"
+            if random.randint(1, 2) == 1:
+                res += f" RETAIN {random.choice([0, 1, 168])} HOURS"
+            if random.randint(1, 4) == 1:
+                res += " DRY RUN"
+            return res + ";"
         if next_option == 2:
-            # Optimize
+            # Optimize. Databricks/Delta treats liquid-clustered tables (CLUSTER BY)
+            # differently from the rest, so the direction must follow the tracked state:
+            #  - clustered: recluster via plain OPTIMIZE or OPTIMIZE ... FULL. ZORDER BY is
+            #    rejected (mutually exclusive with clustering) and a WHERE predicate is not
+            #    supported, so neither is emitted.
+            #  - non-clustered: FULL is only valid for clustered tables, so it is not emitted.
+            #    OPTIMIZE ... WHERE only accepts partition predicates, so a WHERE is added only
+            #    when the table has partition keys and references one of them; ZORDER BY is free.
             res = f"OPTIMIZE {table.get_table_full_path()}"
-            if random.randint(1, 3) == 1:
-                flat_cols = list(table.flat_columns().keys())
-                col = random.choice(flat_cols)
-                res += f" WHERE {col} IS NOT NULL"
+            if table.clustered:
+                if random.randint(1, 4) == 1:
+                    res += " FULL"
+                return res + ";"
+            if table.partition_keys and random.randint(1, 3) == 1:
+                res += f" WHERE {random.choice(table.partition_keys)} IS NOT NULL"
             if random.randint(1, 2) == 1:
                 res += f" ZORDER BY ({self.random_ordered_columns(table, False)})"
             return res + ";"
@@ -1334,6 +1627,36 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         if next_option == 7:
             # Generate manifest
             return f"GENERATE symlink_format_manifest FOR TABLE {table.get_table_full_path()};"
+        if next_option == 8:
+            # Rewrite files with soft-deleted rows (purges deletion vectors)
+            return f"REORG TABLE {table.get_table_full_path()} APPLY (PURGE);"
+        if next_option == 9:
+            # Change liquid clustering keys after creation. Executed inline (like RESTORE) so
+            # the tracked `clustered` flag is updated only after the ALTER succeeds; setting it
+            # before the statement runs would desync it whenever the ALTER fails (the caller
+            # ignores such errors), which would then mis-drive OPTIMIZE generation. The new
+            # value is known from the statement, so set it directly rather than via
+            # `_refresh_table_model` (that helper also clears check constraints, which a
+            # CLUSTER BY change must not do).
+            if random.randint(1, 3) == 1:
+                stmt = f"ALTER TABLE {table.get_table_full_path()} CLUSTER BY NONE"
+                new_clustered = False
+            else:
+                cluster_cols = [
+                    path
+                    for path, dtype in table.flat_columns().items()
+                    if delta_skipping_eligible(dtype)
+                    and not table.columns[path.split(".", 1)[0]].generated
+                ]
+                if not cluster_cols:
+                    return ""
+                random.shuffle(cluster_cols)
+                chosen = cluster_cols[: random.randint(1, min(4, len(cluster_cols)))]
+                stmt = f"ALTER TABLE {table.get_table_full_path()} CLUSTER BY ({','.join(chosen)})"
+                new_clustered = True
+            spark.sql(stmt)
+            table.clustered = new_clustered
+            return ""
         return ""
 
 
@@ -1356,8 +1679,10 @@ class PaimonTableGenerator(LakeTableGenerator):
 
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
-        for k in table.columns.keys():
-            res.append(k)
+        # No partitioning by container types
+        for k, sc in table.columns.items():
+            if not isinstance(sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)):
+                res.append(k)
         return res
 
     def add_generated_col(
@@ -1389,6 +1714,21 @@ class PaimonTableGenerator(LakeTableGenerator):
                 "deletion-vectors.bitmap64",
             ):
                 properties.pop(key, None)
+        if properties.get("merge-engine") == "first-row":
+            # Paimon rejects a sequence field and deletion vectors on the 'first-row' merge
+            # engine, and only 'none' and 'lookup' changelog producers are supported with it
+            properties.pop("sequence.field", None)
+            properties.pop("deletion-vectors.enabled", None)
+            if properties.get("changelog-producer") not in (None, "none", "lookup"):
+                properties["changelog-producer"] = random.choice(["none", "lookup"])
+        if (
+            properties.get("deletion-vectors.enabled") == "true"
+            and properties.get("changelog-producer") == "full-compaction"
+        ):
+            # Deletion vectors mode is only supported for none/input/lookup changelog producers
+            properties["changelog-producer"] = random.choice(
+                ["none", "input", "lookup"]
+            )
         if (
             "deletion-vectors.bitmap64" in properties
             and properties.get("deletion-vectors.enabled") != "true"
@@ -1403,15 +1743,25 @@ class PaimonTableGenerator(LakeTableGenerator):
         # without a fixed 'bucket') alike, so require a fixed bucket here.
         if "full-compaction.delta-commits" in properties and "bucket" not in properties:
             del properties["full-compaction.delta-commits"]
+        # write-only installs NoopCompactManager, but full-compaction.delta-commits makes the
+        # writer trigger a guaranteed compaction on commit -> every INSERT fails
+        if properties.get("write-only") == "true":
+            properties.pop("full-compaction.delta-commits", None)
         for min_key, max_key in (
             ("snapshot.num-retained.min", "snapshot.num-retained.max"),
             ("compaction.min.file-num", "compaction.max.file-num"),
             ("num-sorted-run.compaction-trigger", "num-sorted-run.stop-trigger"),
         ):
-            if min_key in properties and max_key in properties:
+            has_min, has_max = min_key in properties, max_key in properties
+            if has_min and has_max:
                 lo, hi = int(properties[min_key]), int(properties[max_key])
                 if lo > hi:
                     properties[max_key] = str(lo)
+            elif has_max:
+                # Only the max is set: Paimon's default min can exceed it (e.g.
+                # snapshot.num-retained.min defaults to 10 > a chosen max of 5), which
+                # fails validation, so add an explicit min no larger than the chosen max.
+                properties[min_key] = str(random.randint(1, int(properties[max_key])))
         return properties
 
     def generate_table_properties_impl(
@@ -1501,7 +1851,7 @@ class PaimonTableGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 5)
+        next_option = random.randint(1, 9)
 
         if next_option == 1:
             return f"CALL `{table.catalog_name}`.sys.compact(table => '{table.get_namespace_path()}');"
@@ -1514,4 +1864,27 @@ class PaimonTableGenerator(LakeTableGenerator):
             return f"CALL `{table.catalog_name}`.sys.repair(table => '{table.get_namespace_path()}');"
         if next_option == 5:
             return f"CALL `{table.catalog_name}`.sys.remove_orphan_files(table => '{table.get_namespace_path()}');"
+        if next_option == 6:
+            # Rollback — executed here so the in-memory model can be refreshed
+            # afterward (rollback can undo schema-mutating alters)
+            version = random.choice(
+                [str(random.randint(1, 10)), f"tag_{random.randint(1, 1000)}"]
+            )
+            spark.sql(
+                f"CALL `{table.catalog_name}`.sys.rollback(table => '{table.get_namespace_path()}', version => '{version}')"
+            )
+            self._refresh_table_model(spark, table)
+            return ""
+        if next_option == 7:
+            return f"CALL `{table.catalog_name}`.sys.delete_tag(table => '{table.get_namespace_path()}', tag => 'tag_{random.randint(1, 1000)}');"
+        if next_option == 8:
+            branch = f"b_{random.randint(1, 3)}"
+            if random.randint(1, 2) == 1:
+                res = f"CALL `{table.catalog_name}`.sys.create_branch(table => '{table.get_namespace_path()}', branch => '{branch}'"
+                if random.randint(1, 2) == 1:
+                    res += f", tag => 'tag_{random.randint(1, 1000)}'"
+                return res + ");"
+            return f"CALL `{table.catalog_name}`.sys.delete_branch(table => '{table.get_namespace_path()}', branch => '{branch}');"
+        if next_option == 9:
+            return f"CALL `{table.catalog_name}`.sys.expire_partitions(table => '{table.get_namespace_path()}', expiration_time => '{random.choice(['1 h', '1 d', '7 d'])}');"
         return ""
