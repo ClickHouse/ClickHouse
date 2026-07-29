@@ -21,7 +21,10 @@ INSERT INTO t_text_dist_guard SELECT number, 'uniform' FROM numbers(258);
 -- tryMakeDistributedAggregation and stop testing the text index guard at all.
 SET max_rows_to_group_by = 0;
 
-SET make_distributed_plan = 1, enable_parallel_replicas = 0, query_plan_direct_read_from_text_index = 1;
+-- distributed_plan_execute_locally runs the fragments in this server, so a missing stateless worker client
+-- cannot throw the same SUPPORT_IS_DISABLED code while constructing the distributed executor.
+SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
+    query_plan_direct_read_from_text_index = 1;
 
 -- Multi-stage plans ship the read to a worker, so they are rejected.
 
@@ -34,6 +37,9 @@ SELECT count() FROM t_text_dist_guard PREWHERE hasToken(s, 'uniform'); -- { serv
 SELECT '-- hasAnyTokens';
 SELECT count() FROM t_text_dist_guard PREWHERE hasAnyTokens(s, 'uniform') WHERE hasAnyTokens(s, 'uniform'); -- { serverError SUPPORT_IS_DISABLED }
 
+SELECT '-- hasAllTokens';
+SELECT count() FROM t_text_dist_guard PREWHERE hasAllTokens(s, 'uniform') WHERE hasAllTokens(s, 'uniform'); -- { serverError SUPPORT_IS_DISABLED }
+
 -- The same predicate in PREWHERE and WHERE, which is what the AST fuzzer produced, is rejected too once
 -- the plan is split: the read is still shipped.
 SELECT '-- hasToken in PREWHERE and WHERE';
@@ -44,12 +50,19 @@ ORDER BY k LIMIT 3; -- { serverError SUPPORT_IS_DISABLED }
 
 -- A single-stage plan is executed locally, so the synthetic column never has to be reconstructed and the
 -- query must keep running. This is the exact shape the AST fuzzer produced: the negative LIMIT prunes all
--- parts, so no exchange is created.
+-- parts, so no exchange is created. The plan oracle proves direct read really was applied, i.e. the query
+-- did not merely fall back to reading the column and evaluating the function per row.
 SELECT '-- single stage: still runs';
 SELECT k FROM t_text_dist_guard
 PREWHERE (materialize(65537) >= k) AND hasToken(s, '')
 WHERE xor(hasToken(s, ''), (k >= 65537))
 LIMIT -2147483649;
+SELECT countIf(explain LIKE '%__text_index_%') > 0 FROM (
+    EXPLAIN actions = 1 SELECT k FROM t_text_dist_guard
+    PREWHERE (materialize(65537) >= k) AND hasToken(s, '')
+    WHERE xor(hasToken(s, ''), (k >= 65537))
+    LIMIT -2147483649 SETTINGS make_distributed_plan = 1)
+SETTINGS make_distributed_plan = 0;
 
 -- A read the distributed transform declines to distribute (the table fits in a broadcast) also stays
 -- single-stage, so it keeps working and returns the same rows as the non-distributed plan. No ORDER BY:
@@ -57,6 +70,10 @@ LIMIT -2147483649;
 SELECT '-- broadcast-sized read: still runs';
 SELECT k FROM t_text_dist_guard PREWHERE hasToken(s, 'uniform') WHERE k < 2
 SETTINGS distributed_plan_max_rows_to_broadcast = 1000000;
+SELECT countIf(explain LIKE '%__text_index_%') > 0 FROM (
+    EXPLAIN actions = 1 SELECT k FROM t_text_dist_guard PREWHERE hasToken(s, 'uniform') WHERE k < 2
+    SETTINGS make_distributed_plan = 1, distributed_plan_max_rows_to_broadcast = 1000000)
+SETTINGS make_distributed_plan = 0;
 
 -- Without make_distributed_plan the same text index direct reads keep working and return correct results.
 SET make_distributed_plan = 0;

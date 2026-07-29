@@ -1,10 +1,13 @@
 -- WHERE hasToken
 -- PREWHERE hasToken
 -- hasAnyTokens
+-- hasAllTokens
 -- hasToken in PREWHERE and WHERE
 -- single stage: still runs
+1
 -- broadcast-sized read: still runs
 0
+1
 1
 -- not distributed: results are correct
 258
