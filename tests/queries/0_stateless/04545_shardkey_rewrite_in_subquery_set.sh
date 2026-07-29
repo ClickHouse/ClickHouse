@@ -64,8 +64,10 @@ COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, 
 #   * release build: "Not-ready Set" is thrown and printed to stderr;
 #   * debug/sanitizer build: it aborts (exit 134) with the log line suppressed
 #     by --send_logs_level=fatal, so the text is absent but the exit code is 134.
-# A fixed build gets past planning to the unreachable shards (network error,
-# exit != 134, no "Not-ready Set"). $1 = analyzer flag, $2 = sharding key.
+# A fixed build gets past planning and starts contacting the unreachable shards,
+# so its stderr names a configured TEST-NET host. Requiring that host (rather than
+# accepting any non-134 exit) keeps an unrelated planning failure from being read
+# as a successful fallback. $1 = analyzer flag, $2 = sharding key.
 run_unready()
 {
     local analyzer="$1" key="$2" err rc
@@ -79,8 +81,10 @@ run_unready()
 
     if [ "${rc}" = "134" ] || echo "${err}" | grep -q "Not-ready Set"; then
         echo "NOT-READY-SET-LEAK"
-    else
+    elif echo "${err}" | grep -qE "192\.0\.2\.[12]"; then
         echo "PAST-PLANNING"
+    else
+        echo "NO-SHARD-CONTACTED"
     fi
 }
 
@@ -109,19 +113,22 @@ run_ready_pruned()
 # Unready subquery-backed set: must fall back, not abort. Analyzer + old analyzer.
 run_unready 1 'bitAnd(dummy + (0 IN (SELECT 1)), 1)'
 run_unready 0 'bitAnd(dummy + (0 IN (SELECT 1)), 1)'
-# Same unready set, but inside a lambda body. A higher-order key keeps its body in a
-# separate nested DAG, so scanning only the outer DAG misses the set and the query
-# still reaches `FunctionIn` with an unbuilt set. Analyzer + old analyzer.
+# Same unready set, but written inside a lambda body. A higher-order key keeps its
+# body in a separate nested DAG, yet the set itself does not live there: the
+# `ColumnConst(ColumnSet)` is added by `ScopeStack::addColumn`, which always puts it
+# in the outermost DAG and only projects an input into the nested scopes. So the
+# guard sees it without walking lambda bodies. Pin that, because the shape is
+# reachable: without the guard these abort on the old-analyzer path.
 run_unready 1 'arrayExists(x -> x IN (SELECT 1), [dummy])'
 run_unready 0 'arrayExists(x -> x IN (SELECT 1), [dummy])'
-# Nested lambdas: the recursion must not stop at the first level.
+# Nested lambdas: the set stays in the outermost DAG at any nesting depth.
 run_unready 1 'arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [x]), [dummy])'
 run_unready 0 'arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [x]), [dummy])'
 # Ready tuple set: safe, shard pruning must be preserved. Analyzer + old analyzer.
 run_ready_pruned 1 'bitAnd(dummy + (0 IN (1, 2)), 1)'
 run_ready_pruned 0 'bitAnd(dummy + (0 IN (1, 2)), 1)'
-# Ready tuple set inside a lambda body: the nested-DAG walk must report only unbuilt
-# sets, so pruning is still preserved here. Analyzer + old analyzer.
+# Ready tuple set written inside a lambda body: the guard reports only unbuilt sets,
+# so pruning is still preserved here. Analyzer + old analyzer.
 run_ready_pruned 1 'bitAnd(dummy + arrayExists(x -> x IN (1, 2), [0]), 1)'
 run_ready_pruned 0 'bitAnd(dummy + arrayExists(x -> x IN (1, 2), [0]), 1)'
 
