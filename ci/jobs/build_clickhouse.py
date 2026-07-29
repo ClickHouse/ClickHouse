@@ -197,12 +197,11 @@ _Static_assert(config_opt_size_checks, "JEMALLOC_OPT_SIZE_CHECKS is not in effec
 DEPFILE_FLAGS_WITH_OPERAND = ("-MT", "-MF", "-MQ", "-MJ")
 
 # Every extension a compiled source operand can carry in this tree's
-# `compile_commands.json`, plus the object files. Measured over a configured tree's 17284
-# entries: `.cpp` 10387, `.c` 3940, `.cc` 2659, `.asm` 124, `.cxx` 62, `.c++` 49, `.s` 40,
-# `.S` 23. Enumerating only some of them leaves the rest as stray input files, which is the
-# failure the reduction below exists to prevent - so the list is the whole set, and it is
-# only ever applied to *positional* tokens, or a joined flag whose value happens to end this
-# way (`-I/opt/dir.c++`) would be dropped as if it were a source.
+# `compile_commands.json`, plus the object files. Enumerating only some of them leaves the
+# rest as stray input files, which is the failure the reduction below exists to prevent - so
+# the list is the whole set, and it is only ever applied to *positional* tokens, or a joined
+# flag whose value happens to end this way (`-I/opt/dir.c++`) would be dropped as if it were
+# a source.
 SOURCE_OPERAND_EXTENSIONS = (
     ".c",
     ".cc",
@@ -231,10 +230,10 @@ def jemalloc_probe_flags(command):
     depfile flags are consumed as pairs, the way `-o` is - cmake's Makefile generator emits
     exactly `-MD -MT <target> -MF <path>` - and why the source extension list is the
     complete one rather than just jemalloc's own `.c`. Both probe callers reduce with this,
-    and the leak probe's entries are C++: a left-in `.cc` operand costs 2.8s instead of
-    0.2s per probe, and for a source cmake has not generated yet (the guards run in the
-    CMAKE stage, before BUILD - 9 of a configured tree's protobuf `.pb.cc` files are in
-    that state) it fails the probe outright with no diagnostic of its own.
+    and the leak probe's entries are C++, where a left-in operand costs an order of magnitude
+    more per probe; for a source cmake has not generated yet (the guards run in the CMAKE
+    stage, before BUILD, and generated sources such as protobuf's `.pb.cc` are in that state)
+    it fails the probe outright with no diagnostic of its own.
     """
     tokens = shlex.split(command)
     flags = []
@@ -405,20 +404,16 @@ def assert_jemalloc_macros_stay_private(entries):
     the same `-D` (`-Wp,-DX`, `-Wp,-D,X`, `-Xpreprocessor -D -Xpreprocessor X`,
     `-Xclang -D -Xclang X`), and a definition can also arrive with no macro name on the line
     at all - out of an `@response` file, a pre-included header, a `-include-pch`'d PCH, or a
-    `--config` / `--config-user-dir` configuration file. A prefilter over these routes was
-    tried and deleted: four review rounds each found a *narrower* route it did not know
-    about, because clang keeps acquiring ways to inject a definition and no finite clause
-    list closes that. So there is no prefilter, and every entry's flags are put to the
-    compiler.
+    `--config` / `--config-user-dir` configuration file. A scan, or a prefilter admitting
+    only the lines that could "possibly" define, is only ever as complete as the list of
+    routes someone thought of, and clang keeps acquiring routes. So there is no prefilter,
+    and every entry's flags are put to the compiler.
 
     That is affordable because the flags of interest are **per-target**, not per-file: one
-    probe per distinct `(flag set, directory, language)` covers every entry sharing it.
-    Measured on a configured tree, 17217 non-jemalloc entries collapse to 255 such keys,
-    probed in 4.8s. The prefiltered sweep this replaces probed 130 entries in 27.7s - fewer
-    probes but 5.8x the time, because those 130 were only **3** distinct keys, so it re-ran
-    the same three expensive C++ probes ~43 times each. End to end the whole check goes from
-    58s to 36s; both arms spend ~31s of that reducing 17217 compile lines, which dominates
-    either way and is why probing everything costs less than filtering did.
+    probe per distinct `(flag set, directory, language)` covers every entry sharing it, which
+    collapses a configured tree's thousands of non-jemalloc entries to a few hundred keys.
+    Reducing the compile lines dominates the runtime either way, which is why probing
+    everything costs less than filtering did.
     """
     # One representative entry per distinct key, and how many entries that key covers - a
     # flag set now stands for many files, so a bare file count would name one file and hide
@@ -483,8 +478,7 @@ def assert_jemalloc_safety_macros_armed(compile_commands_path):
     Both also dedup by *flag set* rather than by file, because the flags of interest are
     per-target: the arming half compiles one probe per distinct jemalloc flag set, and the
     leak half (`assert_jemalloc_macros_stay_private`) one per distinct non-jemalloc
-    `(flag set, directory, language)` - 255 keys for a configured tree's 17217 non-jemalloc
-    entries, 4.8s of probing, so no entry has to be accepted unprobed.
+    `(flag set, directory, language)`, so no entry has to be accepted unprobed.
     """
     if not os.path.isfile(compile_commands_path):
         raise AssertionError(
@@ -889,8 +883,8 @@ def main():
         # check - a missing `compile_commands.json`, an inconclusive probe - block builds
         # that have nothing to do with a weekly diagnostic lane, including 24 sanitizer,
         # non-x86 and coverage builds that carry no jemalloc translation units at all or
-        # cannot be affected by an x86-64-only cmake guard. The check is cheap (0.31s) but
-        # cheap is not a reason to make it mandatory everywhere.
+        # cannot be affected by an x86-64-only cmake guard. The check is cheap, but cheap is
+        # not a reason to make it mandatory everywhere.
         if res:
             jemalloc_check = {
                 BuildTypes.AMD_JEMALLOC_SAFETY: (

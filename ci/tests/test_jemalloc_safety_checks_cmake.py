@@ -447,13 +447,12 @@ def test_the_probe_answers_whether_each_gate_is_armed(
             ("arena.o", JE),
             (SAFETY, SIZE),
         ),
-        # Every jemalloc TU is `.c`, so reading only that extension was enough for the
-        # arming half - but the leak half probes every distinct flag set among this tree's
-        # other 17217 entries, and 169 of its 255 keys are `clang++`. A left-in C++ operand
-        # costs 2.8s instead of 0.2s per probe, and for a source cmake has not generated yet
-        # (both guards run in the CMAKE stage, before BUILD) it fails the probe with a
-        # `no such file or directory` that carries no `#error` marker - i.e. the
-        # inconclusive branch, on a perfectly clean compile line.
+        # Every jemalloc TU is `.c`, so reading only that extension is enough for the arming
+        # half - but the leak half probes every distinct flag set in the tree, and most of
+        # those are C++. A left-in C++ operand costs an order of magnitude more per probe,
+        # and for a source cmake has not generated yet (both guards run in the CMAKE stage,
+        # before BUILD) it fails the probe with a `no such file or directory` that carries no
+        # `#error` marker - i.e. the inconclusive branch, on a perfectly clean compile line.
         (
             "every compiled-source extension is dropped, not just jemalloc's .c",
             f"clang-21 {BOTH} -o x.o -c {OTHER_CC}",
@@ -477,9 +476,8 @@ def test_the_probe_answers_whether_each_gate_is_armed(
             ("-DKEEP",),
         ),
         # ... and a flag operand that merely *looks* like a source must survive, or the
-        # reduction silently drops a real flag. Measured over a configured tree: 0 of
-        # 17284 entries carries a token ending in a source extension that is not its own
-        # source file, so this is the property that keeps the extension list safe to widen.
+        # reduction silently drops a real flag. Only *positional* tokens are read as sources,
+        # which is the property that keeps the extension list safe to widen.
         (
             "a path-shaped flag operand is not mistaken for a source",
             f"clang-21 {BOTH} -include /p/prefix.h -I/p/dir.c++ -o x.o -c {OTHER_CC}",
@@ -634,27 +632,21 @@ def test_missing_compile_commands_fails_closed(tmp_path):
 
 # --- the macros must stay PRIVATE to jemalloc -----------------------------------------
 #
-# The other direction, and the other half that asks the compiler. It used to be a flag scan,
-# on the grounds that a probe per entry over ~17k is not affordable; the scan was then caught
-# missing a real definition four times running, each time in a strictly narrower spelling of
-# the previous one (`-D X` split, `-Wp,`/`-Xpreprocessor`, `-Xclang`). The verdict therefore
-# moved onto the compiler, and the affordability argument onto a prefilter admitting only the
-# entries that could "possibly" define - which was then itself caught missing a real
-# definition twice more (`--config=<file>`, `--config-user-dir=<dir>`, `-include-pch <pch>`,
-# all measured to define with no macro name on the line). Same failure mode one layer up: a
-# clause list is only ever as complete as the routes someone thought of, and clang keeps
-# acquiring routes.
+# The other direction, and the other half that asks the compiler. Neither a scan of the
+# compile line nor a prefilter admitting only the lines that could "possibly" define can
+# answer this: each is only as complete as the list of routes someone thought of, and clang
+# keeps acquiring routes - a definition can arrive as a split `-D X`, forwarded through
+# `-Wp,`/`-Xpreprocessor`/`-Xclang`, or with no macro name on the line at all (`@response`
+# file, `--config=<file>`, `--config-user-dir=<dir>`, `-include <hdr>`, `-include-pch <pch>`).
 #
-# So the prefilter is gone too, and the affordability argument is now a *fact about the
-# flags* rather than a claim about routes: the flags of interest are per-target, so deduping
-# by `(flag set, directory, language)` collapses a configured tree's 17217 non-jemalloc
-# entries to 255 keys, probed in 4.8s with nothing accepted unprobed. That is *less* probing
-# time than the prefiltered sweep spent (27.7s for 130 entries), because those 130 were only
-# 3 distinct keys - it re-ran the same three C++ probes ~43 times each.
+# So there is no prefilter, and affordability is a *fact about the flags* rather than a claim
+# about routes: they are per-target, so deduping by `(flag set, directory, language)`
+# collapses a configured tree's thousands of non-jemalloc entries to a few hundred keys, with
+# nothing accepted unprobed. Reducing the compile lines dominates the runtime either way.
 #
 # The cases below therefore assert the verdict the COMPILER gives, computed in the test by
-# running it, rather than a hardcoded expectation. Hardcoding is what let the scan's answer
-# and clang's answer drift apart in the first place.
+# running it, rather than a hardcoded expectation. A hardcoded expectation is what lets a
+# scan's answer and clang's answer drift apart.
 
 
 def _macros_stay_private(entries, directory="/b") -> bool:
@@ -713,8 +705,8 @@ _LEAK_SPELLINGS = [
         f"-Xpreprocessor -D -Xpreprocessor {REQUIRED_MACROS[0]}",
         REQUIRED_MACROS[0],
     ),
-    # The r15 spelling: `clang-21` honours it, and the flag scan reported it as *absent*,
-    # so a macro that really did reach a non-jemalloc TU was accepted.
+    # `clang-21` honours this one while a scan of the compile line reports it as *absent*, so
+    # it is the spelling that lets a macro really reaching a non-jemalloc TU be accepted.
     (
         "-Xclang -D -Xclang MACRO",
         f"-Xclang -D -Xclang {REQUIRED_MACROS[0]}",
@@ -767,10 +759,10 @@ def test_the_leak_sweep_agrees_with_the_compiler(
 ):
     """The sweep's verdict must be the compiler's, for every spelling.
 
-    This is the assertion the four rounds of missed spellings were failing: each fix taught
-    the scanner one more form, and the next form was found in the same afternoon. Here the
-    expectation is *measured* - the compiler is run on the same flags - so a spelling the
-    sweep does not understand fails this test instead of shipping.
+    The expectation is *measured* - the compiler is run on the same flags - so a spelling the
+    sweep does not understand fails this test instead of shipping. A hardcoded expectation
+    only ever covers the forms someone thought of, which is the whole reason the verdict is
+    the compiler's.
     """
     defined = _compiler_defines(tmp_path, flags, macro)
     accepted = _macros_stay_private([(JE, BOTH), (OTHER, flags)], directory=str(tmp_path))
@@ -1120,11 +1112,10 @@ def test_the_armed_check_also_runs_the_leak_sweep(compiler_probe, tmp_path):
 # neither. The two controls are what make the table meaningful - without the `-D` row a
 # blanket-catch would pass it, and without the clean row a blanket-catch would too.
 #
-# `-Xclang -D -Xclang <M>` is the row this table exists for: it is the spelling that a
-# parse of the compile line reported as "absent" while clang defined it, so the checker
-# printed "neither macro is defined" on a line where one was. Adding `-Xclang` to a
-# spelling list would have been the fourth pattern on a chain that had already eaten five
-# rounds, so the parse is gone instead and the compiler answers.
+# `-Xclang -D -Xclang <M>` is the row this table exists for: a parse of the compile line
+# reports it as "absent" while clang defines it, so the checker would print "neither macro is
+# defined" on a line where one was. Adding it to a spelling list only closes that one
+# spelling, so there is no parse and the compiler answers.
 _DEFINING_FORMS = [
     ("-D<M> (control)", f"-D{REQUIRED_MACROS[0]}"),
     ("-D <M> split", f"-D {REQUIRED_MACROS[0]}"),
@@ -1972,15 +1963,13 @@ def test_platform_header_search_detects_both_directions(
 # compile line, the platform headers and the build all stay green. The size gate is the one
 # worth pinning hardest: it has no mallctl, so no runtime observable can notice.
 #
-# The question is put to clang, over the initializers extracted from the real header, for
-# the reason recorded across this PR's history: an earlier version of this layer evaluated
-# the conditions with a hand-rolled preprocessor (arm selection, continuation splicing,
-# comment stripping, a `defined()`-to-Python translator, prior-state `#define`/`#undef`
-# detection, `eval`), and five consecutive review rounds each found a *narrower* syntactic
-# shape that evaded it - each fix correct, each evaded. The evaluator's shape space is
-# unbounded, so no finite set of pins closes it; its own docstring conceded as much by
-# raising on any nested conditional, which meant the real header gaining one would have
-# redded the guard rather than answering it. Compiling has no such boundary.
+# The question is put to clang, over the initializers extracted from the real header, because
+# evaluating the conditions in Python cannot be made complete: doing so needs arm selection,
+# continuation splicing, comment stripping, a `defined()`-to-Python translator and prior-state
+# `#define`/`#undef` detection, and the syntactic shape space it has to cover is unbounded, so
+# no finite set of pins closes it. Such an evaluator also has to raise on the shapes it cannot
+# model - a nested conditional, say - which means the real header gaining one reds the guard
+# instead of answering it. Compiling has no such boundary.
 
 
 def _compiled_flag_value(preamble_text, flag, defines, prologue=""):
