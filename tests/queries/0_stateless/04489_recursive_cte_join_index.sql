@@ -829,6 +829,38 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP VIEW edges_view;
 
+-- A remote read is not eligible either unless the cluster it goes to has a shard with more
+-- than one node: `ClusterProxy::updateSettingsAndClientInfoForCluster` turns task-based
+-- parallel replicas off for a single-node cluster and for a `remote()` table function without
+-- a named cluster, so such a query runs as a plain remote read and must keep running under
+-- the forcing mode.
+WITH RECURSIVE remote_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM remote_pr AS t
+        INNER JOIN remote('127.0.0.1', currentDatabase(), edges) AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM remote_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- ... while a cluster with several replicas in a shard really can be read with parallel
+-- replicas, so there the forcing mode must be rejected.
+WITH RECURSIVE cluster_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM cluster_pr_throw AS t
+        INNER JOIN cluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), edges) AS e
+            ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM cluster_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;

@@ -1,6 +1,7 @@
 #include <Processors/Sources/RecursiveCTESource.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageMemory.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
@@ -96,6 +97,51 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
     return result;
 }
 
+/// Whether parallel replicas could actually be engaged for a remote storage.
+///
+/// A remote read does not use parallel replicas just because the settings ask for it: the
+/// cluster also has to have a shape the algorithms can split. `ClusterProxy::
+/// updateSettingsAndClientInfoForCluster` turns task-based parallel replicas off for a
+/// cluster whose every shard has a single node, and for a `remote()` table function without
+/// a named cluster; `Context::canUseParallelReplicasCustomKeyForCluster` requires a single
+/// shard with more than one node. Such reads therefore run as plain remote reads today, and
+/// the forcing mode has nothing to fail on — the rejection must not fire for them either.
+///
+/// Only `StorageDistributed` (which backs `Distributed` tables and the `remote` / `cluster` /
+/// `clusterAllReplicas` table functions) exposes the cluster the read would go to; any other
+/// remote storage counts as eligible, which is the fail-closed side of the check.
+bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
+{
+    const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);
+    if (!distributed)
+        return true;
+
+    auto cluster = distributed->getCluster();
+
+    bool has_shard_with_several_nodes = false;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.getAllNodeCount() > 1)
+        {
+            has_shard_with_several_nodes = true;
+            break;
+        }
+    }
+
+    /// Every algorithm needs at least one shard with more than one node to split the read.
+    if (!has_shard_with_several_nodes)
+        return false;
+
+    /// A `remote()` table function without a named cluster cannot use the task-based mode,
+    /// but the custom-key and sampling modes do not go through `cluster_for_parallel_replicas`
+    /// and work with the ad-hoc cluster.
+    if (cluster->getName().empty() && !context->canUseParallelReplicasCustomKeyForCluster(*cluster)
+        && !context->canUseOffsetParallelReplicas())
+        return false;
+
+    return true;
+}
+
 /// Whether parallel replicas could actually be engaged for a query subtree.
 ///
 /// A recursive step that reads nothing but local, non-`MergeTree` storages — in
@@ -116,9 +162,10 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// is not eligible and must keep running under the forcing mode.
 ///
 /// Remote storages (`Distributed`, `remote`, `cluster`) are eligible in addition: they are not
-/// covered by that rule (which only accepts the `MergeTree` family), yet the custom-key and
-/// sampling modes do split a read across a cluster's replicas. This is the fail-closed side of
-/// the check — a storage counts as eligible when parallel replicas could be engaged for it.
+/// covered by that rule (which only accepts the `MergeTree` family), yet every mode can split a
+/// read across a cluster's replicas — but only when the cluster has a suitable shape, which is
+/// what `mayEngageParallelReplicasForRemoteStorage` checks. This is the fail-closed side of the
+/// check — a storage counts as eligible when parallel replicas could be engaged for it.
 ///
 /// The walk is scoped to `scope_context`: subqueries with a `SETTINGS` clause of their
 /// own get their own context, and the settings that decide whether parallel replicas
@@ -153,7 +200,7 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
         if (const auto * table_node = subtree_node->as<TableNode>())
         {
             const auto & storage = table_node->getStorage();
-            if (storage && storage->isRemote())
+            if (storage && storage->isRemote() && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
                 return true;
 
             if (canUseTableForParallelReplicas(*table_node, scope_context))
@@ -165,7 +212,7 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
             /// with parallel replicas; local ones (`numbers`, `file`, ...) never are — the
             /// planner rejects a `TABLE_FUNCTION` join-tree node outright.
             const auto & storage = table_function_node->getStorage();
-            if (storage && storage->isRemote())
+            if (storage && storage->isRemote() && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
                 return true;
         }
 
