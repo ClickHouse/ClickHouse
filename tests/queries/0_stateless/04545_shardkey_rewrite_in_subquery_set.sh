@@ -65,13 +65,13 @@ COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, 
 #   * debug/sanitizer build: it aborts (exit 134) with the log line suppressed
 #     by --send_logs_level=fatal, so the text is absent but the exit code is 134.
 # A fixed build gets past planning to the unreachable shards (network error,
-# exit != 134, no "Not-ready Set"). $1 = analyzer flag.
+# exit != 134, no "Not-ready Set"). $1 = analyzer flag, $2 = sharding key.
 run_unready()
 {
-    local analyzer="$1" err rc
+    local analyzer="$1" key="$2" err rc
     err=$(${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
         CREATE TABLE dist_04545 AS system.one
-            ENGINE = Distributed(test_04545_two_shards, system, one, bitAnd(dummy + (0 IN (SELECT 1)), 1));
+            ENGINE = Distributed(test_04545_two_shards, system, one, ${key});
         SET allow_experimental_analyzer = ${analyzer}, ${COMMON_SETTINGS};
         SELECT count() FROM dist_04545 WHERE dummy IN (0, 1);
     " 2>&1 >/dev/null)
@@ -88,13 +88,13 @@ run_unready()
 # key reduces to `bitAnd(dummy, 1)` = dummy % 2. Shard pruning must survive.
 # `dummy IN (1, 3)` both map to shard 1 (192.0.2.2); with pruning only that
 # shard is contacted, without pruning shard 0 (192.0.2.1) is contacted too.
-# $1 = analyzer flag.
+# $1 = analyzer flag, $2 = sharding key.
 run_ready_pruned()
 {
-    local analyzer="$1" err
+    local analyzer="$1" key="$2" err
     err=$(${CLICKHOUSE_LOCAL} --config-file="${CLUSTER_CONFIG}" --send_logs_level=fatal --query "
         CREATE TABLE dist_04545 AS system.one
-            ENGINE = Distributed(test_04545_two_shards, system, one, bitAnd(dummy + (0 IN (1, 2)), 1));
+            ENGINE = Distributed(test_04545_two_shards, system, one, ${key});
         SET allow_experimental_analyzer = ${analyzer}, ${COMMON_SETTINGS};
         SELECT count() FROM dist_04545 WHERE dummy IN (1, 3);
     " 2>&1 >/dev/null)
@@ -107,10 +107,22 @@ run_ready_pruned()
 }
 
 # Unready subquery-backed set: must fall back, not abort. Analyzer + old analyzer.
-run_unready 1
-run_unready 0
+run_unready 1 'bitAnd(dummy + (0 IN (SELECT 1)), 1)'
+run_unready 0 'bitAnd(dummy + (0 IN (SELECT 1)), 1)'
+# Same unready set, but inside a lambda body. A higher-order key keeps its body in a
+# separate nested DAG, so scanning only the outer DAG misses the set and the query
+# still reaches `FunctionIn` with an unbuilt set. Analyzer + old analyzer.
+run_unready 1 'arrayExists(x -> x IN (SELECT 1), [dummy])'
+run_unready 0 'arrayExists(x -> x IN (SELECT 1), [dummy])'
+# Nested lambdas: the recursion must not stop at the first level.
+run_unready 1 'arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [x]), [dummy])'
+run_unready 0 'arrayExists(x -> arrayExists(y -> y IN (SELECT 1), [x]), [dummy])'
 # Ready tuple set: safe, shard pruning must be preserved. Analyzer + old analyzer.
-run_ready_pruned 1
-run_ready_pruned 0
+run_ready_pruned 1 'bitAnd(dummy + (0 IN (1, 2)), 1)'
+run_ready_pruned 0 'bitAnd(dummy + (0 IN (1, 2)), 1)'
+# Ready tuple set inside a lambda body: the nested-DAG walk must report only unbuilt
+# sets, so pruning is still preserved here. Analyzer + old analyzer.
+run_ready_pruned 1 'bitAnd(dummy + arrayExists(x -> x IN (1, 2), [0]), 1)'
+run_ready_pruned 0 'bitAnd(dummy + arrayExists(x -> x IN (1, 2), [0]), 1)'
 
 rm -f "${CLUSTER_CONFIG}"
