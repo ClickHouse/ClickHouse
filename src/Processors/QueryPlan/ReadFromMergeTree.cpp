@@ -3287,9 +3287,14 @@ void ReadFromMergeTree::applyQueryConditionCacheToAnalyzedResult()
     /// analysis (filterPartsByQueryConditionCache), but here it runs with prewhere_info set so the
     /// PREWHERE (qualified) cache key is consulted. It only narrows already-selected mark ranges; it
     /// never re-reads indexes or re-checks row limits, so it is safe under parallel replicas.
+    /// Pass the same `top_k_filter_info` and `indexes` the regular consult path in selectRangesToRead
+    /// passes: skip-index exclusions are stored under a key salted with the effective skip-index profile
+    /// (getSkipIndexProfiledConditionHash) and, on the WHERE path, with the TopK parameters, so any other
+    /// value would make every lookup miss. `indexes` is non-empty here (guarded at the call site).
     auto & result = *analyzed_result_ptr;
     MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-        result.parts_with_ranges, query_info, vector_search_parameters, mutations_snapshot, context, log);
+        result.parts_with_ranges, query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot,
+        *indexes, context, log);
 
     /// Refresh the derived selection counters so EXPLAIN / system.query_log reflect the trimmed ranges.
     size_t sum_marks = 0;
