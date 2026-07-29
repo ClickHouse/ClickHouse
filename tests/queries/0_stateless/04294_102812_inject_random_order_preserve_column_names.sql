@@ -25,6 +25,9 @@ CREATE VIEW v_select_single AS SELECT number FROM numbers(1);
 SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'v_select_single';
 DROP VIEW v_select_single;
 
+-- Named output formats must expose the original names, not the internal alias.
+SELECT 1 AS a, 2 AS b FORMAT JSONEachRow;
+
 -- Multi-column SELECT without ORDER BY must not crash.
 SELECT number, number + 1 FROM numbers(3) FORMAT Null;
 
