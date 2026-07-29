@@ -47,4 +47,43 @@ SELECT (
               max_streams_for_union_step = 1
 );
 
+-- Cover the soft-cap paths in `BufferedShardByHashTransform::prepare`. The two queries
+-- above keep every shard queue at 3 chunks or fewer, so `MAX_QUEUE_LENGTH` is never
+-- reached and neither cap branch runs. A small `max_block_size` over a larger table
+-- makes one sharding transform accumulate hundreds of chunks, which reaches both.
+
+-- (a) Cap reached while a sibling port has an empty queue and downstream demand:
+--     the bypass keeps pulling input instead of back-pressuring, which is what the
+--     deadlock fix requires. A single key sends every row to one shard.
+DROP TABLE IF EXISTS test_106237_cap;
+CREATE TABLE test_106237_cap (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_106237_cap SELECT 7 AS a, number AS b FROM numbers(1000000);
+
+SELECT a, max(s)
+FROM (
+    SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
+    UNION ALL
+    SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
+)
+GROUP BY a
+ORDER BY a
+SETTINGS enable_sharding_aggregator = 1,
+         max_threads = 16,
+         max_streams_for_union_step = 1,
+         max_block_size = 100;
+
+-- (b) Cap reached while NO port has an empty queue, so the transform must back-pressure.
+--     Distinct keys spread rows over every shard, so no shard queue is ever empty.
+DROP TABLE IF EXISTS test_106237_spread;
+CREATE TABLE test_106237_spread (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_106237_spread SELECT number AS a, number AS b FROM numbers(1000000);
+
+SELECT count(), sum(s)
+FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
+SETTINGS enable_sharding_aggregator = 1,
+         max_threads = 16,
+         max_block_size = 100;
+
+DROP TABLE test_106237_spread;
+DROP TABLE test_106237_cap;
 DROP TABLE test_106237;
