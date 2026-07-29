@@ -47,13 +47,13 @@ SELECT (SELECT sum(sipHash64(a, b, c)) FROM t_tuple_lex WHERE (a, b) < (2.0, 1.0
      = (SELECT sum(sipHash64(a, b, c)) FROM t_tuple_lex WHERE a < 2 OR (a = 2 AND b < 1));
 
 SELECT '-- pruning: EXPLAIN granules with the optimization ON --';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b) < (2, 1)) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b) < (2, 1) SETTINGS explain_query_plan_default = 'legacy') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- pruning: same query with the optimization OFF reads all granules --';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b) < (2, 1) SETTINGS analyze_index_with_tuple_lexicographic_comparison = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b) < (2, 1) SETTINGS analyze_index_with_tuple_lexicographic_comparison = 0, explain_query_plan_default = 'legacy') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- pruning: 3-element greater --';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b, c) > (2, 1, 3)) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex WHERE (a, b, c) > (2, 1, 3) SETTINGS explain_query_plan_default = 'legacy') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE t_tuple_lex;
 
@@ -92,5 +92,5 @@ SELECT (SELECT sum(sipHash64(id, a, b)) FROM t_tuple_lex_minmax WHERE (a, b) < (
      = (SELECT sum(sipHash64(id, a, b)) FROM t_tuple_lex_minmax WHERE a < 2 OR (a = 2 AND b < 1));
 
 SELECT '-- pruning: minmax skip index granules with the optimization ON --';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex_minmax WHERE (a, b) < (2, 1)) WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tuple_lex_minmax WHERE (a, b) < (2, 1) SETTINGS explain_query_plan_default = 'legacy') WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 DROP TABLE t_tuple_lex_minmax;
