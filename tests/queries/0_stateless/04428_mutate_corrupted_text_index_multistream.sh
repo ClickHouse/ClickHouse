@@ -9,6 +9,8 @@
 # scan and the `DROP INDEX` rename fallback previously enumerated only the base .idx/.idx2
 # plus one mark, so the .dct/.pst/.pos side streams of a corrupted text part were hardlinked
 # into the new part unchanged and `CHECK TABLE` kept failing with `UNEXPECTED_FILE_IN_DATA_PART`.
+# Paths D and E cover the same corruption with the base .idx pair also gone, where a presence
+# check limited to the base extensions reports the part as index-free and no repair runs at all.
 #
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426/04427).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
@@ -24,13 +26,18 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # part has no skp_idx entries in checksums, then re-inject the files on disk.
 make_corrupted_part () {
     local tbl="$1"
+    local mode="${2:-all}"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    # m mirrors 04426: a MATERIALIZED Map column, so `DROP COLUMN m` reaches
+    # `MutateAllPartColumnsTask`. A scalar MATERIALIZED column is not enough -- dropping one
+    # still takes the some-columns path (verified via `MutationAllPartColumns` in `system.part_log`).
     ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${tbl}
     (
         k UInt64,
         s String,
         w UInt64,
+        m Map(String, UInt64) MATERIALIZED map('a', k),
         INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1
     )
     ENGINE = MergeTree ORDER BY k
@@ -39,7 +46,11 @@ make_corrupted_part () {
              columns_and_secondary_indices_sizes_lazy_calculation = 0,
              allow_experimental_text_index_phrase_search = 1"
 
-    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(2000)"
+    # Granule-selective like t_ok below: the phrase sits only in the first 100 rows, i.e. in one
+    # granule out of 20, so a `Granules: 1/20` assertion can tell a working positional index from
+    # a silently declining one. A pure modulo fixture puts the phrase in every granule and makes
+    # any pruning assertion vacuous. The modulo tokens stay for the `hasToken` counts.
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
 
     local data_path active
     data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}'")
@@ -54,7 +65,14 @@ make_corrupted_part () {
 
     local corrupt
     corrupt=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
-    cp "${data_path}/saved_${tbl}/"skp_idx_txt.* "${corrupt}"
+    if [ "${mode}" = side_streams_only ]; then
+        # Base .idx pair deliberately omitted: a part poisoned this way is still corrupted, but
+        # a presence check that probes only the base .idx/.idx2 reports it as index-free.
+        cp "${data_path}/saved_${tbl}/"skp_idx_txt.dct.* "${data_path}/saved_${tbl}/"skp_idx_txt.pst.* \
+           "${data_path}/saved_${tbl}/"skp_idx_txt.pos.* "${corrupt}"
+    else
+        cp "${data_path}/saved_${tbl}/"skp_idx_txt.* "${corrupt}"
+    fi
 }
 
 orphan_on_disk () {
@@ -142,3 +160,40 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alp
 echo "C_has_phrase_prunes:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ok WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"
+
+# --- Paths D and E: the same corruption with the base .idx pair ALSO missing ---
+# Paths A-C keep the base skp_idx_txt.idx on disk, so a presence check that probes only the
+# base extensions still sees the index and both repair paths run. Drop that pair and only the
+# .dct/.pst/.pos side streams remain: the part is just as corrupted, but a base-only check
+# reports it as index-free, so nothing collects the orphans and the full rewrite hardlinks
+# them forward with no checksum entries. Expect 6 files (three substreams, data plus mark).
+make_corrupted_part t_side side_streams_only
+echo "D_corrupted_side_streams_on_disk:"
+side_streams_on_disk t_side
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_side UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+echo "D_orphan_after_update:"
+orphan_on_disk t_side
+echo "D_check_table:"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side SETTINGS check_query_single_value_result = 1;
+    SELECT count() FROM t_side WHERE hasToken(s, 'hello10');
+    DROP TABLE t_side SYNC"
+
+# Path E is the full-rewrite arm of the same shape: dropping the MATERIALIZED Map column m
+# reaches `MutateAllPartColumnsTask`, which rebuilds the index from column data instead of
+# leaving it absent (04426 asserts the same repair for a single-stream minmax index). So here
+# the index files are expected to be BACK and checksummed, and to prune again -- unlike paths
+# A/B/D, where the orphans are removed and the index stays absent until `MATERIALIZE INDEX`.
+make_corrupted_part t_side_full side_streams_only
+echo "E_corrupted_side_streams_on_disk:"
+side_streams_on_disk t_side_full
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_side_full DROP COLUMN m SETTINGS mutations_sync = 2"
+# All 8 files, not just the 6 injected ones: a rebuild writes the base pair too.
+echo "E_side_streams_after_full_rewrite:"
+side_streams_on_disk t_side_full
+echo "E_check_table:"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_side_full SETTINGS check_query_single_value_result = 1;
+    SELECT count() FROM t_side_full WHERE hasToken(s, 'hello10')"
+# The rebuilt index must actually prune, which the file count alone cannot show.
+echo "E_rebuilt_index_prunes:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_side_full WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_side_full SYNC"

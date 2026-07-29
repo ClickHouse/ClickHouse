@@ -2217,6 +2217,35 @@ static bool isIndexResolvableFromOwnFiles(
     return false;
 }
 
+/// Does the part hold a file of `index` on disk, under any substream the index declares?
+/// `IMergeTreeDataPart::hasSecondaryIndex` answers the read-time question and probes only the base
+/// `.idx` / `.idx2`, so a part whose base pair is gone while `.dct` / `.pst` / `.pos` survive looks
+/// index-free to it. Those files still have to be repaired, so mutation repair asks storage about
+/// every declared substream instead.
+static bool hasAnyIndexFileOnDisk(
+    const IMergeTreeIndex & index,
+    const MergeTreeDataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & index_name,
+    const String & mrk_extension)
+{
+    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot))
+        return true;
+
+    const auto & storage = source_part->getDataPartStorage();
+    const String file_name = index.getFileName();
+    for (const auto & substream : index.getSubstreams())
+    {
+        const String stream_name = file_name + substream.suffix;
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
+            return true;
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, storage))
+            return true;
+    }
+
+    return false;
+}
+
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -2328,7 +2357,8 @@ private:
 
             /// Nothing resolvable to preserve: force a recalculate so the writer rebuilds the
             /// index from column data, rather than dropping the orphan files and leaving it absent.
-            bool index_present_on_disk = ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot);
+            bool index_present_on_disk = hasAnyIndexFileOnDisk(
+                *index_ptr, ctx->source_part, ctx->metadata_snapshot, idx.name, ctx->mrk_extension);
             bool index_resolvable_from_checksums = isIndexResolvableFromOwnFiles(
                 *index_ptr, ctx->source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), idx.name);
             bool index_checksums_missing = index_present_on_disk && !index_resolvable_from_checksums;
@@ -3371,7 +3401,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             if (index_ptr->isInert())
                 continue;
 
-            const bool present_on_disk = source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot);
+            const bool present_on_disk = hasAnyIndexFileOnDisk(
+                *index_ptr, source_part, ctx->metadata_snapshot, index.name, ctx->mrk_extension);
             if (!present_on_disk)
                 continue;
             const bool resolvable_from_checksums = isIndexResolvableFromOwnFiles(
