@@ -363,36 +363,90 @@ SELECT id FROM tab_scann_f64_overflow ORDER BY L2Distance(vec, ref) ASC LIMIT 1
 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_f64_overflow;
 
--- Test 15: index survives DETACH/ATTACH (serialization round-trip).
-SELECT '16. Serialization round-trip (DETACH/ATTACH)';
+-- Test 16a: f32 index survives DETACH/ATTACH (serialization round-trip).
+SELECT '16a. f32 serialization round-trip (DETACH/ATTACH)';
 DROP TABLE IF EXISTS tab_scann_detach;
 CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 64))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
-INSERT INTO tab_scann_detach VALUES
-    (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
-    (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 INSERT INTO tab_scann_detach
-    SELECT 10 + toInt32(number), [toFloat32((number + 1) * 100.0), toFloat32(0.0)]
-    FROM numbers(1990);
+    SELECT toInt32(number),
+        [toFloat32(if(number = 0, 0, number + 1000)), toFloat32(if(number = 0, 0, number + 1000))]
+    FROM numbers(2000);
 OPTIMIZE TABLE tab_scann_detach FINAL;
 DETACH TABLE tab_scann_detach SYNC;
 ATTACH TABLE tab_scann_detach;
-WITH [0.0, 2.0] AS reference_vec
+WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
 SELECT isFinite(L2Distance(vec, reference_vec))
 FROM tab_scann_detach
 ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 1
 SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
 SELECT count() FROM (
-    WITH [0.0, 2.0] AS reference_vec
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
     SELECT id FROM tab_scann_detach ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
     SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
     EXCEPT
-    WITH [0.0, 2.0] AS reference_vec
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
     SELECT id FROM tab_scann_detach ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
     SETTINGS use_skip_indexes = 0
 );
 DROP TABLE tab_scann_detach;
+
+SELECT '16b. bf16 serialization round-trip (DETACH/ATTACH)';
+DROP TABLE IF EXISTS tab_scann_detach_bf16;
+CREATE TABLE tab_scann_detach_bf16 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'bf16', 64))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_detach_bf16
+    SELECT toInt32(number),
+        [toFloat32(if(number = 0, 0, number + 1000)), toFloat32(if(number = 0, 0, number + 1000))]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_detach_bf16 FINAL;
+DETACH TABLE tab_scann_detach_bf16 SYNC;
+ATTACH TABLE tab_scann_detach_bf16;
+WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+SELECT isFinite(L2Distance(vec, reference_vec))
+FROM tab_scann_detach_bf16
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_detach_bf16 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_detach_bf16 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_detach_bf16;
+
+SELECT '16c. i8 serialization round-trip (DETACH/ATTACH)';
+DROP TABLE IF EXISTS tab_scann_detach_i8;
+CREATE TABLE tab_scann_detach_i8 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'i8', 64))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_detach_i8
+    SELECT toInt32(number),
+        [toFloat32(if(number = 0, 0, number + 1000)), toFloat32(if(number = 0, 0, number + 1000))]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_detach_i8 FINAL;
+DETACH TABLE tab_scann_detach_i8 SYNC;
+ATTACH TABLE tab_scann_detach_i8;
+WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+SELECT isFinite(L2Distance(vec, reference_vec))
+FROM tab_scann_detach_i8
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
+SELECT count() FROM (
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_detach_i8 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS reference_vec
+    SELECT id FROM tab_scann_detach_i8 ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 1
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_detach_i8;
 
 -- Test 17: Optimized plan must return the correct L2Distance value, not sqrt(L2Distance).
 -- Vector [3.0, 4.0] has L2Distance to [0.0, 0.0] = 5.0 exactly.

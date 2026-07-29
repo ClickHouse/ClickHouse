@@ -37,7 +37,13 @@
 13. non-finite values rejected at insert (NaN/Inf)
 14. non-finite values rejected in query vector
 15. Float64 value overflowing to float32 +Inf rejected in query vector
-16. Serialization round-trip (DETACH/ATTACH)
+16a. f32 serialization round-trip (DETACH/ATTACH)
+1
+0
+16b. bf16 serialization round-trip (DETACH/ATTACH)
+1
+0
+16c. i8 serialization round-trip (DETACH/ATTACH)
 1
 0
 17. L2Distance optimized plan returns correct distance value (not double-sqrt)
