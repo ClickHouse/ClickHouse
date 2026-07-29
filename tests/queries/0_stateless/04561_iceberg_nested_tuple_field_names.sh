@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # - no-fasttest: requires IcebergLocal (USE_AVRO build option)
 
-# getIcebergType recursed into tuple elements through getNormalizedType(), which
+# `getIcebergType` recursed into tuple elements through `getNormalizedType`, which
 # renames a named tuple's elements to "1", "2", ... So a tuple nested inside a
 # tuple was published in the Iceberg schema with its inner field names replaced
 # by positions. With the default Parquet format the INSERT then failed with
@@ -19,6 +19,10 @@ BASE_DIR="${USER_FILES_PATH}/t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 rm -rf "${BASE_DIR}"
 mkdir -p "${BASE_DIR}"
 trap 'rm -rf "${BASE_DIR}"' EXIT
+
+# Object names are database-scoped too: the stress job runs part of its threads
+# against one shared database, where a repeat would otherwise hit TABLE_ALREADY_EXISTS.
+PFX="t_${CLICKHOUSE_DATABASE}"
 
 CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --enable_nullable_tuple_type=1"
 
@@ -45,18 +49,21 @@ print(deepest(json.load(open(sys.argv[1]))['schemas'][-1]['fields'])[1])
 
 # Write each shape through a materialized view (the write path that publishes the
 # Iceberg schema) and read the value back, so the round trip is asserted end to end.
+# The DROPs pin ignore_drop_queries_probability: the stress job injects 0.2 for it,
+# and an ignored DROP would leave the table behind and fail the next CREATE.
 roundtrip() {
     local tag="$1" type="$2" insert="$3" format="$4"
     local engine="IcebergLocal('${BASE_DIR}/${tag}/'"
     [ -n "${format}" ] && engine="${engine}, '${format}'"
-    ${CH} --multiquery -q "
-DROP TABLE IF EXISTS src_${tag};
-DROP TABLE IF EXISTS dst_${tag};
-CREATE TABLE src_${tag} (c0 ${type}) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE dst_${tag} (c0 ${type}) ENGINE = ${engine});
-CREATE MATERIALIZED VIEW mv_${tag} TO dst_${tag} AS SELECT c0 FROM src_${tag};
-INSERT INTO src_${tag} ${insert};
-SELECT '${tag}', toString(c0) FROM dst_${tag};
+    ${CH} -q "
+DROP TABLE IF EXISTS mv_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS src_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS dst_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE src_${PFX}_${tag} (c0 ${type}) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE dst_${PFX}_${tag} (c0 ${type}) ENGINE = ${engine});
+CREATE MATERIALIZED VIEW mv_${PFX}_${tag} TO dst_${PFX}_${tag} AS SELECT c0 FROM src_${PFX}_${tag};
+INSERT INTO src_${PFX}_${tag} ${insert};
+SELECT '${tag}', toString(c0) FROM dst_${PFX}_${tag};
 "
 }
 
@@ -84,11 +91,12 @@ echo "unnamed innermost name: $(innermost_name unnamed)"
 # ALTER ... ADD COLUMN publishes a schema through generateAddColumnMetadata, a
 # second call site that a CREATE-only test would miss. Iceberg refuses adding a
 # non-nullable column, hence Nullable.
-${CH} --multiquery -q "
-CREATE TABLE added (id Int64) ENGINE = IcebergLocal('${BASE_DIR}/added/', 'Avro');
-INSERT INTO added VALUES (1);
-ALTER TABLE added ADD COLUMN c1 Nullable(Tuple(o Tuple(i UInt32)));
-INSERT INTO added VALUES (2, ((7)));
-SELECT 'added', id, toString(c1) FROM added ORDER BY id;
+${CH} -q "
+DROP TABLE IF EXISTS added_${PFX} SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE added_${PFX} (id Int64) ENGINE = IcebergLocal('${BASE_DIR}/added/', 'Avro');
+INSERT INTO added_${PFX} VALUES (1);
+ALTER TABLE added_${PFX} ADD COLUMN c1 Nullable(Tuple(o Tuple(i UInt32)));
+INSERT INTO added_${PFX} VALUES (2, ((7)));
+SELECT 'added', id, toString(c1) FROM added_${PFX} ORDER BY id;
 "
 echo "added innermost name: $(innermost_name added)"
