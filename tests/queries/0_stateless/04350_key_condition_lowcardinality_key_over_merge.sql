@@ -19,10 +19,12 @@ DROP TABLE IF EXISTS t_04350_merge;
 -- (1..65536) and `index_granularity_bytes`. An explicit per-DDL SETTINGS clause wins over that
 -- injection (`ClientBase::addMergeTreeSettings` only adds a setting the CREATE does not already
 -- carry), so pin both here instead of opting the whole test out of randomization.
+-- `min_bytes_for_wide_part = 0` keeps the CREATE quiet: with `index_granularity_bytes = 0` the
+-- wide-part thresholds are unreachable, so a nonzero one only earns a warning on stderr.
 CREATE TABLE t_04350_lc (k LowCardinality(UInt32), v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 CREATE TABLE t_04350_plain (k UInt32, v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_04350_lc SELECT number, toString(number) FROM numbers(100000);
 INSERT INTO t_04350_plain SELECT number, toString(number) FROM numbers(100000);
 
@@ -179,7 +181,7 @@ DROP TABLE t_04350_merge3;
 DROP TABLE IF EXISTS t_04350_lc4;
 DROP TABLE IF EXISTS t_04350_merge4;
 CREATE TABLE t_04350_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_04350_lc4 SELECT number % 60000, toString(number) FROM numbers(100000);
 CREATE TABLE t_04350_merge4 (k UInt16, v String) ENGINE = Merge(currentDatabase(), 't_04350_lc4');
 SELECT count() FROM t_04350_merge4 WHERE CAST(CAST(k, 'LowCardinality(UInt16)'), 'UInt64') > 100;
