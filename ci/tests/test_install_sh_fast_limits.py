@@ -35,8 +35,8 @@ _DEBUG_CXX_FLAGS = "-O0 -g -std=c++2c"
 
 # Rewrites `system.build_options` to a synthetic table carrying the requested rows and
 # forwards the rest of the query text unchanged to a real `clickhouse local`. `*_ROW` set to
-# anything but "1" omits that row, reproducing a previous-release binary that lacks it,
-# where a real server returns zero rows and therefore an empty result.
+# anything but "1" omits that row, so a real server returns zero rows and the probe result
+# is empty.
 _CLICKHOUSE_STUB = r"""#!/usr/bin/env python3
 import os
 import sys
@@ -237,14 +237,15 @@ def test_exported_encrypted_storage_does_not_install_limits_fast(tmp_path):
     _assert_not_installed(proc, link, "encrypted storage is slow and must not be capped")
 
 
-def test_missing_coverage_row_fails_open(tmp_path):
-    """A previous-release binary can lack the WITH_COVERAGE row (26.5+ has it, 25.8 does
-    not) and `upgrade_runner.sh` runs install.sh with one on PATH; the empty result must
-    degrade to the pre-guard behaviour rather than abort or be read as an integer."""
+def test_missing_coverage_row_declines(tmp_path):
+    """A binary without the WITH_COVERAGE row leaves the probe unanswerable, and CXX_FLAGS
+    cannot identify a coverage build, so the only safe verdict is to decline."""
     proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_WITH_COVERAGE_ROW": "0"}
     )
-    _assert_installed(proc, link)
+    _assert_not_installed(
+        proc, link, "an unanswerable coverage probe must not be read as a fast build"
+    )
     assert "integer expression expected" not in (proc.stdout + proc.stderr), (
         "the guards must compare strings, not integers, so an empty probe result is "
         "not a shell error"
@@ -252,9 +253,8 @@ def test_missing_coverage_row_fails_open(tmp_path):
 
 
 def test_missing_cxx_flags_row_is_not_a_shell_error(tmp_path):
-    """Same previous-release reachability for the build-kind probe: an empty result must be
-    compared as a string, otherwise bash prints `integer expression expected` on a path the
-    script really reaches and the fail-open is accidental rather than by construction."""
+    """An unanswerable build-kind probe must be compared as a string, otherwise bash prints
+    `integer expression expected`, and must decline rather than be read as a fast build."""
     proc, link = _run_install(
         tmp_path, args=["--fast-test"], env={"STUB_CXX_FLAGS_ROW": "0"}
     )
