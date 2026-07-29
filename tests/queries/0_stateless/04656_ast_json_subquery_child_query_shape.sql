@@ -50,7 +50,14 @@ SELECT formatQueryFromJSON('{"type":"Subquery","children":[{"type":"SelectQuery"
 SELECT formatQueryFromJSON('{"type":"Subquery","children":[{"type":"ExplainQuery","kind":"QUERY_PLAN"}]}'); -- { serverError BAD_ARGUMENTS }
 
 -- The same payload nested in a real query is rejected as well, so it cannot reach `interpretSubquery`.
+-- The substitution is anchored on the `Subquery` node rather than on the union mode: the parser leaves
+-- `union_mode` at `UNION_DEFAULT` and records `UNION ALL` in `list_of_modes`, so an anchor naming the
+-- mode would match nothing and quietly turn the check below into a no-op. Assert the anchor first, so
+-- that a change to the serialization fails here instead of silently weakening the check.
+
+SELECT position(parseQueryToJSON($$SELECT * FROM (SELECT 1 UNION ALL SELECT 2)$$),
+    '"type":"Subquery","children":[{"type":"SelectWithUnionQuery"') > 0;
 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM (SELECT 1 UNION ALL SELECT 2)$$),
-    '"type":"SelectWithUnionQuery","union_mode":"UNION_ALL"',
-    '"type":"Literal","value":{"field_type":"UInt64","value":1}')); -- { serverError BAD_ARGUMENTS }
+    '"type":"Subquery","children":[{"type":"SelectWithUnionQuery"',
+    '"type":"Subquery","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}')); -- { serverError BAD_ARGUMENTS }
