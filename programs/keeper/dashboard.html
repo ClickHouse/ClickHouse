@@ -1448,17 +1448,22 @@
     }
 
 
+    function isKeeperBarePathChar(ch) {
+        /// Same character classes parseKeeperArg consumes as bare tokens:
+        /// BareWord / Number (ASCII word chars), Slash, Dot, Minus.
+        return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z')
+            || (ch >= 'a' && ch <= 'z') || ch === '_'
+            || ch === '/' || ch === '.' || ch === '-';
+    }
+
     function escapeKeeperNodeName(name) {
         let needs_escaping = false;
         let needs_quoting = false;
         for (let i = 0; i < name.length; i++) {
             const ch = name[i];
-            const code = name.charCodeAt(i);
-            const is_word_char = (code >= 48 && code <= 57) || (code >= 65 && code <= 90)
-                || (code >= 97 && code <= 122) || ch === '_';
             if (ch === ' ' || ch === '\\') {
                 needs_escaping = true;
-            } else if (!is_word_char && ch !== '/' && ch !== '.' && ch !== '-') {
+            } else if (!isKeeperBarePathChar(ch)) {
                 needs_quoting = true;
             }
         }
@@ -1467,6 +1472,84 @@
         if (!needs_quoting)
             return name.replaceAll('\\', '\\\\').replaceAll(' ', '\\ ');
         return "'" + name.replaceAll('\\', '\\\\').replaceAll("'", "\\'") + "'";
+    }
+
+    /// Inverse of parseKeeperArg / formatKeeperNodeName for one CLI argument.
+    /// Converts mixed bare tokens, `\ `/`\\` escapes, and quoted segments into a real znode path.
+    /// Returns null on malformed input (e.g. unclosed quote), matching parse failure in the CLI.
+    function unescapeKeeperArg(arg) {
+        let result = "";
+        let i = 0;
+        const atEnd = () => i >= arg.length;
+        const hasNext = () => i + 1 < arg.length;
+        const peek = (offset = 0) => arg[i + offset];
+        const advance = () => { i += 1; };
+        /// Consume one character and return it.
+        const takeChar = () => arg[i++];
+        /// Consume a `\` escape pair and return the escaped character.
+        const takeEscapedChar = () => {
+            const escaped = arg[i + 1];
+            i += 2;
+            return escaped;
+        };
+
+        while (!atEnd()) {
+            const ch = peek();
+            if (ch === " " || ch === "\t")
+                break;
+
+            if (ch === "'" || ch === '"') {
+                const quote = takeChar();
+                let closed = false;
+                while (!atEnd()) {
+                    if (peek() === "\\" && hasNext()) {
+                        result += takeEscapedChar();
+                        continue;
+                    }
+                    if (peek() === quote) {
+                        advance();
+                        closed = true;
+                        break;
+                    }
+                    result += takeChar();
+                }
+                if (!closed)
+                    return null;
+                continue;
+            }
+
+            if (ch === "\\") {
+                if (!hasNext()) {
+                    result += takeChar();
+                    break;
+                }
+                const next = peek(1);
+                if (next === " " || next === "\\") {
+                    result += takeEscapedChar();
+                    continue;
+                }
+                /// \<other> → keep backslash as-is (same as parseKeeperArg).
+                result += takeChar();
+                continue;
+            }
+
+            if (!isKeeperBarePathChar(ch))
+                break;
+
+            result += takeChar();
+        }
+        return result;
+    }
+
+    /// Escape each path segment for round-tripping through the CLI parser.
+    function escapeKeeperPath(path) {
+        if (!path)
+            return path;
+        return path.split("/").map((segment) => {
+            if (segment === "")
+                return "";
+            return escapeKeeperNodeName(segment);
+        }).join("/");
     }
 
     function longestCommonPrefix(strings) {
@@ -1482,7 +1565,7 @@
 
     function formatColumns(items) {
         if (items.length === 0) return "";
-        const maxLen = Math.max(...items.map(s => s.length));
+        const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
         const colWidth = maxLen + 2;
         const termWidth = 80;
         const cols = Math.max(1, Math.floor(termWidth / colWidth));
@@ -1540,34 +1623,32 @@
 
         const spaceIdx = value.indexOf(" ");
         const cmdPart = value.substring(0, spaceIdx + 1);
-        let argPart = value.substring(spaceIdx + 1).trimStart();
-
-        const quoteChar = argPart[0];
-        if (quoteChar === "'" || quoteChar === '"') {
-            argPart = argPart.endsWith(quoteChar) && argPart.length > 1
-                ? argPart.slice(1, -1)
-                : argPart.slice(1);
-        }
+        const argPart = value.substring(spaceIdx + 1).trimStart();
+        /// Completions insert CLI-escaped text (e.g. space\\ node). Unescape before
+        /// path lookup / prefix matching so a second Tab uses the real znode path.
+        const unescapedArg = unescapeKeeperArg(argPart);
+        if (unescapedArg === null)
+            return;
 
         let parentDir, namePrefix, pathPrefix;
 
-        if (argPart === "") {
+        if (unescapedArg === "") {
             parentDir = cli_cwd;
             namePrefix = "";
             pathPrefix = "";
-        } else if (argPart.endsWith("/")) {
-            parentDir = resolvePath(argPart);
+        } else if (unescapedArg.endsWith("/")) {
+            parentDir = resolvePath(unescapedArg);
             namePrefix = "";
-            pathPrefix = argPart;
+            pathPrefix = unescapedArg;
         } else {
-            const lastSlash = argPart.lastIndexOf("/");
+            const lastSlash = unescapedArg.lastIndexOf("/");
             if (lastSlash === -1) {
                 parentDir = cli_cwd;
-                namePrefix = argPart;
+                namePrefix = unescapedArg;
                 pathPrefix = "";
             } else {
-                pathPrefix = argPart.substring(0, lastSlash + 1);
-                namePrefix = argPart.substring(lastSlash + 1);
+                pathPrefix = unescapedArg.substring(0, lastSlash + 1);
+                namePrefix = unescapedArg.substring(lastSlash + 1);
                 parentDir = resolvePath(pathPrefix);
             }
         }
@@ -1587,14 +1668,15 @@
                 ? children
                 : children.filter(name => name.startsWith(namePrefix));
             const matches = raw_matches.map(escapeKeeperNodeName);
+            const escapedPathPrefix = escapeKeeperPath(pathPrefix);
 
             if (matches.length === 0) return;
             if (matches.length === 1) {
-                input.value = cmdPart + pathPrefix + matches[0];
+                input.value = cmdPart + escapedPathPrefix + matches[0];
                 return;
             }
 
-            input.value = cmdPart + pathPrefix + longestCommonPrefix(matches);
+            input.value = cmdPart + escapedPathPrefix + longestCommonPrefix(matches);
             showCompletionMatches(value, matches);
         } catch (e) { /* ignore fetch errors */ }
     }
@@ -1623,13 +1705,15 @@
         if (!trimmed.startsWith("cd ") && trimmed !== "cd") return false;
 
         let newPath = trimmed === "cd" ? "/" : trimmed.substring(3).trim();
-
-        if ((newPath.startsWith("'") && newPath.endsWith("'")) ||
-            (newPath.startsWith('"') && newPath.endsWith('"'))) {
-            newPath = newPath.slice(1, -1);
+        /// Tab completion / CLI typing emit escaped forms (e.g. /space\\ node,
+        /// /root/'dq"node'). Unescape with the same rules as parseKeeperArg
+        /// before HEAD lookup so the real znode path is checked.
+        const unescapedPath = unescapeKeeperArg(newPath);
+        if (unescapedPath === null) {
+            appendToOutput("Syntax error: invalid path argument\n");
+            return true;
         }
-
-        const targetPath = resolvePath(newPath);
+        const targetPath = resolvePath(unescapedPath);
 
         try {
             const check_url = new URL(window.location);
