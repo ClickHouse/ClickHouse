@@ -43,6 +43,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -468,6 +469,62 @@ std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::
     return {type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()};
 }
 
+/// A fingerprint of a single-row candidate materialization. `ColumnDynamic`/`ColumnVariant` hash the *type*
+/// of the payload stored in the row together with its value, so equal fingerprints mean the two candidates
+/// carry the same payload types.
+UInt64 candidateFingerprint(const ColumnPtr & column)
+{
+    SipHash hash;
+    hash.update(column->getDataType());
+    column->updateHashWithValue(0, hash);
+    return hash.get64();
+}
+
+bool sameCandidateMaterializations(const std::vector<ColumnPtr> & lhs, const std::vector<ColumnPtr> & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    std::vector<UInt64> lhs_fingerprints;
+    std::vector<UInt64> rhs_fingerprints;
+    lhs_fingerprints.reserve(lhs.size());
+    rhs_fingerprints.reserve(rhs.size());
+    for (const auto & column : lhs)
+        lhs_fingerprints.push_back(candidateFingerprint(column));
+    for (const auto & column : rhs)
+        rhs_fingerprints.push_back(candidateFingerprint(column));
+    std::sort(lhs_fingerprints.begin(), lhs_fingerprints.end());
+    std::sort(rhs_fingerprints.begin(), rhs_fingerprints.end());
+    return lhs_fingerprints == rhs_fingerprints;
+}
+
+/// The positions of the *value* arguments of a selector function - one whose result is always one of its
+/// arguments, chosen by the others. `{}` for anything else.
+std::vector<size_t> getSelectorValueArguments(const String & function_name, size_t arguments_count)
+{
+    std::vector<size_t> value_arguments;
+
+    if (function_name == "if" && arguments_count == 3)
+    {
+        /// if(cond, then, else)
+        value_arguments = {1, 2};
+    }
+    else if (function_name == "multiIf" && arguments_count >= 3)
+    {
+        /// multiIf(cond_1, then_1, ..., cond_n, then_n[, else])
+        for (size_t i = 1; i < arguments_count; i += 2)
+            value_arguments.push_back(i);
+        if (arguments_count % 2 == 1)
+            value_arguments.push_back(arguments_count - 1);
+    }
+    else if ((function_name == "coalesce" || function_name == "ifNull") && arguments_count >= 1)
+    {
+        for (size_t i = 0; i < arguments_count; ++i)
+            value_arguments.push_back(i);
+    }
+
+    return value_arguments;
+}
+
 /// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
 /// (e.g. `toDateTime(state)`), while still accepting state-aware functions like `finalizeAggregation`.
 ///
@@ -529,6 +586,20 @@ std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::
 ///   and only ever record the second branch, hiding the aggregate-state payload of the first one.
 /// When either condition fails, the node keeps the fail-closed static enumeration of its result type.
 ///
+/// A *selector* function - `if`, `multiIf`, `coalesce`, `ifNull` - is the exception to the second condition:
+/// its result is always one of its value arguments, so a non-constant control argument can only choose
+/// *which* of their domains the result comes from, never introduce a payload none of them can hold. So when
+/// every value argument has the same materializations and the result type (which rules out a conversion to a
+/// common supertype), the probed domain is propagated after all, and a valid TTL such as
+/// `toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic')))` over `n`, `m UInt32` is accepted.
+///
+/// Higher-order functions cannot be executed here at all, so their result normally falls back to the static
+/// enumeration too. `arrayMap` is the exception: its result is exactly the array of the values its lambda
+/// body produces, and that body is walked as an inner DAG by the recursive call below - with every rule of
+/// this check applied to it - so its candidate domain is wrapped into one-element arrays and propagated.
+/// This accepts e.g. `toDateTime(arrayElement(arrayMap(x -> CAST(x, 'Dynamic'), arr), 1))` over
+/// `arr Array(UInt32)`, whose elements can only ever hold the `UInt32` payload.
+///
 /// A typed `CAST` is the exception to the first condition: its output payloads are fixed by the *source
 /// type* alone (the cast wrapper fills the discriminators derived from it), independent of the values. So
 /// `CAST(n, 'Dynamic')` with `n UInt32` can only ever store the `UInt32` payload, and probing its consumer
@@ -542,12 +613,20 @@ std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::
 /// A cast of a *string* to a carrier is in turn the exception to that exception - it parses the stored
 /// alternative out of the row contents, so it is value-dependent after all and stays fail-closed; see the
 /// `source_payload_may_be_inferred` check below.
-void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
+///
+/// `result_name`, when set, names an output of `actions_dag` whose candidate materializations are returned to
+/// the caller. It is used for the inner DAG of a lambda: the domain of the lambda body is what a higher-order
+/// function like `arrayMap` produces, so returning it lets the outer node propagate it too.
+std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
+    const ActionsDAG & actions_dag, std::string_view expression_kind, const String * result_name = nullptr)
 {
     /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
     /// at TTL execution time and that are in scope of this check. An empty list means the node's default
     /// (or constant) value is representative and its consumers need no extra probes.
     std::unordered_map<const ActionsDAG::Node *, std::vector<ColumnPtr>> candidates_map;
+
+    /// The candidate materializations of the *body* of each lambda argument, keyed by its capture node.
+    std::unordered_map<const ActionsDAG::Node *, std::vector<ColumnPtr>> lambda_body_candidates;
 
     std::function<const std::vector<ColumnPtr> & (const ActionsDAG::Node *)> candidates_of
         = [&](const ActionsDAG::Node * node) -> const std::vector<ColumnPtr> &
@@ -575,10 +654,13 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             /// them. The capture node itself produces a function value, nothing to materialize.
             if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node->function_base.get()))
             {
-                checkActionsDAGForAggregateFunctions(function_capture->getAcionsDAG(), expression_kind);
+                const auto & lambda_result_name = function_capture->getCapture().return_name;
+                lambda_body_candidates[node] = checkActionsDAGForAggregateFunctions(
+                    function_capture->getAcionsDAG(), expression_kind, &lambda_result_name);
                 return candidates_map.emplace(node, std::move(candidates)).first->second;
             }
 
+            const ActionsDAG::Node * lambda_argument = nullptr;
             bool has_lambda_argument = false;
             ColumnsWithTypeAndName arguments;
             std::vector<size_t> suspect_indexes;
@@ -596,6 +678,11 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                 if (WhichDataType(child->result_type).isFunction())
                 {
                     has_lambda_argument = true;
+                    lambda_argument = child->type == ActionsDAG::ActionType::ALIAS ? child->children.front() : child;
+                    /// Make sure the lambda body has been walked (and its candidates recorded) before the
+                    /// higher-order node below looks them up - the outer loop over the DAG nodes visits the
+                    /// nodes in no particular order.
+                    candidates_of(lambda_argument);
                     break;
                 }
 
@@ -624,9 +711,34 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             if (has_lambda_argument)
             {
                 /// The node was not executed (its output cannot be derived synthetically here), so if its
-                /// result can carry a suspect payload, fail closed with the static enumeration.
+                /// result can carry a suspect payload, fail closed with the static enumeration - except for
+                /// `arrayMap`, whose result is exactly an array of the lambda body's values, so the body's
+                /// candidate domain (computed in the inner DAG above, with every narrowing rule of this
+                /// check applied to it) describes the elements: wrap each of them into a one-element array.
                 if (result_in_scope)
-                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                {
+                    const auto * result_array_type = typeid_cast<const DataTypeArray *>(node->result_type.get());
+                    const auto * lambda_capture = lambda_argument && lambda_argument->type == ActionsDAG::ActionType::FUNCTION
+                        ? dynamic_cast<const FunctionCapture *>(lambda_argument->function_base.get())
+                        : nullptr;
+                    const auto * lambda_candidates = lambda_capture && lambda_body_candidates.contains(lambda_argument)
+                        ? &lambda_body_candidates.at(lambda_argument)
+                        : nullptr;
+
+                    if (node->function_base->getName() == "arrayMap" && result_array_type && lambda_candidates
+                        && !lambda_candidates->empty()
+                        && result_array_type->getNestedType()->equals(*lambda_capture->getCapture().return_type))
+                    {
+                        for (const auto & element : *lambda_candidates)
+                        {
+                            auto offsets = ColumnArray::ColumnOffsets::create();
+                            offsets->getData().push_back(1);
+                            candidates.push_back(ColumnArray::create(element->cloneResized(1), std::move(offsets)));
+                        }
+                    }
+                    else
+                        candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                }
             }
             else if (suspect_indexes.empty())
             {
@@ -794,8 +906,42 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                 /// The probes above validated this node, but their outputs under-approximate its runtime
                 /// domain when a non-constant non-suspect argument can select the payload - fail closed
                 /// with the static enumeration for the parents in that case.
+                ///
+                /// A *selector* function is the exception: its result is always one of its value arguments,
+                /// so whatever its non-constant control arguments choose at execution time, the result stays
+                /// inside the union of the value arguments' domains. When all of them are already known to
+                /// have the same materializations (and the same type as the result, so the selector cannot
+                /// convert them to a common supertype), that union is exactly what the probes above recorded
+                /// and it remains valid: `if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic'))` with
+                /// `n`, `m UInt32` can only ever hold the `UInt32` payload, whichever branch `cond` takes.
                 if (result_in_scope && !non_suspect_args_are_constant)
-                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                {
+                    bool selector_domain_is_proven = false;
+                    const auto value_arguments = getSelectorValueArguments(node->function_base->getName(), node->children.size());
+                    if (!value_arguments.empty())
+                    {
+                        selector_domain_is_proven = true;
+                        const std::vector<ColumnPtr> * common_candidates = nullptr;
+                        for (size_t index : value_arguments)
+                        {
+                            const auto * value_argument = node->children[index];
+                            const auto & value_candidates = candidates_of(value_argument);
+                            if (value_candidates.empty() || !value_argument->result_type->equals(*node->result_type)
+                                || (common_candidates && !sameCandidateMaterializations(*common_candidates, value_candidates)))
+                            {
+                                selector_domain_is_proven = false;
+                                break;
+                            }
+                            common_candidates = &value_candidates;
+                        }
+
+                        if (selector_domain_is_proven)
+                            candidates.insert(candidates.end(), common_candidates->begin(), common_candidates->end());
+                    }
+
+                    if (!selector_domain_is_proven)
+                        candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                }
             }
         }
         else
@@ -810,6 +956,15 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
 
     for (const auto & node : actions_dag.getNodes())
         candidates_of(&node);
+
+    if (!result_name)
+        return {};
+
+    /// The lambda body: its result is the single output of the inner DAG. If it cannot be found, give the
+    /// caller nothing and let it fall back to the static enumeration.
+    if (const auto * result_node = actions_dag.tryFindInOutputs(*result_name))
+        return candidates_of(result_node);
+    return {};
 }
 
 /// RAII guard setting `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` on the query
