@@ -1,6 +1,6 @@
--- identity() / __scalarSubqueryResult must preserve a custom-named Variant type (Geometry)
--- and not fall through to the default Variant adaptor, which reassembles a bare Variant(...)
--- and drops the custom name. See issue #110680 (flipCoordinates) for the same bug class.
+-- `identity` / `__scalarSubqueryResult` must preserve a custom-named `Variant` type (`Geometry`)
+-- and not fall through to the default `Variant` adaptor, which reassembles a bare `Variant` and
+-- drops the custom name. See issue #110680 (`flipCoordinates`) for the same bug class.
 
 WITH readWKT('POLYGON((0 0,4 0,4 3,0 3,0 0))') AS g
 SELECT toTypeName(identity(g));

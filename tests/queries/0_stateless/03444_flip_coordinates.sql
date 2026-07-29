@@ -77,9 +77,9 @@ INSERT INTO test_geom2 VALUES
 SELECT id, toTypeName(flipCoordinates(geom)) FROM test_geom2 ORDER BY id;
 DROP TABLE test_geom2;
 
--- Issue #110680 follow-up: a Variant with an empty non-geometry arm must not throw.
--- ColumnVariant keeps an empty subcolumn for every declared alternative; only populated
--- (geometry) arms are flipped, so an unused String arm is left untouched.
+-- Issue #110680 follow-up: a `Variant` with an empty non-geometry arm must not throw.
+-- `ColumnVariant` keeps an empty subcolumn for every declared alternative; only populated
+-- (geometry) arms are flipped, so an unused `String` arm is left untouched.
 SELECT toTypeName(flipCoordinates(CAST(CAST((1.0, 2.0), 'Point') AS Variant(Point, String))));
 SELECT flipCoordinates(CAST(CAST((1.0, 2.0), 'Point') AS Variant(Point, String)));
 
@@ -89,10 +89,17 @@ INSERT INTO test_geom3 VALUES (1, CAST((10.0, 20.0), 'Point')), (2, CAST((30.0, 
 SELECT id, flipCoordinates(geom), toTypeName(flipCoordinates(geom)) FROM test_geom3 ORDER BY id;
 DROP TABLE test_geom3;
 
--- Issue #110680 follow-up: only a custom-named Variant (Geometry) takes the manual path. An ordinary
--- Variant goes through the default FunctionBaseVariantAdaptor, so its variant_throw_on_type_mismatch
--- handling is unchanged from master (flipCoordinates validates the type at execute time, which the
+-- Issue #110680 follow-up: only the `Geometry` type takes the manual path. Every other `Variant`
+-- goes through the default `FunctionBaseVariantAdaptor`, so its `variant_throw_on_type_mismatch`
+-- handling is unchanged from master (`flipCoordinates` validates the type at execute time, which the
 -- adaptor propagates, so a populated unsupported arm throws regardless of the setting).
+
+-- `SimpleAggregateFunction` also attaches a custom name, so it is a custom-named `Variant` without
+-- being `Geometry`: it must keep using the adaptor rather than reaching the `Geometry`-only path.
+SELECT flipCoordinates(CAST(CAST((1., 2.), 'Point'), 'SimpleAggregateFunction(anyLast, Variant(Point, String))'));
+SELECT toTypeName(flipCoordinates(CAST(CAST((1., 2.), 'Point'), 'SimpleAggregateFunction(anyLast, Variant(Point, String))')));
+SELECT flipCoordinates(CAST(readWkt('POINT(10 20)'), 'SimpleAggregateFunction(anyLast, Geometry)'));
+
 SET variant_throw_on_type_mismatch = 0;
 SELECT flipCoordinates(CAST(if(number = 0, CAST((1., 2.), 'Point'), 'x'), 'Variant(Point, String)')) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- A custom-named Geometry still flips and keeps its type name.

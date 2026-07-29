@@ -33,11 +33,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    /// Handle a custom-named Variant (Geometry) ourselves so the `Geometry` type name is preserved; the
-    /// generic FunctionBaseVariantAdaptor rebuilds a bare Variant and drops the custom name. Ordinary
-    /// (unnamed) Variant inputs still go through the adaptor, keeping its variant_throw_on_type_mismatch
-    /// handling. useDefaultImplementationForVariant stays true so getReturnTypeImpl runs per-alternative.
-    bool useDefaultImplementationForVariantWithCustomName() const override { return false; }
+    /// Handle the `Geometry` `Variant` here so its type name is preserved; the generic
+    /// `FunctionBaseVariantAdaptor` rebuilds a bare `Variant` and drops the custom name. Every other
+    /// `Variant` still goes through the adaptor, keeping its `variant_throw_on_type_mismatch` handling.
+    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
+    {
+        return type->getName() != "Geometry";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -70,6 +72,15 @@ public:
 
         if (const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arg.type.get()))
         {
+            /// Only `Geometry` is handled here; `build` sends every other `Variant` through
+            /// `FunctionBaseVariantAdaptor`, which calls this function per alternative.
+            if (arg.type->getName() != "Geometry")
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. Expected Geometry",
+                    arg.type->getName(),
+                    getName());
+
             result = executeForVariant(column, variant_type);
         }
         else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
@@ -96,12 +107,8 @@ public:
     }
 
 private:
-    /// Flip each sub-column of a Variant (e.g. the Geometry type) in place, keeping the same
-    /// discriminators and offsets. flipCoordinates preserves the geometry structure (Point stays a
-    /// Point, Polygon stays a Polygon, ...), so no rows move between variants and the discriminator
-    /// layout is unchanged. Reassembling with the original local_to_global mapping keeps the result
-    /// column compatible with the input Variant type, so getReturnTypeImpl's `arguments[0]` (the
-    /// custom-named `Geometry` type) is the correct result type.
+    /// Flipping never moves a row between alternatives (a `Point` stays a `Point`), so the
+    /// discriminators, offsets and mapping are reused verbatim and the result keeps the input type.
     ColumnPtr executeForVariant(const ColumnPtr & column, const DataTypeVariant * variant_type) const
     {
         const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get());
@@ -109,21 +116,18 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
 
         const auto & variant_types = variant_type->getVariants();
-        const auto local_to_global = column_variant->getLocalToGlobalDiscriminatorsMapping();
         const size_t num_variants = column_variant->getNumVariants();
 
         Columns new_variants;
         new_variants.reserve(num_variants);
 
-        for (size_t local_discr = 0; local_discr < num_variants; ++local_discr)
+        for (ColumnVariant::Discriminator local_discr = 0; local_discr < num_variants; ++local_discr)
         {
             const ColumnPtr & sub_column = column_variant->getVariantPtrByLocalDiscriminator(local_discr);
-            const DataTypePtr & sub_type = variant_types[local_to_global[local_discr]];
+            const DataTypePtr & sub_type = variant_types[column_variant->globalDiscriminatorByLocal(local_discr)];
 
-            /// ColumnVariant keeps an empty subcolumn for every declared alternative, even ones with
-            /// no rows in the current block. Leave such arms untouched: they carry no data to flip and
-            /// may be non-geometry types (e.g. String in Variant(Point, String)) that flipCoordinates
-            /// cannot process. Only arms with rows in this block are flipped.
+            /// `ColumnVariant` keeps an empty subcolumn for every declared alternative, even ones with
+            /// no rows in the current block. Such arms carry no data to flip, so push them unchanged.
             if (sub_column->empty())
             {
                 new_variants.push_back(sub_column);
@@ -155,7 +159,7 @@ private:
             column_variant->getLocalDiscriminatorsPtr(),
             column_variant->getOffsetsPtr(),
             new_variants,
-            local_to_global);
+            column_variant->getLocalToGlobalDiscriminatorsMapping());
     }
 
     ColumnPtr executeForPoint(const ColumnPtr & column) const

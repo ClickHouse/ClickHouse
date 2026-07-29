@@ -825,24 +825,23 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     }
 
     /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
-    /// A custom-named Variant (e.g. Geometry) is gated by useDefaultImplementationForVariantWithCustomName() instead, so a
-    /// function can handle it directly (to keep the custom name) while ordinary Variant inputs still go through the adaptor.
-    if (!base && (useDefaultImplementationForVariant() || useDefaultImplementationForVariantWithCustomName()))
+    if (!base && useDefaultImplementationForVariant())
     {
         checkNumberOfArguments(arguments.size());
 
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i != arguments.size(); ++i)
         {
-            if (isVariant(arg.type))
+            const auto & type = arguments[i].type;
+            if (isVariant(type))
             {
-                const bool use_adaptor = arg.type->hasCustomName()
-                    ? useDefaultImplementationForVariantWithCustomName()
-                    : useDefaultImplementationForVariant();
-                if (!use_adaptor)
-                    break;
+                /// A custom-named `Variant` (e.g. `Geometry`) can be excluded separately, so a function
+                /// handles it directly and keeps the custom name, while ordinary `Variant` inputs still go
+                /// through the adaptor. Keep scanning: another argument may still need the adaptor.
+                if (type->hasCustomName() && !useDefaultImplementationForVariantWithCustomName(type))
+                    continue;
 
                 ColumnsWithTypeAndName args_copy = arguments;
-                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
+                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy), i);
                 break;
             }
         }

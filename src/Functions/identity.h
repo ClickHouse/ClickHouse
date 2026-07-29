@@ -37,15 +37,15 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// executeImpl returns the argument column verbatim, so the result type must be exactly the argument
-    /// type. The default LowCardinality implementation strips (nested) LowCardinality from the declared
-    /// result type while the passthrough column keeps it, yielding a type/column mismatch that later
-    /// aborts during serialization (e.g. WITH TOTALS const key). Keep the type identical to the column.
+    /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
+    /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
+    /// the declared result type while the passthrough column keeps it, yielding a type/column mismatch
+    /// that later aborts during serialization (e.g. `WITH TOTALS` const key). Keep the type identical
+    /// to the column.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    /// Same reasoning for Variant: the default Variant adaptor executes per subtype and reassembles a
-    /// bare Variant, dropping any custom name (e.g. Geometry). Since we pass the column through verbatim,
-    /// keep the declared type exactly equal to the argument type.
+    /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
+    /// such as `Geometry`, which would no longer match the passed-through column.
     bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
