@@ -396,9 +396,8 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         if (is_stopped)
             return;
         file_size = file_data.size();
-        auto in_memory = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
-        seekable = in_memory.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
-        memory_buffer = std::move(in_memory);
+        memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
+        seekable = memory_buffer.get();
     }
     message_reader.emplace(*seekable);
 

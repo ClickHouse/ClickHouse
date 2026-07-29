@@ -2657,9 +2657,17 @@ void ClientBase::processParsedSingleQuery(
 
             client_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
         }
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
+        if (parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->getDatabase();
+            /// `USE {db:Identifier}` keeps the database name in a query parameter, so the parsed AST
+            /// carries an empty name until the parameters are substituted (which the server does when
+            /// it executes the query). Substitute them on the client side as well, otherwise the
+            /// client would remember an empty default database and silently reset the current database
+            /// when it has to re-establish a lost connection.
+            ASTPtr use_query = parsed_query->clone();
+            ReplaceQueryParameterVisitor(client_context->getQueryParameters()).visit(use_query);
+            const String new_database = use_query->as<ASTUseQuery &>().getDatabase();
+
             /// If the client initiates the reconnection, it takes the settings from the config.
             /// TODO: Revisit
             default_database = new_database;
