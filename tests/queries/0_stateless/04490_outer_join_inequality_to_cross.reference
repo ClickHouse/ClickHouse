@@ -1,0 +1,36 @@
+-- inner (baseline) --
+2	2
+5	2
+5	3
+-- left --
+1	\N
+2	2
+5	2
+5	3
+-- right --
+2	2
+5	2
+5	3
+-- full --
+1	\N
+2	2
+5	2
+5	3
+-- left, strict less-than --
+1	2
+1	3
+2	3
+5	\N
+-- left, not-equals --
+1	2
+1	3
+2	3
+5	2
+5	3
+-- left, join_use_nulls = 0 fills defaults --
+1	0
+2	2
+5	2
+5	3
+-- left, equivalence with cross + anti rewrite (1 = equal) --
+1

@@ -230,9 +230,26 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+static String formatJoinCondition(const std::vector<JoinActionRef> & predicates, bool pretty = false)
 {
-    return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+    if (!pretty)
+        return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+
+    /// Render predicates in a readable infix form (e.g. `a >= b` instead of `greaterOrEquals(a, b)`),
+    /// the same way `EXPLAIN ... pretty` does.
+    std::unordered_map<String, PrettyColumnName> pretty_names;
+    std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
+    std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+    auto to_readable = [&](const JoinActionRef & predicate)
+    {
+        return QueryPlanFormat::formatNodePretty(predicate.getNode(), pretty_names, runtime_filter_names, subquery_set_names);
+    };
+    return fmt::format("{}", fmt::join(predicates | std::views::transform(to_readable), " AND "));
+}
+
+static String formatJoinConditionPretty(const std::vector<JoinActionRef> & predicates)
+{
+    return formatJoinCondition(predicates, /* pretty */ true);
 }
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
@@ -863,6 +880,26 @@ static JoinActionRef concatConditions(
     return result;
 }
 
+/// Build a constant equi-predicate `__lhs_const = __rhs_const` between the two sides.
+/// It makes the hash join treat every pair of rows as a key match, so the actual matching is
+/// decided by the residual (mixed) join condition rather than by the key.
+/// TODO: `ConstantJoin` replaced this trick for `JOIN ON <constant>`, but it evaluates no per-pair
+/// predicate, so a non-equi outer join cannot use it yet.
+static JoinActionRef makeConstantJoinKey(const JoinExpressionActions & expression_actions)
+{
+    auto actions_dag = expression_actions.getActionsDAG();
+
+    auto dt = std::make_shared<DataTypeUInt8>();
+
+    JoinActionRef lhs(&actions_dag->addColumn(dt->createColumnConst(0, 1), dt, "__lhs_const"), expression_actions);
+    lhs.setSourceRelations(BitSet().set(0));
+
+    JoinActionRef rhs(&actions_dag->addColumn(dt->createColumnConst(0, 1), dt, "__rhs_const"), expression_actions);
+    rhs.setSourceRelations(BitSet().set(1));
+
+    return JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+}
+
 static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
@@ -895,7 +932,7 @@ static bool tryAddDisjunctiveConditions(
             if (!throw_on_error)
                 return false;
 
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinCondition({expr}));
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinConditionPretty({expr}));
         }
 
         if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
@@ -1150,23 +1187,55 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+            const bool hash_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                 && join_operator.strictness == JoinStrictness::All;
+
+            /// INNER/CROSS with no equi keys is equivalent to a CROSS join with the predicates
+            /// applied as a filter on top of the join result.
+            const bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
+
+            /// OUTER joins must keep non-matching rows (NULL-extended), so a CROSS join + filter is
+            /// not equivalent. Instead we add a constant join key, which makes the hash join enumerate
+            /// every pair of rows, and keep the predicates as a residual (mixed) join condition that is
+            /// evaluated during the join. This is correct, but not efficient (it is a nested loop), so
+            /// it is gated behind the `allow_inequality_join_as_cross_join` setting.
+            const bool can_convert_to_constant_key = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                && hash_enabled && join_settings.allow_inequality_join_as_cross_join;
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                !can_convert_to_cross && !can_convert_to_constant_key);
 
             if (!is_disjunctive_condition)
             {
-                if (!can_convert_to_cross)
-                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                        formatJoinCondition(join_expression));
-
-                join_operator.kind = JoinKind::Cross;
-                join_operator.residual_filter.append_range(join_expression);
-                join_expression.clear();
+                if (can_convert_to_cross)
+                {
+                    join_operator.kind = JoinKind::Cross;
+                    join_operator.residual_filter.append_range(join_expression);
+                    join_expression.clear();
+                }
+                else if (can_convert_to_constant_key)
+                {
+                    join_expression.push_back(makeConstantJoinKey(expression_actions));
+                    bool has_constant_key = addJoinPredicatesToTableJoin(
+                        join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+                    if (!has_constant_key)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
+                            toString(join_operator.kind), formatJoinConditionPretty(join_expression));
+                }
+                else
+                {
+                    /// An outer join with such a condition can be run as a (slow) nested loop if the
+                    /// hash algorithm is enabled and `allow_inequality_join_as_cross_join` is set.
+                    bool suggest_cross_join = (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind))
+                        && hash_enabled && !join_settings.allow_inequality_join_as_cross_join;
+                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
+                        formatJoinConditionPretty(join_expression),
+                        suggest_cross_join
+                            ? ". Enable setting 'allow_inequality_join_as_cross_join' to run it as a CROSS JOIN (may be slow)"
+                            : "");
+                }
             }
         }
     }
@@ -1213,7 +1282,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         }
         if (found_asof_predicate_it == join_expression.end())
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression));
+                formatJoinConditionPretty(join_expression));
 
         join_expression.erase(found_asof_predicate_it);
     }
