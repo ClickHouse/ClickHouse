@@ -185,6 +185,8 @@ void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// The name is what an `OVER w` reference resolves against, and it is not a child, so without
     /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
     /// into whatever `getID` writes next.
+    static_assert(
+        sizeof(*this) == 64, "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
