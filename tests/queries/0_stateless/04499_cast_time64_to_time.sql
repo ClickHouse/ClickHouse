@@ -72,3 +72,8 @@ SELECT materialize(CAST('2020-01-01 00:00:00.5' AS Nullable(DateTime64(1)))) IN 
 SELECT CAST(toDecimal64(3600001, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
 SELECT CAST(toDecimal64(-3600001, 0) AS Time64(0)) IN (SELECT CAST(-3599999 AS Time));
 SELECT CAST(toDecimal64(3599999, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
+
+-- Same for DateTime64 probes, which saturate at the DateTime range boundaries.
+SELECT CAST(toDecimal64(4294967296, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
+SELECT CAST(toDecimal64(-1, 0) AS DateTime64(0)) IN (SELECT toDateTime(0));
+SELECT CAST(toDecimal64(4294967295, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
