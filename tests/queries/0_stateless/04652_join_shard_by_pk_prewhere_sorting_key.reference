@@ -8,8 +8,8 @@ RIGHT JOIN	1
 FULL JOIN	1
 output header
 d	String					
-pipeline header	1
-sharding applied	1
+rfmt step header	1
+plan shape	1
 control non-key col	1
 control join key	1
 control col in output	1

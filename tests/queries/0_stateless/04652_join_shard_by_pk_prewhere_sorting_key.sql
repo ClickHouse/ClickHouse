@@ -2,7 +2,8 @@
 -- column that only the filter uses. The defect cells threw NOT_FOUND_COLUMN_IN_BLOCK before the fix;
 -- the cells labelled `control` did not and must keep working. Result cells compare the sharded
 -- result against an unsharded oracle (hash where the algorithm can change), so a silent wrong
--- result fails too; the rest are header and plan-shape guards.
+-- result fails too; the rest are header and plan-shape guards. The guards matter because every
+-- result cell passes vacuously if the plan silently stops sharding, prewhering or reading in order.
 
 SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;
@@ -17,6 +18,9 @@ SET enable_parallel_replicas = 0;
 -- with no outer scope, and `compatibility` randomization can revert both settings.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
+-- A null-rejecting filter on the non-preserved side otherwise rewrites the outer join kinds, so the
+-- labelled kind would not be the executed one (LEFT becomes INNER, FULL becomes RIGHT).
+SET query_plan_convert_outer_join_to_inner_join = 0;
 
 DROP TABLE IF EXISTS ok2;
 CREATE TABLE ok2 (a UInt32, b UInt32, c Int64, d String)
@@ -39,28 +43,38 @@ SELECT 'filter both sides', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FRO
 SELECT 'explicit PREWHERE', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c = 94) AS r ON l.a = r.a))
                           = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c = 94) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
-SELECT 'LEFT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l LEFT JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
-                  = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l LEFT JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+-- An outer join reaches the branch only when the filter is on a side the join preserves: a filter on
+-- the non-preserved side stays above the join as a `Filter (WHERE)` step and never becomes PREWHERE.
+SELECT 'LEFT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l LEFT JOIN ok2 AS r ON l.a = r.a WHERE l.c = 94))
+                  = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l LEFT JOIN ok2 AS r ON l.a = r.a WHERE l.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
 SELECT 'RIGHT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l RIGHT JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
                    = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l RIGHT JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
-SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l FULL JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
-                  = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l FULL JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a))
+                  = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
 -- The restored columns must not leak into the output header.
 SELECT 'output header';
 DESCRIBE (SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
--- `DESCRIBE` only resolves the sample block, so it cannot see the pipeline-time conversion that
--- drops the restored columns. `EXPLAIN PIPELINE` builds the pipeline; the unindented `Header:` row
--- is the top-level one, and it must carry neither restored column.
-SELECT 'pipeline header', countIf(explain LIKE 'Header:%' AND (explain LIKE '%b UInt32%' OR explain LIKE '%c Int64%')) = 0
-FROM (EXPLAIN PIPELINE header = 1 SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
+-- No step declares a restored column: with everything but step names and headers suppressed, neither
+-- may appear anywhere in the dump. `query_plan_remove_unused_columns = 0` keeps the filtered column
+-- on every step above the read, sharded or not, so it is pinned rather than asserted around.
+SELECT 'rfmt step header', countIf(explain LIKE '%b UInt32%' OR explain LIKE '%c Int64%') = 0
+FROM (EXPLAIN header = 1, actions = 0, description = 0, indexes = 0, pretty = 0
+      SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94)
+SETTINGS query_plan_remove_unused_columns = 1;
 
--- The optimization must still be applied, not silently skipped.
-SELECT 'sharding applied', countIf(explain LIKE '%Sharding%') = 1
-FROM (EXPLAIN actions = 1 SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
+-- All three preconditions of the fixed branch must hold, or every cell above passes vacuously.
+-- `pretty = 0` pins the renderer: `compatibility` randomization can select the legacy one, which
+-- spells the read type `ReadType:` rather than `Read type:`.
+SELECT 'plan shape',
+       countIf(explain LIKE '%Sharding%') = 1
+   AND countIf(explain LIKE '%Prewhere filter%') > 0
+   AND countIf(explain LIKE '%ReadType: InOrder%') > 0
+FROM (EXPLAIN actions = 1, pretty = 0
+      SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
 -- Must-stay-working controls: a non-key column is never in the sorting key, the join key is already
 -- in the read output, and a filtered column kept in the output was never pruned.
