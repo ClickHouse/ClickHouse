@@ -1,9 +1,3 @@
--- Tags: no-random-merge-tree-settings
--- ^ The deadlock is purely a pipeline/query-settings phenomenon and is independent of the
---   table's on-disk layout (verified across index_granularity 1/8192 and wide/compact parts).
---   Disabling MergeTree randomization only avoids unrelated CREATE TABLE failures from settings
---   like part_minmax_index_columns that would mask the regression with a BAD_ARGUMENTS error.
-
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106237
 -- `BufferedShardByHashTransform` deadlocked the pipeline when a downstream `ConcatProcessor`
 -- (here produced by narrowing a `UNION ALL` with `max_streams_for_union_step` < pipeline width)
@@ -34,8 +28,12 @@ INSERT INTO test_106237 SELECT 2 AS a, number AS b FROM numbers(100000);
 -- with the skewed keys above, a wider fan-out guarantees the sequentially-activated
 -- ConcatProcessor demands an empty shard, which is what triggers the stuck state. A small
 -- value (e.g. 2-3) routes all keys onto the demanded shards and hides the bug.
--- Precondition: the sharded transform really is in the pipeline for this shape.
-SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0
+-- Precondition: both halves of the deadlock topology are present for this shape - the
+-- sharded transform, and the `ConcatProcessor` that narrowing the `UNION ALL` produces.
+-- Asserting only the transform is not enough: with narrowing disabled the transform is
+-- still built but no `Concat` appears, and the queries below then pass with the fix
+-- reverted because the sequential consumer they need is gone.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0 AND countIf(explain LIKE '%Concat%') > 0
 FROM (
     EXPLAIN PIPELINE
     SELECT a, max(s)
@@ -68,8 +66,8 @@ SETTINGS enable_sharding_aggregator = 1,
 -- Same deadlock via a scalar-subquery-wrapped UNION ALL (found by the AST-fuzzer oracle,
 -- see the issue thread). The stuck state is a property of the sharded transform, not of
 -- where the UNION ALL sits, so wrapping it in a scalar subquery reaches the same code path.
--- Precondition: this shape shards too, so the assertion below is not vacuous.
-SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0
+-- Precondition: the same topology holds for the scalar-subquery shape.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0 AND countIf(explain LIKE '%Concat%') > 0
 FROM (
     EXPLAIN PIPELINE
     SELECT count() FROM (
