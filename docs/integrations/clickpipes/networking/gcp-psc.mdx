@@ -97,7 +97,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET \
 
 Because GCP PSC does not propagate DNS, a custom private DNS mapping is integral to every GCP PSC endpoint — you always supply the source's private DNS name this way, and ClickPipes resolves it to the endpoint's static internal IP.
 
-The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/aws-privatelink#custom-private-dns) apply — wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. Wildcards are especially useful on GCP: a single mapping such as `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` fronts every broker of a Managed Kafka cluster.
+The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) apply — wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. Wildcards are especially useful on GCP: a single mapping such as `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` fronts every broker of a Managed Kafka cluster.
 
 For GCP PSC, only the mapping's `privateDnsName` is used. The `internalDNSName` field is not supported, because a PSC endpoint exposes a static IP with no DNS name to pin to — mappings always resolve to that IP.
 
@@ -150,5 +150,5 @@ If an endpoint shows `Rejected` or `Failed`, read the message under its status: 
 
 ## Limitations {#limitations}
 
-* The RPE endpoint and the service attachment must be in the **same GCP region**. Cross-region PSC via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) is not supported yet. Use [SSH tunneling](/integrations/clickpipes/networking#ssh-tunneling) if your source is in another region.
+* The RPE endpoint and the service attachment must be in the **same GCP region**. Cross-region PSC via [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) is not supported yet. Use [SSH tunneling](/integrations/clickpipes/networking/index#ssh-tunneling) if your source is in another region.
 * A PSC service attachment can only be claimed by one ClickHouse Cloud service at a time; it cannot be reused across multiple services. To move a service attachment to a different service, [Contact ClickHouse support](https://clickhouse.com/support/program) to release the existing claim.
