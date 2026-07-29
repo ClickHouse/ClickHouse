@@ -33,6 +33,7 @@ function cleanup()
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0.0;
     DROP TABLE IF EXISTS t_lwu_block_number SYNC;
     SET enable_lightweight_update = 1;
 
