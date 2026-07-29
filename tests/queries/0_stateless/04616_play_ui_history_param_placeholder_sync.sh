@@ -69,7 +69,7 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'markBootstrapDirty', 'scheduleSave', 'persist', 'restoreEditor',
     'extractQueryParams', 'getParamValues', 'setParamValues', 'pickRunParams', 'resolveRunParams',
     'extractRunParamNames', 'syncParamsAfterRebuild', 'updateQueryParams', 'onQueryInput',
-    'switchToTab', 'loadLexer', 'tokenize'];
+    'switchToTab', 'startTitleEdit', 'loadLexer', 'tokenize'];
 const code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 
 /// The parameter-input DOM `updateQueryParams` rebuilds: real enough for element creation,
@@ -100,6 +100,9 @@ const sandbox = {
     setTimeout: () => 1,
     clearTimeout: () => {},
     tabs: [], activeTabId: null, tabSeq: 0, tabTitleSeq: 0,
+    activeTitleCommit: null,
+    /// The selection APIs the inline title editor uses to preselect the title being renamed.
+    getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
     activation_num: 0, params_restore_pending_token: null,
     run_epoch: 'ep', run_seq: 0,
     editorInteractionGen: 0,
@@ -122,6 +125,7 @@ const sandbox = {
             return { style: {}, innerHTML: '' };
         },
         createElement: tag => makeEl(tag),
+        createRange: () => ({ selectNodeContents() {} }),
         querySelectorAll: () => [],
         body: { scrollTo() {} },
     },
@@ -257,6 +261,30 @@ function setTrustedParam(name, value)
     input.dispatchEvent({ type: 'input', isTrusted: true });
 }
 
+/// The editable title `span` the tab bar hands to `startTitleEdit`: real enough for the editor's
+/// class/attribute bookkeeping, its preselection and its `keydown`/`blur` commit listeners.
+function makeTitleEl(text)
+{
+    const el = makeEl('span');
+    el.textContent = text;
+    el.contentEditable = 'false';
+    el.classList = { add() {}, remove() {} };
+    el.removeAttribute = () => {};
+    el.closest = () => ({ classList: { add() {}, remove() {} } });
+    el.focus = () => {};
+    return el;
+}
+
+/// A tab rename: drives the REAL inline title editor (`startTitleEdit`) and commits it with
+/// Enter, exactly as the tab bar does.
+function rename(tab, title)
+{
+    const titleEl = makeTitleEl(tab.title);
+    sandbox.startTitleEdit(tab, titleEl);
+    titleEl.textContent = title;
+    titleEl.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault() {}, stopPropagation() {} });
+}
+
 /// A run's launch, exactly as `postOne`/`postAll` bind it: snapshot the parameter VALUES
 /// synchronously at launch (`resolveRunParams` — live inputs, or the tab's saved params during a
 /// pending restore), then bind the parameter NAMES to the run's own tokenization of the launched
@@ -303,6 +331,7 @@ function reset()
     for (const k of Object.keys(param_dom)) delete param_dom[k];
     sandbox.document.title = '';
     sandbox.deferred_run_cancelled = false;
+    sandbox.activeTitleCommit = null;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
     sandbox.activeTabId = tab.id;
@@ -611,6 +640,55 @@ function reset()
     setTrustedParam('y', '5');
     await sandbox.switchToTab(lexerless_home.id);
     assert_params('unrebuildable restore: a live input overrides the merged snapshot', lexerless_tab.params, { y: '5' });
+
+    /// A RENAME is a history writer too: committing the inline title editor rewrites the current
+    /// entry (and the URL) for the active tab. A placeholder-removing edit whose input rebuild has
+    /// not landed yet leaves the removed binding in `tab.params` — the live `param_*` input is only
+    /// dropped by the asynchronous rebuild — so a rename in that window must not stamp
+    /// `?param_x=1#SELECT 1` into the entry, resurrecting a parameter for a placeholder that no
+    /// longer exists on reload or when the URL is copied. The rename goes through the same capture
+    /// funnel as the other structural boundaries, which prunes the snapshot against the text
+    /// (`queryMentionsParam`); a placeholder that SURVIVES the edit keeps its binding.
+    reset();
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    assert_eq('rename baseline: the run URL carries the binding', curUrl().includes('param_x=1'), true);
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                    /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    let release_rename_rebuild;
+    tokenize_hold = new Promise(resolve => { release_rename_rebuild = resolve; });
+    const rename_rebuild = type('SELECT 1');           /// removes x; rebuild gated, not landed
+    tokenize_hold = null;
+    rename(active(), 'renamed');
+    assert_eq('rename before rebuild: the title is committed', active().title, 'renamed');
+    assert_params('rename before rebuild: the capture prunes the removed binding', active().params, {});
+    assert_eq('rename before rebuild: no stale param_x in the entry', curUrl().includes('param_x'), false);
+    assert_eq('rename before rebuild: the entry carries the new draft', curState().query, 'SELECT 1');
+    assert_eq('rename before rebuild: the diverged draft has no run=1', curUrl().includes('run=1'), false);
+    release_rename_rebuild();                          /// the rebuild lands
+    await rename_rebuild;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    assert_params('rename before rebuild: the landing rebuild leaves the pruned map', active().params, {});
+    assert_eq('rename before rebuild: the entry stays clean after the rebuild lands', curUrl().includes('param_x'), false);
+
+    /// Control: a rename after an edit that KEEPS the placeholder must not drop its binding — the
+    /// capture's scan only prunes names that are certainly gone from the text.
+    reset();
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    await type('SELECT {x:Int32} + 1');
+    rename(active(), 'kept');
+    assert_params('rename with a kept placeholder: the binding survives', active().params, { x: '1' });
+    assert_eq('rename with a kept placeholder: the entry keeps the binding', curUrl().includes('param_x=1'), true);
+    assert_eq('rename with a kept placeholder: the entry carries the new draft', curState().query, 'SELECT {x:Int32} + 1');
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

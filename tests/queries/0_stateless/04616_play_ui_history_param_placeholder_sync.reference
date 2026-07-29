@@ -64,4 +64,15 @@ unrebuildable restore: a structural leave preserves the saved bindings
 unrebuildable restore: the saved binding stays in the left tab's entry
 unrebuildable restore: the recovered rebuild seeds the input from the snapshot
 unrebuildable restore: a live input overrides the merged snapshot
+rename baseline: the run URL carries the binding
+rename before rebuild: the title is committed
+rename before rebuild: the capture prunes the removed binding
+rename before rebuild: no stale param_x in the entry
+rename before rebuild: the entry carries the new draft
+rename before rebuild: the diverged draft has no run=1
+rename before rebuild: the landing rebuild leaves the pruned map
+rename before rebuild: the entry stays clean after the rebuild lands
+rename with a kept placeholder: the binding survives
+rename with a kept placeholder: the entry keeps the binding
+rename with a kept placeholder: the entry carries the new draft
 OK

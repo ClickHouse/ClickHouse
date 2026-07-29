@@ -8440,6 +8440,17 @@ function startTitleEdit(tab, titleEl) {
             if (v) tab.title = uniqueTitle(v, tab.id);
         }
         renderTabBar();   /// rebuilds the bar, replacing this editable span with a static one
+        /// A rename writes the current history entry (and the URL) for the active tab, so it is a
+        /// structural boundary exactly like `switchToTab`/`addTab`/`closeTab`/`closeOtherTabs`: route
+        /// it through the same capture funnel first. `tab.query` is already kept in sync by
+        /// `onQueryInput`, but `tab.params` can still carry a binding for a placeholder the latest
+        /// edit removed — the `param_*` input is only dropped by the asynchronous `updateQueryParams`
+        /// rebuild — so a rename landing in that window would otherwise stamp `?param_x=1#SELECT 1`
+        /// into the entry and the URL, resurrecting a parameter for a placeholder that no longer
+        /// exists on reload or when the URL is copied. `captureActiveTab` prunes the snapshot against
+        /// the text just captured (`queryMentionsParam`), which is what the pending rebuild would have
+        /// concluded.
+        captureActiveTab();
         syncHistory();
         scheduleSave();
     };
