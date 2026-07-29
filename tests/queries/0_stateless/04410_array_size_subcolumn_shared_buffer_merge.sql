@@ -19,13 +19,13 @@ DROP TABLE IF EXISTS t_array_size_shared_marks;
 -- No per-substream marks: exercises the read-full-column-then-extract-subcolumn branch.
 CREATE TABLE t_array_size_shared (k UInt64, a Array(UInt32), big Array(UInt32))
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 32, min_bytes_for_wide_part = 1000000000,
+SETTINGS index_granularity = 32, index_granularity_bytes = '100Gi', min_bytes_for_wide_part = 1000000000,
          write_marks_for_substreams_in_compact_parts = 0;
 
 -- Per-substream marks (the current default): exercises the subcolumn-serialization branch.
 CREATE TABLE t_array_size_shared_marks (k UInt64, a Array(UInt32), big Array(UInt32))
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 32, min_bytes_for_wide_part = 1000000000,
+SETTINGS index_granularity = 32, index_granularity_bytes = '100Gi', min_bytes_for_wide_part = 1000000000,
          write_marks_for_substreams_in_compact_parts = 1;
 
 INSERT INTO t_array_size_shared
@@ -39,7 +39,10 @@ FROM numbers(20000);
 OPTIMIZE TABLE t_array_size_shared FINAL;
 OPTIMIZE TABLE t_array_size_shared_marks FINAL;
 
--- Both tables must hold Compact parts.
+-- Preconditions: both tables must hold Compact parts with several fixed-size granules, so a
+-- read with a large block really spans granules. index_granularity_bytes is pinned because the
+-- test runner randomizes it and a small value makes granule sizes vary; it is pinned to a large
+-- value rather than 0 because 0 turns off adaptive granularity, which would force Wide parts.
 SELECT table, part_type FROM system.parts
 WHERE database = currentDatabase()
   AND table IN ('t_array_size_shared', 't_array_size_shared_marks')
@@ -51,12 +54,20 @@ ORDER BY table;
 -- table and present in the second. Otherwise the pins could silently stop taking effect and both
 -- tables would exercise the same branch while every result assertion below still passed.
 SELECT 't_array_size_shared' AS table,
-       isNotNull((`a.size0.mark`).offset_in_compressed_file) AS has_substream_mark
-FROM mergeTreeIndex(currentDatabase(), t_array_size_shared, with_marks = true) LIMIT 1;
+       countIf(rows_in_granule > 0) > 1 AS many_granules,
+       minIf(rows_in_granule, rows_in_granule > 0) = 32
+           AND max(rows_in_granule) = 32 AS granule_rows_pinned,
+       uniqExact(isNotNull((`a.size0.mark`).offset_in_compressed_file)) = 1
+           AND max(isNotNull((`a.size0.mark`).offset_in_compressed_file)) AS has_substream_mark
+FROM mergeTreeIndex(currentDatabase(), t_array_size_shared, with_marks = true);
 
 SELECT 't_array_size_shared_marks' AS table,
-       isNotNull((`a.size0.mark`).offset_in_compressed_file) AS has_substream_mark
-FROM mergeTreeIndex(currentDatabase(), t_array_size_shared_marks, with_marks = true) LIMIT 1;
+       countIf(rows_in_granule > 0) > 1 AS many_granules,
+       minIf(rows_in_granule, rows_in_granule > 0) = 32
+           AND max(rows_in_granule) = 32 AS granule_rows_pinned,
+       uniqExact(isNotNull((`a.size0.mark`).offset_in_compressed_file)) = 1
+           AND max(isNotNull((`a.size0.mark`).offset_in_compressed_file)) AS has_substream_mark
+FROM mergeTreeIndex(currentDatabase(), t_array_size_shared_marks, with_marks = true);
 
 -- Read the `.size0` subcolumn and the full array together, with a block much larger than the
 -- granule so one read appends offsets across many granules.
@@ -64,22 +75,24 @@ SELECT countIf(a.size0 != length(a)) AS bad_a,
        countIf(big.size0 != length(big)) AS bad_big,
        count() AS total
 FROM t_array_size_shared
-SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, merge_tree_min_rows_for_concurrent_read = 0,
+         preferred_block_size_bytes = 0, optimize_functions_to_subcolumns = 0;
 
 SELECT countIf(a.size0 != length(a)) AS bad_a,
        countIf(big.size0 != length(big)) AS bad_big,
        count() AS total
 FROM t_array_size_shared_marks
-SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+SETTINGS max_threads = 1, max_block_size = 65536, merge_tree_min_rows_for_concurrent_read = 0,
+         preferred_block_size_bytes = 0, optimize_functions_to_subcolumns = 0;
 
 -- Same, reading the `.size0` subcolumns only.
 SELECT sum(a.size0) AS sum_a, sum(big.size0) AS sum_big
 FROM t_array_size_shared
-SETTINGS max_threads = 1, max_block_size = 65536;
+SETTINGS max_threads = 1, max_block_size = 65536, preferred_block_size_bytes = 0;
 
 SELECT sum(a.size0) AS sum_a, sum(big.size0) AS sum_big
 FROM t_array_size_shared_marks
-SETTINGS max_threads = 1, max_block_size = 65536;
+SETTINGS max_threads = 1, max_block_size = 65536, preferred_block_size_bytes = 0;
 
 -- Per-granule block size must give identical results.
 SELECT sum(a.size0) AS sum_a, sum(big.size0) AS sum_big
