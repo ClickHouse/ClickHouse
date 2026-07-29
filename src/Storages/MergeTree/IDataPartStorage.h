@@ -194,7 +194,7 @@ public:
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
         LoggerPtr log, const String & prefix, bool detached, bool broken,
-        const NameTakenChecker & name_taken_anywhere = {}) const = 0;
+        const NameTakenChecker & name_taken_anywhere) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.

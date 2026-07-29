@@ -109,19 +109,19 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     {
         res = getPartDirForPrefix(prefix, detached, try_no);
 
-        /// The content comparison below can only read a directory on our own disk, so keep the
-        /// own-disk answer as a separate, narrower question than "is the name free at all".
-        bool taken_here = volume->getDisk()->existsDirectory(full_relative_path / res);
-        bool taken_anywhere = name_taken_anywhere ? name_taken_anywhere(res) : taken_here;
+        auto taken_here = [&] { return volume->getDisk()->existsDirectory(full_relative_path / res); };
+        bool taken_anywhere = name_taken_anywhere ? name_taken_anywhere(res) : taken_here();
 
         if (!taken_anywhere)
             return res;
 
         /// If part with compacted storage is broken then we probably
         /// cannot read the single file with data and check its content.
+        /// The content comparison can only read a directory on our own disk, so "is it taken here"
+        /// stays a narrower question than the "is the name free at all" decision above.
         if (broken
-            && taken_here
             && isFullPartStorage(*this)
+            && taken_here()
             && looksLikeBrokenDetachedPartHasTheSameContent(res, original_checksums_content, original_files_list))
         {
             LOG_WARNING(log, "Directory {} (to detach to) already exists, "

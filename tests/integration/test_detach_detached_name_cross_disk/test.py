@@ -8,6 +8,7 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
+    stay_alive=True,
     tmpfs=["/jbod1:size=60M", "/jbod2:size=60M"],
 )
 
@@ -160,6 +161,144 @@ def test_attach_part_after_cross_disk_detach_is_deterministic(start_cluster):
         ).strip()
         == "0"
     )
+
+
+def data_path_on(table, disk):
+    return node.query(
+        f"SELECT arrayFilter(x -> position(x, '/{disk}/') > 0, data_paths)[1] "
+        f"FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
+    ).strip()
+
+
+def active_part(table):
+    """The part name, read rather than assumed: a plain MergeTree numbers blocks from 1."""
+    return node.query(
+        f"SELECT name FROM system.parts WHERE database = currentDatabase() "
+        f"AND table = '{table}' AND active"
+    ).strip()
+
+
+def fill_every_candidate_name(table, disk, part, prefix=""):
+    """Occupy '<prefix>_<part>' and its 9 '_tryN' variants on `disk` only.
+
+    The allocator tries exactly 10 names, so this leaves it nothing to pick. Creating the
+    directories directly is what test_partition/test.py already does for this allocator.
+    """
+    detached = data_path_on(table, disk) + "detached"
+    base = f"{prefix}_{part}" if prefix else part
+    names = [base] + [f"{base}_try{i}" for i in range(1, 10)]
+    node.exec_in_container(
+        ["bash", "-c", "mkdir -p " + " ".join(f"'{detached}/{n}'" for n in names)],
+        privileged=True,
+    )
+    return names
+
+
+def test_exhausted_names_on_another_disk_fail_closed(start_cluster):
+    """ignore_error = false: a detach that cannot pick a free name must fail loudly.
+
+    Before the table-wide search the 10th attempt returned a name taken on the other disk and
+    the caller's own-disk collision guard let it through, creating a duplicate.
+    """
+    node.query("DROP TABLE IF EXISTS excl SYNC")
+    node.query(
+        """
+        CREATE TABLE excl (k UInt64, v String) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'two_disks', old_parts_lifetime = 100000
+        """
+    )
+    node.query("SYSTEM STOP MERGES excl")
+    node.query(f"INSERT INTO excl {INSERT_SETTINGS} VALUES (1, 'live')")
+    part = active_part("excl")
+    assert part != ""
+
+    other = "jbod2" if active_disk("excl") == "jbod1" else "jbod1"
+    taken = fill_every_candidate_name("excl", other, part)
+    assert (
+        node.query(
+            "SELECT count() FROM system.detached_parts "
+            "WHERE database = currentDatabase() AND table = 'excl'"
+        ).strip()
+        == "10"
+    )
+
+    assert "DIRECTORY_ALREADY_EXISTS" in node.query_and_get_error(
+        f"ALTER TABLE excl DETACH PART '{part}'"
+    )
+
+    # Failing closed means no eleventh directory was created and the part is still attached.
+    assert (
+        node.query(
+            "SELECT count(), uniqExact(name) FROM system.detached_parts "
+            "WHERE database = currentDatabase() AND table = 'excl'"
+        ).strip()
+        == f"{len(taken)}\t{len(taken)}"
+    )
+    assert node.query("SELECT count() FROM excl").strip() == "1"
+
+
+def test_exhausted_names_do_not_kill_the_server_on_start(start_cluster):
+    """ignore_error = true: a startup detach must log and skip, never abort the process.
+
+    The broken-on-start rename passes ignore_error = true on a Replicated table, and two of its
+    callers sit in function-try-blocks that terminate the server, so this exhaustion has to be
+    swallowed rather than escalated.
+    """
+    node.query("DROP TABLE IF EXISTS surv SYNC")
+    node.query(
+        """
+        CREATE TABLE surv (k UInt64, v String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/surv', 'r1') ORDER BY k
+        SETTINGS storage_policy = 'two_disks', old_parts_lifetime = 100000
+        """
+    )
+    node.query("SYSTEM STOP MERGES surv")
+    node.query(f"INSERT INTO surv {INSERT_SETTINGS} VALUES (1, 'live')")
+    part = active_part("surv")
+    assert part != ""
+
+    live = active_disk("surv")
+    other = "jbod2" if live == "jbod1" else "jbod1"
+    names = fill_every_candidate_name("surv", other, part, prefix="broken-on-start")
+    blocked = data_path_on("surv", other) + "detached"
+
+    # Make the part fail to load, so the startup path detaches it as broken-on-start. Corrupting
+    # the checksums file is what makes loadDataPart mark the part broken while it is still in the
+    # expected set (deleting a file it needs instead drops the part before any detach is tried).
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo broken > '{data_path_on('surv', live)}{part}/checksums.txt'",
+        ],
+        privileged=True,
+    )
+
+    try:
+        node.restart_clickhouse(kill=True)
+
+        # Without this the assertions below would hold trivially: they only mean something if the
+        # startup detach really ran out of names and the exception was swallowed rather than raised.
+        assert node.contains_in_log("Cannot find a free directory name to detach to")
+
+        # The whole point: the server is up and answering after swallowing the exhaustion.
+        assert node.query("SELECT 1").strip() == "1"
+        assert (
+            node.query(
+                "SELECT count() FROM system.tables "
+                "WHERE database = currentDatabase() AND name = 'surv'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        # A table left unloadable would fail every later system.tables read in this module, so
+        # free the names and restart before dropping it whatever the assertions did.
+        node.exec_in_container(
+            ["bash", "-c", "rm -rf " + " ".join(f"'{blocked}/{n}'" for n in names)],
+            privileged=True,
+        )
+        node.restart_clickhouse(kill=True)
+        node.query("DROP TABLE IF EXISTS surv SYNC")
 
 
 def test_single_disk_policy_is_unaffected(start_cluster):

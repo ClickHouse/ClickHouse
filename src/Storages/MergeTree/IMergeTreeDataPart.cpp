@@ -2631,10 +2631,12 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
 {
-    auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
-    chassert(path_to_detach);
     try
     {
+        /// Picking the name is inside the try on purpose: it can fail to find a free one, and a
+        /// caller that opted into ignore_error must be able to skip such a detach too.
+        auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
+        chassert(path_to_detach);
         renameTo(path_to_detach.value(), true);
     }
     /// This exceptions majority of cases:
@@ -2660,6 +2662,18 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
             // Don't throw when the destination is to the detached folder. It might be able to
             // recover in some cases, such as fetching parts into multi-disks while some of the
             // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        else
+            throw;
+    }
+    /// - no free directory name left in detached/ (all the '_tryN' candidates are taken)
+    catch (const Exception &)
+    {
+        if (ignore_error)
+        {
+            // A background or startup detach that cannot pick a usable name must be logged and
+            // skipped, not escalated: some of these callers terminate the server on an exception.
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         else
