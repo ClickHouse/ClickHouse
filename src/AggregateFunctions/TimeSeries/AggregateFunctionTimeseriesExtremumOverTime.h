@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -68,7 +69,12 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
 
         /// Commutative and associative: keeps whichever of the two summaries holds the "better" extremum. This
         /// is what makes max/min combinable in any order, unlike last_over_time's "most recent" which requires
-        /// buckets to be combined in time order.
+        /// buckets to be combined in time order. Combining out of arrival order can change which of two *equal*
+        /// (or, for an all-NaN run, which NaN) extrema keeps its `first` timestamp - but `first` is only used
+        /// for the per-bucket `checkTimestampsInRange` range check below (always satisfied, since it is always
+        /// one of that bucket's own sample timestamps) and is never read back out of a merged/combined summary;
+        /// `second` (the value returned to the caller) is unaffected by merge order, so the Two-Stacks
+        /// sliding-window strategy (which combines out of arrival order) is safe to use here.
         void merge(const Summary & other)
         {
             if (!other.has_value)
@@ -114,6 +120,8 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
 
+        explicit Aggregator(size_t stack_size) : sliding_sum(stack_size) {}
+
         void add(const Summary & summary, TimestampType bucket_end_timestamp)
         {
             if (summary.has_value)
@@ -153,9 +161,37 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtremumOverTime, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
+    /// window reaches this value; below it, recomputing the window each grid point is cheaper. Reuses the
+    /// thresholds `AggregateFunctionTimeseriesLinearRegression` measured with the
+    /// `timeseries_to_grid_two_stack_vs_recompute` example (see its `createAggregator` for the benchmark this is
+    /// based on): this `Summary` (a timestamp, a value, and a bool) is smaller than that one's (five `Float64`s),
+    /// so recompute here is at least as expensive per populated bucket and two-stacks is at least as favorable,
+    /// which makes reusing the same crossover a safe, conservative choice.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+
+    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
+    /// the sibling constant in `AggregateFunctionTimeseriesLinearRegression` for why an average alone is not
+    /// enough).
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
+
+    typename Traits::Aggregator createAggregator(size_t num_populated_buckets) const
     {
-        return {};
+        /// Recompute folds the populated buckets in each window - on average `buckets_per_window * density`, where
+        /// `density = num_populated_buckets / bucket_count`. Compare that average (not the dense maximum
+        /// `buckets_per_window`) to the threshold, so sparse data, whose windows hold fewer populated buckets,
+        /// stays on the cheaper recompute path without inflating the threshold. The hard cap still forces
+        /// two-stacks for large windows, where a non-uniform spread could hide a locally dense window.
+        const size_t avg_buckets_in_window = Base::bucket_count
+            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
+                / static_cast<double>(Base::bucket_count))
+            : 0;
+        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
+            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
+        /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
+        /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
+        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
+        return typename Traits::Aggregator{stack_size};
     }
 
     static constexpr UInt16 FORMAT_VERSION = 1;
