@@ -32,9 +32,7 @@ HyperDX можно использовать независимо от остал
 <br />
 
 <Steps>
-  <Step>
-    ### Развертывание с помощью Docker
-
+  <Step title="Развертывание с помощью Docker" id="deploy-hyperdx-with-docker">
     Выполните следующую команду, при необходимости заменив `YOUR_MONGODB_URI`.
 
     ```shell
@@ -42,9 +40,7 @@ HyperDX можно использовать независимо от остал
     ```
   </Step>
 
-  <Step>
-    ### Перейдите в интерфейс HyperDX
-
+  <Step title="Перейдите в интерфейс HyperDX" id="navigate-to-hyperdx-ui">
     Откройте [http://localhost:8080](http://localhost:8080), чтобы перейти в интерфейс HyperDX.
 
     Создайте пользователя, указав имя пользователя и пароль, соответствующие требованиям.
@@ -54,14 +50,12 @@ HyperDX можно использовать независимо от остал
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Интерфейс HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Заполните сведения о подключении
-
+  <Step title="Заполните сведения о подключении" id="complete-connection-details">
     Подключитесь к своему внешнему кластеру ClickHouse, например ClickHouse Cloud.
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Вход в HyperDX" size="md" />
 
-    Если будет предложено создать источник, оставьте все значения по умолчанию и укажите в поле `Table` значение `otel_logs`. Все остальные настройки должны быть определены автоматически, после чего вы сможете нажать `Save New Source`.
+    Если будет предложено создать источник, оставьте все значения по умолчанию и укажите в поле `Table` значение `otel_logs`. Все остальные настройки должны определиться автоматически, после чего вы сможете нажать `Save New Source`.
 
     <Info>
       **Создание источника**

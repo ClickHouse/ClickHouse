@@ -1,0 +1,308 @@
+---
+title: ClickPipes 的 Confluent Cloud 私有连接
+description: 如何通过 AWS PrivateLink 或 GCP Private Service Connect 将 ClickPipes 连接到现有的 Confluent Cloud Kafka 集群。
+date: 2026-07-09
+tags: ['安全与身份验证', 'Cloud 管理']
+keywords: ['Confluent Cloud', 'PrivateLink', 'Private Service Connect', 'Kafka', 'ClickPipes']
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+本指南介绍如何通过私有网络将 ClickPipes 连接到现有的 Confluent Cloud Kafka 集群。
+
+以下情况适用本指南：
+
+* 使用 AWS PrivateLink 或 GCP Private Service Connect (PSC) 的 Confluent Cloud Dedicated 集群
+* 使用 AWS PrivateLink 或 GCP Private Service Connect (PSC) 的 Confluent Cloud 无服务器 集群
+
+本指南假定 Confluent Cloud Kafka 集群、topic 和 Kafka 凭据已存在。
+重点介绍私有连接以及 ClickPipes 反向专用终结点 (RPE) 。
+
+<Warning>
+  目前，您无法仅通过 ClickHouse Cloud 控制台完成此 Confluent Cloud 配置。
+
+  Confluent Cloud 要求为单个反向专用终结点配置多个自定义私有 DNS 映射。
+  而 ClickHouse Cloud 控制台目前每个 RPE 仅支持一个自定义私有 DNS name。
+
+  请使用 [ClickHouse Cloud OpenAPI](/zh/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
+  或 Terraform 创建或更新 RPE 自定义 DNS 映射。
+</Warning>
+
+<div id="how-the-setup-works">
+  ## 工作原理
+</div>
+
+Kafka 客户端会先连接到引导主机名，拉取元数据，然后再连接到由 Confluent Cloud 通告的 broker 主机名。
+对于 Confluent Cloud 的私网连接，这些主机名必须能够在 ClickPipes 网络内解析到由 ClickPipes 创建的专用终结点。
+
+ClickPipes 使用：
+
+* 反向专用终结点来建立云提供商的私网连接。
+* 在该 RPE 上配置自定义私有 DNS 映射，使 Confluent 的引导主机名和 broker 主机名都能通过私网解析。
+* 在 ClickPipe 中将 Confluent Cloud Kafka 引导端点用作 broker 地址。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+* 一个你将用于创建 Kafka ClickPipe 的 ClickHouse Cloud 服务。
+* 一个位于与你希望通过私网连接的目标相同云和区域中的 Confluent Cloud Kafka 集群。
+* ClickPipes 可使用的 Kafka API 密钥或服务账号凭据。
+* 对于 AWS PrivateLink，[ClickPipes 自定义私有 DNS](/zh/integrations/clickpipes/aws-privatelink#custom-private-dns) 目前处于私有预览；如果你的服务尚未启用该功能，请联系 ClickHouse 支持团队。
+
+<div id="dedicated-clusters">
+  ## Dedicated 集群
+</div>
+
+本节适用于通过 Confluent 私网连接的 Confluent Cloud Dedicated 集群。
+
+<div id="collect-dedicated-network-details">
+  ### 收集 Confluent Cloud 网络详细信息
+</div>
+
+从与您的 Dedicated 集群关联的 Confluent Cloud 网络中，收集以下信息：
+
+* 私有 DNS 域名，下文以 `{dns_domain}` 表示。
+* Confluent 网络使用的云提供商可用区。
+* 对于 AWS，Confluent PrivateLink 端点服务名称。
+* 对于 GCP，每个 Confluent 网络可用区对应的 PSC 服务附件。
+
+这些可用区值是 ClickPipes 必须解析的 DNS 名称的一部分。
+对于 AWS，它们是可用区 ID，例如 `use1-az1`。
+对于 GCP，它们是可用区，例如 `us-central1-a`。
+
+<div id="authorize-clickpipes-dedicated">
+  ### 在 Confluent Cloud 中为 ClickPipes 授权
+</div>
+
+在 Confluent Cloud 中为 ClickPipes 消费者身份添加一条 PrivateLink 或 PSC 访问项：
+
+* AWS：允许 ClickPipes AWS 账户 ID `072088201116`。
+* GCP：允许 ClickPipes GCP 项目 `clickpipes-production`。
+
+ClickPipes RPE 连接到 Confluent Cloud 私网之前，必须先完成此授权。
+
+<div id="create-dedicated-rpes">
+  ### 创建 ClickPipes RPE
+</div>
+
+通过 [OpenAPI](/zh/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
+或 Terraform 创建 RPE。
+
+使用 OpenAPI 时，请在创建请求中指定 `customPrivateDnsMappings`。
+如果你使用[更新操作](/zh/products/cloud/api-reference/clickpipes/update-reverse-private-endpoint)更新现有 RPE，
+请注意，`customPrivateDnsMappings` 是一个会被整体替换的列表。
+
+<div id="aws-dedicated">
+  #### AWS Dedicated
+</div>
+
+创建一个指向 Confluent Cloud PrivateLink endpoint service 的 `VPC_ENDPOINT_SERVICE` RPE。
+
+将以下所有自定义私有 DNS 映射添加到同一个 RPE：
+
+* `*.{dns_domain}`
+* 针对每个 Confluent 网络可用区，添加 `*.{zone}.{dns_domain}`
+
+OpenAPI 请求体示例：
+
+```json
+{
+  "description": "Confluent Cloud Dedicated AWS PrivateLink",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az1.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az2.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az3.abcde12345.us-east-1.aws.confluent.cloud"
+    }
+  ]
+}
+```
+
+<div id="gcp-dedicated">
+  #### GCP Dedicated
+</div>
+
+为 Confluent Cloud 的每个可用区创建一个 `GCP_PSC_SERVICE_ATTACHMENT` RPE。
+每个 RPE 都指向该可用区的 PSC 服务附件。
+
+将 `*.{zone}.{dns_domain}` 添加到对应可用区的 RPE 中。
+仅将 `*.{dns_domain}` 添加到其中一个 RPE 中。
+
+首个可用区的 OpenAPI 请求体示例：
+
+```json
+{
+  "description": "Confluent Cloud Dedicated PSC us-central1-a",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-us-central1-a",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-central1-a.abcde12345.us-central1.gcp.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.abcde12345.us-central1.gcp.confluent.cloud"
+    }
+  ]
+}
+```
+
+additional-zone OpenAPI 请求体示例：
+
+```json
+{
+  "description": "Confluent Cloud Dedicated PSC us-central1-b",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-us-central1-b",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-central1-b.abcde12345.us-central1.gcp.confluent.cloud"
+    }
+  ]
+}
+```
+
+<div id="serverless-clusters">
+  ## 无服务器集群
+</div>
+
+如果您使用的是采用 Confluent 私网入口网关和接入点的 Confluent Cloud 无服务器集群，请参阅本节。
+
+<div id="create-ingress-gateway">
+  ### 创建 Confluent 入口私网连接网关
+</div>
+
+在 Confluent Cloud 中，为与 Confluent Kafka 集群位于同一云平台和区域的环境创建私网入口网关：
+
+* AWS：创建入口 PrivateLink 网关。
+* GCP：创建入口 Private Service Connect 网关。
+
+记录 ClickPipes 必须连接的网关目标：
+
+* AWS：网关的 VPC endpoint service 名称。
+* GCP：网关的 PSC 服务附件。
+
+<div id="create-dedicated-rpes">
+  ### 创建 ClickPipes RPE
+</div>
+
+为 Confluent 入口网关创建一个 ClickPipes RPE。
+
+对于 AWS，请创建一个 `VPC_ENDPOINT_SERVICE` RPE：
+
+```json
+{
+  "description": "Confluent Cloud ingress AWS PrivateLink",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0"
+}
+```
+
+对于 GCP，请创建一个 `GCP_PSC_SERVICE_ATTACHMENT` RPE：
+
+```json
+{
+  "description": "Confluent Cloud ingress PSC",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-ingress"
+}
+```
+
+等待 RPE 响应中返回 `endpointId`。
+创建 Confluent 访问点时需要使用此 ID。
+
+<div id="create-access-point">
+  ### 创建 Confluent 访问点
+</div>
+
+为 ClickPipes 端点创建一个 Confluent Cloud 入口访问点：
+
+* AWS：使用 ClickPipes RPE `endpointId` 作为 VPC 端点 ID。
+* GCP：使用 ClickPipes RPE `endpointId` 作为 PSC 连接 ID。
+
+创建访问点后，收集以下信息：
+
+* 访问点的 DNS 域名，下文显示为 `{access_point_dns_domain}`。
+* 该访问点的 bootstrap 端点。
+
+<div id="patch-serverless-rpe-dns">
+  ### 为 RPE 打补丁以添加自定义 DNS 映射
+</div>
+
+使用以下两个自定义私网 DNS 映射为 ClickPipes RPE 打补丁：
+
+* `*.{region}.{cloud}.accesspoint.glb.confluent.cloud`
+* `*.{access_point_dns_domain}`
+
+OpenAPI 更新请求体示例：
+
+```json
+{
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-east-1.aws.accesspoint.glb.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.abcd1234.us-east-1.aws.confluent.cloud"
+    }
+  ]
+}
+```
+
+<Note>
+  `*.{region}.{cloud}.accesspoint.glb.confluent.cloud` 这一映射的适用范围较广，并且在每个云和区域内都是唯一的。
+  由于自定义私有 DNS 名称在一个 ClickHouse 服务的所有 RPE 中必须保持唯一，
+  因此目前你无法在同一云和区域内为同一个 ClickHouse 服务创建多个 Confluent 入口访问点。
+</Note>
+
+<div id="terraform-setup">
+  ## Terraform 设置
+</div>
+
+使用 Terraform 时，请使用：
+
+* [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) 创建 RPE。
+* [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) 管理每个 RPE 的完整自定义私有 DNS 映射集。
+
+ClickPipes Terraform 模块还提供了完整的 Confluent 示例：
+
+* [`confluent-dedicated`](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/confluent-dedicated) 用于 Confluent Cloud Dedicated 私有网络。
+* [`confluent-serverless`](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/confluent-serverless) 用于 Confluent Cloud 无服务器 私网入口。
+
+请沿用本指南中的相同 DNS 映射模式。
+在 Terraform 中，字段名使用 snake&#95;case，例如 `vpc_endpoint_service_name`、`gcp_service_attachment` 和 `private_dns_name`。
+
+<div id="create-the-kafka-clickpipe">
+  ## 创建 Kafka ClickPipe
+</div>
+
+在 RPE 准备就绪后：
+
+1. 创建或编辑 Kafka ClickPipe。
+2. 使用 Confluent Cloud 的引导端点作为 broker 地址，不要包含 `SASL_SSL://` 前缀。
+3. 选择为 Confluent Cloud 私有连接创建的 RPE。
+4. 使用 `PLAIN` 身份验证，并填写 Confluent Cloud Kafka API key 和 secret。
+5. 像平常一样配置 topic、消费者组、数据 format 和目标表。
+
+如果你通过私有网络使用 Confluent Schema Registry，请在 ClickPipe 中配置 Schema Registry URL，并确保其主机名通过同一套 RPE 自定义 private DNS 设置解析。
+更多详细信息，请参阅 [Kafka ClickPipe 的 Schema Registry](/zh/integrations/clickpipes/kafka/schema-registries)。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+* 如果 RPE 仍处于 pending 状态，请检查 Confluent Cloud 的私网授权，并在 Confluent Cloud 中接受或完成该连接。
+* 如果 ClickPipe 连通性检查失败，请检查 Confluent Cloud 返回的每个 bootstrap 和 broker 主机名是否都与某条自定义私有 DNS 映射匹配。
+* 如果你修补自定义 DNS 映射，请包含完整的目标列表。更新会替换现有列表。
+* 如果某个 DNS 映射因重复而被拒绝，请检查同一 ClickHouse 服务中的所有 RPE，确认是否存在重叠的精确名称或通配符名称。
