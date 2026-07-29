@@ -38,14 +38,15 @@ DROP ROW POLICY rp_users_rls_proj ON users_rls_proj;
 DROP TABLE users_rls_proj;
 
 -- A policy on an ALIAS column is enforced by expanding it to the physical dependency the projection
--- stores (`c ALIAS b + 1` -> the filter reads `b`).
+-- stores (`c ALIAS b + 1` -> the filter reads `b`). The projection selects `b`, not the alias itself
+-- (a projection cannot select an ALIAS column - it is not in the data block to materialize).
 DROP TABLE IF EXISTS alias_rls_proj;
 DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
 
 CREATE TABLE alias_rls_proj (a UInt64, b UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a;
 INSERT INTO alias_rls_proj (a, b) VALUES (1, 10), (2, 20), (3, 30);
 
-ALTER TABLE alias_rls_proj ADD PROJECTION p (SELECT a, c ORDER BY a);
+ALTER TABLE alias_rls_proj ADD PROJECTION p (SELECT a, b ORDER BY a);
 ALTER TABLE alias_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
 CREATE ROW POLICY rp_alias_rls_proj ON alias_rls_proj FOR SELECT USING c > 21 TO ALL;
@@ -55,6 +56,26 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDE
 
 DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
 DROP TABLE alias_rls_proj;
+
+-- A policy on a DEFAULT column uses the stored value, not the default expression: the projection stores
+-- the column, so an explicitly inserted value (c = 999, not b + 1) is filtered on directly.
+DROP TABLE IF EXISTS default_rls_proj;
+DROP ROW POLICY IF EXISTS rp_default_rls_proj ON default_rls_proj;
+
+CREATE TABLE default_rls_proj (a UInt64, b UInt64, c UInt64 DEFAULT b + 1) ENGINE = MergeTree ORDER BY a;
+INSERT INTO default_rls_proj (a, b) VALUES (1, 10), (2, 20);
+INSERT INTO default_rls_proj (a, b, c) VALUES (3, 30, 999);
+
+ALTER TABLE default_rls_proj ADD PROJECTION p (SELECT a, c ORDER BY a);
+ALTER TABLE default_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_default_rls_proj ON default_rls_proj FOR SELECT USING c < 100 TO ALL;
+
+SELECT '-- policy on a DEFAULT column filters the stored value, not b + 1 (expect 1, 2)';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_rls_proj', 'p') ORDER BY a;
+
+DROP ROW POLICY rp_default_rls_proj ON default_rls_proj;
+DROP TABLE default_rls_proj;
 
 -- A user PREWHERE must not observe rows the policy hides: the policy filter runs first, so throwIf
 -- never sees the hidden 'private' row.
