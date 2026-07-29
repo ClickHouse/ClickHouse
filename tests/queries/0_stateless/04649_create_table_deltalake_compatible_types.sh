@@ -28,7 +28,7 @@ CREATE TABLE t_dl_compat (
     c_date    Date,
     c_dt      DateTime,
     c_dt64_3  DateTime64(3),
-    c_dt64_tz DateTime64(6, 'UTC')
+    c_dt64_6  DateTime64(6)
 ) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 "
 

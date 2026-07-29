@@ -48,7 +48,7 @@ void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
     update(object_storage_ptr, context);
 }
 
-void StorageObjectStorageConfiguration::create( ///NOLINT
+bool StorageObjectStorageConfiguration::create( ///NOLINT
     ObjectStoragePtr /*object_storage_ptr*/,
     ContextPtr /*context*/,
     const std::optional<ColumnsDescription> & /*columns*/,
@@ -58,6 +58,7 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
 {
+    return false;
 }
 
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(

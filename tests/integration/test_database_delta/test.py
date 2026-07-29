@@ -1380,11 +1380,13 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
 
     # A path-based Spark Delta table (`delta.`<path>``) is written to storage but NOT registered in Unity,
     # so ClickHouse onboards it. Its `binary` and `timestamp_ntz` columns both collapse under the ClickHouse
-    # schema round-trip, so they exercise the raw-schema registration path.
+    # schema round-trip, so they exercise the raw-schema registration path. The target Unity schema must
+    # exist for ClickHouse to register the table into it.
     execute_multiple_spark_queries(
         node1,
         [
-            f"CREATE TABLE delta.\\`{location}\\` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta"
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta",
         ],
         retry_on_timeout=True,
     )

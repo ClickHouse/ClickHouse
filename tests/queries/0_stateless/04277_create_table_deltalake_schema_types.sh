@@ -88,7 +88,7 @@ rm -rf "$TABLE_PATH"
 # above 38, and `LowCardinality` (no Delta equivalent). Compatible types (`UInt8`, `FixedString`, `Date`,
 # `DateTime`, ...) are instead accepted and mapped to a wider/looser Delta type - see the compatible-types test.
 echo "rejections:"
-for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)"; do
+for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)" "DateTime('UTC')" "DateTime64(6, 'UTC')"; do
     reject_path="${TABLE_PATH}_reject"
     rm -rf "$reject_path"
     if $CLICKHOUSE_CLIENT --query "

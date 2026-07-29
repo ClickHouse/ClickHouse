@@ -163,15 +163,16 @@ StorageObjectStorage::StorageObjectStorage(
         && configuration->supportsCreateFromExistingTableInCatalog();
     const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
         && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
-    /// A CREATE that may remap column types (DeltaLake) adopts the persisted schema (see below), which needs the configuration updated first, so it cannot be lazily initialized.
-    const bool adopt_persisted_schema_after_create = creating_new_storage && configuration->mayRemapColumnTypesOnCreate()
+    /// A DeltaLake CREATE that may remap column types adopts the persisted schema after a *fresh* create (see
+    /// below), which needs the configuration updated first, so it cannot be lazily initialized.
+    const bool datalake_create_may_adopt = creating_new_storage && configuration->mayRemapColumnTypesOnCreate()
         && !columns_in_table_or_function_definition.empty();
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path && !adopt_persisted_schema_after_create;
+    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path && !datalake_create_may_adopt;
 
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
@@ -190,10 +191,11 @@ StorageObjectStorage::StorageObjectStorage(
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
 
+    bool created_fresh_table = false;
     if (creating_new_storage)
     {
         LOG_DEBUG(log, "Creating new storage");
-        configuration->create(
+        created_fresh_table = configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
@@ -250,12 +252,26 @@ StorageObjectStorage::StorageObjectStorage(
     else
         validateSupportedColumns(columns, *configuration);
 
-    /// Adopt the persisted schema so the table's columns and the data files a later INSERT writes stay consistent with the metadata (a compatible `UInt8` is stored as Delta `short` and read back as `Int16`).
-    if (adopt_persisted_schema_after_create)
+    /// After a *fresh* create, adopt the persisted column types so the table and the data files a later
+    /// INSERT writes stay consistent with the metadata (a compatible `UInt8` is stored as Delta `short` and
+    /// read back as `Int16`). An attach keeps the declared columns and adapts them to the data on read.
+    if (created_fresh_table)
     {
         if (auto table_structure = configuration->tryGetTableStructureFromMetadata(context))
         {
-            columns = table_structure.value();
+            ColumnsDescription projected;
+            for (const auto & column : columns)
+            {
+                if (table_structure->has(column.name))
+                {
+                    ColumnDescription adjusted = column;
+                    adjusted.type = table_structure->get(column.name).type;
+                    projected.add(std::move(adjusted));
+                }
+                else
+                    projected.add(column);
+            }
+            columns = std::move(projected);
             validateSupportedColumns(columns, *configuration);
         }
     }

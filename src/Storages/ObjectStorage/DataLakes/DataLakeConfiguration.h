@@ -148,7 +148,7 @@ public:
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
-    void create(
+    bool create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
@@ -161,8 +161,17 @@ public:
         BaseStorageConfiguration::update(object_storage, local_context);
 
         assertLocalPathCorrect(object_storage, local_context);
-        DataLakeMetadata::createInitial(
-            object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
+        bool created_fresh = false;
+#if USE_PARQUET
+        /// Only DeltaLake reports whether it created a brand-new table (vs attached to an existing one).
+        if constexpr (std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
+            created_fresh = DataLakeMetadata::createInitial(
+                object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
+        else
+#endif
+            DataLakeMetadata::createInitial(
+                object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
+        return created_fresh;
     }
 
     bool supportsDelete() const override

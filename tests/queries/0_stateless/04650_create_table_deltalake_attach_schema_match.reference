@@ -1,6 +1,7 @@
 fresh: created
 0
 match: attached
-mismatch: rejected
+0
+differing: attached
 0
 columnless: attached

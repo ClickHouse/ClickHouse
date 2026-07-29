@@ -5,7 +5,7 @@
 #
 # CREATE TABLE over an existing `_delta_log`:
 #  - columnless        -> attaches with the table's own schema
-#  - explicit columns  -> must match the existing schema, otherwise the CREATE is rejected
+#  - explicit columns  -> attaches with the declared columns (adapted to the data on read)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,16 +33,15 @@ SELECT count() FROM t_dl_match;
 "
 echo "match: attached"
 
-# (3) Attaching with a conflicting explicit schema is rejected (Code: 36 = BAD_ARGUMENTS).
-if $CLICKHOUSE_CLIENT --query "
+# (3) Attaching with a differing explicit type is accepted; the declared columns are kept and adapted to
+#     the data on read (flexible attach).
+$CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-CREATE TABLE t_dl_mismatch (id Int64, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
-" 2>&1 | grep -q "Code: 36"; then
-    echo "mismatch: rejected"
-else
-    echo "mismatch: NOT rejected"
-fi
+CREATE TABLE t_dl_differing (id Int64, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
+SELECT count() FROM t_dl_differing;
+"
+echo "differing: attached"
 
 # (4) A columnless attach uses the table's own schema.
 $CLICKHOUSE_CLIENT --query "
@@ -56,7 +55,7 @@ echo "columnless: attached"
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_dl_fresh;
 DROP TABLE IF EXISTS t_dl_match;
-DROP TABLE IF EXISTS t_dl_mismatch;
+DROP TABLE IF EXISTS t_dl_differing;
 DROP TABLE IF EXISTS t_dl_columnless;
 "
 rm -rf "$TABLE_PATH"

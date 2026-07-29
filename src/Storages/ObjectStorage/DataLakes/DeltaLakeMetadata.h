@@ -65,7 +65,8 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
-    static void createInitial(
+    /// Returns true if a brand-new table was created (commit 0 written), false if it attached to an existing one.
+    static bool createInitial(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,
@@ -90,11 +91,6 @@ public:
 
     /// Map a non-nested ClickHouse type to its Delta primitive for CREATE TABLE, throwing `NOT_IMPLEMENTED` if it has no compatible Delta type.
     static DeltaPrimitiveType classifyDeltaPrimitive(const DataTypePtr & type);
-
-    /// Whether two schemas map to the same Delta schema. Compatible ClickHouse types compare equal (e.g.
-    /// `UInt8` and `Int16` both map to Delta `short`), so an explicit CREATE schema can be matched against an
-    /// existing table even when the stored types read back as different-but-compatible ClickHouse types.
-    static bool haveSameDeltaSchema(const NamesAndTypesList & lhs, const NamesAndTypesList & rhs);
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 

@@ -728,26 +728,13 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
 
-    /// If a `_delta_log` already exists, attach to the existing table instead of creating.
+    /// If a `_delta_log` already exists, attach to the existing table instead of creating. The declared
+    /// columns are not required to match the table's schema: as with any DeltaLake read, ClickHouse adapts
+    /// them to the data (a genuinely wrong column surfaces as a catchable error at read time).
     const auto data_path = configuration_ptr->getRawPath().path;
     if (deltaLogExists(*object_storage_, data_path))
     {
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
-
-        /// Explicit columns (a columnless CREATE never reaches here) must describe the same Delta schema as
-        /// the existing table (compatible types match, e.g. `UInt8` and the stored `short`), else the mismatch
-        /// would be silently ignored.
-        auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
-        const auto existing_schema = std::make_shared<DeltaLake::TableSnapshot>(
-            /* version */ std::nullopt, kernel_helper, object_storage_, log)->getTableSchema();
-        const auto declared_schema = columns.getAllPhysical();
-        if (!DeltaLakeMetadata::haveSameDeltaSchema(declared_schema, existing_schema))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The columns specified in CREATE TABLE do not match the existing Delta table at `{}`. "
-                "Specified: [{}]; existing: [{}]. Omit the column list to use the table's own schema.",
-                data_path, declared_schema.toString(), existing_schema.toString());
-
         return false;
     }
 

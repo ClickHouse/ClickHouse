@@ -219,7 +219,8 @@ public:
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    virtual void create(
+    /// Returns true if a brand-new table was created (only data lakes do anything here); false otherwise.
+    virtual bool create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
