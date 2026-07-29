@@ -1,7 +1,7 @@
 -- fires: single-token hasToken / hasAnyTokens / hasAllTokens
-└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
-└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
-└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
 -- result matches the normal path
 750
 750
@@ -12,7 +12,7 @@
 -- disabled by the parent optimize_trivial_count_query = 0
 0
 -- fires: multi-token hasAnyTokens (union)
-└──ReadFromPreparedSource (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
 1500
 1500
 -- does not fire: multi-token hasAllTokens (intersection) uses the reader

@@ -1,37 +1,29 @@
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
 #include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
 #include <algorithm>
 
 /// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
-///
-/// A single-token predicate uses the metadata `TokenPostingsInfo::cardinality`.
-/// A multi-token `hasAllTokens`/`hasAnyTokens` combines the per-token posting lists (intersection / union) and takes the cardinality.
+/// The pass only rewrites the plan; the index is read at execution time by `ReadFromTextIndexCount`.
 
 namespace DB
 {
@@ -228,12 +220,7 @@ bool guardsHold(const ReadFromMergeTree & reading)
     return true;
 }
 
-struct ResolvedQuery
-{
-    MergeTreeIndexWithCondition index;
-    std::shared_ptr<MergeTreeIndexConditionText> condition;
-    TextSearchQueryPtr query;
-};
+using ResolvedQuery = ReadFromTextIndexCount::ResolvedQuery;
 
 /// Recovers the exact-mode text search query for the predicate column from the index read tasks.
 std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & reading, const NameSet & predicate_columns)
@@ -278,122 +265,27 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// Counts matching rows in one part from the text-index posting metadata, without reading column or postings data.
-std::optional<UInt64> computeCountForPart(
-    const RangesInDataPart & part_with_ranges,
-    const ResolvedQuery & resolved,
-    const MergeTreeReaderSettings & reader_settings)
+/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
+String makeStepDescription(const ResolvedQuery & resolved)
 {
-    const auto & data_part = part_with_ranges.data_part;
-    const auto & index = resolved.index;
+    const auto & query_tokens = resolved.query->getTokens();
 
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
-    if (!index_format)
-        return {};
-
-    MergeTreeIndexDeserializationState state
+    WriteBufferFromOwnString description;
+    description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
+    if (query_tokens.size() == 1)
     {
-        .version = index_format.version,
-        .condition = resolved.condition.get(),
-        .part = *data_part,
-        .index = *index.index,
-        .readable_ranges = nullptr,
-    };
-
-    const auto substreams = index.index->getSubstreams();
-    auto make_stream = [&](const MergeTreeIndexSubstream & substream)
-    {
-        return makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
-    };
-
-    auto sparse_index_stream = make_stream(substreams[0]);
-    auto dictionary_stream = make_stream(substreams[1]);
-    auto postings_stream = make_stream(substreams[2]);
-
-    sparse_index_stream->seekToStart();
-
-    MergeTreeIndexInputStreams streams;
-    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = postings_stream.get();
-
-    auto granule_ptr = index.index->createIndexGranule();
-    granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
-    auto granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(granule_ptr);
-
-    if (!granule)
-        return {};
-
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & tokens = resolved.query->getTokens();
-
-    /// One granule per part (GRANULARITY ignored), so the dictionary cardinality is the exact part-wide count; no posting I/O.
-    if (tokens.size() == 1)
-    {
-        const auto & token_infos = analyzer.getAllTokenInfos();
-        auto it = token_infos.find(tokens.front());
-        return it == token_infos.end() ? 0 : static_cast<UInt64>(it->second->cardinality);
+        description << "token = '" << query_tokens.front() << "'";
     }
-
-    /// `is_failed`: e.g. All mode with a token missing from the part. An empty part matches nothing.
-    if (data_part->rows_count == 0)
-        return 0;
-
-    const auto & query_builder = analyzer.getQueryBuilder(*resolved.query);
-    if (query_builder.is_failed)
-        return 0;
-
-    auto postings_serialization = PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
-        granule->getSerializationVersion());
-    const RowsRange full_range(0, data_part->rows_count - 1);
-    const bool intersect = resolved.query->getSearchMode() == TextSearchMode::All;
-
-    std::optional<PostingList> result;
-    for (const auto & [token, token_info] : query_builder.tokens)
+    else
     {
-        PostingList token_postings;
-        if (token_info->embedded_postings)
-        {
-            token_postings = *token_info->embedded_postings;
-        }
-        else
-        {
-            for (size_t block_idx : token_info->getBlocksToRead(full_range))
-            {
-                auto block = MergeTreeIndexGranuleText::readPostingsBlock(
-                    *postings_stream, state, *token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
-                if (block)
-                    token_postings |= *block;
-            }
-        }
-
-        if (!result)
-            result = std::move(token_postings);
-        else if (intersect)
-            *result &= token_postings;
-        else
-            *result |= token_postings;
+        description << "tokens = [";
+        for (size_t i = 0; i < query_tokens.size(); ++i)
+            description << (i == 0 ? "'" : ", '") << query_tokens[i] << "'";
+        description << "]";
     }
+    description << ")";
 
-    return result ? result->cardinality() : 0;
-}
-
-QueryPlanStepPtr makeCountSource(UInt64 count, const String & count_column)
-{
-    auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
-
-    Block block_with_count{
-        {createSingleCountStateColumn(agg_count, count),
-         std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
-         count_column}};
-
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
-    return std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    return description.str();
 }
 
 }
@@ -422,36 +314,26 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     if (!resolved)
         return false;
 
-    const auto & reader_settings = matched->reading->getReaderSettings();
-
-    /// Reading the per-part index is real plan-time work; keep it interruptible for tables with many parts.
-    auto query_status = matched->reading->getContext()->getProcessListElementSafe();
-
-    UInt64 total_count = 0;
-    for (const auto & part_with_ranges : matched->reading->getParts())
+    /// Skip optimization when the text index is partially materialized.
+    /// TODO(ahmadov): better handling for the partially materialized text index.
+    const auto & parts = matched->reading->getParts();
+    const auto & text_index = *resolved->index.index;
+    for (const auto & part_with_ranges : parts)
     {
-        if (query_status)
-            query_status->checkTimeLimit();
-
-        auto part_count = computeCountForPart(part_with_ranges, *resolved, reader_settings);
-        if (!part_count)
+        if (!text_index.getDeserializedFormat(*part_with_ranges.data_part, text_index.getFileName()))
             return false;
-        total_count += *part_count;
     }
 
-    const auto & query_tokens = resolved->query->getTokens();
-    String quoted_tokens;
-    for (const auto & token : query_tokens)
-        quoted_tokens += fmt::format("{}'{}'", quoted_tokens.empty() ? "" : ", ", token);
-    String tokens_desc = query_tokens.size() == 1
-        ? fmt::format("token = {}", quoted_tokens)
-        : fmt::format("tokens = [{}]", quoted_tokens);
+    String description = makeStepDescription(*resolved);
 
     auto & source_node = nodes.emplace_back();
-    source_node.step = makeCountSource(total_count, *count_column);
-    source_node.step->setStepDescription(
-        fmt::format("Trivial count from text index ({}, {})", resolved->index.index->index.name, tokens_desc),
-        settings.max_step_description_length);
+    source_node.step = std::make_unique<ReadFromTextIndexCount>(
+        parts,
+        std::move(*resolved),
+        matched->reading->getReaderSettings(),
+        *count_column,
+        matched->reading->getNumStreams());
+    source_node.step->setStepDescription(description, settings.max_step_description_length);
 
     aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
     node.children.front() = &source_node;
