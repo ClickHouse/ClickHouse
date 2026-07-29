@@ -26,7 +26,10 @@ DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
 {
 }
 
-DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+namespace
+{
+
+DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
 {
     DistributedAsyncInsertHeader distributed_header;
 
@@ -64,26 +67,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         distributed_header.insert_settings->read(header_buf);
 
         if (header_buf.hasPendingData())
-        {
             distributed_header.client_info.read(header_buf, distributed_header.revision, /*with_trailing_fields=*/ false);
-
-            /// A batch file written by an older server from a server-initiated query context (a `Buffer`
-            /// flush, a streaming consumer, an asynchronous insert flush) carries a zero client version,
-            /// because such contexts used to inherit the empty client info of the global context - see the
-            /// comment in `Context::makeQueryContext`. `RemoteInserter` replays the batch with exactly this
-            /// client info, so the receiving shard would treat the initiator as an ancient server and apply
-            /// legacy compatibility downgrades. This server is the one that re-initiates the insert, so fill
-            /// the version with its own, the same way a freshly created query context does now.
-            if (distributed_header.client_info.client_version_major == 0
-                && distributed_header.client_info.client_version_minor == 0
-                && distributed_header.client_info.client_version_patch == 0)
-            {
-                distributed_header.client_info.client_version_major = VERSION_MAJOR;
-                distributed_header.client_info.client_version_minor = VERSION_MINOR;
-                distributed_header.client_info.client_version_patch = VERSION_PATCH;
-                distributed_header.client_info.client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-            }
-        }
 
         if (header_buf.hasPendingData())
         {
@@ -139,6 +123,38 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 
     distributed_header.insert_query.resize(query_size);
     in.readStrict(distributed_header.insert_query.data(), query_size);
+
+    return distributed_header;
+}
+
+}
+
+DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
+{
+    DistributedAsyncInsertHeader distributed_header = readHeader(in, log);
+
+    /// A batch file written by an older server from a server-initiated query context (a `Buffer` flush, a
+    /// streaming consumer, an asynchronous insert flush) carries a zero client version, because such
+    /// contexts used to inherit the empty client info of the global context - see the comment in
+    /// `Context::makeQueryContext`. The two legacy header layouts handled above carry no client info at
+    /// all, so they leave it default-constructed, which is a zero version as well. In both cases
+    /// `RemoteInserter` replays the batch with exactly this client info - and the default interface is
+    /// `TCP`, which is the one interface whose version is serialized on the wire - so the receiving shard
+    /// would treat the initiator as an ancient server and apply legacy compatibility downgrades. This
+    /// server is the one that re-initiates the insert, so fill the version with its own, the same way a
+    /// freshly created query context does now.
+    ///
+    /// Normalizing rather than throwing: a stale batch file on disk is not a programming error, and
+    /// rejecting it would wedge the queue permanently.
+    if (distributed_header.client_info.client_version_major == 0
+        && distributed_header.client_info.client_version_minor == 0
+        && distributed_header.client_info.client_version_patch == 0)
+    {
+        distributed_header.client_info.client_version_major = VERSION_MAJOR;
+        distributed_header.client_info.client_version_minor = VERSION_MINOR;
+        distributed_header.client_info.client_version_patch = VERSION_PATCH;
+        distributed_header.client_info.client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+    }
 
     return distributed_header;
 }
