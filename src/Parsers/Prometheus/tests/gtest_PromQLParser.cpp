@@ -1185,6 +1185,7 @@ TEST(PromQLParser, LexerErrorPosition)
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {"$metric", 0},
              {"up\n$down", 3},
+             {R"("é"$)", 4},
          })
     {
         PrometheusQueryTree query_tree;

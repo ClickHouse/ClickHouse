@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/UTF8Helpers.h>
 
 #include "config.h"
 
@@ -96,7 +97,9 @@ namespace
                     }
                 }
             }
-            return std::min(char_index + position_in_line, promql_query.length());
+            auto line = promql_query.substr(char_index);
+            return char_index + UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(line.data()), line.size(), position_in_line);
         }
 
     private:
