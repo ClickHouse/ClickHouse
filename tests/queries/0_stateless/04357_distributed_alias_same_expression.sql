@@ -68,10 +68,14 @@ SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 -- numbers, while the initiator keeps a1 and a2 distinct. The initiator must therefore merge (and bucket) by only the
 -- single collapsed key, otherwise equal groups coming from different shards land in different two-level buckets and are
 -- never merged - returning a group once per shard with a split count instead of one merged row.
+-- `max_bytes_before_external_group_by` is pinned because `AggregatingStep::transformPipeline` zeroes both two-level
+-- thresholds when the pipeline has a single stream, which the `max_threads = 1` draw produces.
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
-    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1;
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1,
+        max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0;
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
-    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 0;
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 0,
+        max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0;
 
 -- GROUP BY duplicate ALIAS columns WITH ROLLUP / WITH CUBE. The merge over the collapsed key set must reconstruct the
 -- duplicate key columns back into the canonical aggregated layout (all GROUP BY keys first, then the aggregate-state
@@ -91,11 +95,18 @@ SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDE
 -- before computing its two-level bucket numbers, while the initiator's per-grouping-set Aggregator buckets by the full
 -- key list. With a single-level/two-level partial mix this would silently split groups across buckets. Reconstructing
 -- the collapsed keys through the grouping-sets merge machinery is not implemented, so the combination is rejected
--- rather than returning wrong results. The rejection is a plan-time decision, so it fires regardless of settings.
+-- rather than returning wrong results. The rejection only applies when two-level aggregation is reachable at all, so
+-- each of these queries pins a non-zero threshold rather than relying on the (randomized) session values.
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
-    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000; -- { serverError NOT_IMPLEMENTED }
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
     SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- With both two-level thresholds at 0 no shard can build a bucketed state, so the mismatch is unreachable and the same
+-- grouping sets are accepted. The result must match the equivalent single-node aggregation (each group counted once per
+-- shard, so twice here).
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+SELECT a1, a2, count() * 2 AS c FROM local_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2;
 -- A grouping set that keeps a single key per set ((a1), (a2)) is safe: each set buckets by one key consistently with
 -- the shard, so it is not rejected and returns merged results.
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1), (a2)) ORDER BY a1, a2
@@ -122,9 +133,13 @@ ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc
 INSERT INTO local_same_expr3 (dt, x) VALUES ('2024-01-01 00:00:00', 7);
 
 SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2, a3)) ORDER BY a1, a2, a3
-    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000; -- { serverError NOT_IMPLEMENTED }
 SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a2, a3), (a1)) ORDER BY a1, a2, a3
     SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- The representative-absent set is likewise accepted when two-level aggregation is impossible.
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a2, a3), (a1)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
+SELECT a1, a2, a3, count() * 2 AS c FROM local_same_expr3 GROUP BY GROUPING SETS ((a2, a3), (a1)) ORDER BY a1, a2, a3;
 -- Three single-key grouping sets stay safe: no set repeats a collapsed representative, so the combination is not rejected.
 SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2), (a3)) ORDER BY a1, a2, a3
     SETTINGS prefer_localhost_replica = 0;

@@ -811,8 +811,12 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         /// its representative; any other key maps to itself), and a set is rejected when two of its keys share a
         /// canonical representative -- this covers shapes where the representative itself is absent from the set, e.g.
         /// ((a2, a3)) with a1, a2, a3 all collapsing onto a1. Sets that keep one key each (e.g. ((a1), (a2))) are
-        /// unaffected.
-        if (!shard_collapse_duplicate_keys.empty() && !aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        /// unaffected. With both two-level thresholds at 0 no shard can build a bucketed state, so the mismatch is
+        /// unreachable and the query keeps working.
+        const bool two_level_aggregation_possible = settings[Setting::group_by_two_level_threshold] != 0
+            || settings[Setting::group_by_two_level_threshold_bytes] != 0;
+        if (!shard_collapse_duplicate_keys.empty() && !aggregation_analysis_result.grouping_sets_parameters_list.empty()
+            && two_level_aggregation_possible)
         {
             for (const auto & grouping_set : aggregation_analysis_result.grouping_sets_parameters_list)
             {

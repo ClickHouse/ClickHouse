@@ -10,6 +10,12 @@
 -- databases on the same server). shard_0 holds 1000 groups (over the two-level threshold), shard_1 holds 10 groups
 -- 0..9 (single-level). Pre-fix the 10 overlapping groups came back twice with count 1 (1010 rows, 0 merged); the fix
 -- merges them into one row with count 2.
+--
+-- Every query pins `max_bytes_before_external_group_by` (as 01231_distributed_aggregation_memory_efficient_mix_levels
+-- does). Without it `AggregatingStep::transformPipeline` zeroes both two-level thresholds whenever the pipeline has a
+-- single stream, so under the `max_threads = 1` draw both shards stay single-level, the buggy merge returns the expected
+-- result, and the test passes with the fix reverted. Measured: at `max_threads = 1` the unpinned query returns the
+-- correct 1000/10/1010 even on a pristine build, while the pinned one returns 1010/0/1010.
 
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
@@ -31,15 +37,18 @@ SET enable_analyzer = 1;
 -- count 1, so sum(count()) = 1010. Pre-fix this was 1010 rows / 0 merged / 1010 total (every group split per shard).
 SELECT count() AS groups, countIf(c = 2) AS merged_groups, sum(c) AS total_rows
 FROM (SELECT a1, a2, count() AS c FROM dist_04489 GROUP BY a1, a2)
-SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1;
+SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0,
+  max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0, distributed_aggregation_memory_efficient = 1;
 
 SELECT count() AS groups, countIf(c = 2) AS merged_groups, sum(c) AS total_rows
 FROM (SELECT a1, a2, count() AS c FROM dist_04489 GROUP BY a1, a2)
-SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 0;
+SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0,
+  max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0, distributed_aggregation_memory_efficient = 0;
 
 -- The overlapping groups, listed explicitly: each must appear exactly once with count 2 (pre-fix this result was empty).
 SELECT a1, a2, count() AS c FROM dist_04489 GROUP BY a1, a2 HAVING c > 1 ORDER BY toUInt64(a1)
-SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1;
+SETTINGS group_by_two_level_threshold = 50, group_by_two_level_threshold_bytes = 0, prefer_localhost_replica = 0,
+  max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0, distributed_aggregation_memory_efficient = 1;
 
 DROP TABLE dist_04489;
 DROP DATABASE shard_0;
