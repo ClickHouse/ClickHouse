@@ -1,6 +1,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -15,6 +16,20 @@ ASTPtr ASTWithElement::clone() const
         res->aliases = aliases->clone();
     res->children.emplace_back(res->subquery);
     return res;
+}
+
+void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The name selects which CTE a reference resolves to, and `aliases` renames the subquery
+    /// columns, but neither is a child, so without this both are absent from the hash.
+    /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(is_materialized);
+    hash_state.update(aliases != nullptr);
+    if (aliases)
+        aliases->updateTreeHash(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

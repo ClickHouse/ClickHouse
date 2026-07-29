@@ -462,20 +462,73 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, OrderByElementChildRolesAreSignifi
     /// The children of an `ASTOrderByElement` carry different roles (collation, WITH FILL bounds)
     /// recorded only in its `positions` map, so without the roles `WITH FILL FROM 1 TO 2` and
     /// `WITH FILL FROM 1 STEP 2` hash equally.
+    ///
+    /// A constraint is the surface that reaches this: a projection rejects the clause, because
+    /// `ParserProjectionSelectQuery` parses its own ORDER BY with `allow_order = false` and so
+    /// never builds an `ASTOrderByElement` at all.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
     MetadataFields fill_to;
-    fill_to.projections = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 TO 2) ORDER BY c)";
+    fill_to.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 TO 2)";
     MetadataFields fill_step;
-    fill_step.projections
-        = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 STEP 2) ORDER BY c)";
-    EXPECT_TRUE(diffOf(fill_to, fill_step).projections_changed);
-    EXPECT_FALSE(diffOf(fill_to, fill_to).projections_changed);
+    fill_step.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM 1 STEP 2)";
+    EXPECT_TRUE(diffOf(fill_to, fill_step).constraints_changed);
+    EXPECT_FALSE(diffOf(fill_to, fill_to).constraints_changed);
 
     /// Redundant parentheses around the bounds still compare equal.
     MetadataFields fill_to_parens;
-    fill_to_parens.projections
-        = "pr (SELECT b WHERE b IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM (1) TO (2)) ORDER BY (c))";
-    EXPECT_FALSE(diffOf(fill_to, fill_to_parens).projections_changed);
+    fill_to_parens.constraints = "cc CHECK a IN (SELECT number FROM numbers(3) ORDER BY number WITH FILL FROM (1) TO (2))";
+    EXPECT_FALSE(diffOf(fill_to, fill_to_parens).constraints_changed);
+}
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, CommonTableExpressionIdentityIsSignificant)
+{
+    /// `ASTWithElement` keeps the CTE name, `MATERIALIZED` and the column aliases outside its
+    /// children, so without hashing them a stored definition that resolves `FROM x` to a different
+    /// subquery compares equal.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// Both hold the same `FROM x` reference and the same two subqueries in the same order, so the
+    /// only difference is which name each subquery is bound to. The same query yields `1` in the
+    /// first and `2` in the second.
+    MetadataFields x_is_one;
+    x_is_one.constraints = "cc CHECK a IN (WITH x AS (SELECT 1 AS q), y AS (SELECT 2 AS q) SELECT q FROM x)";
+    MetadataFields x_is_two;
+    x_is_two.constraints = "cc CHECK a IN (WITH y AS (SELECT 1 AS q), x AS (SELECT 2 AS q) SELECT q FROM x)";
+    EXPECT_TRUE(diffOf(x_is_one, x_is_two).constraints_changed);
+    EXPECT_FALSE(diffOf(x_is_one, x_is_one).constraints_changed);
+
+    /// `MATERIALIZED` and the column aliases live outside the children as well.
+    MetadataFields plain;
+    plain.constraints = "cc CHECK a IN (WITH x AS (SELECT 1 AS q) SELECT q FROM x)";
+    MetadataFields materialized;
+    materialized.constraints = "cc CHECK a IN (WITH x AS MATERIALIZED (SELECT 1 AS q) SELECT q FROM x)";
+    EXPECT_TRUE(diffOf(plain, materialized).constraints_changed);
+
+    MetadataFields aliased;
+    aliased.constraints = "cc CHECK a IN (WITH x (r) AS (SELECT 1 AS q) SELECT r FROM x)";
+    EXPECT_TRUE(diffOf(plain, aliased).constraints_changed);
+}
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, WindowNameIsSignificant)
+{
+    /// `ASTWindowListElement` keeps the window name outside its children, so without hashing it a
+    /// stored definition that resolves `OVER w` to a different frame compares equal.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    /// Both hold the same `OVER w` reference and the same two frames in the same order, so the only
+    /// difference is which name each frame is bound to. `OVER w` is the ascending frame in the first
+    /// and the descending one in the second, which the same query over `numbers(4)` shows as
+    /// `[0, 1, 3, 6]` against `[3, 5, 6, 6]`.
+    MetadataFields w_is_ascending;
+    w_is_ascending.constraints
+        = "cc CHECK a IN (SELECT sum(number) OVER w FROM numbers(4) WINDOW w AS (ORDER BY number), v AS (ORDER BY number DESC))";
+    MetadataFields w_is_descending;
+    w_is_descending.constraints
+        = "cc CHECK a IN (SELECT sum(number) OVER w FROM numbers(4) WINDOW v AS (ORDER BY number), w AS (ORDER BY number DESC))";
+    EXPECT_TRUE(diffOf(w_is_ascending, w_is_descending).constraints_changed);
+    EXPECT_FALSE(diffOf(w_is_ascending, w_is_ascending).constraints_changed);
 }

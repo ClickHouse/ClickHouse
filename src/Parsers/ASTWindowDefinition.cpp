@@ -180,6 +180,16 @@ String ASTWindowListElement::getID(char) const
     return "WindowListElement";
 }
 
+void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The name is what an `OVER w` reference resolves against, and it is not a child, so without
+    /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
+    /// into whatever `getID` writes next.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
                                       FormatState & state, FormatStateStacked frame) const
 {
