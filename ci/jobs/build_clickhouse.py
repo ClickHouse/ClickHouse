@@ -521,13 +521,13 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
     flag set covers them all, exactly as the arming half does (a non-safety build has ~67
     jemalloc entries with one flag set between them).
 
-    An **empty** jemalloc set passes rather than failing closed, unlike the positive check.
-    `amd_debug` does have jemalloc translation units, so this is not the expected outcome
-    there - but "no jemalloc was built" genuinely is an answer of "neither macro reaches a
-    jemalloc TU", and `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc outright
-    whenever `SANITIZE` is set to anything but `undefined`, so the emptiness case is a real
-    configuration rather than a broken one. Copying the positive check's emptiness guard here
-    would red any build reaching this with jemalloc legitimately switched off.
+    An **empty** jemalloc set fails closed, exactly as in the positive check. This check
+    runs only for `amd_debug`, whose cmake command is Linux x86-64 with `-DSANITIZE=` empty,
+    and `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc only when `SANITIZE`
+    is set to something other than `undefined` - so `amd_debug` always builds jemalloc. An
+    empty set there therefore says the source marker stopped matching, not that jemalloc was
+    switched off, and passing on it would report "neither macro is defined" while probing
+    nothing.
 
     An **inconclusive** probe - a nonzero exit carrying neither `#error` marker - raises
     rather than passing, for the same reason a missing file does: it says the question
@@ -556,6 +556,15 @@ def assert_jemalloc_safety_macros_absent(compile_commands_path):
 
     carried = {macro: [] for macro in JEMALLOC_SAFETY_MACROS}
     jemalloc = [e for e in entries if JEMALLOC_SOURCE_MARKER in e["file"]]
+    # A rename of jemalloc's source layout must not make this check vacuous.
+    if not jemalloc:
+        raise AssertionError(
+            f"no {JEMALLOC_SOURCE_MARKER!r} translation unit in "
+            f"{compile_commands_path} (of {len(entries)} entries); jemalloc's source "
+            "layout changed, so re-derive this check rather than letting it pass "
+            "vacuously - this check runs only for a build that always compiles jemalloc"
+        )
+
     probed = {}
     for entry in jemalloc:
         probed.setdefault(tuple(jemalloc_probe_flags(entry["command"])), entry)

@@ -30,11 +30,12 @@ while removing detection, so this file pins every place such a loss can happen:
   line for the macros, which must reach no other translation unit. Both halves' cases are
   driven below, together with the layer's wiring: that this build type requests the option
   and that the build job really invokes the check;
-* every *other* build, via `assert_jemalloc_safety_macros_absent` (same file, same point
-  in the job). The option defaults to OFF, so those builds must carry neither macro -
+* one ordinary build, via `assert_jemalloc_safety_macros_absent` (same file, same point
+  in the job). The option defaults to OFF, so that build must carry neither macro -
   flipping that default would arm both gates in every x86-64 jemalloc build, release
-  included. Emptiness is deliberately not a failure there: jemalloc is disabled outright
-  under every sanitizer but UBSan, so those builds have no jemalloc entries at all;
+  included. Emptiness fails closed there as it does in the arming half: the check runs
+  only for `amd_debug`, which always compiles jemalloc, so no jemalloc entries means the
+  source marker went stale rather than that jemalloc was switched off;
 * the platform headers the option can reach (x86-64 only, since the option refuses
   every other arch), where a bare `#undef` would silently cancel the `-D`;
 * the compiled `jemalloc_preamble.h`, the sole place each `-D` is converted into the
@@ -81,6 +82,7 @@ from ci.defs.defs import BuildTypes, ToolSet
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.build_clickhouse import (
     BUILD_TYPE_TO_CMAKE,
+    JEMALLOC_SOURCE_MARKER,
     assert_jemalloc_macros_stay_private,
     assert_jemalloc_safety_macros_absent,
     assert_jemalloc_safety_macros_armed,
@@ -151,6 +153,10 @@ def _reachable_defs_headers() -> list[Path]:
 
 JE = "/ClickHouse/contrib/jemalloc/src/arena.c"
 JE2 = "/ClickHouse/contrib/jemalloc/src/jemalloc.c"
+# A jemalloc source under a renamed directory: still jemalloc, but `JEMALLOC_SOURCE_MARKER`
+# no longer matches it, which is what makes an empty selection mean "the marker went stale"
+# rather than "jemalloc was not built".
+JE_RENAMED = "/ClickHouse/contrib/jemalloc-renamed/src/arena.c"
 OTHER = "/ClickHouse/src/Interpreters/Context.cpp"
 # A `.cc` sibling: the leak probe's language selection has to follow the entry, and the
 # reduction has to drop this operand as surely as it drops jemalloc's `.c` one.
@@ -1371,6 +1377,12 @@ def test_the_lane_is_amd_debug_plus_only_the_safety_option():
 # a configured tree by construction, asserts the negative.
 
 
+# Expected-outcome sentinel for the table below: a raise whose cause is the source marker
+# selecting nothing, rather than a macro found on a jemalloc line. The two are separate
+# failures with separate messages, so the rows say which they expect.
+MARKER_MISSED = "the source marker matched nothing"
+
+
 def _macros_absent(tmp_path, entries) -> str | None:
     """The absent checker's verdict for these `(file, flags)` pairs, `None` if accepted."""
     path = tmp_path / "compile_commands.json"
@@ -1420,13 +1432,16 @@ def _macros_absent(tmp_path, entries) -> str | None:
         # this check reads jemalloc's own lines, so it must not fire on them - otherwise a
         # leak would be reported twice, from the build that has nothing to do with it.
         ("the macros only on a non-jemalloc TU", [(JE, ""), (OTHER, BOTH)], None),
-        # The opposite of the positive check's emptiness rule, and the plausible
-        # accident: `contrib/jemalloc-cmake/CMakeLists.txt:1-11` disables jemalloc outright
-        # whenever `SANITIZE` is set to anything but `undefined`, so `amd_asan_ubsan`,
-        # `amd_tsan` and `amd_msan` have no jemalloc translation units at all. Copying the
-        # fail-closed guard here would red every one of those builds.
-        ("no jemalloc translation units at all", [(OTHER, "")], None),
-        ("no entries at all", [], None),
+        # Emptiness fails closed, the same way it does in the positive check. This check
+        # runs only for `amd_debug`, which is x86-64 with `-DSANITIZE=` empty and therefore
+        # always compiles jemalloc, so an empty set means the marker stopped matching - and
+        # accepting it prints "neither macro is defined" over zero probes.
+        ("no jemalloc translation units at all", [(OTHER, "")], MARKER_MISSED),
+        ("no entries at all", [], MARKER_MISSED),
+        # The reason emptiness cannot be tolerated: a renamed jemalloc directory carrying
+        # both macros selects nothing, so the check would report absence over a build that
+        # arms both gates.
+        ("both macros on a renamed jemalloc path", [(JE_RENAMED, BOTH)], MARKER_MISSED),
     ],
 )
 def test_a_build_that_did_not_request_the_option_carries_neither_macro(
@@ -1439,6 +1454,22 @@ def test_a_build_that_did_not_request_the_option_carries_neither_macro(
         assert verdict is None, f"{label}: expected to be accepted, got:\n{verdict}"
         return
     assert verdict is not None, f"{label}: expected {carried_macro} to be reported"
+    if carried_macro is MARKER_MISSED:
+        # The marker-missed and carried messages must stay distinguishable, so a failure
+        # says which of the two broke.
+        assert JEMALLOC_SOURCE_MARKER in verdict, (
+            f"{label}: the failure must name the marker that matched nothing; got:\n"
+            f"{verdict}"
+        )
+        assert f"of {len(entries)} entries" in verdict, (
+            f"{label}: the failure must report how many entries were searched; got:\n"
+            f"{verdict}"
+        )
+        assert "is defined for" not in verdict, (
+            f"{label}: a marker that matched nothing must not be reported as a carried "
+            f"macro; got:\n{verdict}"
+        )
+        return
     assert (
         carried_macro in verdict
     ), f"{label}: the failure must name {carried_macro}; got:\n{verdict}"
@@ -1457,8 +1488,8 @@ def test_a_build_without_exported_compile_commands_fails_closed(tmp_path):
     "neither macro is defined" would let a flipped default through on any build whose
     configure step changed shape.
 
-    An *empty* jemalloc set is the opposite case and still passes; the two tolerated
-    shapes are pinned in `test_a_build_that_did_not_request_the_option_carries_neither_macro`.
+    An *empty* jemalloc set fails closed too, for a different reason and with a different
+    message; both are pinned in `test_both_checkers_fail_closed_on_an_empty_jemalloc_set`.
     """
     with pytest.raises(AssertionError) as raised:
         assert_jemalloc_safety_macros_absent(str(tmp_path / "nothing.json"))
@@ -1475,7 +1506,7 @@ def test_a_build_without_exported_compile_commands_fails_closed(tmp_path):
 def test_both_checkers_fail_closed_on_a_missing_file(tmp_path):
     """The two paths handle the same state, so they must not drift apart again.
 
-    They disagreed until r15: the positive check raised and this one returned `None`. An
+    They disagreed once: the positive check raised and this one returned `None`. An
     asymmetry between two paths deciding the same question is the smell that one of them is
     wrong, and the fail-open side was - so the symmetry itself is pinned, with the messages
     required to stay distinguishable so a failure still says which direction was being
@@ -1491,6 +1522,49 @@ def test_both_checkers_fail_closed_on_a_missing_file(tmp_path):
             checker(missing)
         messages.append(str(raised.value))
     assert all(missing in message for message in messages)
+    assert messages[0] != messages[1], (
+        "the two directions must be distinguishable in the failure text; both said:\n"
+        f"{messages[0]}"
+    )
+
+
+def test_both_checkers_fail_closed_on_an_empty_jemalloc_set(compiler_probe, tmp_path):
+    """The other state both directions decide: the source marker selecting nothing.
+
+    This is the asymmetry the missing-file case above already caught once, one state over.
+    Both directions run only for builds that compile jemalloc, so an empty selection means
+    `JEMALLOC_SOURCE_MARKER` went stale - and answering "the gates are armed" or "neither
+    macro is defined" over zero probes is a verdict about nothing. The messages must stay
+    distinguishable, so a failure still says which direction was asking.
+    """
+    path = tmp_path / "compile_commands.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(tmp_path),
+                    "file": JE_RENAMED,
+                    "command": f"{ToolSet.COMPILER_C} {BOTH} -o out.o -c {JE_RENAMED}",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    messages = []
+    for checker in (
+        assert_jemalloc_safety_macros_armed,
+        assert_jemalloc_safety_macros_absent,
+    ):
+        with pytest.raises(AssertionError) as raised:
+            checker(str(path))
+        messages.append(str(raised.value))
+    for message in messages:
+        assert JEMALLOC_SOURCE_MARKER in message, (
+            f"the failure must name the marker that matched nothing; got:\n{message}"
+        )
+        assert "of 1 entries" in message, (
+            f"the failure must report how many entries were searched; got:\n{message}"
+        )
     assert messages[0] != messages[1], (
         "the two directions must be distinguishable in the failure text; both said:\n"
         f"{messages[0]}"
