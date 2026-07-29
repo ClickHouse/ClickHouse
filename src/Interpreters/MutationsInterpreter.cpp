@@ -687,19 +687,11 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
-/// Throw if a mutation expression references a virtual column whose value is only produced
-/// by the query plan (`isQueryPlanOnlyVirtualColumn`: `_sample_factor`, `_table`, `_database`).
-/// `ReadFromMergeTree` fills these into `shared_virtual_fields`, so they only exist inside a
-/// `SELECT` plan; the mutation read path (`MergeTreeSequentialSource`) cannot materialize them.
-/// A mutation referencing one would otherwise pass analysis, start, then fail mid-execution
-/// with `Unexpected const virtual column`. Reject it up front instead.
-///
-/// The walk keys on the identifier's short name, so that a qualified `t._sample_factor` is
-/// recognized, and approximates what the resolver would bind the name to: a compound whose
-/// qualifier-stripped suffix names a real column or subcolumn is that column, a lambda formal
-/// parameter or an expression alias (`1 AS _table`) shadows the name, an `ALIAS` column stands
-/// for its defining expression, and a subquery is its own `SELECT` which can materialize these
-/// virtuals.
+/// Throw if a mutation expression references a query-plan-only virtual column, which the
+/// per-part read path cannot materialize. `shadowed` holds names that are defined by the
+/// expression itself (lambda parameters, expression aliases) and so are not references to a
+/// virtual column; `aliases_in_progress` guards against a cyclic `ALIAS` definition.
+/// Keyed on the short name, so a qualified `t._sample_factor` is recognized too.
 static void rejectQueryPlanOnlyVirtualColumns(
     const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed, NameSet & aliases_in_progress)
 {
@@ -743,16 +735,14 @@ static void rejectQueryPlanOnlyVirtualColumns(
         if (shadowed.contains(short_name))
             return;
 
-        /// A member access rooted at a shadowed name belongs to that name, not to a virtual
-        /// column: inside `arrayMap(x -> x._table, arr)` the `x._table` is a tuple element of
-        /// the lambda parameter, whose short name is nevertheless `_table`.
+        /// A member access rooted at a shadowed name belongs to that name: in
+        /// `arrayMap(x -> x._table, arr)` this is an element of the lambda parameter.
         if (identifier->compound() && shadowed.contains(identifier->name_parts.front()))
             return;
 
         /// A compound whose qualifier-stripped suffix names a real column or subcolumn is that
-        /// column, so it is neither the virtual nor an `ALIAS` sharing the short name. Testing
-        /// only the first part is not enough: for a table `t` with a column `t`, `t._table` has
-        /// a leading real column yet the resolvers strip the qualifier and bind the virtual.
+        /// column. Testing only the first part is not enough: for a table `t` with a column `t`,
+        /// `t._table` has a leading real column yet resolves to the virtual.
         if (identifier->compound())
         {
             const auto & parts = identifier->name_parts;
@@ -766,12 +756,8 @@ static void rejectQueryPlanOnlyVirtualColumns(
             }
         }
 
-        /// An `ALIAS` column is replaced by its defining expression after this check, so follow
-        /// that expression here: `a String ALIAS _table` used in a mutation is a reference to
-        /// `_table`. An alias may itself be named like one of these virtuals (`_table String
-        /// ALIAS _database`), so inspect the definition whatever the alias is called, or that
-        /// name would shadow the virtual below and let the reference through. Track names being
-        /// expanded so a self-referential alias cannot loop.
+        /// An `ALIAS` column stands for its defining expression, so follow it - whatever the
+        /// alias is named, since an alias may itself be called `_table`.
         if (!aliases_in_progress.contains(short_name))
         {
             if (auto column_default = columns.getDefault(short_name);
@@ -799,11 +785,8 @@ static void rejectQueryPlanOnlyVirtualColumns(
         rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed, aliases_in_progress);
 }
 
-/// Collect the expression aliases defined in `ast` (`1 AS _table`). An alias is visible to the
-/// whole expression it is defined in, not only to the subtree below it, so these names are
-/// shadowed for the entire walk rather than scoped as the tree is descended. A subquery is its
-/// own scope, so its aliases must not hide a reference in the enclosing expression, and an alias
-/// does not apply inside the expression that defines it.
+/// Collect the expression aliases defined in `ast` (`1 AS _table`). A subquery is its own scope,
+/// so stop there: its aliases must not hide a reference in the enclosing expression.
 static void collectExpressionAliases(const IAST * ast, NameSet & shadowed)
 {
     if (!ast)
