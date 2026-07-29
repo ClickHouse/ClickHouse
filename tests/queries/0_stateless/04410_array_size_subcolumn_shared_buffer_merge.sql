@@ -39,16 +39,24 @@ FROM numbers(20000);
 OPTIMIZE TABLE t_array_size_shared FINAL;
 OPTIMIZE TABLE t_array_size_shared_marks FINAL;
 
--- Both tables must hold Compact parts, and must differ in the pinned setting, so the two
--- branches really are covered. Without this the pins could silently stop taking effect.
-SELECT p.table, p.part_type,
-       extract(t.engine_full, 'write_marks_for_substreams_in_compact_parts = [01]') AS pinned
-FROM system.parts AS p
-INNER JOIN system.tables AS t ON t.database = p.database AND t.name = p.table
-WHERE p.database = currentDatabase()
-  AND p.table IN ('t_array_size_shared', 't_array_size_shared_marks')
-  AND p.active
-ORDER BY p.table;
+-- Both tables must hold Compact parts.
+SELECT table, part_type FROM system.parts
+WHERE database = currentDatabase()
+  AND table IN ('t_array_size_shared', 't_array_size_shared_marks')
+  AND active
+ORDER BY table;
+
+-- Assert the effective mark layout, not just the recorded setting: the reader picks its branch
+-- from the part's mark type, so a mark for the `a.size0` substream must be absent in the first
+-- table and present in the second. Otherwise the pins could silently stop taking effect and both
+-- tables would exercise the same branch while every result assertion below still passed.
+SELECT 't_array_size_shared' AS table,
+       isNotNull((`a.size0.mark`).offset_in_compressed_file) AS has_substream_mark
+FROM mergeTreeIndex(currentDatabase(), t_array_size_shared, with_marks = true) LIMIT 1;
+
+SELECT 't_array_size_shared_marks' AS table,
+       isNotNull((`a.size0.mark`).offset_in_compressed_file) AS has_substream_mark
+FROM mergeTreeIndex(currentDatabase(), t_array_size_shared_marks, with_marks = true) LIMIT 1;
 
 -- Read the `.size0` subcolumn and the full array together, with a block much larger than the
 -- granule so one read appends offsets across many granules.
