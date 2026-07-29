@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 ## Supported Postgres versions {#supported-postgres-versions}
 
@@ -91,6 +92,14 @@ Connect to your RDS Postgres instance as an admin user and execute the following
       ```
 
    The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
+
+### Using IAM authentication (optional) {#iam-authentication}
+
+<IAMAuthentication engine="postgres" service="rds">
+  <Note>
+  IAM authentication for replication requires the `rds.iam_auth_for_replication` parameter to be set to `1`. This is supported from PostgreSQL version 11 onwards; on earlier versions, you can only run `Initial Load Only` ClickPipes.
+  </Note>
+</IAMAuthentication>
 
 ## Configure network access {#configure-network-access}
 
