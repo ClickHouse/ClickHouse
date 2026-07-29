@@ -28,19 +28,23 @@ disable_failpoint() {
 }
 trap disable_failpoint EXIT
 
-# `expired` is the check: for a column with no default, dropping it from the merged part is the data
-# loss - there is nothing left to refill it from.
+# For a column with no default, dropping it from the merged part is the data loss - there is nothing
+# left to refill it from. Require both that the merged part still carries the column and that it
+# carries at least `min_bytes` of data for it, so a column present but rewritten as empty defaults
+# does not pass.
 assert_kept() {
-    local table="$1" column="$2" label="$3"
-    local expired
-    expired=$(${CLICKHOUSE_CLIENT} --query="
-        SELECT countIf(column = '${column}') = 0 FROM system.parts_columns
+    local table="$1" column="$2" min_bytes="$3" label="$4"
+    local kept
+    kept=$(${CLICKHOUSE_CLIENT} --query="
+        SELECT sumIf(column_data_uncompressed_bytes, column = '${column}') >= ${min_bytes}
+        FROM system.parts_columns
         WHERE database = currentDatabase() AND table = '${table}' AND active")
-    if [ "$expired" != "0" ]; then
-        echo "FAIL (${label}): the merge expired ${column}, so its values are lost"
+    if [ "$kept" != "1" ]; then
+        echo "FAIL (${label}): the merge did not keep the values of ${column}"
         ${CLICKHOUSE_CLIENT} --query="
-            SELECT name, groupArray(column) FROM system.parts_columns
-            WHERE database = currentDatabase() AND table = '${table}' AND active GROUP BY name ORDER BY name"
+            SELECT name, column, column_data_uncompressed_bytes FROM system.parts_columns
+            WHERE database = currentDatabase() AND table = '${table}' AND active
+            ORDER BY name, column"
         exit 1
     fi
 }
@@ -51,13 +55,13 @@ ${CLICKHOUSE_CLIENT} --query="
     CREATE TABLE t_rename_no_default (id UInt64, d String)
     ENGINE = MergeTree() ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0;
-    INSERT INTO t_rename_no_default VALUES (1, 'hello'), (2, 'world');
-    INSERT INTO t_rename_no_default VALUES (3, 'foo'), (4, 'bar');
+    INSERT INTO t_rename_no_default SELECT number, 'payload_value_' || toString(number) FROM numbers(500);
+    INSERT INTO t_rename_no_default SELECT number, 'payload_value_' || toString(number) FROM numbers(500, 500);
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
     OPTIMIZE TABLE t_rename_no_default FINAL;
 "
-assert_kept t_rename_no_default d1 "String, no default"
+assert_kept t_rename_no_default d1 5000 "String, no default"
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default"
 
@@ -78,7 +82,7 @@ ${CLICKHOUSE_CLIENT} --query="
     ALTER TABLE t_rename_no_default_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
     OPTIMIZE TABLE t_rename_no_default_dynamic FINAL;
 "
-assert_kept t_rename_no_default_dynamic d1 "Dynamic, no default"
+assert_kept t_rename_no_default_dynamic d1 1 "Dynamic, no default"
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_dynamic"
 
@@ -99,13 +103,21 @@ ${CLICKHOUSE_CLIENT} --query="
     ALTER TABLE t_rename_no_default_reuse ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0;
     OPTIMIZE TABLE t_rename_no_default_reuse FINAL;
 "
-cols=$(${CLICKHOUSE_CLIENT} --query="
-    SELECT arraySort(groupArray(DISTINCT column)) FROM system.parts_columns
-    WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse' AND active
-      AND column IN ('a', 'b')")
-if [ "$cols" != "['a']" ]; then
-    echo "FAIL (rename target reused): the merged part should physically hold only a, got $cols"
-    exit 1
+# This is the only negative assertion, so it holds only while the rename is genuinely still pending:
+# once it materializes, a physical b is correct. Skip it in that case rather than fail, so a
+# concurrent test clearing the failpoint costs coverage instead of turning a correct server red.
+pending=$(${CLICKHOUSE_CLIENT} --query="
+    SELECT min(is_done) = 0 FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse'")
+if [ "$pending" = "1" ]; then
+    cols=$(${CLICKHOUSE_CLIENT} --query="
+        SELECT arraySort(groupArray(DISTINCT column)) FROM system.parts_columns
+        WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse' AND active
+          AND column IN ('a', 'b')")
+    if [ "$cols" != "['a']" ]; then
+        echo "FAIL (rename target reused): while the rename is pending the merged part should physically hold only a, got $cols"
+        exit 1
+    fi
 fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_reuse"
@@ -161,7 +173,7 @@ ${CLICKHOUSE_CLIENT} --query="
     SYSTEM START MERGES t_rename_no_default_patch_rename;
     OPTIMIZE TABLE t_rename_no_default_patch_rename FINAL;
 "
-assert_kept t_rename_no_default_patch_rename b "patch-only column, rename target"
+assert_kept t_rename_no_default_patch_rename b 1 "patch-only column, rename target"
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_patch_rename"
 
