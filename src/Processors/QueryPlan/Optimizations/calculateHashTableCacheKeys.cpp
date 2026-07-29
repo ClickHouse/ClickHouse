@@ -143,8 +143,8 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
-/// (e.g. the column-blind read hash on the input side, or result-affecting `JoinSettings` such as
-/// `join_any_take_last_row` that the physical `JoinStep` no longer carries). A resulting key
+/// (e.g. the column-blind read hash on the input side, or the join output column names - see the
+/// `JoinStep` case below for why hashing them would be strictly worse). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -299,11 +299,18 @@ void calculateHashTableCacheKeys(
             /// policy above we keep matching robust and accept that residual collision.
             for (const auto & column : *join_step->getOutputHeader())
                 frame.hash.update(column.type->getName());
-            /// Result-affecting `JoinSettings` (e.g. `join_any_take_last_row`, which picks a different
-            /// right-side row for ANY joins) are NOT mixed in: they are baked into the `IJoin` algorithm
-            /// and the physical `JoinStep` no longer carries `JoinSettings`. This is the best-effort
-            /// trade-off documented on `calculateHashTableCacheKeys` - a collision only skews the
-            /// approximate estimate, never the result.
+            /// `join_any_take_last_row` selects the last instead of the first matching right-side row for
+            /// `ANY` joins, so the two modes can produce very different outputs (and thus very different
+            /// collected `output_bytes`) for the same query shape. The physical `JoinStep` no longer
+            /// carries `JoinSettings`, but the concrete algorithm does, so read the bit off `IJoin`.
+            ///
+            /// It is mixed in only when set, so that the default keeps hashing exactly as before. That
+            /// also keeps the single-replica and parallel-replicas plan builds matching if only one of
+            /// them happens to pick an algorithm that does not honor the setting: in the worst case
+            /// Auto-PR just does not run for a `join_any_take_last_row = 1` query, which is the
+            /// fail-closed direction.
+            if (join_step->getJoin()->anyTakeLastRow())
+                frame.hash.update("any_take_last_row");
             frame.hash.update(a);
             frame.hash.update(b);
         }
