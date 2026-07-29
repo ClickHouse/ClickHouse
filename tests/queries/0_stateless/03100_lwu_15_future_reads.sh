@@ -27,7 +27,11 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY id
     SETTINGS
         enable_block_number_column = 1,
-        enable_block_offset_column = 1;
+        enable_block_offset_column = 1,
+        -- The test checks the number of rows in patch parts at the end.
+        -- Once the patches are applied, the cleanup thread is free to drop them,
+        -- so keep them around to make the last query deterministic.
+        remove_unused_patch_parts = 0;
 
     INSERT INTO t_lwu_future_reads SELECT number, number FROM numbers(1000);
     SYSTEM ENABLE FAILPOINT $failpoint_name;
