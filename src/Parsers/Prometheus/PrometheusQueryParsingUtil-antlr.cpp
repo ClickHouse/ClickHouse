@@ -96,7 +96,7 @@ namespace
                     }
                 }
             }
-            return std::max(char_index + position_in_line, promql_query.length());
+            return std::min(char_index + position_in_line, promql_query.length());
         }
 
     private:
