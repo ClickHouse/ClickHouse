@@ -295,3 +295,46 @@ SELECT count(), countDistinct(_part) FROM t_nested_default_chain;
 SELECT id, `n.a` FROM t_nested_default_chain ORDER BY id;
 
 DROP TABLE t_nested_default_chain;
+
+-- The same transitive chain, but with *mixed* source parts: the intermediate `tmp` is materialized in
+-- one source part (by a mutation that touches only the rows of that part) and still missing in the
+-- other. Missing defaults are evaluated per part, so `tmp` is recomputed from the expired `m` for the
+-- rows of the part where it is absent, and `` `n.b` `` must be expired all the same. A dependency
+-- closure that stops recursing as soon as the intermediate is stored in *some* source part leaves
+-- `` `n.b` `` on the vertical-materialization path and corrupts the shared Nested offsets of the
+-- present sibling `n.a`. `max_bytes_to_merge_at_max_space_in_pool` keeps background merges from
+-- consuming the mixed parts before `OPTIMIZE ... FINAL` (which ignores that limit).
+DROP TABLE IF EXISTS t_nested_mixed_parts;
+
+CREATE TABLE t_nested_mixed_parts (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_mixed_parts VALUES (1, [10,20]);
+INSERT INTO t_nested_mixed_parts VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_mixed_parts ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_mixed_parts ADD COLUMN tmp Array(String) DEFAULT arrayMap(v -> toString(v), m);
+ALTER TABLE t_nested_mixed_parts ADD COLUMN `n.b` Array(String) DEFAULT tmp;
+
+-- Touches only the part holding `id = 1`, so `tmp` becomes stored there and stays missing elsewhere.
+ALTER TABLE t_nested_mixed_parts UPDATE tmp = tmp WHERE id = 1 SETTINGS mutations_sync = 2;
+
+-- Exactly one of the two active parts stores `tmp` (the mixed state this case is about).
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_mixed_parts' AND active AND column = 'tmp';
+
+OPTIMIZE TABLE t_nested_mixed_parts FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_mixed_parts;
+SELECT id, `n.a` FROM t_nested_mixed_parts ORDER BY id;
+
+DROP TABLE t_nested_mixed_parts;

@@ -221,17 +221,22 @@ String resolveDefaultDependencyToStorage(const String & required_name, const Col
 /// still detected:
 /// - `ALIAS` columns are never physically stored, so they are always expanded into the physical
 ///   columns their expression reads (and are not themselves reported).
-/// - An ordinary `DEFAULT`/`MATERIALIZED` column that is absent from every source part will itself
-///   be recomputed from its expression during the merge, so its dependencies are expanded too (and
-///   the column itself is still reported). A chain such as `tmp DEFAULT m.keys`, `n.b DEFAULT tmp`
-///   with `m` expired therefore reports `m`, so `n.b` is expired as well.
-/// Columns that are present in the source parts are read as stored (not recomputed), so their own
+/// - An ordinary `DEFAULT`/`MATERIALIZED` column that is missing from at least one source part will
+///   be recomputed from its expression for that part's rows during the merge, so its dependencies
+///   are expanded too (and the column itself is still reported). A chain such as
+///   `tmp DEFAULT m.keys`, `n.b DEFAULT tmp` with `m` expired therefore reports `m`, so `n.b` is
+///   expired as well. Missing defaults are evaluated per part (see
+///   `IMergeTreeReader::evaluateMissingDefaults`), so the recursion must stop only for columns
+///   stored in *every* source part, not for columns stored in at least one of them: an intermediate
+///   materialized in one part (e.g. by a partially applied mutation) and missing in another is still
+///   recomputed for the rows of the latter.
+/// Columns stored in all source parts are read as stored (never recomputed), so their own
 /// dependencies are not followed. Over-approximating is safe: an extra dependency only moves a
 /// column from being materialized at merge time to being recomputed at read time.
 NameSet collectDefaultStorageDependencies(
     const ASTPtr & default_expression,
     const ColumnsDescription & columns_desc,
-    const NameSet & columns_present_in_parts)
+    const NameSet & columns_present_in_all_parts)
 {
     NameSet result;
     NameSet visited_columns;
@@ -267,11 +272,12 @@ NameSet collectDefaultStorageDependencies(
                 continue;
             }
 
-            /// A physical column that is missing from every source part is recomputed from its own
-            /// `DEFAULT`/`MATERIALIZED` expression during the merge, so follow its dependencies too:
-            /// the subcolumn we started from transitively reads whatever this expression reads.
+            /// A physical column that is not stored in every source part is recomputed from its own
+            /// `DEFAULT`/`MATERIALIZED` expression during the merge (for the rows of the parts where
+            /// it is missing), so follow its dependencies too: the subcolumn we started from
+            /// transitively reads whatever this expression reads.
             if (dependency_default && dependency_default->expression
-                && !columns_present_in_parts.contains(storage_name)
+                && !columns_present_in_all_parts.contains(storage_name)
                 && visited_columns.emplace(storage_name).second)
                 to_visit.push_back(dependency_default->expression);
 
@@ -776,11 +782,28 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
+        /// Number of source parts each column is stored in, to tell "present in at least one source
+        /// part" apart from "present in every source part".
+        std::unordered_map<String, size_t> column_part_counts;
+
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
+            {
                 columns_present_in_parts.emplace(col.name);
+                ++column_part_counts[col.name];
+            }
+        }
+
+        /// A column stored in every source part is read as stored for all rows of the merged part.
+        /// A column stored only in some of them is recomputed from its default for the rows of the
+        /// parts where it is missing, because missing defaults are evaluated per part.
+        NameSet columns_present_in_all_parts;
+        for (const auto & [column_name, part_count] : column_part_counts)
+        {
+            if (part_count == global_ctx->future_part->parts.size())
+                columns_present_in_all_parts.emplace(column_name);
         }
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
@@ -822,7 +845,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     /// expands `ALIAS` columns, so both false positives (a lambda parameter that
                     /// happens to share a name with an expired column) and false negatives (a
                     /// dependency reached through an alias) are avoided.
-                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, columns_present_in_parts))
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, columns_present_in_all_parts))
                     {
                         if (expired_columns.contains(dependency))
                         {
