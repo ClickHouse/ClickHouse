@@ -479,11 +479,20 @@ static void formatIndexes(const IndexesDescription & desc, JSONBuilder::JSONMap 
 }
 
 /// Collect index descriptions from the whole plan tree (including child plans
-/// like `Merge` table sub-plans). Returns false when the plan contains a
-/// multi-input step other than `Union` (e.g. `Join` or `CreatingSets`):
-/// collapsing index stats from different inputs of such a step into one flat
-/// summary would lose which input each filter came from, so the caller must
-/// fall back to the regular compact traversal.
+/// like `Merge` table sub-plans). Returns false when the plan shape cannot be
+/// represented by a single rolled-up summary, namely:
+///
+/// - the plan contains a multi-input step other than `Union` (e.g. `Join` or
+///   `CreatingSets`): collapsing index stats from different inputs of such a
+///   step into one flat summary would lose which input each filter came from;
+/// - some source of the plan produced no index description at all (e.g. a
+///   `UNION ALL` or a `Merge` table mixing a `MergeTree` table with
+///   `numbers`): the summary would silently drop that input, and the number
+///   of collected descriptions would no longer match the number of inputs.
+///
+/// In both cases the caller must fall back to the regular compact traversal.
+/// When it returns true, the number of collected descriptions is exactly the
+/// number of the plan's sources.
 static bool collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDescription> & result)
 {
     struct Frame
@@ -512,13 +521,19 @@ static bool collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
         }
         else
         {
-            if (auto desc = frame.node->step->getIndexesDescription())
+            auto desc = frame.node->step->getIndexesDescription();
+            if (desc)
                 result.push_back(std::move(*desc));
 
             auto child_plans = frame.node->step->getChildPlans();
             for (auto * child_plan : child_plans)
                 if (!collectIndexesFromPlan(*child_plan, result))
                     return false;
+
+            /// A source that contributed nothing would be dropped from the
+            /// summary altogether, so the shape is not supported.
+            if (!desc && frame.node->children.empty() && child_plans.empty())
+                return false;
 
             stack.pop();
         }
@@ -707,9 +722,11 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
             header_options.indexes = false;
             explainStep(*node->step, *node_map, header_options);
 
-            /// With a single reading step there is no cross-table ambiguity,
-            /// so keep the original per-index metadata (name, condition, keys,
-            /// search algorithm) instead of aggregating and dropping it.
+            /// `collectIndexesFromPlan` guarantees that every source of the
+            /// plan contributed a description, so a single description means a
+            /// single reading step and there is no cross-table ambiguity: keep
+            /// the original per-index metadata (name, condition, keys, search
+            /// algorithm) instead of aggregating and dropping it.
             if (descriptions.size() == 1)
             {
                 formatIndexes(descriptions.front(), *node_map, options.compact);
@@ -1058,9 +1075,11 @@ void QueryPlan::explainPlan(
             header_options.indexes = false;
             explainStep(*reading_node->step, settings, header_options, max_description_length);
 
-            /// With a single reading step there is no cross-table ambiguity,
-            /// so keep the original per-index metadata (name, condition, keys,
-            /// search algorithm) instead of aggregating and dropping it.
+            /// `collectIndexesFromPlan` guarantees that every source of the
+            /// plan contributed a description, so a single description means a
+            /// single reading step and there is no cross-table ambiguity: keep
+            /// the original per-index metadata (name, condition, keys, search
+            /// algorithm) instead of aggregating and dropping it.
             if (descriptions.size() == 1)
             {
                 formatIndexes(descriptions.front(), settings);

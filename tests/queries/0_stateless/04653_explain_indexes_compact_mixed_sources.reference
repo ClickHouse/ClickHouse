@@ -1,0 +1,119 @@
+-- Mixed `UNION ALL`: the `numbers` branch reports no indexes, so the plan must
+-- be printed in full instead of being collapsed to the `MergeTree` summary.
+-- { echo }
+explain indexes=1, compact=1 select key from test_mixed_mt where value > 500000 union all select number::Int from numbers(10);
+Output: CAST(number AS Int)
+
+Union
+├──ReadFromMergeTree (default.test_mixed_mt)
+│     Read type: Default
+│     Parts: 1 | Granules: 5
+│     Output: CAST(number AS Int)
+│     Prewhere filter
+│     Prewhere filter column:  value > 500000
+│     Indexes:
+│       PrimaryKey
+│         Condition: true
+│         Parts: 1/1
+│         Granules: 10/10
+│       Skip
+│         Name: value_idx
+│         Description: minmax GRANULARITY 1
+│         Condition: (value in [500001, +Inf))
+│         Parts: 1/1
+│         Granules: 5/10
+│       Ranges: 1
+└──ReadFromSystemNumbers
+      Output: number
+explain indexes=1, compact=1, json=1 select key from test_mixed_mt where value > 500000 union all select number::Int from numbers(10) format TSVRaw;
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Node Id": "Union_10",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_12",
+          "Description": "(Project names + Projection)",
+          "Plans": [
+            {
+              "Node Type": "Expression",
+              "Node Id": "Expression_16",
+              "Description": "(WHERE + Change column names to column identifiers)",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromMergeTree",
+                  "Node Id": "ReadFromMergeTree_0",
+                  "Description": "default.test_mixed_mt",
+                  "Indexes": [
+                    {
+                      "Type": "PrimaryKey",
+                      "Condition": "true",
+                      "Initial Parts": 1,
+                      "Selected Parts": 1,
+                      "Initial Granules": 10,
+                      "Selected Granules": 10
+                    },
+                    {
+                      "Type": "Skip",
+                      "Name": "value_idx",
+                      "Description": "minmax GRANULARITY 1",
+                      "Condition": "(value in [500001, +Inf))",
+                      "Initial Parts": 1,
+                      "Selected Parts": 1,
+                      "Initial Granules": 10,
+                      "Selected Granules": 5
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_15",
+          "Description": "(Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))",
+          "Plans": [
+            {
+              "Node Type": "ReadFromSystemNumbers",
+              "Node Id": "ReadFromSystemNumbers_5"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+-- Homogeneous `UNION ALL` and a single-table `Merge`: the fast path still applies.
+explain indexes=1, compact=1 select key from test_mixed_mt where value > 500000 union all select key from test_mixed_mt where value > 900000;
+Output: key
+
+Union
+Indexes:
+  PrimaryKey
+    Parts: 2/2
+    Granules: 20/20
+  Skip
+    Parts: 2/2
+    Granules: 6/20
+  Tables: 2
+  Ranges: 2
+explain indexes=1, compact=1 select key from test_mixed_merge where value > 500000;
+Output: key
+
+ReadFromMerge
+Output: key
+Indexes:
+  PrimaryKey
+    Condition: true
+    Parts: 1/1
+    Granules: 10/10
+  Skip
+    Name: value_idx
+    Description: minmax GRANULARITY 1
+    Condition: (value in [500001, +Inf))
+    Parts: 1/1
+    Granules: 5/10
+  Ranges: 1
