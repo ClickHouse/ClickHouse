@@ -28,8 +28,9 @@
     <!-- Derived across the join: `r.k > 9900000` must stay executable and shrink the build side. -->
     <query>SELECT count() FROM t_chain_derived_join AS l INNER JOIN t_chain_derived AS r ON l.k = r.k WHERE l.v &lt; r.k AND 9900000 &lt; l.v</query>
 
-    <!-- Same-side chain in a join query: the derived comparisons must stay free per row. -->
-    <query>SELECT count() FROM t_chain_derived AS l INNER JOIN t_chain_derived_join AS r ON l.k = r.k WHERE l.s1 &lt; l.s2 AND l.s2 &lt; l.s3 AND l.s3 &lt; l.s4 AND l.s4 &lt; repeat('p', 100) || 'b'</query>
+    <!-- Same-side chain in a join query: the derived comparisons must stay free per row,
+         and the join input (12% of rows pass the chain) must be unchanged by hinting them. -->
+    <query>SELECT count() FROM t_chain_derived AS l INNER JOIN t_chain_derived_join AS r ON l.k = r.k WHERE l.s1 &lt; l.s2 AND l.s2 &lt; l.s3 AND l.s3 &lt; l.s4 AND l.s4 &lt; repeat('p', 100) || 'd2'</query>
 
     <drop_query>DROP TABLE IF EXISTS t_chain_derived</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_chain_derived_join</drop_query>
