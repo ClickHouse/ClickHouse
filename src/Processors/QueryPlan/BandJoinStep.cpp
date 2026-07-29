@@ -141,7 +141,7 @@ QueryPipelineBuilderPtr BandJoinStep::updatePipeline(QueryPipelineBuilders pipel
     };
 
     auto pipeline = QueryPipelineBuilder::joinPipelinesBuildProbe(
-        std::move(build_pipeline), std::move(probe_pipeline), std::move(build_transform), probe_transform_factory, &processors);
+        std::move(build_pipeline), std::move(probe_pipeline), std::move(build_transform), probe_transform_factory, this, &processors);
 
     if (swap_inputs)
     {

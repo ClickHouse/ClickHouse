@@ -183,6 +183,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> probe,
         std::shared_ptr<JoinBuildSideTransform> build_transform,
         std::function<std::shared_ptr<JoinProbeSideTransform>()> probe_transform_factory,
+        IQueryPlanStep * join_step,
         Processors * collected_processors);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(

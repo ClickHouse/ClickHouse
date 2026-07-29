@@ -423,6 +423,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesBuildPr
     std::unique_ptr<QueryPipelineBuilder> probe,
     std::shared_ptr<JoinBuildSideTransform> build_transform,
     std::function<std::shared_ptr<JoinProbeSideTransform>()> probe_transform_factory,
+    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     build->checkInitializedAndNotCompleted();
@@ -444,10 +445,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesBuildPr
     if (!build_transform->getOutputs().front().getHeader().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Build transform of a build/probe join must have a data-free output");
 
-    /// Attribute the processors added to the build pipeline to its last plan step,
+    /// Attribute the processors added to the build pipeline to the join step,
     /// as joinPipelinesRightLeft does for the right pipeline.
-    IQueryPlanStep * step = build->pipe.processors->back()->getQueryPlanStep();
-    QueryPipelineProcessorsCollector collector(*build, step);
+    QueryPipelineProcessorsCollector collector(*build, join_step);
 
     ///  (probe) ──────────────────────┐
     ///                                ╞> Probing ─> (joined)
@@ -480,8 +480,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesBuildPr
     }
 
     Processors build_processors = collector.detachProcessors();
-    if (step)
-        step->appendExtraProcessors(build_processors);
+    if (join_step)
+        join_step->appendExtraProcessors(build_processors);
 
     probe->pipe.processors->insert(probe->pipe.processors->end(), build->pipe.processors->begin(), build->pipe.processors->end());
     probe->resources = std::move(build->resources);
