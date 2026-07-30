@@ -715,6 +715,81 @@ TEST(LocalObjectStorage, ConditionalWriteIfMatchRejectsStaleEtag)
     EXPECT_THROW(writeObject(storage, root / "missing.text", "1", ifMatch(etag_seen_by_a)), DB::Exception);
 }
 
+/// The etag of this storage is `(mtime, inode, size)`, and none of the three
+/// distinguishes two versions of a path on its own: `rename` frees the replaced
+/// version's inode number for immediate reuse, equal-length payloads share the size,
+/// and a kernel that stamps inode times from the coarse per-tick clock gives every
+/// file written inside one tick the same mtime down to the nanosecond. If all three
+/// coincide, the etag of an older version compares equal to the current one and a
+/// writer holding that older etag silently overwrites a newer version.
+///
+/// What rules that out is a modification time that strictly increases with every
+/// published version. The clock hides a violation of that invariant whenever it
+/// happens to advance on its own, so this test removes the clock from the picture: it
+/// pushes the current version's mtime into the future and then publishes over it. The
+/// publication must still come out strictly later, which it can only do by stamping
+/// the mtime rather than by inheriting whatever the clock said.
+TEST(LocalObjectStorage, ConditionalWritePublishesStrictlyIncreasingMTime)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_monotonic_mtime");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "version-hint.text";
+
+    writeObject(storage, path, "1", ifNoneMatchAll());
+
+    /// Well past any tick of any clock, and past the runtime of this test.
+    std::error_code ec;
+    fs::last_write_time(path, fs::last_write_time(path) + std::chrono::hours(1), ec);
+    ASSERT_FALSE(ec) << "Failed to set the modification time: " << ec.message();
+
+    const auto mtime_before = fs::last_write_time(path);
+    const auto etag_before = readObject(storage, path).metadata.etag;
+    ASSERT_FALSE(etag_before.empty());
+
+    /// Same length as the payload it replaces, so `st_size` cannot tell them apart.
+    writeObject(storage, path, "2", ifMatch(etag_before));
+
+    EXPECT_GT(fs::last_write_time(path), mtime_before)
+        << "the published version must carry a modification time strictly later than the version it replaces, "
+           "otherwise its etag can repeat an earlier one and a stale writer passes the If-Match check";
+
+    const auto etag_after = readObject(storage, path).metadata.etag;
+    EXPECT_NE(etag_after, etag_before) << "two versions of an object must never share an etag";
+    EXPECT_EQ(readObject(storage, path).data, "2");
+
+    /// The stale etag must still be rejected, and the fresh one still accepted.
+    EXPECT_THROW(writeObject(storage, path, "3", ifMatch(etag_before)), DB::Exception);
+    EXPECT_EQ(readObject(storage, path).data, "2");
+    writeObject(storage, path, "4", ifMatch(etag_after));
+    EXPECT_EQ(readObject(storage, path).data, "4");
+
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"version-hint.text"});
+}
+
+/// Every etag this storage hands out has to be the same kind of token, because a
+/// caller feeds the etag it read straight back into `If-Match`. `getObjectMetadata`
+/// used to build a differently shaped one, which could then only ever compare unequal
+/// and turned a conditional write into an unconditional `PreconditionFailed`.
+TEST(LocalObjectStorage, EtagFromGetObjectMetadataSatisfiesIfMatch)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_etag_shape");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "v1.metadata.json";
+
+    writeObject(storage, path, "first", ifNoneMatchAll());
+
+    const auto etag = storage->getObjectMetadata(path.string(), /*with_tags=*/ false).etag;
+    ASSERT_FALSE(etag.empty());
+    EXPECT_EQ(etag, readObject(storage, path).metadata.etag) << "all etag producers of this storage must agree";
+
+    writeObject(storage, path, "second", ifMatch(etag));
+    EXPECT_EQ(readObject(storage, path).data, "second");
+}
+
 TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
 {
     ScopedTempDir tmp("ch_gtest_local_object_storage_cas");
