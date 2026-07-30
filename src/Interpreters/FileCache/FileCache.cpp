@@ -616,15 +616,16 @@ void FileCache::initializeImpl(bool load_metadata)
 
     if (drop_cache_threads > 1)
     {
-        /// Unlimited queue: concurrent drop requests share the pool,
-        /// and scheduling must not block or throw because of one another.
+        /// Concurrent drop requests share the pool: with the queue limited to
+        /// `max_threads`, a request whose workers do not fit blocks in scheduling
+        /// until the previous request's workers finish.
         drop_cache_pool = std::make_unique<ThreadPool>(
             CurrentMetrics::FilesystemCacheDropCacheThreads,
             CurrentMetrics::FilesystemCacheDropCacheThreadsActive,
             CurrentMetrics::FilesystemCacheDropCacheThreadsScheduled,
             /* max_threads */drop_cache_threads,
             /* max_free_threads */0,
-            /* queue_size */0);
+            /* queue_size */drop_cache_threads);
     }
 
     is_initialized = true;
