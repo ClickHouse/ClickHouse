@@ -281,7 +281,7 @@ void SerializationBool::serializeTextJSONPretty(const IColumn &column, size_t ro
     serializeSimple(column, row_num, ostr, settings);
 }
 
-void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
+void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings & settings) const
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
@@ -292,7 +292,10 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
     char first_char = *istr.position();
     if (first_char == 't' || first_char == 'f')
         readBoolTextWord(value, istr);
-    else if (first_char == '1' || first_char == '0')
+    /// Numeric 1/0 is only accepted when special bool values are allowed, mirroring the text/CSV
+    /// paths. This keeps Variant/Dynamic JSON inference (which disables special bool values) from
+    /// greedily reading 1/0 as Bool instead of a wider integer type.
+    else if ((first_char == '1' || first_char == '0') && settings.allow_special_bool_values)
         readBoolText(value, istr);
     else
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL,
@@ -301,7 +304,7 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
     col->insert(value);
 }
 
-bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings &) const
+bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     if (istr.eof())
         return false;
@@ -314,7 +317,7 @@ bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuf
         if (!readBoolTextWord<bool>(value, istr))
             return false;
     }
-    else if (first_char == '1' || first_char == '0')
+    else if ((first_char == '1' || first_char == '0') && settings.allow_special_bool_values)
     {
         /// Doesn't throw.
         readBoolText(value, istr);
