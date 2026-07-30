@@ -1220,7 +1220,7 @@ void compactIcebergManifests(
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
-    SharedHeader sample_block_,
+    SharedHeader /* sample_block_ */,
     ContextPtr context_,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
@@ -1279,13 +1279,22 @@ void compactIcebergManifests(
             return;
         }
 
+        auto physical_context = createIcebergPhysicalContext(context_);
+        auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i), physical_context);
+
+        const Int32 schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
+        auto physical_sample_block
+            = createIcebergPhysicalSampleBlock(*persistent_table_components.schema_processor, schema_id, context_);
+
         if (writeConsolidatedManifestFile(
                 metadata_version,
                 metadata_object,
                 persistent_table_components,
                 object_storage_,
                 context_,
-                sample_block_,
+                physical_sample_block,
                 write_format,
                 persistent_table_components.metadata_compression_method,
                 data_lake_settings,
@@ -1314,7 +1323,7 @@ void compactIcebergTable(
     ObjectStoragePtr object_storage_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
-    SharedHeader sample_block_,
+    SharedHeader /* sample_block_ */,
     ContextPtr context_,
     const String & write_format)
 {
@@ -1331,17 +1340,36 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// Do not trust the caller sample (may be presentation DateTime64 without explicit TZ
+        /// after a prior SELECT with iceberg_timezone_for_timestamptz=''). Rematerialize under UTC
+        /// so ChunkPartitioner / getAvroType keep adjust-to-utc and calendar transforms correct.
+        auto physical_context = createIcebergPhysicalContext(context_);
+        auto schemas = plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i), physical_context);
+
+        const Int32 schema_id = plan.initial_metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
+        auto physical_sample_block
+            = createIcebergPhysicalSampleBlock(*persistent_table_components.schema_processor, schema_id, context_);
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
-            sample_block_,
+            physical_sample_block,
             object_storage_,
             persistent_table_components.path_resolver,
             format_settings_,
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+        writeMetadataFiles(
+            plan,
+            persistent_table_components.path_resolver,
+            object_storage_,
+            context_,
+            physical_sample_block,
+            write_format,
+            persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }

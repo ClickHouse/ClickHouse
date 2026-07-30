@@ -359,6 +359,8 @@ Iceberg writes (`INSERT`, mutations, `OPTIMIZE ... MANIFEST`) require this setti
 
 Partition pruning and min-max filtering also use UTC typing for `timestamptz`, independent of this setting, so filters stay consistent with UTC-written partitions.
 
+Full `OPTIMIZE` (data compaction) rematerializes ClickHouse types under UTC before rewriting manifests, so a prior read with an empty or non-UTC presentation setting cannot leave non-explicit `DateTime64` types in Avro (`adjust-to-utc`) or partition transforms.
+
 ## Asynchronous metadata prefetching {#async-metadata-prefetch}
 
 Asynchronous metadata prefetching can be enabled at `Iceberg` table creation by setting `iceberg_metadata_async_prefetch_period_ms`. If set to 0 (default) or if metadata caching is not enabled, the asynchronous prefetching is disabled.

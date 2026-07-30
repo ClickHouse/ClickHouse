@@ -8216,6 +8216,8 @@ Must remain `UTC` for Iceberg writes (INSERT, mutations, `OPTIMIZE ... MANIFEST`
 
 Partition pruning and min-max index filtering always use UTC typing for `timestamptz`, regardless of this setting.
 
+Full `OPTIMIZE` rematerializes `timestamptz` types under UTC before rewriting manifests, so a stale presentation sample cannot flip `adjust-to-utc` or partition calendars.
+
 Possible values:
 
 - Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`

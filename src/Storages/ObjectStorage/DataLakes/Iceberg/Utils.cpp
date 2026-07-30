@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <config.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
@@ -490,6 +491,19 @@ ContextPtr createIcebergPhysicalContext(ContextPtr query_context)
     auto physical_context = Context::createCopy(query_context);
     physical_context->setSetting("iceberg_timezone_for_timestamptz", String("UTC"));
     return physical_context;
+}
+
+SharedHeader createIcebergPhysicalSampleBlock(
+    IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id,
+    ContextPtr query_context)
+{
+    auto physical_context = createIcebergPhysicalContext(query_context);
+    auto names_and_types = schema_processor.getClickhouseTableSchemaById(schema_id, physical_context);
+    Block block;
+    for (const auto & name_and_type : *names_and_types)
+        block.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+    return std::make_shared<const Block>(std::move(block));
 }
 
 enum class MostRecentMetadataFileSelectionWay
