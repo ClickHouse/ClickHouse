@@ -33,3 +33,8 @@ direct read	1
 2
 10
 11
+-- regression (subcolumn form): non-materialized part must not drop rows --
+1
+2
+10
+11

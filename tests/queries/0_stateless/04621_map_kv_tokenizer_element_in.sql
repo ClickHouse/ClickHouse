@@ -52,4 +52,6 @@ INSERT INTO t_mix VALUES (10, map('lvl', 'err')), (11, map('lvl', 'warn')), (12,
 ALTER TABLE t_mix ADD INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1;
 INSERT INTO t_mix VALUES (1, map('lvl', 'err')), (2, map('lvl', 'warn')), (3, map('lvl', 'debug'));      -- part materialized (index built on insert)
 SELECT id FROM t_mix WHERE m['lvl'] IN ('err', 'warn') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, optimize_functions_to_subcolumns = 0;
+SELECT '-- regression (subcolumn form): non-materialized part must not drop rows --';
+SELECT id FROM t_mix WHERE m['lvl'] IN ('err', 'warn') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, optimize_functions_to_subcolumns = 1;
 DROP TABLE t_mix;
