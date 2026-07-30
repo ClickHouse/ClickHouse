@@ -94,6 +94,17 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 /// was inferred from a negative literal, so that a negative Int64 is not widened to UInt64).
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
+/// True if merging these two types would perform the one widening whose correctness depends on
+/// inference provenance: Int64 to UInt64, at the top level or at the same nested position. A caller
+/// that has no provenance available can use this to decline the merge instead of widening blind.
+bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second);
+
+/// Re-record on `to` the inference provenance held for the equal type `from`, recursively for nested
+/// types. The provenance is keyed on type object identity, so a caller that keeps one of two equal
+/// types and drops the other must call this first or the dropped object's provenance is lost.
+/// Does nothing unless the two types are equal, so it cannot mark a type that is not the same type.
+void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info);
+
 /// The same as transformInferredTypesIfNeeded but uses some specific transformations for JSON.
 /// Example 1:
 ///     When we have numbers inferred from strings and strings, we convert all such numbers back to string.

@@ -297,6 +297,24 @@ void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & 
         type, new_type, format_settings, FormatSettings::EscapingRule::Escaped, &inference_info);
 }
 
+void TSKVSchemaReader::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    /// Per-file provenance died with the per-file reader (union mode merges through a fresh stateless
+    /// reader), so a negative Int64 from one file is indistinguishable from a non-negative one here.
+    /// Without it, sign-dependent widening cannot be proven safe, so decline it and let the caller
+    /// report the mismatch instead of inferring a type whose read then fails.
+    if (isSignDependentIntegerWidening(type, new_type))
+        return;
+
+    transformInferredTypesByEscapingRuleIfNeeded(
+        type, new_type, format_settings, FormatSettings::EscapingRule::Escaped, nullptr);
+}
+
+void TSKVSchemaReader::carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained)
+{
+    carryOverInferenceProvenance(dropped, retained, &inference_info);
+}
+
 void registerInputFormatTSKV(FormatFactory & factory);
 void registerInputFormatTSKV(FormatFactory & factory)
 {

@@ -1,0 +1,16 @@
+1. a negative integer and a UInt64-range value in separate files
+TYPE_MISMATCH
+TYPE_MISMATCH
+2. the same shape without a negative value is refused identically, as before this change
+TYPE_MISMATCH
+3. merges that do not depend on the sign of an integer still happen
+Nullable(Int64)
+-2
+-1
+Nullable(Float64)
+-1
+1.5
+4. the default (non-union) mode on the same two files is unaffected
+Nullable(Int64)
+-1
+-1

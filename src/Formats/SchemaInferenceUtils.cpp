@@ -923,7 +923,13 @@ namespace
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
         if (checkIfTypesAreEqual(nested_types))
+        {
+            /// Only the last element's type object survives, so carry the other elements' provenance
+            /// over to it first: they are all equal, but the provenance is keyed on object identity.
+            for (size_t i = 0; i + 1 < nested_types.size(); ++i)
+                carryOverInferenceProvenance(nested_types[i], nested_types.back(), json_info);
             return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
+        }
 
         /// If element types are not equal, we should try to find common type.
         /// If after transformation element types are still different, we return Tuple for JSON and
@@ -1275,7 +1281,7 @@ namespace
             }
             else
             {
-                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, nullptr, depth + 1);
+                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1);
             }
 
             if (key_type)
@@ -1438,6 +1444,64 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
 {
     transformInferredTypesIfNeeded(first, second, settings, nullptr);
+}
+
+bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second)
+{
+    if (!first || !second)
+        return false;
+
+    /// Widening Int64 to UInt64 is the only transformation whose correctness depends on whether the
+    /// Int64 was inferred from a negative literal, which is recorded as inference provenance. Report
+    /// it wherever the pair puts an Int64 against a UInt64, at the top level or nested at the same
+    /// position, so that a caller with no provenance available can decline it.
+    auto collect = [](const DataTypePtr & type)
+    {
+        std::vector<TypeIndex> indexes{type->getTypeId()};
+        type->forEachChild([&](const IDataType & child) { indexes.push_back(child.getTypeId()); });
+        return indexes;
+    };
+
+    const auto first_indexes = collect(first);
+    const auto second_indexes = collect(second);
+    if (first_indexes.size() != second_indexes.size())
+        return false;
+
+    for (size_t i = 0; i != first_indexes.size(); ++i)
+    {
+        const bool int_vs_uint = first_indexes[i] == TypeIndex::Int64 && second_indexes[i] == TypeIndex::UInt64;
+        const bool uint_vs_int = first_indexes[i] == TypeIndex::UInt64 && second_indexes[i] == TypeIndex::Int64;
+        if (int_vs_uint || uint_vs_int)
+            return true;
+    }
+
+    return false;
+}
+
+void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info)
+{
+    /// The provenance is keyed on the type object identity, so dropping one of two equal types loses
+    /// whatever was recorded about it. Walk both in lockstep and re-record on the surviving object.
+    if (!json_info || !from || !to || from.get() == to.get() || !from->equals(*to))
+        return;
+
+    if (json_info->negative_integers.contains(from.get()))
+        json_info->negative_integers.insert(to.get());
+
+    /// The two types are equal, so forEachChild visits structurally identical children in the same
+    /// order; collect and pair them up.
+    std::vector<const IDataType *> from_children;
+    std::vector<const IDataType *> to_children;
+    from->forEachChild([&](const IDataType & child) { from_children.push_back(&child); });
+    to->forEachChild([&](const IDataType & child) { to_children.push_back(&child); });
+    if (from_children.size() != to_children.size())
+        return;
+
+    for (size_t i = 0; i != from_children.size(); ++i)
+    {
+        if (json_info->negative_integers.contains(from_children[i]))
+            json_info->negative_integers.insert(to_children[i]);
+    }
 }
 
 void transformInferredJSONTypesIfNeeded(
