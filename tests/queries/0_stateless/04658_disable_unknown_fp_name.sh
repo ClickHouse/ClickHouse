@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Before the fix, SYSTEM DISABLE FAILPOINT accepted any string and silently did nothing for a name
-# that is not a registered fail point, while SYSTEM ENABLE FAILPOINT rejected it. A typo therefore
-# reported success and left the intended fail point armed.
+# SYSTEM DISABLE FAILPOINT must reject a name that is not in the fail point registry.
 #
 # This is a clickhouse-local test on purpose: fail point state is process global, so asserting it
 # against a shared server would race concurrent tests. Each clickhouse-local invocation owns its own
@@ -40,10 +38,8 @@ SYSTEM DISABLE FAILPOINT dummy_failpoint;
 SELECT 'disabled', enabled FROM system.fail_points WHERE name = 'dummy_failpoint';
 "
 
-# Why the check matters: a mistyped disable of an armed fail point is now reported instead of
-# reporting success. 'still_armed' is a must-not-change control, not evidence: it reads 1 both before
-# and after the fix, and pins that the rejected call leaves the fail point untouched rather than
-# half-disabling it.
+# 'still_armed' is a must-not-change control, not evidence: it reads 1 both before and after the fix,
+# and pins that the rejected call leaves the fail point untouched rather than half-disabling it.
 ${CLICKHOUSE_LOCAL} --multiquery --query "
 SYSTEM ENABLE FAILPOINT dummy_failpoint;
 SELECT 'armed', enabled FROM system.fail_points WHERE name = 'dummy_failpoint';
