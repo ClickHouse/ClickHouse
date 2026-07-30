@@ -180,3 +180,24 @@ def test_remote_host_filter_not_bypassed_by_host_port(started_cluster):
     )
     assert "UNACCEPTABLE_URL" in error, error
     assert "not-allowed-host:5672" in error, error
+
+
+def test_rabbitmq_secure_conflicts_with_plaintext_address(started_cluster):
+    """`rabbitmq_secure = 1` with a plaintext `amqp://` address must be rejected.
+
+    `RabbitMQConnection::connectImpl` takes the transport from the URI scheme and ignores the
+    `rabbitmq_secure` setting for the address form, so this combination used to connect in
+    cleartext despite the user having asked for TLS - a silent downgrade rather than an error.
+    """
+    error = node.query_and_get_error(
+        f"""
+        CREATE TABLE secure_conflict (key UInt64, value UInt64)
+        ENGINE = RabbitMQ
+        SETTINGS rabbitmq_address = 'amqp://guest:guest@localhost:{BROKER_PORT}/',
+                 rabbitmq_secure = 1,
+                 rabbitmq_exchange_name = 'ex',
+                 rabbitmq_format = 'JSONEachRow'
+        """
+    )
+    assert "rabbitmq_secure" in error, error
+    assert "amqps" in error, error

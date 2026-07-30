@@ -82,7 +82,7 @@ Optional parameters:
 
 ### SSL connection {#ssl-connection}
 
-Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+To use TLS with the `rabbitmq_host_port` form, set `rabbitmq_secure = 1`. With the `rabbitmq_address` form the transport is taken from the URI scheme, so use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` is ignored for the address form; combining `rabbitmq_secure = 1` with a plaintext `amqp://` address is rejected rather than silently connecting in cleartext.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.

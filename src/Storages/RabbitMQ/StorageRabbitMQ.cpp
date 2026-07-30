@@ -175,7 +175,16 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
 
-        secure_connection = secure_connection || address->secure();
+        /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
+        /// `rabbitmq_secure` setting for the address form, so reject a contradictory
+        /// `rabbitmq_secure = 1` rather than silently connecting in plaintext.
+        if (secure_connection && !address->secure())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
+                "`rabbitmq_address`; use an `amqps://` address for a secure connection");
+
+        secure_connection = address->secure();
     }
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
