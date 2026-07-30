@@ -9,11 +9,11 @@ DB_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_sqlite_like_pushdown.db"
 trap 'rm -f "$DB_PATH"' EXIT
 rm -f "$DB_PATH"
 
-# A plain `TEXT` column of a `STRICT` table is otherwise pushdown-safe. However, SQLite evaluates `LIKE`
+# A plain `NOT NULL` `TEXT` column of a `STRICT` table is otherwise pushdown-safe. However, SQLite evaluates `LIKE`
 # case-insensitively for ASCII by default and does not use backslash as the implicit escape character, unlike
 # ClickHouse. Pushing these predicates down can therefore discard rows before ClickHouse re-filters the result.
 sqlite3 "$DB_PATH" "
-    CREATE TABLE t(s TEXT) STRICT;
+    CREATE TABLE t(s TEXT NOT NULL) STRICT;
     INSERT INTO t VALUES ('a_b'), ('aXb'), ('Abc'), ('abc'), ('zzz');
 "
 

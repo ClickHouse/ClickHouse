@@ -17,6 +17,18 @@ namespace
     /// How long to sleep between `sqlite3_prepare_v2` retries when the database is locked (SQLITE_BUSY),
     /// matching the `sqlite3_step` retry back-off in `SQLiteStatementReader`.
     constexpr UInt64 sqlite_busy_retry_ms = 10;
+
+    /// Unlike the `SQLite` input format, where `input_format_null_as_default` substitutes the column default
+    /// for a remote NULL, the storage read path must reject a NULL that reaches an explicitly non-`Nullable`
+    /// column: the pushdown gate keeps predicates local for exactly this case (a nullable remote column
+    /// mapped to a non-`Nullable` local type), and substituting a default here would silently turn such a
+    /// failing read into a successful one.
+    FormatSettings storageReadFormatSettings()
+    {
+        FormatSettings settings;
+        settings.null_as_default = false;
+        return settings;
+    }
 }
 
 SQLiteSource::SQLiteSource(
@@ -27,7 +39,7 @@ SQLiteSource::SQLiteSource(
     : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , query_str(query_str_)
     , max_block_size(max_block_size_)
-    , statement_reader(sample_block, FormatSettings{}, SQLiteStatementReader::ValueReadMode::Native)
+    , statement_reader(sample_block, storageReadFormatSettings(), SQLiteStatementReader::ValueReadMode::Native)
     , sqlite_db(std::move(sqlite_db_))
 {
 }

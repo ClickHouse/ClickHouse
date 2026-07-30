@@ -20,12 +20,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     keep the row.
 # Only the exact pairs stay pushdown-eligible: `Int64` over INTEGER and `Float64` over REAL (and `String`
 # over TEXT, covered by 04637). The trace log of the queries sent to SQLite proves both directions.
+# The exact-pair columns are declared NOT NULL: a nullable remote column mapped to a non-Nullable local type
+# keeps its predicates local (covered by 04653_sqlite_pushdown_remote_nullability).
 
 DB_PATH="${CLICKHOUSE_TMP}/04639_sqlite_coercion.db"
 rm -f "${DB_PATH}"
 
 sqlite3 "${DB_PATH}" "
-CREATE TABLE t (u8 INTEGER, i64r REAL, f64i INTEGER, f32r REAL, i64 INTEGER, f64 REAL) STRICT;
+CREATE TABLE t (u8 INTEGER, i64r REAL, f64i INTEGER, f32r REAL, i64 INTEGER NOT NULL, f64 REAL NOT NULL) STRICT;
 INSERT INTO t VALUES (300, 1.9, 9007199254740993, 16777217.0, 10, 1.5), (44, 1.0, 1, 1.0, 2, 0.5);
 "
 

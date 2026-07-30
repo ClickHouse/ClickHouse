@@ -18,7 +18,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   - a `String` column with the RTRIM collation ('a ' > 'a' byte-wise, but equal under RTRIM);
 #   - a view, whose expression columns have no affinity at all.
 # A well-matched column of a STRICT table (Int64 over INTEGER, String over plain TEXT) must stay
-# pushdown-eligible, while the same columns of an ordinary (non-STRICT) table must not.
+# pushdown-eligible, while the same columns of an ordinary (non-STRICT) table must not. The STRICT columns
+# expected to push down are declared NOT NULL: a nullable remote column mapped to a non-Nullable local type
+# keeps its predicates local (covered by 04653_sqlite_pushdown_remote_nullability).
 
 DB_PATH="${CLICKHOUSE_TMP}/04637_sqlite_affinity.db"
 rm -f "${DB_PATH}"
@@ -26,7 +28,7 @@ rm -f "${DB_PATH}"
 sqlite3 "${DB_PATH}" "
 CREATE TABLE t (x TEXT, n INTEGER, s TEXT COLLATE NOCASE, r TEXT COLLATE RTRIM, plain TEXT, num_s INTEGER);
 INSERT INTO t VALUES ('10', 10, 'a', 'a ', 'a', '10'), ('2', 2, 'B', 'a', 'B', '2');
-CREATE TABLE st (n INTEGER, plain TEXT, s TEXT COLLATE NOCASE) STRICT;
+CREATE TABLE st (n INTEGER NOT NULL, plain TEXT NOT NULL, s TEXT COLLATE NOCASE) STRICT;
 INSERT INTO st VALUES (10, 'a', 'a'), (2, 'B', 'B');
 CREATE VIEW v AS SELECT x FROM t;
 "
