@@ -666,8 +666,8 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
         }
         else if (const auto * join_node = current->as<JoinNode>())
         {
-            nodes_to_process.push_back(join_node->getLeftTableExpression());
-            nodes_to_process.push_back(join_node->getRightTableExpression());
+            nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
+            nodes_to_process.push_back(join_node->getRightTableExpressionNode());
         }
         else if (const auto * cross_join_node = current->as<CrossJoinNode>())
         {
@@ -676,7 +676,7 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
         }
         else if (const auto * array_join_node = current->as<ArrayJoinNode>())
         {
-            nodes_to_process.push_back(array_join_node->getTableExpression());
+            nodes_to_process.push_back(array_join_node->getTableExpressionNode());
         }
     }
     return false;
@@ -717,7 +717,7 @@ void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
             continue;
 
         /// A shadowed column resolves on the shard and may join differently than the initiator's alias; accepted.
-        if (leftTableHasColumn(join_node.getLeftTableExpression(), name))
+        if (leftTableHasColumn(join_node.getLeftTableExpressionNode(), name))
             continue;
 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
