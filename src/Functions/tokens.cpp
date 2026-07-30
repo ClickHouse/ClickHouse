@@ -327,6 +327,12 @@ tokens(value, 'array')
         {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
         {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},
     };
+
+    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (e.g. `japanese`), so its
+    /// tokenizer list omits `japanese`.
+    FunctionDocumentation::Arguments arguments_like = arguments;
+    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -377,7 +383,7 @@ and is used internally to analyze tokenization behavior for LIKE patterns.
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in_like = {26, 3};
-        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments, {}, returned_value, examples_like, introduced_in_like, category};
+        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
 
         factory.registerFunction<FunctionTokensOverloadResolver<LikePatternTokensTraits>>(documentation_like);
     }
