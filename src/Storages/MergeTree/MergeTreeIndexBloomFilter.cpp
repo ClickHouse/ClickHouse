@@ -722,6 +722,12 @@ static bool castConstantToIndexDomain(
     if (!value_type)
         return false;
 
+    /// A NULL constant has no representation in the index domain, and the wrapper strip below would
+    /// otherwise insert it into a non-nullable column, which throws BAD_GET. Declining matches what
+    /// convertFieldToType did here before.
+    if (value_field.isNull())
+        return false;
+
     const DataTypePtr from_type = removeLowCardinalityAndNullable(value_type);
 
     try

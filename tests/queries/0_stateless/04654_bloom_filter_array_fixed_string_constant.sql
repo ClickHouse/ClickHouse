@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS k_lcfs3;
 DROP TABLE IF EXISTS p_str;
 DROP TABLE IF EXISTS p_fs3;
 DROP TABLE IF EXISTS p_lcstr;
+DROP TABLE IF EXISTS p_lcfs3;
 DROP TABLE IF EXISTS p_num;
 DROP TABLE IF EXISTS q_str;
 DROP TABLE IF EXISTS o_sc;
@@ -96,6 +97,34 @@ SELECT count() FROM k_lcfs3 WHERE has(v,toFixedString('V0',5)); -- { serverError
 SELECT count() FROM o_lcfs3 WHERE indexOf(v,toFixedString('V0',5)) = 1; -- { serverError TOO_LARGE_STRING_SIZE }
 SELECT count() FROM k_lcfs3 WHERE indexOf(v,toFixedString('V0',5)) = 1; -- { serverError TOO_LARGE_STRING_SIZE }
 
+-- A NULL constant has no representation in the index domain, so analysis must decline instead of
+-- materializing it. The constant must be a TYPED null: a bare NULL is Nullable(Nothing), which fails
+-- the string test and declines earlier, so a bare-literal cell would not reach the coercion at all.
+-- RPNBuilder keeps the constant type Nullable only when the value IS Null, so this is the exact pair
+-- that arrives. Every cell answers 0; asserting keyed == oracle is what catches a throw.
+SELECT 'null str has NStr', (SELECT count() FROM o_str WHERE has(v,CAST(NULL AS Nullable(String)))) = (SELECT count() FROM k_str WHERE has(v,CAST(NULL AS Nullable(String))));
+SELECT 'null str indexOf NStr', (SELECT count() FROM o_str WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1) = (SELECT count() FROM k_str WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1);
+SELECT 'null str hasAny NStr', (SELECT count() FROM o_str WHERE hasAny(v,[CAST(NULL AS Nullable(String))])) = (SELECT count() FROM k_str WHERE hasAny(v,[CAST(NULL AS Nullable(String))]));
+SELECT 'null str hasAll NStr', (SELECT count() FROM o_str WHERE hasAll(v,[CAST(NULL AS Nullable(String))])) = (SELECT count() FROM k_str WHERE hasAll(v,[CAST(NULL AS Nullable(String))]));
+SELECT 'null fs3 has NStr', (SELECT count() FROM o_fs3 WHERE has(v,CAST(NULL AS Nullable(String)))) = (SELECT count() FROM k_fs3 WHERE has(v,CAST(NULL AS Nullable(String))));
+SELECT 'null fs3 has NFS3', (SELECT count() FROM o_fs3 WHERE has(v,CAST(NULL AS Nullable(FixedString(3))))) = (SELECT count() FROM k_fs3 WHERE has(v,CAST(NULL AS Nullable(FixedString(3)))));
+SELECT 'null fs3 indexOf NStr', (SELECT count() FROM o_fs3 WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1) = (SELECT count() FROM k_fs3 WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1);
+SELECT 'null fs3 indexOf NFS3', (SELECT count() FROM o_fs3 WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1) = (SELECT count() FROM k_fs3 WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1);
+SELECT 'null fs3 hasAny NFS3', (SELECT count() FROM o_fs3 WHERE hasAny(v,[CAST(NULL AS Nullable(FixedString(3)))])) = (SELECT count() FROM k_fs3 WHERE hasAny(v,[CAST(NULL AS Nullable(FixedString(3)))]));
+SELECT 'null fs3 hasAll NFS3', (SELECT count() FROM o_fs3 WHERE hasAll(v,[CAST(NULL AS Nullable(FixedString(3)))])) = (SELECT count() FROM k_fs3 WHERE hasAll(v,[CAST(NULL AS Nullable(FixedString(3)))]));
+SELECT 'null lcstr has NStr', (SELECT count() FROM o_lcstr WHERE has(v,CAST(NULL AS Nullable(String)))) = (SELECT count() FROM k_lcstr WHERE has(v,CAST(NULL AS Nullable(String))));
+SELECT 'null lcstr has NFS3', (SELECT count() FROM o_lcstr WHERE has(v,CAST(NULL AS Nullable(FixedString(3))))) = (SELECT count() FROM k_lcstr WHERE has(v,CAST(NULL AS Nullable(FixedString(3)))));
+SELECT 'null lcstr indexOf NStr', (SELECT count() FROM o_lcstr WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1) = (SELECT count() FROM k_lcstr WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1);
+SELECT 'null lcstr indexOf NFS3', (SELECT count() FROM o_lcstr WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1) = (SELECT count() FROM k_lcstr WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1);
+SELECT 'null lcstr hasAny NStr', (SELECT count() FROM o_lcstr WHERE hasAny(v,[CAST(NULL AS Nullable(String))])) = (SELECT count() FROM k_lcstr WHERE hasAny(v,[CAST(NULL AS Nullable(String))]));
+SELECT 'null lcstr hasAll NStr', (SELECT count() FROM o_lcstr WHERE hasAll(v,[CAST(NULL AS Nullable(String))])) = (SELECT count() FROM k_lcstr WHERE hasAll(v,[CAST(NULL AS Nullable(String))]));
+SELECT 'null lcfs3 has NStr', (SELECT count() FROM o_lcfs3 WHERE has(v,CAST(NULL AS Nullable(String)))) = (SELECT count() FROM k_lcfs3 WHERE has(v,CAST(NULL AS Nullable(String))));
+SELECT 'null lcfs3 has NFS3', (SELECT count() FROM o_lcfs3 WHERE has(v,CAST(NULL AS Nullable(FixedString(3))))) = (SELECT count() FROM k_lcfs3 WHERE has(v,CAST(NULL AS Nullable(FixedString(3)))));
+SELECT 'null lcfs3 indexOf NStr', (SELECT count() FROM o_lcfs3 WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1) = (SELECT count() FROM k_lcfs3 WHERE indexOf(v,CAST(NULL AS Nullable(String))) = 1);
+SELECT 'null lcfs3 indexOf NFS3', (SELECT count() FROM o_lcfs3 WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1) = (SELECT count() FROM k_lcfs3 WHERE indexOf(v,CAST(NULL AS Nullable(FixedString(3)))) = 1);
+SELECT 'null lcfs3 hasAny NFS3', (SELECT count() FROM o_lcfs3 WHERE hasAny(v,[CAST(NULL AS Nullable(FixedString(3)))])) = (SELECT count() FROM k_lcfs3 WHERE hasAny(v,[CAST(NULL AS Nullable(FixedString(3)))]));
+SELECT 'null lcfs3 hasAll NFS3', (SELECT count() FROM o_lcfs3 WHERE hasAll(v,[CAST(NULL AS Nullable(FixedString(3)))])) = (SELECT count() FROM k_lcfs3 WHERE hasAll(v,[CAST(NULL AS Nullable(FixedString(3)))]));
+
 -- Pruning must not be lost. 64 granules, needle in exactly one, so the reduction is real.
 CREATE TABLE p_str (id UInt64, v Array(String), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO p_str SELECT number, [if(number = 7, 'V0', concat('z', toString(number)))] FROM numbers(64);
@@ -103,6 +132,8 @@ CREATE TABLE p_fs3 (id UInt64, v Array(FixedString(3)), INDEX idx v TYPE bloom_f
 INSERT INTO p_fs3 SELECT number, [if(number = 7, toFixedString('V0',3), toFixedString(concat('z', leftPad(toString(number),2,'0')),3))] FROM numbers(64);
 CREATE TABLE p_lcstr (id UInt64, v Array(LowCardinality(String)), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO p_lcstr SELECT number, [if(number = 7, 'V0', concat('z', toString(number)))] FROM numbers(64);
+CREATE TABLE p_lcfs3 (id UInt64, v Array(LowCardinality(FixedString(3))), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO p_lcfs3 SELECT number, [if(number = 7, toFixedString('V0',3), toFixedString(concat('z', leftPad(toString(number),2,'0')),3))] FROM numbers(64);
 
 SELECT 'prune str has Str', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_str WHERE has(v,'V0')) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'prune str hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_str WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
@@ -129,6 +160,18 @@ SELECT 'prune fs3 has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count()
 SELECT 'prune lcstr has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'prune lcstr hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'prune lcstr has Str', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE has(v,'V0')) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+
+-- LowCardinality(FixedString(N)) is the one element type where the two coercion modes could differ,
+-- and the whole case for coercing rather than declining is that pruning survives. The four cells
+-- above that use this wrapper are result comparisons, which would also pass if analysis declined
+-- entirely, so pin both modes here: has/indexOf take Direct, hasAny/hasAll take Supertype.
+SELECT 'prune lcfs3 has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcfs3 WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcfs3 indexOf FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcfs3 WHERE indexOf(v,toFixedString('V0',3)) = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcfs3 hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcfs3 WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcfs3 hasAll FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcfs3 WHERE hasAll(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+-- The reduction is real and both modes agree on it: all four select exactly the granule holding row 7.
+SELECT 'prune lcfs3 has FS3 is 7', (SELECT groupArray(id) FROM (SELECT id FROM p_lcfs3 WHERE has(v,toFixedString('V0',3)) ORDER BY id)) = [7];
+SELECT 'prune lcfs3 hasAny FS3 is 7', (SELECT groupArray(id) FROM (SELECT id FROM p_lcfs3 WHERE hasAny(v,[toFixedString('V0',3)]) ORDER BY id)) = [7];
 
 -- A numeric element takes executeIntegral, a coercion the helper does not emulate, so it stays on the
 -- original path. Answer and pruning must both be unaffected.
@@ -163,6 +206,7 @@ DROP TABLE k_lcfs3;
 DROP TABLE p_str;
 DROP TABLE p_fs3;
 DROP TABLE p_lcstr;
+DROP TABLE p_lcfs3;
 DROP TABLE p_num;
 DROP TABLE q_str;
 DROP TABLE o_sc;
