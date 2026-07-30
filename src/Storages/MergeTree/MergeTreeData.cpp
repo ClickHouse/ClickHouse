@@ -10385,9 +10385,29 @@ public:
 
         for (const auto & index : indices)
         {
+            /// A creator can reject a description that attach-mode validation tolerated on purpose, so
+            /// construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
+            /// creator's own error must surface, on ATTACH refusing to load the table would be worse
+            /// than losing the check for this one index.
+            MergeTreeIndexPtr index_ptr;
+            try
+            {
+                index_ptr = index_factory.get(metadata_snapshot, index, settings);
+            }
+            catch (const Exception & e)
+            {
+                if (throw_on_error)
+                    throw;
+
+                LOG_WARNING(
+                    log,
+                    "Skipping index '{}' of type '{}' in the filename collision check: {}",
+                    index.name, index.type, e.message());
+                continue;
+            }
+
             /// Inert index types (a removed type kept only so old tables still attach) hold no data
             /// and are skipped by every write path, so they can never collide with anything.
-            auto index_ptr = index_factory.get(metadata_snapshot, index, settings);
             if (index_ptr->isInert())
                 continue;
 
@@ -10450,8 +10470,10 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
 {
     /// Constructing real index objects is what makes `getSubstreams` the single source of truth for
     /// the on-disk layout, but a creator assumes its validator has already run (for example
-    /// `setIndexCreator` dereferences `index.arguments` unchecked). Every caller therefore invokes
-    /// this only after `setProperties`/`checkProperties` has validated the index descriptions.
+    /// `setIndexCreator` dereferences `index.arguments` unchecked). On CREATE/ALTER, where the
+    /// validator enforces, every caller therefore invokes this only after
+    /// `setProperties`/`checkProperties`. On ATTACH the validator is deliberately permissive, which is
+    /// why `add` tolerates a construction failure there.
     auto metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(metadata);
 
     SkipIndexFilenameCollisionChecker checker(settings, log.load(), throw_on_error);

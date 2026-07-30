@@ -45,17 +45,8 @@ ENGINE = MergeTree ORDER BY k SETTINGS escape_index_filenames = 1;
 ALTER TABLE t_collide MODIFY SETTING escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_collide;
 
--- Both bases are long enough to be replaced by a hash, so the reported filename is the hashed one and
--- the `replace_long_file_name_to_hash` hint is appended. Detection itself does not depend on hashing:
--- it maps equal names to equal hashes and distinct names to distinct hashes (a collision only after
--- hashing would need a real 128-bit hash collision), so this arm pins the message and the hint path
--- rather than the comparison.
-CREATE TABLE t_collide (k UInt64, s String, w UInt64,
-    INDEX `a_text_index_with_a_deliberately_very_long_name`(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
-    INDEX `a_text_index_with_a_deliberately_very_long_name.dct` w TYPE set(100) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k
-SETTINGS escape_index_filenames = 0,
-         replace_long_file_name_to_hash = 1, max_file_name_length = 42; -- { serverError BAD_ARGUMENTS }
+-- A long-named pair, whose reported filename is the hash and whose message carries the
+-- `replace_long_file_name_to_hash` hint, lives in 04654: asserting the hash and the hint needs stderr.
 
 -- Bounds against an over-broad check.
 
