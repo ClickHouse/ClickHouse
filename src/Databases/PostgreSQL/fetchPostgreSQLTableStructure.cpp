@@ -345,8 +345,14 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
+    /// When no schema is specified, the table has to be looked up in the schema the server itself resolves
+    /// unqualified names in, because that is where the `COPY` statements of the read and write paths will
+    /// read and write the rows: `current_schema()` is the first existing schema of the search path. For
+    /// PostgreSQL with the default search path it is `public`, and a ClickHouse server (which exposes its
+    /// databases as schemas) reports the connected database, so schema discovery and the data path always
+    /// agree on the same relation.
     where += postgres_schema.empty()
-        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
+        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())"
         : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;

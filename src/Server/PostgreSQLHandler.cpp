@@ -1974,11 +1974,7 @@ SELECT * FROM VALUES(
     /// `system.tables` on that identity, so a renamed object keeps its OID and appears under its new name,
     /// while a dropped object disappears from the catalog with its OID staying reserved (and a recreated
     /// one keeps its old OID, which is harmless - stability is what matters). OID ranges are offset
-    /// (namespaces above 1e9, relations above 2e9) to avoid colliding with the small built-in OIDs. In addition, when no real database named `public` exists, tables of the
-    /// connected database are also exposed under the default `public` schema (OID 2200), so that clients
-    /// that do not qualify a table with a schema - which is what `fetchPostgreSQLTableStructure` does by
-    /// default - still resolve it in the current database. Each such alias row is a distinct relation
-    /// identity with its own OID (see `pg_class_entries` below), keeping `pg_class.oid` unique per row.
+    /// (namespaces above 1e9, relations above 2e9) to avoid colliding with the small built-in OIDs.
     /// The name-fallback identities hex-encode the names: hex output cannot contain the `:` separator, so
     /// `(database, name)` pairs like `('a', 'b.c')` and `('a.b', 'c')` cannot collide, and neither fallback
     /// can collide with a `uuid:` identity.
@@ -2023,13 +2019,16 @@ FROM
 ) AS databases
 INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)");
     /// One row per exposed relation, shared by `pg_class` and `pg_attribute` so their `oid` /
-    /// `attrelid` values always agree. Tables of the connected database are exposed a second time under
-    /// the synthetic `public` schema (see `pg_namespace` below), and that alias row is a distinct
-    /// relation identity with its own OID (the real OID offset by 1e9, deterministically derived and
-    /// thus equally stable): PostgreSQL clients treat `pg_class.oid` as the unique relation identifier
-    /// (e.g. `JOIN pg_attribute ON attrelid = pg_class.oid`), so two `pg_class` rows sharing one OID
-    /// would duplicate every column of a current-database table in such joins. Relation OIDs start
-    /// above 2e9 and `UInt32` holds ~4.29e9, so the offset cannot overflow before ~1.29e9 tables.
+    /// `attrelid` values always agree. Every relation appears exactly once, under the namespace of the
+    /// database that owns it: PostgreSQL clients treat `pg_class.oid` as the unique relation identifier
+    /// (e.g. `JOIN pg_attribute ON attrelid = pg_class.oid`), and, more importantly, a name must denote
+    /// the same relation in the catalog and in the data path. There is deliberately no synthetic `public`
+    /// schema aliasing the connected database: the data statements this handler executes (`SELECT ... FROM
+    /// t`, `INSERT INTO t`) resolve an unqualified name in the connected database and a qualified
+    /// `public.t` in a ClickHouse database named `public`, so an alias would let schema discovery and the
+    /// `COPY` that follows it target two different tables. A client that does not qualify a table with a
+    /// schema resolves it through `current_schema()` instead, which this server reports as the connected
+    /// database - exactly what its unqualified data statements use.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries AS
 SELECT
     oids.database AS database,
@@ -2037,21 +2036,9 @@ SELECT
     oids.oid AS oid,
     ns.oid AS relnamespace
 FROM pg_class_oids AS oids
-INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name
-UNION ALL
-SELECT
-    database,
-    name,
-    toUInt32(oid + 1000000000) AS oid,
-    toUInt32(2200) AS relnamespace
-FROM pg_class_oids
-WHERE database = currentDatabase()
-    AND (SELECT count() FROM system.databases WHERE name = 'public') = 0)");
-    /// The synthetic `public` schema (OID 2200), which aliases the connected database, is emitted only when
-    /// no real ClickHouse database named `public` exists; otherwise the real database wins and is listed
-    /// like any other, so that `postgresql(..., schema='public')` reaches it instead of silently resolving
-    /// to the current-database alias. The connected database always stays reachable under its own name. The
-    /// remaining fixed names are PostgreSQL-reserved (`pg_*`) or system-owned (`information_schema`), so
+INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name)");
+    /// Every ClickHouse database is exposed as a schema under its own name, including one named `public`.
+    /// The fixed names below are PostgreSQL-reserved (`pg_*`) or system-owned (`information_schema`), so
     /// they cannot shadow user data.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT oid, nspname FROM VALUES(
@@ -2062,10 +2049,6 @@ SELECT oid, nspname FROM VALUES(
     (99,    'pg_temp_1'),
     (100,   'pg_toast_temp_1')
 )
-UNION ALL
-SELECT toUInt32(2200) AS oid, 'public' AS nspname
-FROM system.one
-WHERE (SELECT count() FROM system.databases WHERE name = 'public') = 0
 UNION ALL
 SELECT oid, name AS nspname
 FROM pg_namespace_oids

@@ -49,7 +49,8 @@ def test_read_table_via_postgresql_function(started_cluster):
         "INSERT INTO test_self VALUES (1, 'one', 10, 1.5), (2, 'two', NULL, 2.5), (3, 'three', 30, 3.5)"
     )
 
-    # No schema qualifier: the table is resolved in the connected ('default') database via the 'public' schema.
+    # No schema qualifier: the table is resolved in the schema the server resolves unqualified names in,
+    # which is the connected ('default') database.
     assert (
         node.query(f"SELECT a, b, c, d FROM {pg_source('default', 'test_self')} ORDER BY a")
         == "1\tone\t10\t1.5\n2\ttwo\t\\N\t2.5\n3\tthree\t30\t3.5\n"
@@ -688,7 +689,7 @@ def test_self_connect_skips_materialized_and_alias_columns(started_cluster):
         cur.execute(
             "SELECT count() FROM pg_attribute WHERE attrelid = "
             "(SELECT oid FROM pg_class WHERE relname = 'test_mat_alias' "
-            "AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')) "
+            "AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())) "
             "AND NOT attisdropped AND attnum > 0"
         )
         assert cur.fetchone()[0] == 3
@@ -1398,10 +1399,13 @@ def test_catalog_refresh_trigger_is_case_insensitive(started_cluster):
         node.query("DROP TABLE IF EXISTS aaa_upper_second SYNC")
 
 
-def test_real_public_database_wins_over_alias(started_cluster):
-    # The synthetic `public` schema (the current-database alias, OID 2200) must not shadow a real ClickHouse
-    # database named `public`: when one exists, `schema='public'` has to reach its tables, and once it is
-    # dropped the alias comes back so an unqualified lookup resolves in the connected database again.
+def test_public_schema_is_only_a_real_database(started_cluster):
+    # `public` is not synthesized as an alias of the connected database: a schema name always denotes the
+    # ClickHouse database of that name, so schema discovery and the `COPY` that reads the rows can never
+    # resolve one unqualified name to two different tables. An unqualified lookup resolves through
+    # `current_schema()`, that is in the connected database, even while a real `public` database with a
+    # same-named table exists; `schema='public'` reaches that real database, and nothing at all once it is
+    # dropped.
     node.query("DROP DATABASE IF EXISTS public SYNC")
     node.query("DROP TABLE IF EXISTS default.pub_probe SYNC")
     node.query("CREATE TABLE default.pub_probe (v UInt32) ENGINE = MergeTree ORDER BY v")
@@ -1411,15 +1415,18 @@ def test_real_public_database_wins_over_alias(started_cluster):
         node.query("CREATE TABLE public.pub_probe (v UInt32) ENGINE = MergeTree ORDER BY v")
         node.query("INSERT INTO public.pub_probe VALUES (2)")
 
-        # Schema-qualified `public` resolves to the real database, not to the alias of the connected
-        # database (`default`, whose table holds a different value).
+        # No schema qualifier: both the column discovery and the rows come from the connected database,
+        # never from the same-named table of the real `public` database.
+        assert node.query(f"SELECT v FROM {pg_source('default', 'pub_probe')}") == "1\n"
+
+        # Schema-qualified `public` resolves to the real database of that name.
         assert (
             node.query(
                 f"SELECT v FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'pub_probe', 'pguser', 'pgpass', 'public')"
             )
             == "2\n"
         )
-        # The connected database stays reachable under its own name.
+        # The connected database stays reachable under its own name as well.
         assert (
             node.query(
                 f"SELECT v FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'pub_probe', 'pguser', 'pgpass', 'default')"
@@ -1429,9 +1436,13 @@ def test_real_public_database_wins_over_alias(started_cluster):
 
         node.query("DROP DATABASE public SYNC")
 
-        # With no real `public` database the alias is back: an unqualified lookup (the reader defaults to
-        # the `public` schema) resolves the table in the connected database.
+        # An unqualified lookup keeps working, while `schema='public'` now fails cleanly instead of
+        # silently falling back to a table of the connected database.
         assert node.query(f"SELECT v FROM {pg_source('default', 'pub_probe')}") == "1\n"
+        with pytest.raises(Exception, match="does not exist"):
+            node.query(
+                f"SELECT v FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'pub_probe', 'pguser', 'pgpass', 'public')"
+            )
     finally:
         node.query("DROP DATABASE IF EXISTS public SYNC")
         node.query("DROP TABLE IF EXISTS default.pub_probe SYNC")
@@ -1496,7 +1507,6 @@ def test_catalog_refresh_per_statement(started_cluster):
         )
         cur.execute("EXECUTE refresh_probe_stmt")
         rows = cur.fetchall()
-        # The table may legitimately appear more than once (a real-namespace row and a `public` alias row).
         assert rows and all(row[0] == "refresh_prepare_probe" for row in rows)
 
         # DDL followed by a catalog read in one simple-query message: the refresh has to happen per split
@@ -1514,10 +1524,9 @@ def test_catalog_refresh_per_statement(started_cluster):
 
 
 def test_pg_class_oid_is_unique_per_row(started_cluster):
-    # A current-database table is exposed twice in `pg_class` - under its real namespace and under the
-    # synthetic `public` alias - and the two rows must carry distinct OIDs: clients treat `pg_class.oid`
-    # as the unique relation identifier, so a shared OID would duplicate every column in joins that
-    # follow it (e.g. `pg_attribute.attrelid = pg_class.oid`).
+    # A table is exposed exactly once in `pg_class`, under the namespace of the database that owns it:
+    # clients treat `pg_class.oid` as the unique relation identifier, so a second row for the same table
+    # would duplicate every column in joins that follow it (e.g. `pg_attribute.attrelid = pg_class.oid`).
     node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
     node.query(
         "CREATE TABLE oid_unique_probe (a UInt32, b String) ENGINE = MergeTree ORDER BY a"
@@ -1530,10 +1539,9 @@ def test_pg_class_oid_is_unique_per_row(started_cluster):
         cur = conn.cursor()
         cur.execute("SELECT oid FROM pg_class WHERE relname = 'oid_unique_probe'")
         oids = [row[0] for row in cur.fetchall()]
-        assert len(oids) == 2, oids
-        assert len(set(oids)) == 2, oids
+        assert len(oids) == 1, oids
 
-        # Following either OID through the `attrelid` join must yield each column exactly once.
+        # Following the OID through the `attrelid` join must yield each column exactly once.
         for oid in oids:
             cur.execute(
                 "SELECT a.attname FROM pg_class c "
