@@ -92,6 +92,13 @@ WHERE d.type = 'Setting' AND position(d.description, '**Introduced in:** v') > 0
 -- the setting became adjustable per query, so no introducing version is claimed for it.
 SELECT position(description, '**Introduced in:**') = 0 FROM system.documentation WHERE type = 'Setting' AND name = 'page_cache_block_size';
 
+-- Conversely, the reason of a record that registers a new setting is free-form — it usually describes what the
+-- setting does, and only sometimes says that the setting is new — so the introducing version is reported for such
+-- a record whatever its reason says. `apply_row_policy_after_final` and `parallel_replicas_mode` are settings whose
+-- introduction is recorded with a reason that never uses the word "new".
+SELECT extract(description, '\\*\\*Introduced in:\\*\\* v([0-9.]+)') FROM system.documentation WHERE type = 'Setting' AND name = 'apply_row_policy_after_final';
+SELECT extract(description, '\\*\\*Introduced in:\\*\\* v([0-9.]+)') FROM system.documentation WHERE type = 'Setting' AND name = 'parallel_replicas_mode';
+
 -- The full documentation of a setting: the description, the type, the default value, and the history.
 -- `async_insert_max_data_size` is a long-standing setting whose default value was raised in 24.2.
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'async_insert_max_data_size';

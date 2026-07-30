@@ -436,18 +436,35 @@ SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history
 
 /// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
 /// register something that did not exist before, rather than to note something about a setting that already
-/// existed. The history has no structured marker for it, so this recognizes the wording that the file uses by
-/// convention ("New setting", "A new compatibility setting", "Added an alias for ..."), and reports nothing when
-/// the wording says something else — claiming a wrong introducing version is worse than claiming none.
+/// existed.
+///
+/// The history has no structured marker for it, so this has to go by the wording, and the wording is free-form:
+/// a record that registers a new setting is as likely to describe what the setting does ("Cloud sync", "Max
+/// retries for general keeper operations", "Allow to skip empty files in azure table engine") as to say that it
+/// is new. Recognizing the phrasings that announce a new setting would therefore drop most introductions, so
+/// this recognizes the opposite — the far smaller and more formulaic set of phrasings the file uses when a
+/// no-op record is about a setting that already existed: that it became obsolete, that it graduated to another
+/// maturity tier, that an existing setting became settable per query, or that the record adds an alias.
+///
+/// A record that adds an alias introduces the alias and not the setting it aliases — hence `documenting_an_alias`.
 bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alias)
 {
-    static const re2::RE2 new_setting(R"((?i)\bnew\b[^.]{0,40}\bsettings?\b)");
-    static const re2::RE2 new_alias(R"((?i)\balias\b)");
-    return re2::RE2::PartialMatch(reason, new_setting) || (documenting_an_alias && re2::RE2::PartialMatch(reason, new_alias));
+    /// "Added an alias for setting `x`", "Add alias to x", "Added as an alias for 'x'". The bound keeps the verb
+    /// and the alias in one phrase, so that describing an alias of a setting being introduced ("New setting ... .
+    /// 'y' is an alias for this setting.") is not mistaken for adding one.
+    static const re2::RE2 adds_an_alias(R"((?i)\b(?:add\w*|new|introduc\w*)\b[^.]{0,20}\balias\b)");
+    /// "Obsolete setting", "Old setting which popped up here being renamed", "Made this setting adjustable on a
+    /// per-query level", "became the Beta tier feature", "was moved to Beta", "is now Beta".
+    static const re2::RE2 concerns_an_existing_setting(
+        R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the )?\w+ tier|moved to beta|is now beta)");
+
+    if (re2::RE2::PartialMatch(reason, adds_an_alias))
+        return documenting_an_alias;
+    return !re2::RE2::PartialMatch(reason, concerns_an_existing_setting);
 }
 
 /// Whether a recorded change is the introduction of the entity — a setting or an alias of one — that it is being
-/// rendered for. It is, when the change is from a value to itself and its reason says so: such a record has no
+/// rendered for. It is, when the change is from a value to itself and its reason does not say otherwise: such a record has no
 /// effect on `compatibility` and is written either to make a setting that did not exist before known to it, or to
 /// note something else about a setting that already exists (that it became obsolete, or that it graduated from
 /// experimental to beta, say). A setting introduced with a compatibility value that differs from its default is
