@@ -5197,7 +5197,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             Map cursor;
             const size_t num_partitions = fuzz_rand() % 2 + 1;
             /// Distinct partition ids: a flat leaf and a nested object under the same
-            /// key would collide in buildCursorTree when the cursor is formatted.
+            /// key would collide in buildCursorTree.
             const size_t base = fuzz_rand() % cursor_partition_ids.size();
             for (size_t i = 0; i < num_partitions; ++i)
             {
@@ -5238,10 +5238,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 /// Toggle between bare STREAM and STREAM CURSOR, or regenerate the cursor
                 auto & stream = table_expr->stream_settings->as<ASTStreamSettings &>();
-                if (stream.cursor.has_value() && fuzz_rand() % 2 == 0)
+                if (stream.cursor && fuzz_rand() % 2 == 0)
                     stream.cursor.reset();
                 else
-                    stream.cursor = make_random_cursor();
+                    stream.cursor = buildCursorTree(make_random_cursor());
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
@@ -5250,7 +5250,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// max_execution_time, so keep the probability low.
             ASTStreamSettings new_stream_settings;
             if (fuzz_rand() % 2 == 0)
-                new_stream_settings.cursor = make_random_cursor();
+                new_stream_settings.cursor = buildCursorTree(make_random_cursor());
             auto stream_node = make_intrusive<ASTStreamSettings>(std::move(new_stream_settings));
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
