@@ -14,7 +14,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -92,7 +92,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     try
     {
-        PullingPipelineExecutor executor(io.pipeline);
+        PullingAsyncPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
         writeQueryResponse(response, executor, converter.getResultType());
@@ -113,7 +113,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
