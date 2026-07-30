@@ -25,12 +25,18 @@ JapaneseTokenizer::JapaneseTokenizer(const JapaneseTokenizer &)
 
 void JapaneseTokenizer::ensureLoaded() const
 {
-    if (dictionary)
+    if (lattice)
         return;
-    dictionary = MecabDictionaryManager::instance().getJapaneseDictionary();
-    lattice.reset(dictionary->getModel().createLattice());
-    if (!lattice)
+
+    auto loaded_dictionary = MecabDictionaryManager::instance().getJapaneseDictionary();
+    std::unique_ptr<MeCab::Lattice> loaded_lattice(loaded_dictionary->getModel().createLattice());
+    if (!loaded_lattice)
         throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Failed to initialize the MeCab Japanese tokenizer");
+
+    /// Publish only after both are ready, so a transient failure leaves the tokenizer un-loaded (the
+    /// next call retries) instead of half-initialized (dictionary set but lattice null).
+    dictionary = std::move(loaded_dictionary);
+    lattice = std::move(loaded_lattice);
 }
 
 bool JapaneseTokenizer::nextInString(
