@@ -197,9 +197,7 @@ fi
 #     leak. Asserted from both sides. The rows must arrive in one block, or the pipeline's own check bounds
 #     the INSERT whatever the function does.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_replace_stored SYNC"
-# Pinned off here too: the instance built for a stored expression snapshots the compile threshold from the
-# defining statement's context.
-${CLICKHOUSE_CLIENT} --compile_regular_expressions 0 --query "
+${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_replace_stored (k String) ENGINE = MergeTree
     PARTITION BY substring(replaceRegexpAll(k, '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'), 1, 1) ORDER BY tuple()"
 run "stored expression" \
@@ -228,7 +226,7 @@ for i in 1 2 3 4 5 6; do
     ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_replace_stored_$i (k String, v String) ENGINE = MergeTree ORDER BY k"
     # ALTER, not CREATE: a CREATE analyses the expression on a context carrying no query state, so nothing
     # could be captured there and the case would be vacuous.
-    ${CLICKHOUSE_CLIENT} --compile_regular_expressions 0 --max_execution_time "$DEADLINE" --query "
+    ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --query "
         ALTER TABLE t_replace_stored_$i ADD INDEX ix replaceRegexpAll(v, '[0-9]', 'x') TYPE set(10) GRANULARITY 1"
 done
 queries_after=$(sample_queries)
