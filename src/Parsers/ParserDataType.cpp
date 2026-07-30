@@ -439,7 +439,15 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
 
-        /// Fall back to generic parser
+        /// Fall back to the generic parser, but only for an empty argument list (`Tuple()`), which
+        /// the fast path above deliberately rejects. For a non-empty argument list the generic
+        /// parser applies exactly the same element parsers - `ParserNameTypePair` is
+        /// `ParserIdentifier` followed by `ParserDataType` - so it stops at the same token and fails
+        /// the same way. Re-parsing would only duplicate the work, and for nested tuples the
+        /// duplication compounds: a malformed `Tuple(Tuple(...))` of depth N costs 2^N.
+        if (!arguments->children.empty())
+            return false;
+
         pos = saved_pos;
     }
 
