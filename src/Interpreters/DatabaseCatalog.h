@@ -37,6 +37,7 @@ class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
+using DatabaseAndTableWeak = std::pair<std::weak_ptr<IDatabase>, std::weak_ptr<IStorage>>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
@@ -300,7 +301,7 @@ private:
 
     struct UUIDToStorageMapPart
     {
-        std::unordered_map<UUID, DatabaseAndTable> map TSA_GUARDED_BY(mutex);
+        std::unordered_map<UUID, DatabaseAndTableWeak> map TSA_GUARDED_BY(mutex);
         mutable std::mutex mutex;
     };
 

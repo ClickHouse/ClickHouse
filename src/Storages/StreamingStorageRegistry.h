@@ -27,6 +27,9 @@ public:
 
     void renameTable(const StorageID & from, const StorageID & to);
 
+    /// Throws if a subsequent renameTable for this storage would fail.
+    void checkTableCanBeRenamed(const StorageID & from);
+
     void shutdown();
 
 private:

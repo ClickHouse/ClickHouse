@@ -350,6 +350,11 @@ void StorageKafka::shutdown(bool)
     StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
 }
 
+void StorageKafka::checkTableCanBeRenamed(const StorageID & /*new_name*/) const
+{
+    StreamingStorageRegistry::instance().checkTableCanBeRenamed(getStorageID());
+}
+
 void StorageKafka::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();

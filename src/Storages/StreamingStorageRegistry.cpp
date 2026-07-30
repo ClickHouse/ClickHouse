@@ -30,6 +30,7 @@ std::string makeMetadataKey(const std::string & zookeeper_name, const std::strin
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
@@ -116,6 +117,16 @@ void StreamingStorageRegistry::unregisterTable(const StorageID & storage, bool i
     }
     storages.erase(it);
     LOG_TRACE(log, "Unregistered table: {}", storage.getNameForLogs());
+}
+
+void StreamingStorageRegistry::checkTableCanBeRenamed(const StorageID & from)
+{
+    std::lock_guard lock(mutex);
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Cannot rename {}, the server is shutting down", from.getNameForLogs());
+
+    if (!storages.contains(from))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
 }
 
 void StreamingStorageRegistry::renameTable(const StorageID & from, const StorageID & to)

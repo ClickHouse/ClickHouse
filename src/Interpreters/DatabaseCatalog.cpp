@@ -364,14 +364,14 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMapping(db_uuid);
     }
-    chassert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
         /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
         {
             auto & db = mapping.second.first;
             auto & table = mapping.second.second;
-            return db || table;
+            return !db.expired() || !table.expired();
         };
         std::lock_guard map_lock{elem.mutex};
         auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
@@ -402,7 +402,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         return {};
-    return it->second;
+    return {it->second.first.lock(), it->second.second.lock()};
 }
 
 
@@ -1001,9 +1001,9 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
 
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    chassert(prev_database || !prev_table);
+    chassert(!prev_database.expired() || prev_table.expired());
 
-    if (!prev_database && database)
+    if (prev_database.expired() && database)
     {
         /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
         prev_database = database;
@@ -1011,7 +1011,7 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
         return;
     }
 
-    /// We are trying to replace existing mapping (prev_database != nullptr), it's logical error
+    /// We are trying to replace existing mapping (prev_database is still alive), it's logical error
     if (database || table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", uuid);
     /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
@@ -1028,7 +1028,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {nullptr, nullptr};
+    it->second = {};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
@@ -1051,9 +1051,9 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    chassert(prev_database && prev_table);
-    prev_database = std::move(database);
-    prev_table = std::move(table);
+    chassert(!prev_database.expired() && !prev_table.expired());
+    prev_database = database;
+    prev_table = table;
 }
 
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)

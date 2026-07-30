@@ -61,6 +61,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     void read(

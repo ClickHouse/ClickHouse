@@ -1036,6 +1036,11 @@ void StorageRabbitMQ::shutdown(bool)
     LOG_TRACE(log, "Shutdown finished");
 }
 
+void StorageRabbitMQ::checkTableCanBeRenamed(const StorageID & /*new_name*/) const
+{
+    StreamingStorageRegistry::instance().checkTableCanBeRenamed(getStorageID());
+}
+
 void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();

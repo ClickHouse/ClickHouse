@@ -1822,6 +1822,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 
 void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_name) const
 {
+    StreamingStorageRegistry::instance().checkTableCanBeRenamed(getStorageID());
+
     const bool move_between_databases = getStorageID().database_name != new_name.database_name;
     if (move_between_databases && !can_be_moved_between_databases)
     {
