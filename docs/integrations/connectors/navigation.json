@@ -219,8 +219,7 @@
         "integrations/connectors/sql-clients/jupysql",
         "integrations/connectors/sql-clients/qstudio",
         "integrations/connectors/sql-clients/tablum",
-        "integrations/connectors/sql-clients/marimo",
-        "integrations/connectors/sql-clients/cli"
+        "integrations/connectors/sql-clients/marimo"
       ]
     },
     {
