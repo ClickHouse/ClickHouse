@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <system_error>
 #include <unordered_map>
@@ -60,6 +61,10 @@ namespace ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int CANNOT_PARSE_NUMBER;
 }
+
+/// A valid `LATEST` contains one positive decimal `Int64` and fits well within this limit.
+/// Use the same value as the minimum read buffer size so it is read in one underlying request.
+constexpr size_t PAIMON_HINT_FILE_SIZE = 64;
 
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
 {
@@ -198,11 +203,11 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     /// try to read latest hint
     Int64 snapshot_version{-1};
     String latest_snapshot_path;
-    RelativePathWithMetadata relative_path_with_metadata(
-        std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
+    String latest_hint_path = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT;
+    StoredObject latest_hint_object(latest_hint_path);
     try
     {
-        if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
+        if (object_storage->exists(latest_hint_object))
         {
             /// Read the hint atomically, not via createReadBuffer(): a concurrent writer
             /// rewrites this file, and createReadBuffer's AsynchronousBoundedReadBuffer caches
@@ -210,28 +215,32 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
             /// The ETag is pinned (when s3_validate_etag_on_read) so a rewrite between retried
             /// requests throws S3_OBJECT_CHANGED_DURING_READ (falling back to listing below)
             /// instead of splicing bytes of two hint generations into a bogus snapshot id.
+            auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/true);
+            read_settings.local_fs_settings.buffer_size
+                = std::max(read_settings.local_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+            read_settings.remote_fs_settings.buffer_size
+                = std::max(read_settings.remote_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+
             auto hint_data = object_storage->readSmallObjectAndGetObjectMetadata(
-                makeEtagPinnedStoredObject(relative_path_with_metadata.relative_path),
-                getContext()->getReadSettings(),
-                PAIMON_MAX_HINT_FILE_SIZE);
+                makeEtagPinnedStoredObject(latest_hint_path), read_settings, PAIMON_HINT_FILE_SIZE);
             const String & hint_version_string = hint_data.data;
             {
-                auto [_, ec]
-                    = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
-                if (ec != std::errc())
+                const auto * end = hint_version_string.data() + hint_version_string.size();
+                auto [ptr, ec] = std::from_chars(hint_version_string.data(), end, snapshot_version);
+                if (ec != std::errc() || ptr != end || snapshot_version <= 0 || snapshot_version == std::numeric_limits<Int64>::max())
                 {
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
                 }
             }
             latest_snapshot_path
-                = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
+                = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
         }
     }
     catch (...)
     {
-        LOG_WARNING(log, "Failed to read Paimon LATEST hint file, falling back to snapshot listing: {}",
-                    getCurrentExceptionMessage(false));
+        LOG_WARNING(
+            log, "Failed to read Paimon LATEST hint file, falling back to snapshot listing: {}", getCurrentExceptionMessage(false));
         snapshot_version = -1;
         latest_snapshot_path.clear();
     }
@@ -240,10 +249,11 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     if (!latest_snapshot_path.empty())
     {
         Int64 next_snapshot_version = snapshot_version + 1;
-        StoredObject store_object(
+        StoredObject snapshot_object(latest_snapshot_path);
+        StoredObject next_snapshot_object(
             std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
             / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
-        if (!object_storage->exists(store_object))
+        if (object_storage->exists(snapshot_object) && !object_storage->exists(next_snapshot_object))
         {
             return std::make_pair(snapshot_version, latest_snapshot_path);
         }

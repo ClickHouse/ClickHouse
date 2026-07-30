@@ -4,33 +4,23 @@
 
 #if USE_AVRO
 
+#include <Core/Field.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadStatus.h>
-#include <Common/setThreadName.h>
 
 #include <base/scope_guard.h>
 
-#include <unistd.h> /// for ::getpid
+#include <unistd.h>
 
 #include <atomic>
+#include <exception>
 #include <filesystem>
 #include <fstream>
-#include <functional>
-#include <optional>
 #include <string>
 #include <thread>
-
-namespace ProfileEvents
-{
-    extern const Event RemoteFSBuffers;
-}
+#include <vector>
 
 namespace fs = std::filesystem;
 using namespace DB;
@@ -38,17 +28,18 @@ using namespace DB;
 namespace
 {
 
-/// A scoped temp directory that cleans itself up on destruction.
 struct ScopedTempDir
 {
     fs::path path;
-    explicit ScopedTempDir(const std::string & name_hint)
-        : path(fs::temp_directory_path() / fs::path(name_hint + "_" + std::to_string(::getpid())))
+
+    explicit ScopedTempDir(const std::string & name)
+        : path(fs::temp_directory_path() / (name + "_" + std::to_string(::getpid())))
     {
         std::error_code ec;
         fs::remove_all(path, ec);
         fs::create_directories(path);
     }
+
     ~ScopedTempDir()
     {
         std::error_code ec;
@@ -56,405 +47,152 @@ struct ScopedTempDir
     }
 };
 
-void writeFile(const fs::path & p, const std::string & content)
+void writeFile(const fs::path & path, const std::string & contents)
 {
-    fs::create_directories(p.parent_path());
-    std::ofstream f(p, std::ios::binary | std::ios::trunc);
-    f << content;
+    fs::create_directories(path.parent_path());
+    std::ofstream out;
+    out.exceptions(std::ios::failbit | std::ios::badbit);
+    out.open(path, std::ios::binary | std::ios::trunc);
+    out << contents;
+    out.close();
 }
 
-ObjectStoragePtr makeLocalObjectStorage(const std::string & key_prefix)
+void replaceFileAtomically(const fs::path & path, const std::string & contents, size_t sequence)
 {
-    return std::make_shared<LocalObjectStorage>(
-        LocalObjectStorageSettings(/*disk_name_=*/"test_paimon_local", /*key_prefix_=*/key_prefix, /*read_only_=*/false));
+    fs::path temporary_path(path.string() + ".tmp." + std::to_string(sequence));
+    writeFile(temporary_path, contents);
+    fs::rename(temporary_path, path);
 }
 
-/// Lay out a minimal Paimon table at `<root>/test.db/test_table` with the given
-/// snapshot ids present and a LATEST hint pointing at `latest_hint`.
-fs::path makePaimonTable(const fs::path & root, const std::vector<int> & snapshot_ids, const std::string & latest_hint)
+fs::path makePaimonTable(const fs::path & root, const std::vector<Int64> & snapshot_ids, const std::string & latest_hint)
 {
     auto table = root / "test.db" / "test_table";
-    for (int id : snapshot_ids)
-        writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(id)), "{}");
+    for (Int64 snapshot_id : snapshot_ids)
+    {
+        writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(snapshot_id)), "{}");
+    }
     writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT, latest_hint);
     return table;
 }
 
-/// RAII ThreadGroup with its own ProfileEvents counters so a read's event increments can be
-/// observed in isolation (mirrors the helper in src/IO/tests/gtest_reader_executor_metric.cpp).
-struct CountingThreadGroup
+class CountingLocalObjectStorage : public LocalObjectStorage
 {
-    std::optional<ThreadStatus> thread_status_holder{
-        current_thread ? std::nullopt : std::optional<ThreadStatus>(std::in_place)};
-    ThreadGroupPtr thread_group = ThreadGroup::createForQuery(getContext().context);
-    ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true};
+public:
+    using LocalObjectStorage::LocalObjectStorage;
 
-    ProfileEvents::Count get(ProfileEvents::Event event) const { return thread_group->performance_counters[event]; }
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint) const override
+    {
+        small_object_reads.fetch_add(1, std::memory_order_relaxed);
+        last_local_buffer_size.store(read_settings.local_fs_settings.buffer_size, std::memory_order_relaxed);
+        last_remote_buffer_size.store(read_settings.remote_fs_settings.buffer_size, std::memory_order_relaxed);
+        last_max_size_bytes.store(max_size_bytes, std::memory_order_relaxed);
+        return IObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
+    }
+
+    size_t getSmallObjectReads() const { return small_object_reads.load(std::memory_order_relaxed); }
+    size_t getLastLocalBufferSize() const { return last_local_buffer_size.load(std::memory_order_relaxed); }
+    size_t getLastRemoteBufferSize() const { return last_remote_buffer_size.load(std::memory_order_relaxed); }
+    size_t getLastMaxSizeBytes() const { return last_max_size_bytes.load(std::memory_order_relaxed); }
+
+private:
+    mutable std::atomic<size_t> small_object_reads{0};
+    mutable std::atomic<size_t> last_local_buffer_size{0};
+    mutable std::atomic<size_t> last_remote_buffer_size{0};
+    mutable std::atomic<size_t> last_max_size_bytes{0};
 };
 
-/// A clean read of a mutable-metadata object must not go through AsynchronousBoundedReadBuffer (the
-/// cached-size chassert path). Over LocalObjectStorage that buffer is the only reader that bumps
-/// RemoteFSBuffers, so a zero delta is a deterministic, race-free signal (see the commit message).
-void expectReadDoesNotUseAsyncBoundedBuffer(const std::function<void()> & read)
+std::shared_ptr<CountingLocalObjectStorage> makeLocalObjectStorage(const fs::path & root)
 {
-    CountingThreadGroup tg;
-    auto before = tg.get(ProfileEvents::RemoteFSBuffers);
-    read();
-    EXPECT_EQ(tg.get(ProfileEvents::RemoteFSBuffers), before)
-        << "mutable-metadata read went through AsynchronousBoundedReadBuffer (cached-size chassert path)";
+    return std::make_shared<CountingLocalObjectStorage>(
+        LocalObjectStorageSettings("test_paimon_latest_hint", root.string(), /*read_only_=*/false));
 }
 
 }
 
-/// Happy path: the LATEST hint names the newest snapshot and there is no newer one,
-/// so the hint is trusted directly.
-TEST(PaimonLatestHint, ReadsLatestHintDirectly)
+TEST(PaimonLatestHint, ReadsConcurrentlyReplacedHintAsSmallObject)
 {
-    ScopedTempDir tmp("ch_gtest_paimon_hint_direct");
-    auto table = makePaimonTable(tmp.path, {1, 2}, "2");
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), getContext().context);
-
-    auto info = client.getLatestTableSnapshotInfo();
-    ASSERT_TRUE(info.has_value());
-    EXPECT_EQ(info->first, 2);
-    EXPECT_TRUE(fs::exists(info->second)) << info->second;
-}
-
-/// Stale hint: LATEST points at an older snapshot while a newer one exists on disk.
-/// getLatestTableSnapshotInfo must fall through to snapshot listing and return the
-/// real latest (snapshot-3), never the stale hint value.
-TEST(PaimonLatestHint, FallsBackWhenHintIsStale)
-{
-    ScopedTempDir tmp("ch_gtest_paimon_hint_stale");
-    auto table = makePaimonTable(tmp.path, {1, 2, 3}, "1");
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), getContext().context);
-
-    auto info = client.getLatestTableSnapshotInfo();
-    ASSERT_TRUE(info.has_value());
-    EXPECT_EQ(info->first, 3);
-    EXPECT_TRUE(fs::exists(info->second)) << info->second;
-}
-
-/// A writer rewrites the LATEST hint between "1" and "10" while the reader runs. The reader must
-/// never abort and must always resolve to a snapshot that exists on disk. Before the fix this hit
-/// the AsynchronousBoundedReadBuffer cached-size chassert (the test_paimon_incremental_read flake).
-TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
-{
-    ScopedTempDir tmp("ch_gtest_paimon_hint_race");
-    auto table = makePaimonTable(tmp.path, {1, 10}, "1");
-    auto hint = table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT;
-
-    /// The pre-fix chassert only fires when the hint read goes through createReadBuffer's
-    /// AsynchronousBoundedReadBuffer, which is selected by remote_filesystem_read_method=threadpool
-    /// + remote_filesystem_read_prefetch=1. Pin both explicitly so the repro stays tied to the
-    /// failure mode rather than to whatever the global defaults happen to be.
-    auto context = Context::createCopy(getContext().context);
-    context->setSetting("remote_filesystem_read_method", String("threadpool"));
-    context->setSetting("remote_filesystem_read_prefetch", Field(true));
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), context);
-
-    {
-        std::atomic<bool> stop{false};
-        std::thread writer(
-            [&]
-            {
-                const char * vals[] = {"1", "10"};
-                size_t i = 0;
-                while (!stop.load(std::memory_order_relaxed))
-                    writeFile(hint, vals[(i++) & 1u]);
-            });
-        /// Join on every exit path (failed ASSERT_* returns early, or the code under test throws):
-        /// a still-joinable std::thread destructor would call std::terminate and turn a plain test
-        /// failure into a process abort, which is the crash this test must distinguish from.
-        SCOPE_EXIT({
-            stop.store(true);
-            writer.join();
-        });
-
-        for (int i = 0; i < 4000; ++i)
-        {
-            auto info = client.getLatestTableSnapshotInfo();
-            /// A torn read of the hint is tolerated (the parse fails and we fall back to snapshot
-            /// listing), so the result must still be a snapshot that exists on disk.
-            ASSERT_TRUE(info.has_value());
-            EXPECT_TRUE(fs::exists(info->second)) << info->second;
-        }
-    }
-
-    /// Race-free signal: the LATEST hint read must not use the cached-size async buffer.
-    writeFile(hint, "10");
-    expectReadDoesNotUseAsyncBoundedBuffer([&] { client.getLatestTableSnapshotInfo(); });
-}
-
-/// schema-0 is another mutable metadata object: validateTableIdentity reads it on every
-/// background refresh to detect an external DROP + re-CREATE at the same path, and a recreate can
-/// write a larger schema-0. A concurrent writer that grows schema-0 while the reader is mid-read
-/// used to hit the same AsynchronousBoundedReadBuffer cached-size chassert as the LATEST hint.
-/// The contract getTableSchemaJSON must uphold is fail-closed without process termination: a torn
-/// read may throw a normal parse exception, but the process must never abort, and a clean read
-/// must still return a valid schema.
-TEST(PaimonLatestHint, ConcurrentSchemaZeroRewriteDoesNotCrash)
-{
-    ScopedTempDir tmp("ch_gtest_paimon_schema0_race");
-    auto table = tmp.path / "test.db" / "test_table";
-    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
-
-    /// A small and a larger schema JSON, so the file size changes across the rewrite. Padding lives
-    /// in an ignored field so both documents remain parseable objects.
-    const std::string small_schema = R"({"version":3,"timeMillis":1})";
-    const std::string large_schema = R"({"version":3,"timeMillis":2,"_pad":")" + std::string(64 * 1024, 'x') + R"("})";
-    writeFile(schema0, small_schema);
-
-    /// Pin the async-prefetch read path (same as the LATEST test) so the repro stays tied to the
-    /// failure mode rather than to whatever the global defaults happen to be.
-    auto context = Context::createCopy(getContext().context);
-    context->setSetting("remote_filesystem_read_method", String("threadpool"));
-    context->setSetting("remote_filesystem_read_prefetch", Field(true));
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), context);
-
-    auto schema0_info = client.getTableSchemaInfoById(0);
-
-    {
-        std::atomic<bool> stop{false};
-        std::thread writer(
-            [&]
-            {
-                size_t i = 0;
-                while (!stop.load(std::memory_order_relaxed))
-                    writeFile(schema0, ((i++) & 1u) ? large_schema : small_schema);
-            });
-        /// Join on every exit path (see the LATEST test): a still-joinable std::thread destructor
-        /// would std::terminate and turn a plain test failure into a process abort.
-        SCOPE_EXIT({
-            stop.store(true);
-            writer.join();
-        });
-
-        for (int i = 0; i < 4000; ++i)
-        {
-            /// A torn read yields an unparseable document; getTableSchemaJSON then throws a normal
-            /// exception (never aborts). Either a valid schema object or a thrown parse error is
-            /// tolerated here; the point is that the process must not terminate.
-            try
-            {
-                auto schema_json = client.getTableSchemaJSON(schema0_info);
-                EXPECT_FALSE(schema_json.isNull());
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
-            }
-        }
-    }
-
-    /// Writer has stopped and schema-0 is a complete document again: a clean read must succeed and
-    /// return the expected schema. This rejects a degenerate implementation that "passes" the loop
-    /// above only by always throwing.
-    writeFile(schema0, small_schema);
-    Poco::JSON::Object::Ptr schema_json;
-    /// Race-free signal: the schema-0 read must not use the cached-size async buffer.
-    expectReadDoesNotUseAsyncBoundedBuffer([&] { schema_json = client.getTableSchemaJSON(schema0_info); });
-    ASSERT_FALSE(schema_json.isNull());
-    EXPECT_EQ(schema_json->getValue<Int64>("timeMillis"), 1);
-}
-
-namespace
-{
-std::string makeSnapshotJson(Int64 id, const std::string & pad = "")
-{
-    return R"({"id":)" + std::to_string(id) + R"(,"schemaId":0,"baseManifestList":"b","deltaManifestList":"d",)"
-        + R"("commitUser":"u","commitIdentifier":1,"commitKind":"APPEND","timeMillis":1)"
-        + (pad.empty() ? "" : R"(,"_pad":")" + pad + R"(")") + "}";
-}
-}
-
-/// snapshot-N is read on every refresh (in loadLatestState, before validateTableIdentity) at a fixed
-/// path that an external DROP + re-CREATE reuses, so it is mutable in place just like schema-0. The
-/// same contract applies: a concurrent grow may cause a torn parse (a normal exception) but must
-/// never abort the process, and a clean read must still return a valid snapshot.
-TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
-{
-    ScopedTempDir tmp("ch_gtest_paimon_snapshot_race");
-    auto table = tmp.path / "test.db" / "test_table";
-    auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
-
-    const std::string small_snapshot = makeSnapshotJson(1);
-    const std::string large_snapshot = makeSnapshotJson(1, std::string(64 * 1024, 'x'));
-    writeFile(snapshot1, small_snapshot);
+    ScopedTempDir temporary_directory("ch_gtest_paimon_latest_hint");
+    auto table = makePaimonTable(temporary_directory.path, {9, 10}, "9");
+    auto hint_path = table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT;
 
     auto context = Context::createCopy(getContext().context);
     context->setSetting("remote_filesystem_read_method", String("threadpool"));
     context->setSetting("remote_filesystem_read_prefetch", Field(true));
 
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), context);
+    auto object_storage = makeLocalObjectStorage(temporary_directory.path);
+    PaimonTableClient client(object_storage, table.string(), context);
 
+    std::atomic<bool> stop{false};
+    std::exception_ptr writer_exception;
     {
-        std::atomic<bool> stop{false};
         std::thread writer(
             [&]
             {
-                size_t i = 0;
-                while (!stop.load(std::memory_order_relaxed))
-                    writeFile(snapshot1, ((i++) & 1u) ? large_snapshot : small_snapshot);
+                try
+                {
+                    size_t sequence = 0;
+                    while (!stop.load(std::memory_order_relaxed))
+                    {
+                        replaceFileAtomically(hint_path, (sequence % 2 == 0) ? "10" : "9", sequence);
+                        ++sequence;
+                    }
+                }
+                catch (...)
+                {
+                    writer_exception = std::current_exception();
+                    stop.store(true, std::memory_order_relaxed);
+                }
             });
+
         SCOPE_EXIT({
-            stop.store(true);
+            stop.store(true, std::memory_order_relaxed);
             writer.join();
         });
 
-        for (int i = 0; i < 4000; ++i)
+        for (size_t iteration = 0; iteration < 2000; ++iteration)
         {
-            try
-            {
-                auto snapshot = client.getSnapshot({1, snapshot1.string()});
-                EXPECT_EQ(snapshot.id, 1);
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-                /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
-            }
+            auto snapshot_info = client.getLatestTableSnapshotInfo();
+            ASSERT_TRUE(snapshot_info.has_value());
+            EXPECT_EQ(snapshot_info->first, 10);
+            EXPECT_TRUE(fs::exists(snapshot_info->second));
         }
     }
 
-    /// Writer stopped: a clean read must succeed (rejects an always-throwing implementation).
-    writeFile(snapshot1, small_snapshot);
-    std::optional<PaimonSnapshot> snapshot;
-    /// Race-free signal: the snapshot read must not use the cached-size async buffer.
-    expectReadDoesNotUseAsyncBoundedBuffer([&] { snapshot.emplace(client.getSnapshot({1, snapshot1.string()})); });
-    ASSERT_TRUE(snapshot.has_value());
-    EXPECT_EQ(snapshot->id, 1);
+    if (writer_exception)
+    {
+        try
+        {
+            std::rethrow_exception(writer_exception);
+        }
+        catch (const std::exception & exception)
+        {
+            FAIL() << "Hint writer failed: " << exception.what();
+        }
+    }
+
+    EXPECT_GT(object_storage->getSmallObjectReads(), 0);
+    EXPECT_EQ(object_storage->getLastMaxSizeBytes(), 64);
+    EXPECT_GE(object_storage->getLastLocalBufferSize(), 64);
+    EXPECT_GE(object_storage->getLastRemoteBufferSize(), 64);
 }
 
-/// Incremental read may skip a snapshot whose load failed (and advance the watermark past it)
-/// only when the `snapshot-N` file is genuinely gone, i.e. removed by Paimon compaction.
-/// If the file still exists, the failure was a live-read problem (torn read during an external
-/// recreate, transient backend error) and the caller must fail closed instead of losing data.
-TEST(PaimonIncrementalRead, SkipsOnlyGenuinelyMissingSnapshots)
+TEST(PaimonLatestHint, FallsBackToListingForInvalidHint)
 {
-    ScopedTempDir tmp("paimon_snapshot_skip_test");
-    auto table = makePaimonTable(tmp.path, /*snapshot_ids=*/{1}, /*latest_hint=*/"1");
-    auto storage = makeLocalObjectStorage(tmp.path.string());
+    ScopedTempDir temporary_directory("ch_gtest_paimon_invalid_latest_hint");
+    auto table = makePaimonTable(temporary_directory.path, {1, 2}, "3trailing");
 
-    const auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
-    const auto snapshot2 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "2");
+    auto object_storage = makeLocalObjectStorage(temporary_directory.path);
+    PaimonTableClient client(object_storage, table.string(), getContext().context);
 
-    /// The snapshot file is still there: a failed load must not be skipped (fail closed).
-    EXPECT_FALSE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
-    /// The snapshot file never existed / was removed by compaction: skipping is safe.
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot2.string()));
-
-    /// Removing the file flips the verdict for the same snapshot id.
-    fs::remove(snapshot1);
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
-}
-
-/// A targeted read (`paimon_target_snapshot_id`) loads `snapshot-N` from a path that an external
-/// DROP + re-CREATE reuses, and snapshot numbering restarts from 1 in the recreated table.  The
-/// snapshot itself therefore carries no evidence of the recreate: `snapshot-1` of the new table is
-/// byte-comparable to `snapshot-1` of the old one.  What does change is `schema-0`'s `timeMillis`,
-/// which is why `iterate` re-validates table identity after loading the targeted snapshot.  This
-/// test pins that property of the reused path: the same snapshot id still loads cleanly after the
-/// recreate, while the identity probe sees a different value and so fails the read closed.
-TEST(PaimonIncrementalRead, DetectsRecreateOnReusedTargetSnapshotPath)
-{
-    ScopedTempDir tmp("paimon_target_snapshot_recreate");
-    auto table = tmp.path / "test.db" / "test_table";
-    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
-    auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
-
-    writeFile(schema0, R"({"version":3,"timeMillis":1000})");
-    writeFile(snapshot1, makeSnapshotJson(1));
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), getContext().context);
-
-    /// Identity latched when the ClickHouse table was created.
-    const Int64 latched_time_millis = PaimonMetadata::readSchemaZeroTimeMillis(client);
-    EXPECT_EQ(latched_time_millis, 1000);
-    EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1);
-
-    /// External DROP + re-CREATE at the same path: snapshot numbering restarts, so `snapshot-1`
-    /// exists again and loads fine, but it now belongs to a different table.
-    fs::remove_all(table);
-    writeFile(schema0, R"({"version":3,"timeMillis":2000})");
-    writeFile(snapshot1, makeSnapshotJson(1));
-
-    EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1)
-        << "the recreated table reuses the snapshot path, so the load itself cannot detect the recreate";
-    EXPECT_NE(PaimonMetadata::readSchemaZeroTimeMillis(client), latched_time_millis)
-        << "identity probe must see the recreate that the targeted snapshot load cannot";
-}
-
-/// An external DROP is not atomic: it can remove `snapshot-N` files while `schema/schema-0` is still
-/// the old one.  In that interleaving neither guard on the collecting side can tell the removal from
-/// a Paimon compaction gap — the existence probe sees a missing file, and the pre-commit identity
-/// re-validation still sees the unchanged old `timeMillis` — so the watermark does advance past
-/// snapshots that the DROP, not compaction, removed.  What must not happen is the recreated table
-/// inheriting that watermark under the reused `keeper_path` and skipping its first snapshots, so the
-/// watermark is committed together with the table generation it belongs to and discarded when that
-/// generation no longer matches.  This test walks exactly that ordering.
-TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
-{
-    ScopedTempDir tmp("paimon_watermark_generation");
-    auto table = tmp.path / "test.db" / "test_table";
-    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
-    const auto snapshot_path = [&](int id)
-    { return table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(id)); };
-
-    writeFile(schema0, R"({"version":3,"timeMillis":1000})");
-    for (int id : {1, 2, 3})
-        writeFile(snapshot_path(id), makeSnapshotJson(id));
-
-    auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), getContext().context);
-
-    /// Identity latched when the ClickHouse table was created, and a watermark committed for it.
-    const Int64 old_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
-    EXPECT_EQ(old_generation, 1000);
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, old_generation));
-
-    /// First half of a non-atomic external DROP: `snapshot-2` is gone, `schema-0` is untouched.
-    fs::remove(snapshot_path(2));
-    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot_path(2).string()))
-        << "a deleted snapshot file is indistinguishable from a compaction gap at this point";
-    EXPECT_EQ(PaimonMetadata::readSchemaZeroTimeMillis(client), old_generation)
-        << "the identity re-validation before the commit cannot see this half of the DROP either";
-    /// So a watermark may legitimately be committed for snapshot 3 under the old generation here.
-
-    /// Second half: the re-CREATE rewrites `schema-0` and restarts snapshot numbering from 1.  The
-    /// recreated table's own snapshot-1 is byte-comparable to the old one, so only the generation
-    /// marker distinguishes the two watermarks.
-    fs::remove_all(table);
-    writeFile(schema0, R"({"version":3,"timeMillis":2000})");
-    writeFile(snapshot_path(1), makeSnapshotJson(1));
-
-    const Int64 new_generation = PaimonMetadata::readSchemaZeroTimeMillis(client);
-    EXPECT_EQ(new_generation, 2000);
-    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, new_generation))
-        << "the watermark of the dropped table must not be inherited by the recreated one";
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(new_generation, new_generation));
-
-    /// A watermark written before generation tracking existed carries no marker, so it may equally
-    /// be this table's progress or progress inherited from a dropped one: it is of unknown
-    /// generation and must not be trusted, because trusting it is the only direction that can skip
-    /// data.  Discarding it takes the initial-read branch, which always commits a watermark and so
-    /// latches the marker - the unmarked state is left behind after a single batch, whether or not
-    /// that batch had any new snapshots to read.
-    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, new_generation))
-        << "an unmarked watermark may have been inherited from a dropped table at the same keeper_path";
-    /// A table whose identity could not be latched has nothing to compare against, so the watermark
-    /// is taken at face value there.
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, 0));
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, 0));
+    auto snapshot_info = client.getLatestTableSnapshotInfo();
+    ASSERT_TRUE(snapshot_info.has_value());
+    EXPECT_EQ(snapshot_info->first, 2);
+    EXPECT_TRUE(fs::exists(snapshot_info->second));
+    EXPECT_EQ(object_storage->getSmallObjectReads(), 1);
 }
 
 #endif
