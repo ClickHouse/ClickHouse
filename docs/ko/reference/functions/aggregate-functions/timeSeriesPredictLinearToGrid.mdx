@@ -42,19 +42,20 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 **60초 OFFSET을 적용하여 그리드 [90, 105, 120, 135, 150, 165, 180, 195, 210]에서 predict&#95;linear 값 계산**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
-    -- 참고: 140과 190 사이의 간격은 window 매개변수에 따라 ts = 150, 165, 180의 값이 어떻게 채워지는지 보여주기 위한 것입니다
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
-    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- 위 타임스탬프에 대응하는 값의 배열
-    90 AS start_ts,       -- 타임스탬프 그리드의 시작
-    90 + 120 AS end_ts,   -- 타임스탬프 그리드의 끝
-    15 AS step_seconds,   -- 타임스탬프 그리드의 간격
-    45 AS window_seconds, -- "staleness" 윈도우
-    60 AS predict_offset  -- 예측 시간 오프셋
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds, -- "staleness" window
+    60 AS predict_offset  -- prediction time offset
 SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)
 FROM
 (
-    -- 이 서브쿼리는 타임스탬프와 값의 배열을 `timestamp`, `value` 행으로 변환합니다
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
     SELECT
         arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
         ts_and_val.1 AS timestamp,
@@ -71,6 +72,7 @@ FROM
 **배열 인수를 사용한 동일한 쿼리**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,

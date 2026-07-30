@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -219,7 +220,7 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    bool is_join_with_constant = false;
+    std::optional<bool> join_expression_value = std::nullopt;
 
     bool enable_analyzer = false;
 
@@ -393,12 +394,17 @@ public:
 
     bool isJoinWithConstant() const
     {
-        return is_join_with_constant;
+        return join_expression_value.has_value();
     }
 
-    void setIsJoinWithConstant(bool is_join_with_constant_value)
+    std::optional<bool> getJoinExpressionValue() const
     {
-        is_join_with_constant = is_join_with_constant_value;
+        return join_expression_value;
+    }
+
+    void setJoinExpressionValue(bool join_expression_value_)
+    {
+        join_expression_value = join_expression_value_;
     }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;

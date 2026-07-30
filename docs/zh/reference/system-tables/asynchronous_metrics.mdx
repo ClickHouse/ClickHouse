@@ -317,6 +317,18 @@ CPU 的当前频率，单位为 MHz。大多数现代 CPU 会为节能和 Turbo 
 
 不可纠正的 ECC 内存错误数。该值非零表示 RAM 已出现故障，必须立即更换，因为这意味着可能发生数据损坏。来源：`/sys/devices/system/edac/mc/`
 
+<div id="executableuserdefinedfunctionmemoryresidentbytes">
+  ### ExecutableUserDefinedFunctionMemoryResidentBytes
+</div>
+
+所有存活的 executable 和 executable&#95;pool 用户自定义函数进程及其子进程的驻留集大小 (VmRSS) 总和，单位为字节。包含空闲的 executable&#95;pool 工作线程。共享页会对每个进程分别计一次，因此该总和只是一个上界，可能会超过 UDF 进程实际独占的物理内存用量。
+
+<div id="executableuserdefinedfunctionprocesses">
+  ### ExecutableUserDefinedFunctionProcesses
+</div>
+
+为 executable 和 executable&#95;pool 用户自定义函数启动的存活进程数量，包括其子进程。
+
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>
