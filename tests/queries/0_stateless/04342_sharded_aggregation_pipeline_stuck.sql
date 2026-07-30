@@ -94,8 +94,16 @@ SELECT (
 
 -- Cover the soft-cap paths in `BufferedShardByHashTransform::prepare`. The two queries
 -- above keep every shard queue at 3 chunks or fewer, so `MAX_QUEUE_LENGTH` is never
--- reached and neither cap branch runs. A small `max_block_size` over a larger table
--- makes one sharding transform accumulate hundreds of chunks, which reaches both.
+-- reached and neither cap branch runs. A smaller `max_block_size` over a larger table
+-- makes one sharding transform accumulate enough chunks to reach both.
+--
+-- `max_block_size` is 1000 rather than a smaller value on purpose. Queue depth scales
+-- with the number of chunks, but it only has to clear `MAX_QUEUE_LENGTH`, whereas the
+-- per-chunk hashing and scattering cost scales with the chunk count too. Measured peak
+-- depth here is 99 for (a) and 12-70 for (b) against a cap of 10, so both branches run
+-- with a wide margin, while a tenfold smaller `max_block_size` only buys more depth at
+-- roughly 2-3x the CPU. `max_threads = 16` is load-bearing and must not be lowered:
+-- with fewer shards the consumer keeps up and peak depth never exceeds 1.
 
 -- (a) Cap reached while a sibling port has an empty queue and downstream demand:
 --     the bypass keeps pulling input instead of back-pressuring, which is what the
@@ -115,7 +123,7 @@ ORDER BY a
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_streams_for_union_step = 1,
-         max_block_size = 100,
+         max_block_size = 1000,
          max_rows_to_group_by = 0,
          enable_parallel_replicas = 0;
 
@@ -133,7 +141,7 @@ SELECT count(), sum(s)
 FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
 SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
-         max_block_size = 100,
+         max_block_size = 1000,
          max_rows_to_group_by = 0,
          enable_parallel_replicas = 0;
 
