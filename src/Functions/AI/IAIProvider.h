@@ -60,6 +60,10 @@ struct AIRequest
 
     /// Maximum number of tokens the model may generate in its response. This is a per-request limit, not a per-query limit.
     UInt64 max_tokens = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiGenerate").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
@@ -95,6 +99,10 @@ struct AIEmbeddingRequest
     /// Optional target dimensionality for the output vectors. 0 means use the model's native size.
     /// Supported by OpenAI's `text-embedding-3-*` models; providers that ignore it return the native size.
     UInt64 dimensions = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiEmbed").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single embedding request. `embeddings` is aligned 1:1 with `AIEmbeddingRequest::inputs`.
