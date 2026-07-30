@@ -171,7 +171,7 @@ def test_session_close_shutdown(started_cluster):
         # Give the Close request some time to get committed
         # (shutdown only waits for the request to reach the leader).
         # (It would be better to instead make shutdown wait for the Close requests to be committed,
-        #  so that no wait or retrying is needed, see TODO in KeeperRequestDispatcher::shutdown.)
+        #  so that no wait or retrying is needed, see TODO in KeeperRequestDispatcher::shutdownRequests.)
         time.sleep(1)
 
         if node1_zk.exists(eph_node) == None:
