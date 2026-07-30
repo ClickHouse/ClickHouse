@@ -2783,22 +2783,56 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         ///   - empty `<users_config>` with `<user_directories>`: there is no users config file at all.
         String users_config_value = config.getString("users_config", "");
         bool has_user_directories = config.has("user_directories");
-        fs::path users_path;
+        std::vector<fs::path> users_paths;
         if (users_config_value.empty())
         {
             if (!has_user_directories)
-                users_path = config_path;
+                users_paths.emplace_back(config_path);
         }
         else
         {
-            users_path = users_config_value;
+            fs::path users_path{users_config_value};
             if (users_path.is_relative() && fs::exists(config_dir / users_path))
                 users_path = config_dir / users_path;
+            users_paths.push_back(std::move(users_path));
         }
-        /// Scan the active users config and the fragments merged into it, unless it is the main
-        /// config (already scanned) or there is no separate users config (empty `users_path`).
-        if (!users_path.empty() && users_path != fs::path(config_path))
+
+        /// `<user_directories>` adds *more* active users config files, and
+        /// `addStoragesFromUserDirectoriesConfig` loads each of them with its own `ConfigProcessor`
+        /// invocation, which honors that file's own `<include_from>`. Mirror the entry types it maps to
+        /// `UsersConfigAccessStorage` (`users_xml` — its storage type — plus the `users.xml` and
+        /// `users_config` aliases, with the `[N]` suffix Poco appends to repeated keys stripped, exactly
+        /// as that function does) and the same relative-path resolution, so a substitution source
+        /// named by such a users file — and itself merged into the server config from `config.d`/`conf.d`
+        /// — is not mistaken for an unknown top-level key. The stock `programs/server/config.xml` uses
+        /// exactly this path, so missing it would reject valid configs.
+        if (has_user_directories)
         {
+            Strings keys_in_user_directories;
+            config.keys("user_directories", keys_in_user_directories);
+            for (const String & key_in_user_directories : keys_in_user_directories)
+            {
+                String type = key_in_user_directories;
+                if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
+                    type.resize(bracket_pos);
+                if (type != "users_xml" && type != "users.xml" && type != "users_config")
+                    continue;
+                String path = config.getString("user_directories." + key_in_user_directories + ".path", "");
+                if (path.empty())
+                    continue;
+                fs::path users_path{path};
+                if (users_path.is_relative() && fs::exists(config_dir / users_path))
+                    users_path = config_dir / users_path;
+                users_paths.push_back(std::move(users_path));
+            }
+        }
+
+        /// Scan every active users config and the fragments merged into it, unless it is the main
+        /// config (already scanned).
+        for (const auto & users_path : users_paths)
+        {
+            if (users_path == fs::path(config_path))
+                continue;
             scan_file(users_path, /*is_server_file=*/false);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
                 scan_file(merge_file, /*is_server_file=*/false);
