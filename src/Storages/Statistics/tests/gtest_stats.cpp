@@ -23,7 +23,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
@@ -31,8 +30,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Core/Field.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
