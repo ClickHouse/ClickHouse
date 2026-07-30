@@ -3496,21 +3496,21 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
 
 /// DISTINCT uses the same cost heuristic as GROUP BY. Similar to GROUP BY, the ordinary DISTINCT plan has
 /// a parallel preliminary `DistinctTransform` per stream.
-bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
+void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
 {
     if (isQueryWithFinal())
-        return false;
+        return;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With distinct-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
-        return false;
+        return;
 
     if (!context->getSettingsRef()[Setting::force_distinct_partitions_independently]
         && !isPartitionIndependentProcessingProfitable(ProcessorKind::Distinct))
-        return false;
+        return;
 
-    return output_each_partition_through_separate_port = true;
+    output_each_partition_through_separate_port = true;
 }
 
 ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() const
