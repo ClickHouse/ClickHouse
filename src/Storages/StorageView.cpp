@@ -1,4 +1,4 @@
-#include <Access/DefinerDependencies.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -58,7 +58,6 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
 }
 
@@ -131,9 +130,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
 
-    /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
-    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
-        && !view_settings[Setting::parallel_replicas_plan_based])
+    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
     {
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
@@ -180,7 +177,7 @@ StorageView::StorageView(
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -396,7 +393,7 @@ void StorageView::drop()
 
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().removeDependencies(table_id);
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
 void StorageView::alter(
@@ -414,12 +411,12 @@ void StorageView::alter(
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = DefinerDependencies::instance();
+    auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
+        instance.removeViewDependencies(table_id);
 
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addDependency(*new_metadata.definer, table_id);
+        instance.addViewDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 }
