@@ -389,6 +389,8 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 ///     column is not eligible even though ClickHouse reads its cells as `String`: SQLite never equates a
 ///     BLOB cell with a TEXT literal, so every pushed-down comparison would be a false negative;
 ///   - a STRICT ANY column places no constraint on its cells and is not eligible.
+/// The remote column must also be guaranteed non-`NULL` when the ClickHouse type cannot contain `NULL`.
+/// Otherwise, a pushed-down predicate could discard a `NULL` that the local read path would reject.
 ///
 /// Everything else fails closed to local filtering: a non-STRICT table, a view (`pragma_table_list` reports
 /// no STRICT views), or remote metadata that cannot be fetched because the column vanished remotely.
@@ -413,6 +415,9 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     if (SQLITE_OK
         != sqlite3_table_column_metadata(
             db, "main", table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement))
+        return false;
+
+    if (!canContainNull(*type) && !not_null && !primary_key)
         return false;
 
     /// A STRICT table only admits the declared types INT, INTEGER, REAL, TEXT, BLOB and ANY (stored as
