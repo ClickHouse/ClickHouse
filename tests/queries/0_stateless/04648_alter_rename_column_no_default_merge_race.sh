@@ -18,13 +18,12 @@ set -e
 # for it because it aborts the explicit OPTIMIZE too ("Cancelled merging parts").
 #
 # The failpoint is server-global, so a concurrent copy of this test can clear it mid-window. That
-# only ever costs coverage here, never a red: every assertion reads `system.parts_columns`, which
-# records what the merge itself decided and is stable from the moment OPTIMIZE returns. An early
-# release has exactly two observable effects, and both are handled explicitly - the rename may
-# materialize before the merge (so the assertions must accept the materialized shape too), and it may
-# materialize on only some source parts (so OPTIMIZE legitimately refuses a mixed mutation version,
-# which `optimize_or_skip` below turns into a skip). Same trade-off as
-# 03830_vertical_merge_inject_column_after_drop, which is untagged.
+# only ever costs coverage here, never a red, because every assertion holds in both states: the
+# positive ones read `system.parts_columns` for a column the merge had to keep either way, and the
+# phase-3 one reads the values, which the rename preserves whether or not it has materialized. The
+# remaining effect of an early release is that the rename may materialize on only some source parts,
+# so OPTIMIZE legitimately refuses a mixed mutation version - `optimize_or_skip` below turns that one
+# refusal into a skip. Same trade-off as 03830_vertical_merge_inject_column_after_drop, untagged too.
 #
 # Every assertion is about what a merge decided, so OPTIMIZE always runs with
 # `optimize_throw_if_noop = 1`: a silently skipped merge would otherwise read as a lost column.
