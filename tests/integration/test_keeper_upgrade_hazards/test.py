@@ -13,9 +13,13 @@ takes a peer), so keeping the leader on the old binary until the end means every
 snapshot handed out during the mixed-version window is one the old nodes can
 read. Read the verdict on every test:
 
-    SAFE   — the procedure works, and the test fails if that ever regresses.
-    UNSAFE — the procedure breaks the cluster. The test pins the exact failure
-             so the blast radius is known. It does NOT bless the procedure.
+    SAFE        — the procedure works, and the test fails if that regresses.
+    RECOVERABLE — the procedure is disrupted but heals once the rollout
+                  completes. The test fails if it does not heal, or if anything
+                  is lost along the way.
+    UNSAFE      — the procedure breaks the cluster with no way back. The test
+                  pins the exact failure so the blast radius is known. It does
+                  NOT bless the procedure.
 
 Summary of what works and what does not:
 
@@ -25,6 +29,18 @@ Summary of what works and what does not:
       old binary is left. A still-old follower that falls far enough behind to
       need a snapshot installed is caught up correctly, because the leader
       shipping that snapshot is still writing the old format.
+
+  test_old_node_broken_by_v8_snapshot_recovers_when_upgraded   RECOVERABLE
+      The residual risk of the followers-first order: if the still-old leader is
+      lost involuntarily part-way through, leadership moves to an already-upgraded
+      node writing `V8`, and the old node coming back is handed a snapshot it
+      cannot read, so it aborts and keeps aborting - restarting is what
+      re-triggers it. Because every node is upgraded eventually, what matters is
+      that rolling that node forward clears it completely: it rejoins, serves
+      every znode written while it was down, and takes part in snapshots again.
+      The test fails if recovery does not happen or if anything is lost. Note the
+      only valid intervention is forward; putting the old binary back does not
+      work, for the separate reason below.
 
   test_rollback_after_v8_snapshot_is_impossible                UNSAFE
       Once a node has written a `V8` snapshot, putting the old binary back on it
@@ -41,10 +57,6 @@ Deliberately not covered here:
     while old binaries are still present. Both make an upgraded node hand a `V8`
     snapshot to an old one, which fails in `readMetadata`, but neither is part of
     the rollout being rehearsed.
-  - Involuntary loss of the old leader during the window (crash, OOM, host
-    failure), which moves leadership onto an already-upgraded node and can
-    reintroduce the hazard above. This is a real residual risk of the
-    followers-first order and is not yet tested.
   - Enabling a new feature flag such as `CREATE_TTL`, which is gated on
     `write_snapshot_version >= 8`, part-way through the window.
 
@@ -192,6 +204,35 @@ def upgrade(node, config_prefix, write_snapshot_version=None):
     assert not node.query("SELECT version()").strip().startswith(f"{OLD_VERSION}.")
 
 
+def upgrade_stopped_node(node, config_prefix, write_snapshot_version=None):
+    """Put the new binary on a node whose process is not running.
+
+    `restart_with_latest_version` cannot be used here because it starts by
+    `pkill`-ing ClickHouse, which fails when the process has already died on its
+    own - which is exactly the situation this helper exists for.
+    """
+    if write_snapshot_version is not None:
+        node.replace_in_config(
+            config_path(node, config_prefix),
+            f"<write_snapshot_version>{V6}</write_snapshot_version>",
+            f"<write_snapshot_version>{write_snapshot_version}"
+            "</write_snapshot_version>",
+        )
+    node.exec_in_container(["bash", "-c", "pkill -9 clickhouse || true"], user="root")
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cp /usr/bin/clickhouse /usr/share/clickhouse_original "
+            "&& cp /usr/share/clickhouse_fresh /usr/bin/clickhouse "
+            "&& chmod 777 /usr/bin/clickhouse",
+        ],
+        user="root",
+    )
+    node.start_clickhouse(start_wait_sec=180)
+    assert not node.query("SELECT version()").strip().startswith(f"{OLD_VERSION}.")
+
+
 def bump_write_version(cluster, node, config_prefix, version):
     """Raise `write_snapshot_version` on an already-upgraded node and restart it."""
     node.replace_in_config(
@@ -319,6 +360,101 @@ def test_documented_order_upgrade_is_safe():
             keeper_utils.wait_until_connected(cluster, node)
         assert_batch_visible(cluster, nodes, "/before", 50)
         assert_batch_visible(cluster, nodes, "/after", 50)
+    finally:
+        cluster.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# RECOVERABLE: transient breakage that must clear once the node is upgraded.
+# ---------------------------------------------------------------------------
+
+
+def test_old_node_broken_by_v8_snapshot_recovers_when_upgraded():
+    """An old node handed a `V8` snapshot must recover once it gets the new binary.
+
+    This is the residual risk of the followers-first order: if the still-old
+    leader is lost involuntarily part-way through the rollout, leadership moves to
+    an already-upgraded node that writes `V8`, and the old node coming back is
+    handed a snapshot it cannot read. Since every node is upgraded eventually,
+    what matters is not that the disruption happens but that rolling the node
+    forward clears it completely and loses nothing.
+
+    This test fails if the node does not come back, if it does not rejoin the
+    quorum, or if any znode written while it was down is missing afterwards.
+    """
+    prefix = "small_snap_keeper"
+    cluster, nodes = make_cluster(prefix)
+    node1, node2, node3 = nodes
+    try:
+        cluster.start()
+        keeper_utils.wait_nodes(cluster, nodes)
+        assert keeper_utils.is_leader(cluster, node1)
+
+        write_batch_on(cluster, node1, "/before", 100)
+        assert_batch_visible(cluster, nodes, "/before", 100)
+
+        # Followers first, each restart also raising the write version, which is
+        # the rollout in use. The leader is left for last.
+        for node in (node3, node2):
+            upgrade(node, prefix, write_snapshot_version=V8)
+            keeper_utils.wait_until_connected(cluster, node)
+
+        # The still-old leader is lost involuntarily before its turn comes.
+        node1.stop_clickhouse(kill=True)
+
+        # Leadership lands on an upgraded node, which writes V8 from now on.
+        force_leader(cluster, node3)
+        assert create_snapshot(cluster, node3) == V8
+
+        # Move far enough ahead that the log node1 needs has been compacted, so
+        # rejoining requires a snapshot install rather than log replay. node2 and
+        # node3 still form a quorum, so writes keep working.
+        write_batch_on(cluster, node3, "/while_old_leader_down", 200)
+        assert create_snapshot(cluster, node3) == V8
+
+        # node1 comes back still on the old binary, before anyone upgrades it.
+        # It may abort while starting, so the start is not required to succeed;
+        # there is deliberately no assertion inside this block.
+        try:
+            node1.start_clickhouse(start_wait_sec=60, retry_start=False)
+        except Exception:
+            pass
+
+        # It was offered a snapshot, which is the precondition for this scenario.
+        # If this ever stops holding, the test is no longer exercising the path it
+        # was written for and needs revisiting rather than silently passing.
+        assert wait_for_log(
+            node1, "Saving snapshot", timeout=120
+        ), "node1 was never offered a snapshot, so the scenario did not reproduce"
+        assert wait_for_log(
+            node1, UNSUPPORTED_VERSION_ERROR, timeout=120
+        ), f"expected {UNSUPPORTED_VERSION_ERROR!r} while node1 was still old"
+
+        # The rollout continues and node1 finally gets the new binary. Everything
+        # from here on must hold, or this scenario is not survivable.
+        upgrade_stopped_node(node1, prefix, write_snapshot_version=V8)
+        keeper_utils.wait_until_connected(cluster, node1)
+
+        # Recovered: it reads the V8 snapshot, and nothing written while it was
+        # down was lost.
+        assert_batch_visible(cluster, [node1], "/before", 100)
+        assert_batch_visible(cluster, [node1], "/while_old_leader_down", 200)
+
+        # Recovered as a real quorum member, not just as a reader: a write issued
+        # against it is accepted and replicated everywhere.
+        write_batch_on(cluster, node1, "/after_recovery", 20)
+        assert_batch_visible(cluster, nodes, "/after_recovery", 20)
+
+        # And it participates in snapshots again, at the new version.
+        assert create_snapshot(cluster, node1) == V8
+
+        # Full cluster restart from V8 snapshots keeps every batch.
+        for node in nodes:
+            node.restart_clickhouse(stop_start_wait_sec=120, kill=True)
+            keeper_utils.wait_until_connected(cluster, node)
+        assert_batch_visible(cluster, nodes, "/before", 100)
+        assert_batch_visible(cluster, nodes, "/while_old_leader_down", 200)
+        assert_batch_visible(cluster, nodes, "/after_recovery", 20)
     finally:
         cluster.shutdown()
 
