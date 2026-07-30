@@ -43,8 +43,6 @@
 #include <base/scope_guard.h>
 #include <Core/Settings.h>
 
-#include <base/scope_guard.h>
-
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
