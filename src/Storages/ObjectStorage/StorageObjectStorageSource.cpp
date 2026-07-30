@@ -1167,7 +1167,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && !object_info->getObjectMetadata()->etag.empty())
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1302,6 +1302,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// The query planner puts row policies into `row_level_filter` when
         /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
         /// files in mixed-format tables may not support it at format level.
+        /// `update_row_numbers_info = true`: safe here because every transform between the format
+        /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
             auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
@@ -1310,7 +1312,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
                     stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column);
+                    stripped_row_level_filter->do_remove_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
@@ -1322,7 +1326,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, prewhere_actions,
                     stripped_prewhere_info->prewhere_column_name,
-                    stripped_prewhere_info->remove_prewhere_column);
+                    stripped_prewhere_info->remove_prewhere_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
@@ -1414,9 +1420,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && object_info.metadata->etag.empty())
+    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
     {
-        LOG_WARNING(log, "Cannot use page cache, no etag specified");
+        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
     }
 
@@ -1490,9 +1496,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
+        if (!object_info.metadata->isEtagUsableAsCacheKey())
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
         }
         else
         {
