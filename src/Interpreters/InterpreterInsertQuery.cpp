@@ -71,7 +71,7 @@ namespace Setting
     extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsMaxThreads max_insert_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
@@ -544,7 +544,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
-static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, ContextPtr & select_context)
+static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
 {
     const Settings & settings = select_context->getSettingsRef();
 
@@ -574,9 +574,9 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = getMaxThreadsForAvailableMemory(
-            std::max<UInt64>(1, settings[Setting::max_insert_threads]),
-            settings[Setting::max_insert_threads_min_free_memory_per_thread]);
+        /// Use the effective value computed in the constructor: it is already capped by `max_threads`
+        /// and reduced according to the available memory, while the raw setting is not.
+        new_settings[Setting::max_threads] = effective_max_insert_threads;
 
         if (prefer_large_blocks)
         {
@@ -619,7 +619,7 @@ static bool queryHasOrderByAll(const ASTPtr & select)
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
-    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
+    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
     QueryPipelineBuilder pipeline = [&]()
     {
@@ -653,7 +653,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
-    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
+    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
     auto [pipeline_builder, parallel_replicas_info]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
