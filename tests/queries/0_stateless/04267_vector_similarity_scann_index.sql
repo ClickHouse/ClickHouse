@@ -492,39 +492,36 @@ DROP TABLE tab_scann_cosine_zero_q;
 -- in normalization. For a vector like [1e20, 0]: 1e20 fits in float32 but 1e20^2 = 1e40
 -- overflows float32 to Inf, making inv = 0 and silently storing the indexed vector as [0, 0].
 -- The same overflow affects the query-vector normalization path.
--- Regression: both paths must produce results matching exact cosineDistance.
+-- Search every leaf and check the returned distance directly. Comparing ANN top-K IDs with
+-- an exact Float64 scan is unstable because the index stores vectors as Float32.
 SELECT '20. Large Float64 cosine vectors: float32 overflow in normalization regression';
 DROP TABLE IF EXISTS tab_scann_cos_f64_large;
-CREATE TABLE tab_scann_cos_f64_large (id Int32, vec Array(Float64), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+CREATE TABLE tab_scann_cos_f64_large (id Int32, vec Array(Float64), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2, 'f32', 16))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 -- id=0: [1e20, 0] points along x-axis; id=1: [0, 1e20] points along y-axis.
 INSERT INTO tab_scann_cos_f64_large VALUES (0, [1e20, 0.0]), (1, [0.0, 1e20]);
 INSERT INTO tab_scann_cos_f64_large
-    SELECT 2 + toInt32(number), [toFloat64(number + 1), toFloat64(1.0)]
+    SELECT 2 + toInt32(number), [toFloat64(number + 1), toFloat64(number + 2)]
     FROM numbers(1998);
 OPTIMIZE TABLE tab_scann_cos_f64_large FINAL;
 -- Indexed-vector path: reference [1.0, 0.0] isolates indexed-vector normalization.
--- Without the fix, [1e20, 0] is stored as [0, 0] (cosineDistance = 1) and ranked incorrectly.
-SELECT count() FROM (
-    WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
-    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
-    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
-    EXCEPT
-    WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
-    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
-    SETTINGS use_skip_indexes = 0
-);
+-- Without the fix, [1e20, 0] is stored as [0, 0] and its index distance is 1.
+WITH [toFloat64(1.0), toFloat64(0.0)] AS reference_vec
+SELECT abs(cosineDistance(vec, reference_vec)) < 0.00001
+FROM tab_scann_cos_f64_large
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1,
+    scann_num_leaves_to_search = 16, scann_candidate_pool_size = 2000;
 -- Query-vector path: reference [1e20, 0.0] isolates query-vector normalization.
--- Without the fix, the query vector is normalized to [0, 0] and all distances become 1.
-SELECT count() FROM (
-    WITH [toFloat64(1e20), toFloat64(0.0)] AS reference_vec
-    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
-    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
-    EXCEPT
-    WITH [toFloat64(1e20), toFloat64(0.0)] AS reference_vec
-    SELECT id FROM tab_scann_cos_f64_large ORDER BY cosineDistance(vec, reference_vec) ASC LIMIT 3
-    SETTINGS use_skip_indexes = 0
-);
+-- Without the fix, the query vector is normalized to [0, 0] and the index distance is 1.
+WITH [toFloat64(1e20), toFloat64(0.0)] AS reference_vec
+SELECT abs(cosineDistance(vec, reference_vec)) < 0.00001
+FROM tab_scann_cos_f64_large
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1,
+    scann_num_leaves_to_search = 16, scann_candidate_pool_size = 2000;
 DROP TABLE tab_scann_cos_f64_large;
 
 -- Test 21: Unquoted 'scann' identifier must be treated as method name 'scann' and

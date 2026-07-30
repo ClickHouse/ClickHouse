@@ -51,8 +51,8 @@
 18. cosineDistance rejects zero-magnitude indexed vector
 19. cosineDistance rejects zero-magnitude query vector
 20. Large Float64 cosine vectors: float32 overflow in normalization regression
-0
-0
+1
+1
 21. Unquoted scann identifier requires allow_experimental_scann_index
 22. Existing ScaNN index does not block unrelated ALTER
 unrelated ALTER succeeds
