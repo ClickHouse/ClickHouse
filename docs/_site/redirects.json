@@ -1,5 +1,13 @@
 [
   {
+    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
     "source": "/concepts/features/operations/delete/delete-mutations",
     "destination": "/reference/statements/alter/delete"
   },
