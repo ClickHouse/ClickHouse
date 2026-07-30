@@ -485,6 +485,13 @@ void checkIcebergTimezoneSettingForWrite(const ContextPtr & context)
             timezone.empty() ? String("<empty>") : timezone);
 }
 
+ContextPtr createIcebergPhysicalContext(ContextPtr query_context)
+{
+    auto physical_context = Context::createCopy(query_context);
+    physical_context->setSetting("iceberg_timezone_for_timestamptz", String("UTC"));
+    return physical_context;
+}
+
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,

@@ -8214,6 +8214,8 @@ Timezone used to present Iceberg `timestamptz` as ClickHouse `DateTime64` on rea
 
 Must remain `UTC` for Iceberg writes (INSERT, mutations, `OPTIMIZE ... MANIFEST`): partition transforms and written `timestamptz` Avro metadata are UTC-based.
 
+Partition pruning and min-max index filtering always use UTC typing for `timestamptz`, regardless of this setting.
+
 Possible values:
 
 - Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`

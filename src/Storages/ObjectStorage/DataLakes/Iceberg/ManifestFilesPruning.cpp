@@ -70,6 +70,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
     ActionsDAG dag_with_renames;
     for (const auto column_id : used_columns_in_filter)
     {
+        /// Names follow the presentation timezone; types follow UTC (Iceberg physical).
         auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id, context);
 
         /// Columns which we dropped and don't exist in current schema
@@ -78,7 +79,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, context);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, physical_context);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -104,6 +105,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
     , context(context_)
+    , physical_context(createIcebergPhysicalContext(context_))
 {
     if (filter_dag == nullptr)
     {
@@ -118,24 +120,25 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), physical_context, /* boolean_context */ true);
         partition_key_condition.emplace(
-            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            inverted_dag, physical_context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
     {
-        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id, context);
+        auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id, physical_context);
         if (!name_and_type.has_value())
             continue;
 
         name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
         ExpressionActionsPtr expression
-            = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
+            = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(physical_context));
 
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), physical_context, /* boolean_context */ true);
+        min_max_key_conditions.emplace(
+            used_column_id, KeyCondition(inverted_dag, physical_context, {name_and_type->name}, expression));
     }
 }
 
@@ -168,7 +171,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, context);
+        std::optional<NameAndTypePair> name_and_type
+            = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id, physical_context);
 
         /// There is no such column in this manifest file
         if (!name_and_type.has_value())

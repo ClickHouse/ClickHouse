@@ -75,6 +75,10 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 /// `iceberg_timezone_for_timestamptz` is presentation-only and must not be used on write paths.
 void checkIcebergTimezoneSettingForWrite(const ContextPtr & context);
 
+/// Copy of `query_context` with `iceberg_timezone_for_timestamptz` forced to `UTC`.
+/// Use for partition prune / min-max typing so transforms match UTC-written partitions.
+ContextPtr createIcebergPhysicalContext(ContextPtr query_context);
+
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

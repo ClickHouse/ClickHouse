@@ -39,7 +39,10 @@ private:
     const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
+    /// Presentation timezone (filter column names / aliases).
     DB::ContextPtr context;
+    /// Forced UTC for timestamptz types used in partition / min-max prune.
+    DB::ContextPtr physical_context;
     const DB::KeyDescription * partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
 

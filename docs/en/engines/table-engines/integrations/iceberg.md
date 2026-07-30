@@ -357,6 +357,8 @@ Default value is `UTC`.
 
 Iceberg writes (`INSERT`, mutations, `OPTIMIZE ... MANIFEST`) require this setting to be `UTC`. Partition transforms and written `timestamptz` Avro metadata are always UTC-based; a non-default value is rejected on write paths.
 
+Partition pruning and min-max filtering also use UTC typing for `timestamptz`, independent of this setting, so filters stay consistent with UTC-written partitions.
+
 ## Asynchronous metadata prefetching {#async-metadata-prefetch}
 
 Asynchronous metadata prefetching can be enabled at `Iceberg` table creation by setting `iceberg_metadata_async_prefetch_period_ms`. If set to 0 (default) or if metadata caching is not enabled, the asynchronous prefetching is disabled.

@@ -107,3 +107,64 @@ def test_writes_reject_non_utc_timestamptz_timezone(
         ).strip()
         == "Europe/Berlin"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize(
+    "tz_settings",
+    [
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+        {"iceberg_timezone_for_timestamptz": "", "session_timezone": "Europe/Berlin"},
+        {"iceberg_timezone_for_timestamptz": "UTC"},
+    ],
+)
+def test_partition_pruning_uses_utc_despite_presentation_timezone(
+    started_cluster_iceberg_with_spark, storage_type, tz_settings
+):
+    """Presentation timezone must not shift hour-partition prune relative to UTC-written partitions."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_prune_tz_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(id Int32, ts DateTime64(6, 'UTC'))",
+        2,
+        "toRelativeHourNum(ts)",
+    )
+
+    # Near UTC day boundary: Berlin wall clock is already 2024-01-02 00:30.
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES "
+        f"(1, toDateTime64('2024-01-01 23:30:00', 6, 'UTC')), "
+        f"(2, toDateTime64('2024-01-02 01:30:00', 6, 'UTC'))",
+        settings={"allow_insert_into_iceberg": 1, "iceberg_timezone_for_timestamptz": "UTC"},
+    )
+
+    filter_sql = (
+        f"SELECT id FROM {TABLE_NAME} "
+        f"WHERE ts >= toDateTime64('2024-01-01 23:00:00', 6, 'UTC') "
+        f"AND ts < toDateTime64('2024-01-02 00:00:00', 6, 'UTC') "
+        f"ORDER BY id"
+    )
+    expected = "1\n"
+
+    without_pruning = instance.query(
+        filter_sql,
+        settings={**tz_settings, "use_iceberg_partition_pruning": 0},
+    )
+    with_pruning = instance.query(
+        filter_sql,
+        settings={**tz_settings, "use_iceberg_partition_pruning": 1},
+    )
+    assert without_pruning == expected
+    assert with_pruning == expected
+    assert (
+        instance.query(
+            f"SELECT timezoneOf(ts) FROM {TABLE_NAME} LIMIT 1",
+            settings=tz_settings,
+        ).strip()
+        == ("UTC" if tz_settings.get("iceberg_timezone_for_timestamptz") == "UTC" else "Europe/Berlin")
+    )
