@@ -1,7 +1,7 @@
 packed	1	Packed
 accounted	1
-untouched	1
 rows	1
+untouched	1
 fewer_file_open	1
 fewer_pool_read	1
 sizes_index_equal	1	1	1

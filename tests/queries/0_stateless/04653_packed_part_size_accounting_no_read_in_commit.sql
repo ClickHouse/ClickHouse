@@ -4,17 +4,20 @@
 -- installed there at all.
 
 -- `MergeTreeData::Transaction::commit` updates the table's per-column and per-secondary-index size
--- aggregates inside a `NOEXCEPT_SCOPE`. For a part whose sizes are not computed yet, that update
--- used to call the size getters, which lazily read the part storage. On packed storage that read
--- resolves the skip-index archive index, and on object storage it is scheduled onto a thread pool. A
--- thread pool that cannot schedule throws `CANNOT_SCHEDULE_TASK`, which is not a memory-tracker
--- exception, so `LockMemoryExceptionInThread` does not suppress it, it reaches the `NOEXCEPT_SCOPE`
--- catch-all, and the server terminates.
+-- aggregates inside a `NOEXCEPT_SCOPE` whose catch-all terminates the server. For a part whose sizes
+-- are not computed yet, that update called the size getters, which lazily read the part storage, and
+-- on packed storage that read resolves the skip-index archive index. Under the default
+-- `local_filesystem_read_method = 'pread_threadpool'` it is submitted to a thread pool, which is where
+-- the reproduced abort came from (`AsynchronousReadBufferFromFileDescriptor::asyncReadInto` ->
+-- `ThreadPoolImpl::scheduleImpl`): a pool that cannot schedule throws `CANNOT_SCHEDULE_TASK`, not a
+-- memory-tracker exception, so `LockMemoryExceptionInThread` does not suppress it and it escapes.
 --
--- The commit path must therefore perform no storage read at all. This test measures that through
--- the `MutatePart` row of `system.part_log`: `ProfileEventsScope` in
--- `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`, and `write_part_log` runs
--- after it on the same thread, so a read taken inside the commit is counted there.
+-- The commit must therefore read nothing. The oracle is the `MutatePart` row of `system.part_log`:
+-- `ProfileEventsScope` in `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`, and
+-- `write_part_log` runs after it on the same thread. An object-storage disk is used not because the
+-- scheduling happens there, but because it makes the extra access deterministically measurable as
+-- read volume: on it the read runs synchronously (`AsynchronousBoundedReadBuffer::readSync` ->
+-- `ThreadPoolRemoteFSReader::execute`), so the test observes the access, not the scheduling.
 --
 -- The cold arm is compared against a warm control rather than against an absolute count: with
 -- `columns_and_secondary_indices_sizes_lazy_calculation = 0` the part is warmed when it is loaded,
@@ -77,15 +80,22 @@ WHERE database = currentDatabase() AND table LIKE 'packed_commit_%';
 
 -- A predicate matching no rows takes the untouched-part shortcut, which clones the part and keeps
 -- its block range, so the source part is covered and both accounting paths run in the commit.
--- `MutationUntouchedParts` below asserts that shortcut was taken.
+-- `untouched` below asserts that shortcut was taken.
 ALTER TABLE packed_commit_cold UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
 ALTER TABLE packed_commit_warm UPDATE a = concat(a, 'x') WHERE s = 'no_such_key' SETTINGS mutations_sync = 2;
-
-SELECT 'untouched', value > 0 FROM system.events WHERE event = 'MutationUntouchedParts';
 
 SYSTEM FLUSH LOGS part_log;
 
 SELECT 'rows', count() = 2
+FROM system.part_log
+WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
+
+-- `MutationUntouchedParts` is read per table from the `MutatePart` row rather than from
+-- `system.events`, whose counters are process-wide and lifetime-cumulative, so a concurrent test
+-- taking the same shortcut would satisfy the assertion for us and it would fail open.
+SELECT 'untouched',
+    minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_cold') > 0
+  AND minIf(ProfileEvents['MutationUntouchedParts'], table = 'packed_commit_warm') > 0
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
@@ -107,9 +117,8 @@ SELECT 'fewer_file_open',
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
--- The same statement in bytes moved through `ThreadPoolRemoteFSReader::execute` for this read. On
--- this path that runs synchronously on the mutation thread, via
--- `AsynchronousBoundedReadBuffer::readSync`, so the `MutatePart` counter scope collects it.
+-- The same statement in bytes moved through `ThreadPoolRemoteFSReader::execute`, which as noted above
+-- runs synchronously on the mutation thread here, so the `MutatePart` counter scope collects it.
 --
 -- It is a second read-volume signal beside `FileOpen`, not the scheduling observable: on the
 -- scheduled path the same increment happens on a pool worker under its own thread group, which the
