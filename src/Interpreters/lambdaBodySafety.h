@@ -29,6 +29,10 @@ struct LambdaBodySafety
 /// quadratic.
 ///
 /// Never throws: this is an optimizer predicate, so an unrecognized shape is skipped.
+///
+/// Deliberately shares no visited state with hasStatefulFunctionsInLambdaBodies below: that one
+/// walks a whole DAG and can reuse a visited set across its nodes, while this one is called per
+/// node and must stay stateless, or a later call would skip a body an earlier node already saw.
 LambdaBodySafety inspectLambdaBodies(const ActionsDAG::Node & node);
 
 /// True if any node of `dag` holds a lambda body containing a stateful function.

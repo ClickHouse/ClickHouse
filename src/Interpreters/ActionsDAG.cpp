@@ -3018,6 +3018,8 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                 /// Statefulness is deliberately not tested here: it is vetoed for the whole step by
                 /// ActionsDAG::hasStatefulFunctions, so vetoing it per conjunct would let a
                 /// deterministic sibling move and change the row set the stateful function sees.
+                /// The order of the disjuncts is deliberate: the cheap metadata test must stay first
+                /// so `||` short-circuits and the DAG walk never runs on the common path.
                 bool is_deprecated_function = !allow_non_deterministic_functions
                     && ((cur.node->type == ActionsDAG::ActionType::FUNCTION
                          && !cur.node->function_base->isDeterministicInScopeOfQuery())

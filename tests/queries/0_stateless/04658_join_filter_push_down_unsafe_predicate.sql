@@ -110,6 +110,24 @@ SELECT 'B2 visible deterministic', abs((
         SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
         WHERE t_left_big.a % 2 = 0) SETTINGS query_plan_filter_push_down = 0)) - 1.) < 0.05;
 
+-- The same count oracle with the non-deterministic call HIDDEN in a lambda body. Neither row
+-- above can observe the partial path's lambda blindness: A2 uses the hidden lambda but the NULL
+-- oracle, which is blind to a copy (a copied predicate still constrains the post-join rows, and
+-- the partial filter lands on the preserved left side, so no NULL is fabricated), while B1 uses
+-- this oracle but a visible `rand`, which the node's own metadata already rejects. The partial
+-- path is on by default, but the runner randomizes the setting off directly and the stress
+-- runner's randomized `compatibility` reverts it below 26.1, so pin it: this row observes only
+-- that path, and with it off the row reads 1 whatever the optimizer does.
+SELECT 'B3 hidden non deterministic', abs((
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left_big.a])) SETTINGS
+            query_plan_filter_push_down = 1, use_join_disjunctions_push_down = 1) /
+    (SELECT count() FROM (
+        SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
+        WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left_big.a])) SETTINGS
+            query_plan_filter_push_down = 0)) - 1.) < 0.05;
+
 -- Plan shape, for the carriers no execution oracle reaches.
 -- A pushed filter appears AFTER the Join in the top-down plan dump, so a Filter row whose
 -- index exceeds the Join's index is a filter sitting below the join.
