@@ -1108,6 +1108,16 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
 
     const auto & prep = *std::get<StagedChunk::AggregatePayload>(block.payload).prepared;
 
+    /// The consume path's compiled aggregation applies here under the same gate: unlike the
+    /// frozen consume loop, whose misses are null places the compiled row loop cannot skip,
+    /// every place in a drain slice is non-null, and the staged argument columns are always
+    /// dense. The sparse check only mirrors the consume-path gate - a prepared staged chunk
+    /// cannot carry sparse arguments.
+    bool use_compiled_functions = false;
+#if USE_EMBEDDED_COMPILER
+    use_compiled_functions = compiled_aggregate_functions_holder && !hasSparseArguments(prep.instructions.data());
+#endif
+
     /// `places` is indexed by absolute record index: the compacted argument columns hold record
     /// j's values at row j, so the batch calls below consume the [slice_begin, slice_end) range
     /// of the columns and of `places` directly.
@@ -1132,7 +1142,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         {
             it->getMapped() = nullptr;
             aggregate_data = bucket_arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-            createAggregateStates(aggregate_data);
+            createAggregateStates(aggregate_data, use_compiled_functions);
             it->getMapped() = aggregate_data;
         }
         else
@@ -1145,11 +1155,19 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         return;
 
     /// Apply the aggregate functions to the delayed rows only: the slice is a contiguous row
-    /// range of the compacted argument columns and of `places`, so the standard batch dispatch
-    /// applies to it directly, with no gather (the staged columns are always dense, so its
-    /// sparse path never fires).
-    for (size_t i = 0; i < aggregate_functions.size(); ++i)
-        addBatch(slice_begin, slice_end, prep.instructions.data() + i, places.data(), bucket_arena);
+    /// range of the compacted argument columns and of `places`, so the standard executor
+    /// applies to it directly - one compiled row loop for the compiled functions, a batch pass
+    /// per remaining function.
+    executeAggregateInstructions(
+        bucket_arena,
+        slice_begin,
+        slice_end,
+        prep.instructions.data(),
+        places.data(),
+        /*key_start=*/slice_begin,
+        /*has_only_one_value_since_last_reset=*/false,
+        /*all_keys_are_const=*/false,
+        use_compiled_functions);
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const

@@ -877,6 +877,24 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
     }
 }
 
+void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data, bool use_compiled_functions [[maybe_unused]]) const
+{
+#if USE_EMBEDDED_COMPILER
+    if (use_compiled_functions)
+    {
+        const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+        callJITFunction(compiled_aggregate_functions.create_aggregate_states_function, aggregate_data);
+        if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+        {
+            static constexpr bool skip_compiled_aggregate_functions = true;
+            createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+        }
+        return;
+    }
+#endif
+    createAggregateStates(aggregate_data);
+}
+
 bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggregate_instructions)
 {
     for (const auto * inst = aggregate_instructions; inst->that; ++inst)
@@ -1362,24 +1380,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(nullptr);
 
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-
-#if USE_EMBEDDED_COMPILER
-                if (use_compiled_functions)
-                {
-                    const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                    callJITFunction(compiled_aggregate_functions.create_aggregate_states_function, aggregate_data);
-                    if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
-                    {
-                        static constexpr bool skip_compiled_aggregate_functions = true;
-                        createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
-                    }
-                }
-                else
-#endif
-                {
-                    createAggregateStates(aggregate_data);
-                }
-
+                createAggregateStates(aggregate_data, use_compiled_functions);
                 emplace_result.setMapped(aggregate_data);
             }
             else

@@ -516,6 +516,11 @@ private:
     template <bool skip_compiled_aggregate_functions = false>
     void createAggregateStates(AggregateDataPtr & aggregate_data) const;
 
+    /// The same, choosing the creation path the way the consume loop does: the compiled
+    /// functions' states in one JIT call plus the rest generically when the query's functions
+    /// are compiled, everything generically otherwise.
+    void createAggregateStates(AggregateDataPtr & aggregate_data, bool use_compiled_functions) const;
+
     /** Call `destroy` methods for states of aggregate functions.
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
