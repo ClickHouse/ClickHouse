@@ -79,9 +79,20 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
+
+A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](../../../engines/table-engines/special/distributed.md) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
+
+Instead, define the policy on the underlying local tables on each remote server; it is applied there when the shipped query reads them:
+
+```sql
+-- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
+CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
+```
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
-Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md). This is also the convenient way to create the policy on the local tables of every server of the cluster.
 
 ## Examples {#examples}
 
