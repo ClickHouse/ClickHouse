@@ -56,19 +56,29 @@ def assert_negotiated_session_timeout(expected_ms):
     The configs here set the server's *max* session timeout; if that cap drops to or below the
     client's default request the handshake silently clamps every session, and a stall longer than
     the clamped value then kills the session under whatever Keeper call is in flight.
+
+    Only the session's *existence* is polled: with no Replicated database yet, the server's own
+    session is opened by DDLWorker startup, which is an AsyncLoader job that restart_clickhouse()
+    does not wait for. The timeout value itself is never retried, so a clamped session fails on
+    the first read.
     """
-    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="cons")
-    # 'cons' answers on its own connection too, and that connection never completed a handshake:
-    # its session_id is the -1 initializer, which still passes the 'session_id != 0' guard in
-    # dumpStats, and session_timeout is never assigned for it, so it reports
-    # sid=0xffffffffffffffff with to=0. Skip it and read the real sessions.
-    timeouts = [
-        int(m.group(1))
-        for line in data.split("\n")
-        if line.strip() and "sid=0xffffffffffffffff" not in line
-        for m in [re.search(r"\bto=(\d+)", line)]
-        if m
-    ]
+    deadline = time.monotonic() + 30
+    while True:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="cons")
+        # 'cons' answers on its own connection too, and that connection never completed a
+        # handshake: its session_id is the -1 initializer, which still passes the
+        # 'session_id != 0' guard in dumpStats, and session_timeout is never assigned for it, so
+        # it reports sid=0xffffffffffffffff with to=0. Skip it and read the real sessions.
+        timeouts = [
+            int(m.group(1))
+            for line in data.split("\n")
+            if line.strip() and "sid=0xffffffffffffffff" not in line
+            for m in [re.search(r"\bto=(\d+)", line)]
+            if m
+        ]
+        if timeouts or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
     assert timeouts, f"no established Keeper session found in cons output:\n{data}"
     assert all(t == expected_ms for t in timeouts), (expected_ms, timeouts, data)
 
