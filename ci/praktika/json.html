@@ -1130,8 +1130,14 @@
         const CPU_COLOR = "#4e79a7";
         const MEM_COLOR = "#e15759";
 
-        const peak = (s) => s.reduce((m, p) => Math.max(m, p[1]), 0);
-        const cpuPeak = peak(cpu), memPeak = peak(mem);
+        // Series points are [t, avg, peak]; tolerate the older [t, v] shape.
+        const avgOf = (p) => p[1];
+        const peakOf = (p) => (p.length > 2 ? p[2] : p[1]);
+        const seriesPeak = (s) => s.reduce((m, p) => Math.max(m, peakOf(p)), 0);
+        // Prefer the exact global peaks (max over every fine sample, never
+        // decimated away); fall back to the peak visible in the series.
+        const cpuPeak = metrics.peaks && metrics.peaks.cpu != null ? metrics.peaks.cpu : seriesPeak(cpu);
+        const memPeak = metrics.peaks && metrics.peaks.mem != null ? metrics.peaks.mem : seriesPeak(mem);
         const duration = Math.max(
             metrics.duration || 0,
             cpu.length ? cpu[cpu.length - 1][0] : 0,
@@ -1167,6 +1173,24 @@
         header.appendChild(title);
         header.appendChild(legend);
         wrapper.appendChild(header);
+
+        // PSI sub-line: kernel-accumulated stall time over the run (captured
+        // continuously, so it reflects contention even between samples).
+        if (metrics.psi) {
+            const psi = metrics.psi;
+            const parts = [];
+            if (psi.cpu_s != null) parts.push(`cpu stalled ${psi.cpu_s}s`);
+            if (psi.mem_some_s != null) parts.push(`mem stalled ${psi.mem_some_s}s`);
+            if (psi.mem_full_s) parts.push(`mem stalled(all) ${psi.mem_full_s}s`);
+            if (parts.length) {
+                const psiLine = document.createElement("div");
+                psiLine.style.fontSize = "0.75em";
+                psiLine.style.opacity = "0.7";
+                psiLine.style.marginBottom = "4px";
+                psiLine.textContent = parts.join(" · ");
+                wrapper.appendChild(psiLine);
+            }
+        }
 
         // Responsive SVG (scales to the widget width via viewBox).
         const W = 320, H = 130, ML = 26, MR = 6, TP = 6, BP = 16;
@@ -1217,21 +1241,25 @@
         mkText(ML, H - 4, "0s", "start");
         mkText(W - MR, H - 4, fmtT(duration), "end");
 
-        const mkPath = (series, color) => {
+        const mkPath = (series, color, valueFn, width, opacity) => {
             if (series.length < 2) return;
             const d = series
-                .map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p[0]).toFixed(1)} ${yScale(p[1]).toFixed(1)}`)
+                .map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p[0]).toFixed(1)} ${yScale(valueFn(p)).toFixed(1)}`)
                 .join(" ");
             const path = document.createElementNS(svgNS, "path");
             path.setAttribute("d", d);
             path.setAttribute("fill", "none");
             path.setAttribute("stroke", color);
-            path.setAttribute("stroke-width", "1.2");
+            path.setAttribute("stroke-width", width);
+            path.setAttribute("stroke-opacity", opacity);
             path.setAttribute("vector-effect", "non-scaling-stroke");
             svg.appendChild(path);
         };
-        mkPath(mem, MEM_COLOR);
-        mkPath(cpu, CPU_COLOR);
+        // Faint peak envelope behind the solid average line for each metric.
+        mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
+        mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
+        mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
+        mkPath(cpu, CPU_COLOR, avgOf, "1.2", "1");
 
         // Hover cursor + tooltip.
         const cursor = mkLine(ML, TP, ML, TP + plotH, textColor, 0);
@@ -1268,10 +1296,13 @@
             cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
             cursor.setAttribute("stroke-opacity", 0.4);
             const c = nearest(cpu, t), m = nearest(mem, t);
+            const fmtPt = (label, color, p) =>
+                `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
+                (p.length > 2 ? ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>` : "");
             tip.innerHTML =
                 `${fmtT(t)}<br>` +
-                (c ? `<span style="color:${CPU_COLOR}">cpu</span> ${c[1].toFixed(0)}%<br>` : "") +
-                (m ? `<span style="color:${MEM_COLOR}">ram</span> ${m[1].toFixed(0)}%` : "");
+                (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
+                (m ? fmtPt("ram", MEM_COLOR, m) : "");
             tip.style.display = "block";
             const left = Math.min(
                 (e.clientX - rect.left) + 8,
