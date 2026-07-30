@@ -2603,28 +2603,28 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
         ResidencyIterator iterator(caches_, piece.object, piece.object_file_offset, piece_span);
 
         const size_t piece_object_end = piece.object_file_offset + pr.object.bytes_size;
+        /// CA1: the WINDOW is the demand unit - one demand end for the whole
+        /// piece (the user's "fixed window bounded by file end"), not a
+        /// per-position request-map computation. The demand end is the object
+        /// end, capped by the read bound; request-map COVERAGE bounds the
+        /// window at the CA3 join, not per-position tiling here. A single
+        /// window demand is what lets CA2 open writers by one `getOrSet` over
+        /// the window. Speculation clamps (`prefetchAllowance`/`boundedReach`)
+        /// read the map directly and are unaffected. No-map behavior is
+        /// unchanged (per-position demand was the object end there already).
+        size_t window_demand_end = piece_object_end;
+        if (demand_ceiling_phys)
+            window_demand_end = std::min(window_demand_end, *demand_ceiling_phys);
+        (void)request_map_;
+
         ResolutionFold fold(traits, piece_span);
         size_t pos = piece_span.offset;
         while (pos < piece_span.end())
         {
-            /// The demand from `pos`: the request-map range under it; in a map
-            /// hole, up to the next covered range; with no map, the whole file
-            /// stands in (the user rule). The read bound caps everything, and
-            /// the plan span does NOT - the plan edge is a knowledge horizon,
-            /// so an edge cell completes its grid cell when demand continues
-            /// (it overhangs the span; the cell closure fills it). RM2 shapes
-            /// tiles only - speculation over holes is unchanged.
-            size_t demand_end = piece_object_end;
-            if (request_map_)
-            {
-                if (const auto covering = request_map_->coveringInterval(pos))
-                    demand_end = covering->end();
-                else if (const auto next = request_map_->nextIntervalAfter(pos))
-                    demand_end = next->offset;
-            }
-            if (demand_ceiling_phys)
-                demand_end = std::min(demand_end, *demand_ceiling_phys);
-            demand_end = std::max(demand_end, pos + 1);
+            /// The fixed window demand, kept positive at every position (a tail
+            /// past the demand shapes no tiling; `> pos` only keeps the probe
+            /// well-formed - the same guard the per-position walk had).
+            const size_t demand_end = std::max(window_demand_end, pos + 1);
             const auto res = iterator.lookAt(pos, demand_end);
             fold.add(res);
             pos = res.range.end();
