@@ -340,19 +340,21 @@ inline bool isPushdownSafeType(const DataTypePtr & type)
 /// inserted values - while every cell keeps its own runtime storage class, so an INTEGER-declared column can
 /// still hold the TEXT cell `'abc'` and a BLOB-declared column any value at all. Only a STRICT table
 /// guarantees that every stored cell actually has the storage class of its declared column type. Errors and
-/// a missing table fail closed to `false`.
+/// A missing table fails closed to `false`. A locked database (SQLITE_BUSY) is not a proof of anything, so
+/// it does not fail closed: the probe waits like the other metadata paths (`prepareSQLiteStatementRetryOnBusy`,
+/// `stepSQLiteStatementRetryOnBusy`) and surfaces the error once the wait is cancelled or times out.
 inline bool isStrictTable(sqlite3 * db, const String & table_name)
 {
-    sqlite3_stmt * raw_statement = nullptr;
-    if (SQLITE_OK
-        != sqlite3_prepare_v2(db, "SELECT strict FROM pragma_table_list WHERE schema = 'main' AND name = ?", -1, &raw_statement, nullptr))
-        return false;
-    SQLiteStatementPtr statement{raw_statement, sqlite3_finalize};
+    auto statement = prepareSQLiteStatementRetryOnBusy(db, "SELECT strict FROM pragma_table_list WHERE schema = 'main' AND name = ?");
 
-    if (SQLITE_OK != sqlite3_bind_text64(statement.get(), 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8))
-        return false;
+    checkSQLiteStatus(
+        db,
+        sqlite3_bind_text64(statement.get(), 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8),
+        "Cannot bind the table name to a SQLite statement");
 
-    if (SQLITE_ROW != sqlite3_step(statement.get()))
+    int status = stepSQLiteStatementRetryOnBusy(statement.get());
+    checkSQLiteStatus(db, status, "Cannot query the SQLite table list");
+    if (status != SQLITE_ROW)
         return false;
 
     return sqlite3_column_int(statement.get(), 0) != 0;
@@ -393,7 +395,10 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// Otherwise, a pushed-down predicate could discard a `NULL` that the local read path would reject.
 ///
 /// Everything else fails closed to local filtering: a non-STRICT table, a view (`pragma_table_list` reports
-/// no STRICT views), or remote metadata that cannot be fetched because the column vanished remotely.
+/// no STRICT views), or remote metadata that cannot be fetched because the column vanished remotely. A
+/// locked database (SQLITE_BUSY) is the one condition that does not fail closed: it proves nothing about
+/// the column, so the metadata probes wait for the lock like every other metadata path and surface the
+/// error once the wait is cancelled or times out.
 inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const String & column_name, const DataTypePtr & type)
 {
     if (!isPushdownSafeType(type))
@@ -412,9 +417,23 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     int not_null = 0;
     int primary_key = 0;
     int autoincrement = 0;
-    if (SQLITE_OK
-        != sqlite3_table_column_metadata(
-            db, "main", table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement))
+    Stopwatch watch;
+    int status;
+    while (true)
+    {
+        status = sqlite3_table_column_metadata(
+            db, "main", table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement);
+        if (status == SQLITE_BUSY && keepWaitingForSQLiteLock(watch))
+            continue;
+        break;
+    }
+    /// A locked database means the metadata is unknown, not unsafe: wait like the other metadata paths and
+    /// surface the error after a cancelled or timed-out wait instead of failing closed, which would wrongly
+    /// reject a pushdown-safe filter with `INCORRECT_QUERY` under `external_table_strict_query = 1`. Only
+    /// SQLITE_ERROR - the column vanished remotely - fails closed to local filtering.
+    if (status != SQLITE_OK && status != SQLITE_ERROR)
+        checkSQLiteStatus(db, status, "Cannot fetch SQLite column metadata");
+    if (status != SQLITE_OK)
         return false;
 
     if (!canContainNull(*type) && !not_null && !primary_key)
