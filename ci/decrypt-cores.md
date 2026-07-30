@@ -25,10 +25,13 @@ When a job collects core dumps, it attaches the following files to the run:
 
 - `aes.key.rsa` - the RSA-OAEP-wrapped AES key. There is exactly one per job, and
   it decrypts every core that job attached.
-- One or more `<origin>.core.<comm>.<pid>.zst.enc` files. `<origin>` says where the
-  core came from: `run_r0`/`run_r1`/`run_r2` for a server replica, `client` for a
-  `clickhouse-client` or `clickhouse-local` process that a test spawned. At most
-  three cores are taken per origin.
+- One or more encrypted cores, at most three per directory collected from. The
+  stateless and fast-test jobs collect from several directories, so each core is
+  prefixed with its origin: `<origin>.core.<comm>.<pid>.zst.enc`, where `<origin>`
+  is `run_r0`/`run_r1`/`run_r2` for a server replica and `client` for a
+  `clickhouse-client` or `clickhouse-local` process that a test spawned. The
+  AST-fuzzer and stress jobs collect from a single directory and keep the
+  unprefixed `core.<comm>.<pid>.zst.enc` form.
 
 Client cores are collected only for jobs that declare the directory their
 `clickhouse-test` runs from (`ClickHouseProc.client_core_path`). A relative
@@ -63,16 +66,19 @@ openssl pkeyutl -decrypt \
 
 # 2. Decrypt the compressed core.
 openssl enc -d -aes-256-cbc \
-    -in core.<pid>.zst.enc \
-    -out core.<pid>.zst \
+    -in <core>.zst.enc \
+    -out <core>.zst \
     -pbkdf2 \
     -pass file:aes.key
 
 # 3. Decompress to obtain the raw core file.
-zstd -d core.<pid>.zst -o core.<pid>
+zstd -d <core>.zst -o <core>
 ```
 
-Repeat steps 2 and 3 for each `core.<pid>.zst.enc` artifact. The same
+`<core>` is whatever the downloaded file is called:
+`run_r0.core.MergeMutate.654-5182` for a stateless server core,
+`client.core.clickhouse-clie.138694` for a client core, `core.Fuzzer.7` for a
+fuzzer core. Repeat steps 2 and 3 for each `.zst.enc` artifact. The same
 `aes.key` works for every core file in the same job.
 
 ## Loading the Core in gdb
@@ -85,7 +91,7 @@ with the helper in `.claude/skills/decompress-binary`:
 
 ```bash
 python3 .claude/skills/decompress-binary/extract_self_extracting.py clickhouse clickhouse.elf
-gdb clickhouse.elf core.<pid>      # or: lldb clickhouse.elf -c core.<pid>
+gdb clickhouse.elf <core>          # or: lldb clickhouse.elf -c <core>
 ```
 
 The binary must come from the exact build that produced the core (matching
