@@ -123,76 +123,62 @@ ClickHouse 버전은 `YY.M.patch.build-type` 체계를 따릅니다. 여기서 `
   ### 단계별 절차
 </div>
 
-<div id="discover-active-releases">
-  #### 1. 활성 릴리스 찾기
-</div>
+<Steps>
+  <Step title="활성 릴리스 확인" id="discover-active-releases">
+    `BackportPRs.receive_release_prs`는 GitHub에서 `release` 레이블이 지정된 열려 있는 모든 PR을 조회합니다. 이 PR들의 head ref는 릴리스 브랜치 이름(예: `release/25.3`)입니다. 여기서 검색할 버전별 레이블 집합을 도출합니다. 즉, 가장 최신의 활성 릴리스보다 더 새롭지 않은 버전을 가진, 리포지토리에 존재하는 모든 `v{VER}-must-backport` 레이블입니다. 더 오래된 레이블은 해당 릴리스가 더 이상 활성 상태가 아니더라도 포함됩니다(모든 활성 릴리스보다 더 새로운 레이블은 어떤 활성 브랜치로도 확장될 수 없으므로 건너뜁니다). 따라서 지원 종료된 릴리스용으로 레이블이 지정된 PR도, 더 새로운 릴리스가 활성 상태인 한 여전히 검색됩니다.
+  </Step>
 
-`BackportPRs.receive_release_prs`는 GitHub에서 `release` 레이블이 지정된 모든 열린 PR을 조회합니다. 이들 PR의 head ref가 릴리스 브랜치 이름(예: `release/25.3`)입니다. 여기서 검색할 버전별 레이블 세트를 도출합니다. 즉, 리포지토리에 존재하면서 버전이 최신 활성 릴리스보다 새롭지 않은 모든 `v{VER}-must-backport` 레이블입니다. 이전 레이블은 해당 릴리스가 더 이상 활성 상태가 아니더라도 포함됩니다(모든 활성 릴리스보다 최신인 레이블은 어떤 활성 브랜치로도 확장될 수 없으므로 건너뜁니다). 따라서 지원 종료된 릴리스용 레이블이 지정된 PR도 더 최신 릴리스가 활성 상태인 한 계속 찾아낼 수 있습니다.
+  <Step title="백포트할 PR 찾기" id="find-prs-to-backport">
+    `BackportPRs.receive_prs_for_backport`는 GitHub 검색 API를 사용해 다음 조건을 만족하는 머지된 PR을 찾습니다.
 
-<div id="find-prs-to-backport">
-  #### 2. 백포트할 PR 찾기
-</div>
+    * 하나 이상의 백포트 레이블(`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` 또는 버전별 레이블)을 가지고 있고,
+    * 아직 `pr-backports-created` 레이블이 없으며,
+    * 모든 릴리스 브랜치에서 발견된 가장 오래된 커밋 날짜 이후에 머지되었고,
+    * 최근 90일 이내에 업데이트되었습니다(검색 쿼리의 효율을 유지하기 위해).
+  </Step>
 
-`BackportPRs.receive_prs_for_backport`는 GitHub Search API를 사용해 다음 조건을 충족하는 머지된 PR을 찾습니다.
+  <Step title="롤링아웃 중 브랜치 처리" id="rolling-out-branch-handling">
+    릴리스 PR에 `rolling-out` 레이블이 있으면 일반 백포트 레이블(`pr-must-backport`, `pr-critical-bugfix`)은 해당 브랜치를 건너뜁니다. 봇은 해당 브랜치에 대해 이전에 생성된 체리픽 PR 또는 백포트 PR을 설명 댓글을 남기고 닫습니다. 버전별 레이블(예: `v25.3-must-backport`)은 항상 이를 재정의하며, 지정된 릴리스와 그 레이블이 확장되는 그보다 최신의 모든 활성 릴리스 브랜치에 적용됩니다. `pr-must-backport-force`는 모든 브랜치에서 `rolling-out` 검사를 우회합니다.
+  </Step>
 
-* 하나 이상의 백포트 레이블(`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` 또는 버전별 레이블)이 있으며,
-* 아직 `pr-backports-created` 레이블이 없고,
-* 모든 릴리스 브랜치에서 확인된 가장 오래된 커밋 날짜 이후에 머지되었으며,
-* 최근 90일 이내에 업데이트되었습니다(검색 쿼리의 효율성을 유지하기 위해).
+  <Step title={<>체리픽 단계 (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
+    아직 체리픽 PR이 없는 각 (원본 PR, 릴리스 브랜치) 쌍에 대해 다음을 수행합니다.
 
-<div id="rolling-out-branch-handling">
-  #### 3. `rolling-out` 브랜치 처리
-</div>
+    1. 릴리스 브랜치를 체크아웃한 뒤, 그 브랜치에서 **백포트 브랜치**(`backport/release/X.Y/N`)를 생성합니다.
+    2. 머지 커밋의 첫 번째 부모를 대상으로 `git merge -s ours`를 수행해, 내용 변경 없이 합성 머지 베이스를 생성합니다.
+    3. 원본 PR의 머지 커밋을 직접 가리키도록 **체리픽 브랜치**(`cherrypick/release/X.Y/N`)를 강제로 생성합니다.
+    4. 체리픽 브랜치를 백포트 브랜치에 머지하기 위해 `git merge --no-commit --no-ff`를 시도합니다.
+       * 이미 최신 상태이면 해당 변경은 이미 릴리스 브랜치에 포함되어 있으므로 완료로 표시하고 건너뜁니다.
+       * 그렇지 않으면(충돌 여부와 관계없이) 리셋한 후 두 브랜치를 모두 푸시합니다.
+    5. `cherrypick/release/X.Y/N`에서 `backport/release/X.Y/N`으로 보내는 체리픽 PR을 생성하고, `pr-cherrypick` 및 `do not test` 레이블을 지정합니다.
+    6. 해당하는 경우 원본 PR의 `pr-bugfix` 또는 `pr-critical-bugfix`를 그대로 전파합니다.
+    7. 이 단계에서는 담당자를 설정하지 않으며, 충돌이 감지된 경우에만 추가합니다.
+  </Step>
 
-릴리스 PR에 `rolling-out` 레이블이 있으면 일반 백포트 레이블(`pr-must-backport`, `pr-critical-bugfix`)은 해당 브랜치를 건너뜁니다. 봇은 해당 브랜치에 대해 이전에 생성된 체리픽 또는 백포트 PR을 모두 설명 댓글과 함께 닫습니다. 버전별 레이블(예: `v25.3-must-backport`)은 항상 이 동작보다 우선하며, 지정된 릴리스와 해당 레이블이 확장되는 그보다 최신의 모든 활성 릴리스 브랜치에 적용됩니다. `pr-must-backport-force`는 모든 브랜치에서 `rolling-out` 검사를 우회합니다.
+  <Step title="충돌 없는 체리픽 PR 자동 머지" id="auto-merge-conflict-free-cherry-pick-prs">
+    체리픽 PR을 머지할 수 있으면(충돌 없음), 봇이 GitHub API를 통해 이를 자동으로 머지한 뒤 즉시 백포트 단계로 진행합니다.
+  </Step>
 
-<div id="cherry-pick-stage">
-  #### 4. 체리픽 단계 (`ReleaseBranch.create_cherrypick`)
-</div>
+  <Step title={<>백포트 단계 (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
+    체리픽 PR이 머지된 후:
 
-아직 체리픽 PR이 없는 각 (원본 PR, 릴리스 브랜치) 쌍에 대해 다음을 수행합니다.
+    1. 백포트 브랜치를 체크아웃한 뒤 pull합니다.
+    2. 릴리스 브랜치와 백포트 브랜치 사이의 머지 베이스를 찾습니다.
+    3. 머지 베이스로 `git reset --soft`를 수행해, 체리픽한 모든 커밋을 하나로 스쿼시합니다.
+    4. 백포트 PR 제목을 메시지로 사용해 커밋합니다.
+    5. 백포트 브랜치를 강제로 푸시한 뒤, 실제 릴리스 브랜치를 대상으로 하는 백포트 PR을 엽니다.
+    6. PR에 `pr-backport` 레이블을 지정합니다(해당하는 경우 `pr-bugfix` / `pr-critical-bugfix`도 지정).
+    7. PR을 원본 PR의 author, 머지한 사용자, 기존 assignees에게 할당합니다(로봇 계정 제외).
+  </Step>
 
-1. 릴리스 브랜치를 체크아웃한 뒤, 그 브랜치에서 **백포트 브랜치**(`backport/release/X.Y/N`)를 생성합니다.
-2. 머지 커밋의 첫 번째 부모를 대상으로 `git merge -s ours`를 수행해, 내용 변경 없이 합성 머지 베이스를 생성합니다.
-3. 원본 PR의 머지 커밋을 직접 가리키도록 **체리픽 브랜치**(`cherrypick/release/X.Y/N`)를 강제로 생성합니다.
-4. 체리픽 브랜치를 백포트 브랜치에 머지하기 위해 `git merge --no-commit --no-ff`를 시도합니다.
-   * 이미 최신 상태이면 해당 변경은 이미 릴리스 브랜치에 포함되어 있으므로 완료로 표시하고 건너뜁니다.
-   * 그렇지 않으면(충돌 여부와 관계없이) 리셋한 후 두 브랜치를 모두 푸시합니다.
-5. `cherrypick/release/X.Y/N`에서 `backport/release/X.Y/N`으로 보내는 체리픽 PR을 생성하고, `pr-cherrypick` 및 `do not test` 레이블을 지정합니다.
-6. 해당하는 경우 원본 PR의 `pr-bugfix` 또는 `pr-critical-bugfix`를 그대로 전파합니다.
-7. 이 단계에서는 담당자를 설정하지 않으며, 충돌이 감지된 경우에만 추가합니다.
+  <Step title="완료" id="completion">
+    특정 원본 PR에 연결된 모든 릴리스 브랜치에 대한 백포트가 완료되면, 봇이 원본 PR에 `pr-backports-created`를 추가합니다.
+  </Step>
 
-<div id="auto-merge-conflict-free-cherry-pick-prs">
-  #### 5. 충돌 없는 체리픽 PR 자동 머지
-</div>
-
-체리픽 PR을 머지할 수 있는 상태이면(충돌이 없으면), 봇이 GitHub API를 통해 자동으로 머지한 뒤 즉시 백포트 단계로 진행합니다.
-
-<div id="backport-stage">
-  #### 6. 백포트 단계 (`ReleaseBranch.create_backport`)
-</div>
-
-체리픽 PR이 병합된 후:
-
-1. 백포트 브랜치를 체크아웃한 뒤 pull합니다.
-2. 릴리스 브랜치와 백포트 브랜치 사이의 merge-base를 찾습니다.
-3. merge-base로 `git reset --soft`를 실행해 체리픽된 모든 커밋을 하나로 스쿼시합니다.
-4. 백포트 PR 제목을 메시지로 사용해 커밋합니다.
-5. 백포트 브랜치를 강제로 push한 뒤, 실제 릴리스 브랜치를 대상으로 백포트 PR을 엽니다.
-6. PR에 `pr-backport` 레이블을 지정합니다(해당하는 경우 `pr-bugfix` / `pr-critical-bugfix`도 지정).
-7. PR을 원본 PR의 작성자, 병합한 사용자, 기존 담당자에게 할당합니다(로봇 계정 제외).
-
-<div id="completion">
-  #### 7. 완료
-</div>
-
-주어진 원본 PR의 모든 릴리스 브랜치에 대한 백포트가 완료되면 봇이 원본 PR에 `pr-backports-created`를 추가합니다.
-
-<div id="pre-check">
-  #### 8. 사전 점검
-</div>
-
-PR 작업을 시작하기 전에 `ReleaseBranch.pre_check`는 `git merge-base --is-ancestor`를 실행해 머지 커밋이 릴리스 브랜치에 이미 포함되어 있는지 확인합니다. 이미 포함되어 있으면 해당 PR은 이미 백포트된 것으로 간주하고 건너뜁니다.
+  <Step title="사전 점검" id="pre-check">
+    PR 작업을 시작하기 전에 `ReleaseBranch.pre_check`는 `git merge-base --is-ancestor`를 실행해 해당 머지 커밋이 이미 릴리스 브랜치에서 도달 가능한지 확인합니다. 이미 도달 가능한 경우 해당 PR은 이미 백포트된 것으로 간주하고 건너뜁니다.
+  </Step>
+</Steps>
 
 <div id="stale-cherry-pick-pr-handling">
   ### 오래된 체리픽 PR 처리
