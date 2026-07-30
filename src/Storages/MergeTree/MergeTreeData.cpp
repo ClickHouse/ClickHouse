@@ -137,6 +137,7 @@
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <atomic>
@@ -5011,20 +5012,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
-    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
-    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
-    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
-    /// setting is unaffected.
-    for (const auto & command : commands)
-    {
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            Field value;
-            if (command.settings_changes.tryGet("auto_statistics_types", value))
-                validateAutoStatisticsTypes(value.safeGet<String>());
-        }
-    }
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
@@ -6478,10 +6465,12 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
-        transaction.rollback(&lock);
+        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        new_data_part->getDataPartStorage().commitTransaction();
+        rollback_tx_guard.reset();
+
         new_data_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
@@ -7323,6 +7312,7 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     /// If the part has no metadata_version.txt (very old parts), the fallback in
     /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -8357,6 +8347,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
