@@ -310,8 +310,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     if (final_mode.query_with_final)
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        result.not_applicable_reason = "EXPLAIN WHATIF needs empirical estimation under FINAL, and it is "
-                                       "unavailable for this index or query";
+        result.not_applicable_reason = "Cannot estimate under FINAL: empirical estimation is unavailable for this "
+                                       "index or query, or PrimaryKeyExpand would make the read wider than the baseline";
         return result;
     }
 

@@ -1,0 +1,42 @@
+--- exact mode on, candidate outside the primary key ---
+Baseline (after PK + partition + existing indexes):
+  marks:       20
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        6
+--- exact mode off, no expansion ---
+Baseline (after PK + partition + existing indexes):
+  marks:       20
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+--- skip indexes disabled under FINAL ---
+Baseline (after PK + partition + existing indexes):
+  marks:       20
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Skip indexes are not used under FINAL (`use_skip_indexes_if_final = 0`)
+--- no FINAL, same table and candidate ---
+Baseline (after PK + partition + existing indexes):
+  marks:       20
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+--- exact mode on, candidate inside the primary key ---
+Baseline (after PK + partition + existing indexes):
+  marks:       18
+With idx_c (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+--- no final mark, baseline is the whole table ---
+Baseline (after PK + partition + existing indexes):
+  marks:       20
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        20
+--- no final mark, expansion wider than the baseline ---
+Baseline (after PK + partition + existing indexes):
+  marks:       16
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Cannot estimate under FINAL: empirical estimation is unavailable for this index or query, or PrimaryKeyExpand would make the read wider than the baseline

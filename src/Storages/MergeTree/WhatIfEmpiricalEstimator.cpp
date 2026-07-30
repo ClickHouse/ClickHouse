@@ -63,26 +63,6 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
     return windows;
 }
 
-/// The cases where `findPKRangesForFinalAfterSkipIndex` gives up and returns whole parts,
-/// which is not bounded by the baseline and so cannot be expressed as pruning
-bool primaryKeyExpandWouldExpandWholeParts(
-    const KeyDescription & primary_key, const KeyDescription & sorting_key, const RangesInDataParts & baseline_parts)
-{
-    if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
-        return true;
-
-    for (const auto & part_with_ranges : baseline_parts)
-    {
-        const auto & index_granularity = part_with_ranges.data_part->index_granularity;
-        if (!index_granularity->hasFinalMark())
-            return true;
-        for (const auto & range : part_with_ranges.ranges)
-            if (range.end >= index_granularity->getMarksCount())
-                return true;
-    }
-    return false;
-}
-
 }
 
 bool tryEstimateEmpirical(
@@ -108,11 +88,6 @@ bool tryEstimateEmpirical(
     /// With non-zero seek gaps a real read coalesces ranges, so our per-granule count would diverge
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
         || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
-        return false;
-
-    /// Bail out before the scan instead of reporting a number the real read would not deliver
-    if (apply_final_pk_expand
-        && primaryKeyExpandWouldExpandWholeParts(metadata->getPrimaryKey(), metadata->getSortingKey(), saved_parts))
         return false;
 
     /// Marks the candidate keeps, per part, for the PrimaryKeyExpand pass below
@@ -352,8 +327,9 @@ bool tryEstimateEmpirical(
         for (const auto & expanded_part : expanded)
             expanded_marks += expanded_part.getMarksCount();
 
-        /// The pass only re-adds marks from the snapshot we gave it, so anything above the baseline
-        /// means it bailed out to whole parts and the estimate would be meaningless
+        /// The pass only re-adds marks from the snapshot we gave it, so going above the baseline means
+        /// it fell back to whole parts: the candidate would make the query read more than it does now,
+        /// which `skip_ratio` cannot express
         if (expanded_marks > baseline_marks)
             return false;
 
