@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 QUERY="SELECT (SELECT getClientHTTPHeader(* APPLY lambda(tuple(x), toString(x)) EXCEPT '[0-9]' REPLACE (true AS \`h\`)) GROUP BY ALL INTERSECT ALL SELECT getClientHTTPHeader(* APPLY lambda(tuple(x), toString(x)) EXCEPT '[0-9]' REPLACE (NULL AS \`h\`)) GROUP BY ALL QUALIFY 2147483646 LIMIT -2147483647) INTERSECT ALL SELECT getClientHTTPHeader(* APPLY lambda(tuple(x), toString(x)) EXCEPT '[0-9]' REPLACE (true AS \`h\`)) GROUP BY ALL"
 
-OUTPUT=$($CLICKHOUSE_CLIENT --allow_get_client_http_header 1 --query "$QUERY" 2>&1 || true)
+OUTPUT=$($CLICKHOUSE_CLIENT --allow_get_client_http_header=1 --query "$QUERY" 2>&1 || true)
 
 if [[ "$OUTPUT" == *"Context has expired"* ]]
 then
