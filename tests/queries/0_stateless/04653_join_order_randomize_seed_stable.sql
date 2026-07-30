@@ -3,8 +3,9 @@
 -- `query_plan_optimize_join_order_randomize = 1` means "derive a seed", and the seed feeds
 -- `getRandomizedStats`, which replaces the real relation statistics and therefore decides the join order.
 -- The seed must be a function of the query, not of the individual plan construction: a query builds several
--- plans (one per scalar subquery, and under parallel replicas one per replica, because `serialize_query_plan`
--- is off by default and every replica re-plans the query text it receives). When those plans disagree on the
+-- plans (one per scalar subquery, and under parallel replicas one per replica: a replica re-plans whether it
+-- receives the query text or a serialized plan, because `JoinStepLogical::serialize` does not encode the
+-- `optimized` flag, so the join-order rewrite runs again on the replica). When those plans disagree on the
 -- join order, the leftmost relation differs, so a different table gets `requestReadingInOrder` and two
 -- replicas announce different coordination modes for one stream, throwing `Coordination mode mismatch for
 -- stream`.
@@ -191,15 +192,20 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
             SELECT query_id FROM system.query_log
             WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
 
--- The configured fan-out really happened, read from the initiator's own accumulated counters so the assertion
--- does not depend on when the replicas' own `query_log` rows become visible. `ParallelReplicasAvailableCount` is
--- incremented once per replica that actually joined the query.
-SELECT 'cell C fanned out to three replicas', ProfileEvents['ParallelReplicasAvailableCount'] = 3
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
-  AND is_initial_query AND type = 'QueryFinish'
-LIMIT 1
-SETTINGS enable_parallel_replicas = 0;
+-- Cell C must be non-vacuous in the way that matters: at least two DISTINCT plan constructions carried this
+-- query's derived seed. The scope is the seed value itself, computed from the initiator's own `query_log` row,
+-- which is always locally visible; joining the replicas' rows instead would race their `query_log` flush
+-- (`SYSTEM FLUSH LOGS` has no cross-replica barrier).
+SELECT 'cell C several plans carried the derived seed', uniqExact(query_id) >= 2
+FROM system.text_log
+WHERE logger_name = 'QueryPlanOptimizationSettings'
+  AND message LIKE '%random seed%'
+  AND extract(message, 'seed (\\d+)') = (
+      SELECT toString(greatest(sipHash64(query_id), 2))
+      FROM system.query_log
+      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+        AND is_initial_query AND type != 'QueryStart'
+      LIMIT 1);
 
 DROP TABLE t1_04653;
 DROP TABLE t2_04653;
