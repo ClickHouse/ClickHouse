@@ -21,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatFactory.h>
 #include <optional>
 #include <memory>
 #include <string>
@@ -341,12 +342,17 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        /// When the storage carries no format settings (table functions pass none),
+        /// derive them from the context. Substituting FormatSettings{} here (struct
+        /// defaults, e.g. `output_string_as_string = false`) made table-function
+        /// writes produce parquet without the `String` annotation, unreadable for
+        /// external Iceberg readers such as Spark.
         return current_metadata->write(
             sample_block,
             table_id,
             object_storage,
             shared_from_this(),
-            format_settings.has_value() ? *format_settings : FormatSettings{},
+            format_settings.has_value() ? *format_settings : getFormatSettings(context),
             context,
             catalog);
     }
