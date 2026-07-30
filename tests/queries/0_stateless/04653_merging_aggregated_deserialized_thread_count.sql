@@ -43,7 +43,7 @@ SETTINGS serialize_query_plan = 0,
          distributed_aggregation_memory_efficient = 0,
          enable_memory_bound_merging_of_aggregation_results = 0;
 
--- Without a GROUP BY the merge step is still built by the same rewrite.
+-- Without a `GROUP BY` the merge step is still built by the same rewrite.
 SELECT sum(a) FROM cluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), 't_merging_aggregated_threads')
 SETTINGS serialize_query_plan = 1,
          distributed_aggregation_memory_efficient = 0,
