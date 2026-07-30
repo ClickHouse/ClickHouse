@@ -79,7 +79,7 @@ Glue supports multiple table formats, but ClickHouse only reads **Iceberg** tabl
 </Tab>
 <Tab title="Unity Catalog (Iceberg)">
 
-Query Unity Catalog managed [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables using OAuth client credentials from a Databricks service principal. See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-iceberg) for full setup.
+Query Unity Catalog [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables that use external storage locations, using OAuth client credentials from a Databricks service principal. See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-iceberg) for full setup.
 
 Before you connect, confirm:
 
@@ -89,7 +89,7 @@ Before you connect, confirm:
 
 In the flyout:
 
-1. Enter your Databricks **Workspace URL** (e.g. `dbc-1234567a-cbde`).
+1. Enter your Databricks **Workspace URL** (e.g. `dbc-1234567a-cbde.cloud.databricks.com`).
 2. Enter the **Databricks catalog name** to connect (e.g. `icebench`).
 3. Enter the OAuth **Client ID** and **Client secret** for your service principal.
 4. Enter a **Database name** for the ClickHouse database that exposes your Unity Catalog tables.
@@ -97,7 +97,7 @@ In the flyout:
 </Tab>
 <Tab title="Unity Catalog (Delta)">
 
-Query Unity Catalog [Delta Lake](/reference/engines/table-engines/integrations/deltalake) tables using a Databricks Personal Access Token (PAT). See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-delta) for full setup.
+Query Unity Catalog [Delta Lake](/reference/engines/table-engines/integrations/deltalake) tables that use external storage locations, using a Databricks Personal Access Token (PAT). See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-delta) for full setup.
 
 Before you connect, confirm:
 

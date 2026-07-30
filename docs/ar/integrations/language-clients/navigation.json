@@ -34,7 +34,6 @@
       "group": "برامج عميلة تابعة لجهات خارجية",
       "icon": "users",
       "pages": [
-        "ar/integrations/language-clients/third-party/moose-olap",
         "ar/integrations/language-clients/third-party/client-libraries"
       ]
     }

@@ -34,7 +34,6 @@
       "group": "サードパーティ製クライアント",
       "icon": "users",
       "pages": [
-        "ja/integrations/language-clients/third-party/moose-olap",
         "ja/integrations/language-clients/third-party/client-libraries"
       ]
     }

@@ -5640,7 +5640,7 @@
     "source": "/interfaces/third-party/integrations"
   },
   {
-    "destination": "/integrations/language-clients/third-party/moose-olap",
+    "destination": "/integrations",
     "source": "/interfaces/third-party/moose-olap"
   },
   {
@@ -10480,7 +10480,7 @@
     "source": "/jp/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ja/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ja/integrations",
     "source": "/jp/interfaces/third-party/moose-olap"
   },
   {
@@ -21232,7 +21232,7 @@
     "source": "/ko/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ko/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ko/integrations",
     "source": "/ko/interfaces/third-party/moose-olap"
   },
   {
@@ -33340,7 +33340,7 @@
     "source": "/ru/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ru/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ru/integrations",
     "source": "/ru/interfaces/third-party/moose-olap"
   },
   {
@@ -46896,7 +46896,7 @@
     "source": "/zh/interfaces/third-party/integrations"
   },
   {
-    "destination": "/zh/integrations/language-clients/third-party/moose-olap",
+    "destination": "/zh/integrations",
     "source": "/zh/interfaces/third-party/moose-olap"
   },
   {
@@ -54206,5 +54206,41 @@
   {
     "destination": "/zh/clickstack/demo-days/2026/2026-06-12",
     "source": "/zh/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "/integrations",
+    "source": "/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/ar/integrations",
+    "source": "/ar/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/es/integrations",
+    "source": "/es/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/fr/integrations",
+    "source": "/fr/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/ja/integrations",
+    "source": "/ja/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/ko/integrations",
+    "source": "/ko/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/pt-BR/integrations",
+    "source": "/pt-BR/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/ru/integrations",
+    "source": "/ru/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/zh/integrations",
+    "source": "/zh/integrations/language-clients/third-party/moose-olap"
   }
 ]
