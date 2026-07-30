@@ -275,22 +275,14 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
+<Warning>
 `NaN` in a `Float` `JOIN` key does not follow the `NULL` rule above. The scalar comparison
-`NaN = NaN` is `0`, but an equality `JOIN` key is not compared with those scalar semantics, so `NaN`
-keys can match each other. Do not rely on either outcome: whether two `NaN` keys match is not
-specified, and it varies with the join implementation that ClickHouse chooses, with the key type, and
-with the settings in effect. The merge algorithms, for instance, use the column comparator, which
-reports any two `NaN` values as equal, while the hash algorithms compare the key bytes and so treat
-`NaN` values with different bit patterns as different keys. `isNotDistinctFrom` does not reliably
-separate them either. On a key that is not `Nullable`, use `ON if(isNaN(A.id), NULL, A.id) = B.id`
-when `NaN` rows must not match. On a `Nullable(Float)` key that form also stops `NULL` keys from
-matching each other, because `isNaN(NULL)` is `NULL`. To drop only the `NaN` matches and keep the
-`NULL = NULL` matches of the section above, write
-`ON isNotDistinctFrom(A.id, B.id) AND NOT ifNull(isNaN(A.id), 0)` instead. That
-predicate adds a condition besides the key equality, which not every join algorithm accepts, so
-`join_algorithm = 'full_sorting_merge'` on its own may reject it depending on the `JOIN` kind. The
-closest match key of an `ASOF JOIN` is searched by ordering, so exclude `NaN` from that key on both
-sides when it can occur.
+`NaN = NaN` is `0`, but `JOIN` keys are not compared with scalar semantics, so `NaN` keys can match
+each other. Whether they do is not specified: it varies with the join algorithm, the key type, and
+the settings in effect, so do not rely on either outcome. When `NaN` rows must not match, map them
+to `NULL` in the key: `ON if(isNaN(A.id), NULL, A.id) = B.id`. In an `ASOF JOIN`, the closest-match
+column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
+</Warning>
 
 ## ASOF JOIN usage {#asof-join-usage}
 
