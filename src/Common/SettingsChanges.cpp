@@ -57,8 +57,12 @@ bool SettingsChanges::insertSetting(std::string_view name, const Field & value)
 
 void SettingsChanges::setSetting(std::string_view name, const Field & value)
 {
-    if (auto * setting_value = tryGet(name))
-        *setting_value = value;
+    if (auto * change = find(*this, name))
+    {
+        change->value = value;
+        /// The concrete value replaces whatever shorthand form the previous change was written in.
+        change->shorthand = false;
+    }
     else
         insertSetting(name, value);
 }

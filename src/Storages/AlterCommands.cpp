@@ -1011,7 +1011,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
-                it->value = change.value;
+                *it = change;
             else
                 settings_from_storage.push_back(change);
         }

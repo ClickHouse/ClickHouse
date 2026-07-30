@@ -1,0 +1,1 @@
+CREATE TABLE default.t_setting_shorthand\n(\n    `x` UInt64\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192, replace_long_file_name_to_hash = true

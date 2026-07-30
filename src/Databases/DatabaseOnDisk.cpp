@@ -908,7 +908,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
             auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
                                    [&](const auto & prev){ return prev.name == change.name; });
             if (it != storage_settings.end())
-                it->value = change.value;
+                *it = change;
             else
                 storage_settings.push_back(change);
         }
