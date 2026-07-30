@@ -138,7 +138,9 @@ public:
     virtual Packet receivePacket() = 0;
     virtual UInt64 receivePacketType() = 0;
 
-    /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
+    /// If not connected yet - then connect. If cannot connect - throw an exception.
+    /// Does not ping an already-established connection: a connection that the server has closed
+    /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
     virtual bool isConnected() const = 0;
