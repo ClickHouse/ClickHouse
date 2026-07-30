@@ -18,6 +18,8 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/AzureBlobStorage/getBlobPropertiesWithRetry.h>
+#include <IO/AzureBlobStorage/retryAzureOperation.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <base/sleep.h>
 
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
@@ -164,7 +166,9 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     try
     {
         auto blob_client = client_ptr->GetBlobClient(object.remote_path);
-        blob_client.GetProperties();
+        /// Retry a transient 403/auth (RBAC-propagation window) like the read/download loops; only a real
+        /// NotFound (handled below) means the object is absent.
+        getBlobPropertiesWithRetry(blob_client, settings.get()->max_single_download_retries, object.remote_path, log);
         return true;
     }
     catch (const Azure::Core::RequestFailedException & e)
@@ -361,12 +365,15 @@ void AzureObjectStorage::removeObjectImpl(
     {
         if (isAdlsGen2Endpoint(connection_params.endpoint))
         {
-            buildDataLakeFileClient(path)->Delete();
+            /// Retry a transient 403/auth (RBAC-propagation window) like the read/upload paths.
+            retryAzureOperation([&] { buildDataLakeFileClient(path)->Delete(); },
+                settings.get()->max_single_download_retries, path, log);
             success = true;
         }
         else
         {
-            auto delete_info = client_ptr->GetBlobClient(path).Delete();
+            auto delete_info = retryAzureOperation([&] { return client_ptr->GetBlobClient(path).Delete(); },
+                settings.get()->max_single_download_retries, path, log);
             success = delete_info.Value.Deleted;
             if (!if_exists && !delete_info.Value.Deleted)
                 throw Exception(
@@ -476,7 +483,9 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
 
         try
         {
-            client_ptr->SubmitBatch(requests);
+            /// Retry a transient batch-level 403/auth (RBAC-propagation window) before giving up.
+            retryAzureOperation([&] { client_ptr->SubmitBatch(requests); },
+                settings.get()->max_single_download_retries, container, log);
         }
         catch (...)
         {
@@ -505,16 +514,35 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
                     add_log_entry(object, avg_elapsed_us);
-                }
-                else
-                {
-                    add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
-
-                    if (!throw_at_end)
-                        throw_at_end = std::current_exception();
-
                     continue;
                 }
+
+                /// A transient per-object 403/auth (RBAC-propagation window): re-issue this single delete
+                /// under the bounded retry policy before recording a failure.
+                if (isRetryableAzureException(e))
+                {
+                    const String & remote_path = object.remote_path;
+                    auto original = std::current_exception();
+                    try
+                    {
+                        retryAzureOperation([&] { client_ptr->GetBlobClient(remote_path).Delete(); },
+                            settings.get()->max_single_download_retries, remote_path, log);
+                        add_log_entry(object, avg_elapsed_us);
+                        continue;
+                    }
+                    catch (...) /// retries exhausted; record the original failure below
+                    {
+                    }
+                    add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
+                    if (!throw_at_end)
+                        throw_at_end = original;
+                    continue;
+                }
+
+                add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
+                if (!throw_at_end)
+                    throw_at_end = std::current_exception();
+                continue;
             }
         }
 
