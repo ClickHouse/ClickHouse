@@ -903,7 +903,11 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
-        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index && !already_has_direct_read);
+    {
+        /// virtual-column/direct-read rewrite is pointless for a deferred PREWHERE (the filter never runs during reading)
+        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
+        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_allowed);
+    }
 
     if (stack.size() < 2)
         return;
