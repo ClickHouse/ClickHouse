@@ -21,7 +21,7 @@ SELECT gini(1);
 SELECT gini(x) FROM (SELECT 1 AS x) WHERE 0;
 
 -- Sum of values is 0 -> NaN.
-SELECT gini(x) FROM (SELECT number - 5 AS x FROM numbers(11));
+SELECT gini(x) FROM (SELECT 0 AS x FROM numbers(11));
 
 -- Negative values are rejected.
 SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
