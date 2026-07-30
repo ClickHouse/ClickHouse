@@ -1,0 +1,12 @@
+--- materialize a projection after a type change ---
+str
+s	Nullable(String)
+--- a part detached across the type change ---
+part type before the rewrite
+b	String
+part type after the rewrite
+b	Nullable(String)
+data
+x	y	x!
+read from the projection
+x	y
