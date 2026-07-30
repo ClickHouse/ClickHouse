@@ -2689,12 +2689,16 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         if (return_single_block)
         {
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
+            /// Like the general paths below: the inline count values are copied out (final)
+            /// or rebuilt as arena states (non-final), so the table releases its buffer now.
+            data.clearAndShrink();
             return chunks;
         }
 
         if (rows_in_current_block)
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
 
+        data.clearAndShrink();
         return chunks;
     }
 
