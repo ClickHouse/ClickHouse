@@ -319,12 +319,15 @@ class HostMetricsCollector:
 
     @staticmethod
     def _decimate(points: List[Tuple[float, float, float]], max_points: int) -> List[List[float]]:
-        """Downsample (t, avg, peak) triples preserving the envelope.
+        """Downsample (t, avg, peak) triples preserving both lines' envelope.
 
         The first and last samples are always kept. The middle is split into
-        buckets; from each bucket the sample with the highest ``peak`` and the
-        one with the lowest ``avg`` are emitted in time order, so both spikes
-        (via peak) and dips (via avg) survive.
+        buckets; from each bucket three representatives are emitted in time
+        order - the highest ``avg``, the lowest ``avg`` and the highest ``peak``
+        - so a sustained high average, an idle dip, and a short spike all
+        survive. Keeping the highest ``avg`` matters because the chart draws the
+        average as its solid line: dropping it would let a spike in one window
+        hide sustained load in another.
         """
         n = len(points)
         if n <= max_points:
@@ -332,8 +335,8 @@ class HostMetricsCollector:
 
         first, last = points[0], points[-1]
         middle = points[1:-1]
-        # Two points per bucket, plus the fixed first/last.
-        n_buckets = max(1, (max_points - 2) // 2)
+        # Up to three points per bucket, plus the fixed first/last.
+        n_buckets = max(1, (max_points - 2) // 3)
         bucket_size = len(middle) / n_buckets
 
         result: List[Tuple[float, float, float]] = [first]
@@ -343,10 +346,12 @@ class HostMetricsCollector:
             chunk = middle[lo:hi]
             if not chunk:
                 continue
-            hi_peak = max(chunk, key=lambda p: p[2])
-            lo_avg = min(chunk, key=lambda p: p[1])
-            # Emit the two representatives in time order (dedup if identical).
-            pair = sorted({hi_peak, lo_avg}, key=lambda p: p[0])
-            result.extend(pair)
+            reps = {
+                max(chunk, key=lambda p: p[1]),  # highest average (sustained load)
+                min(chunk, key=lambda p: p[1]),  # lowest average (idle dips)
+                max(chunk, key=lambda p: p[2]),  # highest peak (short spikes)
+            }
+            # Emit the distinct representatives in time order.
+            result.extend(sorted(reps, key=lambda p: p[0]))
         result.append(last)
         return [[t, a, p] for t, a, p in result]
