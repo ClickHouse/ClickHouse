@@ -1507,6 +1507,7 @@ protected:
                 }
                 catch (...)
                 {
+                    /// `recordCurrentException` stores it as the query's first failure. Ok.
                     cancellation->recordCurrentException();
                 }
             });
