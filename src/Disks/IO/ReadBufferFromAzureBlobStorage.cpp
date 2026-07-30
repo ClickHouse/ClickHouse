@@ -16,6 +16,10 @@
 #include <Common/FailPoint.h>
 #include <IO/SeekableReadBuffer.h>
 
+#include <fmt/format.h>
+
+#include <string_view>
+
 
 namespace ProfileEvents
 {
@@ -242,12 +246,38 @@ off_t ReadBufferFromAzureBlobStorage::getPosition()
     return offset - available();
 }
 
+namespace
+{
+
+/// Azure reports the same ETag in two different spellings: `ListBlobs` takes it from the XML body of
+/// the response, while every single-blob request (`GetProperties`, `Download`) takes it from the HTTP
+/// header, where RFC 7232 requires the opaque tag to be quoted. So the value carried by a listed
+/// `StoredObject` and the value that comes back from `Download` may differ by the surrounding quotes
+/// alone (and, in principle, by the weak-validator prefix) while denoting the same generation.
+/// Compare - and send `If-Match` - on the opaque tag only, otherwise every read of a listed blob
+/// would look like a concurrent rewrite.
+std::string_view etagOpaqueTag(std::string_view etag)
+{
+    if (etag.starts_with("W/"))
+        etag.remove_prefix(2);
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+    {
+        etag.remove_prefix(1);
+        etag.remove_suffix(1);
+    }
+    return etag;
+}
+
+}
+
 void ReadBufferFromAzureBlobStorage::pinToExpectedEtag(Azure::Storage::Blobs::DownloadBlobOptions & download_options) const
 {
     if (expected_etag.empty())
         return;
 
-    download_options.AccessConditions.IfMatch = Azure::ETag(expected_etag);
+    /// `If-Match` is an HTTP header, so the opaque tag has to be quoted even when the expected ETag
+    /// was obtained from a listing, which does not quote it.
+    download_options.AccessConditions.IfMatch = Azure::ETag(fmt::format("\"{}\"", etagOpaqueTag(expected_etag)));
 }
 
 void ReadBufferFromAzureBlobStorage::validateResponseEtag(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const
@@ -260,7 +290,7 @@ void ReadBufferFromAzureBlobStorage::validateResponseEtag(const Azure::Storage::
 
     /// An endpoint that does not report an ETag gives nothing to compare against; the `If-Match`
     /// header is then the only protection, so do not fail an otherwise valid read.
-    if (response_etag.empty() || response_etag == expected_etag)
+    if (response_etag.empty() || etagOpaqueTag(response_etag) == etagOpaqueTag(expected_etag))
         return;
 
     throw Exception(

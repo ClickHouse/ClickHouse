@@ -80,7 +80,9 @@ private:
 
     /// Belt and braces for the `If-Match` pin: Azure is expected to answer `412 Precondition Failed`,
     /// but validating the ETag that came back costs nothing and also covers endpoints (emulators,
-    /// gateways) that ignore the condition header.
+    /// gateways) that ignore the condition header.  Compares the opaque tags only: a listed ETag is
+    /// unquoted (it comes from the XML body) while a `Download` ETag is quoted (it comes from the HTTP
+    /// header), and the two spellings denote the same generation.
     void validateResponseEtag(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const;
 
     /// Translate the `412` produced by the `If-Match` pin into the same non-retryable error as the
