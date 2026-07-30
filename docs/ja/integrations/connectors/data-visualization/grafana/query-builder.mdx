@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -70,17 +70,17 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 ログのクエリタイプは[データリンク](#data-links)をサポートしています。
 
-| フィールド          | 説明                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| Use OTel       | OpenTelemetry のカラムを有効にします。選択した OTel スキーマバージョンで定義されたカラムを使用するように、選択中のカラムを上書きします (カラム選択は無効になります) 。            |
-| カラム        | ログの行に追加する追加カラムです。関数やカラムのエイリアスを使用できるよう、このフィールドには生の SQL を入力できます。                                             |
-| Time           | ログのプライマリ タイムスタンプカラムです。時刻系の型が表示されますが、カスタム値や関数も使用できます。                                                       |
-| Log Level      | 任意。ログの *level* または *severity* です。値は通常、`INFO`、`error`、`Debug` などになります。                                      |
-| Message        | ログメッセージの内容です。                                                                                              |
+| フィールド          | 説明                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| Use OTel       | OpenTelemetry のカラムを有効にします。選択した OTel スキーマバージョンで定義されたカラムを使用するように、選択中のカラムを上書きします (カラム選択は無効になります) 。               |
+| カラム            | ログの行に追加する追加カラムです。関数やカラムエイリアスを使用できるよう、このフィールドには Raw SQL を入力できます。                                               |
+| Time           | ログのプライマリ タイムスタンプカラムです。時刻系の型が表示されますが、カスタム値や関数も使用できます。                                                          |
+| Log Level      | 任意。ログの *level* または *severity* です。値は通常、`INFO`、`error`、`Debug` などになります。                                         |
+| Message        | ログメッセージの内容です。                                                                                                 |
 | Order By       | [ORDER BY](/ja/reference/statements/select/order-by) 式の一覧です。                                                  |
 | Limit          | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると除外されますが、大規模なログデータセットでは推奨されません。 |
-| Filters        | `WHERE` 句に適用するフィルターの一覧です。                                                                                  |
-| Message Filter | `LIKE %value%` を使ってログを簡単に絞り込むためのテキスト入力です。入力が空の場合は除外されます。                                                   |
+| Filters        | `WHERE` 句に適用するフィルターの一覧です。                                                                                     |
+| Message Filter | `LIKE %value%` を使ってログを簡単に絞り込むためのテキスト入力です。入力が空の場合は除外されます。                                                      |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel ログクエリの例" border />
 
@@ -113,16 +113,16 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
   `LIMIT` 句を `0` に設定して削除してみてください (データセットで許可されている場合) 。
 </Warning>
 
-| Field      | Description                                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
-| ビルダーモード    | シンプルクエリでは Aggregates と Group By は含まれず、集計クエリではこれらのオプションが含まれます。                                                              |
-| Time       | クエリのプライマリ時間カラムです。時刻型に相当する型が表示されますが、カスタム値や関数も指定できます。                                                                        |
-| カラム        | 選択したカラムです。関数やカラムのエイリアスを使用できるように、このフィールドには生の SQL を入力できます。シンプルモードでのみ表示されます。                                                  |
-| Aggregates | [集約関数](/ja/reference/functions/aggregate-functions/index) の一覧です。関数とカラムにはカスタム値を指定できます。集計モードでのみ表示されます。           |
+| Field      | Description                                                                                                                   |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| ビルダーモード    | シンプルクエリでは Aggregates と Group By は含まれず、集計クエリではこれらのオプションが含まれます。                                                                 |
+| Time       | クエリのプライマリ時間カラムです。時刻型に相当する型が表示されますが、カスタム値や関数も指定できます。                                                                           |
+| カラム        | 選択したカラムです。関数やカラムのエイリアスを使用できるように、このフィールドには生の SQL を入力できます。シンプルモードでのみ表示されます。                                                     |
+| Aggregates | [集約関数](/ja/reference/functions/aggregate-functions/index) の一覧です。関数とカラムにはカスタム値を指定できます。集計モードでのみ表示されます。                          |
 | Group By   | [GROUP BY](/ja/reference/statements/select/group-by) 式の一覧です。集計モードでのみ表示されます。                                                   |
 | Order By   | [ORDER BY](/ja/reference/statements/select/order-by) 式の一覧です。                                                                  |
 | Limit      | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると追加されません。可視化全体を表示するため、一部の時系列データセットではこの設定を推奨します。 |
-| Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                  |
+| Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                     |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="時系列クエリの例" border />
 
@@ -144,24 +144,24 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 トレースクエリタイプは[データリンク](#data-links)をサポートしています。
 
-| フィールド                 | 説明                                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Trace Mode            | クエリを Trace Search から Trace ID ルックアップに切り替えます。                                                                 |
-| Use OTel              | OpenTelemetry カラムを有効にします。選択した OTel スキーマバージョンで定義されたカラムを使用するよう、現在選択されているカラムを上書きします (カラム選択は無効になります) 。           |
-| Trace ID Column       | trace の ID。                                                                                                  |
-| Span ID Column        | Span ID。                                                                                                     |
-| Parent Span ID Column | 親 span ID。通常、トップレベルのトレースでは空です。                                                                               |
-| Service Name Column   | サービス名。                                                                                                       |
-| Operation Name Column | オペレーション名。                                                                                                    |
-| Start Time Column     | trace span のプライマリ time カラム。span の開始時刻です。                                                                     |
-| Duration Time Column  | span の継続時間。既定では Grafana はこれをミリ秒の float として想定します。`Duration Unit` ドロップダウンにより、自動的に変換されます。                       |
-| Duration Unit         | 継続時間に使用する時間単位。既定ではナノ秒です。選択した単位は、Grafana が必要とするミリ秒の float に変換されます。                                            |
-| Tags Column           | Span タグ。特定の Map カラム型を前提としているため、OTel ベースのスキーマを使用しない場合は除外してください。                                               |
-| Service Tags Column   | サービスタグ。特定の Map カラム型を前提としているため、OTel ベースのスキーマを使用しない場合は除外してください。                                                |
+| フィールド                 | 説明                                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Trace Mode            | クエリを Trace Search から Trace ID ルックアップに切り替えます。                                                                    |
+| Use OTel              | OpenTelemetry カラムを有効にします。選択した OTel スキーマバージョンで定義されたカラムを使用するよう、現在選択されているカラムを上書きします (カラム選択は無効になります) 。              |
+| Trace ID Column       | trace の ID。                                                                                                     |
+| Span ID Column        | Span ID。                                                                                                        |
+| Parent Span ID Column | 親 span ID。通常、トップレベルのトレースでは空です。                                                                                  |
+| Service Name Column   | サービス名。                                                                                                          |
+| Operation Name Column | オペレーション名。                                                                                                       |
+| Start Time Column     | trace span のプライマリ time カラム。span の開始時刻です。                                                                        |
+| Duration Time Column  | span の継続時間。既定では Grafana はこれをミリ秒の float として想定します。`Duration Unit` ドロップダウンにより、自動的に変換されます。                          |
+| Duration Unit         | 継続時間に使用する時間単位。既定ではナノ秒です。選択した単位は、Grafana が必要とするミリ秒の float に変換されます。                                               |
+| Tags Column           | Span タグ。特定の Map カラム型を前提としているため、OTel ベースのスキーマを使用しない場合は除外してください。                                                  |
+| Service Tags Column   | サービスタグ。特定の Map カラム型を前提としているため、OTel ベースのスキーマを使用しない場合は除外してください。                                                   |
 | Order By              | [ORDER BY](/ja/reference/statements/select/order-by) 式の一覧。                                                      |
 | Limit                 | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると除外されますが、大規模なトレースデータセットでは推奨されません。 |
-| Filters               | `WHERE` 句に適用するフィルターの一覧。                                                                                      |
-| Trace ID              | フィルター対象の Trace ID。Trace ID モードの場合、および trace ID の[データリンク](#data-links)を開く場合にのみ使用されます。                         |
+| Filters               | `WHERE` 句に適用するフィルターの一覧。                                                                                         |
+| Trace ID              | フィルター対象の Trace ID。Trace ID モードの場合、および トレース ID の[データリンク](#data-links)を開く場合にのみ使用されます。                            |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel トレースクエリの例" border />
 
@@ -187,7 +187,7 @@ SQL エディタは、クエリエディタ上部の &quot;SQL Editor&quot; を�
   ## データリンク
 </div>
 
-Grafana の [data links](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
+Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 を使うと、新しいクエリへリンクできます。
 この機能は、トレースからログへ、またログからトレースへリンクできるように、ClickHouse プラグインで有効化されています。最も効果的に利用するには、[data source&#39;s config](/ja/integrations/connectors/data-visualization/grafana/config#opentelemetry) でログとトレースの両方に対して OpenTelemetry を設定してください。
 
@@ -217,9 +217,9 @@ Grafana の [data links](https://grafana.com/docs/grafana/latest/panels-visualiz
   ### リンク機能
 </div>
 
-データリンクがあると、指定された trace ID を使って トレース と ログ を開けます。
+データリンクがあると、指定された トレース ID を使って トレース と ログ を開けます。
 
-&quot;**View Trace**&quot; をクリックすると、trace を表示する分割パネルが開きます。&quot;**View Logs**&quot; をクリックすると、trace ID で絞り込まれた ログ クエリが開きます。
+&quot;**View Trace**&quot; をクリックすると、trace を表示する分割パネルが開きます。&quot;**View Logs**&quot; をクリックすると、トレース ID で絞り込まれた ログ クエリが開きます。
 Explore ビューではなくダッシュボードからリンクをクリックした場合、そのリンクは Explore ビューの新しいタブで開きます。
 
 クエリタイプをまたぐ場合 (ログ から トレース、トレース から ログ) は、[ログ](/ja/integrations/connectors/data-visualization/grafana/config#logs) と [トレース](/ja/integrations/connectors/data-visualization/grafana/config#traces) の両方でデフォルトを設定しておく必要があります。同じクエリタイプのリンクを開く場合は、クエリをそのままコピーできるため、デフォルトは不要です。
