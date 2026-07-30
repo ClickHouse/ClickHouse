@@ -194,6 +194,7 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
             /// None of these gives another fixed character.
             case '\0':
             case '(':
+            case ')':
             case '[':
             case '^':
             case '+':
