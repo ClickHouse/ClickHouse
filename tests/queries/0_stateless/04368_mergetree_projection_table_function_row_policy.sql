@@ -259,3 +259,23 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_dep_rls_proj', 'p'
 
 DROP ROW POLICY rp_default_dep_rls_proj ON default_dep_rls_proj;
 DROP TABLE default_dep_rls_proj;
+
+-- Same for a MATERIALIZED column: although its value cannot be set explicitly, it is still stored and can
+-- diverge from the current expression (e.g. after ALTER MODIFY COLUMN, which does not re-materialize old
+-- parts). Reconstructing it from the stored dependency would filter the wrong value, so fail closed.
+DROP TABLE IF EXISTS materialized_dep_rls_proj;
+DROP ROW POLICY IF EXISTS rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
+
+CREATE TABLE materialized_dep_rls_proj (x UInt64, m UInt64 MATERIALIZED x + 1) ENGINE = MergeTree ORDER BY x;
+INSERT INTO materialized_dep_rls_proj (x) VALUES (1), (2), (3);
+
+ALTER TABLE materialized_dep_rls_proj ADD PROJECTION p (SELECT x ORDER BY x);
+ALTER TABLE materialized_dep_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_materialized_dep_rls_proj ON materialized_dep_rls_proj FOR SELECT USING m > 2 TO ALL;
+
+SELECT '-- policy on a MATERIALIZED column with only its dependency stored: read is refused';
+SELECT x FROM mergeTreeProjection(currentDatabase(), 'materialized_dep_rls_proj', 'p') ORDER BY x; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
+DROP TABLE materialized_dep_rls_proj;
