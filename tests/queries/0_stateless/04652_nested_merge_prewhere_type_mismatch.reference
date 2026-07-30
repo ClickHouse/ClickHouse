@@ -80,6 +80,10 @@
 5
 -- a refused policy over a storage that processes past FetchColumns fails closed --
 10
+-- so does a policy on a matching column: only the query text ships, never the filter --
+-- a policy on the Distributed table itself keeps the documented remote enforcement --
+10
+10
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10

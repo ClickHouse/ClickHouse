@@ -2479,6 +2479,13 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
     if (input_pipe || !storage || !storage->supportsPrewhere())
         return false;
 
+    /// A wrapper delegating to a remote storage cannot carry the filter at all: only the query
+    /// text is shipped, and it references the remote tables, not the wrapper. A policy on
+    /// Distributed itself keeps the documented model - the remote tables' own policies enforce
+    /// it - so it is left on the carrier as before.
+    if (storage->isRemote() && !typeid_cast<const StorageDistributed *>(storage.get()))
+        return false;
+
     /// The filter is built against this table's schema, but read() hands it to wrapper
     /// storages' children (Merge, Buffer), which re-derive it against their own types.
     /// Push it down only if every column it consumes is in the PREWHERE contract.

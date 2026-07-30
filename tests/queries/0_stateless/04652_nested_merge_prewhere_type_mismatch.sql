@@ -272,6 +272,18 @@ SELECT count() FROM rls_mv_dist; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY rp_04652_dist ON rls_mv_dist;
 
+SELECT '-- so does a policy on a matching column: only the query text ships, never the filter --';
+CREATE ROW POLICY rp_04652_dist_x ON rls_mv_dist FOR SELECT USING x < 5 TO CURRENT_USER;
+SELECT count() FROM rls_mv_dist; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
+DROP ROW POLICY rp_04652_dist_x ON rls_mv_dist;
+
+SELECT '-- a policy on the Distributed table itself keeps the documented remote enforcement --';
+CREATE ROW POLICY rp_04652_dist_d ON rls_dist FOR SELECT USING y < 5 TO CURRENT_USER;
+SELECT count() FROM rls_dist;
+SELECT count() FROM rls_dist SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04652_dist_d ON rls_dist;
+
 DROP VIEW rls_mv_dist;
 DROP TABLE rls_dist;
 DROP TABLE rls_dist_leaf;

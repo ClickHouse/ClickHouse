@@ -1727,7 +1727,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     /// The filter is built against this table's schema, but read() hands it to wrapper
                     /// storages' children (Merge, Buffer), which re-derive it against their own types.
                     /// Push it down only if every column it consumes is in the PREWHERE contract.
-                    bool can_push_down_filter = storage->supportsPrewhere();
+                    /// A wrapper delegating to a remote storage cannot carry it at all: only the query
+                    /// text is shipped, and it references the remote tables, not the wrapper. A policy
+                    /// on Distributed itself keeps the documented model - the remote tables' own
+                    /// policies enforce it - so it is left on the carrier as before.
+                    bool can_push_down_filter = storage->supportsPrewhere()
+                        && (!storage->isRemote() || typeid_cast<const StorageDistributed *>(storage.get()));
                     if (can_push_down_filter)
                     {
                         if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
