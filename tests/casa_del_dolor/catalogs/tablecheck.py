@@ -227,13 +227,23 @@ class SparkAndClickHouseCheck:
             # `CAST(decimal AS STRING)` can emit scientific notation for a zero read from a lake
             # file (e.g. "0E-11"), which ClickHouse never does; `format_number` always yields plain
             # fixed-point (strip its grouping commas) and preserves full 38-digit precision.
+            # The same applies inside Array(Decimal) columns, so their elements are formatted
+            # one by one instead of relying on `CAST(array AS STRING)`.
+            def spark_decimal_str(expr: str, scale: int) -> str:
+                plain = f"regexp_replace(format_number({expr}, {scale}), ',', '')"
+                return (
+                    f"CASE WHEN {plain} LIKE '%.%' "
+                    f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
+                )
+
             def spark_col_expr(col) -> str:
                 if isinstance(col.spark_type, DecimalType):
-                    plain = f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
-                    s = (
-                        f"CASE WHEN {plain} LIKE '%.%' "
-                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
-                    )
+                    s = spark_decimal_str(col.column_name, col.spark_type.scale)
+                elif isinstance(col.spark_type, ArrayType) and isinstance(
+                    col.spark_type.elementType, DecimalType
+                ):
+                    elem = spark_decimal_str("x", col.spark_type.elementType.scale)
+                    s = f"'[' || array_join(transform({col.column_name}, x -> {elem}), ', ') || ']'"
                 else:
                     s = f"CAST({col.column_name} AS STRING)"
                 return f"COALESCE({s}, '{_NULL_SENTINEL}')"
