@@ -1391,13 +1391,22 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (subplanEmitsTotals(branch))
                 return 0;
 
+        /// This rewrite forces every branch input header to the pushed-down filter's output header,
+        /// which assumes the step forwards each branch unchanged. Its constructor instead
+        /// materializes a column that is not Const with the same value in every branch, so when an
+        /// input header differs from the output the forced header reinstates a constness the branch
+        /// does not emit. Skip that case, exactly as for UnionStep.
+        const auto & set_key_header = *intersect_or_except->getOutputHeader();
+        for (const auto & input_header : child->getInputHeaders())
+            if (!blocksHaveEqualStructure(*input_header, set_key_header))
+                return 0;
+
         /// IntersectOrExcept compares whole rows positionally: its entire header is the set key, and
         /// the pushed filter's output header becomes the new one. Dropping a set-key column coarsens
         /// the comparison; projecting them all away (e.g. a count() parent) computes the set over zero
         /// columns and aborts on num_srcs > 0. Consistent renaming or reordering is harmless, so only
         /// the column count and positional types must be preserved.
         auto expected_output = filter->getOutputHeader();
-        const auto & set_key_header = *intersect_or_except->getOutputHeader();
         if (expected_output->columns() != set_key_header.columns())
             return 0;
         for (size_t i = 0; i < set_key_header.columns(); ++i)

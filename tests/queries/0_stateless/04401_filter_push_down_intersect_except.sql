@@ -231,6 +231,16 @@ SELECT 'block mismatch filters on', countIf(explain ILIKE '%Filter column: mater
 SELECT 'block mismatch filters off', countIf(explain ILIKE '%Filter column: materialize(NULL) = materialize(NULL)%') FROM
 (EXPLAIN SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0);
 
+-- A branch whose GROUP BY keys differ from its sibling's keeps a Const the step materialized away,
+-- so that branch input header differs from the output one. Forcing the filter's output header onto
+-- it reinstates a constness the branch does not emit, and the plan-time check then fails, so the
+-- pushdown must decline. Both settings return 0; the assertion is that the query completes at all.
+-- The inner WHERE is required: it is what leaves a second filter to push once the outer one moves.
+SELECT 'const branch except', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) EXCEPT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 1;
+SELECT 'const branch except off', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) EXCEPT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 0;
+SELECT 'const branch intersect', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) INTERSECT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 1;
+SELECT 'const branch intersect off', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) INTERSECT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 0;
+
 -- IntersectOrExceptTransform uniformizes only the main ports, so a WITH TOTALS branch whose main port
 -- constant-folds leaves the outer DISTINCT comparing a Const main port against a full totals one.
 SELECT 'totals except', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;

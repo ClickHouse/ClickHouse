@@ -35,6 +35,10 @@ block mismatch	0
 block mismatch off	0
 block mismatch filters on	2
 block mismatch filters off	1
+const branch except	0
+const branch except off	0
+const branch intersect	0
+const branch intersect off	0
 totals except	0
 totals except off	0
 totals intersect	0
