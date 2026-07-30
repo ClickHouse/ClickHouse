@@ -34,9 +34,9 @@ class HostMetricsCollector:
 
     Each aggregated sample is appended to a ``jsonl`` file so partial data
     survives if the runner is killed (e.g. on an OOM or a hard timeout). On
-    ``stop`` the samples are decimated with a min/max-per-bucket pass that
-    preserves peaks and troughs, and returned as a plain dict ready to be stored
-    in ``Result.ext["metrics"]``.
+    ``stop`` the samples are decimated with a per-bucket pass that preserves the
+    envelope of both lines (highest/lowest average and highest peak), and
+    returned as a plain dict ready to be stored in ``Result.ext["metrics"]``.
 
     On a non-Linux host (no ``/proc``) the collector is a no-op and ``stop``
     returns ``None``.
