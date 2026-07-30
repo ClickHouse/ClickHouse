@@ -2,9 +2,7 @@
 
 #include <Parsers/IAST.h>
 
-#include <Core/Field.h>
-
-#include <optional>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
@@ -15,15 +13,8 @@ namespace DB
 ///
 struct ASTStreamSettings : public IAST
 {
-    struct WatermarkSettings
-    {
-        String column;
-        ASTPtr expression;
-        UInt64 idle_timeout_ms = 0;
-    };
-
-    std::optional<Map> cursor;
-    std::optional<WatermarkSettings> watermark;
+    CursorTreeNodePtr cursor;
+    WatermarkSettingsPtr watermark;
 
 public:
     String getID(char) const override { return "ASTStreamSettings"; }

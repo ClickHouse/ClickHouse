@@ -46,7 +46,7 @@ void formatCursorTree(WriteBuffer & wb, CursorTreeNode * node)
 
 void formatWatermark(
     WriteBuffer & wb,
-    const ASTStreamSettings::WatermarkSettings & node,
+    const WatermarkSettings & node,
     const IAST::FormatSettings & format_settings,
     IAST::FormatState & state,
     IAST::FormatStateStacked frame)
@@ -54,8 +54,8 @@ void formatWatermark(
     wb << "FOR " << backQuoteIfNeed(node.column) << " AS ";
     node.expression->format(wb, format_settings, state, frame);
 
-    if (node.idle_timeout_ms > 0)
-        wb << " IDLE TIMEOUT INTERVAL " << node.idle_timeout_ms << " MILLISECOND";
+    if (node.idle_timeout.count() > 0)
+        wb << " IDLE TIMEOUT INTERVAL " << node.idle_timeout.count() << " MILLISECOND";
 }
 
 }
@@ -64,27 +64,25 @@ ASTPtr ASTStreamSettings::clone() const
 {
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
-    cloned_stream_settings->cursor = cursor;
-
-    cloned_stream_settings->watermark = watermark;
-    if (watermark && watermark->expression)
-        cloned_stream_settings->watermark->expression = watermark->expression->clone();
+    if (cursor)
+        cloned_stream_settings->cursor = buildCursorTree(cursorTreeToMap(cursor));
+    if (watermark)
+        cloned_stream_settings->watermark = watermark->clone();
 
     return cloned_stream_settings;
 }
 
 bool ASTStreamSettings::hasTweaks() const
 {
-    return cursor.has_value() || watermark.has_value();
+    return cursor != nullptr || watermark != nullptr;
 }
 
 void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     if (cursor)
     {
-        auto tree = buildCursorTree(cursor.value());
         ostr << "CURSOR ";
-        formatCursorTree(ostr, tree.get());
+        formatCursorTree(ostr, cursor.get());
     }
 
     if (watermark)
@@ -101,8 +99,8 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
 
-    if (cursor.has_value())
-        w.writeFieldValue("cursor_tree", Field(cursor.value()));
+    if (cursor)
+        w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
 }
 
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
@@ -136,7 +134,7 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`StreamSettings` 'cursor_tree' element must be a (String, integer) tuple during AST JSON deserialization");
         }
-        cursor = std::move(map);
+        cursor = buildCursorTree(map);
     }
 }
 

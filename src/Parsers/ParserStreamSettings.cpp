@@ -77,7 +77,7 @@ std::optional<Map> parseCursorClause(IParser::Pos & pos, Expected & expected)
     return flat;
 }
 
-std::optional<ASTStreamSettings::WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expected & expected)
+std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_for{Keyword::FOR};
     if (!s_for.ignore(pos, expected))
@@ -97,7 +97,7 @@ std::optional<ASTStreamSettings::WatermarkSettings> parseWatermarkClause(IParser
     if (!expression_p.parse(pos, expression_ast, expected))
         return std::nullopt;
 
-    ASTStreamSettings::WatermarkSettings watermark;
+    WatermarkSettings watermark;
     watermark.column = getIdentifierName(column_ast);
     watermark.expression = std::move(expression_ast);
 
@@ -116,7 +116,7 @@ std::optional<ASTStreamSettings::WatermarkSettings> parseWatermarkClause(IParser
             return std::nullopt;
 
         const auto num_intervals = num_intervals_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
-        watermark.idle_timeout_ms = static_cast<Int64>(num_intervals) * interval_kind.toAvgMilliseconds();
+        watermark.idle_timeout = std::chrono::milliseconds(static_cast<Int64>(num_intervals) * interval_kind.toAvgMilliseconds());
     }
 
     return watermark;
@@ -137,7 +137,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!cursor.has_value())
             return false;
 
-        stream_settings->cursor = std::move(cursor);
+        stream_settings->cursor = buildCursorTree(cursor.value());
     }
 
     if (s_watermark.ignore(pos, expected))
@@ -146,7 +146,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!watermark.has_value())
             return false;
 
-        stream_settings->watermark = std::move(watermark);
+        stream_settings->watermark = std::make_shared<WatermarkSettings>(std::move(watermark.value()));
     }
 
     node = std::move(stream_settings);
