@@ -35,6 +35,15 @@ INSERT INTO bf_fs3_idx VALUES (0, 'V0'), (1, 'V0X'), (2, 'X');
 SELECT 'A4 FixedString(3) idx vs FixedString(4)', (SELECT count() FROM bf_fs3_log WHERE v = toFixedString('V0', 4)) = (SELECT count() FROM bf_fs3_idx WHERE v = toFixedString('V0', 4));
 SELECT 'A5 FixedString(3) idx vs FixedString(5)', (SELECT count() FROM bf_fs3_log WHERE v = toFixedString('V0', 5)) = (SELECT count() FROM bf_fs3_idx WHERE v = toFixedString('V0', 5));
 
+-- The rule is about byte length, not the constant's declared type: a plain String constant wider
+-- than the index is padded by nothing (convertFieldToType never truncates), so it is hashed over
+-- more bytes than the index stored while zero-padded comparison still matches at runtime.
+-- 'V0\0\0' is a 4-byte String literal against a FixedString(3) index.
+SELECT 'A11 FixedString(3) idx vs 4-byte String const', (SELECT count() FROM bf_fs3_log WHERE v = 'V0\0\0') = (SELECT count() FROM bf_fs3_idx WHERE v = 'V0\0\0');
+SELECT 'A12 FixedString(3) idx vs 5-byte String const', (SELECT count() FROM bf_fs3_log WHERE v = 'V0\0\0\0') = (SELECT count() FROM bf_fs3_idx WHERE v = 'V0\0\0\0');
+
+SELECT count() FROM bf_fs3_idx WHERE v = 'V0\0\0' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 -- Wrapped INDEX types: getPrimitiveType strips LowCardinality and Nullable.
 DROP TABLE IF EXISTS bf_lc_log;
 DROP TABLE IF EXISTS bf_lc_idx;
@@ -68,9 +77,9 @@ SELECT 'A8 LowCardinality(FixedString(3)) idx vs FixedString(5)', (SELECT count(
 SELECT 'A9 String idx vs LowCardinality(FixedString(3)) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(FixedString(3)))) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(FixedString(3))));
 SELECT 'A10 String idx vs LowCardinality(Nullable(FixedString(3))) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(Nullable(FixedString(3))))) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(Nullable(FixedString(3)))));
 
--- Direction B: pruning is preserved wherever the conversion is faithful. Uses the read-side
--- granule reduction (an index section is printed even when it prunes nothing) with the total
--- toUInt64OrZero extraction.
+-- Direction B: pruning is preserved wherever the conversion is faithful. Each row asserts the
+-- granule REDUCTION extracted from the plan text rather than pinning an exact plan rendering in
+-- the .reference, so it keeps testing "the index still prunes" across plan-format churn.
 
 DROP TABLE IF EXISTS bf_keys_str;
 DROP TABLE IF EXISTS bf_keys_fs3;
@@ -93,9 +102,17 @@ WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granule
 SELECT 'B4 FixedString(3) idx vs FixedString(3) const still prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_keys_fs3 WHERE v = toFixedString('k7', 3))
 WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 
--- The declined cell must stop pruning: this row is 1 before the fix and 0 after it, which is
+-- A plain String constant no wider than the FixedString index is padded into exactly one indexed
+-- value, so the widened width rule must not start declining these sound cells.
+SELECT 'B6 FixedString(3) idx vs 3-byte String const still prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_keys_fs3 WHERE v = 'k7\0')
+WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+
+-- The declined cells must stop pruning: these rows are 1 before the fix and 0 after it, which is
 -- what makes the Direction B assertions above non-vacuous.
 SELECT 'B5 String idx vs FixedString(3) const does not prune', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_keys_str WHERE v = toFixedString('k7', 3))
+WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+
+SELECT 'B7 FixedString(3) idx vs 4-byte String const does not prune', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_keys_fs3 WHERE v = 'k7\0\0')
 WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 
 DROP TABLE bf_str_log;

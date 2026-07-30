@@ -863,29 +863,29 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
-            /// A `FixedString(N)` constant is stored as a `String` Field of N bytes, right-padded with
-            /// '\0', and compared zero-padded, so it can match more stored values than the single
-            /// padded one the hash below is built from:
-            ///   - against a `String` index it matches the family `value` + trailing '\0'* (`'abc'`,
-            ///     `'abc\0'`, ...), which is unbounded, so no finite set of hashes can represent it;
-            ///   - against a narrower `FixedString(M)` index (N > M) it keeps the N padded bytes,
-            ///     which no longer map into the index domain.
-            /// Either way the single hash matches at most one member, so granules holding another
-            /// member are pruned away and the query silently returns too few rows. Decline index
-            /// analysis (fall back to a full scan). A wider-or-equal `FixedString(M)` index (M >= N)
-            /// pads the constant into exactly one value, so pruning stays correct and is untouched.
-            /// This mirrors the same guard in KeyCondition::extractAtomFromTree.
-            /// Strip `LowCardinality` and `Nullable` from the constant type first: a wrapped constant
-            /// such as `LowCardinality(FixedString(N))`, or `LowCardinality(Nullable(FixedString(N)))`
-            /// whose inner `Nullable` survives outer peeling, carries the same padded bytes and
-            /// comparison semantics, so no variant may slip past this guard. `getPrimitiveType`
-            /// already stripped those wrappers from the index type.
-            if (WhichDataType(removeLowCardinalityAndNullable(value_type)).isFixedString()
-                && isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            /// String comparison is zero-padded, so a constant can match more stored values than the
+            /// single hash built below, which then prunes granules holding a matching row.
+            /// The index is sound only when the constant maps into exactly one indexed value:
+            ///   - a `FixedString` constant against a `String` index matches the unbounded family
+            ///     `value` + trailing '\0'*, so no finite set of hashes represents it;
+            ///   - against a `FixedString(M)` index any constant wider than M keeps its own bytes
+            ///     (`convertFieldToType` pads but never truncates), so it is hashed over more bytes
+            ///     than the index stored while zero-padded comparison still matches.
+            /// Hence require `M >= constant_bytes`; otherwise decline and fall back to a full scan.
+            /// `LowCardinality` and `Nullable` are peeled off the constant type because `tryGetConstant`
+            /// peels only an outer `Nullable`, so `LowCardinality(Nullable(FixedString(N)))` reaches
+            /// here wrapped. Same rule as in `KeyCondition::extractAtomFromTree`.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
             {
+                const bool constant_is_fixed_string
+                    = WhichDataType(removeLowCardinalityAndNullable(value_type)).isFixedString();
                 const size_t constant_bytes = value_field.safeGet<String>().size();
                 const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-                if (!fixed_index_type || fixed_index_type->getN() < constant_bytes)
+
+                if (constant_is_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
                     return false;
             }
 
