@@ -430,3 +430,22 @@ FROM (
     UNION ALL
     SELECT '{"a":99}'::JSON, toInt32(NULL)
 );
+
+-- Variant-typed path: must not throw NOT_IMPLEMENTED (Field overload is unimplemented for Variant).
+SELECT toJSONString(mergedJSONPatch(patch, 1))
+FROM (SELECT CAST('{"a":1}', 'JSON(a Variant(UInt64, String))') AS patch);
+
+-- Variant-typed path via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, 1) AS state
+    FROM (SELECT CAST('{"a":1}', 'JSON(a Variant(UInt64, String))') AS patch)
+);
+
+-- Tuple-typed path: newer version wins atomically.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT CAST('{"t":{"x":1,"y":2}}', 'JSON(t Tuple(x UInt32, y UInt32))') AS patch, 1 AS version
+    UNION ALL
+    SELECT CAST('{"t":{"x":10,"y":20}}', 'JSON(t Tuple(x UInt32, y UInt32))'), 2
+);

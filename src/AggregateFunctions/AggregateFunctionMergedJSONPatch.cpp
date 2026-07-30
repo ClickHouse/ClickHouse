@@ -611,7 +611,7 @@ struct AggregateFunctionMergedJSONPatchData
         insertBatchAtomic(batch);
     }
 
-    void insertResultInto(IColumn & to, const DataTypePtr & /* result_type_ */) const
+    void insertResultInto(IColumn & to, const DataTypePtr & result_type_) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
@@ -624,14 +624,34 @@ struct AggregateFunctionMergedJSONPatchData
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
 
+        /// Typed path declarations from the result type. Used to deserialize DynamicBinary entries
+        /// directly into typed columns without going through Field — necessary for types like
+        /// Variant, Tuple, and others whose serialization does not implement the Field overload.
+        const auto * result_obj_type = typeid_cast<const DataTypeObject *>(result_type_.get());
+        const auto * typed_path_result_types = result_obj_type ? &result_obj_type->getTypedPaths() : nullptr;
+
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
 
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
             {
-                /// Typed columns accept a Field — the target column knows its declared type
-                /// and stores the raw value regardless of the Field's coarse type tag.
+                if (entry.value.kind == EncodedField::Kind::DynamicBinary && typed_path_result_types)
+                {
+                    /// Deserialize directly into the typed column using the declared type's
+                    /// serialization. This avoids the Field round-trip, which throws NOT_IMPLEMENTED
+                    /// for types like Variant and Tuple that do not support the Field binary overload.
+                    auto type_it = typed_path_result_types->find(String(path));
+                    if (type_it != typed_path_result_types->end())
+                    {
+                        ReadBufferFromString val_buf(entry.value.dataView());
+                        decodeDataType(val_buf); /// skip the type prefix written by serializeCurrentValueBinary
+                        type_it->second->getDefaultSerialization()->deserializeBinary(*typed_it->second, val_buf, {});
+                        continue;
+                    }
+                }
+                /// Fallback: non-DynamicBinary entries (e.g. from old serialized state) go through
+                /// Field. All simple typed paths (Int64, UInt64, String, Date, etc.) work fine here.
                 typed_it->second->insert(entry.value.get());
             }
             else if (entry.value.kind == EncodedField::Kind::DynamicBinary)
