@@ -1187,6 +1187,7 @@ TEST(PromQLParser, ErrorPosition)
              {"up\n$down", 3},
              {R"("é"$)", 4},
              {R"("é" "x")", 5},
+             {R"(label_join(up, "dst", "é", "src", "\q"))", 36},
          })
     {
         PrometheusQueryTree query_tree;
