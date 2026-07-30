@@ -17,6 +17,7 @@ struct WatermarkSettings
 
 public:
     std::shared_ptr<WatermarkSettings> clone() const;
+    bool operator==(const WatermarkSettings & rhs) const;
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
@@ -27,6 +28,7 @@ struct StreamSettings
 
 public:
     std::shared_ptr<StreamSettings> clone() const;
+    bool operator==(const StreamSettings & rhs) const;
 };
 using StreamSettingsPtr = std::shared_ptr<StreamSettings>;
 
