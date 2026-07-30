@@ -50,6 +50,10 @@
 0
 1
 0
+-- null pattern: returns NULL
+\N
+-- null tokenizer: returns NULL
+\N
 -- combined: matchToken AND hasAnyTokens
 4	connection error handler
 -- supp: anchored ^err matches tokens starting with err

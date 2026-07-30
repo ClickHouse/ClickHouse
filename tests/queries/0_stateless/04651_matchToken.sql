@@ -76,6 +76,17 @@ SELECT matchToken('hello world', '.*');
 SELECT matchToken('', '.*');
 
 -- ============================================================
+-- NULL constant argument propagation
+-- `matchToken('abc', NULL)` and `matchToken('abc', 'a', NULL)` must return
+-- NULL, not raise an exception.
+-- ============================================================
+SELECT '-- null pattern: returns NULL';
+SELECT matchToken('hello world', NULL);
+
+SELECT '-- null tokenizer: returns NULL';
+SELECT matchToken('hello world', 'hel.*', NULL);
+
+-- ============================================================
 -- Combined with other predicates
 -- ============================================================
 SELECT '-- combined: matchToken AND hasAnyTokens';

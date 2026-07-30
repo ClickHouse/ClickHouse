@@ -1,31 +1,34 @@
 -- EXPLAIN: regexp err.*
-Parts: 1 | Granules: 5
 Condition: true
+Parts: 1/1
 Granules: 11/11
 Skip
 Name: idx_msg
 Description: text GRANULARITY 100000000
 Condition: (mode: Any; tokens: [])
+Parts: 1/1
 Granules: 5/11
 -- EXPLAIN: regexp xyz.* (no match)
-Parts: 0 | Granules: 0
 Condition: true
+Parts: 1/1
 Granules: 11/11
 Skip
 Name: idx_msg
 Description: text GRANULARITY 100000000
 Condition: (mode: Any; tokens: [])
+Parts: 0/1
 Granules: 0/11
 -- setting off: text index is not used
 0
 -- text index on Array(String): uses text index
-Parts: 1 | Granules: 3
 Condition: true
+Parts: 1/1
 Granules: 4/4
 Skip
 Name: idx_tags
 Description: text GRANULARITY 100000000
 Condition: (mode: Any; tokens: [])
+Parts: 1/1
 Granules: 3/4
 1	['hello world','error handler']
 3	['errno state','misc value']

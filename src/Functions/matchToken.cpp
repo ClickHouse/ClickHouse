@@ -285,9 +285,16 @@ public:
                 name,
                 arguments.size());
 
+        /// `getReturnTypeImpl` short-circuits `NULL` constant arguments to `Nullable(Nothing)`,
+        /// but `build` still calls `buildImpl` with the original columns. Guard against
+        /// `onlyNull()` constants so `matchToken('abc', NULL)` and `matchToken('abc', 'a', NULL)`
+        /// propagate `NULL` instead of throwing from `getDataAt` on `ColumnNullable`.
+        bool pattern_is_null = arguments[arg_pattern].column && arguments[arg_pattern].column->onlyNull();
+        bool tokenizer_is_null = arguments.size() > arg_tokenizer && arguments[arg_tokenizer].column && arguments[arg_tokenizer].column->onlyNull();
+
         /// Resolve the tokenizer: explicit tokenizer argument > default splitByNonAlpha.
         std::shared_ptr<const ITokenizer> tokenizer;
-        if (arguments.size() > arg_tokenizer && arguments[arg_tokenizer].column)
+        if (!tokenizer_is_null && arguments.size() > arg_tokenizer && arguments[arg_tokenizer].column)
         {
             std::string_view tokenizer_name = arguments[arg_tokenizer].column->getDataAt(0);
             tokenizer = TokenizerFactory::instance().get(tokenizer_name);
@@ -295,11 +302,20 @@ public:
         else
             tokenizer = TokenizerFactory::instance().get(SplitByNonAlphaTokenizer::getExternalName());
 
-        if (!arguments[arg_pattern].column || arguments[arg_pattern].column->empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'matchToken': pattern argument must be a non-empty constant");
+        std::shared_ptr<OptimizedRegularExpression> re;
+        if (pattern_is_null)
+        {
+            /// Placeholder: `useDefaultImplementationForConstants()` short-circuits to NULL.
+            re = std::make_shared<OptimizedRegularExpression>("");
+        }
+        else
+        {
+            if (!arguments[arg_pattern].column || arguments[arg_pattern].column->empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'matchToken': pattern argument must be a non-empty constant");
 
-        String pattern = String(arguments[arg_pattern].column->getDataAt(0));
-        auto re = std::make_shared<OptimizedRegularExpression>(pattern);
+            String pattern = String(arguments[arg_pattern].column->getDataAt(0));
+            re = std::make_shared<OptimizedRegularExpression>(pattern);
+        }
 
         DataTypes arg_types;
         arg_types.reserve(arguments.size());

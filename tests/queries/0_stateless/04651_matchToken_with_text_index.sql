@@ -2,6 +2,8 @@
 -- Array index hit, and prefix range-scan correctness.
 -- The no-index correctness sibling is 04651_matchToken.sql.
 
+SET explain_query_plan_default = 'legacy';
+
 SET enable_full_text_index = 1;
 
 -- ============================================================
@@ -34,11 +36,11 @@ INSERT INTO test_match_token VALUES
 
 SELECT '-- EXPLAIN: regexp err.*';
 SELECT trimLeft(explain) AS explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'err.*'))
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- EXPLAIN: regexp xyz.* (no match)';
 SELECT trimLeft(explain) AS explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'xyz.*'))
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- setting off: text index is not used';
 SET use_text_index_match_token_evaluation_by_dictionary_scan = 0;
@@ -74,7 +76,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT * FROM test_match_token_array WHERE matchToken(tags, 'err.*')
 )
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%';
 
 SELECT id, tags FROM test_match_token_array WHERE matchToken(tags, 'err.*') ORDER BY id;
 
