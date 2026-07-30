@@ -877,9 +877,9 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
     }
 }
 
-bool Aggregator::hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions)
+bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggregate_instructions)
 {
-    for (auto * inst = aggregate_instructions; inst->that; ++inst)
+    for (const auto * inst = aggregate_instructions; inst->that; ++inst)
         if (inst->has_sparse_arguments)
             return true;
     return false;
@@ -1420,7 +1420,7 @@ void Aggregator::executeAggregateInstructions(
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
-    AggregateFunctionInstruction * aggregate_instructions,
+    const AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr * places,
     size_t key_start,
     bool has_only_one_value_since_last_reset,
@@ -1438,7 +1438,7 @@ void Aggregator::executeAggregateInstructions(
             if (!is_aggregate_function_compiled[i])
                 continue;
 
-            AggregateFunctionInstruction * inst = aggregate_instructions + i;
+            const AggregateFunctionInstruction * inst = aggregate_instructions + i;
             size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
             can_optimize_equal_keys_ranges &= inst->can_optimize_equal_keys_ranges;
 
@@ -1468,7 +1468,7 @@ void Aggregator::executeAggregateInstructions(
             continue;
 #endif
 
-        AggregateFunctionInstruction * inst = aggregate_instructions + i;
+        const AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
@@ -1567,7 +1567,7 @@ void Aggregator::addBatch(
 
 void Aggregator::addBatchSinglePlace(
     size_t row_begin, size_t row_end,
-    AggregateFunctionInstruction * inst,
+    const AggregateFunctionInstruction * inst,
     AggregateDataPtr place,
     Arena * arena)
 {

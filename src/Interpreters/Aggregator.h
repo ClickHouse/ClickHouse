@@ -712,7 +712,7 @@ private:
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions,
+        const AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr * places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
@@ -982,7 +982,7 @@ private:
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
 
-    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
+    static bool hasSparseArguments(const AggregateFunctionInstruction * aggregate_instructions);
 
     static void addBatch(
         size_t row_begin, size_t row_end,
@@ -992,7 +992,7 @@ private:
 
     static void addBatchSinglePlace(
         size_t row_begin, size_t row_end,
-        AggregateFunctionInstruction * inst,
+        const AggregateFunctionInstruction * inst,
         AggregateDataPtr place,
         Arena * arena);
 };
