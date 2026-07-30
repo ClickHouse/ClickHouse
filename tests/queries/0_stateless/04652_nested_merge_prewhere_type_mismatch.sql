@@ -224,6 +224,37 @@ DROP ROW POLICY rp_04652_mv_alias ON mv_alias;
 DROP VIEW mv_alias;
 DROP TABLE mv_alias_tgt;
 
+-- A column a child lacks entirely must fail closed too (found by review): the child read strips
+-- it and fills defaults only afterwards, so a pushed filter has no input for it.
+CREATE TABLE het_leaf1 (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE het_leaf2 (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE het_m (x UInt64, y UInt64) ENGINE = Merge(currentDatabase(), '^het_leaf[12]$');
+INSERT INTO het_leaf1 SELECT number, number + 1 FROM numbers(5);
+INSERT INTO het_leaf2 SELECT number + 100 FROM numbers(5);
+
+SELECT '-- a column missing from one child is rejected for PREWHERE --';
+SELECT count() FROM het_m PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM het_m PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a column every child declares still supports PREWHERE, and WHERE sees the defaults --';
+SELECT count() FROM het_m PREWHERE x >= 100;
+SELECT count() FROM het_m WHERE y != 0;
+
+SELECT '-- a policy on the missing column filters above the read instead of failing inside it --';
+CREATE ROW POLICY rp_04652_het ON het_m FOR SELECT USING y != 0 TO CURRENT_USER;
+SELECT count() FROM het_m;
+SELECT count() FROM het_m SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04652_het ON het_m;
+
+SELECT '-- a policy on the shared column still pushes --';
+CREATE ROW POLICY rp_04652_het_x ON het_m FOR SELECT USING x < 100 TO CURRENT_USER;
+SELECT count() FROM het_m;
+DROP ROW POLICY rp_04652_het_x ON het_m;
+
+DROP TABLE het_m;
+DROP TABLE het_leaf2;
+DROP TABLE het_leaf1;
+
 -- `StorageAlias` forwards the whole PREWHERE contract to its target, so an alias over a nested
 -- `Merge` must reject the mismatched column exactly like the target itself does (transitively).
 

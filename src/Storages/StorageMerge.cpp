@@ -353,6 +353,11 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
             }
         }
 
+        /// A column the child does not declare at all fails the same way: it is stripped from the
+        /// child's read list and filled with defaults only after the read, so a filter pushed into
+        /// that read has no input for it.
+        std::erase_if(supported_columns, [&](const auto & name) { return !table_columns.has(name); });
+
         /// The loop above compares the root type against the child's *declared* columns. When the
         /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
         /// declared type can match while a leaf's differs. PREWHERE would then be built against the
