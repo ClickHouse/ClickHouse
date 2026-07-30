@@ -128,7 +128,7 @@ def test_schema_inference_cache(started_cluster):
     assert (
         node.query(
             "SELECT count() FROM system.schema_inference_cache "
-            f"WHERE storage = 'GCS' AND source LIKE '%schema_cache/data.tsv'"
+            "WHERE storage = 'GCS' AND source LIKE '%schema_cache/data.tsv'"
         ).strip()
         == "1"
     )
