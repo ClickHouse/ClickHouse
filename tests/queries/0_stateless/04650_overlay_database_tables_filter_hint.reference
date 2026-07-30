@@ -26,5 +26,5 @@ SHOW TABLES with a pattern
 pref_one
 pref_two
 the sources themselves are unaffected
-db_src_b_04650	only_in_b
-db_src_b_04650	shadowed
+only_in_b
+shadowed
