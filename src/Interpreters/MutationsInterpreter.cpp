@@ -1676,13 +1676,24 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// Recompute MATERIALIZED columns that transitively depend on a cleared column.
-    /// The cleared column entered the readonly stage above with its type-default value,
-    /// so the level-ordered stages emitted here evaluate a chain (m2 MATERIALIZED m1
-    /// MATERIALIZED src) in dependency order: m1 against the cleared src, then m2 against
-    /// the freshly recomputed m1.
+    /// Recompute MATERIALIZED columns after a CLEAR COLUMN. The cleared column entered the
+    /// readonly stage above with its type-default value, so the level-ordered stages emitted
+    /// here evaluate a chain (m2 MATERIALIZED m1 MATERIALIZED src) in dependency order: m1
+    /// against the cleared src, then m2 against the freshly recomputed m1.
+    /// The set stays every recomputable MATERIALIZED column, as before: only the ordering
+    /// changes, so a column that does not depend on the cleared one keeps being re-evaluated
+    /// at its current expression.
     if (need_recalculate_materialized_for_clear)
-        emit_materialized_recompute_stages(affected_materialized_closure(cleared_base_columns));
+    {
+        NameSet all_recomputable_materialized;
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
+                all_recomputable_materialized.insert(column.name);
+        }
+
+        emit_materialized_recompute_stages(all_recomputable_materialized);
+    }
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
