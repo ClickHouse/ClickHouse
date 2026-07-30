@@ -266,17 +266,31 @@ SETTINGS query_plan_optimize_join_order_randomize = 1, query_plan_optimize_join_
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
-SELECT 'cell C2 serialized plan derives the same seed', uniqExact(query_id) >= 2
-FROM system.text_log
-WHERE logger_name = 'QueryPlanOptimizationSettings'
-  AND message LIKE '%random seed%'
-  AND extract(message, 'seed (\\d+)') = (
-      SELECT toString(greatest(sipHash64(query_id), 2))
-      FROM system.query_log
-      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
-        AND is_initial_query AND type != 'QueryStart'
-      ORDER BY event_time_microseconds DESC
-      LIMIT 1);
+-- The scope is the query, not the seed value: a seed-filtered population cannot observe a plan
+-- construction that derived a DIFFERENT seed, so it could never fail on the disagreement this change is
+-- about. Scoping by `initial_query_id` and comparing the whole set against the single derived value
+-- asserts both halves at once: the constructions agreed, and they agreed on the derived value.
+SELECT 'cell C2 serialized plan derives the same seed', (
+    SELECT groupUniqArray(extract(message, 'seed (\\d+)'))
+    FROM system.text_log
+    WHERE logger_name = 'QueryPlanOptimizationSettings'
+      AND message LIKE '%random seed%'
+      AND query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE log_comment = '04653_cell_c2' AND type != 'QueryStart'
+            AND initial_query_id = (
+                SELECT query_id FROM system.query_log
+                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
+                  AND is_initial_query AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1))
+) = (
+    SELECT [toString(greatest(sipHash64(query_id), 2))]
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
+      AND is_initial_query AND type != 'QueryStart'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1);
 
 DROP TABLE t1_04653;
 DROP TABLE t2_04653;
