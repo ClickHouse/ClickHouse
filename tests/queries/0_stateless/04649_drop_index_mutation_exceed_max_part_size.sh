@@ -347,6 +347,11 @@ done
 # hardlinked) and one a DROP STATISTICS (which does change them, so it is written anew). Comparing the
 # two mutations' write footprints needs no threshold and no constant, and it is what notices a
 # regression that re-serializes an identical archive - something an "it completed" assertion cannot see.
+#
+# The byte counter below is WriteBufferFromFileDescriptorWriteBytes, which counts local file
+# descriptor writes only, so every table whose footprint it measures pins storage_policy = 'default'.
+# On an object storage policy the part data goes to the remote buffer instead and the counter is left
+# measuring local metadata, which is the same size on both sides of each comparison.
 ##########################################################################################
 
 $CLICKHOUSE_CLIENT --query "
@@ -356,7 +361,8 @@ $CLICKHOUSE_CLIENT --query "
         d UInt64 STATISTICS(tdigest), e UInt64 STATISTICS(tdigest), f UInt64 STATISTICS(tdigest),
         INDEX idx_id id TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0;
+    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0,
+             storage_policy = 'default';
 
     CREATE TABLE write_footprint_rewrite AS write_footprint_keep;
 
@@ -371,7 +377,7 @@ $CLICKHOUSE_CLIENT --query "
         INDEX idx_id id TYPE minmax GRANULARITY 1, INDEX idx_a a TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-             packed_skip_index_max_bytes = 1048576;
+             packed_skip_index_max_bytes = 1048576, storage_policy = 'default';
 
     /* Its statistics-free twin. Whatever the two write in common cancels out, so the difference between
        them isolates the statistics write that WOULD occur on regression: near nothing while the decision
@@ -381,7 +387,8 @@ $CLICKHOUSE_CLIENT --query "
         INDEX idx_id id TYPE minmax GRANULARITY 1, INDEX idx_a a TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-             packed_skip_index_max_bytes = 1048576, auto_statistics_types = '';
+             packed_skip_index_max_bytes = 1048576, auto_statistics_types = '',
+             storage_policy = 'default';
 
     INSERT INTO write_footprint_keep SELECT number,
         number * 7, number * 11, number * 13, number * 17, number * 19, number * 23 FROM numbers(50000);
@@ -458,7 +465,8 @@ $CLICKHOUSE_CLIENT --query "
         INDEX idx_id id TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-             packed_skip_index_max_bytes = 0, auto_statistics_types = '';
+             packed_skip_index_max_bytes = 0, auto_statistics_types = '',
+             storage_policy = 'default';
 
     /* Statistics-free twin: whatever the two write in common cancels out. */
     CREATE TABLE materialize_column_nost (id UInt64, base UInt64,
@@ -468,7 +476,8 @@ $CLICKHOUSE_CLIENT --query "
         INDEX idx_id id TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-             packed_skip_index_max_bytes = 0, auto_statistics_types = '';
+             packed_skip_index_max_bytes = 0, auto_statistics_types = '',
+             storage_policy = 'default';
 
     /* The preserving baseline, same shape, mutated by a DROP INDEX instead. */
     CREATE TABLE materialize_column_keep_st AS materialize_column_st;
