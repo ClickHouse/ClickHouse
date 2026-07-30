@@ -63,14 +63,16 @@ SETTINGS log_comment = '04652_low_cardinality_pruning';
 
 SYSTEM FLUSH LOGS query_log;
 
--- `AggregationConvertedToTwoLevel` isolates the hash table from the arena: the
--- 400k distinct keys are far past `group_by_two_level_threshold`, so a table that
--- still held every evicted group would have converted to two-level.  A pruned
--- table never grows past the heap and so never converts.
+-- `AggregationTopKKeysEvicted` counts heap evictions whether or not the hash table
+-- could follow, so it cannot tell pruning from skip-only mode;
+-- `AggregationTopKKeysPruned` counts only the keys actually erased, with their
+-- aggregate states destroyed, which is the property under test.  Asserting on it
+-- rather than on a memory or table-shape proxy keeps this immune to the settings
+-- clickhouse-test randomizes.
 SELECT
     sum(ProfileEvents['AggregationTopKKeysEvicted']) > 300000 AS evicted,
     sum(ProfileEvents['AggregationTopKRowsSkipped']) = 0 AS nothing_skipped,
-    sum(ProfileEvents['AggregationConvertedToTwoLevel']) = 0 AS table_stayed_small
+    sum(ProfileEvents['AggregationTopKKeysPruned']) > 300000 AS table_pruned
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '04652_low_cardinality_pruning'
