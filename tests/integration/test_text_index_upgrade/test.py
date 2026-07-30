@@ -316,9 +316,8 @@ def test_change_codec_after_upgrade(started_cluster):
         # New binary reads the old-format parts unchanged.
         assert run_search_queries(node, table) == expected_results()
 
-        # Switch the default codec. An index without phrase search support is
-        # written in the 'v1_with_codec' format even under the 'v2_with_positions'
-        # default, so new parts persist the codec type in the header.
+        # Switch the default codec. New parts are written in the default
+        # 'v2_with_positions' format, which persists the codec type in the header.
         node.query(
             f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'bitpacking'"
         )
@@ -330,15 +329,15 @@ def test_change_codec_after_upgrade(started_cluster):
         )
         assert "text_index_serialization_version" in error and "v1_with_codec" in error, error
 
-        # The new part is written with 'bitpacking' + the 'v1_with_codec' header, so the
-        # table now mixes 'none'/'v0_initial' and 'bitpacking'/'v1_with_codec' segments.
+        # The new part is written with 'bitpacking' + the 'v2_with_positions' header, so the
+        # table now mixes 'none'/'v0_initial' and 'bitpacking'/'v2_with_positions' segments.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
         assert_index_used(node, table)
 
         # Merge across the two codecs: the reader must decode both layouts and the
-        # writer re-emits a single 'bitpacking'/'v1_with_codec' part.
+        # writer re-emits a single 'bitpacking'/'v2_with_positions' part.
         node.query(f"OPTIMIZE TABLE {table} FINAL")
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED

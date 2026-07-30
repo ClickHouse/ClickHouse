@@ -42,7 +42,7 @@ SELECT count() FROM tab WHERE hasPhrase(str, 'qux quux');
 "
 
 echo '-- the part merged under the pin contains the positions substream'
-part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE table = 'tab' AND active")
+part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'tab' AND active")
 if [ -f "${part_path}skp_idx_text_idx.pos.idx" ]; then
     echo 'positions file exists'
 else

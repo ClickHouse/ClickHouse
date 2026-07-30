@@ -709,12 +709,12 @@ which stores token positions to support exact phrase matching.
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
-The setting is a preference, not a hard constraint: every index is written in the format
-closest to the preferred one that can represent it. An index with `support_phrase_search`
-is always written in `v2_with_positions` (older formats cannot represent positions), an
-index with a posting list codec is written at least in `v1_with_codec` (older formats do
-not persist the codec type), and an index without positions is written at most in
-`v1_with_codec` (it gains nothing from a newer format).
+The setting is a preference, not a hard constraint: every index is written in the preferred
+format if that format can represent it, and in the oldest format that can otherwise. An index
+with `support_phrase_search` is always written in `v2_with_positions` (older formats cannot
+represent positions), and an index with a posting list codec is written at least in
+`v1_with_codec` (older formats do not persist the codec type). An index without positions is
+written in the preferred format as well, and its header records that it has no positions.
 
 Explicit contradictions are rejected at creation time: an index with `support_phrase_search`
 cannot be created while this setting is below `v2_with_positions`, and an index with a

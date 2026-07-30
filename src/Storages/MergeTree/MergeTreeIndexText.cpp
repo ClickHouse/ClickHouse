@@ -1966,7 +1966,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     bool has_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
 
     /// The setting is a preference to preserve compatibility, not a hard constraint.
-    /// If setting contadicts with the index features on current version, the index features take precedence.
+    /// If the setting contradicts the index features on the current version, the index features take precedence.
     using enum MergeTreeTextIndexSerializationVersion;
     MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
     MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
