@@ -255,6 +255,27 @@ DROP TABLE het_m;
 DROP TABLE het_leaf2;
 DROP TABLE het_leaf1;
 
+-- A refused row-level filter runs as a filter step right above the read, so the read must stop at
+-- FetchColumns: a wrapper over Distributed would otherwise process past the policy and skip it
+-- entirely (found by review).
+CREATE TABLE rls_dist_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO rls_dist_leaf SELECT number, number FROM numbers(10);
+CREATE TABLE rls_dist (x UInt64, y UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), rls_dist_leaf);
+CREATE MATERIALIZED VIEW rls_mv_dist TO rls_dist (x UInt64, y UInt32) AS SELECT x, y FROM rls_dist_leaf;
+
+SELECT '-- a refused policy over a storage that processes past FetchColumns still filters --';
+SELECT count() FROM rls_mv_dist;
+SELECT count() FROM rls_mv_dist PREWHERE y < 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM rls_mv_dist PREWHERE y < 5 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
+CREATE ROW POLICY rp_04652_dist ON rls_mv_dist FOR SELECT USING y < 5 TO CURRENT_USER;
+SELECT count() FROM rls_mv_dist;
+SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0;
+DROP ROW POLICY rp_04652_dist ON rls_mv_dist;
+
+DROP VIEW rls_mv_dist;
+DROP TABLE rls_dist;
+DROP TABLE rls_dist_leaf;
+
 -- `StorageAlias` forwards the whole PREWHERE contract to its target, so an alias over a nested
 -- `Merge` must reject the mismatched column exactly like the target itself does (transitively).
 

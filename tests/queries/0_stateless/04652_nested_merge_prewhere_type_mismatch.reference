@@ -78,6 +78,10 @@
 5
 -- a policy on the shared column still pushes --
 5
+-- a refused policy over a storage that processes past FetchColumns still filters --
+10
+5
+5
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10

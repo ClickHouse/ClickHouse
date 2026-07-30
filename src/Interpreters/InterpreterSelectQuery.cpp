@@ -1283,6 +1283,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     {
         query_info.prepared_sets = query_analyzer->getPreparedSets();
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// A row-level filter the PREWHERE contract refuses is applied as a FilterStep right above
+        /// the read, which only the first processing stage adds. Do not let a storage that could
+        /// process further (e.g. a wrapper over Distributed) skip the policy entirely.
+        if (row_policy_info && from_stage > QueryProcessingStage::FetchColumns && !shouldPushRowLevelFilterToStorage())
+            from_stage = QueryProcessingStage::FetchColumns;
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -2473,10 +2479,12 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
     /// The filter is built against this table's schema, but read() hands it to wrapper
     /// storages' children (Merge, Buffer), which re-derive it against their own types.
     /// Push it down only if every column it consumes is in the PREWHERE contract.
+    /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
+    /// analysis_result exists; they share the same object.
     if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
     {
         const auto & table_columns = metadata_snapshot->getColumns();
-        for (const auto & column_name : analysis_result.row_policy_info->actions.getRequiredColumnsNames())
+        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
         {
             if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
                 return false;

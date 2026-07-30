@@ -1655,6 +1655,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 const auto & columns_names = table_expression_data.getColumnNames();
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
+                bool row_policy_filter_not_pushed = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -1746,7 +1747,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
+                    {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_not_pushed = true;
+                    }
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -1775,8 +1779,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 if (!select_query_options.build_logical_plan)
+                {
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                    /// A row-level filter the PREWHERE contract refuses runs as a filter step right
+                    /// above the read, against the table's own columns. Do not let a storage that
+                    /// could process further (e.g. a wrapper over Distributed) run past them.
+                    /// The parallel-replicas paths below may raise the stage again, but they replace
+                    /// the plan with a remote re-planning that re-derives the policy on each replica.
+                    if (row_policy_filter_not_pushed && till_stage > QueryProcessingStage::FetchColumns)
+                        till_stage = QueryProcessingStage::FetchColumns;
+                }
 
                 if (select_query_options.build_logical_plan)
                 {
