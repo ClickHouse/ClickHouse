@@ -144,6 +144,11 @@ bash -ex /packages/keeper_test.sh""",
 def test_install_tgz(image: DockerImage) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
+
+    # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
+    # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
+    # until the tree is removed. These are by far the most disk hungry tests of the
+    # job, and they used to fail with `No space left on device`.
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
@@ -152,6 +157,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
+    rm -rf "/${package:?}"
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
@@ -162,6 +168,7 @@ for pkg in /packages/clickhouse-keeper*tgz; do
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
+    rm -rf "/${package:?}"
 done
 bash -ex /packages/keeper_test.sh""",
     }
@@ -189,6 +196,18 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
         )
         Shell.check(f"docker kill -s 9 {container_id}", verbose=True)
     return test_results
+
+
+def free_packages(pattern: str) -> None:
+    """Delete the packages that have already been tested.
+
+    All the package flavours are downloaded into the same directory, which is mounted
+    into every container, and together they take more than 6 GiB - as much as a single
+    container needs to install them. Nothing reads a package once its own tests are
+    done, so drop it to leave room for the tests that follow.
+    """
+    Shell.check(f"rm -f {TEMP_PATH}/{pattern}", verbose=True)
+    Shell.check("df -h /", verbose=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -241,9 +260,11 @@ def main():
     if args.deb:
         print("Test debian")
         test_results.extend(test_install_deb(deb_image))
+        free_packages("*.deb")
     if args.rpm:
         print("Test rpm")
         test_results.extend(test_install_rpm(rpm_image))
+        free_packages("*.rpm")
     if args.tgz:
         print("Test tgz")
         test_results.extend(test_install_tgz(deb_image))
