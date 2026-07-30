@@ -80,6 +80,7 @@ public:
     {
         NameSet column_names;
         NamesAndTypes columns;
+        TableExpressionNodePtr source;
 
         void addColumn(NameAndTypePair column)
         {
@@ -111,6 +112,7 @@ public:
         {
             auto [insert_it, _] = column_source_to_columns.emplace(column_source, Columns());
             it = insert_it;
+            it->second.source = column_source;
         }
 
         it->second.addColumn(column_node->getColumn());
@@ -148,7 +150,7 @@ public:
         size_t subquery_depth = 0;
     };
 
-    const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & getReplacementMap() const
+    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
     {
         return replacement_map;
     }
@@ -165,7 +167,7 @@ public:
             return false;
 
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpression() == child)
+        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpressionNode() == child)
             return false;
 
         return true;
@@ -245,7 +247,7 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-            replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
+            replacement_map.emplace(&table_node_typed, std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
@@ -279,7 +281,7 @@ private:
     }
 
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
@@ -542,12 +544,12 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 }
 
 QueryTreeNodePtr getSubqueryFromTableExpression(
-    const QueryTreeNodePtr & join_table_expression,
+    const TableExpressionNodePtr & join_table_expression,
     const std::unordered_map<QueryTreeNodePtr, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
     const ContextPtr & context)
 {
     auto join_table_expression_node_type = join_table_expression->getNodeType();
-    QueryTreeNodePtr subquery_node;
+    TableExpressionNodePtr subquery_node;
 
     if (join_table_expression_node_type == QueryTreeNodeType::QUERY || join_table_expression_node_type == QueryTreeNodeType::UNION)
     {
@@ -581,7 +583,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
                 {
                     if (seen_column_names.insert(col.name).second)
                     {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, columns_it->second.source));
                         projection_columns.push_back(col);
                     }
                 }
@@ -605,7 +607,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
         query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
         query_node->resolveProjectionColumns(std::move(projection_columns));
-        query_node->getJoinTree() = join_table_expression;
+        query_node->getJoinTreeNode() = join_table_expression;
         query_node->setIsSubquery(true);
 
         subquery_node = query_node;
@@ -644,15 +646,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
-            QueryTreeNodePtr join_table_expression;
+            TableExpressionNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
             if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
-                join_table_expression = join_node->getRightTableExpression();
+                join_table_expression = join_node->getRightTableExpressionNodeTyped();
             }
             else if (join_kind == JoinKind::Right)
             {
-                join_table_expression = join_node->getLeftTableExpression();
+                join_table_expression = join_node->getLeftTableExpressionNodeTyped();
             }
             else
             {
@@ -682,7 +684,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 const auto * descendant = descendants_to_map.back();
                 descendants_to_map.pop_back();
 
-                replacement_map.emplace(descendant, temporary_table_expression_node);
+                if (const auto * ptr = descendant->asTableExpression())
+                    replacement_map.emplace(ptr, temporary_table_expression_node);
 
                 for (const auto & child : descendant->getChildren())
                     if (child)
@@ -700,14 +703,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            QueryTreeNodePtr replacement_table_expression;
+            TableExpressionNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
                     subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
-                        subquery_to_execute,
+                        static_pointer_cast<TableNode>(subquery_to_execute),
                         planner_context->getQueryContext());
 
                 // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
@@ -722,10 +725,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                replacement_table_expression = temporary_table_expression_node->clone();
+                replacement_table_expression = static_pointer_cast<ITableExpressionNode>(temporary_table_expression_node->clone());
             }
 
-            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
+            replacement_map.emplace(in_function_subquery_node->asTableExpression(), replacement_table_expression);
         }
         else
         {
@@ -802,7 +805,7 @@ public:
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
+            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpressionNode());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }
@@ -811,7 +814,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpression() == child)
+        if (join_node && join_node->getRightTableExpressionNode() == child)
             return false;
 
         return true;
