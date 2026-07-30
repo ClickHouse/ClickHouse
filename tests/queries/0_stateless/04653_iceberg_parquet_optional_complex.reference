@@ -7,6 +7,17 @@ leaf nst.list.element.b       maxdef=1 maxrep=1
 leaf ns.c                     maxdef=1 maxrep=0
 leaf nq.inner.list.element    maxdef=2 maxrep=1
 leaf sc                       maxdef=1 maxrep=0
+node arr              optional=False
+node arr.element      optional=False
+node m                optional=False
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=False
+node nst              optional=False
+node nst.element      optional=False
+node nq               optional=True
+node nq.inner         optional=False
+node sc               optional=True
 data arr  [[1, 2], []]
 data m    [[('k', 1)], []]
 data st   [{'a': 7}, {'a': 8}]
@@ -23,6 +34,17 @@ leaf nst.list.element.b       maxdef=2 maxrep=1
 leaf ns.c                     maxdef=1 maxrep=0
 leaf nq.inner.list.element    maxdef=3 maxrep=1
 leaf sc                       maxdef=1 maxrep=0
+node arr              optional=True
+node arr.element      optional=False
+node m                optional=True
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=True
+node nst              optional=False
+node nst.element      optional=True
+node nq               optional=True
+node nq.inner         optional=True
+node sc               optional=True
 data arr  [[1, 2], []]
 data m    [[('k', 1)], []]
 data st   [{'a': 7}, {'a': 8}]
@@ -42,6 +64,17 @@ leaf nst.list.element.b       maxdef=1 maxrep=1
 leaf ns.c                     maxdef=1 maxrep=0
 leaf nq.inner.list.element    maxdef=2 maxrep=1
 leaf sc                       maxdef=1 maxrep=0
+node arr              optional=False
+node arr.element      optional=False
+node m                optional=False
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=False
+node nst              optional=False
+node nst.element      optional=False
+node nq               optional=True
+node nq.inner         optional=False
+node sc               optional=True
 data arr  [[1, 2], []]
 data m    [[('k', 1)], []]
 data st   [{'a': 7}, {'a': 8}]
@@ -58,6 +91,17 @@ leaf nst.list.element.b       maxdef=2 maxrep=1
 leaf ns.c                     maxdef=1 maxrep=0
 leaf nq.inner.list.element    maxdef=3 maxrep=1
 leaf sc                       maxdef=1 maxrep=0
+node arr              optional=True
+node arr.element      optional=False
+node m                optional=True
+node m.key            optional=False
+node m.value          optional=False
+node st               optional=True
+node nst              optional=False
+node nst.element      optional=True
+node nq               optional=True
+node nq.inner         optional=True
+node sc               optional=True
 data arr  [[1, 2], []]
 data m    [[('k', 1)], []]
 data st   [{'a': 7}, {'a': 8}]

@@ -24,6 +24,10 @@ trap 'rm -rf "${USER_FILES_PATH}/${BASE}"* 2>/dev/null' EXIT
 # one (`None`), which is what pins the definition level of the new OPTIONAL group relative
 # to the array's own level. ClickHouse's own reader normalizes a null container to an empty
 # one, so a round-trip through ClickHouse cannot see that distinction.
+# The `node` lines are what localize the level: a leaf's `maxdef` counts the nullable ancestors
+# along its whole chain and therefore cannot say WHICH ancestor contributed, so it reads the same
+# whether the container group or a node beneath it carries the OPTIONAL. Which node carries it is
+# the property an external Iceberg reader validates against the published schema.
 read -r -d '' PROBE <<'PY'
 import glob, sys
 import pyarrow.parquet as pq
@@ -33,6 +37,20 @@ for fn in sorted(glob.glob(sys.argv[1] + '/data/*.parquet')):
     for i in range(len(schema)):
         c = schema.column(i)
         print('leaf %-24s maxdef=%d maxrep=%d' % (c.path, c.max_definition_level, c.max_repetition_level))
+    sa = f.schema_arrow
+    for name, get in (
+            ('arr',           lambda: sa.field('arr')),
+            ('arr.element',   lambda: sa.field('arr').type.field(0)),
+            ('m',             lambda: sa.field('m')),
+            ('m.key',         lambda: sa.field('m').type.key_field),
+            ('m.value',       lambda: sa.field('m').type.item_field),
+            ('st',            lambda: sa.field('st')),
+            ('nst',           lambda: sa.field('nst')),
+            ('nst.element',   lambda: sa.field('nst').type.field(0)),
+            ('nq',            lambda: sa.field('nq')),
+            ('nq.inner',      lambda: sa.field('nq').type.field('inner')),
+            ('sc',            lambda: sa.field('sc'))):
+        print('node %-16s optional=%s' % (name, get().nullable))
     table = f.read()
     for name in table.column_names:
         print('data %-4s %s' % (name, table.column(name).to_pylist()))
