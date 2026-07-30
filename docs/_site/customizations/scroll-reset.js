@@ -65,6 +65,12 @@
     }
   }
 
+  window.addEventListener('hashchange', function () {
+    if (window.location.hash) {
+      scrollToAnchor(window.location.hash, 180);
+    }
+  });
+
   function watch() {
     var path = window.location.pathname;
     if (path !== lastPath) {
