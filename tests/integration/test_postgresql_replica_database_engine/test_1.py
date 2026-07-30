@@ -586,6 +586,65 @@ def test_merge_table_over_materialized_postgresql_database(started_cluster):
     assert instance.query(merge_query) == expected
 
 
+def test_reads_during_startup_window_use_final(started_cluster):
+    """
+    Right after a server restart (and right after CREATE / ATTACH DATABASE) the map of
+    StorageMaterializedPostgreSQL wrappers is empty until startSynchronization has fetched the
+    tables list from PostgreSQL and published the wrappers. In that window tryGetTable and
+    getTablesIterator used to fall back to the nested ReplacingMergeTree tables, so user-facing
+    reads bypassed the forced FINAL and the `_sign = 1` filter and exposed stale and deleted row
+    versions. Now the nested tables are wrapped on the fly.
+
+    The window is held open deterministically: PostgreSQL is paused, so after the restart the
+    synchronization keeps failing and retrying and can never publish the wrappers.
+    """
+    table_name = "postgresql_replica_startup_window"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(3)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.execute(f"UPDATE {table_name} SET value = 42 WHERE key = 1")
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key = 2")
+    check_tables_are_synchronized(instance, table_name)
+
+    expected = "0\t0\n1\t42\n"
+    direct_query = (
+        f"SELECT key, value FROM test_database.{table_name} ORDER BY key, value"
+    )
+    merge_query = (
+        f"SELECT key, value FROM merge('test_database', '^{table_name}$')"
+        " ORDER BY key, value"
+    )
+
+    with started_cluster.pause_container_using_signal("postgres1"):
+        instance.restart_clickhouse()
+
+        # The table is visible while synchronization has not finished (it cannot finish -
+        # PostgreSQL is paused), and reads go through the wrapper: FINAL is forced and the
+        # deleted row (key = 2) and the stale version (key = 1, value = 1) are filtered out.
+        assert (
+            table_name
+            in instance.query("SHOW TABLES FROM test_database").strip().split("\n")
+        )
+
+        for query in [direct_query, merge_query]:
+            explain = instance.query(f"EXPLAIN actions=1 {query}")
+            assert "FINAL: 1" in explain, explain
+
+        assert instance.query(direct_query) == expected
+        assert instance.query(merge_query) == expected
+
+    # Once PostgreSQL is reachable again, synchronization catches up and reads keep working.
+    check_tables_are_synchronized(instance, table_name)
+    assert instance.query(direct_query) == expected
+
+
 def test_drop_database_while_enumerating_tables(started_cluster):
     """
     `DROP DATABASE` clears the map of `StorageMaterializedPostgreSQL` wrappers that

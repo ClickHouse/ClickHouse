@@ -266,8 +266,6 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 {
     /// In order to define which table access is needed - to MaterializedPostgreSQL table (only in case of SELECT queries) or
     /// to its nested ReplacingMergeTree table (in all other cases), the context of a query is modified.
-    /// Also if materialized_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
-    /// replication_handler was shutdown.
     ///
     /// Note: In select query we call MaterializedPostgreSQL table and it calls tryGetTable from its nested.
     /// So the only point, where synchronization is needed - access to MaterializedPostgreSQL table wrapper over nested table.
@@ -275,17 +273,43 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
     /// races with `stopReplication`, which clears the map.
     if (!local_context->isInternalQuery())
     {
-        std::lock_guard lock(tables_mutex);
-        if (!materialized_tables.empty())
+        bool wrap_nested = false;
         {
-            auto table = materialized_tables.find(name);
+            std::lock_guard lock(tables_mutex);
+            if (!materialized_tables.empty())
+            {
+                auto table = materialized_tables.find(name);
 
-            /// Return wrapper over ReplacingMergeTree table. If table synchronization just started, table will not
-            /// be accessible immediately. Table is considered to exist once its nested table was created.
-            if (table != materialized_tables.end() && table->second->as <StorageMaterializedPostgreSQL>()->hasNested())
-                return table->second;
+                /// Return wrapper over ReplacingMergeTree table. If table synchronization just started, table will not
+                /// be accessible immediately. Table is considered to exist once its nested table was created.
+                if (table != materialized_tables.end() && table->second->as <StorageMaterializedPostgreSQL>()->hasNested())
+                    return table->second;
 
-            return StoragePtr{};
+                return StoragePtr{};
+            }
+
+            /// The map is empty in two different states. After `stopReplication` (server shutdown or
+            /// `DROP DATABASE`) all access goes to the nested tables. But it is also empty right after
+            /// `CREATE` / `ATTACH DATABASE` and after a server restart, until `startSynchronization`
+            /// has fetched the tables list from PostgreSQL and published the wrappers - including the
+            /// whole time that first connection attempt is failing and retrying. In that startup
+            /// window a user-facing read must not fall back to the nested table - that would bypass
+            /// the forced `FINAL` and the `_sign = 1` filter and expose stale and deleted row
+            /// versions - so wrap the nested table on the fly instead.
+            wrap_nested = !replication_stopped;
+        }
+
+        if (wrap_nested)
+        {
+            /// `tables_mutex` is released: the base class lookup takes its own mutex, and taking it
+            /// while holding `tables_mutex` would introduce a second lock order. If
+            /// `startSynchronization` publishes the wrappers concurrently, the wrapper built here is
+            /// equivalent to the published one.
+            auto nested = DatabaseAtomic::tryGetTable(name, local_context);
+            if (!nested)
+                return StoragePtr{};
+
+            return std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, name);
         }
     }
 
@@ -556,6 +580,9 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     std::map<std::string, StoragePtr> tables_to_destroy;
     {
         std::lock_guard tables_lock(tables_mutex);
+        /// From now on an empty map means "replication was stopped", not "startup has not finished",
+        /// so user-facing reads stop wrapping the nested tables on the fly (see tryGetTable).
+        replication_stopped = true;
         tables_to_destroy.swap(materialized_tables);
     }
 }
@@ -596,9 +623,11 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
         /// the traversal and the `hasNested` call on a stored pointer would otherwise race with it.
         Tables tables;
         bool has_materialized_tables = false;
+        bool wrap_nested = false;
         {
             std::lock_guard lock(tables_mutex);
             has_materialized_tables = !materialized_tables.empty();
+            wrap_nested = !has_materialized_tables && !replication_stopped;
 
             for (const auto & [table_name, storage] : materialized_tables)
             {
@@ -617,6 +646,26 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
         /// the database is dropped while the iterator is being used.
         if (has_materialized_tables)
             return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+
+        if (wrap_nested)
+        {
+            /// Startup window: the map is empty because `startSynchronization` has not published the
+            /// wrappers yet (see tryGetTable). Wrap every nested table on the fly instead of exposing
+            /// the nested tables to user-facing enumeration. `tables_mutex` is released: the base
+            /// class iterator takes its own mutex, and taking it while holding `tables_mutex` would
+            /// introduce a second lock order.
+            auto nested_iterator = DatabaseAtomic::getTablesIterator(
+                StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+            for (; nested_iterator->isValid(); nested_iterator->next())
+            {
+                if (auto nested = nested_iterator->table())
+                    tables.emplace(
+                        nested_iterator->name(),
+                        std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, nested_iterator->name()));
+            }
+
+            return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+        }
     }
 
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
