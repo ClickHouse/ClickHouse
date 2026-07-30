@@ -1,0 +1,12 @@
+=== Arrow ===
+string: leaked marker occurrences in native output: 0
+string: native output independent of NULL-row nested bytes: OK
+string: round-trips to all NULL (native reader / library reader): 1 / 1
+binary: native output independent of NULL-row nested bytes: OK
+binary: round-trips to all NULL (native reader): 1
+=== ArrowStream ===
+string: leaked marker occurrences in native output: 0
+string: native output independent of NULL-row nested bytes: OK
+string: round-trips to all NULL (native reader / library reader): 1 / 1
+binary: native output independent of NULL-row nested bytes: OK
+binary: round-trips to all NULL (native reader): 1

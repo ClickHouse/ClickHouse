@@ -1,0 +1,6 @@
+--- sibling directory (absolute path) ---
+is not inside
+--- sibling directory (relative path) ---
+is not inside
+--- nested path inside user_files ---
+ok

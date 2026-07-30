@@ -40,7 +40,9 @@ public:
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
+
+    Namespaces getNamespaces() const override;
 
     bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
@@ -103,7 +105,8 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.

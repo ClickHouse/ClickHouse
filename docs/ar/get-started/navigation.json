@@ -1,0 +1,208 @@
+{
+  "icon": "/images/icons/icon-get-started.svg",
+  "item": "البدء",
+  "pages": [
+    {
+      "group": "البدء",
+      "icon": "/images/menu-icon-lightning.svg",
+      "pages": [
+        "ar/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": true,
+          "group": "مقدمة",
+          "pages": [
+            "ar/get-started/about/intro",
+            "ar/get-started/about/why-clickhouse-is-so-fast",
+            "ar/get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "حالات الاستخدام",
+          "pages": [
+            "ar/get-started/use-cases/real-time-analytics",
+            "ar/get-started/use-cases/observability",
+            "ar/get-started/use-cases/data-warehousing",
+            "ar/get-started/use-cases/agentic-analytics"
+          ],
+          "root": "ar/get-started/use-cases/overview"
+        },
+        "ar/get-started/about/deployment-modes"
+      ],
+      "root": "ar/get-started/index"
+    },
+    {
+      "expanded": true,
+      "group": "الإعداد",
+      "icon": "/images/menu-icon-gear.svg",
+      "pages": [
+        "ar/get-started/setup/cloud",
+        {
+          "expanded": true,
+          "group": "مُدار ذاتيًا",
+          "pages": [
+            {
+              "group": "التطوير المحلي",
+              "pages": [
+                "ar/get-started/setup/self-managed/quick-install",
+                "ar/get-started/setup/self-managed/clickhousectl",
+                "ar/get-started/setup/self-managed/docker",
+                "ar/get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "خادم الإنتاج",
+              "pages": [
+                "ar/get-started/setup/self-managed/debian-ubuntu",
+                "ar/get-started/setup/self-managed/redhat",
+                "ar/get-started/setup/self-managed/nixos",
+                "ar/get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ],
+          "root": "ar/get-started/setup/self-managed/overview"
+        }
+      ],
+      "root": "ar/get-started/setup/install"
+    },
+    {
+      "expanded": true,
+      "group": "مجموعات بيانات نموذجية",
+      "icon": "/images/menu-icon-database.svg",
+      "pages": [
+        "ar/get-started/sample-datasets/playground",
+        {
+          "group": "اختبارات الأداء",
+          "pages": [
+            "ar/get-started/sample-datasets/amplab-benchmark",
+            "ar/get-started/sample-datasets/brown-benchmark",
+            "ar/get-started/sample-datasets/criteo",
+            "ar/get-started/sample-datasets/job",
+            "ar/get-started/sample-datasets/star-schema",
+            "ar/get-started/sample-datasets/tpcds",
+            "ar/get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "البحث المتجهي والتضمينات",
+          "pages": [
+            "ar/get-started/sample-datasets/dbpedia",
+            "ar/get-started/sample-datasets/hacker-news-vector-search",
+            "ar/get-started/sample-datasets/laion",
+            "ar/get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "تحليلات الويب ووسائل التواصل الاجتماعي",
+          "pages": [
+            "ar/get-started/sample-datasets/amazon-reviews",
+            "ar/get-started/sample-datasets/anon-web-analytics-metrica",
+            "ar/get-started/sample-datasets/github",
+            "ar/get-started/sample-datasets/github-events",
+            "ar/get-started/sample-datasets/hacker-news",
+            "ar/get-started/sample-datasets/stackoverflow",
+            "ar/get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "البيانات الجغرافية والمواقع",
+          "pages": [
+            "ar/get-started/sample-datasets/cell-towers",
+            "ar/get-started/sample-datasets/foursquare-os-places",
+            "ar/get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "السلاسل الزمنية وأجهزة الاستشعار",
+          "pages": [
+            "ar/get-started/sample-datasets/environmental-sensors",
+            "ar/get-started/sample-datasets/noaa",
+            "ar/get-started/sample-datasets/tw-weather",
+            "ar/get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "السجلات العامة والبيانات المفتوحة",
+          "pages": [
+            "ar/get-started/sample-datasets/covid19",
+            "ar/get-started/sample-datasets/menus",
+            "ar/get-started/sample-datasets/nypd-complaint-data",
+            "ar/get-started/sample-datasets/ontime",
+            "ar/get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ],
+      "root": "ar/get-started/sample-datasets/index"
+    },
+    {
+      "expanded": true,
+      "group": "الترحيل",
+      "icon": "/images/caret-double-right.svg",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "pages": [
+            "ar/get-started/migrate/postgres/overview",
+            {
+              "group": "دليل الترحيل",
+              "pages": [
+                "ar/get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "ar/get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "ar/get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "ar/get-started/migrate/postgres/appendix"
+          ],
+          "root": "ar/get-started/migrate/postgres/index"
+        },
+        {
+          "group": "BigQuery",
+          "pages": [
+            "ar/get-started/migrate/bigquery/overview",
+            "ar/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "ar/get-started/migrate/bigquery/loading-data"
+          ],
+          "root": "ar/get-started/migrate/bigquery/index"
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "ar/get-started/migrate/snowflake/overview",
+            "ar/get-started/migrate/snowflake/migration-guide",
+            "ar/get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "ar/get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "ar/get-started/migrate/redshift/overview",
+            "ar/get-started/migrate/redshift/migration-guide",
+            "ar/get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "من OSS إلى Cloud",
+          "pages": [
+            "ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "طرق أخرى",
+          "pages": [
+            "ar/get-started/migrate/other-methods/clickhouse-local-etl",
+            "ar/get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "ar/get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ],
+      "root": "ar/get-started/migrate/overview"
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 ---
-description: 'ClickHouse Compressor 的文档'
+description: 'ClickHouse Compressor 文档'
 slug: /operations/utilities/clickhouse-compressor
 title: 'clickhouse-compressor'
-doc_type: '参考'
+doc_type: 'reference'
 ---
 
-一个用于压缩和解压缩数据的简单程序。
+用于数据压缩和解压缩的简单工具。
 
 <div id="examples">
   ### 示例
@@ -23,13 +23,13 @@ $ ./clickhouse-compressor < input_file > output_file
 $ ./clickhouse-compressor --decompress < input_file > output_file
 ```
 
-使用 ZSTD 以 5 级别压缩数据：
+使用 ZSTD 以 5 级压缩数据：
 
 ```bash
 $ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
 ```
 
-使用四字节的 Delta 和 10 级 ZSTD 对数据进行压缩。
+使用四字节 Delta 和 ZSTD 级别 10 压缩数据。
 
 ```bash
 $ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file

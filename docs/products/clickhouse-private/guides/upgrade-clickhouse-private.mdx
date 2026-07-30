@@ -32,9 +32,7 @@ Before beginning the upgrade:
 
 <Steps>
 
-<Step>
-
-### 1. Upgrade the Operator Helm Chart
+<Step title="1. Upgrade the Operator Helm Chart" id="1-upgrade-the-operator-helm-chart">
 
 Keep all existing helm values the same, updating only the operator versions to the new target versions.
 
@@ -49,9 +47,7 @@ helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
 
 </Step>
 
-<Step>
-
-### 2. Validate the Upgraded Operator
+<Step title="2. Validate the Upgraded Operator" id="2-validate-the-upgraded-operator">
 
 Confirm the operator deployment is running and healthy:
 
@@ -69,9 +65,7 @@ kubectl get clickhousecluster -A
 
 </Step>
 
-<Step>
-
-### 3. Upgrade the onprem-clickhouse-cluster Helm Chart
+<Step title="3. Upgrade the onprem-clickhouse-cluster Helm Chart" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
 
 Upgrade the `onprem-clickhouse-cluster` helm chart for each cluster. Keep all existing helm values the same, updating only the ClickHouse server and keeper image versions to the new target versions.
 
@@ -88,9 +82,7 @@ This triggers a **rolling restart of keeper and server pods** (one pod at a time
 
 </Step>
 
-<Step>
-
-### 4. Validate the Upgraded Cluster
+<Step title="4. Validate the Upgraded Cluster" id="4-validate-the-upgraded-cluster">
 
 After the rolling restart completes, confirm the cluster is healthy:
 

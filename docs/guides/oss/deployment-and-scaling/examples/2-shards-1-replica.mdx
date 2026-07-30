@@ -36,8 +36,7 @@ The architecture of the cluster you will be setting up is shown below:
 - You have docker installed on your machine
 
 <Steps>
-<Step>
-## Set up directory structure and test environment {#set-up}
+<Step title="Set up directory structure and test environment" id="set-up">
 
 <ExampleFiles/>
 
@@ -161,8 +160,7 @@ done
 
 <ConfigExplanation/>
 </Step>
-<Step>
-## Configure ClickHouse nodes {#configure-clickhouse-servers}
+<Step title="Configure ClickHouse nodes" id="configure-clickhouse-servers">
 
 ### Server setup {#server-setup}
 
@@ -396,8 +394,7 @@ In practice, this is discouraged.
 In this example, each `users.xml` file is identical for all nodes in the cluster.
 </Note>
 </Step>
-<Step>
-## Configure ClickHouse Keeper {#configure-clickhouse-keeper-nodes}
+<Step title="Configure ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
 
 ### Keeper setup {#configuration-explanation}
 
@@ -413,8 +410,7 @@ In this example, each `users.xml` file is identical for all nodes in the cluster
 
 <CloudTip/>
 </Step>
-<Step>
-## Test the setup {#test-the-setup}
+<Step title="Test the setup" id="test-the-setup">
 
 Make sure that docker is running on your machine.
 Start the cluster using the `docker-compose up` command from the root of the `cluster_2S_1R` directory:
@@ -493,8 +489,7 @@ WHERE path IN ('/', '/clickhouse')
 With this, you have successfully set up a ClickHouse cluster with two shards and one replica per shard.
 In the next step, you will create a table in the cluster.
 </Step>
-<Step>
-## Create a database {#creating-a-database}
+<Step title="Create a database" id="creating-a-database">
 
 Now that you have verified the cluster is correctly setup and is running, you
 will be recreating the same table as the one used in the [UK property prices](/get-started/sample-datasets/uk-price-paid)
@@ -551,8 +546,7 @@ SHOW DATABASES;
    └────────────────────┘
 ```
 </Step>
-<Step>
-## Create a table on the cluster {#creating-a-table}
+<Step title="Create a table on the cluster" id="creating-a-table">
 
 Now that the database has been created, you will create a table.
 Run the following query from any of the host clients:
@@ -654,8 +648,7 @@ on it or inserting data to both shards when we run insert queries.
 In ClickHouse this interface is called a **distributed table**, which we create using
 the [`Distributed`](/reference/engines/table-engines/special/distributed) table engine. Let's take a look at how it works.
 </Step>
-<Step>
-## Create a distributed table {#create-distributed-table}
+<Step title="Create a distributed table" id="create-distributed-table">
 
 Create a distributed table with the following query:
 
@@ -691,8 +684,7 @@ ON CLUSTER cluster_2S_1R
 ENGINE = Distributed('cluster_2S_1R', 'uk', 'uk_price_paid_local', rand());
 ```
 </Step>
-<Step>
-## Insert data into a distributed table {#inserting-data-into-distributed-table}
+<Step title="Insert data into a distributed table" id="inserting-data-into-distributed-table">
 
 Now connect to either of the hosts and insert the data:
 
