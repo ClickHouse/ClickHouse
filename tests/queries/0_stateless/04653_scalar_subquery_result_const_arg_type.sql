@@ -3,7 +3,7 @@
 -- while execution used the real one. Pinned explicitly because `compatibility` randomization can
 -- flip `enable_analyzer` and silently stop testing the old analyzer.
 SET enable_analyzer = 0;
--- Results carrying a timezone-less DateTime are rendered in the session timezone, which the test
+-- Results carrying a timezone-less `DateTime` are rendered in the session timezone, which the test
 -- runner randomizes. The timezone-argument rows below name a timezone explicitly and are unaffected.
 SET session_timezone = 'UTC';
 
