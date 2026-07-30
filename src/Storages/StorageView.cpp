@@ -27,6 +27,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -504,6 +505,33 @@ StoragePtr getViewTargetTable(
 
     auto resolved_id = context->resolveStorageID(table_id->getTableId());
     return DatabaseCatalog::instance().getTable(resolved_id, context);
+}
+
+/// Follows `Alias` tables down to the storage that actually holds the data.
+/// An `Alias` forwards metadata, reads and writes to its own target, so any check on the properties
+/// of a view's target table has to be made against the storage the alias ultimately resolves to.
+/// Returns `storage` itself when it is not an `Alias`, and stops early on a dangling alias, leaving
+/// the diagnostics for the code that later touches the target.
+StoragePtr resolveThroughAliases(StoragePtr storage)
+{
+    /// `Alias` currently refuses to point at another `Alias`, so the walk normally makes a single
+    /// step; the bound only keeps it from looping if that ever changes.
+    static constexpr size_t max_alias_chain_length = 100;
+
+    for (size_t depth = 0; depth < max_alias_chain_length; ++depth)
+    {
+        const auto * alias = storage->as<StorageAlias>();
+        if (!alias)
+            break;
+
+        auto next = alias->tryGetTargetTable();
+        if (!next)
+            break;
+
+        storage = std::move(next);
+    }
+
+    return storage;
 }
 
 
@@ -1197,11 +1225,15 @@ SinkToStoragePtr StorageView::write(
     /// `CREATE VIEW v AS SELECT a, b FROM mv`, forwarding a full `INSERT INTO mv (a, b)` hides the
     /// omitted `b` from `t`'s `DEFAULT`. Reject any view target via `isView` instead of silently
     /// storing diverging values.
-    if (target_table->isView())
+    /// The target is resolved through `Alias` tables first: an `Alias` forwards both the metadata and
+    /// the write to its own target, so `CREATE TABLE a ENGINE = Alias('v1')` over a view `v1` would
+    /// otherwise pass a direct `isView` check while still routing the insert through `v1`.
+    const auto resolved_target_table = resolveThroughAliases(target_table);
+    if (resolved_target_table->isView())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its target {} is itself a view; "
             "inserting through a chain of views is not supported",
-            getStorageID().getFullTableName(), target_table->getStorageID().getFullTableName());
+            getStorageID().getFullTableName(), resolved_target_table->getStorageID().getFullTableName());
 
     NameSet target_columns;
     const auto target_table_metadata = target_table->getInMemoryMetadataPtr(context, false);
