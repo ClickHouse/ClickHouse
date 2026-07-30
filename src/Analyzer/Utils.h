@@ -156,6 +156,16 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
+/// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.
+/// Passes that create a `_CAST` after normal resolution (e.g. `IfTransformStringsToEnumPass`,
+/// `DistanceTransposedPartialReadsPass`) must fold it here so that a remote shard / parallel replica, which
+/// re-analyzes the shipped AST and folds the constant on its side, names the resulting `ConstantNode`
+/// identically. Otherwise the action-node names on the initiator and the shard diverge and the initiator
+/// cannot find the column the shard produced (issues #74716, #110719). If the node cannot be folded (not a
+/// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
+/// node is returned unchanged.
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
@@ -204,6 +214,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
   * Specified context will be copied and used as query context.
   */
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
 
 /** Does a node or its children have a dependency on column
   * NOT from a specific table expression.

@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud à partir d’un notebook Jupyter à l’aide de [chDB](/fr/products/chdb/index), un moteur SQL OLAP in-process rapide basé sur ClickHouse.
+Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud à partir d’un notebook Jupyter à l’aide de [chDB](/fr/chdb/index), un moteur SQL OLAP in-process rapide basé sur ClickHouse.
 
 **Prérequis** :
 
@@ -110,7 +110,7 @@ Avec le jeu de données UK price paid configuré et chDB en cours d’exécution
 
 Imaginons que nous voulions examiner l’évolution des prix au fil du temps pour une zone précise du Royaume-Uni, comme sa capitale, Londres.
 La fonction [`remoteSecure`](/fr/reference/functions/table-functions/remote) de ClickHouse vous permet de récupérer facilement les données depuis ClickHouse Cloud.
-Vous pouvez demander à chDB de renvoyer ces données sous forme de data frame Pandas dans le processus, ce qui offre une manière pratique et familière de travailler avec les données.
+Vous pouvez demander à chDB de renvoyer ces données sous forme de DataFrame Pandas dans le processus, ce qui offre une manière pratique et familière de travailler avec les données.
 
 Écrivez la requête suivante pour récupérer les données UK price paid depuis votre service ClickHouse Cloud et les convertir en `pandas.DataFrame` :
 
