@@ -72,6 +72,65 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS escape_index_filenames = 0,
          ratio_of_defaults_for_sparse_serialization = 0.9375; -- { serverError BAD_ARGUMENTS }
 
+-- A `Map` opens a `.buckets_info` stream only under the bucketed serialization, and the INSERT and
+-- merge paths read DIFFERENT settings for it (`..._for_zero_level_parts` vs the plain one). Checking
+-- one version alone leaves the other path's stream unmodelled, so both are enumerated. Here only the
+-- INSERT path bucketizes, which is the direction a single-version check misses.
+-- `serialization_info_version` is pinned on every Map arm because below `with_types` the
+-- `SerializationInfoSettings` constructor forces the Map version back to `basic`, and then there is
+-- genuinely no bucketed stream to collide with.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Map(String, UInt64), w UInt64,
+    INDEX `a.buckets_info` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         serialization_info_version = 'with_types',
+         map_serialization_version = 'basic',
+         map_serialization_version_for_zero_level_parts = 'with_buckets'; -- { serverError BAD_ARGUMENTS }
+
+-- The mirror direction, where only the merge path bucketizes. Both Map settings are pinned on every
+-- arm because the test runner randomizes them independently.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Map(String, UInt64), w UInt64,
+    INDEX `a.buckets_info` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         serialization_info_version = 'with_types',
+         map_serialization_version = 'with_buckets',
+         map_serialization_version_for_zero_level_parts = 'basic'; -- { serverError BAD_ARGUMENTS }
+
+-- `Dynamic` gates its nested streams on having a column, returning right after `.dynamic_structure`
+-- when none is given. Past that gate `Variant` emits `.variant_discr` unconditionally, so the DDL
+-- check enumerates with an empty column of the column's own type to see it.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Dynamic, w UInt64,
+    INDEX `a.variant_discr` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
+
+-- A bare `Variant` reaches the same stream without the `Dynamic` wrapper.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Variant(UInt64, String), w UInt64,
+    INDEX `a.variant_discr` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
+
+-- Both of the two enumeration passes need the empty column, not just one. With sparse off the
+-- synthesized-kind pass returns immediately, so only the plain pass is left to see these streams;
+-- with sparse on the situation reverses. These arms pin the settings-independent half.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Dynamic, w UInt64,
+    INDEX `a.variant_discr` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0; -- { serverError BAD_ARGUMENTS }
+
+-- The same for the Map version union, which is likewise independent of the serialization kind.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Map(String, UInt64), w UInt64,
+    INDEX `a.buckets_info` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         serialization_info_version = 'with_types',
+         map_serialization_version = 'basic',
+         map_serialization_version_for_zero_level_parts = 'with_buckets'; -- { serverError BAD_ARGUMENTS }
+
+
 -- Sparse off means no offsets stream, so the same pair is legal. This bounds the check to the
 -- settings that actually produce the stream.
 CREATE TABLE t_collide (k UInt64, skp_idx_a UInt64, w UInt64,
@@ -185,6 +244,57 @@ INSERT INTO t_collide SELECT number, if(number % 100 = 0, number, 0), number FRO
 SELECT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_collide' AND active AND column = 'skp_idx_a';
 SELECT count(), sum(skp_idx_a) FROM t_collide;
+DROP TABLE t_collide;
+
+-- Below `with_types` the `SerializationInfoSettings` constructor resets every type-specialized
+-- version, so a bucketed Map is never actually written and the same pair is legal. Building both
+-- settings variants through that constructor rather than assigning the member is what keeps this
+-- arm accepted: a member assignment would model a stream no write path produces.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Map(String, UInt64), w UInt64,
+    INDEX `a.buckets_info` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         serialization_info_version = 'basic',
+         map_serialization_version = 'basic',
+         map_serialization_version_for_zero_level_parts = 'with_buckets';
+INSERT INTO t_collide SELECT number, map('x', number), number FROM numbers(50);
+SELECT count(), countIf(skp_idx_a['x'] = k) FROM t_collide;
+-- ... and raising the info version afterwards must be rejected, because then it is written.
+ALTER TABLE t_collide MODIFY SETTING serialization_info_version = 'with_types'; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_collide;
+
+-- With both Map versions unbucketed there is no `.buckets_info` stream, so the same pair is legal.
+-- The INSERT and read-back make the arm exercise the real write path rather than parsing only.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Map(String, UInt64), w UInt64,
+    INDEX `a.buckets_info` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         map_serialization_version = 'basic',
+         map_serialization_version_for_zero_level_parts = 'basic';
+INSERT INTO t_collide SELECT number, map('x', number), number FROM numbers(50);
+SELECT count(), countIf(skp_idx_a['x'] = k) FROM t_collide;
+DROP TABLE t_collide;
+
+-- `.dynamic` is not a produced suffix, so a `Dynamic` column beside it stays legal. Two different
+-- dynamic types are inserted and read back so the arm covers the real write path.
+CREATE TABLE t_collide (k UInt64, skp_idx_a Dynamic, w UInt64,
+    INDEX `a.dynamic` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_collide SELECT number, if(number % 2, number::Dynamic, 'str'::Dynamic), number FROM numbers(50);
+SELECT count(), countIf(dynamicType(skp_idx_a) = 'String'), sum(skp_idx_a::Nullable(UInt64) IS NULL) FROM t_collide;
+DROP TABLE t_collide;
+
+-- An empty column recovers only the STRUCTURAL streams a fresh column already determines. A JSON
+-- column's dynamic-path streams exist only for paths present in real data, so they remain outside
+-- this check's reach and such a name must still be accepted. This keeps the scope boundary an
+-- asserted property rather than a prose claim.
+CREATE TABLE t_collide (k UInt64, skp_idx_a JSON, w UInt64,
+    INDEX `a%2Ep.dynamic_structure` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_collide SELECT number, toJSONString(map('p', number))::JSON, number FROM numbers(50);
+SELECT count(), countIf(skp_idx_a.p::Nullable(UInt64) = k) FROM t_collide;
 DROP TABLE t_collide;
 
 -- A projection stream base coinciding with a parent-table stream base is not a collision: the

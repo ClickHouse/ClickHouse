@@ -345,6 +345,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -10319,6 +10320,7 @@ namespace
 void enumerateStreamsForDataDependentKinds(
     const NameAndTypePair & column,
     const SerializationInfo::Settings & serialization_settings,
+    const ColumnPtr & sample_column,
     const ISerialization::StreamCallback & callback)
 {
     if (serialization_settings.isAlwaysDefault())
@@ -10330,7 +10332,52 @@ void enumerateStreamsForDataDependentKinds(
     auto info = column.type->createSerializationInfo(kind_settings);
     info->addDefaults(1);
 
-    column.type->getSerialization(*info)->enumerateStreams(callback);
+    column.type->getSerialization(*info)->enumerateStreams(callback, column.type, sample_column);
+}
+
+/// The distinct `SerializationInfo::Settings` the writers could build for one table.
+///
+/// A zero-level part (the one an INSERT produces) and a merged part do not necessarily agree:
+/// `MergeTreeDataWriter` reads `map_serialization_version_for_zero_level_parts` while `MergeTask`
+/// reads `map_serialization_version`, and the two settings are declared independently. Since
+/// `SerializationMap::enumerateStreams` only emits its `.buckets_info` stream for the bucketed
+/// version, checking one version alone leaves the other path's stream unmodelled. Enumerating the
+/// union covers whichever part type is written first.
+///
+/// Only `map_serialization_version` needs this: it is the sole `SerializationInfoSettings` member
+/// with a `_for_zero_level_parts` twin. The string and nullable versions have no such twin, and
+/// `object_shared_data_serialization_version_for_zero_level_parts` is not part of these settings at
+/// all (it belongs to `ISerialization::EnumerateStreamsSettings`).
+///
+/// Both variants are built through the constructor, exactly as the writers do, because it is the
+/// constructor that resets every type-specialized version below `WITH_TYPES`. Assigning the member
+/// afterwards would model a bucketed Map that no write path can ever produce, and the check would
+/// then reject a definition that is in fact safe.
+std::vector<SerializationInfo::Settings> getSerializationSettingsVariants(const MergeTreeSettings & settings)
+{
+    auto make_settings = [&](MergeTreeMapSerializationVersion map_serialization_version)
+    {
+        return SerializationInfo::Settings
+        {
+            static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            false,
+            settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+            settings[MergeTreeSetting::serialization_info_version],
+            settings[MergeTreeSetting::string_serialization_version],
+            settings[MergeTreeSetting::nullable_serialization_version],
+            map_serialization_version,
+            settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        };
+    };
+
+    auto merge_path_settings = make_settings(settings[MergeTreeSetting::map_serialization_version]);
+    auto insert_path_settings = make_settings(settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
+
+    std::vector<SerializationInfo::Settings> variants{merge_path_settings};
+    if (insert_path_settings != merge_path_settings)
+        variants.push_back(insert_path_settings);
+
+    return variants;
 }
 
 /// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
@@ -10348,17 +10395,7 @@ public:
         auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
             ? Nested::collect(columns.getAllPhysical())
             : columns.getAllPhysical();
-        SerializationInfo::Settings serialization_settings
-        {
-            static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-            false,
-            settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-            settings[MergeTreeSetting::serialization_info_version],
-            settings[MergeTreeSetting::string_serialization_version],
-            settings[MergeTreeSetting::nullable_serialization_version],
-            settings[MergeTreeSetting::map_serialization_version],
-            settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-        };
+        auto serialization_settings_variants = getSerializationSettingsVariants(settings);
 
         for (const auto & column : columns_list)
         {
@@ -10371,14 +10408,30 @@ public:
                 column_streams.emplace(stream_name, full_stream_name);
             };
 
-            /// The plain serialization misses every stream that exists only for a non-default
-            /// serialization kind, because the kind depends on the data and no data exists yet.
-            /// Sparse is the reachable one: it is on at default settings and its offsets stream is
-            /// named `<base>.sparse.idx`, so `.idx` is part of the NAME and can alias a skip index.
-            /// Enumerate the union of every kind the writer could pick, keyed per column, so an
-            /// index can never share a base with a stream a later INSERT will open.
-            column.type->getSerialization(serialization_settings)->enumerateStreams(callback);
-            enumerateStreamsForDataDependentKinds(column, serialization_settings, callback);
+            /// Some streams exist only once a value that a DDL-time check cannot observe is known,
+            /// so enumerating the plain serialization once is not enough. Three things are unknown
+            /// here and each is supplied explicitly, and because every pass feeds the same per-column
+            /// map the result is their union: an index can never share a base with a stream that a
+            /// later write will open.
+            ///
+            ///  - The serialization KIND depends on the data. Sparse is reachable at default settings
+            ///    and its offsets stream is named `<base>.sparse.idx`, so `.idx` is part of the NAME
+            ///    and can alias a skip index. `enumerateStreamsForDataDependentKinds` synthesises it.
+            ///  - The Map serialization VERSION differs between the insert and merge paths, so both
+            ///    are enumerated (see `getSerializationSettingsVariants`).
+            ///  - Some types gate their nested streams on having a COLUMN: `Dynamic` returns right
+            ///    after `.dynamic_structure` when none is given, hiding the `.variant_discr` stream
+            ///    that `Variant` then emits unconditionally. An empty column of the column's own type
+            ///    passes that gate, which is enough for the structural streams a fresh column already
+            ///    determines. It does NOT recover streams that exist only for values actually present
+            ///    (a JSON column's dynamic paths, a Dynamic column's concrete variants); those stay
+            ///    data-dependent and are out of this check's reach.
+            ColumnPtr sample_column = column.type->createColumn();
+            for (const auto & serialization_settings : serialization_settings_variants)
+            {
+                column.type->getSerialization(serialization_settings)->enumerateStreams(callback, column.type, sample_column);
+                enumerateStreamsForDataDependentKinds(column, serialization_settings, sample_column, callback);
+            }
 
             auto owner = fmt::format("Column '{} {}'", column.name, column.type->getName());
             for (const auto & [stream_name, full_stream_name] : column_streams)
