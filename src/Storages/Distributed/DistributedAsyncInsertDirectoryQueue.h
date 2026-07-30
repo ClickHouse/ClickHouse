@@ -110,10 +110,20 @@ private:
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
 
+    void updateSleepTime();
+
     SyncGuardPtr getDirectorySyncGuard(const std::string & path);
 
     std::string getLoggerName() const;
 
+public:
+    /// Backoff delay from error_count, saturating at max_sleep_time. Static and public for unit testing.
+    static std::chrono::milliseconds calculateSleepTime(
+        std::chrono::milliseconds default_sleep_time,
+        std::chrono::milliseconds max_sleep_time,
+        size_t error_count);
+
+private:
     StorageDistributed & storage;
     const ConnectionPoolWithFailoverPtr pool;
 

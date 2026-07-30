@@ -10,7 +10,9 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -18,8 +20,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
-#include <IO/SnappyReadBuffer.h>
-#include <IO/SnappyWriteBuffer.h>
+#include <IO/SnappyBasicReadBuffer.h>
+#include <IO/SnappyBasicWriteBuffer.h>
+#include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -50,6 +53,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -77,15 +81,15 @@ private:
 
 
 /// Implementation of the exposing metrics protocol.
-class PrometheusRequestHandler::ExposeMetricsImpl : public Impl
+class PrometheusRequestHandler::MetricsImpl : public Impl
 {
 public:
-    explicit ExposeMetricsImpl(PrometheusRequestHandler & parent) : Impl(parent) {}
+    explicit MetricsImpl(PrometheusRequestHandler & parent) : Impl(parent) {}
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::ExposeMetrics);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
     void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
@@ -126,7 +130,7 @@ public:
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
     /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
-    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
+    /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
     virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
@@ -283,7 +287,7 @@ protected:
 
 
 /// Implementation of the remote-write protocol.
-class PrometheusRequestHandler::RemoteWriteImpl : public ImplWithContext
+class PrometheusRequestHandler::WriteImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -291,14 +295,29 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
-        checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
-        checkHTTPHeader(request, "Content-Encoding", "snappy");
+        /// Unsupported content types and encodings get 415 Unsupported Media Type.
+        const String content_type = request.get("Content-Type", "");
+        if (content_type != "application/x-protobuf")
+            throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
+                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf')", content_type);
+
+        /// The remote-write 1.0 spec mandates snappy, but some senders can also compress with zstd.
+        const String content_encoding = request.get("Content-Encoding", "");
+        std::unique_ptr<ReadBuffer> decompressing_buf;
+        if (content_encoding == "snappy")
+            decompressing_buf = std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()));
+        else if (content_encoding == "zstd")
+            decompressing_buf = std::make_unique<ZstdInflatingReadBuffer>(wrapReadBufferPointer(request.getStream()));
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
+                "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
@@ -306,8 +325,7 @@ public:
         prometheus::WriteRequest write_request;
 
         {
-            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
             if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
@@ -329,7 +347,7 @@ public:
 };
 
 /// Implementation of the remote-read protocol.
-class PrometheusRequestHandler::RemoteReadImpl : public ImplWithContext
+class PrometheusRequestHandler::ReadImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -337,7 +355,8 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteRead);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
@@ -353,37 +372,50 @@ public:
 
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+                std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()))};
 
             if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
         }
 
-        prometheus::ReadResponse read_response;
-
-        size_t num_queries = read_request.queries_size();
-        for (size_t i = 0; i != num_queries; ++i)
-        {
-            const auto & query = read_request.queries(static_cast<int>(i));
-            auto & new_query_result = *read_response.add_results();
-            protocol.readTimeSeries(
-                *new_query_result.mutable_timeseries(),
-                query.start_timestamp_ms(),
-                query.end_timestamp_ms(),
-                query.matchers(),
-                query.hints());
-        }
-
-#    if 0
-    LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
-#    endif
-
+        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
+        /// used by `SnappyFramedWriteBuffer` for HTTP `Content-Encoding`). Serialize the response
+        /// straight into the compression buffer, then drop the `prometheus::ReadResponse` object
+        /// tree before finalizing `SnappyBasicWriteBuffer`, so only the accumulated serialized data
+        /// (not the object tree) is held while it is compressed into a single raw snappy block.
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
-        zero_copy_output_stream.finalize();
+        auto & out = getOutputStream(response);
+        SnappyBasicWriteBuffer snappy_out(&out);
+        {
+            prometheus::ReadResponse read_response;
+
+            size_t num_queries = read_request.queries_size();
+            for (size_t i = 0; i != num_queries; ++i)
+            {
+                const auto & query = read_request.queries(static_cast<int>(i));
+                auto & new_query_result = *read_response.add_results();
+                protocol.readTimeSeries(
+                    *new_query_result.mutable_timeseries(),
+                    query.start_timestamp_ms(),
+                    query.end_timestamp_ms(),
+                    query.matchers(),
+                    query.hints());
+            }
+
+#    if 0
+            LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
+#    endif
+
+            /// The zero-copy stream is intentionally not finalized here: finalizing it would flush
+            /// and compress `snappy_out` while the object tree is still alive. Serialization leaves
+            /// all bytes buffered in `snappy_out`; compression happens in `snappy_out.finalize()`
+            /// below, after the object tree has been released.
+            ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{snappy_out};
+            read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+        }
+        snappy_out.finalize();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote read protocol is disabled");
@@ -391,8 +423,9 @@ public:
     }
 };
 
-/// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
-class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -401,8 +434,9 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus Query API request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI);
+        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     bool isSettingLikeParameter(const String & name) override
@@ -420,7 +454,9 @@ public:
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
-        LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
+        /// This endpoint accepts user/password (and other secrets) as query-string parameters via
+        /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
 
         response.setContentType("application/json");
 
@@ -429,7 +465,18 @@ public:
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
-            if (uri.starts_with("/api/v1/query_range"))
+            auto query_finish_callback = [&]()
+            {
+                getOutputStream(response).finalize();
+            };
+
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
@@ -451,9 +498,9 @@ public:
                     .step_param = step,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
-            else if (uri.starts_with("/api/v1/query"))
+            else if (uri_path.ends_with("/query"))
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
@@ -470,17 +517,17 @@ public:
                     .step_param = "",
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
-            else if (uri.starts_with("/api/v1/format_query"))
+            else if (uri_path.ends_with("/format_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/parse_query"))
+            else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/series"))
+            else if (uri_path.ends_with("/series"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -490,7 +537,7 @@ public:
 
                 protocol.getSeries(getOutputStream(response), match, start, end);
             }
-            else if (uri.starts_with("/api/v1/labels"))
+            else if (uri_path.ends_with("/labels"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -498,22 +545,17 @@ public:
 
                 protocol.getLabels(getOutputStream(response), match, start, end);
             }
-            else if (uri.find("/api/v1/label/") != String::npos && uri.ends_with("/values"))
+            else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                // Extract label name from URI: /api/v1/label/<name>/values
-                size_t start_pos = uri.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
-                size_t end_pos = uri.find("/values");
-                String label_name = uri.substr(start_pos, end_pos - start_pos);
-
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabelValues(getOutputStream(response), label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", uri, request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
@@ -542,6 +584,96 @@ public:
             LOG_ERROR(log(), "Error executing query: {}", e.displayText());
         }
     }
+
+private:
+    /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
+    /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
+    static std::optional<String> extractLabelValuesName(std::string_view uri_path)
+    {
+        static constexpr std::string_view values_suffix = "/values";
+        static constexpr std::string_view label_segment = "/label";
+
+        if (!uri_path.ends_with(values_suffix))
+            return std::nullopt;
+
+        /// Strip the "/values" suffix, leaving "<prefix>/label/<name>".
+        std::string_view without_values = uri_path.substr(0, uri_path.size() - values_suffix.size());
+
+        /// A label name never contains '/', so it is the last path segment.
+        size_t name_slash = without_values.rfind('/');
+        if (name_slash == std::string_view::npos)
+            return std::nullopt;
+
+        std::string_view label_name = without_values.substr(name_slash + 1);
+        if (label_name.empty())
+            return std::nullopt;
+
+        /// The segment before the name must be "/label".
+        if (!without_values.substr(0, name_slash).ends_with(label_segment))
+            return std::nullopt;
+
+        return String{label_name};
+    }
+};
+
+
+/// Handles all Prometheus "/api/v1" protocols, dispatching each request to the
+/// Write, Read, or Query implementation based on its path.
+class PrometheusRequestHandler::APIv1Impl : public Impl
+{
+public:
+    explicit APIv1Impl(PrometheusRequestHandler & parent)
+        : Impl(parent)
+        , write_impl(parent)
+        , read_impl(parent)
+        , query_impl(parent)
+    {
+    }
+
+    void beforeHandlingRequest(HTTPServerRequest & request) override
+    {
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::APIv1);
+        current_impl = &getImpl(request);
+        current_impl->beforeHandlingRequest(request);
+    }
+
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        /// `current_impl` was selected in beforeHandlingRequest().
+        /// Forward the whole request to it so its own authentication, context setup,
+        /// and endpoint dispatch run exactly as for a dedicated single-protocol handler.
+        current_impl->handleRequest(request, response);
+    }
+
+    void onException() override
+    {
+        if (current_impl)
+            current_impl->onException();
+    }
+
+private:
+    /// Selects the implementation for a request based on the trailing segment of its path,
+    /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
+    /// ("/prefix/api/v1/write").
+    Impl & getImpl(const HTTPServerRequest & request)
+    {
+        /// Get the decoded URL path (without the query string).
+        const String path = Poco::URI(request.getURI()).getPath();
+
+        if (path.ends_with("/write"))
+            return write_impl;
+        if (path.ends_with("/read"))
+            return read_impl;
+
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// are served by the Query implementation, which itself returns 404 for unknown paths.
+        return query_impl;
+    }
+
+    WriteImpl write_impl;
+    ReadImpl read_impl;
+    QueryImpl query_impl;
+    Impl * current_impl = nullptr;
 };
 
 
@@ -567,24 +699,29 @@ void PrometheusRequestHandler::createImpl()
 {
     switch (config.type)
     {
-        case PrometheusRequestHandlerConfig::Type::ExposeMetrics:
+        case PrometheusRequestHandlerConfig::Type::Metrics:
         {
-            impl = std::make_unique<ExposeMetricsImpl>(*this);
+            impl = std::make_unique<MetricsImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::RemoteWrite:
+        case PrometheusRequestHandlerConfig::Type::Write:
         {
-            impl = std::make_unique<RemoteWriteImpl>(*this);
+            impl = std::make_unique<WriteImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::RemoteRead:
+        case PrometheusRequestHandlerConfig::Type::Read:
         {
-            impl = std::make_unique<RemoteReadImpl>(*this);
+            impl = std::make_unique<ReadImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::QueryAPI:
+        case PrometheusRequestHandlerConfig::Type::Query:
         {
-            impl = std::make_unique<QueryAPIImpl>(*this);
+            impl = std::make_unique<QueryImpl>(*this);
+            return;
+        }
+        case PrometheusRequestHandlerConfig::Type::APIv1:
+        {
+            impl = std::make_unique<APIv1Impl>(*this);
             return;
         }
     }
