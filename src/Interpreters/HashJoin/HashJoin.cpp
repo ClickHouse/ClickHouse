@@ -482,6 +482,31 @@ bool HashJoin::preferUseMapsAll() const
         || table_join->getMixedJoinExpression() != nullptr;
 }
 
+bool HashJoin::buildPopsZeroInsertBlocks() const
+{
+    /// Mirror the streaming build's pop at `insertFromBlockImpl`:
+    ///     if (!flag_per_row && !is_inserted && !nullmap_stored_for_block) { ... data->columns.pop_back(); }
+    /// A just-stored right block is rolled back when it inserted no row and stored no nullmap. The three
+    /// clauses below are exactly the conditions under which that branch can fire:
+    ///   1. there are no per-right-table-row used-flags (`!flag_per_row`); the per-row path always keeps
+    ///      the block,
+    ///   2. this is not a RIGHT/FULL join - those store a nullmap (`save_nullmap` / `not_joined_map`) for
+    ///      the not-joined rows, so `nullmap_stored_for_block` becomes true and the block is never popped,
+    ///   3. the active build maps are one-row-per-key (`MapsOne` == `MapsTemplate<RowRef>`); only then is
+    ///      `is_inserted` seeded false (`is_inserted = !mapped_one || is_asof_join`) and can stay false.
+    ///      ALL (`MapsAll`) and ASOF (`MapsAsof`) seed it true and never pop.
+    /// The maps variant is read live, not inferred from strictness, because `preferUseMapsAll` forces
+    /// `MapsAll` for a mixed both-sides ON expression or an ALL->RIGHT ANY promotion (so a nominally-ANY
+    /// join can still use `MapsAll`).
+    if (needUsedFlagsForPerRightTableRow(table_join))
+        return false;
+    if (isRightOrFull(kind))
+        return false;
+    if (!data || data->maps.empty())
+        return false;
+    return std::holds_alternative<MapsOne>(data->maps.at(0));
+}
+
 bool HashJoin::alwaysReturnsEmptySet() const
 {
     return isInnerOrRight(getKind()) && data->rows_to_join == 0;
@@ -638,6 +663,12 @@ bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     auto materialized = materializeColumnsFromRightBlock(source_block);
     return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), check_limits);
+}
+
+void HashJoin::captureMemoryUsageBaseline()
+{
+    if (!memory_usage_before_adding_blocks)
+        memory_usage_before_adding_blocks = JoinCommon::getCurrentQueryMemoryUsage();
 }
 
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)

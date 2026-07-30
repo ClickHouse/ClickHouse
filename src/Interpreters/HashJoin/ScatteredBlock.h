@@ -233,6 +233,11 @@ struct ScatteredBlock : private boost::noncopyable
 
     /// In case of scattered block we account proportional share of the source block bytes.
     /// For not scattered columns it will be trivial (bytes * N / N) calculation.
+    /// The shares of the shards scattered from one source block sum back to the whole block only while
+    /// every shard is retained. A caller that drops some shards while keeping others must materialize
+    /// the kept ones (see the deferred-build compaction in `ConcurrentHashJoin::addBlockToJoin`);
+    /// otherwise the kept shares under-count the resident bytes, because the kept shards still share
+    /// ownership of the whole source block.
     size_t allocatedBytes() const { return block.rows() ? block.allocatedBytes() * rows() / block.rows() : 0; }
 
     ScatteredBlock shrinkToFit() const

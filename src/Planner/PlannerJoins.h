@@ -264,6 +264,12 @@ struct JoinAlgorithmParams
 
     std::optional<UInt64> rhs_size_estimation;
 
+    /// Estimated distinct-key count of the (single-column) right join key, taken from the planner's
+    /// `uniq`-backed column statistics only (never the mock cardinality). Used to size the build hash
+    /// map exactly on the streaming path, skipping the deferred build. Absent for composite/expression
+    /// keys, sources without `uniq` statistics, and subqueries/non-MergeTree relations.
+    std::optional<UInt64> trustworthy_rhs_key_ndv;
+
     explicit JoinAlgorithmParams(const Context & context);
 
     JoinAlgorithmParams(

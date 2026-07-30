@@ -1217,7 +1217,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         params.grace_hash_join_max_buckets,
                         params.max_threads,
                         stats_collecting_params,
-                        params.join_any_take_last_row);
+                        params.join_any_take_last_row,
+                        params.trustworthy_rhs_key_ndv);
                 }
             }
 
@@ -1243,7 +1244,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.max_threads,
                     right_table_expression_header,
                     stats_collecting_params,
-                    params.join_any_take_last_row);
+                    params.join_any_take_last_row,
+                    /*external_join_threshold_=*/0,
+                    params.trustworthy_rhs_key_ndv);
             }
         }
 
@@ -1299,7 +1302,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
                     stats_collecting_params,
-                    params.join_any_take_last_row);
+                    params.join_any_take_last_row,
+                    params.trustworthy_rhs_key_ndv);
             }
 
             return std::make_shared<SpillingHashJoin>(
