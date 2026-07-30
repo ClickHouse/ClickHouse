@@ -35,12 +35,10 @@ Prepare a fresh AWS account, GCP project, or Azure subscription under your organ
 
 <Steps>
 <Step title="Choose a Cloud Provider" id="choose-cloud-provider">
-
 <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background='black'/>
 </Step>
 <Step title="Account/project/subscription setup" id="account-setup">
-
-The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
+The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
 
 <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background='black'/>
 
@@ -48,21 +46,24 @@ The initial BYOC setup can be performed using a [CloudFormation template (AWS)](
 Storage buckets, VPC/VNet, Kubernetes cluster, and compute resources required for running ClickHouse aren't included in this initial setup. They will be provisioned in the next step.
 </Note>
 
-#### Alternative Terraform Module for AWS {#terraform-module-aws}
+#### Terraform Module for AWS {#terraform-module-aws}
 
-If you prefer to use Terraform instead of CloudFormation for AWS deployments, we also provide a [Terraform module for AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
-
-Usage:
+If you prefer to use Terraform instead of CloudFormation for AWS deployments, use the [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module:
 
 ```hcl
 module "clickhouse_onboarding" {
-  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-  byoc_env = "production"
+  source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+  external_id = "<external-id-provided-by-clickhouse>"
 }
 ```
+
+Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
+
+<Note>
+The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
+</Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
-
 You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
 
 - **Region**: All **public regions** listed in our [supported regions](/products/cloud/reference/supported-regions) documentation are available for BYOC deployments. Private regions aren't currently supported.
@@ -81,7 +82,7 @@ After your BYOC infrastructure has been provisioned, you're ready to launch your
 
 <Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC create new service"/>
 
-During service creation, you’ll configure the following options:
+During service creation, you'll configure the following options:
 
 - **Service name**: Enter a clear, descriptive name for your ClickHouse service.
 - **BYOC infrastructure**: Select the BYOC environment, including the cloud account and region, where your service will run.
