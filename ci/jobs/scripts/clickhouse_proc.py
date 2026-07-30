@@ -65,6 +65,10 @@ class ClickHouseProc:
     # How many times `stop_server` takes out a server that the watchdog brought
     # back while the previous one was being stopped, before giving up on it.
     RESPAWN_STOP_ATTEMPTS = 3
+    # How far up the process tree `stop_server` looks for the watchdogs above a
+    # respawned server. `BaseDaemon::setupWatchdog` adds exactly one level, so
+    # this is only a guard against walking an unexpectedly deep chain forever.
+    WATCHDOG_ANCESTOR_LIMIT = 8
 
     def __init__(
         self,
@@ -844,11 +848,18 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         teardown of the previous one is over. Nothing may outlive this teardown
         holding that lock, or the scraping of `system.*_log` loses every system
         table of this replica.
+
+        A server that is back means something is bringing it back, so the
+        watchdog above it is taken out first. Killing the server alone cannot
+        win: the watchdog restarts it after every abnormal exit, so each
+        `SIGKILL` would only trigger the next restart and the loop below would
+        run out of attempts with yet another server alive and holding the lock.
         """
         for _ in range(cls.RESPAWN_STOP_ATTEMPTS):
             pid = cls._current_server_pid(pid_file)
             if not pid:
                 return
+            cls._stop_server_watchdogs(pid)
             print(
                 f"ClickHouse process {pid} came up again after the teardown - send KILL signal"
             )
@@ -861,6 +872,63 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 f"WARNING: ClickHouse process {pid} is still alive after the teardown - "
                 f"system tables in {run_path} will not be scraped"
             )
+
+    @classmethod
+    def _stop_server_watchdogs(cls, pid) -> None:
+        """Kill the watchdog processes above the server `pid`, outermost first.
+
+        `BaseDaemon::setupWatchdog` keeps the original process as the watchdog
+        and forks the server below it, so the watchdog is the parent of the pid
+        in the pid file and shares its `argv[0]`. Outermost first, so an inner
+        watchdog cannot be restarted by an outer one while it is being killed.
+
+        Only called once a server has been seen coming back, so a watchdog is
+        never taken out on the normal teardown path, where it exits on its own
+        and gets to log the server's exit status.
+        """
+        for watchdog in cls._server_watchdog_pids(pid):
+            print(
+                f"ClickHouse watchdog process {watchdog} is bringing the server "
+                f"back - send KILL signal"
+            )
+            cls._signal_server(watchdog, signal.SIGKILL, "KILL")
+            if not cls._wait_server_gone(watchdog, timeout=60):
+                print(f"WARNING: ClickHouse watchdog process {watchdog} survived KILL")
+
+    @classmethod
+    def _server_watchdog_pids(cls, pid) -> list:
+        """The chain of watchdogs above the server `pid`, outermost first.
+
+        An ancestor counts as a watchdog only while it is a ClickHouse server
+        process itself (the same `argv[0]` check as everywhere else here): above
+        the watchdog sits the `sh -c ...` wrapper, and killing the wrapper is
+        `_reap_server_wrapper`'s business, not this function's.
+        """
+        watchdogs = []
+        for _ in range(cls.WATCHDOG_ANCESTOR_LIMIT):
+            pid = cls._parent_pid(pid)
+            if pid <= 1 or not cls._server_process_alive(pid):
+                break
+            watchdogs.append(pid)
+        watchdogs.reverse()
+        return watchdogs
+
+    @staticmethod
+    def _parent_pid(pid) -> int:
+        """The parent pid of `pid`, or 0 if it cannot be determined.
+
+        Read from `/proc/<pid>/status` rather than `/proc/<pid>/stat`, whose
+        fields cannot be split on whitespace: the second one is the command
+        name, in parentheses, and may itself contain spaces.
+        """
+        try:
+            with open(f"/proc/{pid}/status", "rb") as status:
+                for line in status:
+                    if line.startswith(b"PPid:"):
+                        return int(line.split()[1])
+        except (OSError, ValueError, IndexError):
+            return 0
+        return 0
 
     @classmethod
     def _server_process_alive(cls, pid) -> bool:

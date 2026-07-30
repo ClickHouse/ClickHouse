@@ -74,7 +74,14 @@ pid_file, status_file, ignore_signals = sys.argv[1], sys.argv[2], sys.argv[3]
 # watchdog restarts it under a new pid - the `CLICKHOUSE_WATCHDOG_RESTART=1`
 # shape, driven by the test instead of by a signal so that the drift is
 # deterministic.
-restart_file = sys.argv[4] if len(sys.argv) > 4 else ""
+restart_file = sys.argv[4]
+# "once" hands the pid over a single time; "always" is the full
+# `CLICKHOUSE_WATCHDOG_RESTART=1` watchdog, which brings a new server up after
+# every abnormal exit - so a teardown that only kills servers never wins.
+restart_mode = sys.argv[5]
+# Bounded well above `RESPAWN_STOP_ATTEMPTS`, so that a teardown killing only
+# servers loses, yet a failing test cannot leave a process respawning forever.
+RESTART_ALWAYS_LIMIT = 20
 
 
 def serve(hand_over):
@@ -92,6 +99,19 @@ def serve(hand_over):
             os._exit(0)
         time.sleep(0.1)
 
+
+if restart_mode == "always":
+    # Detach the watchdog from the `sh -c ...` wrapper - fork it, and let the
+    # process the wrapper is waiting for exit at once - so that the only thing
+    # bringing servers back is the watchdog itself, whether or not the shell
+    # exec'd this process instead of forking it.
+    if os.fork() != 0:
+        os._exit(0)
+    for _ in range(RESTART_ALWAYS_LIMIT):
+        if os.fork() == 0:
+            serve(hand_over=False)
+        os.wait()
+    sys.exit(0)
 
 if os.fork() == 0:
     serve(hand_over=bool(restart_file))
@@ -121,7 +141,11 @@ def _pid_alive(pid):
 
 
 def _start_fake_server(
-    tmp_path, name="clickhouse-server", ignore_signals="TERM", restart_file=""
+    tmp_path,
+    name="clickhouse-server",
+    ignore_signals="TERM",
+    restart_file="",
+    restart_mode="once",
 ):
     """Start wrapper shell -> watchdog -> "server", as the CI harness does.
 
@@ -129,7 +153,9 @@ def _start_fake_server(
     makes it the server as far as `_server_process_alive` is concerned.
 
     With `restart_file`, the watchdog restarts the server under a new pid once
-    that file appears, modelling `CLICKHOUSE_WATCHDOG_RESTART=1`.
+    that file appears, modelling `CLICKHOUSE_WATCHDOG_RESTART=1`. With
+    `restart_mode="always"` it keeps doing so after every abnormal exit, as the
+    real watchdog in that mode does.
 
     Returns `(proc, pid)`, the pair `stop_server` iterates over: `proc` is the
     `Popen` handle on the wrapper, `pid` is what the server wrote to its pid file.
@@ -147,7 +173,8 @@ def _start_fake_server(
     pid_file = tmp_path / "clickhouse-server.pid"
     status_file = tmp_path / "status"
     proc = subprocess.Popen(
-        f"{server} {script} {pid_file} {status_file} '{ignore_signals}' {restart_file}",
+        f"{server} {script} {pid_file} {status_file} '{ignore_signals}' "
+        f"'{restart_file}' '{restart_mode}'",
         shell=True,
         cwd=tmp_path,
     )
@@ -301,6 +328,42 @@ def test_stop_server_stops_the_server_the_pid_file_names_now(monkeypatch, tmp_pa
         _cleanup(proc, startup_pid)
         if respawned_pid:
             _cleanup(proc, respawned_pid)
+
+
+def test_stop_server_stops_the_watchdog_that_keeps_restarting_the_server(
+    monkeypatch, tmp_path
+):
+    # A watchdog in `CLICKHOUSE_WATCHDOG_RESTART=1` mode brings a new server up
+    # after *every* abnormal exit, so killing servers alone can never win: each
+    # `SIGKILL` only triggers the next restart, and a teardown that gives up
+    # after a bounded number of them returns with yet another server alive and
+    # holding `<run_path>/status` - losing this replica's system tables just the
+    # same. `stop_server` therefore has to take out the watchdog itself.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    proc, startup_pid = _start_fake_server(tmp_path, restart_mode="always")
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        _make_proc(monkeypatch, tmp_path, proc, startup_pid).stop_server()
+        # Whoever the pid file names by now - the first server or the n-th one
+        # the watchdog brought back - must be gone, and the lock free.
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server the watchdog restarted ({pid_file.read_text().strip()}) "
+            "outlived stop_server"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+        for watchdog in watchdogs:
+            assert not _pid_alive(watchdog), (
+                f"the watchdog {watchdog} outlived stop_server and can start "
+                "yet another server"
+            )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
 
 
 def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):
