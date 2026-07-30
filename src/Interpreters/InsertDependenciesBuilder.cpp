@@ -1456,6 +1456,26 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
 
 Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 {
+    /// view_id is empty for a direct INSERT into the table, non-empty when the table is a materialized
+    /// view target. In the latter case the plain storage error names only the target, so add the view.
+    if (view_id.empty())
+        return createSinkImpl(view_id);
+
+    try
+    {
+        return createSinkImpl(view_id);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while writing to target table {} of materialized view {}",
+            inner_tables.at(view_id).getNameForLogs(), view_id.getNameForLogs());
+        throw;
+    }
+}
+
+
+Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) const
+{
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
     const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
