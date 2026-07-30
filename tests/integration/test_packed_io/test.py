@@ -129,6 +129,12 @@ def pack_part_recursive(part_path, output_dir, file_order_hint):
 
 
 def test_packed_io(started_cluster):
+    # The tables are created with `auto_statistics_types = ''` because `packed-io` does not
+    # convert the statistics representation between full and packed parts: a full part keeps a
+    # single top-level `statistics.packed`, a packed part keeps `statistics_<column>.stats`
+    # members. Comparing a converted part against a natively written one therefore always
+    # differs while statistics are present. See
+    # https://github.com/ClickHouse/ClickHouse/issues/112598
     node.query(
         "CREATE OR REPLACE TABLE t_packed_local (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
@@ -172,6 +178,8 @@ def test_packed_io(started_cluster):
 
 
 def test_packed_io_projections(started_cluster):
+    # `auto_statistics_types = ''` for the same reason as in `test_packed_io`, see
+    # https://github.com/ClickHouse/ClickHouse/issues/112598
     node.query(
         "CREATE OR REPLACE TABLE t_packed_local_proj (id UInt64, s String, PROJECTION p (SELECT sum(id), max(s))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = '10M', auto_statistics_types = ''"
     )
