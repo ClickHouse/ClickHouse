@@ -59,10 +59,13 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_has_idx_simple)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              id
+            Condition: (toUInt64(plus(id, 2)) in 5-element set)
             Parts: 1/1
-            Granules: 100/100
-          Ranges: 1
+            Granules: 3/100
+            Search Algorithm: generic exclusion search
+          Ranges: 3
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_idx_simple

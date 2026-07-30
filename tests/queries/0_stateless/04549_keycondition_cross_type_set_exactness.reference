@@ -444,24 +444,24 @@ attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)	1
 --- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---
 null-elem NOT IN stays exact	1
 null-elem NOT IN	1
-null-elem NOT IN transform_null_in declines	1
+null-elem NOT IN transform_null_in declines	0
 null-elem NOT IN transform_null_in	1
-null-elem NOT has declines	1
+null-elem NOT has declines	0
 null-elem NOT has	1
-null-elem LC NOT IN transform_null_in declines	1
+null-elem LC NOT IN transform_null_in declines	0
 null-elem LC NOT IN transform_null_in	1
-null-elem LC NOT has declines	1
+null-elem LC NOT has declines	0
 null-elem LC NOT has	1
 null-elem identity keeps pruning	1
 null-elem identity	1	1
 --- the lossy conversion path, not the element type, is what forfeits exactness ---
-lossy same-width NOT IN declines	1
+lossy same-width NOT IN declines	0
 lossy same-width NOT IN	1
-lossy same-width NOT has declines	1
+lossy same-width NOT has declines	0
 lossy same-width NOT has	1
-lossy mixed array NOT has declines	1
+lossy mixed array NOT has declines	0
 lossy mixed array NOT has	1	1
-lossy cross-type array NOT has declines	1
+lossy cross-type array NOT has declines	0
 lossy cross-type array NOT has	1	1
 safe identity actual NULL keeps pruning	1
 safe identity actual NULL IN keeps pruning	1

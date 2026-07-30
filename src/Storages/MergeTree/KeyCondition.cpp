@@ -2750,13 +2750,17 @@ static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, co
     return both_integers && !key->hasCustomName() && !set->hasCustomName();
 }
 
+/// `set_lost_a_source_null` reports that an element which was already NULL in the source survived
+/// into the prepared set as the nested default, so the prepared set is not an exact image of the
+/// predicate's set and the atom must be marked relaxed. See the write site below for why.
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & set_lost_a_source_null)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2844,15 +2848,6 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        /// Past this point the element is converted with `castColumnAccurateOrNull` and the null maps are
-        /// merged below. That merge consults only the null map the cast produced, so an element that was
-        /// ALREADY NULL in the source survives into the prepared set as the nested default - a value the
-        /// predicate's set does not contain. `IN` is only weakened by that, but `NOT IN`/`NOT has` are
-        /// strengthened, so the atom must not be treated as an exact image of the predicate.
-        /// `isNullable` alone is false for `LowCardinality(Nullable(T))`, which takes the same branch.
-        if (isNullableOrLowCardinalityNullable(set_element_type))
-            return false;
-
         if (!key_column_type->canBeInsideNullable())
             return false;
 
@@ -2898,6 +2893,13 @@ static bool tryPrepareSetColumnsForIndex(
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
+                /// A source NULL is not filtered out here (only cast-produced NULLs are), so it
+                /// survives into the prepared set as the nested default - a value the predicate's set
+                /// does not contain. That only weakens `IN`, but it strengthens `NOT IN`/`NOT has`,
+                /// so the atom is no longer an exact image of the predicate.
+                if (i < set_column_null_map->size() && (*set_column_null_map)[i])
+                    set_lost_a_source_null = true;
+
                 if (nullable_set_column_null_map_size < set_column_null_map->size())
                     filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
@@ -2996,9 +2998,14 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_lost_a_source_null = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count,
+            set_lost_a_source_null))
         return false;
+
+    if (set_lost_a_source_null)
+        out.relaxed = true;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -3036,6 +3043,13 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// composite element the left expression additionally has to have the same type. A scalar element is
 /// left to those per-column checks. Returns false (decline) when the types differ or when the left
 /// expression's type cannot be reconstructed.
+///
+/// Identity here defers to the same notion as `setIndexConversionPreservesEquality`: `equals` plus
+/// agreement on custom names and on a stable child order. `equals` is the right granularity because
+/// the attributes it ignores - a time zone, a decimal's precision - are not represented in a `Field`
+/// at all, so they cannot change the `accurateEquals` verdict; shape and custom names are represented
+/// and so must still match. Comparing canonical names instead would reject a key that declares a time
+/// zone against an element that does not, which is the very policy the scalar helper above rejects.
 static bool compositeHasArgumentsHaveSameType(
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
@@ -3078,7 +3092,9 @@ static bool compositeHasArgumentsHaveSameType(
         left_type = std::make_shared<DataTypeTuple>(elements);
     }
 
-    return left_type->getName() == element_type->getName();
+    return left_type->equals(*element_type)
+        && setIndexTypeTreeHasStableChildOrder(*left_type)
+        && setIndexTypesAgreeOnCustomNames(*left_type, *element_type);
 }
 
 bool KeyCondition::tryPrepareSetIndexForHas(
@@ -3137,9 +3153,14 @@ bool KeyCondition::tryPrepareSetIndexForHas(
             indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type))
         return false;
 
+    bool set_lost_a_source_null = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count,
+            set_lost_a_source_null))
         return false;
+
+    if (set_lost_a_source_null)
+        out.relaxed = true;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
