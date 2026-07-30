@@ -946,7 +946,7 @@ The key length is kept in a trailer, which also keeps the dictionary sorted by k
 It accelerates:
 
 - Exact equality on a map element (`attributes['level'] = 'error'`) — an exact token lookup with direct read.
-- Set membership on a map element (`attributes['level'] IN ('error', 'warn')`) — the union of the exact `attributes['level'] = vᵢ` lookups.
+- Set membership on a map element (`attributes['level'] IN ('error', 'warn')`) — the union of the exact `attributes['level'] = vᵢ` lookups, answered from the index with direct read.
 - Pair existence (`mapContainsKeyValue(attributes, 'level', 'error')`, `mapContainsKeyValueLike(attributes, 'lev%', '%rror%')`) — matches an entry on both key and value at any position, so it is well defined for duplicate keys (unlike `attributes['level'] = 'error'`, which tests the first value).
 - Value prefix/suffix on a map element (`attributes['level'] LIKE 'err%'`, `startsWith`, `endsWith`).
 - Value-only search across all keys (`mapContainsValue(attributes, 'error')`, `mapContainsValueLike(attributes, '%rror%')`) — a scan of the dictionary of distinct pairs rather than the map column.
