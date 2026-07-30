@@ -54274,5 +54274,21 @@
   {
     "destination": "/concepts/features/interfaces/client",
     "source": "/docs/integrations/sql-clients/cli"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/static-ips",
+    "source": "/integrations/clickpipes/static-ips"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/aws-privatelink",
+    "source": "/integrations/clickpipes/aws-privatelink"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/gcp-psc",
+    "source": "/integrations/clickpipes/gcp-psc"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/azure-privatelink",
+    "source": "/integrations/clickpipes/azure-privatelink"
   }
 ]
