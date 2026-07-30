@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 520,
+  "settings": 521,
   "anchorRoutes": {
     "abort_on_logical_error": "/reference/settings/server-settings/settings/other",
     "access_control_improvements": "/reference/settings/server-settings/settings/access-control",
@@ -184,6 +184,7 @@
     "jemalloc_flush_profile_on_memory_exceeded": "/reference/settings/server-settings/settings/jemalloc-flush",
     "jemalloc_flush_profile_on_memory_exceeded_interval": "/reference/settings/server-settings/settings/jemalloc-flush",
     "jemalloc_max_background_threads_num": "/reference/settings/server-settings/settings/jemalloc",
+    "jemalloc_merge_tree_arenas": "/reference/settings/server-settings/settings/jemalloc",
     "jemalloc_profiler_sampling_rate": "/reference/settings/server-settings/settings/jemalloc",
     "keep_alive_timeout": "/reference/settings/server-settings/settings/other",
     "keeper_hosts": "/reference/settings/server-settings/settings/keeper",
@@ -1595,8 +1596,8 @@
     {
       "path": "/reference/settings/server-settings/settings/jemalloc",
       "label": "jemalloc_*",
-      "settings": 3,
-      "characters": 1116
+      "settings": 4,
+      "characters": 1791
     },
     {
       "path": "/reference/settings/server-settings/settings/jemalloc-enable",
