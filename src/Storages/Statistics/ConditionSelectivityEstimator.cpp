@@ -217,6 +217,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts, const Names & required_columns) const
 {
+    /// The context from a previous query may have expired, making `getContext()` unusable.
+    if (context.expired())
+        return true;
+
     /// Build a name-set of the cached parts for O(1) lookups instead of
     /// requiring exact position match (parts can be reordered by a caller).
     NameSet cached_parts(parts_names.begin(), parts_names.end());
