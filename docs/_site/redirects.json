@@ -1,5 +1,17 @@
 [
   {
+    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/reference/faq-aws",
+    "destination": "/products/bring-your-own-cloud/reference/faq"
+  },
+  {
     "source": "/concepts/features/operations/delete/delete-mutations",
     "destination": "/reference/statements/alter/delete"
   },
@@ -2202,6 +2214,10 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
     "source": "/cloud/security/scim-setup"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+    "source": "/cloud/security/scim-setup-entra"
   },
   {
     "destination": "/products/cloud/guides/data-sources/accessing-s3-data-securely",
