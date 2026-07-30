@@ -30,9 +30,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
 </div>
 
 <Steps>
-  <Step>
-    ### Criar tabela
-
+  <Step title="Criar tabela" id="create-table">
     Crie a tabela `hackernews` para armazenar as postagens, seus embeddings e os atributos associados:
 
     ```sql
@@ -63,9 +61,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     a busca por similaridade vetorial combinada com pós-filtragem/pré-filtragem, conforme explicado na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Carregar dados
-
+  <Step title="Carregar dados" id="load-table">
     Para carregar os dados a partir do arquivo `Parquet`, execute a seguinte instrução SQL:
 
     ```sql
@@ -75,9 +71,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     A inserção de 28,74 milhões de linhas na tabela levará alguns minutos.
   </Step>
 
-  <Step>
-    ### Criar um índice de similaridade vetorial
-
+  <Step title="Criar um índice de similaridade vetorial" id="build-vector-similarity-index">
     Execute o SQL abaixo para definir e criar um índice de similaridade vetorial na coluna `vector` da tabela `hackernews`:
 
     ```sql
@@ -94,9 +88,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     A criação e o salvamento do índice podem levar alguns minutos ou até uma hora para o conjunto de dados completo de 28,74 milhões, dependendo do número de núcleos de CPU disponíveis e da largura de banda do armazenamento.
   </Step>
 
-  <Step>
-    ### Faça uma busca ANN
-
+  <Step title="Faça uma busca ANN" id="perform-ann-search">
     Depois que o índice de similaridade vetorial for criado, as consultas de busca vetorial usarão automaticamente o índice:
 
     ```sql title="Query"
@@ -110,9 +102,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     O primeiro carregamento do índice vetorial na memória pode levar alguns segundos/minutos.
   </Step>
 
-  <Step>
-    ### Gerar embeddings para consulta de busca
-
+  <Step title="Gerar embeddings para consulta de busca" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) oferecem modelos de embedding locais e fáceis de usar para capturar o significado semântico de frases e parágrafos.
 
     O conjunto de dados do HackerNews contém embeddings vetoriais gerados pelo modelo
@@ -135,38 +125,39 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # Recebe a consulta de busca do usuário
+        # Take the search query from user
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Executa o modelo e obtém o vetor de busca
+        # Run the model and obtain search vector
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
-        print("Consultando o ClickHouse...")
+        print("Querying ClickHouse...")
         params = {'v1':list(embeddings[0]), 'v2':20}
         result = chclient.query("SELECT id, title, text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
         print("Results :")
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
+
     ```
 
     Um exemplo da execução do script Python acima e os resultados da busca por similaridade são exibidos abaixo
     (apenas 100 caracteres de cada um dos 20 posts principais são exibidos):
 
     ```text
-    Inicializando...
+    Initializing...
 
-    Digite uma consulta de pesquisa :
+    Enter a search query :
     Are OLAP cubes useful
 
-    Gerando o embedding para  "Are OLAP cubes useful"
+    Generating the embedding for  "Are OLAP cubes useful"
 
-    Consultando o ClickHouse...
+    Querying ClickHouse...
 
-    Resultados :
+    Results :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -299,12 +290,12 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # Recebe a consulta de busca do usuário
+        # Take the search query from user
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Executa o modelo e obtém o vetor de busca ou de referência
+        # Run the model and obtain search or reference vector
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -312,7 +303,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # Apenas concatena todos os resultados da busca
+        # Just join all the search results
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]
