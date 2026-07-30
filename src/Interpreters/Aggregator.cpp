@@ -2063,7 +2063,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     Method & method,
     Arena * arena,
     bool final,
-    Int32 bucket) const
+    Int32 bucket,
+    UInt64 * topk_full_key_bytes) const
 {
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
@@ -2082,7 +2083,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     }
 
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
-        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket);
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
 
     auto result = convertToBlockImpl(
         method,
@@ -2099,7 +2100,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 
 template <typename Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket) const
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const
 {
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_count_index < params.aggregates_size);
@@ -2134,11 +2135,28 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
 
+    /// The byte size a key contributes to its materialized key columns: string keys mirror
+    /// `ColumnString` (the characters plus one offset), fixed-size keys their column widths, and
+    /// a serialized multi-key blob stands in for the per-column sizes it carries. The selection
+    /// scan visits every cell anyway, so the whole bucket's key bytes come out of the same pass
+    /// for the dataflow-statistics accounting of what a full materialization would produce.
+    const auto key_byte_size = [](const TableKey & key) -> UInt64
+    {
+        if constexpr (std::is_same_v<TableKey, std::string_view>)
+            return key.size() + sizeof(IColumn::Offset);
+        else if constexpr (std::is_same_v<TableKey, PackedStringRef>)
+            return static_cast<std::string_view>(key).size() + sizeof(IColumn::Offset);
+        else
+            return sizeof(TableKey);
+    };
+    UInt64 key_bytes = 0;
+
     std::vector<Candidate> top;
     top.reserve(std::min(params.bucket_top_k, data.size()));
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
+            key_bytes += key_byte_size(key);
             const UInt64 value = count_of(mapped);
             if (top.size() < params.bucket_top_k)
             {
@@ -2152,6 +2170,9 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
                 std::push_heap(top.begin(), top.end(), worse_first);
             }
         });
+
+    if (full_key_bytes)
+        *full_key_bytes = key_bytes;
 
     const size_t keep = top.size();
     auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
@@ -2231,6 +2252,10 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
 
+    /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in
+    /// the dataflow statistics, because the truncated chunk carries only the kept groups.
+    UInt64 topk_full_key_bytes = 0;
+
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
@@ -2240,9 +2265,14 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
             updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
-        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket); \
+        agg_chunk = convertOneBucketToChunk(merged_data, *merged_data.NAME, arena, final, bucket, &topk_full_key_bytes); \
         if (updater) \
-            updater->recordAggregationKeySizes(agg_chunk.chunk, keys_positions, key_types); \
+        { \
+            if (topk_full_key_bytes) \
+                updater->recordAggregationKeySizes(agg_chunk.chunk, keys_positions, key_types, topk_full_key_bytes); \
+            else \
+                updater->recordAggregationKeySizes(agg_chunk.chunk, keys_positions, key_types); \
+        } \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2298,7 +2328,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*topk_full_key_bytes=*/nullptr); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -2354,7 +2384,7 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket);
+        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*topk_full_key_bytes=*/nullptr);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -3333,7 +3363,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket));
+            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*topk_full_key_bytes=*/nullptr));
         }
     };
 

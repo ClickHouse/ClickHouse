@@ -858,13 +858,19 @@ private:
     Chunks
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
 
+    /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
+    /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
+    /// dataflow statistics must describe the untruncated aggregation output (it prices the
+    /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
+    /// every group), so the chunk of a truncated conversion cannot be measured as is.
     template <typename Method>
     AggregatedChunk convertOneBucketToChunk(
         AggregatedDataVariants & data_variants,
         Method & method,
         Arena * arena,
         bool final,
-        Int32 bucket) const;
+        Int32 bucket,
+        UInt64 * topk_full_key_bytes) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
@@ -872,7 +878,8 @@ private:
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
     /// upstream receives at most 256 * n candidate rows instead of every group.
     template <typename Method>
-    AggregatedChunk convertOneBucketToChunkTopK(Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket) const;
+    AggregatedChunk convertOneBucketToChunkTopK(
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,
