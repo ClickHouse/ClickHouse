@@ -26,13 +26,34 @@
     }
   });
 
+  function findAnchor(id) {
+    var exact = document.getElementById(id);
+    if (exact) return exact;
+
+    // Legacy Docusaurus anchors were lowercase, while some Mintlify anchors
+    // preserve identifier casing. Accept casing-only changes in page content,
+    // but fail closed if more than one element could be the intended target.
+    var main = document.querySelector('main');
+    if (!main) return null;
+
+    var normalizedId = id.toLowerCase();
+    var elements = main.querySelectorAll('[id]');
+    var match = null;
+    for (var index = 0; index < elements.length; index += 1) {
+      if (elements[index].id.toLowerCase() !== normalizedId) continue;
+      if (match) return null;
+      match = elements[index];
+    }
+    return match;
+  }
+
   // The new page renders some frames after the path changes, so poll for the
   // anchor target before scrolling to it; if it never appears (bad anchor),
   // fall back to the top rather than keeping the old page's position.
   function scrollToAnchor(hash, framesLeft) {
     var id;
     try { id = decodeURIComponent(hash.slice(1)); } catch (e) { id = hash.slice(1); }
-    var el = document.getElementById(id);
+    var el = findAnchor(id);
     if (el) {
       el.scrollIntoView();
       return;
@@ -57,6 +78,10 @@
       }
     }
     window.requestAnimationFrame(watch);
+  }
+
+  if (window.location.hash) {
+    scrollToAnchor(window.location.hash, 180);
   }
   window.requestAnimationFrame(watch);
 })();
