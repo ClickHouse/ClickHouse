@@ -6,9 +6,6 @@ tags: ['Security and Authentication', 'Managing Cloud']
 keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
-{frontMatter.description}
-{/* truncate */}
-
 ## Overview {#overview}
 
 This guide explains how to expose an Amazon MSK cluster to ClickPipes with [AWS PrivateLink VPC endpoint services](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
@@ -131,7 +128,7 @@ Repeat the process until every broker hostname has a matching RPE.
 For custom private DNS behavior, naming rules, and API/Terraform options, see
 [Custom private DNS](/integrations/clickpipes/aws-privatelink#custom-private-dns).
 
-You can also create the reverse private endpoints with [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeReversePrivateEndpointCreate) or Terraform.
+You can also create the reverse private endpoints with [OpenAPI](/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) or Terraform.
 
 For OpenAPI, create one reverse private endpoint per broker with `type` set to `VPC_ENDPOINT_SERVICE`, the broker-specific VPC endpoint service name, and one custom private DNS mapping for the broker hostname:
 

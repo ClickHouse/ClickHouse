@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`, `clickhouse-client` y otros binarios similares son enlaces simbólicos en el directorio `programs/` que apuntan al ejecutable `clickhouse` una vez finalizada la compilación.
+</Note>
 
-  :::tip
+<Tip>
   CMake ofrece formas abreviadas para los comandos anteriores:
 
   ```sh
   cmake -S . -B build  # configurar la compilación; ejecutar desde el directorio raíz del repositorio
   cmake --build build  # compilar
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## Ejecutar el ejecutable de ClickHouse
