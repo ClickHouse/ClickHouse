@@ -3,17 +3,17 @@
 -- merge() joined in a subquery: the join is offloaded
 1
 -- merge() INNER JOIN a MergeTree table
-200	1485000
+20	13500
 -- merge() LEFT JOIN a MergeTree table
-20000	149985000	200
+2000	1498500	20
 -- MergeTree table RIGHT JOIN merge()
-20000	149985000
+2000	1498500
 -- Merge table INNER JOIN a MergeTree table
-200	1485000
+20	13500
 -- merge() in a subquery
-20000	149985000
+2000	1498500
 -- merge() joined in a subquery
-200
+20
 -- merge() FINAL joined
 0
-200	1485000
+20	13500

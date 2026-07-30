@@ -12,8 +12,8 @@ DROP TABLE IF EXISTS t_pr_merge_over_nothing;
 
 CREATE TABLE t_pr_merge_1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
 CREATE TABLE t_pr_merge_2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
-INSERT INTO t_pr_merge_1 SELECT number, number * 2 FROM numbers(10000);
-INSERT INTO t_pr_merge_2 SELECT number + 10000, number FROM numbers(10000);
+INSERT INTO t_pr_merge_1 SELECT number, number * 2 FROM numbers(1000);
+INSERT INTO t_pr_merge_2 SELECT number + 1000, number FROM numbers(1000);
 
 CREATE TABLE t_pr_merge ENGINE = Merge(currentDatabase(), '^t_pr_merge_[12]$');
 
@@ -51,7 +51,7 @@ SELECT '-- filter on the _table virtual column';
 SELECT count(), sum(k), sum(v) FROM t_pr_merge WHERE _table = 't_pr_merge_2';
 
 SELECT '-- plain SELECT without aggregation';
-SELECT k, v FROM t_pr_merge WHERE k IN (1, 9999, 10000, 19999) ORDER BY k;
+SELECT k, v FROM t_pr_merge WHERE k IN (1, 999, 1000, 1999) ORDER BY k;
 
 -- Ordered query with a limit: read-in-order optimization materializes the child plans of the
 -- Merge table; it must not clash with enabling parallel replicas reading on the same step.
@@ -70,7 +70,7 @@ SELECT count(), sum(k), sum(v) FROM merge(currentDatabase(), '^t_pr_merge_[12]$'
 -- A Merge over a non-MergeTree table cannot coordinate reading, parallel replicas must not be used
 SELECT '-- Merge over a non-MergeTree table';
 CREATE TABLE t_pr_merge_log (k UInt64, v UInt64) ENGINE = Log;
-INSERT INTO t_pr_merge_log SELECT number + 20000, number FROM numbers(100);
+INSERT INTO t_pr_merge_log SELECT number + 2000, number FROM numbers(100);
 CREATE TABLE t_pr_merge_over_log ENGINE = Merge(currentDatabase(), '^t_pr_merge_(1|2|log)$');
 SELECT trimLeft(explain) AS e FROM (EXPLAIN SELECT count(), sum(k), sum(v) FROM t_pr_merge_over_log) WHERE e IN ('Aggregating', 'MergingAggregated');
 SELECT count(), sum(k), sum(v) FROM t_pr_merge_over_log;

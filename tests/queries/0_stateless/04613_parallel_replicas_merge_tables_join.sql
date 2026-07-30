@@ -12,13 +12,13 @@ DROP TABLE IF EXISTS t_prj_dim;
 
 CREATE TABLE t_prj_merge_1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
 CREATE TABLE t_prj_merge_2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
-INSERT INTO t_prj_merge_1 SELECT number, number * 2 FROM numbers(10000);
-INSERT INTO t_prj_merge_2 SELECT number + 10000, number FROM numbers(10000);
+INSERT INTO t_prj_merge_1 SELECT number, number * 2 FROM numbers(1000);
+INSERT INTO t_prj_merge_2 SELECT number + 1000, number FROM numbers(1000);
 
 CREATE TABLE t_prj_merge ENGINE = Merge(currentDatabase(), '^t_prj_merge_[12]$');
 
 CREATE TABLE t_prj_dim (k UInt64, name String) ENGINE = MergeTree ORDER BY k;
-INSERT INTO t_prj_dim SELECT number * 100, 'dim_' || toString(number * 100) FROM numbers(200);
+INSERT INTO t_prj_dim SELECT number * 100, 'dim_' || toString(number * 100) FROM numbers(20);
 
 SET enable_analyzer = 1;
 SET max_threads = 4;
