@@ -138,20 +138,32 @@ def postgres_login(port, user, password=""):
         return auth_type == 0  # AuthenticationOk
 
 
-def login_success_count(user, interface):
-    node1.query("SYSTEM FLUSH LOGS session_log")
-    return int(node1.query(f"SELECT count() FROM system.session_log WHERE type = 'LoginSuccess' AND user = '{user}' AND interface = '{interface}'"))
+def session_log_count(node, type_, user, interface):
+    node.query("SYSTEM FLUSH LOGS session_log")
+    return int(node.query(f"SELECT count() FROM system.session_log WHERE type = '{type_}' AND user = '{user}' AND interface = '{interface}'"))
 
 
 @contextmanager
-def assert_login_success(user, interface):
+def assert_login_success(user, interface, node=node1):
     """Assert that the wrapped action produced a new `LoginSuccess` row in
     `system.session_log`, comparing the count of matching rows before and after,
     so that a row left by an earlier login of the same user on the same interface
     cannot satisfy the assertion."""
-    count_before = login_success_count(user, interface)
+    count_before = session_log_count(node, "LoginSuccess", user, interface)
     yield
-    assert login_success_count(user, interface) > count_before
+    assert session_log_count(node, "LoginSuccess", user, interface) > count_before
+
+
+@contextmanager
+def assert_anonymous_login_failure(interface, node=node1):
+    """Assert that the wrapped action produced a new `LoginFailure` row with an empty
+    user name in `system.session_log`. An empty `default_session_user` prohibits
+    connections without a user name, and the reject has to stay auditable: it must be
+    recorded as a login failure rather than returned from the pre-authentication guard
+    silently."""
+    count_before = session_log_count(node, "LoginFailure", "", interface)
+    yield
+    assert session_log_count(node, "LoginFailure", "", interface) > count_before
 
 
 def test_http_global_default_session_user():
@@ -189,10 +201,12 @@ def test_fixed_user_handler_with_anonymous_logins_disabled():
         response = urllib.request.urlopen(url, timeout=10).read()
     assert response == b"fixed_handler_user\n"
 
-    # The prohibition still applies to the default handlers on the same endpoint.
-    with pytest.raises(urllib.error.HTTPError) as exc_info:
-        execute_query_http(8129, "SELECT currentUser()")
-    assert exc_info.value.code == 403
+    # The prohibition still applies to the default handlers on the same endpoint,
+    # and the reject is recorded in `system.session_log`.
+    with assert_anonymous_login_failure("HTTP"):
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            execute_query_http(8129, "SELECT currentUser()")
+        assert exc_info.value.code == 403
 
 
 def grpc_execute(query, node=node1, user_name=None):
@@ -227,10 +241,12 @@ def test_grpc_default_session_user():
 
 
 def test_grpc_anonymous_logins_disabled():
-    # An empty global default session user prohibits gRPC queries without a user name.
-    result = grpc_execute("SELECT 1", node=node_reject)
-    assert result.HasField("exception")
-    assert "default_session_user" in result.exception.display_text
+    # An empty global default session user prohibits gRPC queries without a user name,
+    # and the reject is recorded in `system.session_log`.
+    with assert_anonymous_login_failure("gRPC", node=node_reject):
+        result = grpc_execute("SELECT 1", node=node_reject)
+        assert result.HasField("exception")
+        assert "default_session_user" in result.exception.display_text
 
     # An explicitly specified user works as usual.
     assert grpc_query("SELECT currentUser()", user_name="explicit_user", node=node_reject) == "explicit_user\n"
@@ -272,9 +288,11 @@ def test_arrowflight_anonymous_logins_disabled():
     # An empty global default session user prohibits Arrow Flight calls without a user
     # name: both without the `authorization` header and with Basic credentials with an
     # empty user name.
+    # Every reject is recorded in `system.session_log`.
     for authorization in [None, basic_authorization("")]:
-        with pytest.raises(pyarrow.flight.FlightUnauthenticatedError, match="default_session_user"):
-            arrowflight_query(node_reject, "SELECT 1", authorization)
+        with assert_anonymous_login_failure("ArrowFlight", node=node_reject):
+            with pytest.raises(pyarrow.flight.FlightUnauthenticatedError, match="default_session_user"):
+                arrowflight_query(node_reject, "SELECT 1", authorization)
 
     # An explicitly specified user works as usual.
     assert arrowflight_query(node_reject, "SELECT currentUser()", basic_authorization("explicit_user")) == "explicit_user"
@@ -301,8 +319,10 @@ def test_native_default_session_user():
     # An explicitly specified user is not affected.
     with assert_login_success("explicit_user", "TCP"):
         assert native_hello(9101, "explicit_user") == hello
-    # An empty default session user prohibits connections without a user name.
-    assert native_hello(9104, "") == exception
+    # An empty default session user prohibits connections without a user name,
+    # and the reject is recorded in `system.session_log`.
+    with assert_anonymous_login_failure("TCP"):
+        assert native_hello(9104, "") == exception
 
 
 def test_default_session_user_inherited_through_impl_alias():
@@ -376,9 +396,11 @@ def test_mysql_default_session_user():
 def test_mysql_anonymous_logins_disabled():
     # An empty `default_session_user` on a MySQL listener prohibits connections
     # without a user name: the empty user name is not substituted by anything, so
-    # authentication fails and the server answers with an error packet.
-    with pytest.raises(pymysql.err.Error):
-        mysql_connect_without_user(9111)
+    # authentication fails and the server answers with an error packet. The failure goes
+    # through the normal authentication path, so it is recorded in `system.session_log`.
+    with assert_anonymous_login_failure("MySQL"):
+        with pytest.raises(pymysql.err.Error):
+            mysql_connect_without_user(9111)
 
     # An explicitly specified user works as usual.
     connection = pymysql.connect(user="explicit_user", password="", host=node1.ip_address, port=9111)
@@ -396,8 +418,10 @@ def test_postgres_default_session_user():
 def test_postgres_anonymous_logins_disabled():
     # An empty `default_session_user` on a PostgreSQL listener prohibits connections
     # without a user name: the startup message with an empty user name is answered
-    # with an error response instead of an authentication request.
-    assert not postgres_login(9112, "")
+    # with an error response instead of an authentication request. The failure goes through
+    # the normal authentication path, so it is recorded in `system.session_log`.
+    with assert_anonymous_login_failure("PostgreSQL"):
+        assert not postgres_login(9112, "")
 
     # An explicitly specified user works as usual.
     with assert_login_success("explicit_user", "PostgreSQL"):
