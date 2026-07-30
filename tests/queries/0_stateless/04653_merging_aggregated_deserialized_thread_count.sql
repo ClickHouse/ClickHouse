@@ -58,11 +58,21 @@ SETTINGS serialize_query_plan = 1,
 -- Take the newest matching row rather than aggregating over history: CI passes a fixed
 -- `--database` in some jobs, so one database serves many executions and an aggregate could be
 -- satisfied by an earlier run.
+-- Secondary queries run as the `default` user, so their `current_database` is `default` rather
+-- than the test database and they cannot be filtered by `current_database = currentDatabase()`
+-- directly. Scope them through their initiator, which does run in `currentDatabase()`.
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 SELECT argMax(Settings['serialize_query_plan'] = '1' AND ProfileEvents['SelectedMarks'] > 0, event_time_microseconds)
 FROM system.query_log
-WHERE log_comment = '04653_merging_aggregated_deserialized_thread_count'
+WHERE initial_query_id = (
+        SELECT argMax(query_id, event_time_microseconds)
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND log_comment = '04653_merging_aggregated_deserialized_thread_count'
+          AND type = 'QueryFinish'
+          AND is_initial_query
+          AND event_date >= yesterday() AND event_time >= now() - 600)
   AND type = 'QueryFinish'
   AND NOT is_initial_query
   AND event_date >= yesterday() AND event_time >= now() - 600
@@ -86,7 +96,8 @@ FROM system.processors_profile_log
 WHERE initial_query_id = (
         SELECT argMax(query_id, event_time_microseconds)
         FROM system.query_log
-        WHERE log_comment = '04653_merging_aggregated_deserialized_thread_count'
+        WHERE current_database = currentDatabase()
+          AND log_comment = '04653_merging_aggregated_deserialized_thread_count'
           AND type = 'QueryFinish'
           AND is_initial_query
           AND event_date >= yesterday() AND event_time >= now() - 600)
