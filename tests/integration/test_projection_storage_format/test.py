@@ -507,10 +507,13 @@ def test_carry_replicated_fetch(storage_kind):
     )
     node2.query("SYSTEM SYNC REPLICA t_repl")
 
-    # assert structure: the fetched part carries a flat sibling, and SELECT matches across replicas
+    # assert structure: the fetched part carries a flat sibling; fail closed: it is usable, not a silent base-part fallback
     p = part_dir("t_repl", node2)
     assert path_exists(f"{p}.p.proj", node2)
-    assert proj_query("t_repl", node2) == proj_query("t_repl", node)
+    assert broken_projection_parts("t_repl", node2) == "0"
+    assert proj_query(
+        "t_repl", node2, extra_settings="force_optimize_projection = 1"
+    ) == proj_query("t_repl", node, extra_settings="force_optimize_projection = 1")
 
 
 # This test checks that a merge on a ReplicatedMergeTree writes the flat layout on each replica
@@ -576,10 +579,13 @@ def test_carry_attach_partition_from(storage_kind):
     node.query("TRUNCATE TABLE t_dst")
     node.query("ALTER TABLE t_dst ATTACH PARTITION tuple() FROM t_src")
 
-    # assert structure: the destination part carries a flat sibling, SELECT matches the source
+    # assert structure: the destination part carries a flat sibling; fail closed: it is usable, not a silent base-part fallback
     p = part_dir("t_dst")
     assert path_exists(f"{p}.p.proj")
-    assert proj_query("t_dst") == proj_query("t_src")
+    assert broken_projection_parts("t_dst") == "0"
+    assert proj_query(
+        "t_dst", extra_settings="force_optimize_projection = 1"
+    ) == proj_query("t_src", extra_settings="force_optimize_projection = 1")
 
 
 # This test checks that DETACH/ATTACH PART moves the flat sibling with the part on disk and in
@@ -667,9 +673,9 @@ def test_carry_detach_attach_no_mixed_state(storage_kind):
 # - assert structure: the flat sibling is present and SELECT matches baseline
 # @pytest.mark.xfail(reason=REVIEW + "3472535414", strict=False)
 def test_carry_after_restart_detach_attach():
-    # create table with a 'flat' projection, capture baseline
+    # create table with a 'flat' projection, capture the forced-projection baseline
     setup_table("t_reload", "projection_storage_format = 'flat'")
-    baseline = proj_query("t_reload")
+    baseline = proj_query("t_reload", extra_settings="force_optimize_projection = 1")
 
     # restart, then round-trip the reloaded part through DETACH/ATTACH
     node.restart_clickhouse()
@@ -678,10 +684,11 @@ def test_carry_after_restart_detach_attach():
     node.query(f"ALTER TABLE t_reload DETACH PART '{name}'")
     node.query(f"ALTER TABLE t_reload ATTACH PART '{name}'")
 
-    # assert structure: flat sibling present, SELECT matches baseline
+    # assert structure: flat sibling present; fail closed: the reloaded-then-round-tripped part is usable
     p = part_dir("t_reload")
     assert path_exists(f"{p}.p.proj")
-    assert proj_query("t_reload") == baseline
+    assert broken_projection_parts("t_reload") == "0"
+    assert proj_query("t_reload", extra_settings="force_optimize_projection = 1") == baseline
 
 
 # This test checks that after DETACH PART, system.detached_parts shows exactly one entry (no junk
@@ -967,6 +974,54 @@ def test_carry_rename_table():
         == baseline
     )
     assert check_table("t_ren_db.dst") == "1"
+
+
+# This test checks that MOVE PART across disks (clonePart's flat_projection_copies path) carries a
+# materialized flat projection sibling onto the destination disk, healthy and usable -- the positive
+# counterpart to test_unowned_move_part_skips, whose part owns no projection so the copy loop is a no-op. (Issue #2)
+# Scenario:
+# - create a 'flat' table on a multi-disk policy with the projection materialized on insert
+# - capture the forced-projection baseline, then MOVE the part to the s3 disk
+# - assert structure: the destination carries a flat (not nested) sibling and one non-broken projection part
+# - fail closed: the forced-projection SELECT still matches the baseline and CHECK TABLE passes
+def test_carry_move_part_to_disk(storage_kind):
+    # create a 'flat' table on a multi-disk policy, projection materialized on insert (the default)
+    node.query("DROP TABLE IF EXISTS t_move_carry SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_move_carry (key UInt64, id UInt64, value String,
+            PROJECTION p (SELECT key, id, value ORDER BY id))
+            ENGINE = MergeTree ORDER BY key
+            SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat', storage_policy = 'default_and_s3'", storage_kind)}"""
+    )
+    node.query(
+        "INSERT INTO t_move_carry SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    # the projection is materialized on the default disk; capture the forced-projection baseline
+    baseline = proj_query("t_move_carry", extra_settings="force_optimize_projection = 1")
+    assert active_projection_parts("t_move_carry") == "1"
+    src = part_dir("t_move_carry")
+    name = part_name("t_move_carry")
+    assert path_exists(f"{src}.p.proj")
+
+    # move the part across disks (clonePart copies the flat sibling to the s3 disk)
+    node.query(f"ALTER TABLE t_move_carry MOVE PART '{name}' TO DISK 's3'")
+
+    # assert structure: destination carries a flat (not nested) sibling and one non-broken projection part
+    dst = part_dir("t_move_carry")
+    assert dst != src  # the part really moved to the other disk
+    assert path_exists(f"{dst}.p.proj")
+    assert not path_exists(f"{dst}/p.proj")
+    assert active_projection_parts("t_move_carry") == "1"
+    assert broken_projection_parts("t_move_carry") == "0"
+
+    # fail closed: the moved part serves the projection from its new location, not a silent base-part fallback
+    assert (
+        proj_query("t_move_carry", extra_settings="force_optimize_projection = 1")
+        == baseline
+    )
+    assert check_table("t_move_carry") == "1"
 
 
 # ==============================================================================
