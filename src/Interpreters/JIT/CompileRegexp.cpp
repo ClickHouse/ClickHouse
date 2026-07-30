@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RegexpJIT/RegexpProgram.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -26,6 +27,11 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+
+namespace ProfileEvents
+{
+    extern const Event CompileRegexpFunction;
+}
 
 namespace DB
 {
@@ -671,6 +677,10 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     }
 
     auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
+
+    /// Only this function reaches the regexp JIT, and only on a compile rather than on a cache hit. The
+    /// other writers of the shared cache charge `CompileFunction` instead.
+    ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
     /// `compileModule` has already registered the module in the JIT instance; it is released only by
     /// `deleteCompiledModule` (called from `~CompiledRegexpHolder`). Until the holder is constructed and
