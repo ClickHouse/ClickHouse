@@ -16,7 +16,11 @@ SET max_ast_depth = 1000, max_ast_elements = 50000;
 CREATE RULE r_make_rule_ddl AS (SELECT 41)
 REWRITE TO (CREATE RULE r_inner AS (SELECT 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20) REWRITE TO (SELECT 1));
 
-SET query_rules = 'r_make_rule_ddl';
+-- A second rule in the chain forces another matcher pass over the intermediate query, which is
+-- exactly the pass that would hash the oversized template.
+CREATE RULE r_after AS (SELECT 42) REWRITE TO (SELECT 43);
+
+SET query_rules = 'r_make_rule_ddl, r_after';
 
 -- With a tight element limit the submitted query (`SELECT 41`) fits, and so does the rewritten
 -- `CREATE RULE` node when only `children` and the non-`children` members of the node itself are
@@ -28,6 +32,7 @@ SELECT 41; -- { serverError TOO_BIG_AST }
 SET max_ast_depth = 1000, max_ast_elements = 50000;
 SET query_rules = '';
 DROP RULE r_make_rule_ddl;
+DROP RULE r_after;
 
 -- The rejected rewrite persisted nothing.
 SELECT count() FROM system.query_rules WHERE name LIKE 'r_inner%';
