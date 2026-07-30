@@ -699,10 +699,10 @@ size_t DiskCacheProvider::maxFillCell() const
 /// bypass cache (`read_if_exists_otherwise_bypass`): `cache->get` only -
 /// existing segments come back, hits carry readers, gaps and uncommitted tails
 /// are boundary-aligned writer-less misses, nothing is created or reserved.
-std::vector<ICacheProvider::Resolution> DiskCacheProvider::resolve(
+VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
-    std::vector<ICacheProvider::Resolution> out;
+    VectorWithMemoryTracking<ICacheProvider::Resolution> out;
     const size_t object_size = object.bytes_size;
     chassert(range.offset >= object_file_offset);
     const size_t ask_lo_obj = range.offset - object_file_offset;

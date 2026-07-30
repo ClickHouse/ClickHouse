@@ -434,7 +434,7 @@ void ReaderExecutor::seek(size_t new_position)
     prefetch();
 }
 
-void ReaderExecutor::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)
+void ReaderExecutor::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     /// Stored PHYSICAL: planning (`observeSpan`) works in physical space, and
     /// `toPhys` is a constant shift, so sizes are preserved.

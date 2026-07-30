@@ -130,7 +130,7 @@ public:
 
     /// Resolve `range` into per-block hits (readers) and misses (whole-block
     /// writers when populating); see the definition.
-    std::vector<Resolution> resolve(
+    VectorWithMemoryTracking<Resolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:

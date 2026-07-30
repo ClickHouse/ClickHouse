@@ -69,7 +69,7 @@ public:
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 
     void setPlannedReadEnd(size_t position) override { file_in.setPlannedReadEnd(position); }
-    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override { file_in.setRequestMap(std::move(ranges)); }
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override { file_in.setRequestMap(std::move(ranges)); }  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }

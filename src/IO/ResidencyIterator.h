@@ -42,8 +42,6 @@ public:
 };
 using CacheViewPtr = std::unique_ptr<CacheView>;
 
-
-
 /// Assemble a span-probe-shaped read-only view (sorted hit entries with
 /// readers + one-cell miss entries) over `span` - for callers that need one
 /// whole small range at once: the encryption-header read and the buffer-API

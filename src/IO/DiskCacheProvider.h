@@ -174,7 +174,7 @@ public:
 
     /// Resolve `range` into hits (readers) and misses (writers when
     /// populating); see the definition for the get/getOrSet split.
-    std::vector<Resolution> resolve(
+    VectorWithMemoryTracking<Resolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:

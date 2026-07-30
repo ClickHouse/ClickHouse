@@ -78,7 +78,7 @@ public:
         file_in->setPlannedReadEnd(position);
     }
 
-    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         initInput();
         file_in->setRequestMap(std::move(ranges));

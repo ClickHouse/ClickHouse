@@ -241,10 +241,10 @@ PageCacheProvider::PageCacheProvider(
 /// uncached block is one miss cell carrying its whole-block writer when the
 /// provider populates (bypass leaves it writer-less). The plan fills the misses
 /// through those writers.
-std::vector<ICacheProvider::Resolution> PageCacheProvider::resolve(
+VectorWithMemoryTracking<ICacheProvider::Resolution> PageCacheProvider::resolve(
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
-    std::vector<ICacheProvider::Resolution> out;
+    VectorWithMemoryTracking<ICacheProvider::Resolution> out;
     const size_t blk = block_size;
     const size_t file_size = file_size_in_bytes;
     if (range.offset >= file_size)

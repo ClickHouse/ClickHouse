@@ -149,7 +149,7 @@ void PipelineReadBuffer::setPlannedReadEnd(size_t position)
     executor->setReadBound(position);
 }
 
-void PipelineReadBuffer::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)
+void PipelineReadBuffer::setRequestMap(std::vector<std::pair<size_t, size_t>> ranges)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     executor->setRequestMap(std::move(ranges));
 }

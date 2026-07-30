@@ -217,7 +217,7 @@ public:
     /// assignment will read. Empty/absent = the whole file. REPLACES the stored
     /// map (a task switch re-announces the new assignment). Inert for now:
     /// stored knowledge for demand-aware fill sizing and speculation.
-    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges);
+    void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     // ─── Random access (`readBigAt`) ─────────────────────────────────────
 

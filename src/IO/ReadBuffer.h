@@ -251,7 +251,7 @@ public:
     /// Bounds read-ahead and fill sizing, never service; absent = the whole
     /// file. A caller whose assignment changes (task switch) re-announces;
     /// the new map REPLACES the old. Default: ignore.
-    virtual void setRequestMap(std::vector<std::pair<size_t, size_t>> /* ranges */) {}
+    virtual void setRequestMap(std::vector<std::pair<size_t, size_t>> /* ranges */) {}  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

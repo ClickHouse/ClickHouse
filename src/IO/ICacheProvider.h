@@ -211,7 +211,7 @@ public:
     /// decision (a read-only cache never does). Holds no per-call state, so a
     /// shared provider is safe to resolve from many threads (the `readBigAt`
     /// fan-out).
-    virtual std::vector<Resolution> resolve(
+    virtual VectorWithMemoryTracking<Resolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) = 0;
 };
 
