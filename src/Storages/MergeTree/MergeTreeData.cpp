@@ -11447,8 +11447,15 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 
 PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
+    const auto & patch_part_index = patch_part.getPatchPartIndex();
+
     /// This metadata depends only on the structure of the patch part.
-    auto cache_key = getStructureHashOfPatch(patch_part.info.getPartitionId());
+    /// The v2 structure hash covers column names and types, so the metadata can be shared
+    /// across patch partitions. The v1 hash covers only names, so cache v1 metadata per full
+    /// patch partition id to avoid reusing it for the same names but different types.
+    auto cache_key = patch_part_index.getFormatVersion() == PatchPartIndex::V1_FORMAT_VERSION
+        ? patch_part.info.getPartitionId()
+        : getStructureHashOfPatch(patch_part.info.getPartitionId());
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     auto & patch_metadata = patch_parts_metadata_cache[cache_key];
@@ -11459,8 +11466,6 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
     /// This metadata is cached for the table's lifetime, so build it
     /// in the dedicated arena like the rest of the per-table metadata.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    const auto & patch_part_index = patch_part.getPatchPartIndex();
 
     switch (patch_part_index.getFormatVersion())
     {
