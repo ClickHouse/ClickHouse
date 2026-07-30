@@ -264,6 +264,15 @@ public:
     /// down; skipped for a cancelled query, whose table just destroys itself.
     void spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const;
 
+    /// Retires a merged-and-converted bucket's working memory, called by the bucket's merge
+    /// task after a successful conversion (the output either copied the values out or captured
+    /// the arena slot's ownership): resets the bucket's arena slot and drops the backlog's
+    /// chunk references, whose borrow ends at conversion. The destination subtable buffer is
+    /// already released by the conversion itself. Never called for a cancelled or failed
+    /// bucket - the variants still own every non-retired slot, so ordinary destruction covers
+    /// those.
+    void retireAdaptiveMergedBucket(AggregatedDataVariants & dest, AdaptiveAggregationSession & shared, size_t bucket) const;
+
     /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
     /// by the merge task that owns the bucket, before it merges that bucket: production finished
     /// before the merge sources were created and the ownership is exclusive, so the backlog is

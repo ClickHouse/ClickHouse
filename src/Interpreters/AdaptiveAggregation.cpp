@@ -12,6 +12,7 @@ namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
+    extern const Event AdaptiveAggregationBucketsRetired;
 }
 
 namespace DB
@@ -80,6 +81,14 @@ void AdaptiveAggregationSession::StagedBacklog::registerChunk(const StagedChunkP
     }
 }
 
+void AdaptiveAggregationSession::StagedBacklog::releaseMergedBucket(size_t bucket)
+{
+    std::shared_lock registry_lock(registry_mutex);
+    auto & b = buckets[bucket];
+    std::lock_guard lock(b.mutex);
+    b.backlog = {};
+}
+
 std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllForPressureDrain()
 {
     std::vector<StagedChunkPtr> chunks;
@@ -99,6 +108,13 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
                 chunks.push_back(std::move(chunk));
     }
     return chunks;
+}
+
+void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, AdaptiveAggregationSession & shared, size_t bucket) const
+{
+    dest.adaptive_merge_bucket_arenas[bucket].reset();
+    shared.backlog.releaseMergedBucket(bucket);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
 }
 
 namespace

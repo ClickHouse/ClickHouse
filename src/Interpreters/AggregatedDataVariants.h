@@ -324,6 +324,15 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+
+    /// The adaptive bucket-parallel merge's per-bucket arenas, populated on the merge
+    /// destination when the merge sources are created. Deliberately outside
+    /// `aggregates_pools`: the output conversion captures that list wholesale into every
+    /// bucket's non-final and -State columns, while these slots are handed out per bucket and
+    /// reset as buckets retire (`Aggregator::retireAdaptiveMergedBucket`), so a converted
+    /// bucket's drained and merged states free early. States adopted from the producers'
+    /// mixed arenas stay in `aggregates_pools` and live until the variants die.
+    Arenas adaptive_merge_bucket_arenas;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;

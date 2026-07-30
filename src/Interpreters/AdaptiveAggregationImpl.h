@@ -220,6 +220,11 @@ struct AdaptiveAggregationSession
         void recordDrained(size_t records) { undrained_records.fetch_sub(records, std::memory_order_relaxed); }
         size_t undrainedRecords() const { return undrained_records.load(std::memory_order_relaxed); }
 
+        /// Retires a bucket's chunk references after its merge-and-convert completed: the
+        /// borrow of staged key bytes ends at conversion. A chunk frees once the last bucket
+        /// holding it retires.
+        void releaseMergedBucket(size_t bucket);
+
     private:
         void registerChunk(const StagedChunkPtr & chunk);
 

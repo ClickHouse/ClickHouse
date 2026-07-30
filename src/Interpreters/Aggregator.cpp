@@ -58,6 +58,7 @@ namespace ProfileEvents
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
     extern const Event AggregationOptimizedEqualRangesOfKeys;
+    extern const Event AggregationBucketTopKConversions;
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
 }
@@ -2066,11 +2067,25 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 {
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
+
+    /// The adaptive merge holds this bucket's drained and merged states in a per-bucket arena
+    /// outside `aggregates_pools` (see `adaptive_merge_bucket_arenas`); the conversion must
+    /// hand that slot to the output columns together with the ordinary pools, so non-final and
+    /// -State results capture its ownership before the bucket retires.
+    Arenas * pools_for_output = &data_variants.aggregates_pools;
+    Arenas pools_with_bucket_arena;
+    if (!data_variants.adaptive_merge_bucket_arenas.empty())
+    {
+        pools_with_bucket_arena = data_variants.aggregates_pools;
+        pools_with_bucket_arena.push_back(data_variants.adaptive_merge_bucket_arenas[bucket]);
+        pools_for_output = &pools_with_bucket_arena;
+    }
+
     auto result = convertToBlockImpl(
         method,
         method.data.impls[bucket],
         arena,
-        data_variants.aggregates_pools,
+        *pools_for_output,
         final,
         method.data.impls[bucket].size(),
         return_single_block);
