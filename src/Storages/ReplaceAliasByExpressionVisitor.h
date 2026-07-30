@@ -35,6 +35,8 @@ public:
         const ColumnsDescription & columns;
         /// Names bound by an enclosing lambda parameter; not expanded as ALIASes.
         NameSet private_aliases;
+        /// Reject an ALIAS whose expression would be captured by an enclosing lambda parameter
+        bool reject_lambda_capture = false;
     };
 
     static void visit(ASTPtr & ast, Data &);

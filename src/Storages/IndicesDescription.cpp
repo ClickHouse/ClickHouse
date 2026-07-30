@@ -41,7 +41,7 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
         {
-            ReplaceAliasToExprVisitor::Data data{columns, {}};
+            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
             ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
         }
     }

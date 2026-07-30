@@ -662,6 +662,37 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Preprocessor referencing a chained ALIAS captured by a lambda parameter is rejected';
+-- `a` expands to `b` and only then to `x`, so the capture appears at the last expansion step.
+CREATE TABLE tab
+(
+    s String,
+    x String,
+    b String ALIAS x,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> lower(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- The same capture in a non-text index expression is still accepted';
+-- The rejection above is scoped to the text index `preprocessor` / `postprocessor` arguments.
+-- Index expressions accepted such definitions before, so `ATTACH` must keep working for them.
+
+CREATE TABLE tab
+(
+    arr Array(String),
+    x String,
+    a String ALIAS x,
+    INDEX bf arrayMap(x -> lower(a), arr) TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1;
+
+DETACH TABLE tab;
+ATTACH TABLE tab;
+SELECT count() FROM tab;
+
+DROP TABLE tab;
+
 SELECT '-- Preprocessor referencing chained ALIAS columns (a -> b -> s)';
 
 CREATE TABLE tab

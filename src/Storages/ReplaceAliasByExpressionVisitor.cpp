@@ -79,7 +79,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
                     self(child, bound);
             };
 
-            if (!data.private_aliases.empty())
+            if (data.reject_lambda_capture && !data.private_aliases.empty())
                 check_alias_not_captured_by_lambda(col_default->expression, data.private_aliases);
 
             ast = col_default->expression->clone();
