@@ -215,16 +215,33 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
 }
 
-bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
+bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts, const Names & required_columns) const
 {
-    if (data_parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
+    /// Build a name-set of the cached parts for O(1) lookups instead of
+    /// requiring exact position match (parts can be reordered by a caller).
+    NameSet cached_parts(parts_names.begin(), parts_names.end());
+
+    /// When a caller passes specific columns it is a query that only needs a
+    /// subset of the cached statistics; a superset of parts is OK.  When
+    /// `required_columns` is empty (background refresh, whole-table load) we
+    /// still require every requested part to exist, which naturally rejects a
+    /// cached estimator that lost a part (merge/mutation) while accepting
+    /// reordering and partition-pruned subsets.
     for (const auto & data_part : data_parts)
     {
-        if (parts_names[idx++] != data_part->name)
+        if (!cached_parts.contains(data_part->name))
             return true;
     }
+
+    if (!required_columns.empty())
+    {
+        for (const auto & col : required_columns)
+        {
+            if (!column_estimators.contains(col))
+                return true;
+        }
+    }
+
     return false;
 }
 

@@ -904,21 +904,22 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    /// The storage-wide `cached_estimator` (populated by the background refresher or a
-    /// previous whole-table request) is a superset of any explicit-column request, so a
-    /// cache hit avoids re-reading `statistics.packed`. Only whole-table loads (empty
-    /// `required_columns`) populate the cache; subset loads stay lazy.
+    /// The storage-wide `cached_estimator` supports subset matching: a query that
+    /// requests a subset of parts (e.g. after partition pruning) or a subset of
+    /// columns can still reuse a cached estimator that was populated by the background
+    /// refresher or a previous wider-scope request.  Part-order reordering is also
+    /// tolerated (the check uses a name-set rather than positional comparison).
     const bool use_cache = local_context->getSettingsRef()[Setting::use_statistics_cache];
 
+    DataPartsVector data_parts;
     if (use_cache)
     {
-        DataPartsVector data_parts;
         data_parts.reserve(parts.size());
         for (const auto & part : parts)
             data_parts.push_back(part.data_part);
 
         std::lock_guard<std::mutex> lock(stats_mutex);
-        if (cached_estimator && !cached_estimator->isStale(data_parts))
+        if (cached_estimator && !cached_estimator->isStale(data_parts, required_columns))
             return cached_estimator;
     }
 
@@ -943,10 +944,16 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     auto estimator = estimator_builder.getEstimator();
 
-    if (use_cache && required_columns.empty())
+    if (use_cache)
     {
         std::lock_guard<std::mutex> lock(stats_mutex);
-        cached_estimator = estimator;
+        /// Replace the cached estimator only when the new one covers at least as
+        /// many columns as the existing entry, so a narrower subsequent request
+        /// never evicts a wider (more-useful) cache entry.  The background
+        /// refresher still guarantees a periodic full refresh regardless.
+        if (!cached_estimator
+            || cached_estimator->isStale(data_parts, required_columns))
+            cached_estimator = estimator;
     }
 
     return estimator;

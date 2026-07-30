@@ -62,7 +62,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
-    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
+    bool isStale(const std::vector<DataPartPtr> & data_parts, const Names & required_columns = {}) const;
 
     struct RPNElement
     {

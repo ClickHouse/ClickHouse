@@ -1240,9 +1240,9 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         size_t file_size = reader.getFileSize(filename);
         auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
-        CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
             {
@@ -1275,9 +1275,9 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
             continue;
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
-        CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
             {
@@ -1411,7 +1411,19 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns, bool 
     }
 
     /// Load off the lock, then commit under the lock; a failure leaves the cache clean.
-    auto statistics = loadStatistics(missing);
+    ColumnsStatistics statistics;
+    try
+    {
+        statistics = loadStatistics(missing);
+    }
+    catch (...)
+    {
+        /// A load failure means every column in `missing` has no usable statistics
+        /// right now (deterministic miss or transient error).  Record nullopt for all
+        /// of them so that repeated queries on the same part object do not re-read and
+        /// re-warn on every invocation.
+        tryLogCurrentException(storage.log, fmt::format("Failed to load statistics for part {}", name));
+    }
 
     std::lock_guard lock(estimates_mutex);
     {
