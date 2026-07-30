@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -268,11 +269,21 @@ void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The interpreter locked the alias, but the data belongs to the target and readers lock the
+    /// target (see read() above), so without this the target's data can be destroyed under them.
+    /// MergeTree is exempt for the same reason as in InterpreterDropQuery: it synchronizes
+    /// truncation itself and this lock is heavyweight.
+    TableExclusiveLockHolder target_lock;
+    if (!std::dynamic_pointer_cast<MergeTreeData>(target_storage))
+        target_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_lock);
 }
 
 bool StorageAlias::optimize(
