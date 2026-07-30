@@ -139,6 +139,16 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
 
+    /// A decorrelated correlated subquery's totals and extremes are not part of the value the subquery
+    /// returns: the non-correlated scalar subquery evaluator consumes data chunks only. Decorrelation
+    /// replaces the subquery with this join, which would otherwise propagate them (`addDefaultTotals` in
+    /// `joinPipelinesRightLeft`) and they would surface as the OUTER query's totals. Drop them from the
+    /// carrier input only, so a legitimate totals stream on the other input still propagates. This runs
+    /// before the `swap_streams` swap below and before algorithm dispatch, because that is the only point
+    /// where `pipelines[i]` still corresponds to this step's declared inputs.
+    if (decorrelated_subquery_side.has_value())
+        pipelines[*decorrelated_subquery_side == JoinTableSide::Left ? 0 : 1]->dropTotalsAndExtremesViaTransform();
+
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
 
@@ -363,6 +373,7 @@ void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
     join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
     result_rows_estimation = logical_join_info.result_rows_estimation;
     locality = logical_join_info.locality;
+    decorrelated_subquery_side = logical_join_info.decorrelated_subquery_side;
 }
 
 void JoinStep::updateOutputHeader()

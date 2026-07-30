@@ -15,6 +15,7 @@ struct LogicalJoinInfo
     String readable_relation_name;
     std::optional<UInt64> result_rows_estimation;
     JoinLocality locality{};
+    std::optional<JoinTableSide> decorrelated_subquery_side;
 };
 
 /// Join two data streams.
@@ -99,6 +100,9 @@ private:
     const NameSet required_output;
     std::set<size_t> columns_to_remove;
     JoinLocality locality = JoinLocality::Unspecified;
+    /// Which input carries a decorrelated correlated subquery, if any. Its totals and extremes are
+    /// dropped rather than propagated. See `JoinStepLogical::decorrelated_subquery_side`.
+    std::optional<JoinTableSide> decorrelated_subquery_side;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool use_join_disjunctions_push_down;

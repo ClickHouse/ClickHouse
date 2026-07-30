@@ -180,6 +180,9 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
+    std::optional<JoinTableSide> getDecorrelatedSubquerySide() const { return decorrelated_subquery_side; }
+    void setDecorrelatedSubquerySide(JoinTableSide side) { decorrelated_subquery_side = side; }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -210,6 +213,13 @@ protected:
 
     String left_table_label;
     String right_table_label;
+
+    /// Set only on the join that correlated subquery decorrelation creates to produce its result
+    /// stream, and records which of the two inputs carries the subquery. That input's totals and
+    /// extremes are not part of the subquery's value, so the physical join drops them instead of
+    /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized: a plan
+    /// retaining a TotalsHaving step is never distributed.
+    std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Dummy stats retrieved from hints, used for debugging
     String dummy_stats;

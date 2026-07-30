@@ -33,7 +33,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
-#include <Processors/QueryPlan/DropTotalsAndExtremesStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -496,17 +495,6 @@ void buildRenamingForScalarSubquery(
     query_plan.addStep(std::move(expression_step));
 }
 
-/// A subquery's totals/extremes are not part of its value: the non-correlated scalar subquery path
-/// consumes data chunks only (see evaluateScalarSubqueryIfNeeded). Decorrelation replaces the
-/// subquery with a JOIN, which propagates totals from either input (addDefaultTotals in
-/// QueryPipelineBuilder::joinPipelinesRightLeft), so they must be dropped here or they become the
-/// outer query's totals. Added unconditionally: the transform is a no-op without those streams, and
-/// nothing here has to recognize which step produced them.
-void dropTotalsAndExtremesOfDecorrelatedPlan(QueryPlan & query_plan)
-{
-    query_plan.addStep(std::make_unique<DropTotalsAndExtremesStep>(query_plan.getCurrentHeader()));
-}
-
 void buildExistsResultExpression(
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
@@ -562,6 +550,9 @@ QueryPlan buildLogicalJoin(
 
     auto lhs_plan = std::move(decorrelated_plan);
     auto rhs_plan = std::move(input_stream_plan);
+    /// Track which side the subquery plan ends up on, so it follows the swap below rather than being
+    /// re-derived from the setting that drives it.
+    auto decorrelated_subquery_side = JoinTableSide::Left;
 
     NameSet output_columns;
     output_columns.insert_range(rhs_plan_header->getNames());
@@ -574,6 +565,7 @@ QueryPlan buildLogicalJoin(
         std::swap(lhs_plan, rhs_plan);
         std::swap(lhs_plan_header, rhs_plan_header);
         std::swap(get_lhs_column_name, get_rhs_column_name);
+        decorrelated_subquery_side = JoinTableSide::Right;
     }
 
     JoinExpressionActions join_expression_actions(
@@ -605,6 +597,12 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
+    /// The subquery's totals and extremes are not part of the value it returns, but this join would
+    /// propagate them from either input and they would surface as the OUTER query's totals. Record the
+    /// carrier side here, the one place where the two inputs are known unambiguously, so the physical
+    /// join can drop them from that side only. This is set on the result join only: the inner CROSS join
+    /// built during decorrelation does not produce the subquery's result stream.
+    result_join->setDecorrelatedSubquerySide(decorrelated_subquery_side);
 
     /// Depending on correlated_subqueries_use_in_memory_buffer setting,
     /// the RHS input stream can be buffered in memory.
@@ -759,7 +757,6 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
-            dropTotalsAndExtremesOfDecorrelatedPlan(decorrelated_plan);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             query_plan = buildLogicalJoin(
@@ -809,7 +806,6 @@ void buildQueryPlanForCorrelatedSubquery(
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             /// Add a 'exists(<table expression id>)' expression that is always true.
             buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
-            dropTotalsAndExtremesOfDecorrelatedPlan(decorrelated_plan);
 
             /// Use LEFT OUTER JOIN to produce the result plan.
             /// If there's no corresponding rows from the right side, 'exists(<table expression id>)' would be replaced by default value (false).

@@ -38,8 +38,8 @@ SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH ROLLUP HAVING isNul
 -- The same shape without WITH TOTALS is decorrelated normally.
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 HAVING isNull(val) = 0) ORDER BY id;
 
--- H: the streams are dropped on the subquery plan before the join is built, so neither the join-kind
--- swap nor the in-memory buffer changes the result.
+-- H: the carrier side is recorded where the two inputs are unambiguous and re-derived after any
+-- reordering, so neither the join-kind swap nor the in-memory buffer changes the result.
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact SETTINGS correlated_subqueries_default_join_kind = 'left';
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact SETTINGS correlated_subqueries_default_join_kind = 'right';
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
@@ -48,21 +48,24 @@ SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNul
 -- I: a correlated TotalsHaving step is still refused by the pre-existing unsupported-step check.
 SELECT id FROM t_04327 WHERE EXISTS (SELECT val GROUP BY 1 WITH TOTALS); -- { serverError NOT_IMPLEMENTED }
 
--- J: a distributed plan serializes every step of every fragment, so the new step needs the
--- serialization contract. Without it this fails with SUPPORT_IS_DISABLED. The second query is the
--- oracle: the same result without a distributed plan.
+-- J: a correlated subquery whose plan is serialized for distributed execution still answers
+-- correctly. This one has no WITH TOTALS, so it guards the distributed route rather than the fix
+-- above. The second query is the oracle: the same result without a distributed plan.
 DROP TABLE IF EXISTS u_04327;
 CREATE TABLE u_04327 (id UInt32, w Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO u_04327 SELECT number, number * 3 FROM numbers(4);
 
+-- Parallel replicas are pinned off because make_distributed_plan rejects them outright
+-- (SUPPORT_IS_DISABLED) and the test runner randomizes them on.
 SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_force_shuffle_aggregation = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_force_shuffle_aggregation = 1,
+         enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id;
 
 -- A warm query result cache replaces the subquery plan with a step that carries the cached totals and
 -- contains no TotalsHavingStep, so a check that recognized step types could be defeated by it.
--- Dropping the streams at the decorrelation boundary cannot be, because it never inspects steps.
+-- Dropping the carrier input's streams at the join cannot be, because it never inspects steps.
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0;
 

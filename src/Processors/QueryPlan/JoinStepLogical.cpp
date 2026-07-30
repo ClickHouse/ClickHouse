@@ -1491,7 +1491,8 @@ void JoinStepLogical::buildPhysicalJoin(
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
         .result_rows_estimation = join_step->result_rows_estimation,
-        .locality = join_step->join_operator.locality
+        .locality = join_step->join_operator.locality,
+        .decorrelated_subquery_side = join_step->decorrelated_subquery_side
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -1772,6 +1773,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_table_label = right_table_label;
     result_step->dummy_stats = dummy_stats;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->decorrelated_subquery_side = decorrelated_subquery_side;
 
     return result_step;
 }
