@@ -1175,7 +1175,7 @@ void StorageObjectStorageQueue::commit(
     else
         chassert(last_processed_file_per_partition.empty());
 
-    if (requests.empty())
+    if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty())
     {
         LOG_TEST(log, "Nothing to commit");
         return;

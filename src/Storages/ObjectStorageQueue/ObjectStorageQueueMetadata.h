@@ -246,7 +246,7 @@ private:
 
     FileStatusesCache local_file_statuses;
     std::mutex exclusive_processing_paths_mutex;
-    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths;
+    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().
