@@ -37,6 +37,11 @@ SELECT count() FROM numbers(100) WHERE number IN s;
 SELECT formatQuery('WITH t AS MATERIALIZED ENGINE = Memory (SELECT 1) SELECT * FROM t');
 SELECT formatQuery('WITH s AS MATERIALIZED ENGINE = Set (SELECT 1 AS x) SELECT 1 IN s');
 
+-- ... and survives an AST JSON round-trip instead of falling back to the default Memory engine.
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH t AS MATERIALIZED ENGINE = Memory (SELECT 1) SELECT * FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH s AS MATERIALIZED ENGINE = Set (SELECT 1 AS x) SELECT 1 IN s'));
+SELECT formatQueryFromJSON(parseQueryToJSON('WITH t AS MATERIALIZED (SELECT 1) SELECT * FROM t'));
+
 -- With the feature disabled the ENGINE clause still parses; the CTE is treated as a normal one.
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT count() FROM numbers(100) WHERE number IN s
