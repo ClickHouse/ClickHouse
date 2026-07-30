@@ -296,7 +296,7 @@ namespace
         return std::bit_cast<UInt64>(value) == 0x7FF0000000000002ULL;
     }
 
-    /// Fills the id, timestamp, and value columns for the "samples" table by iterating over the time series.
+    /// Fills the id, timestamp, value, and is_stale_marker columns for the "samples" table by iterating over the time series.
     /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
     template <typename T>
     void fillSamplesColumnsImpl(
@@ -304,7 +304,8 @@ namespace
         const IColumn & id_column_in_tags_table,
         IColumn & out_id_column,
         UInt32 timestamp_scale, IColumn & out_timestamp_column,
-        IColumn & out_value_column)
+        IColumn & out_value_column,
+        IColumn & out_is_stale_marker_column)
     {
         for (size_t i = 0; i != static_cast<size_t>(time_series.size()); ++i)
         {
@@ -314,12 +315,12 @@ namespace
 
             for (const auto & sample : element.samples())
             {
-                /// Drop Prometheus stale markers instead of storing them as ordinary samples: real
-                /// Prometheus treats the series as absent at this point rather than feeding the marker
-                /// into query evaluation (see `isPrometheusStaleMarker` above), so every `_over_time`
-                /// function reading this table must see no row here at all, not a NaN value.
-                if (isPrometheusStaleMarker(sample.value()))
-                    continue;
+                /// Keep Prometheus stale markers as rows (flagged via `is_stale_marker`) instead of dropping
+                /// them: a bare PromQL instant selector must still see exactly where a series went stale to
+                /// stop its lookback there (see fromSelector.cpp), even though every `_over_time` function
+                /// must keep treating a stale marker as if there was no sample at all at that point (see
+                /// `isPrometheusStaleMarker` above and TimeSeriesColumnNames::IsStaleMarker).
+                bool is_stale_marker = isPrometheusStaleMarker(sample.value());
 
                 out_id_column.insertFrom(id_column_in_tags_table, i);
                 if constexpr (is_decimal<T>)
@@ -327,22 +328,24 @@ namespace
                 else
                     out_timestamp_column.insert(DecimalUtils::convertTo<T>(DateTime64{sample.timestamp()}, 3));
                 out_value_column.insert(sample.value());
+                out_is_stale_marker_column.insert(is_stale_marker ? 1u : 0u);
             }
         }
     }
 
-    /// Fills the id, timestamp, and value columns for the "samples" table by iterating over the time series.
+    /// Fills the id, timestamp, value, and is_stale_marker columns for the "samples" table by iterating over the time series.
     void fillSamplesColumns(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         const IColumn & id_column_in_tags_table,
         IColumn & out_id_column,
         UInt32 timestamp_scale, IColumn & out_timestamp_column,
-        IColumn & out_value_column)
+        IColumn & out_value_column,
+        IColumn & out_is_stale_marker_column)
     {
         if (isDateTime64Column(out_timestamp_column))
-            fillSamplesColumnsImpl<DateTime64>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column);
+            fillSamplesColumnsImpl<DateTime64>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column, out_is_stale_marker_column);
         else
-            fillSamplesColumnsImpl<UInt32>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column);
+            fillSamplesColumnsImpl<UInt32>(time_series, id_column_in_tags_table, out_id_column, timestamp_scale, out_timestamp_column, out_value_column, out_is_stale_marker_column);
     }
 
     /// Fills the metric_family_name, type, unit, and help columns for the "metrics" table.
@@ -539,17 +542,24 @@ namespace
         auto value_column = scalar_type->createColumn();
         value_column->reserve(total_samples);
 
+        /// Column "is_stale_marker".
+        DataTypePtr is_stale_marker_type = samples_metadata.columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
+        auto is_stale_marker_column = is_stale_marker_type->createColumn();
+        is_stale_marker_column->reserve(total_samples);
+
         /// Prepare a block for inserting to the "samples" table.
         fillSamplesColumns(time_series, *id_column_in_tags_table,
                            *id_column_in_data_table,
                            timestamp_scale, *timestamp_column,
-                           *value_column);
+                           *value_column,
+                           *is_stale_marker_column);
 
         /// Build data block.
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
         BlocksToInsert res;
 

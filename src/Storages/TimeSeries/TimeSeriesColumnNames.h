@@ -11,6 +11,19 @@ struct TimeSeriesColumnNames
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";
 
+    /// Whether this sample is a Prometheus "stale marker" (see PrometheusRemoteWriteProtocol.cpp's
+    /// `isPrometheusStaleMarker`). Such rows are kept (instead of being dropped at ingest) so that a bare
+    /// PromQL instant selector can still see exactly where a series went stale and stop its lookback there,
+    /// while every numeric `_over_time` function simply excludes them (see fromSelector.cpp).
+    static constexpr const char * IsStaleMarker = "is_stale_marker";
+
+    /// Internal column used only while evaluating a bare instant selector (see fromSelector.cpp): whether
+    /// the most recent row (real sample or marker) within the selector's window is a stale marker. Deliberately
+    /// named differently from `IsStaleMarker` above (which is a per-row flag from the "samples" table) - the two
+    /// are read together in the same SELECT, and reusing one name for both would make `IsStaleMarker` resolve to
+    /// this column's own alias instead of the source column.
+    static constexpr const char * WinningRowIsStaleMarker = "winning_row_is_stale_marker";
+
     /// The "tags" table contains identifiers for each combination of a metric name with corresponding tags (labels):
 
     /// The default expression specified for the "id" column contains an expression for calculating an identifier of a time series by a metric name and tags.

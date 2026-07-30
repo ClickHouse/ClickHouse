@@ -29,6 +29,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -393,6 +394,19 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
                 add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
                 add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+
+                /// Column "is_stale_marker" - defaults to 0 for ordinary samples; set to 1 only for a
+                /// Prometheus stale marker kept at ingest (see TimeSeriesColumnNames::IsStaleMarker).
+                if (add_column_if_missing(TimeSeriesColumnNames::IsStaleMarker, makeASTDataType("UInt8")))
+                {
+                    auto & column = new_list->children.back();
+                    column = column->clone();
+                    auto & new_decl = column->as<ASTColumnDeclaration &>();
+                    new_decl.default_specifier = ColumnDefaultSpecifier::Default;
+                    new_decl.ephemeral_default = false;
+                    new_decl.setDefaultExpression(make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}));
+                    changed = true;
+                }
 
                 break;
             }
@@ -885,6 +899,7 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
+                check_column_type(TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>());
                 break;
             }
 

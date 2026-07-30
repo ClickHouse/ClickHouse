@@ -1058,6 +1058,23 @@ def test_stale_marker():
         ],
     )
 
+    # Regression for a gap in the fix above that a reviewer found: a *bare* instant-vector selector (no
+    # `_over_time` wrapper) is evaluated by real Prometheus as `last_over_time(selector[5m])` using its
+    # `vector_selector` code path, which is NOT the same as an explicit range selector's `matrix_selector`
+    # path used by the cases above. `matrix_selector` simply never sees stale markers (they're excluded
+    # from the matrix, as tested above), so an older real sample earlier in the window is still visible;
+    # `vector_selector` instead looks at the single most recent sample (real or stale) within the lookback
+    # and, if it is a stale marker, reports the series absent for that query time - it does NOT fall back
+    # to an older real sample. So querying `stale_marker_test` (real sample at 130, stale marker at 145)
+    # at 150 must return nothing at all, even though the bare selector's implicit 5-minute lookback window
+    # easily reaches back to the real sample at 130. Verified against a real Prometheus 3.5.0 instance.
+    do_query_test(
+        "stale_marker_test",
+        150,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
 
 def test_literals():
     timestamp = 250

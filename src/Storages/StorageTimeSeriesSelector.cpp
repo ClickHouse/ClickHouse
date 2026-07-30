@@ -355,7 +355,7 @@ namespace
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT id, timestamp, value
+        /// SELECT id, timestamp, value, is_stale_marker
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
@@ -370,6 +370,8 @@ namespace
 
             select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
