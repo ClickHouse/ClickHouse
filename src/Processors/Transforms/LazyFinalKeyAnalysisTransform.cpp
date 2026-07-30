@@ -31,7 +31,8 @@ LazyFinalKeyAnalysisTransform::LazyFinalKeyAnalysisTransform(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
     RangesInDataPartsPtr ranges_,
     ContextPtr query_context_,
-    float min_filtered_ratio_)
+    float min_filtered_ratio_,
+    LazyFinalPreFinalFilters pre_final_filters_)
     : IProcessor(InputPorts{InputPort(Block())}, OutputPorts{OutputPort(Block())})
     , future_set(std::move(future_set_))
     , shared_state(std::move(shared_state_))
@@ -44,6 +45,7 @@ LazyFinalKeyAnalysisTransform::LazyFinalKeyAnalysisTransform(
     , ranges(std::move(ranges_))
     , query_context(std::move(query_context_))
     , min_filtered_ratio(min_filtered_ratio_)
+    , pre_final_filters(std::move(pre_final_filters_))
     , log(getLogger("LazyFinalKeyAnalysisTransform"))
 {
 }
@@ -105,7 +107,8 @@ std::unique_ptr<ReadFromMergeTree> LazyFinalKeyAnalysisTransform::buildReadingSt
     const MergeTreeData & data,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     RangesInDataPartsPtr ranges,
-    ContextPtr query_context)
+    ContextPtr query_context,
+    const LazyFinalPreFinalFilters & pre_final_filters)
 {
     const auto & settings = query_context->getSettingsRef();
     const auto & sorting_key = metadata_snapshot->getSortingKey();
@@ -128,9 +131,24 @@ std::unique_ptr<ReadFromMergeTree> LazyFinalKeyAnalysisTransform::buildReadingSt
         columns_to_read.insert(merging_params.is_deleted_column);
         all_column_names.push_back(merging_params.is_deleted_column);
     }
+    /// The pre-FINAL filters run on this read, so their input columns must be read as well.
+    for (const auto & column : pre_final_filters.extra_columns)
+    {
+        if (columns_to_read.insert(column).second)
+            all_column_names.push_back(column);
+    }
 
     SelectQueryInfo query_info;
     query_info.table_expression_modifiers = TableExpressionModifiers(false, {}, {});
+    /// A filter the query applies before the FINAL merge decides which rows take part in
+    /// deduplication, so the winner-selection `argMax` below must see only those rows.
+    /// The caller clones these filters with `cloneFilterSubDAG`, which keeps the predicate
+    /// computation and exposes each of its inputs as a pass-through output, and it clears the
+    /// remove-column flags for the names the aggregation reads. The constructor derives the output
+    /// header from the filters, so those two properties are what keep a filter from erasing a
+    /// column the aggregation needs.
+    query_info.row_level_filter = pre_final_filters.row_level_filter;
+    query_info.prewhere_info = pre_final_filters.prewhere_info;
 
     auto reading = std::make_unique<ReadFromMergeTree>(
         std::move(ranges),
@@ -156,7 +174,7 @@ void LazyFinalKeyAnalysisTransform::work()
 {
     auto reading = buildReadingStep(
         metadata_snapshot, mutations_snapshot, storage_snapshot,
-        data_settings, data, max_block_numbers_to_read, ranges, query_context);
+        data_settings, data, max_block_numbers_to_read, ranges, query_context, pre_final_filters);
 
     /// Count total marks before index analysis.
     size_t total_marks = 0;

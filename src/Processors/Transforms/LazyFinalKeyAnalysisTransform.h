@@ -6,12 +6,30 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/LazyFinalSharedState.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+/// Filters the query applies BEFORE the FINAL merge, so they constrain which rows participate in
+/// deduplication. The winner-selection read must apply them too: otherwise its `argMax` picks a row
+/// the filter excludes, and the key yields no row at all instead of the highest-versioned row that
+/// does satisfy the filter.
+///
+/// Owned clones, never the reading step's own filters: `ReadFromMergeTree::getQueryInfo` shares
+/// those with the false branch's FINAL read.
+struct LazyFinalPreFinalFilters
+{
+    FilterDAGInfoPtr row_level_filter;
+    PrewhereInfoPtr prewhere_info;
+    /// Storage columns the filters consume, read in addition to the aggregation's own columns.
+    Names extra_columns;
+
+    bool empty() const { return !row_level_filter && !prewhere_info; }
+};
 
 /// Waits for the set to be built, then:
 /// 1. Creates a ReadFromMergeTree step with an IN-set filter
@@ -33,7 +51,8 @@ public:
         PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
         RangesInDataPartsPtr ranges_,
         ContextPtr query_context_,
-        float min_filtered_ratio_);
+        float min_filtered_ratio_,
+        LazyFinalPreFinalFilters pre_final_filters_);
 
     String getName() const override { return "LazyFinalKeyAnalysisTransform"; }
     Status prepare() override;
@@ -49,7 +68,8 @@ public:
         const MergeTreeData & data,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read,
         RangesInDataPartsPtr ranges,
-        ContextPtr query_context);
+        ContextPtr query_context,
+        const LazyFinalPreFinalFilters & pre_final_filters);
 
 private:
     FutureSetPtr future_set;
@@ -63,6 +83,7 @@ private:
     RangesInDataPartsPtr ranges;
     ContextPtr query_context;
     float min_filtered_ratio;
+    LazyFinalPreFinalFilters pre_final_filters;
 
     LoggerPtr log;
     bool is_done = false;
