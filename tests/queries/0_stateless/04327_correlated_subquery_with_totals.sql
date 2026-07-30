@@ -45,6 +45,15 @@ SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNul
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
 
+-- The carrier side is re-derived after join-order reconstruction, so forcing the optimizer to flip the
+-- join's children must not move the result. Transporting the recorded side without re-deriving it makes
+-- this row leak a totals block, because the drop is then applied to the outer input. The functional
+-- runner never injects query_plan_join_swap_table = true, but the stress runner does, so pin it here.
+-- The order limit is pinned too: at 0 optimizeJoinLogicalImpl returns before the flip can happen, and
+-- the runner draws 0 with 5% probability, which would silently make this row a duplicate of the one above.
+SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact
+SETTINGS query_plan_join_swap_table = true, query_plan_optimize_join_order_limit = 10, correlated_subqueries_use_in_memory_buffer = 0;
+
 -- I: a correlated TotalsHaving step is still refused by the pre-existing unsupported-step check.
 SELECT id FROM t_04327 WHERE EXISTS (SELECT val GROUP BY 1 WITH TOTALS); -- { serverError NOT_IMPLEMENTED }
 
@@ -78,10 +87,19 @@ SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
 -- A warm query result cache replaces the subquery plan with a step that carries the cached totals and
 -- contains no TotalsHavingStep, so a check that recognized step types could be defeated by it.
 -- Dropping the carrier input's streams at the join cannot be, because it never inspects steps.
-SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
-SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0;
 
-SELECT count() > 0 FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%GROUP BY val WITH TOTALS%';
+-- The cache below is a server-wide resource shared with every concurrently running test, and its
+-- policy declines a write outright when the cache is full of live entries, which would make the rows
+-- that assert the warm entry and the hit fail. query_cache_tag is folded into the entry key, so tagging
+-- our statements both isolates our entry and lets this drop free the space for it without touching any
+-- other test's entries, unlike an untagged SYSTEM DROP QUERY CACHE.
+SYSTEM DROP QUERY CACHE TAG '04327_totals';
+
+SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
+SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0,
+         query_cache_tag = '04327_totals';
+
+SELECT count() > 0 FROM system.query_cache WHERE is_subquery = 1 AND tag = '04327_totals' AND query LIKE '%GROUP BY val WITH TOTALS%';
 
 -- Deleting the rows the entry was built from makes the hit observable without reading
 -- system.query_log: the cached values can only survive if the subquery is served from the cache.
@@ -90,17 +108,19 @@ SELECT count() > 0 FROM system.query_cache WHERE is_subquery = 1 AND query LIKE 
 DELETE FROM t_04327 WHERE 1 SETTINGS lightweight_deletes_sync = 2;
 
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
-SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0;
+SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0,
+         query_cache_tag = '04327_totals';
 
 -- Control: with reads disabled the same query returns nothing, so the row above is a real hit.
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
-SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0, enable_reads_from_query_cache = 0;
+SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0, enable_reads_from_query_cache = 0,
+         query_cache_tag = '04327_totals';
 
 INSERT INTO t_04327 SELECT number, number * 7 FROM numbers(3);
 
 SELECT id FROM t_04327 WHERE id >= (SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) AS s WHERE t_04327.val >= 0) ORDER BY id FORMAT JSONCompact
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0,
-         log_comment = '04327_cache_correlated';
+         query_cache_tag = '04327_totals', log_comment = '04327_cache_correlated';
 
 -- The rows were restored above, so the statement returns the same main rows whether or not the
 -- subquery came from the cache, and a miss would build a real TotalsHaving step that the carrier-side

@@ -220,7 +220,9 @@ protected:
     /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized, and it
     /// does not need to be: a totals-carrying subquery never reaches a serialized plan, because
     /// make_distributed_plan refuses such a plan up front (planHasUnsupportedDistributedStep, see
-    /// optimizeTree.cpp) and findQueryForParallelReplicas declines a decorrelated join tree.
+    /// optimizeTree.cpp) and findQueryForParallelReplicas declines a decorrelated join tree. A
+    /// serialization round trip therefore does drop this member, and that is harmless: the only plans
+    /// that reach `serialize` are ones with no totals to drop.
     std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Dummy stats retrieved from hints, used for debugging
