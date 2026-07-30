@@ -111,7 +111,15 @@ namespace ErrorCodes
 #else
 #define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(Dialect, dialect, Dialect::clickhouse, R"(
-Which dialect will be used to parse query
+Which dialect will be used to parse query.
+
+Supported values:
+- `clickhouse` (default) — standard ClickHouse SQL.
+- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
+- `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `allow_experimental_json_ast_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -277,21 +285,24 @@ Allow multiple threads to process non-joined rows from the right table in parall
 This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
-    DECLARE(UInt64, max_insert_threads, 0, R"(
+    DECLARE(MaxThreads, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
 Possible values:
 
-- 0 (or 1) — `INSERT SELECT` no parallel execution.
-- Positive integer. Bigger than 1.
+- 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
+- 1 — `INSERT SELECT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
+- Positive integer bigger than 1 — Parallel execution with the specified number of threads.
+
+Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT SELECT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
+Higher values will lead to higher memory usage.
 
 Cloud default value:
 - `1` for nodes with 8 GiB memory
 - `2` for nodes with 16 GiB memory
 - `4` for larger nodes
-
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
@@ -2841,12 +2852,8 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
-Allow the MergeTree primary key and skip indexes to prune granules for `WHERE`/`PREWHERE` predicates that involve `coalesce` or `ifNull`. Without this setting, such predicates are opaque to index analysis and do not prune, so granules that cannot match are still read. This affects only which granules are read; query results are unchanged, because rows are still filtered by the original predicate.
-
-Two predicate shapes are rewritten before index analysis:
-
-- A comparison against a `coalesce`/`ifNull`, such as `coalesce(a, b) = 5`, becomes a disjunction so an index on each argument can prune: `a = 5 OR (a IS NULL AND b = 5)`, extended for more arguments.
-- A `coalesce`/`ifNull` with a falsy (zero) constant default used directly as a condition, such as `ifNull(a = 5, 0)` or `coalesce(a = 5, 0)`, is unwrapped to its inner predicate `a = 5`. Such wrappers collapse the inner predicate's three-valued result into a definite boolean (mapping `NULL` to `false`).
+Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
+Additionally, exact equality predicates of the form `nullIf(key, sentinel) = const` (where `sentinel != const` and types match exactly) are rewritten to `key = const` so primary key, partition, and skip indexes on `key` can prune granules directly. Range and disjunctive nullIf pruning is not supported.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Require joined subqueries and table functions to have an alias, but only when a missing alias would introduce a real ambiguity: that is, when the unaliased subquery or table function exposes a column whose name also occurs in another table expression of the same join or matches an in-scope expression alias that shadows it (expression aliases shadow join-tree columns when `prefer_column_name_to_alias = 0`, the default), so that a bare identifier could not be qualified unambiguously. When there is no such name collision the missing alias is harmless and is allowed. Set to `0` to never require an alias.
@@ -7149,6 +7156,9 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
+    DECLARE(UInt64, distributed_cache_min_inflight_bytes_to_discard_connection_on_seek, 4 * 1024 * 1024, R"(
+Only has an effect in ClickHouse Cloud. On a seek away from the current position of an open distributed cache stream, if the estimated number of in-flight bytes that would have to be discarded to keep reusing the connection (via the read range id mechanism) exceeds this value, drop the connection and open a new one instead. This avoids draining a large amount of unused data when seeks are frequent. 0 disables this and always reuses the connection.
+)", 0) \
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
@@ -8426,6 +8436,22 @@ Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_json_ast_dialect, false, R"(
+Enable the `clickhouse_json` value of the `dialect` setting.
+
+When `dialect` is set to `clickhouse_json`, queries are interpreted as JSON ASTs
+(the output of `parseQueryToJSON`) instead of SQL text. The `SET` query is still
+parsed as plain SQL so that the dialect can be switched back.
+
+Example:
+```sql
+SET allow_experimental_json_ast_dialect = 1;
+SET dialect = 'clickhouse_json';
+
+-- Subsequent queries are parsed as JSON ASTs:
+{"type":"SelectWithUnionQuery", ...}
+```
 )", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
