@@ -155,10 +155,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     String username;
     String password;
 
-    /// `RabbitMQConnection::connectImpl` connects to `rabbitmq_address` (the URI form) whenever it is
-    /// set, in preference to `rabbitmq_host_port`. Validate against `remote_host_filter` by keying off
-    /// the same condition, so the check cannot be bypassed by pairing an allowed `rabbitmq_host_port`
-    /// with a disallowed `rabbitmq_address` (both settings can be given at once).
+    /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
+    /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
+    bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
+
     const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
 
     if (!address_string.empty())
@@ -174,6 +174,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         }
 
         context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+
+        secure_connection = secure_connection || address->secure();
     }
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
@@ -206,7 +208,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .connection_string = address_string
     };
 
-    if (configuration.secure)
+    if (secure_connection)
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())

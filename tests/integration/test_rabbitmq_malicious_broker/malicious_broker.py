@@ -7,6 +7,9 @@ almost 4 GiB followed by a stream of filler bytes.
 
 A client that takes the proposed maximum frame size at face value ends up reading that
 stream into its fixed-size receive buffer, which is a heap out-of-bounds write.
+
+Given a certificate and key it speaks amqps instead, so the same attack can be driven through
+the client's TLS receive path (which used to be entirely unbounded).
 """
 
 import socket
@@ -103,15 +106,37 @@ def handle(conn, frame_max):
 def main():
     port = int(sys.argv[1])
     frame_max = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    # Optional TLS: pass a cert and key to make the broker speak amqps, so the same attack can
+    # be driven through the client's TLS receive path.
+    certfile = sys.argv[3] if len(sys.argv) > 3 else None
+    keyfile = sys.argv[4] if len(sys.argv) > 4 else None
+
+    tls_context = None
+    if certfile:
+        import ssl
+
+        tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls_context.load_cert_chain(certfile, keyfile)
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("0.0.0.0", port))
     server.listen(16)
-    print(f"listening on {port}, proposing frame_max={frame_max}", flush=True)
+    print(
+        f"listening on {port} ({'amqps' if tls_context else 'amqp'}),"
+        f" proposing frame_max={frame_max}",
+        flush=True,
+    )
 
     while True:
         conn, _ = server.accept()
+        if tls_context is not None:
+            try:
+                conn = tls_context.wrap_socket(conn, server_side=True)
+            except OSError:
+                # e.g. a plain-TCP liveness probe that never completes the TLS handshake
+                conn.close()
+                continue
         threading.Thread(target=handle, args=(conn, frame_max), daemon=True).start()
 
 

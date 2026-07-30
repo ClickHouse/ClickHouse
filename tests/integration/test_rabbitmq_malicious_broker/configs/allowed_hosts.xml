@@ -1,5 +1,6 @@
 <clickhouse>
     <remote_url_allow_hosts>
         <host>localhost:19672</host>
+        <host>localhost:19673</host>
     </remote_url_allow_hosts>
 </clickhouse>

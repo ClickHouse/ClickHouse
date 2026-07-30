@@ -16,8 +16,9 @@ from helpers.test_tools import wait_condition
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Must match the port allowed in configs/allowed_hosts.xml.
+# Must match the ports allowed in configs/allowed_hosts.xml.
 BROKER_PORT = 19672
+TLS_BROKER_PORT = 19673
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -27,11 +28,25 @@ node = cluster.add_instance(
 )
 
 
+def _wait_for_port(port):
+    wait_condition(
+        lambda: node.exec_in_container(
+            ["bash", "-c", f"exec 3<>/dev/tcp/127.0.0.1/{port} && echo OK"],
+            nothrow=True,
+        ),
+        lambda r: "OK" in r,
+        max_attempts=40,
+        delay=0.5,
+    )
+
+
 def start_malicious_broker():
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "malicious_broker.py"),
         "/malicious_broker.py",
     )
+
+    # Plain amqp broker.
     node.exec_in_container(
         [
             "bash",
@@ -42,19 +57,30 @@ def start_malicious_broker():
         detach=True,
         user="root",
     )
-    wait_condition(
-        lambda: node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"exec 3<>/dev/tcp/127.0.0.1/{BROKER_PORT} && echo OK",
-            ],
-            nothrow=True,
-        ),
-        lambda r: "OK" in r,
-        max_attempts=40,
-        delay=0.5,
+    _wait_for_port(BROKER_PORT)
+
+    # amqps broker with a throwaway self-signed cert (the client does not verify it), so the same
+    # overflow can be driven through the TLS receive path.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost"
+            " -keyout /broker_key.pem -out /broker_cert.pem 2>/dev/null",
+        ],
+        user="root",
     )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"python3 /malicious_broker.py {TLS_BROKER_PORT} 0 /broker_cert.pem /broker_key.pem"
+            " > /var/log/clickhouse-server/malicious_broker_tls.log 2>&1",
+        ],
+        detach=True,
+        user="root",
+    )
+    _wait_for_port(TLS_BROKER_PORT)
 
 
 @pytest.fixture(scope="module")
@@ -85,6 +111,36 @@ def test_broker_proposing_zero_frame_max(started_cluster):
     # The server has to be alive and healthy - the point of the test is that the oversized
     # frame was rejected rather than read into a buffer that is too small for it. Under a
     # sanitizer build the out-of-bounds write takes the server down and this query fails.
+    assert node.query("SELECT 1") == "1\n"
+
+    # Deterministic proof the frame-size guard actually fired (rather than the server merely
+    # surviving the overflow by luck on a non-sanitizer build): the library rejects the
+    # oversized frame with a `frame size exceeded` protocol error, which the handler logs.
+    wait_condition(
+        lambda: node.contains_in_log("frame size exceeded"),
+        lambda fired: fired,
+        max_attempts=20,
+        delay=0.5,
+    )
+
+
+def test_broker_proposing_zero_frame_max_over_tls(started_cluster):
+    """The same overflow driven through the TLS (amqps) receive path, which used to be unbounded.
+
+    This is primarily a guard for the sanitizer lane: without the fix the oversized frame is read
+    past the end of the TLS receive buffer and a sanitizer build aborts here, so the server must
+    stay alive and answer afterwards.
+    """
+    error = node.query_and_get_error(
+        f"""
+        CREATE TABLE malicious_tls (key UInt64, value UInt64)
+        ENGINE = RabbitMQ
+        SETTINGS rabbitmq_address = 'amqps://guest:guest@localhost:{TLS_BROKER_PORT}/',
+                 rabbitmq_exchange_name = 'ex',
+                 rabbitmq_format = 'JSONEachRow'
+        """
+    )
+    assert "CANNOT_CONNECT_RABBITMQ" in error, error
     assert node.query("SELECT 1") == "1\n"
 
 
