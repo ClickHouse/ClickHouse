@@ -688,304 +688,40 @@ size_t DiskCacheProvider::maxFillCell() const
     return max_segment / boundary * boundary;
 }
 
-/// The disk tier's residency walk (see `ICacheProvider::IProbeCursor`): the
-/// ask unit is ONE fill cell - the only range the miss side can ever need -
-/// and the hit side self-sizes from segment extents (`cache->get` returns
-/// covering segments WHOLE, so a warm ask costs one metadata lock per
-/// segment, not per cell). `hits` are the committed pieces (full extents,
-/// split at the writer frontier); `cells` are the ask's raw miss runs
-/// boundary-aligned, merged, and tiled into demand-shaped fill cells on the
-/// absolute grid - a cut that would land inside an existing segment is pushed
-/// past it, extending the ask when it crosses into unprobed territory. The
-/// holder pins the probed segments; the touch book carries the deferred LRU
-/// bump with the handed-out readers.
+/// The disk tier's residency walk (see `ICacheProvider::IProbeCursor`). One
+/// `resolve` call is one cache transaction and the cursor holds no state beyond
+/// its provider, so a shared provider stays concurrency-safe under the
+/// `readBigAt` fan-out (each fan-out gets its own cursor).
 class DiskCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
 {
 public:
     explicit ProbeCursor(DiskCacheProvider & provider_) : provider(provider_) {}
 
-    /// The RANGED walk (one cache transaction): `getOrSet` over the
-    /// grid-rounded ask resolves residency AND allocates - the cache's own
-    /// `splitRange` shapes the virgin segments, so cells = segments by
-    /// construction (no manual tiling, no cut-aliasing possible). Hits carry
-    /// readers; misses carry OPEN writers sharing the one holder. The bypass
-    /// configuration (`read_if_exists_otherwise_bypass`) falls to the read-only
-    /// `probeRange` - no segment creation, writer-less misses.
-    std::vector<ICacheProvider::Resolution> lookAt(
+    /// Resolve `range` in one call, mirroring the legacy reader's get/getOrSet
+    /// split (`CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`).
+    /// POPULATING (write-through) cache: one `getOrSet` transaction - the
+    /// cache's own `splitRange` shapes the virgin segments (cells = segments),
+    /// hits carry readers, misses carry OPEN writers sharing the one holder.
+    /// READ-ONLY / bypass cache (`read_if_exists_otherwise_bypass`):
+    /// `cache->get` only - existing segments come back, hits carry readers,
+    /// gaps and uncommitted tails are boundary-aligned writer-less misses,
+    /// nothing is created or reserved. The provider decides; the caller passes
+    /// no flag.
+    std::vector<ICacheProvider::Resolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
-protected:
-    ICacheProvider::Resolution resolveStep(
-        const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) override;
-
 private:
-    void roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file);
-
     DiskCacheProvider & provider;
-    bool loaded = false;
-    ByteRange span{};   /// file-space coverage of the derived entries
-    std::shared_ptr<FileSegmentsHolder> holder;
-    std::shared_ptr<DiskCacheTouchBook> touch_book;
-    VectorWithMemoryTracking<ByteRange> hits;
-    VectorWithMemoryTracking<ByteRange> cells;
-    size_t hit_idx = 0;
-    size_t cell_idx = 0;
 };
-
-void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file)
-{
-    auto resolved_key = provider.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
-    auto resolved_origin = provider.custom_origin.value_or(provider.cache->getCommonOriginWithSegmentKeyType(object.local_path));
-
-    chassert(pos_in_file >= object_file_offset);
-    chassert(demand_end_in_file > pos_in_file);
-    const size_t object_size = object.bytes_size;
-    const size_t boundary_alignment = provider.cache_settings.boundary_alignment.value_or(provider.cache->getBoundaryAlignment());
-    const size_t opt_cell = provider.maxFillCell();
-
-    /// The ask: ONE `opt_cell` grid cell's worth from the BOUNDARY-aligned
-    /// floor of the position (the per-roll cost bound), tapered to the DEMAND
-    /// edge when the demand ends sooner - the head rule: a cold head cell
-    /// starts at the alignment boundary of the ask (a mid-cell point read must
-    /// not fetch the whole cell), interior cuts sit on the absolute `opt_cell`
-    /// grid, and the demand edge tapers the last cell to the boundary grid. A
-    /// demand that runs past the grid line keeps the cell FULL - the plan edge
-    /// is a knowledge horizon, not a demand edge, and cells may overhang it
-    /// (the schedule's cell closure fills the overhang). Retried wider only
-    /// when a cut crosses the ask's end into unprobed territory.
-    const size_t pos_obj = pos_in_file - object_file_offset;
-    const size_t demand_end_obj = std::min(demand_end_in_file - object_file_offset, object_size);
-    const size_t ask_start = FileCacheUtils::roundDownToMultiple(pos_obj, boundary_alignment);
-    const size_t grid_line = FileCacheUtils::roundUpToMultiple(pos_obj + 1, opt_cell);
-    const size_t aligned_demand = std::max(
-        FileCacheUtils::roundUpToMultiple(demand_end_obj, boundary_alignment), ask_start + boundary_alignment);
-    size_t ask_end = std::min({object_size, aligned_demand, std::max(grid_line, ask_start + boundary_alignment)});
-
-    while (true)
-    {
-        hits.clear();
-        cells.clear();
-
-        holder = std::make_shared<FileSegmentsHolder>();
-        if (ask_end > ask_start)
-        {
-            auto got = provider.cache->get(
-                resolved_key, ask_start, ask_end - ask_start,
-                /*file_segments_limit=*/0, resolved_origin.user_id);
-            if (got)
-                holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
-        }
-        touch_book = std::make_shared<DiskCacheTouchBook>(holder, object_file_offset);
-
-        /// The segment walk: committed pieces become hits at their FULL extents
-        /// (committed knowledge is valid beyond the ask - the executor clamps
-        /// serves); raw misses stay within the ask (beyond it is unprobed).
-        /// `existing_obj` collects real segment extents so a tiling cut never
-        /// lands inside one (two writers must never share a segment).
-        VectorWithMemoryTracking<ByteRange> raw_miss_obj;
-        auto add_miss_obj = [&](size_t off, size_t end_)
-        {
-            const size_t clamped_end = std::min(end_, ask_end);
-            if (clamped_end > off)
-                raw_miss_obj.push_back(ByteRange{off, clamped_end - off});
-        };
-        auto add_hit = [&](size_t off_obj, size_t end_obj)
-        {
-            if (end_obj > off_obj)
-                hits.push_back(ByteRange{off_obj + object_file_offset, end_obj - off_obj});
-        };
-
-        VectorWithMemoryTracking<ByteRange> existing_obj;
-        size_t walk = ask_start;
-        for (const auto & segment : *holder)
-        {
-            const auto & seg_range = segment->range();
-            if (seg_range.left > walk)
-                add_miss_obj(walk, seg_range.left);
-
-            const auto state = segment->state();
-            if (state != FileSegmentState::DETACHED)
-                existing_obj.push_back(ByteRange{seg_range.left, seg_range.right + 1 - seg_range.left});
-
-            if (seg_range.left >= ask_end)
-            {
-                walk = std::max(walk, ask_end);
-                break;
-            }
-
-            const size_t seg_left = seg_range.left;
-            const size_t seg_end = seg_range.right + 1;
-
-            if (state == FileSegmentState::DOWNLOADED)
-            {
-                add_hit(seg_left, seg_end);
-            }
-            else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
-                  || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-                  || state == FileSegmentState::DOWNLOADING)
-            {
-                const size_t cwo = segment->getCurrentWriteOffset();
-                if (cwo > seg_left)
-                    add_hit(seg_left, cwo);
-                const size_t miss_off = std::max<size_t>({cwo, seg_left, ask_start});
-                if (miss_off < seg_end)
-                    add_miss_obj(miss_off, seg_end);
-            }
-            else
-            {
-                add_miss_obj(std::max(seg_left, ask_start), seg_end);
-            }
-
-            walk = std::max(walk, seg_end);
-        }
-        if (walk < ask_end)
-            add_miss_obj(walk, ask_end);
-
-        /// Boundary-align each raw miss (clamped to the object end), merge
-        /// adjacent/overlapping aligned runs (in OBJECT-LOCAL space), then tile
-        /// into fill cells on the absolute `maxFillCell` grid, tapered at
-        /// the demand edge.
-        VectorWithMemoryTracking<ByteRange> merged_obj;
-        for (const auto & m : raw_miss_obj)
-        {
-            const size_t a_off = FileCacheUtils::roundDownToMultiple(m.offset, boundary_alignment);
-            size_t a_end = FileCacheUtils::roundUpToMultiple(m.end(), boundary_alignment);
-            a_end = std::min(a_end, object_size);
-            if (a_end <= a_off)
-                continue;
-            if (!merged_obj.empty() && a_off <= merged_obj.back().end())
-            {
-                auto & last = merged_obj.back();
-                last.size = std::max(last.end(), a_end) - last.offset;
-            }
-            else
-                merged_obj.push_back(ByteRange{a_off, a_end - a_off});
-        }
-
-        size_t next_existing = 0;
-        auto inside_existing = [&](size_t cut)
-        {
-            while (next_existing < existing_obj.size() && existing_obj[next_existing].end() <= cut)
-                ++next_existing;
-            return next_existing < existing_obj.size()
-                && existing_obj[next_existing].offset < cut && cut < existing_obj[next_existing].end();
-        };
-        size_t need_ask_end = ask_end;
-        for (const auto & run : merged_obj)
-        {
-            size_t pos = run.offset;
-            while (pos < run.end())
-            {
-                size_t cut = std::min<size_t>(run.end(), FileCacheUtils::roundUpToMultiple(pos + 1, opt_cell));
-                while (cut < run.end() && inside_existing(cut))
-                    cut = std::min<size_t>(run.end(), FileCacheUtils::roundUpToMultiple(cut + 1, opt_cell));
-                /// A cut at the run's end is trustworthy only when that end is
-                /// residency truth (a committed boundary or the object end).
-                /// An ask-truncated run ends at the KNOWLEDGE HORIZON: a cut
-                /// there inside an existing segment would alias its writer,
-                /// and a swallowed cut past the horizon lands in unprobed
-                /// territory. Either way: widen the ask and re-derive.
-                if (cut >= ask_end && ask_end < object_size && inside_existing(cut))
-                {
-                    /// Widen just past the CONFLICTING segment (its true extent is
-                    /// residency knowledge) - a whole-cell jump would defeat the
-                    /// per-roll cost bound at every existing-segment boundary.
-                    const size_t conflicting_end = existing_obj[next_existing].end();
-                    need_ask_end = std::min(object_size,
-                        std::max(FileCacheUtils::roundUpToMultiple(conflicting_end, boundary_alignment),
-                                 ask_end + boundary_alignment));
-                    break;
-                }
-                need_ask_end = std::max(need_ask_end, std::min(cut, object_size));
-                cells.push_back(ByteRange{pos + object_file_offset, cut - pos});
-                pos = cut;
-            }
-            if (need_ask_end > ask_end)
-                break;
-        }
-        if (need_ask_end > ask_end)
-        {
-            ask_end = need_ask_end;
-            continue;
-        }
-
-        break;
-    }
-
-    /// The span is what the derived entries actually cover: full-extent hits
-    /// may reach far beyond the ask on either side, and a head cell may round
-    /// below it; the walk answers inside the span from the lists alone.
-    size_t covered_lo = pos_in_file;
-    size_t covered_hi = std::min(ask_end, object_size) + object_file_offset;
-    if (!hits.empty())
-    {
-        covered_lo = std::min(covered_lo, hits.front().offset);
-        covered_hi = std::max(covered_hi, hits.back().end());
-    }
-    if (!cells.empty())
-    {
-        covered_lo = std::min(covered_lo, cells.front().offset);
-        covered_hi = std::max(covered_hi, cells.back().end());
-    }
-    span = ByteRange{covered_lo, covered_hi - covered_lo};
-
-    LOG_TRACE(provider.log, "probe: rolled cell ask, file [{}, {}) -> {} hits, {} cells",
-        span.offset, span.end(), hits.size(), cells.size());
-    loaded = true;
-    hit_idx = 0;
-    cell_idx = 0;
-}
-
-ICacheProvider::Resolution DiskCacheProvider::ProbeCursor::resolveStep(
-    const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file)
-{
-    if (pos_in_file >= object_file_offset + object.bytes_size)
-        return {};
-
-    if (!loaded || pos_in_file < span.offset || pos_in_file >= span.end())
-        roll(object, object_file_offset, pos_in_file, demand_end_in_file);
-
-    auto & c = *this;
-    /// A backward re-ask rewinds the walk cursors; forward asks advance them.
-    if (c.hit_idx > 0 && c.hit_idx <= c.hits.size() && c.hits[c.hit_idx - 1].end() > pos_in_file)
-        c.hit_idx = 0;
-    if (c.cell_idx > 0 && c.cell_idx <= c.cells.size() && c.cells[c.cell_idx - 1].end() > pos_in_file)
-        c.cell_idx = 0;
-    while (c.hit_idx < c.hits.size() && c.hits[c.hit_idx].end() <= pos_in_file)
-        ++c.hit_idx;
-    while (c.cell_idx < c.cells.size() && c.cells[c.cell_idx].end() <= pos_in_file)
-        ++c.cell_idx;
-
-    ICacheProvider::Resolution res;
-    if (c.hit_idx < c.hits.size() && c.hits[c.hit_idx].offset <= pos_in_file)
-    {
-        res.kind = ICacheProvider::Resolution::Kind::Hit;
-        res.range = c.hits[c.hit_idx];
-        res.reader = std::make_unique<DiskCacheReader>(
-            c.holder, res.range, object_file_offset,
-            provider.local_throttler, &provider.reader_anchors, &provider.streaming_slot, c.touch_book);
-        return res;
-    }
-    if (c.cell_idx < c.cells.size() && c.cells[c.cell_idx].offset <= pos_in_file)
-    {
-        res.kind = ICacheProvider::Resolution::Kind::Miss;
-        res.range = c.cells[c.cell_idx];
-        return res;
-    }
-    return res;
-}
 
 std::unique_ptr<ICacheProvider::IProbeCursor> DiskCacheProvider::probe()
 {
     return std::make_unique<ProbeCursor>(*this);
 }
 
-std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::lookAt(
+std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
-    if (!provider.populatesOnMiss())
-        return probeRange(object, object_file_offset, range);
-
     std::vector<ICacheProvider::Resolution> out;
     const size_t object_size = object.bytes_size;
     chassert(range.offset >= object_file_offset);
@@ -993,14 +729,77 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::lookAt(
     if (ask_lo_obj >= object_size)
         return out;
 
+    const size_t ask_hi_obj = std::min(range.end() - object_file_offset, object_size);
+
     auto resolved_key = provider.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = provider.custom_origin.value_or(provider.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+
+    /// READ-ONLY / bypass cache (mirrors the legacy reader's `cache->get` branch
+    /// in `CachedOnDiskReadBufferFromFile`): return existing segments only -
+    /// hits at their committed extent, gaps and uncommitted tails as
+    /// boundary-aligned writer-less misses. Nothing is created, reserved, or
+    /// evicted, so a bypass read (a merge) never perturbs the cache.
+    /// `observeSpan` drops a bypass tier's misses; only `probeView` reads them.
+    if (!provider.populatesOnMiss())
+    {
+        const size_t boundary = provider.cache_settings.boundary_alignment.value_or(provider.cache->getBoundaryAlignment());
+        const size_t ask_start = FileCacheUtils::roundDownToMultiple(ask_lo_obj, boundary);
+        const size_t ask_end = std::min(FileCacheUtils::roundUpToMultiple(ask_hi_obj, boundary), object_size);
+
+        auto holder = std::make_shared<FileSegmentsHolder>();
+        if (ask_end > ask_start)
+            if (auto got = provider.cache->get(
+                    resolved_key, ask_start, ask_end - ask_start,
+                    /*file_segments_limit=*/0, resolved_origin.user_id))
+                holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
+        auto book = std::make_shared<DiskCacheTouchBook>(holder, object_file_offset);
+
+        /// Boundary-align each writer-less miss (clamped to the object end); the
+        /// bypass side never fills, so misses carry no fill-cell geometry.
+        auto emit_miss = [&](size_t lo_obj, size_t hi_obj)
+        {
+            const size_t a_off = FileCacheUtils::roundDownToMultiple(lo_obj, boundary);
+            const size_t a_end = std::min(FileCacheUtils::roundUpToMultiple(hi_obj, boundary), object_size);
+            if (a_end <= a_off)
+                return;
+            ICacheProvider::Resolution miss;
+            miss.kind = ICacheProvider::Resolution::Kind::Miss;
+            miss.range = ByteRange{a_off + object_file_offset, a_end - a_off};
+            out.push_back(std::move(miss));
+        };
+
+        size_t walk = ask_start;
+        for (const auto & segment_ptr : *holder)
+        {
+            const auto & seg_range = segment_ptr->range();
+            const size_t seg_left = seg_range.left;
+            const size_t seg_end = seg_range.right + 1;
+            if (seg_left > walk)
+                emit_miss(walk, seg_left);
+            const size_t committed_end = segmentCommittedEnd(*segment_ptr);
+            if (committed_end > seg_left)
+            {
+                ICacheProvider::Resolution hit;
+                hit.kind = ICacheProvider::Resolution::Kind::Hit;
+                hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
+                hit.reader = std::make_unique<DiskCacheReader>(
+                    holder, hit.range, object_file_offset,
+                    provider.local_throttler, &provider.reader_anchors, &provider.streaming_slot, book);
+                out.push_back(std::move(hit));
+            }
+            if (committed_end < seg_end)
+                emit_miss(committed_end, seg_end);
+            walk = std::max(walk, seg_end);
+        }
+        if (walk < ask_end)
+            emit_miss(walk, ask_end);
+        return out;
+    }
 
     /// One transaction over the (object-clamped) ask: existing segments come
     /// back whole, virgin territory comes back as demand-shaped segments cut by
     /// the cache's `splitRange` on its own grid - the edge overhang is the
     /// grid rounding `getOrSet` itself applies.
-    const size_t ask_hi_obj = std::min(range.end() - object_file_offset, object_size);
     auto shared_holder = std::shared_ptr<FileSegmentsHolder>(provider.cache->getOrSet(
         resolved_key,
         ask_lo_obj,

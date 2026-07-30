@@ -643,8 +643,12 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & [cache, view] : populate_views)
         {
+            /// A populating cache's `resolve` already opened the miss writers
+            /// (they arrived through the view); only a tier that returned them
+            /// writer-less needs the explicit open.
             for (auto & m : view->miss_entries)
-                m.writer = cache->openWriter(pieces.front().object, /*object_file_offset=*/0, m.range);
+                if (!m.writer)
+                    m.writer = cache->openWriter(pieces.front().object, /*object_file_offset=*/0, m.range);
             for (const auto & m : view->misses())
             {
                 if (!m.writer)
@@ -2644,7 +2648,7 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
             {
                 for (const auto & sub : subtracted.subtract(ask))
                 {
-                    for (auto & res : probe->lookAt(piece.object, piece.object_file_offset, sub))
+                    for (auto & res : probe->resolve(piece.object, piece.object_file_offset, sub))
                     {
                         if (res.kind == ICacheProvider::Resolution::Kind::End)
                             continue;

@@ -206,65 +206,24 @@ public:
         CacheWriterPtr writer;
     };
 
-    /// One residency walk: step-wise probe state OWNED BY THE WALKER, so a
-    /// shared provider stays concurrency-safe (the `readBigAt` fan-out probes
-    /// one provider from many threads - each walk gets its own cursor). The
-    /// cursor pins chunks lazily while stepping; dropping it drops its pins -
-    /// what the plan keeps pinned travels in the handed-out readers.
+    /// One residency walk over a RANGE, owned by the walker so a shared
+    /// provider stays concurrency-safe (the `readBigAt` fan-out probes one
+    /// provider from many threads - each walk gets its own cursor).
     class IProbeCursor
     {
     public:
         virtual ~IProbeCursor() = default;
 
-        /// READ-ONLY ranged residency: every resolution covering `range`, in
-        /// offset order, each once - hits with readers, misses WRITER-LESS, no
-        /// cache mutation. The cursor is the walk's own state; cells at the
-        /// range edges may overhang it (grid rounding, object-end clamping).
-        /// Loops the per-position `resolveStep` primitive.
-        std::vector<Resolution> probeRange(const StoredObject & object, size_t object_file_offset, ByteRange range)
-        {
-            std::vector<Resolution> out;
-            size_t collected_until = range.offset;
-            size_t pos = range.offset;
-            while (pos < range.end())
-            {
-                auto r = resolveStep(object, object_file_offset, pos, range.end());
-                if (r.kind == Resolution::Kind::End)
-                    break;
-                const size_t end = r.range.end();
-                if (end > collected_until)
-                {
-                    out.push_back(std::move(r));
-                    collected_until = end;
-                }
-                pos = std::max(pos + 1, end);
-            }
-            return out;
-        }
-
-        /// The RANGED walk WITH allocation: every resolution covering `range`,
-        /// readers on hits and WRITERS OPEN on misses (one cache transaction
-        /// resolves and allocates; the caller asks each tier only for territory
-        /// faster tiers miss, so no writer opens for pruned cells). Cells may
-        /// overhang the range edges. Default: the read-only probe - a
-        /// non-populating tier, or one whose writers the caller backfills;
-        /// populating tiers override to allocate at the call.
-        virtual std::vector<Resolution> lookAt(const StoredObject & object, size_t object_file_offset, ByteRange range)
-        {
-            return probeRange(object, object_file_offset, range);
-        }
-
-    protected:
-        /// The per-position residency PRIMITIVE (read-only): resolve `pos` into
-        /// its covering hit/miss and the stride the classification stays
-        /// constant over. EACH MISS IS ONE CELL of the tier (the provider owns
-        /// the alignment policy). `demand_end_in_file` is the exclusive end of
-        /// contiguous demand from `pos` - miss runs tile demand-shaped up to the
-        /// cache's max segment size, tapering to the boundary grid at the demand
-        /// edge (page cache: whole fixed blocks regardless). MUST NOT mutate the
-        /// cache. Not the public API - callers use the ranged `probeRange` /
-        /// `lookAt`.
-        virtual Resolution resolveStep(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) = 0;
+        /// Resolve `range` in ONE pass: every resolution covering it, in offset
+        /// order, each once - hits carry readers. Whether a MISS carries an open
+        /// writer is THE PROVIDER'S decision, not the caller's: a populating
+        /// cache opens the writer at this call (one cache transaction resolves
+        /// and allocates); a read-only / bypass cache returns the miss
+        /// writer-less. The caller subtracts faster-tier hits BEFORE asking, so
+        /// no writer opens for a pruned cell. Cells at the range edges may
+        /// overhang it (grid rounding, object-end clamping). MUST NOT mutate the
+        /// cache beyond that populate decision (a read-only cache never does).
+        virtual std::vector<Resolution> resolve(const StoredObject & object, size_t object_file_offset, ByteRange range) = 0;
     };
 
     virtual std::unique_ptr<IProbeCursor> probe() = 0;

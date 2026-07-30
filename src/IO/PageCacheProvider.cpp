@@ -260,12 +260,29 @@ class PageCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
 public:
     explicit ProbeCursor(PageCacheProvider & provider_) : provider(provider_) {}
 
-protected:
-    ICacheProvider::Resolution resolveStep(
-        const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/) override
+    /// Read-only ranged residency (the page cache is populated separately, by
+    /// the plan's whole-block writers): loop the per-block resolve across the
+    /// range, collecting each block hit/miss once.
+    std::vector<ICacheProvider::Resolution> resolve(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) override
     {
-        /// Page-cache cells are whole fixed blocks; the demand shapes nothing here.
-        return provider.resolve(object, object_file_offset, pos_in_file);
+        std::vector<ICacheProvider::Resolution> out;
+        size_t collected_until = range.offset;
+        size_t pos = range.offset;
+        while (pos < range.end())
+        {
+            auto r = provider.resolve(object, object_file_offset, pos);
+            if (r.kind == ICacheProvider::Resolution::Kind::End)
+                break;
+            const size_t end = r.range.end();
+            if (end > collected_until)
+            {
+                out.push_back(std::move(r));
+                collected_until = end;
+            }
+            pos = std::max(pos + 1, end);
+        }
+        return out;
     }
 
 private:

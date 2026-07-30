@@ -31,8 +31,30 @@ private:
     public:
         explicit Cursor(SpanProbeMockBase & mock_) : mock(mock_) {}
 
-    protected:
-        Resolution resolveStep(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/) override
+    public:
+        std::vector<Resolution> resolve(const StoredObject & object, size_t object_file_offset, ByteRange range) override
+        {
+            std::vector<Resolution> out;
+            size_t collected_until = range.offset;
+            size_t pos = range.offset;
+            while (pos < range.end())
+            {
+                auto r = resolveStep(object, object_file_offset, pos, range.end());
+                if (r.kind == Resolution::Kind::End)
+                    break;
+                const size_t end = r.range.end();
+                if (end > collected_until)
+                {
+                    out.push_back(std::move(r));
+                    collected_until = end;
+                }
+                pos = std::max(pos + 1, end);
+            }
+            return out;
+        }
+
+    private:
+        Resolution resolveStep(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/)
         {
         static constexpr size_t PROBE_CHUNK = 8 * 1024 * 1024;
 

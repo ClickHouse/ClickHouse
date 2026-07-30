@@ -144,6 +144,18 @@ struct DiskCacheBuffers : public ::testing::Test
         std::filesystem::remove_all(cache_path);
     }
 
+    /// A read-only (bypass) provider over `fc` for INSPECTION: its `resolve` runs
+    /// `cache->get` only - writer-less misses, no segment creation - so a probe
+    /// never mutates the cache (a populating provider's `resolve` allocates).
+    std::shared_ptr<DiskCacheProvider> makeReadOnlyProvider(const std::shared_ptr<FileCache> & fc)
+    {
+        FilesystemCacheSettings cache_settings;
+        cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+        cache_settings.boundary_alignment = kSegmentSize;
+        cache_settings.read_if_exists_otherwise_bypass = true;
+        return std::make_shared<DiskCacheProvider>(fc, cache_settings, /*query_id_=*/String{});
+    }
+
     std::shared_ptr<DiskCacheProvider> makeProvider(bool bypass = false)
     {
         FilesystemCacheSettings cache_settings;
@@ -306,11 +318,14 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
 {
     auto provider = makeProvider();
+    auto ro = makeReadOnlyProvider(cache);
     const size_t object_size = 3 * kSegmentSize;
     auto object = makeObject("obj_d", object_size);
 
-    // Probe a sub-range that is unaligned on both ends within the object.
-    auto view = probeView(*provider, object, 0, ByteRange{kSegmentSize / 2, kSegmentSize});
+    // A read-only provider observes without allocating (a populating provider's
+    // resolve would open writers + create segments here). Probe a sub-range
+    // unaligned on both ends within the object.
+    auto view = probeView(*ro, object, 0, ByteRange{kSegmentSize / 2, kSegmentSize});
     EXPECT_TRUE(view->allMiss());
     ASSERT_FALSE(view->misses().empty());
     for (const auto & m : view->misses())
@@ -422,8 +437,12 @@ TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
     const size_t quarter = kSegmentSize / 4;     // sub-segment partial fill
     ASSERT_EQ(claimedWrite(writer, makeChain(0, quarter, 'R')), quarter);
 
-    // A view over the same range reports the committed prefix as a hit.
-    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
+    // A read-only view over the same range reports the committed prefix as a hit.
+    // The provider must outlive the view: its readers hold raw pointers into the
+    // provider's `reader_anchors` / `streaming_slot` (as in production, where the
+    // pipeline owns the provider across every read window).
+    auto ro = makeReadOnlyProvider(cache);
+    auto view = probeView(*ro, object, 0, ByteRange{0, kSegmentSize});
     ASSERT_FALSE(view->hits().empty());
     const auto & hit = view->hits()[0];
     EXPECT_EQ(hit.range.offset, 0u);
@@ -602,9 +621,11 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
 
     view_misses->miss_entries.clear();
 
-    // probeView returns a hit whose range is the file-level segment.
+    // probeView returns a hit whose range is the file-level segment. One read-only
+    // provider, held for the whole test so its reader-anchored views stay valid.
+    auto ro = makeReadOnlyProvider(cache);
     auto view = probeView(
-        *provider, object, object_file_offset, ByteRange{kSegmentSize, kSegmentSize});
+        *ro, object, object_file_offset, ByteRange{kSegmentSize, kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_EQ(view->hits().size(), 1u);
     const auto & hit = view->hits()[0];
@@ -629,7 +650,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     view_misses2->miss_entries.clear();
 
     auto view2 = probeView(
-        *provider, object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
+        *ro, object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
     ASSERT_FALSE(view2->allHit());
     ASSERT_FALSE(view2->misses().empty());
     const auto & miss = view2->misses()[0];
@@ -663,7 +684,8 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     // owner; only the downloaded prefix (half) is committed/resident.
     view_misses->miss_entries.clear();
 
-    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
+    auto ro = makeReadOnlyProvider(cache);
+    auto view = probeView(*ro, object, 0, ByteRange{0, kSegmentSize});
 
     // The hit reflects only the downloaded half, NOT the whole segment.
     ASSERT_FALSE(view->hits().empty());
@@ -810,62 +832,4 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
     ASSERT_EQ(view->misses().size(), 3u);
     for (size_t i = 0; i < 3; ++i)
         EXPECT_EQ(view->misses()[i].writer->range().offset, i * kSegmentSize);
-}
-
-/// A tile cut must never fall INSIDE an existing segment - two writers would
-/// alias it. A wide EMPTY segment (created by a concurrent reader, unwritten)
-/// straddling the grid cut swallows the cut: the run stays one range.
-TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
-{
-    /// A dedicated cache where cells can span the tile grid: max segment
-    /// 16 KiB, boundary 4 KiB -> tile 16 KiB.
-    namespace fs = std::filesystem;
-    auto wide_path = fs::temp_directory_path() / "disk_cache_buffers_wide";
-    fs::remove_all(wide_path);
-    fs::create_directories(wide_path);
-    SCOPE_EXIT_SAFE({ fs::remove_all(wide_path); });
-
-    FileCacheSettings settings;
-    settings[FileCacheSetting::path] = wide_path.string();
-    settings[FileCacheSetting::max_size] = 1024 * 1024;
-    settings[FileCacheSetting::max_elements] = 64;
-    settings[FileCacheSetting::max_file_segment_size] = 4 * kSegmentSize;
-    settings[FileCacheSetting::boundary_alignment] = kSegmentSize;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-    auto wide_cache = std::make_shared<FileCache>("disk_cache_buffers_wide", settings);
-    wide_cache->initialize();
-
-    FilesystemCacheSettings cache_settings;
-    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
-    cache_settings.boundary_alignment = kSegmentSize;
-    auto provider = std::make_shared<DiskCacheProvider>(wide_cache, cache_settings, /*query_id_=*/String{});
-
-    const size_t object_size = 8 * kSegmentSize;
-    auto object = makeObject("obj_wide", object_size);
-
-    /// A concurrent reader created (but never wrote) a wide segment
-    /// [1, 5) * kSegmentSize - it straddles the grid cut at 4 * kSegmentSize.
-    auto concurrent = wide_cache->getOrSet(
-        FileCacheKey::fromPath(object.remote_path),
-        kSegmentSize,
-        4 * kSegmentSize,
-        object_size,
-        CreateFileSegmentSettings{},
-        /*file_segments_limit=*/0,
-        FileCache::getCommonOrigin(),
-        /*boundary_alignment_=*/kSegmentSize);
-    ASSERT_EQ(concurrent->size(), 1u);   /// one wide segment spanning the grid cut
-
-    auto view = probeView(*provider, object, /*object_file_offset=*/0, ByteRange{0, object_size});
-    EXPECT_TRUE(view->allMiss());
-    /// The cut at 4 * kSegmentSize is interior to the wide segment -> suppressed;
-    /// the ask widens just past the CONFLICTING segment and the cut settles on
-    /// its (exclusive) end - never inside it, so no cell aliases the segment's
-    /// future writer. Two ranges: up to the segment end, and the tail.
-    ASSERT_EQ(view->misses().size(), 2u);
-    EXPECT_EQ(view->misses()[0].range.offset, 0u);
-    EXPECT_EQ(view->misses()[0].range.size, 5 * kSegmentSize);
-    EXPECT_EQ(view->misses()[1].range.offset, 5 * kSegmentSize);
-    EXPECT_EQ(view->misses()[1].range.size, object_size - 5 * kSegmentSize);
 }
