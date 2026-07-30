@@ -49,6 +49,7 @@
         "products/bring-your-own-cloud/reference/billable-aws-services",
         "products/bring-your-own-cloud/reference/cost-model-aws",
         "products/bring-your-own-cloud/reference/aws-service-limits",
+        "products/bring-your-own-cloud/reference/security-shared-responsibility",
         "products/bring-your-own-cloud/reference/faq"
       ]
     }
