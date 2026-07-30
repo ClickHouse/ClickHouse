@@ -42,11 +42,18 @@ INSERT INTO pk_nullable VALUES ('7'), ('3'), ('V0'), ('zz');
 CREATE TABLE pk_fixed1 (v FixedString(1)) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 1;
 INSERT INTO pk_fixed1 VALUES ('7'), ('3');
 
+-- Eight rows, so that with index_granularity = 1 a point lookup leaves granules unread and the pruning
+-- oracle below can require selected < total. With only two rows both arms read everything and the
+-- non vacuity check could not fail.
 CREATE TABLE pk_fixed4 (v FixedString(4)) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 1;
-INSERT INTO pk_fixed4 VALUES ('7'), ('3');
+INSERT INTO pk_fixed4 VALUES ('7'), ('3'), ('V0'), ('zz'), ('aa'), ('bb'), ('cc'), ('dd');
 
-CREATE TABLE pk_partition (v String) ENGINE = MergeTree PARTITION BY v ORDER BY tuple();
-INSERT INTO pk_partition VALUES ('7'), ('3'), ('V0');
+-- The '3' partition deliberately holds more rows than the '7' partition. The wrongly converted constant
+-- selects the '3' partition, so its granule count differs from the correct one and the partition pruning
+-- oracle below is a real detector rather than a coincidence.
+CREATE TABLE pk_partition (v String) ENGINE = MergeTree PARTITION BY v ORDER BY tuple()
+SETTINGS index_granularity = 1;
+INSERT INTO pk_partition VALUES ('7'), ('3'), ('3'), ('3'), ('V0');
 
 -- The bloom filter tables deliberately do NOT store the string '3', and they use a low false positive
 -- rate. With the default rate this fixture is small enough that '3' collides with an existing granule,
@@ -126,12 +133,27 @@ SELECT 'not_in', (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v NOT IN (CA
     = (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v NOT IN ('7')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0);
 
--- An OR chain of enum constants is rewritten to IN, which used to drop a disjunct.
+-- An OR chain of enum constants is rewritten to IN, which used to drop a disjunct. Three disjuncts are
+-- needed: optimize_min_equality_disjunction_chain_length defaults to 3, so a two disjunct chain is left
+-- as OR and would only measure two standalone equals, which pk_equals already covers. The cell after
+-- this one asserts the rewrite really happens, so the chain length cannot silently fall below it again.
 SELECT 'or_chain_rewritten_to_in', (SELECT arraySort(groupArray(v)) FROM pk_str
-    WHERE v = CAST('7', 'Enum8(\'7\' = 3, \'zz\' = 9)') OR v = CAST('zz', 'Enum8(\'7\' = 3, \'zz\' = 9)')
+    WHERE v = CAST('7', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
+       OR v = CAST('zz', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
+       OR v = CAST('V0', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
-    = (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v IN ('7', 'zz')
+    = (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v IN ('7', 'zz', 'V0')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0);
+
+-- Matched with the trailing comma, because a bare '%in%' also matches ordinary, result_type and other
+-- identifiers. This is a mechanism guard rather than a bug detector: the rewrite fires before the fix too.
+SELECT 'or_chain_is_rewritten', countIf(explain LIKE '%function_name: in,%') = 1
+    AND countIf(explain LIKE '%function_name: or,%') = 0
+FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM pk_str
+    WHERE v = CAST('7', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
+       OR v = CAST('zz', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
+       OR v = CAST('V0', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)'));
 
 SELECT 'tuple_in', (SELECT groupArray(a) FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
@@ -184,6 +206,80 @@ SELECT 'bloom_filter_still_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v = '7'));
+
+-- One pruning oracle per distinct conversion branch, because the cells above cover only the plain String
+-- primary key and the plain String bloom filter. Without these, a regression that restored correctness by
+-- making the branch decline the index would still return the right rows and every result cell would pass.
+-- Each compares the enum constant's granule total against the equivalent String literal's.
+
+-- FixedString re-entry: the name has to be zero padded to the column width by the second pass.
+SELECT 'pk_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_fixed4 WHERE v = '7'
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+-- Non vacuous companion: a declined index reads every granule, which would satisfy the equality above
+-- with both arms reading everything. This pins that granules really are skipped.
+SELECT 'pk_fixed_string_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+-- PARTITION BY: this plan emits both Min-Max and Partition sections, and both carry a Granules: line, so
+-- the same total over all sections is used here as everywhere else.
+SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS optimize_use_implicit_projections = 0))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
+          SETTINGS optimize_use_implicit_projections = 0));
+
+SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = '7'));
+
+SELECT 'bloom_filter_fixed_string_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')));
+
+-- The IN set branch, distinct from the equals branch pinned by bloom_filter_still_prunes.
+SELECT 'bloom_filter_in_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v IN (CAST('7', 'Enum8(\'7\' = 3)'))))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v IN ('7')));
+
+-- The array element with hint branch.
+SELECT 'bloom_filter_has_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, CAST('7', 'Enum8(\'7\' = 3)'))))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, '7')));
+
+-- The hint unwrap branch, reached because the key type carries a LowCardinality or Nullable wrapper.
+SELECT 'pk_low_cardinality_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_lc WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_lc WHERE v = '7'
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+SELECT 'pk_nullable_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_nullable WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_nullable WHERE v = '7'
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+-- The tuple set branch does carry a distinct pruning signal, measured as 2/3 granules against 1/3 before
+-- the fix, so it gets an oracle like the others rather than a documented gap.
+SELECT 'tuple_in_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
+    = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_pair WHERE (a, b) IN (('7', 'x'))
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
 
 -- Conversions that must not change.
 SELECT 'control_string_to_enum', toInt8(CAST('7', 'Enum8(\'7\' = 3)')) = 3;

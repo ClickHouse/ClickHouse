@@ -13,6 +13,7 @@ bloom_filter_has	1
 in_set	1
 not_in	1
 or_chain_rewritten_to_in	1
+or_chain_is_rewritten	1
 tuple_in	1
 nullable_enum_equals	1
 nullable_enum_in	1
@@ -23,6 +24,16 @@ enum16	1
 pk_still_prunes	1
 pk_prunes_something	1
 bloom_filter_still_prunes	1
+pk_fixed_string_prunes	1
+pk_fixed_string_prunes_something	1
+partition_key_prunes	1
+bloom_filter_fixed_string_prunes	1
+bloom_filter_fixed_string_prunes_something	1
+bloom_filter_in_prunes	1
+bloom_filter_has_prunes	1
+pk_low_cardinality_prunes	1
+pk_nullable_prunes	1
+tuple_in_prunes	1
 control_string_to_enum	1
 control_enum_to_string_cast	1
 control_bool_to_string	1
