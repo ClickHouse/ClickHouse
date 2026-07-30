@@ -351,8 +351,24 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
+static bool isRegisteredFailPoint(const String & fail_point_name)
+{
+#define M(NAME)                              \
+    if (fail_point_name == FailPoints::NAME) \
+        return true;
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
+
+    return false;
+}
+
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
+    /// Registration is deliberately the only check: disabling a registered fail point that is
+    /// not currently enabled must stay a silent no-op, because callers do idempotent cleanup.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {

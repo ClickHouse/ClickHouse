@@ -1,0 +1,8 @@
+unknown_disable Code: 36
+unknown_enable Code: 36
+registered_not_enabled_disable rc=0 out=[]
+enabled	1
+disabled	0
+armed	1
+still_armed	1
+disarmed	0
