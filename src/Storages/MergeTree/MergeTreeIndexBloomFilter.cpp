@@ -5,8 +5,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -33,6 +35,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -689,6 +692,79 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
+/// How the executing function coerces the constant before comparing it.
+enum class ConstantCoercion : uint8_t
+{
+    /// hasAny/hasAll and has/indexOf over a FixedString element: the function casts both sides to
+    /// getLeastSupertype (hasAllAny.h, arrayIndex.h executeGeneric).
+    Supertype,
+    /// has/indexOf over a LowCardinality element: the function casts the constant straight to the
+    /// dictionary value type (LowCardinalityExecutionHelpers.h dictionaryIndexForConstant).
+    Direct,
+};
+
+/// The index must hash the value the executing function actually compares.
+///
+/// convertFieldToType is a Field-level conversion: it pads a String shorter than FixedString(N) and
+/// passes an oversized one through unchanged. The array-search functions instead coerce with
+/// castColumn, and a FixedString -> String cast strips trailing zero bytes. So for a FixedString
+/// constant the index hashed a padded value the function never compares, and the granule was dropped.
+///
+/// Returns false when the constant has no representation in the index domain, which means the caller
+/// must decline the index rather than hash a value that can never match.
+static bool castConstantToIndexDomain(
+    const Field & value_field,
+    const DataTypePtr & value_type,
+    const DataTypePtr & actual_type,
+    ConstantCoercion coercion,
+    Field & out_field)
+{
+    if (!value_type)
+        return false;
+
+    const DataTypePtr from_type = removeLowCardinalityAndNullable(value_type);
+
+    try
+    {
+        auto column = from_type->createColumn();
+        column->insert(value_field);
+        ColumnWithTypeAndName arg{std::move(column), from_type, ""};
+
+        if (coercion == ConstantCoercion::Supertype)
+        {
+            /// Two hops, matching the runtime: strip the padding via the common type, then re-encode
+            /// into the element width. A direct cast would reject a constant wider than the element
+            /// before the padding is stripped, losing pruning the function does perform.
+            const DataTypePtr common_type = getLeastSupertype(DataTypes{actual_type, from_type});
+            arg = ColumnWithTypeAndName{castColumn(arg, common_type), common_type, ""};
+        }
+
+        ColumnPtr casted = castColumn(arg, actual_type);
+        if (casted->empty() || casted->isNullAt(0))
+            return false;
+
+        out_field = (*casted)[0];
+        return !out_field.isNull();
+    }
+    catch (const Exception & e)
+    {
+        /// The constant does not fit the element width. The function raises the same error on the
+        /// same input, so there is no value the index could hash that it would ever compare.
+        if (e.code() == ErrorCodes::TOO_LARGE_STRING_SIZE)
+            return false;
+        throw;
+    }
+}
+
+/// True for the element/constant types whose coercion castConstantToIndexDomain reproduces. Numeric
+/// elements take executeIntegral, which runs before executeGeneric and does not coerce this way.
+static bool constantCastAppliesToIndexDomain(const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    return value_type
+        && isStringOrFixedString(removeLowCardinalityAndNullable(value_type))
+        && isStringOrFixedString(actual_type);
+}
+
 static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
 {
     if (value_field.getType() != Field::Types::Array)
@@ -704,6 +780,44 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
 
         auto converted = convertFieldToType(f, *actual_type);
         if (converted.isNull())
+            return nullptr;
+
+        mutable_column->insert(converted);
+    }
+
+    return std::move(mutable_column);
+}
+
+
+/// Like createColumnFromConstantArray, but hashes what hasAny/hasAll compare. Kept separate because
+/// createColumnFromConstantArray is shared with the has(<const array>, <indexed scalar>) arm, whose
+/// runtime is a Field-level accurateEquals and therefore needs the padded form.
+static ColumnPtr createColumnFromConstantArrayCastAware(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    if (value_field.getType() != Field::Types::Array)
+        return nullptr;
+
+    DataTypePtr element_type;
+    if (value_type)
+    {
+        if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
+            element_type = value_array_type->getNestedType();
+    }
+
+    if (!constantCastAppliesToIndexDomain(element_type, actual_type))
+        return createColumnFromConstantArray(value_field, actual_type);
+
+    const bool is_nullable = actual_type->isNullable();
+    auto mutable_column = actual_type->createColumn();
+
+    for (const auto & f : value_field.safeGet<Array>())
+    {
+        if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+            return nullptr;
+
+        Field converted;
+        if (!castConstantToIndexDomain(f, element_type, actual_type, ConstantCoercion::Supertype, converted))
             return nullptr;
 
         mutable_column->insert(converted);
@@ -817,10 +931,30 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (function_name == "has" || indexOfCanUseBloomFilter(parent))
                 {
                     out.function = RPNElement::FUNCTION_HAS;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                    if (converted_field.isNull())
-                        return false;
+                    const DataTypePtr & raw_nested_type = array_type->getNestedType();
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(raw_nested_type);
+
+                    Field converted_field;
+                    /// A bare String element takes executeString, which compares the raw padded bytes
+                    /// without coercing, so there the unconverted field is already the right value. The
+                    /// test must read the raw type: getPrimitiveType strips LowCardinality, and a
+                    /// LowCardinality element does coerce (executeArrayLowCardinality runs before the
+                    /// wrapper is removed).
+                    if (WhichDataType(raw_nested_type).isString()
+                        || !constantCastAppliesToIndexDomain(value_type, actual_type))
+                    {
+                        converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                        if (converted_field.isNull())
+                            return false;
+                    }
+                    else
+                    {
+                        const auto coercion = raw_nested_type->lowCardinality()
+                            ? ConstantCoercion::Direct
+                            : ConstantCoercion::Supertype;
+                        if (!castConstantToIndexDomain(value_field, value_type, actual_type, coercion, converted_field))
+                            return false;
+                    }
 
                     out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
                 }
@@ -843,7 +977,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+            ColumnPtr column = createColumnFromConstantArrayCastAware(value_field, value_type, actual_type);
 
             if (!column)
                 return false;
