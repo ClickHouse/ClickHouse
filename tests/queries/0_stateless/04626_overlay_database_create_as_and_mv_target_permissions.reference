@@ -1,8 +1,0 @@
-SHOW COLUMNS on the Overlay database alone is not enough for CREATE TABLE AS through the facade
-ACCESS_DENIED
-SHOW COLUMNS on both the Overlay and the underlying database succeeds
-3
-INSERT on the Overlay database alone is not enough for CREATE MATERIALIZED VIEW TO the facade
-ACCESS_DENIED
-INSERT on both the Overlay and the underlying database succeeds
-1
