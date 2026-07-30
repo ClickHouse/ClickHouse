@@ -35,6 +35,9 @@
   "integrations": {
     "clarity": {
       "projectId": "xgummrwgj9"
+    },
+    "gtm": {
+      "tagId": "GTM-WTNTDT7W"
     }
   },
   "interaction": {
