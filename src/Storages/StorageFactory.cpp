@@ -206,6 +206,11 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
+
+            if (query.sql_security)
+                check_feature(
+                    "SQL SECURITY clause",
+                    [](StorageFeatures features) { return features.supports_sql_security; });
         }
     }
 
