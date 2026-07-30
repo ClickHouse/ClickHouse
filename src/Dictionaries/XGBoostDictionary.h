@@ -44,7 +44,8 @@ public:
 
     std::string getTypeName() const override { return "XGBoost"; }
 
-    size_t getBytesAllocated() const override { return bytes_allocated; }
+    /// XGBoost does not provide any sensible way to collect the model size in bytes, for now we return 0
+    size_t getBytesAllocated() const override { return 0; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -57,9 +58,7 @@ public:
 
     double getHitRate() const override { return 1.0; }
 
-    /// This computational dictionary stores no keys; it reports the number of feature columns the model was
-    /// trained on.
-    size_t getElementCount() const override { return model->getFeatureNames().size(); }
+    size_t getElementCount() const override { return 0; }
 
     /// The whole model is resident in memory, so the load factor is always one.
     double getLoadFactor() const override { return 1.0; }
@@ -107,8 +106,6 @@ private:
 
     /// Trained once while the dictionary is being constructed and never modified afterwards.
     std::unique_ptr<XGBoostModel> model;
-
-    size_t bytes_allocated = 0;
 
     mutable std::atomic<size_t> query_count{0};
 

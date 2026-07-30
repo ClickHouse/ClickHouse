@@ -236,6 +236,11 @@ LIFETIME(0);
 SYSTEM RELOAD DICTIONARY model_04509_eager;
 SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'model_04509_eager';
 SELECT isFinite(predictXGBoost('model_04509_eager', 1.0, 2.0));
+
+-- A computational dictionary stores no items, so there is nothing to count or to size.
+SELECT 'Positive: system.dictionaries reports no stored items';
+SELECT element_count, bytes_allocated FROM system.dictionaries
+WHERE database = currentDatabase() AND name = 'model_04509_eager';
 DROP DICTIONARY model_04509_eager;
 
 -- A bad configuration is rejected at SYSTEM RELOAD DICTIONARY, which forces training synchronously and

@@ -34,5 +34,7 @@ Negative: non-numeric structure (rejected at first use)
 Train on demand with SYSTEM RELOAD DICTIONARY
 LOADED
 1
+Positive: system.dictionaries reports no stored items
+0	0
 Error: num_iterations must be a positive integer, rejected at SYSTEM RELOAD DICTIONARY
 LOADED
