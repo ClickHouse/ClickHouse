@@ -185,7 +185,7 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
         if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate key value argument: {}", arg_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: {}", arg_name);
     }
     return key_value_args;
 }
