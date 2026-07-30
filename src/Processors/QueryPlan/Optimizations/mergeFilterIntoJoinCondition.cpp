@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
@@ -145,7 +147,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
-    const Names & right_stream_available_columns
+    const Names & right_stream_available_columns,
+    const bool allow_dynamic_type_in_join_keys
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -179,8 +182,16 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             const auto * lhs = conjunct->children[0];
             const auto * rhs = conjunct->children[1];
 
-            /// We can't push equality condition into JOIN if types are not equal.
-            if (!lhs->result_type->equals(*rhs->result_type))
+            /// Dynamic type in join keys can lead to unexpected results
+            if (!allow_dynamic_type_in_join_keys && (hasDynamicType(lhs->result_type) || hasDynamicType(rhs->result_type)))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
+            /// We can't push equality condition into JOIN if types do not have a common super type
+            if (!lhs->result_type->equals(*rhs->result_type) 
+                && !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type}))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;
@@ -293,12 +304,15 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto left_stream_available_columns = get_available_columns(*left_stream_header);
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
+    const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
-        right_stream_available_columns);
+        right_stream_available_columns,
+        allow_dynamic_type_in_join_keys);
 
     if (equality_predicates.empty())
         return 0;
