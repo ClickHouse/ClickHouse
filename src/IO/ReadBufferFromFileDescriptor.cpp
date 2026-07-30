@@ -12,7 +12,12 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Common/filesystemHelpers.h>
+#if defined(OS_WINDOWS)
+#include <io.h>
+#include <Poco/UnWindows.h>
+#else
 #include <poll.h>
+#endif
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
 
@@ -32,6 +37,51 @@ namespace CurrentMetrics
 {
     extern const Metric Read;
 }
+
+#if defined(OS_WINDOWS)
+namespace
+{
+
+/// `read`/`pread` for Windows. `ReadFile` with an `OVERLAPPED` offset is the positional read:
+/// unlike `_lseeki64` followed by `_read` it leaves the descriptor's shared file position alone,
+/// which is exactly what `pread` promises and what makes concurrent reads of one file safe.
+/// Reports failure the way the POSIX calls do, through `-1` and `errno`.
+ssize_t readWindows(int fd, char * to, size_t bytes, bool use_pread, size_t offset)
+{
+    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        errno = EBADF;
+        return -1;
+    }
+
+    /// `ReadFile` counts in `DWORD`.
+    const DWORD to_read = static_cast<DWORD>(std::min<size_t>(bytes, std::numeric_limits<DWORD>::max()));
+
+    OVERLAPPED overlapped{};
+    OVERLAPPED * positional = nullptr;
+    if (use_pread)
+    {
+        overlapped.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFull);
+        overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32);
+        positional = &overlapped;
+    }
+
+    DWORD bytes_read = 0;
+    if (!ReadFile(handle, to, to_read, &bytes_read, positional))
+    {
+        /// Reading at or past the end of a file with an explicit offset is reported this way
+        /// rather than as a short read; it is the end of file, not an error.
+        if (GetLastError() == ERROR_HANDLE_EOF)
+            return 0;
+        errno = EIO;
+        return -1;
+    }
+    return static_cast<ssize_t>(bytes_read);
+}
+
+}
+#endif
 
 namespace DB
 {
@@ -71,10 +121,14 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
+#if defined(OS_WINDOWS)
+            res = readWindows(fd, to + bytes_read, to_read, use_pread, offset + bytes_read);
+#else
             if (use_pread)
                 res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
             else
                 res = ::read(fd, to + bytes_read, to_read);
+#endif
         }
         if (!res)
             break;
@@ -156,12 +210,39 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     if (hasPendingData())
         return true;
 
+    const auto timeout_milliseconds = static_cast<int>(
+        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+
+#if defined(OS_WINDOWS)
+    /// Windows has no `poll` for file descriptors - `WSAPoll` takes sockets only. The waitable
+    /// objects here are the console and pipes, which `WaitForSingleObject` handles; a disk file
+    /// is not waitable but is also always ready to read, which is what `poll` reports for one.
+    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll file {}: not an open descriptor", getFileName());
+    }
+
+    if (GetFileType(handle) == FILE_TYPE_DISK)
+        return true;
+
+    const DWORD waited = WaitForSingleObject(handle, static_cast<DWORD>(timeout_milliseconds));
+    if (waited == WAIT_FAILED)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+            "Cannot poll file {} (WaitForSingleObject), error code: {}",
+            getFileName(),
+            GetLastError());
+    }
+    return waited == WAIT_OBJECT_0;
+#else
     pollfd poll_fd{};
     poll_fd.fd = fd;
     poll_fd.events = POLLIN | POLLPRI;
-
-    const auto timeout_milliseconds = static_cast<int>(
-        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
     int result = 0;
     do
@@ -177,6 +258,7 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     }
 
     return result > 0;
+#endif
 }
 
 

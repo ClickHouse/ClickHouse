@@ -18,7 +18,9 @@
 #include <Poco/Logger.h>
 
 #include <csignal>
+#if !defined(OS_WINDOWS)
 #include <sys/mman.h>
+#endif
 
 
 namespace DB
