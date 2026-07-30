@@ -173,6 +173,57 @@ DROP TABLE buf_top;
 DROP TABLE buf_merge;
 DROP TABLE buf_leaf;
 
+-- The name existing in the destination is not enough either: the filter is forwarded into the raw
+-- destination read, where an ALIAS twin is not a physical input (found by review). The kinds must
+-- be compatible the same way StorageMerge requires.
+CREATE TABLE buf_alias_dst (x UInt64, y UInt64 ALIAS x) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE buf_alias (y UInt64)
+    ENGINE = Buffer(currentDatabase(), buf_alias_dst, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+INSERT INTO buf_alias_dst (x) SELECT number FROM numbers(10);
+
+SELECT '-- a destination ALIAS twin is rejected for PREWHERE, not forwarded --';
+SELECT count() FROM buf_alias PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM buf_alias PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
+-- Reading it through the Buffer does not work regardless; the policy must not turn that into a push.
+CREATE ROW POLICY rp_04652_alias ON buf_alias FOR SELECT USING y != 0 TO CURRENT_USER;
+SELECT count() FROM buf_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT count() FROM buf_alias SETTINGS enable_analyzer = 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP ROW POLICY rp_04652_alias ON buf_alias;
+
+SELECT '-- a MATERIALIZED twin is physical in the destination and stays supported --';
+CREATE TABLE buf_mat_dst (x UInt64, y UInt64 MATERIALIZED x + 1) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE buf_mat (y UInt64)
+    ENGINE = Buffer(currentDatabase(), buf_mat_dst, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+INSERT INTO buf_mat_dst (x) SELECT number FROM numbers(10);
+SELECT count() FROM buf_mat PREWHERE y > 5;
+SELECT count() FROM buf_mat PREWHERE y > 5 SETTINGS enable_analyzer = 0;
+CREATE ROW POLICY rp_04652_mat ON buf_mat FOR SELECT USING y > 5 TO CURRENT_USER;
+SELECT count() FROM buf_mat;
+DROP ROW POLICY rp_04652_mat ON buf_mat;
+
+DROP TABLE buf_mat;
+DROP TABLE buf_mat_dst;
+DROP TABLE buf_alias;
+DROP TABLE buf_alias_dst;
+
+-- The same physicality rule holds through a materialized view: the target twin can drift to an
+-- ALIAS after the view is created.
+CREATE TABLE mv_alias_tgt (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW mv_alias TO mv_alias_tgt (y UInt64) AS SELECT 1::UInt64 AS y;
+INSERT INTO mv_alias_tgt (x, y) SELECT number, number FROM numbers(10);
+ALTER TABLE mv_alias_tgt MODIFY COLUMN y UInt64 ALIAS x;
+
+SELECT '-- a target ALIAS twin behind a view is rejected for PREWHERE too --';
+SELECT count() FROM mv_alias PREWHERE y != 0; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM mv_alias PREWHERE y != 0 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
+CREATE ROW POLICY rp_04652_mv_alias ON mv_alias FOR SELECT USING y != 0 TO CURRENT_USER;
+SELECT count() FROM mv_alias; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT count() FROM mv_alias SETTINGS enable_analyzer = 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP ROW POLICY rp_04652_mv_alias ON mv_alias;
+
+DROP VIEW mv_alias;
+DROP TABLE mv_alias_tgt;
+
 -- `StorageAlias` forwards the whole PREWHERE contract to its target, so an alias over a nested
 -- `Merge` must reject the mismatched column exactly like the target itself does (transitively).
 

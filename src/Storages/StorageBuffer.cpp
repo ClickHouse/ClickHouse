@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ColumnDefault.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -960,16 +961,20 @@ std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
         return NameSet{};
 
     /// A type declared differently than in the destination is fine: read() prepends a converting
-    /// prefix to the filter. But the column must exist in the destination, or the filter has an
-    /// input nothing binds to.
+    /// prefix to the filter. But the filter is forwarded into the raw destination read, so the
+    /// column must be physical there just like here: an ALIAS twin has no input the filter binds to.
     auto own_metadata = getInMemoryMetadataPtr(getContext(), false);
-    auto own_columns = own_metadata->getColumns().getAll();
+    const auto & own_columns_description = own_metadata->getColumns();
     auto destination_metadata = destination->getInMemoryMetadataPtr(getContext(), false);
     const auto & destination_columns = destination_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & column : own_columns)
+    for (const auto & column : own_columns_description.getAll())
     {
-        if (destination_columns.tryGetColumn(GetColumnsOptions::All, column.name))
+        if (!destination_columns.tryGetColumn(GetColumnsOptions::All, column.name))
+            continue;
+        const auto own_kind = own_columns_description.getDefault(column.name).value_or(ColumnDefault{}).kind;
+        const auto destination_kind = destination_columns.getDefault(column.name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(own_kind, destination_kind))
             supported_columns.insert(column.name);
     }
 

@@ -63,6 +63,12 @@
 1	2
 2	3
 3	4
+-- a destination ALIAS twin is rejected for PREWHERE, not forwarded --
+-- a MATERIALIZED twin is physical in the destination and stays supported --
+5
+5
+5
+-- a target ALIAS twin behind a view is rejected for PREWHERE too --
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10

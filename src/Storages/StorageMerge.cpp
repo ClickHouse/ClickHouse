@@ -101,27 +101,6 @@ extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
 }
 
-namespace
-{
-
-bool columnIsPhysical(ColumnDefaultKind kind)
-{
-    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
-}
-
-bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
-{
-    if (lhs == rhs)
-        return true;
-
-    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
-        return true;
-
-    return false;
-}
-
-}
-
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,

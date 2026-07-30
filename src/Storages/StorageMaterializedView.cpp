@@ -1,6 +1,7 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
+#include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1082,14 +1083,20 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         return std::nullopt;
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
-    auto view_columns = view_metadata->getColumns().getAll();
+    const auto & view_columns_description = view_metadata->getColumns();
     auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : view_columns)
+    for (const auto & [name, type] : view_columns_description.getAll())
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (target_column && target_column->type->equals(*type))
+        if (!target_column || !target_column->type->equals(*type))
+            continue;
+        /// The filter is forwarded into the raw target read, so the column must be physical there
+        /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.
+        const auto view_kind = view_columns_description.getDefault(name).value_or(ColumnDefault{}).kind;
+        const auto target_kind = target_table_columns.getDefault(name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(view_kind, target_kind))
             supported_columns.insert(name);
     }
 
