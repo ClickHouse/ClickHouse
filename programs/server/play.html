@@ -1439,6 +1439,14 @@
             display: none;
         }
 
+        /* The two run buttons form a pair, so the space between them matches the space to the
+           left of the first one (#main's 0.5rem padding) rather than the 1rem gap that separates
+           the unrelated controls in #run_div. The margin adds to the flex gap, hence -0.5rem. */
+        #run + #run-all
+        {
+            margin-left: -0.5rem;
+        }
+
         #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
