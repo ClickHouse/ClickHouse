@@ -22,11 +22,15 @@ public:
 
     StreamSettings settings;
 
+    ASTStreamSettings() = default;
     explicit ASTStreamSettings(StreamSettings settings_);
 
     String getID(char) const override { return "ASTStreamSettings"; }
 
     ASTPtr clone() const override { return make_intrusive<ASTStreamSettings>(*this); }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
