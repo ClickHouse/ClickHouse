@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Regression test pinning what MergeTask::prepareProjectionsToMergeAndRebuild does with a projection that reads
-# `_block_offset` (and not `_block_number`) when NO source part has the projection materialized.
-# The merge memory reservation estimate (CompactionStatistics::estimateNeededMemoryForMerge) mirrors that decision:
-# with some source parts missing the projection, the merge rebuilds it only for a `_block_number` (commit-order)
-# projection - which is never written on insert - or under materialize_projections_on_merge, and DROPS it from the
-# merged part otherwise. A `_block_offset` projection is written on insert like any ordinary one, so it must take
-# the drop branch here and cost the reservation nothing. Pricing a rebuild the merge never performs would
-# over-reserve, the starvation direction this estimate exists to avoid. This test pins the merge behaviour the
-# estimator mirrors: the projection is absent from the merged part.
+# Coverage test for the merge memory reservation estimate (see CompactionStatistics::estimateNeededMemoryForMerge)
+# on a commit-order projection that reads `_block_offset` when NO source part has the projection materialized.
+# MergeTask::prepareProjectionsToMergeAndRebuild rebuilds such a projection from the merged rows - since
+# d673d9e5a6e ("Introduce Invalidated System Columns") a `_block_offset` projection takes that branch together
+# with a `_block_number` one, because a merge invalidates `_block_offset` and the projection cannot be merged from
+# stale per-part offsets. The estimator only mirrored `with_block_number`, so a `_block_offset`-only projection took
+# the drop branch and its whole rebuild - the temporary projection part writer streams plus the read-back - was
+# missing from the reservation, under-reserving exactly the path the merge executes. OPTIMIZE reserves
+# unconditionally, so this must still succeed under a pathologically small soft limit while driving the rebuilt
+# projection sizing for a commit-order projection.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,8 +26,9 @@ ${CLICKHOUSE_LOCAL} -q "
              allow_commit_order_projection = 1,
              enable_block_offset_column = 1,
              -- No source part gets the projection materialized, so every part has the same (empty) projection set
-             -- and they are mergeable, while the merge still sees 'some parts do not have it'.
+             -- and they are mergeable, while the merge still sees 'some parts do not have it' and rebuilds.
              materialize_projections_on_insert = 0,
+             -- Off, so the rebuild is decided by the projection being a commit-order one, not by this setting.
              materialize_projections_on_merge = 0;
 
     SYSTEM STOP MERGES t_merge_mem_block_offset_proj;
@@ -43,7 +45,8 @@ ${CLICKHOUSE_LOCAL} -q "
 
     SELECT count() FROM t_merge_mem_block_offset_proj;
     SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_mem_block_offset_proj' AND active AND partition_id = 'all';
-    -- Dropped by the merge, exactly as the estimator prices it: still no projection part.
-    SELECT count() FROM system.projection_parts
+    -- Rebuilt by the merge, which is what the estimator must price: the projection part now exists.
+    SELECT name FROM system.projection_parts
         WHERE database = currentDatabase() AND table = 't_merge_mem_block_offset_proj' AND active;
+    SELECT count() FROM (SELECT _block_offset FROM t_merge_mem_block_offset_proj ORDER BY _block_offset);
 " -- --merges_mutations_memory_usage_soft_limit=1

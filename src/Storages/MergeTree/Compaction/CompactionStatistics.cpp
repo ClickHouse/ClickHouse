@@ -1555,7 +1555,13 @@ UInt64 estimateNeededMemoryForMerge(
                 }
                 else if (projection_parts.size() != future_part.parts.size())
                 {
-                    if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
+                    /// Both commit-order projections rebuild here, mirroring
+                    /// prepareProjectionsToMergeAndRebuild: a `_block_offset` one joined `_block_number`
+                    /// in d673d9e5a6e ("Introduce Invalidated System Columns"), because a merge
+                    /// invalidates `_block_offset` and the projection has to be recalculated from the
+                    /// merged rows rather than merged from stale per-part offsets.
+                    if (projection.with_block_number || projection.with_block_offset
+                        || settings[MergeTreeSetting::materialize_projections_on_merge])
                         rebuild_projection = true;
                     else
                         continue; /// Dropped from the merged part - no IO.
