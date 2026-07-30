@@ -27,6 +27,7 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -810,6 +811,25 @@ static void setEffectiveParallelReplicasCount(const ContextMutablePtr & context,
     context->setSetting("max_parallel_replicas", replicas_count);
 }
 
+static ASTPtr getQueryASTWithEffectiveParallelReplicasCount(const ASTPtr & query_ast, size_t replicas_count)
+{
+    auto result = query_ast->clone();
+    std::vector<IAST *> nodes_to_visit{result.get()};
+    while (!nodes_to_visit.empty())
+    {
+        auto * current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (auto * settings = current->as<ASTSetQuery>(); settings && !settings->is_standalone
+            && settings->changes.tryGet("max_parallel_replicas"))
+            settings->changes.setSetting("max_parallel_replicas", UInt64{replicas_count});
+
+        for (auto & child : current->children)
+            nodes_to_visit.push_back(child.get());
+    }
+    return result;
+}
+
 static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
@@ -870,6 +890,7 @@ void executeQueryWithParallelReplicas(
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     setEffectiveParallelReplicasCount(new_context, max_replicas_to_use);
+    auto remote_query_ast = getQueryASTWithEffectiveParallelReplicasCount(query_ast, max_replicas_to_use);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -921,7 +942,7 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            remote_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -961,7 +982,7 @@ void executeQueryWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            remote_query_ast,
             query_tree,
             planner_context,
             cluster,
