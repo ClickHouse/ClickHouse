@@ -10300,6 +10300,39 @@ void MergeTreeData::checkStreamFilenamesForCollision(const StorageInMemoryMetada
 namespace
 {
 
+/// Enumerate the streams that appear only once a data-dependent serialization kind is chosen.
+///
+/// The write path builds its `SerializationInfo` with `choose_kind = true` and feeds it real data
+/// (`MergeTreeDataWriter.cpp`, `MergeTask.cpp`), so `chooseKindStack` can select Sparse and
+/// `SerializationSparse::enumerateStreams` then contributes a `<base>.sparse.idx` offsets stream.
+/// A DDL-time check has no data, so it must synthesise the kind instead: an all-defaults `Data`
+/// makes the defaults ratio 1.0, which exceeds `ratio_of_defaults_for_sparse_serialization` for
+/// every value below 1.0 and therefore yields the widest kind stack the writer could ever pick.
+///
+/// Going through `createSerializationInfo` (rather than wrapping the top-level serialization by
+/// hand) is what makes nested owners work: `Tuple` chooses a kind per ELEMENT, so its Sparse
+/// streams are `<base>%2E<elem>.sparse.idx` and a top-level wrap would never produce them.
+/// `Detached` and `Replicated` are deliberately not synthesised: neither is reachable here.
+/// `Detached` exists only for in-flight block marshalling, and the only producer of `Replicated`
+/// is `DataTypeTuple::getSerializationInfoImpl` for an already-replicated column, which the
+/// writer materialises away before a part is written.
+void enumerateStreamsForDataDependentKinds(
+    const NameAndTypePair & column,
+    const SerializationInfo::Settings & serialization_settings,
+    const ISerialization::StreamCallback & callback)
+{
+    if (serialization_settings.isAlwaysDefault())
+        return;
+
+    auto kind_settings = serialization_settings;
+    kind_settings.choose_kind = true;
+
+    auto info = column.type->createSerializationInfo(kind_settings);
+    info->addDefaults(1);
+
+    column.type->getSerialization(*info)->enumerateStreams(callback);
+}
+
 /// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
 class StreamFilenameCollisionChecker
 {
@@ -10338,8 +10371,14 @@ public:
                 column_streams.emplace(stream_name, full_stream_name);
             };
 
-            auto serialization = column.type->getSerialization(serialization_settings);
-            serialization->enumerateStreams(callback);
+            /// The plain serialization misses every stream that exists only for a non-default
+            /// serialization kind, because the kind depends on the data and no data exists yet.
+            /// Sparse is the reachable one: it is on at default settings and its offsets stream is
+            /// named `<base>.sparse.idx`, so `.idx` is part of the NAME and can alias a skip index.
+            /// Enumerate the union of every kind the writer could pick, keyed per column, so an
+            /// index can never share a base with a stream a later INSERT will open.
+            column.type->getSerialization(serialization_settings)->enumerateStreams(callback);
+            enumerateStreamsForDataDependentKinds(column, serialization_settings, callback);
 
             auto owner = fmt::format("Column '{} {}'", column.name, column.type->getName());
             for (const auto & [stream_name, full_stream_name] : column_streams)
@@ -10427,7 +10466,7 @@ private:
 void MergeTreeData::checkStreamFilenamesForCollision(
     const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const
 {
-    /// Constructing real index objects is what makes `getSubstreams()` the single source of truth for
+    /// Constructing real index objects is what makes `getSubstreams` the single source of truth for
     /// the on-disk layout, but a creator assumes its validator has already run (for example
     /// `setIndexCreator` dereferences `index.arguments` unchecked). Every caller therefore invokes
     /// this only after `setProperties`/`checkProperties` has validated the index descriptions.

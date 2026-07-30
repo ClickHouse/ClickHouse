@@ -16,7 +16,7 @@ CREATE TABLE t_collide (k UInt64, s String, w UInt64,
 ENGINE = MergeTree ORDER BY k
 SETTINGS escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
 
--- Not specific to `set`: every non-inert type that does not override getSubstreams() writes `.idx`.
+-- Not specific to `set`: every non-inert type that does not override `getSubstreams` writes `.idx`.
 CREATE TABLE t_collide (k UInt64, s String, w UInt64,
     INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
     INDEX `a.pst` w TYPE bloom_filter GRANULARITY 1)
@@ -52,6 +52,35 @@ DROP TABLE t_collide;
 CREATE TABLE t_collide (k UInt64, skp_idx_a String, w UInt64,
     INDEX a(w) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
+
+-- A sparse column's offsets stream is data-dependent: the writer only picks Sparse after seeing
+-- the data, and its stream is named `<base>.sparse.idx`, so `.idx` is part of the NAME. Column
+-- `skp_idx_a` therefore claims `skp_idx_a.sparse.idx`, which is exactly what index `a.sparse.idx`
+-- resolves to with escaping off. Both then open one marks file.
+-- The ratio is pinned because at 1.0 sparse is off, and then there is genuinely no collision.
+CREATE TABLE t_collide (k UInt64, skp_idx_a UInt64, w UInt64,
+    INDEX `a.sparse.idx` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         ratio_of_defaults_for_sparse_serialization = 0.9375; -- { serverError BAD_ARGUMENTS }
+
+-- `Tuple` picks a kind per ELEMENT, so its sparse streams are `<base>%2E<elem>.sparse.idx` and a
+-- top-level-only enumeration would miss them.
+CREATE TABLE t_collide (k UInt64, skp_idx_t Tuple(a UInt64, b UInt64), w UInt64,
+    INDEX `t%2Ea.sparse.idx` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0,
+         ratio_of_defaults_for_sparse_serialization = 0.9375; -- { serverError BAD_ARGUMENTS }
+
+-- Sparse off means no offsets stream, so the same pair is legal. This bounds the check to the
+-- settings that actually produce the stream.
+CREATE TABLE t_collide (k UInt64, skp_idx_a UInt64, w UInt64,
+    INDEX `a.sparse.idx` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
+-- ... but enabling sparse afterwards must be rejected, like any other setting change.
+ALTER TABLE t_collide MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.9375; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_collide;
 
 -- A hashed index base can collide with a column literally named that hex string.
 SELECT lower(hex(reverse(CAST(sipHash128('skp_idx_a_very_long_index_name_that_will_be_hashed'), 'FixedString(16)'))));
@@ -142,6 +171,20 @@ CREATE TABLE t_collide (k UInt64, skp_idx_b String, w UInt64,
 ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_collide SELECT number, 'x', number FROM numbers(50);
 SELECT count() FROM t_collide;
+DROP TABLE t_collide;
+
+-- `.sparse` alone is NOT the offsets base (`.sparse.idx` is), so this pair stays legal. The mostly
+-- default column makes the writer really choose Sparse, so the arm exercises the sparse path rather
+-- than merely parsing: `serialization_kind` is asserted and the values must read back intact.
+CREATE TABLE t_collide (k UInt64, skp_idx_a UInt64, w UInt64,
+    INDEX `a.sparse` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 0.9375;
+INSERT INTO t_collide SELECT number, if(number % 100 = 0, number, 0), number FROM numbers(1000);
+SELECT serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_collide' AND active AND column = 'skp_idx_a';
+SELECT count(), sum(skp_idx_a) FROM t_collide;
 DROP TABLE t_collide;
 
 -- A projection stream base coinciding with a parent-table stream base is not a collision: the
