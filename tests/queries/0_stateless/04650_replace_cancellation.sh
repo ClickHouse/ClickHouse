@@ -59,9 +59,9 @@ run "many rows" \
 #    fast paths, which return without entering any loop. Each fold's cost is building the matcher, charged
 #    as the pattern's byte count: 130000 bytes is about 8100 units against a 65536-unit budget.
 #    Sizing the folds by their MATCH count instead lets the in-loop check fire, which is what an earlier
-#    version got wrong. The count stays at 60: the folds are chained with '+', and a longer chain is
-#    rejected as too deeply nested on builds with a smaller usable stack.
-FOLDS=$(python3 -c "print(' + '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 10000), 'x'))\" % i for i in range(60)))")
+#    version got wrong. The folds go in one array rather than a '+' chain: a chain nests one node per
+#    fold and formatting it recurses, which overruns the stack allowance a TSan build gives a query thread.
+FOLDS=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 10000), 'x'))\" % i for i in range(60)) + '])')")
 run "many folds" "SELECT $FOLDS FORMAT Null"
 
 # 5. One match per iteration with a replacement much larger than the match: the whole cost is in the
