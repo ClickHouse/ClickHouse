@@ -432,11 +432,7 @@ def test_default_codec_for_compact_parts(start_cluster):
         "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='compact_parts_table'"
     ).strip()
     node4.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"rm {data_path}detached/all_1_1_0/default_compression_codec.txt",
-        ]
+        ["rm", f"{data_path}detached/all_1_1_0/default_compression_codec.txt"]
     )
 
     node4.query("ALTER TABLE compact_parts_table ATTACH PART 'all_1_1_0'")
