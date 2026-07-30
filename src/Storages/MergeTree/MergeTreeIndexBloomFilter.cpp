@@ -754,8 +754,9 @@ static bool castConstantToIndexDomain(
     }
     catch (const Exception & e)
     {
-        /// The constant does not fit the element width. The function raises the same error on the
-        /// same input, so there is no value the index could hash that it would ever compare.
+        /// The constant does not fit the element width, so it has no representation in the index
+        /// domain and the index must decline. Depending on the element wrapper the function either
+        /// rejects the same constant or simply finds no match; neither is a value the index can hash.
         if (e.code() == ErrorCodes::TOO_LARGE_STRING_SIZE)
             return false;
         throw;
@@ -798,6 +799,10 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
 /// Like createColumnFromConstantArray, but hashes what hasAny/hasAll compare. Kept separate because
 /// createColumnFromConstantArray is shared with the has(<const array>, <indexed scalar>) arm, whose
 /// runtime is a Field-level accurateEquals and therefore needs the padded form.
+///
+/// Performs the same two hops as castConstantToIndexDomain, batched over the whole array: the common
+/// type and both cast functions are loop-invariant, and hasAllAny.h likewise casts whole argument
+/// columns rather than one element at a time.
 static ColumnPtr createColumnFromConstantArrayCastAware(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type)
 {
@@ -814,22 +819,63 @@ static ColumnPtr createColumnFromConstantArrayCastAware(
     if (!constantCastAppliesToIndexDomain(element_type, actual_type))
         return createColumnFromConstantArray(value_field, actual_type);
 
+    const Array & elements = value_field.safeGet<Array>();
     const bool is_nullable = actual_type->isNullable();
+    const DataTypePtr from_type = removeLowCardinalityAndNullable(element_type);
+
     auto mutable_column = actual_type->createColumn();
+    if (elements.empty())
+        return std::move(mutable_column);
 
-    for (const auto & f : value_field.safeGet<Array>())
+    try
     {
-        if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+        auto source_column = from_type->createColumn();
+        source_column->reserve(elements.size());
+
+        for (const auto & f : elements)
+        {
+            if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+                return nullptr;
+
+            /// from_type has the wrappers stripped, so a NULL has no representation in it. Declining
+            /// matches the scalar path, which refuses a NULL constant for the same reason.
+            if (f.isNull())
+                return nullptr;
+
+            source_column->insert(f);
+        }
+
+        ColumnWithTypeAndName arg{std::move(source_column), from_type, ""};
+
+        /// Two hops, matching the runtime: strip the padding via the common type, then re-encode into
+        /// the element width. A direct cast would reject a constant wider than the element before the
+        /// padding is stripped, losing pruning the function does perform.
+        const DataTypePtr common_type = getLeastSupertype(DataTypes{actual_type, from_type});
+        arg = ColumnWithTypeAndName{castColumn(arg, common_type), common_type, ""};
+
+        ColumnPtr casted = castColumn(arg, actual_type);
+        if (casted->size() != elements.size())
             return nullptr;
 
-        Field converted;
-        if (!castConstantToIndexDomain(f, element_type, actual_type, ConstantCoercion::Supertype, converted))
-            return nullptr;
+        /// One unrepresentable element declines the whole predicate, as the per-element form did.
+        for (size_t i = 0; i < casted->size(); ++i)
+        {
+            if (casted->isNullAt(i))
+                return nullptr;
 
-        mutable_column->insert(converted);
+            mutable_column->insert((*casted)[i]);
+        }
+
+        return std::move(mutable_column);
     }
-
-    return std::move(mutable_column);
+    catch (const Exception & e)
+    {
+        /// The batched cast throws on the first element that does not fit the element width, which
+        /// declines the whole predicate exactly as one unrepresentable element did before.
+        if (e.code() == ErrorCodes::TOO_LARGE_STRING_SIZE)
+            return nullptr;
+        throw;
+    }
 }
 
 
