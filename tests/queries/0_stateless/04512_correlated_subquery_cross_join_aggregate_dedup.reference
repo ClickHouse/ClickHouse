@@ -44,8 +44,8 @@
 1	1
 2	1
 -- duplicate correlated values in the outer table, no join, subquery GROUP BY --
-10	4000
-10	4000
+10	1
+10	1
 -- same shape without GROUP BY: a plain scalar SUM inflates too --
 10	4000
 10	4000

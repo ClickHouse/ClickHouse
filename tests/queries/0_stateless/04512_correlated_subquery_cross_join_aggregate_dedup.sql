@@ -71,11 +71,17 @@ CREATE TABLE lk1_04512 (id UInt32, c0 Nullable(Int32), c1 Nullable(Int32)) ENGIN
 INSERT INTO lk1_04512 VALUES (1, 10, 1000), (2, 10, 3000), (3, 20, 9000), (4, 20, 9500);
 INSERT INTO lk0_04512 VALUES (1, 10), (2, 10);
 
--- GROUP BY only the correlated column: grouping by c1 as well would make the subquery return
--- several rows, and which one the scalar subquery picks is arbitrary.
+-- The reported shape groups by c1 as well, so the subquery returns one row per distinct c1 and
+-- which one the scalar subquery picks is arbitrary. Assert that the value is one of the two valid
+-- per-group sums instead of pinning one of them: without the deduplication every candidate is
+-- inflated out of that domain (2000 or 6000), so the assertion still fails. The comparison is
+-- wrapped in a subquery because a correlated subquery cannot yet be an IN argument.
 SELECT '-- duplicate correlated values in the outer table, no join, subquery GROUP BY --';
-SELECT c0, (SELECT SUM(lk1_04512.c1) FROM lk1_04512 WHERE lk1_04512.c0 = lk0_04512.c0 GROUP BY lk1_04512.c0) AS sq
-FROM lk0_04512
+SELECT c0, sq IN (1000, 3000) AS sum_is_a_valid_group FROM
+(
+    SELECT id, c0, (SELECT SUM(lk1_04512.c1) FROM lk1_04512 WHERE lk1_04512.c0 = lk0_04512.c0 GROUP BY lk1_04512.c0, lk1_04512.c1) AS sq
+    FROM lk0_04512
+)
 ORDER BY id;
 
 SELECT '-- same shape without GROUP BY: a plain scalar SUM inflates too --';
