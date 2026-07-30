@@ -179,24 +179,25 @@ std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCo
     return result;
 }
 
-std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllFilesExcludingDeleted() const
+std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    UInt64 result = 0;
-    /// `file_size_in_bytes` is a required file-level field in all format versions, so the
-    /// sum is exact (the previous implementation summed the byte size of a single column
-    /// per file, which is not the file size at all). Live position/equality delete files
-    /// are included, matching the `total-files-size` summary contract, which tracks all
-    /// live table files. The field is parsed as a raw Int64, so a corrupted manifest file
-    /// may carry a negative value; it is reported as "size unavailable" rather than summed
-    /// or rejected, mirroring record_count above.
-    for (const auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+    size_t result = 0;
+    for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
     {
-        for (const auto & file : getFilesWithoutDeleted(content_type))
+        /// Have at least one column with bytes count
+        bool found = false;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
         {
-            if (file->parsed_entry->file_size_in_bytes < 0)
-                return std::nullopt;
-            result += static_cast<UInt64>(file->parsed_entry->file_size_in_bytes);
+            if (column_info.bytes_size.has_value())
+            {
+                result += *column_info.bytes_size;
+                found = true;
+                break;
+            }
         }
+
+        if (!found)
+            return std::nullopt;
     }
     return result;
 }
@@ -605,6 +606,30 @@ bool ManifestFileIterator::areAllDataFilesSortedBySortOrderID(Int32 sort_order_i
     }
     /// Empty manifest (no data files) is considered sorted by definition
     return true;
+}
+
+std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingDeleted() const
+{
+    Int64 result = 0;
+    auto handle = getFilesWithoutDeletedHandle();
+    for (const auto & file : handle.getFilesWithoutDeleted(FileContentType::DATA))
+    {
+        /// Have at least one column with bytes count
+        bool found = false;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+        {
+            if (column_info.bytes_size.has_value())
+            {
+                result += *column_info.bytes_size;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            return std::nullopt;
+    }
+    return result;
 }
 
 }

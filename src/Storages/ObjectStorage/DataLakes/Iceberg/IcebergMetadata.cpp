@@ -404,6 +404,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
             snapshot_id);
     IcebergPathFromMetadata manifest_list_file_path = IcebergPathFromMetadata::deserialize(snapshot_object->getValue<String>(f_manifest_list));
     std::optional<size_t> total_rows;
+    std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
 
     if (snapshot_object->has(f_summary))
@@ -411,6 +412,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         auto summary_object = snapshot_object->get(f_summary).extract<Poco::JSON::Object::Ptr>();
         if (summary_object->has(f_total_records))
             total_rows = summary_object->getValue<Int64>(f_total_records);
+
+        if (summary_object->has(f_total_files_size))
+            total_bytes = summary_object->getValue<Int64>(f_total_files_size);
 
         if (summary_object->has(f_total_position_deletes))
         {
@@ -428,6 +432,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         snapshot_id,
         schema_id,
         total_rows,
+        total_bytes,
         total_position_deletes);
 }
 
@@ -1181,26 +1186,21 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     if (!actual_data_snapshot)
         return 0;
 
-    /// The snapshot summary's `total-files-size` hint is not used as a data source for the
-    /// same reason `total-records` is not in totalRows(): it is maintained incrementally by
-    /// writers (parent total +/- delta), so a corrupted commit in the table history poisons
-    /// it silently, and a negative value would wrap into an absurdly huge unsigned size.
-    /// Instead, sum the file-level `file_size_in_bytes` over all live files -- data files
-    /// and position/equality delete files, matching what `total-files-size` tracks: the
-    /// field is required in all format versions, so the result is exact at the cost of
-    /// opening the manifest files (served from the Iceberg metadata cache on repeated calls).
-    UInt64 result = 0;
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (actual_data_snapshot->total_bytes.has_value())
+        return actual_data_snapshot->total_bytes;
+
+    Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-        /// nullopt means a corrupted manifest file with a negative `file_size_in_bytes`:
-        /// fail closed to "unknown" instead of returning a wrong size.
-        auto bytes = manifest_file_ptr.getBytesCountInAllFilesExcludingDeleted();
-        if (!bytes.has_value())
+        auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
+        if (!count.has_value())
             return {};
 
-        result += *bytes;
+        result += count.value();
     }
 
     return result;

@@ -60,11 +60,7 @@ public:
         /// Returns std::nullopt if any file carries a malformed (negative) record count.
         std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        /// Sum of the file-level `file_size_in_bytes` over all live files: data files and
-        /// position/equality delete files, matching the snapshot summary's `total-files-size`
-        /// contract, which tracks all live table files.
-        /// Returns std::nullopt if any file carries a malformed (negative) size.
-        std::optional<UInt64> getBytesCountInAllFilesExcludingDeleted() const;
+        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     private:
         friend class ManifestFileIterator;
@@ -96,6 +92,10 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
+    /// Fields with rows count in manifest files are optional
+    /// they can be absent.
+    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+    std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
