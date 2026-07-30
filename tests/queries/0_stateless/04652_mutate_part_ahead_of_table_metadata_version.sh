@@ -17,9 +17,6 @@ function restore_failpoints()
         return
     fi
 
-    # In case we failed inside the stopped-merges window below
-    $CLICKHOUSE_CLIENT -q "system start merges $advanced_replica" ||:
-
     # Let the failed ALTER_METADATA succeed again, to avoid endless errors in logs
     $CLICKHOUSE_CLIENT -q "system enable failpoint replicated_queue_unfail_entries" ||:
     $CLICKHOUSE_CLIENT -q "system sync replica $held_replica" ||:
@@ -31,8 +28,10 @@ $CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     drop table if exists data_r1;
     drop table if exists data_r2;
 
-    create table data_r1 (key Int, value Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', 'r1') order by key;
-    create table data_r2 (key Int, value Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', 'r2') order by key;
+    -- Merges disabled on both replicas: the pre-ALTER and post-ALTER parts are mutually mergeable,
+    -- and a covering part would make the exact-name assertions below vacuous.
+    create table data_r1 (key Int, value Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', 'r1') order by key settings max_bytes_to_merge_at_max_space_in_pool = 0;
+    create table data_r2 (key Int, value Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/data', 'r2') order by key settings max_bytes_to_merge_at_max_space_in_pool = 0;
 
     insert into data_r1 (key, value) values (1, 10);
 
@@ -72,13 +71,6 @@ if [[ -z $held_replica ]]; then
     echo "Table metadata version did not diverge between the replicas" >&2 && exit 1
 fi
 
-# Stop merges on the advanced replica only, which is the one that assigns merges here. The pre-ALTER
-# part and the post-ALTER one are mutually mergeable (a metadata-only ALTER creates no mutation, so
-# both are at mutation version 0), so otherwise the held replica could fetch a covering part instead
-# and the exact-name assertions below would become vacuous. Not stopped on the held replica: the same
-# blocker gates MUTATE_PART, which would postpone our mutation for the wrong reason.
-$CLICKHOUSE_CLIENT -q "system stop merges $advanced_replica"
-
 # Write a part at metadata version 1 containing `h` and let the held-back replica fetch it.
 # metadata_version.txt travels with the part, so the fetched part is ahead of that replica's table.
 # Two rows, so the DELETE below touches some but not all of them: a mutation that affects no row
@@ -95,8 +87,6 @@ for ((i = 0; i < 300; ++i)); do
     fi
     sleep 0.1
 done
-
-$CLICKHOUSE_CLIENT -q "system start merges $advanced_replica"
 
 # Assert the fixture really built the state, otherwise the test below proves nothing.
 echo -n 'held replica still at metadata version 0: '
