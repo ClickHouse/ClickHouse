@@ -828,10 +828,10 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     /// Watermark expression's result type must match the column type.
     auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, storage_snapshot->metadata->getColumns());
     auto dummy_table_node = std::make_shared<TableNode>(std::move(dummy_storage), scope.context);
-    auto expression_clone = watermark.expression->clone();
-    QueryAnalyzer(/*only_analyze=*/true).resolve(expression_clone, dummy_table_node, scope.context);
+    auto expression_node = buildQueryTree(watermark.expression, scope.context);
+    QueryAnalyzer(/*only_analyze=*/true).resolve(expression_node, dummy_table_node, scope.context);
 
-    auto expression_type = expression_clone->getResultType();
+    auto expression_type = expression_node->getResultType();
     if (!expression_type->equals(*column->type))
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.column, column->type->getName());
 }

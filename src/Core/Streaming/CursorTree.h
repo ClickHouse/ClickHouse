@@ -31,6 +31,8 @@ public:
     Int64 getValue(const String & key, Int64 default_value) const;
     Int64 & setValue(const String & key, Int64 value);
 
+    CursorTreeNodePtr clone() const;
+
     Data::iterator begin();
     Data::iterator end();
 

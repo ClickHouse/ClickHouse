@@ -1,6 +1,5 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
-#include <chrono>
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
@@ -983,19 +982,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
 
                     stream_settings = StreamSettings{};
-
-                    if (ast_stream_settings.cursor.has_value())
-                        stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());
-
-                    if (ast_stream_settings.watermark.has_value())
-                    {
-                        const auto & ast_watermark = ast_stream_settings.watermark.value();
-                        stream_settings->watermark = std::make_shared<WatermarkSettings>();
-                        stream_settings->watermark->column = ast_watermark.column;
-                        stream_settings->watermark->idle_timeout = std::chrono::milliseconds(ast_watermark.idle_timeout_ms);
-                        if (ast_watermark.expression)
-                            stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
-                    }
+                    stream_settings->cursor = ast_stream_settings.cursor;
+                    if (ast_stream_settings.watermark)
+                        stream_settings->watermark = ast_stream_settings.watermark->clone();
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));

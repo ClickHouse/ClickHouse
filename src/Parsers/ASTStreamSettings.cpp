@@ -55,7 +55,7 @@ void formatWatermark(
     node.expression->format(wb, format_settings, state, frame);
 
     if (node.idle_timeout.count() > 0)
-        wb << " IDLE TIMEOUT INTERVAL " << node.idle_timeout.count() << " MILLISECOND";
+        wb << " IDLE TIMEOUT INTERVAL " << static_cast<Int64>(node.idle_timeout.count()) << " MILLISECOND";
 }
 
 }
@@ -65,7 +65,7 @@ ASTPtr ASTStreamSettings::clone() const
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
     if (cursor)
-        cloned_stream_settings->cursor = buildCursorTree(cursorTreeToMap(cursor));
+        cloned_stream_settings->cursor = cursor->clone();
     if (watermark)
         cloned_stream_settings->watermark = watermark->clone();
 

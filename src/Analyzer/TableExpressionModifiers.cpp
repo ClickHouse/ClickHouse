@@ -74,7 +74,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
         {
             hash_state.update(stream_settings->watermark->column);
             hash_state.update(stream_settings->watermark->idle_timeout.count());
-            hash_state.update(stream_settings->watermark->expression->getTreeHash());
+            stream_settings->watermark->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
         }
     }
 }

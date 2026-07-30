@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
 
-#include <Analyzer/IQueryTreeNode.h>
-
-#include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/Settings.h>
 
 namespace DB
@@ -117,7 +116,7 @@ inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & 
     if ((lhs.expression == nullptr) != (rhs.expression == nullptr))
         return false;
 
-    return !lhs.expression || lhs.expression->isEqual(*rhs.expression);
+    return !lhs.expression || lhs.expression->getTreeHash(/*ignore_aliases=*/false) == rhs.expression->getTreeHash(/*ignore_aliases=*/false);
 }
 
 inline bool operator==(const StreamSettings & lhs, const StreamSettings & rhs)
