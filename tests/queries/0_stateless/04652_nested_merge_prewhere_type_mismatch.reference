@@ -81,9 +81,11 @@
 -- a refused policy over a storage that processes past FetchColumns fails closed --
 10
 -- so does a policy on a matching column: only the query text ships, never the filter --
--- a policy on the Distributed table itself keeps the documented remote enforcement --
+-- a policy on the Distributed table itself fails closed too, instead of a silent drop --
 10
-10
+-- the leaf policy still enforces through the Distributed read, matching shard-side model --
+5
+5
 -- Alias over a nested Merge must be rejected too --
 -- a matching column still supports PREWHERE through the Alias --
 10

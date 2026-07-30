@@ -1727,12 +1727,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     /// The filter is built against this table's schema, but read() hands it to wrapper
                     /// storages' children (Merge, Buffer), which re-derive it against their own types.
                     /// Push it down only if every column it consumes is in the PREWHERE contract.
-                    /// A wrapper delegating to a remote storage cannot carry it at all: only the query
-                    /// text is shipped, and it references the remote tables, not the wrapper. A policy
-                    /// on Distributed itself keeps the documented model - the remote tables' own
-                    /// policies enforce it - so it is left on the carrier as before.
-                    bool can_push_down_filter = storage->supportsPrewhere()
-                        && (!storage->isRemote() || typeid_cast<const StorageDistributed *>(storage.get()));
+                    /// A remote storage cannot carry it at all: read() only ships query text to the
+                    /// remote servers and never lowers the filter into it, so pushing would silently
+                    /// drop an access-control filter. Refuse, and let the stage check fail closed.
+                    bool can_push_down_filter = storage->supportsPrewhere() && !storage->isRemote();
                     if (can_push_down_filter)
                     {
                         if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
@@ -1789,13 +1787,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
-                    /// A row-level filter the PREWHERE contract refuses runs as a filter step right
+                    /// A row-level filter refused for push-down runs as a filter step right
                     /// above the read, but that step is only appended while the storage stops at
-                    /// FetchColumns. A storage processing further (e.g. a wrapper over Distributed)
-                    /// would silently skip the policy, so fail closed instead.
+                    /// FetchColumns. A storage processing further (e.g. Distributed or a wrapper
+                    /// over it) would silently skip the policy, so fail closed instead.
                     if (row_policy_filter_not_pushed && till_stage > QueryProcessingStage::FetchColumns)
                         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                            "Row policy filter for {} uses columns not supported for PREWHERE, and the storage processes "
+                            "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                             "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables",
                             storage->getStorageID().getNameForLogs());
                 }

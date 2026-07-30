@@ -1284,12 +1284,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         query_info.prepared_sets = query_analyzer->getPreparedSets();
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
 
-        /// A row-level filter the PREWHERE contract refuses is applied as a FilterStep right above
+        /// A row-level filter refused for push-down is applied as a FilterStep right above
         /// the read, which only the first processing stage adds. A storage processing further
-        /// (e.g. a wrapper over Distributed) would silently skip the policy, so fail closed instead.
+        /// (e.g. Distributed or a wrapper over it) would silently skip the policy, so fail closed instead.
         if (row_policy_info && from_stage > QueryProcessingStage::FetchColumns && !shouldPushRowLevelFilterToStorage())
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Row policy filter for {} uses columns not supported for PREWHERE, and the storage processes "
+                "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                 "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables",
                 storage->getStorageID().getNameForLogs());
     }
@@ -2479,11 +2479,10 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
     if (input_pipe || !storage || !storage->supportsPrewhere())
         return false;
 
-    /// A wrapper delegating to a remote storage cannot carry the filter at all: only the query
-    /// text is shipped, and it references the remote tables, not the wrapper. A policy on
-    /// Distributed itself keeps the documented model - the remote tables' own policies enforce
-    /// it - so it is left on the carrier as before.
-    if (storage->isRemote() && !typeid_cast<const StorageDistributed *>(storage.get()))
+    /// A remote storage cannot carry the filter at all: read() only ships query text to the
+    /// remote servers and never lowers the filter into it, so pushing would silently drop an
+    /// access-control filter. Refuse, and let the stage check fail closed.
+    if (storage->isRemote())
         return false;
 
     /// The filter is built against this table's schema, but read() hands it to wrapper
