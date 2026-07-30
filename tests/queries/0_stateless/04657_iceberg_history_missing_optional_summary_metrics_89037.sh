@@ -3,28 +3,21 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/89037:
-# `IcebergMetadata::getHistory` read the OPTIONAL snapshot-summary metrics
-# `added-files-size` and `changed-partition-count` with an unguarded
-# `Poco::JSON::Object::getValue<Int32>`. An absent key yields an empty
-# `Poco::Dynamic::Var`, so `Var::convert<Int32>` threw
-# `Invalid access: Can not convert empty value` and `OPTIMIZE TABLE` failed on a
-# spec-conforming lake (the reporter's lake was written by a Spark `MERGE`).
-# Both fields are optional per the Iceberg spec, so omitting them is legal.
+# `OPTIMIZE TABLE` failed with `Invalid access: Can not convert empty value` on a lake
+# omitting the spec-optional summary metrics `added-files-size` and
+# `changed-partition-count`. Both now go through a `has` check in
+# `SnapshotSummary::fromJSON` and default to 0.
 #
-# The summary metrics are now parsed by `SnapshotSummary::fromJSON`, where every
-# metric goes through a `has()` check and defaults to 0.
+# ClickHouse's own writer always emits both metrics, so the lake is built through supported
+# SQL and the fields are then removed by publishing a NEW metadata version, which a reader
+# cannot have cached. The strip must NOT rewrite the existing version in place: metadata
+# JSON is cached (`use_iceberg_metadata_files_cache` defaults to 1), so an in-place edit of
+# an already-read file is not re-read and the test would pass even without the fix.
 #
-# ClickHouse's own writer always emits both metrics, so the lake is built through
-# supported SQL and the two fields are then removed by publishing a NEW metadata
-# version. The strip must NOT rewrite the existing version in place: metadata JSON
-# is cached (`use_iceberg_metadata_files_cache` defaults to 1), so an in-place edit
-# of an already-read file is not re-read and the test would pass even without the
-# fix. A path that was never read cannot have a cached entry.
-#
-# Only those two fields are removed. `added-data-files` must stay, because
-# `checkIfIcebergHistorySupported` runs after `getHistory` and rejects an append
-# with 0 added files, and the snapshots must stay `append`, because
-# `tryGetAppendUpdate` rejects other operation types.
+# Only those two fields are removed: `added-data-files` must stay because
+# `checkIfIcebergHistorySupported` runs after `getHistory` and rejects an append with 0
+# added files, and the snapshots must stay `append` because `tryGetAppendUpdate` rejects
+# other operation types.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -111,10 +104,19 @@ else
 fi
 
 # `StorageSystemIcebergHistory::fillData` swallows a `getHistory` exception, so the
-# regression drops the rows instead of reporting an error. This oracle therefore
-# discriminates by row count, and covers the cloud build too.
+# regression drops the rows instead of reporting an error. The row count therefore
+# discriminates the regression, and covers the cloud build too.
+#
+# The summary values additionally prove that the STRIPPED metadata version is the one
+# that was read: `SnapshotSummary::forEachField` always emits these two metrics for an
+# `append` snapshot, so a stripped summary reports them as 0 while the previous,
+# unstripped version reports a non-zero byte count. Without this, reading the older
+# metadata file would satisfy every other assertion in this test.
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.iceberg_history
+    SELECT count(),
+           countIf(summary['added-files-size'] = '0'),
+           countIf(summary['changed-partition-count'] = '0')
+    FROM system.iceberg_history
     WHERE database = currentDatabase() AND table = '${TABLE}'
 "
 
