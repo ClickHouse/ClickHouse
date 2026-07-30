@@ -33,14 +33,6 @@ bool isVirtual(const FsNodePtr & node)
     return !node->info.has_value();
 }
 
-FsNodePtr cloneFsNodeIfNotExclusive(const FsNodePtr & node)
-{
-    if (node.use_count() > 1)
-        return std::make_shared<FsNode>(*node);
-
-    return node;
-}
-
 template <class Ptr>
 Ptr walk(Ptr node, const NormalizedPath & path)
 {
@@ -93,16 +85,25 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
     return false;
 }
 
+/// Copies every node on the path, so that the nodes of the previous version of the tree are never modified.
+/// This is what makes a tree that was already published (via `FsSnapshot::getRoot`) immutable, and therefore
+/// safe to read from other threads without holding the mutex of the snapshot that is being modified here.
+///
+/// Do not try to skip the copy for nodes that look exclusively owned, e.g. by testing `use_count() == 1`.
+/// A node is reachable through the `subdirectories` map of its parent, and a thread that reads the node -
+/// including a thread that copies it here - does not take a reference of its own. The reference count can
+/// therefore drop to one while another thread is still reading the node, and modifying it in place at that
+/// moment is a data race.
 std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const NormalizedPath & path)
 {
-    FsNodePtr cloned_start = cloneFsNodeIfNotExclusive(start);
+    FsNodePtr cloned_start = std::make_shared<FsNode>(*start);
     FsNodePtr node = cloned_start;
 
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
         if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
-            cloned_child = cloneFsNodeIfNotExclusive(it->second);
+            cloned_child = std::make_shared<FsNode>(*it->second);
         else
             cloned_child = std::make_shared<FsNode>();
 
