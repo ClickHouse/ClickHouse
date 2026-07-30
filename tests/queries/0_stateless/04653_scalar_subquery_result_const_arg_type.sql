@@ -22,7 +22,7 @@ SELECT toDateTime64(1600000000, 3, __scalarSubqueryResult('Asia/Tokyo'))::String
 SELECT toTypeName(toDateTime('2020-01-01 00:00:00', __scalarSubqueryResult('Asia/Tokyo')));
 SELECT toStartOfDay(toDateTime(1600000000), __scalarSubqueryResult('Asia/Tokyo'))::String;
 
-SELECT '-- the new analyzer rejects a directly typed wrapper instead of folding it, and still does';
+SELECT '-- the analyzer rejects a directly typed wrapper instead of folding it, and still does';
 SET enable_analyzer = 1;
 SELECT toStartOfDay(toDateTime(1600000000), __scalarSubqueryResult('Asia/Tokyo'))::String; -- { serverError ILLEGAL_COLUMN }
 SELECT toDateTime(0, __scalarSubqueryResult(toUInt64(1))); -- { serverError ILLEGAL_COLUMN }
@@ -74,7 +74,7 @@ CREATE TABLE sc (s UInt8) ENGINE = Log;
 INSERT INTO tz VALUES ('Asia/Tokyo');
 INSERT INTO sc VALUES (2);
 
--- (a) foldable timezone: type and stored value now match the new analyzer
+-- (a) foldable timezone: type and stored value now match the analyzer
 CREATE MATERIALIZED VIEW mv_foldable_tz ENGINE = Log AS SELECT toDateTime(x, (SELECT 'Asia/Tokyo')) AS d FROM src;
 -- (b) data-dependent timezone: the scalar is not known while the view is analyzed, so it stays as it was
 CREATE MATERIALIZED VIEW mv_datadep_tz ENGINE = Log AS SELECT toDateTime(x, (SELECT z FROM tz)) AS d FROM src;

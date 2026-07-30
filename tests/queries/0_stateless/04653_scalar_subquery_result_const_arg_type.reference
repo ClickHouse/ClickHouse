@@ -11,7 +11,7 @@ DateTime64(1)	1970-01-01 00:00:00.0
 2020-09-13 21:26:40.000
 DateTime(\'Asia/Tokyo\')
 2020-09-13 00:00:00
--- the new analyzer rejects a directly typed wrapper instead of folding it, and still does
+-- the analyzer rejects a directly typed wrapper instead of folding it, and still does
 -- a literal in the same position gives the same answers
 DateTime64(1)	1970-01-01 00:00:00.0
 1	1
