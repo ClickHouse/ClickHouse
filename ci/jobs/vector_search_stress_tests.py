@@ -774,6 +774,7 @@ class RunTest:
 
         quantization = self._test_params[QUANTIZATION]
         index_type = self._test_params.get(INDEX_TYPE, "hnsw")
+        self._chclient.query("SET allow_experimental_scann_index = 1")
 
         if index_type == "scann":
             num_clusters = self._test_params[SCANN_NUM_CLUSTERS]
