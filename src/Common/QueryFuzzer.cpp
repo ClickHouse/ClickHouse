@@ -2747,6 +2747,21 @@ static const std::map<size_t, Strings> swapAggrs
          "uniq",
          "welchTTest"}}};
 
+/// `Nullable`, `LowCardinality(Nullable)`, `Variant` and `Dynamic` are not allowed inside `Variant`,
+/// and the constructor of `DataTypeVariant` throws on them. The fuzzer may produce such a type for a
+/// variant alternative, so coerce it into something the type is allowed to hold.
+static DataTypePtr makeTypeAllowedInsideVariant(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return removeNullableOrLowCardinalityNullable(type);
+
+    const auto type_id = type->getTypeId();
+    if (type_id == TypeIndex::Variant || type_id == TypeIndex::Dynamic)
+        return std::make_shared<DataTypeString>();
+
+    return type;
+}
+
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
@@ -2852,10 +2867,10 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     {
         DataTypes variants;
         for (const auto & v : type_variant->getVariants())
-            variants.push_back(fuzzDataType(v));
+            variants.push_back(makeTypeAllowedInsideVariant(fuzzDataType(v)));
         /// Occasionally add a new alternative
         if (variants.size() < 10 && fuzz_rand() % 4 == 0)
-            variants.push_back(getRandomType());
+            variants.push_back(makeTypeAllowedInsideVariant(getRandomType()));
         /// Occasionally drop an alternative (keep at least 1)
         if (variants.size() > 1 && fuzz_rand() % 4 == 0)
             variants.erase(variants.begin() + fuzz_rand() % variants.size());
@@ -3005,7 +3020,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             const size_t tuple_size = fuzz_rand() % 6 + 1;
             DataTypes elements;
             for (size_t i = 0; i < tuple_size; ++i)
-                elements.push_back(getRandomType());
+                elements.push_back(makeTypeAllowedInsideVariant(getRandomType()));
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
