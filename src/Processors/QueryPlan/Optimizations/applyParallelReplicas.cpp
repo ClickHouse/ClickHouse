@@ -2,6 +2,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -305,6 +306,24 @@ static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
     return false;
 }
 
+/// A `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`) cannot yet be shipped: `addStepsToBuildSets`
+/// moves the subquery's plan out before the captured fragment is serialized, so serialization throws a
+/// `LOGICAL_ERROR` (#111876). Until fixed, detect the still-intact `DelayedCreatingSetsStep` and run the
+/// query locally, like the FINAL case above.
+/// TODO(#111876): serialize the subquery set at fragment-capture time so `IN (subquery)` can be distributed.
+static bool planHasSubquerySet(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get());
+        delayed && !delayed->getSets().empty())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasSubquerySet(child))
+            return true;
+    return false;
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -315,6 +334,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         return;
 
     if (planHasFinalMergeTreeRead(root))
+        return;
+
+    if (planHasSubquerySet(root))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;
