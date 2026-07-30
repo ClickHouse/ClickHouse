@@ -285,6 +285,9 @@ def should_skip_job(job_name):
 
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()
+        # A performance job that is not named after one. Matched by prefix, because the name
+        # carries a build-type parameter.
+        and not job_name.startswith(JobNames.CLI_STARTUP)
         and job_name
         not in (
             "Build (amd_release)",

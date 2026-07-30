@@ -1434,10 +1434,17 @@ class JobConfigs:
         runs_on=["#from param"],
         command="python3 ./ci/jobs/cli_startup_benchmark.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
+            # Re-run whenever the binary can change, not only when this job's own code does.
+            # A startup regression comes from `src`, and `requires` is dropped from the job digest
+            # (see `drop_fields` in `praktika/digest.py`), so requiring the build artifact is not
+            # enough on its own - without the build inputs here the job would be served from cache
+            # on exactly the pull requests worth measuring.
+            include_paths=build_digest_config.include_paths
+            + [
                 "./ci/jobs/cli_startup_benchmark.py",
                 "./ci/jobs/scripts/cli_startup/",
             ],
+            with_git_submodules=True,
         ),
         # A dedicated runner: the whole point is measuring CPU time, so the job must not share a
         # machine with anything else. Same labels the performance comparison uses.
