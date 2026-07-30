@@ -7,10 +7,15 @@
 #include <cerrno>
 
 #if USE_SSL
+#include <base/scope_guard.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <fcntl.h>
+#endif
+
+#if USE_SILK && USE_SSL
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB
@@ -115,6 +120,14 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
         {
+#if USE_SILK
+            if (auto * silk_secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(secure))
+            {
+                silk_secure->setDontWait(true);
+                SCOPE_EXIT({ silk_secure->setDontWait(false); });
+                return getSslSocketState(ssl);
+            }
+#endif
             ScopedNonBlocking non_blocking(secure->sockfd());
             return getSslSocketState(ssl);
         }

@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <memory>
 
-#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -36,24 +35,17 @@ uint64_t timeoutNs(const Poco::Timespan & timeout)
     return static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000ULL;
 }
 
-/// The fd's real `O_NONBLOCK` state, queried fresh on every call: one cheap syscall, negligible
-/// next to actual I/O. `Poco::Net::SocketImpl::getBlocking()` cannot be trusted here - it only
-/// reflects `SocketImpl::setBlocking`, which silk sockets reject outright (see
-/// `FiberStreamSocketImpl::setBlocking`), while the connection-pool staleness probe
-/// (`DB::getSslSocketState`, via `ScopedNonBlocking` in `SocketPeerClosed.cpp`) flips the flag on
-/// the raw fd with a plain `fcntl`, behind Poco's back, precisely to keep `SSL_peek` non-blocking.
-bool isFdNonBlocking(int fd)
+FiberStreamSocketImpl * getUnderlyingSocket(BIO * bio)
 {
-    const int flags = ::fcntl(fd, F_GETFL, 0);
-    return flags >= 0 && (flags & O_NONBLOCK) != 0;
+    return static_cast<FiberStreamSocketImpl *>(static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio)));
 }
 
 int silkBioRead(BIO * bio, char * buf, int len)
 {
-    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
+    auto * socket_impl = getUnderlyingSocket(bio);
     const int fd = socket_impl->sockfd();
 
-    if (isFdNonBlocking(fd))
+    if (socket_impl->getDontWait())
     {
         /// Honor non-blocking mode instead of parking the caller on an io_uring read: a
         /// non-blocking caller (e.g. `SSL_peek` from the pool's staleness probe) expects an
@@ -119,10 +111,10 @@ int silkBioRead(BIO * bio, char * buf, int len)
 
 int silkBioWrite(BIO * bio, const char * buf, int len)
 {
-    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
+    auto * socket_impl = getUnderlyingSocket(bio);
     const int fd = socket_impl->sockfd();
 
-    if (isFdNonBlocking(fd))
+    if (socket_impl->getDontWait())
     {
         /// See the matching branch in silkBioRead: honor non-blocking mode rather than parking
         /// the caller in a fiber wait for getSendTimeout().
@@ -261,10 +253,21 @@ private:
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
-    : Poco::Net::SecureStreamSocketImpl(new FiberStreamSocketImpl, context)
+    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl, context)
+{
+}
+
+SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
+    : Poco::Net::SecureStreamSocketImpl(underlying_, context)
+    , underlying(underlying_)
 {
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());
+}
+
+void SecureFiberStreamSocketImpl::setDontWait(bool flag)
+{
+    underlying->setDontWait(flag);
 }
 
 bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
