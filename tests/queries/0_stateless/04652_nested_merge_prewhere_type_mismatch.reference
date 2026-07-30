@@ -142,3 +142,15 @@ lazy_outer	TableProxy
 1	2
 2	3
 3	4
+-- a subcolumn PREWHERE rides its origin column through a Buffer --
+10
+5
+5
+-- and through a Merge whose origin type matches the leaf --
+10
+5
+-- a subcolumn of a type-drifted origin stays rejected --
+-- a row policy consuming a subcolumn maps to its origin for the push decision --
+0
+1
+2

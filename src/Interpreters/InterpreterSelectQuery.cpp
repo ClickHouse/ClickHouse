@@ -88,6 +88,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
@@ -2474,9 +2475,10 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
     /// Push it down only if every column it consumes is in the PREWHERE contract.
     if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
     {
+        const auto & table_columns = metadata_snapshot->getColumns();
         for (const auto & column_name : analysis_result.row_policy_info->actions.getRequiredColumnsNames())
         {
-            if (!supported_prewhere_columns->contains(column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
                 return false;
         }
     }
@@ -2638,10 +2640,11 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     if (supported_prewhere_columns.has_value())
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();
+        const auto & table_columns = metadata_snapshot->getColumns();
 
         for (const auto & column_name : required_columns_from_prewhere)
         {
-            if (!supported_prewhere_columns->contains(column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }

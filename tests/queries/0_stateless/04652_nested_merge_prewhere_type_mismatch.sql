@@ -374,3 +374,43 @@ DROP VIEW rp_mv_two;
 DROP VIEW rp_mv_one;
 DROP TABLE rp_mv_dst;
 DROP TABLE rp_mv_src;
+
+-- PREWHERE on a subcolumn is delegated through its origin column, and subcolumn sets (JSON
+-- paths) are open-ended, so the contract lists origins only: `j.a` must be admitted whenever
+-- `j` is (found by review: a closed NameSet of top-level names rejected every subcolumn).
+
+DROP TABLE IF EXISTS sub_leaf;
+DROP TABLE IF EXISTS sub_buf;
+DROP TABLE IF EXISTS sub_merge;
+DROP TABLE IF EXISTS sub_merge_bad;
+
+SET enable_json_type = 1;
+CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number), number FROM numbers(10);
+CREATE TABLE sub_buf (j JSON, t Tuple(a UInt64), x UInt64)
+    ENGINE = Buffer(currentDatabase(), sub_leaf, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
+CREATE TABLE sub_merge (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = Merge(currentDatabase(), '^sub_leaf$');
+-- `t` deviates from the leaf here: its subcolumns must be rejected with it.
+CREATE TABLE sub_merge_bad (t Tuple(a Nullable(UInt64)), x UInt64) ENGINE = Merge(currentDatabase(), '^sub_leaf$');
+
+SELECT '-- a subcolumn PREWHERE rides its origin column through a Buffer --';
+SELECT count() FROM sub_buf PREWHERE j.a = 1;
+SELECT count() FROM sub_buf PREWHERE t.a < 5;
+SELECT count() FROM sub_buf PREWHERE t.a < 5 SETTINGS enable_analyzer = 0;
+
+SELECT '-- and through a Merge whose origin type matches the leaf --';
+SELECT count() FROM sub_merge PREWHERE j.a = 1;
+SELECT count() FROM sub_merge PREWHERE t.a < 5;
+
+SELECT '-- a subcolumn of a type-drifted origin stays rejected --';
+SELECT count() FROM sub_merge_bad PREWHERE t.a < 5; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT '-- a row policy consuming a subcolumn maps to its origin for the push decision --';
+CREATE ROW POLICY rp_04652_sub ON sub_buf FOR SELECT USING t.a < 3 TO CURRENT_USER;
+SELECT x FROM sub_buf ORDER BY x LIMIT 5;
+DROP ROW POLICY rp_04652_sub ON sub_buf;
+
+DROP TABLE sub_merge_bad;
+DROP TABLE sub_merge;
+DROP TABLE sub_buf;
+DROP TABLE sub_leaf;

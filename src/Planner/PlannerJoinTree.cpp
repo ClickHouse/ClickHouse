@@ -24,6 +24,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1729,9 +1730,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
                         {
+                            const auto & table_columns = storage_snapshot->metadata->getColumns();
                             for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
                             {
-                                if (!supported_prewhere_columns->contains(column_name))
+                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
                                 {
                                     can_push_down_filter = false;
                                     break;
