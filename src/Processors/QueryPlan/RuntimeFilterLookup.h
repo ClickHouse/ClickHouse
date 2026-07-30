@@ -392,6 +392,15 @@ struct RuntimeFilterIndexAnalysisDescriptor
     DataTypePtr key_column_type;
 };
 
+/// Build a pruning predicate on the column: IN (exact values) else BETWEEN [min, max];
+/// nullptr if the filter recorded neither (fail-open).
+const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
+    const IRuntimeFilter & filter,
+    const String & column_name,
+    const DataTypePtr & column_type,
+    ActionsDAG & dag,
+    const ContextPtr & context);
+
 /// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
 const ActionsDAG::Node * buildRuntimeRangePredicate(
     const IRuntimeFilterLookup & lookup,

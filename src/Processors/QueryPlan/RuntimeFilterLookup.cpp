@@ -630,7 +630,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
 }
 
 /// Build a pruning predicate on the column: IN (exact values) else BETWEEN.
-static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
+const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const IRuntimeFilter & filter,
     const String & column_name,
     const DataTypePtr & column_type,

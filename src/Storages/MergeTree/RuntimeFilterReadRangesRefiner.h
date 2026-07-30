@@ -44,7 +44,6 @@ private:
 
     /// Written once by setFilter before any refine call (guaranteed by the gating edge).
     std::once_flag set_filter_once;
-    bool drop_all = false;
     std::shared_ptr<const KeyCondition> condition;
 };
 

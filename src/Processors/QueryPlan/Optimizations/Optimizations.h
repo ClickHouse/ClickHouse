@@ -2,6 +2,7 @@
 #include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <array>
 
 class SipHash;
@@ -162,6 +163,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
 /// Try to prune LHS table granules using JoinRuntimeFilter & index analysis
 void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter in
+/// the DAG (typically of a FilterStep after push-down). One descriptor per bare-column conjunct.
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);

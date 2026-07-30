@@ -577,6 +577,47 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     return true;
 }
 
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag)
+{
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
+
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base)
+            continue;
+        if (dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = dag_node.children[0];
+        if (!label->column || !isColumnConst(*label->column))
+            continue;
+        const Field id_field = (*label->column)[0];
+        if (id_field.getType() != Field::Types::String)
+            continue;
+
+        /// Argument 1: the probe key column, possibly wrapped in a CAST.
+        const auto * key_arg = dag_node.children[1];
+        while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+               && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
+               && !key_arg->children.empty())
+            key_arg = key_arg->children.front();
+
+        /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
+        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
+        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
+        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
+        /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
+        /// the negating filter exposes neither recorded key values nor a key range.)
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        res.push_back({id_field.safeGet<String>(), key_arg->result_name, key_arg->result_type});
+    }
+
+    return res;
+}
+
 void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!optimization_settings.enable_join_runtime_filters_index_analysis)
@@ -603,39 +644,8 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
         return;
 
     /// After push-down the key column is already in the read step's namespace, so no remapping is needed.
-    for (const auto & dag_node : filter_step->getExpression().getNodes())
-    {
-        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base)
-            continue;
-        if (dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() != 2)
-            continue;
-
-        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
-        const auto * label = dag_node.children[0];
-        if (!label->column || !isColumnConst(*label->column))
-            continue;
-        const Field id_field = (*label->column)[0];
-        if (id_field.getType() != Field::Types::String)
-            continue;
-
-        /// Argument 1: the probe key column, possibly wrapped in a CAST.
-        const auto * key_arg = dag_node.children[1];
-        while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-               && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
-               && !key_arg->children.empty())
-            key_arg = key_arg->children.front();
-
-        /// Only bare key columns are registered. This intentionally excludes the `tuple(key1, key2, ...)`
-        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
-        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
-        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
-        /// is registered here. Single-key ANTI filters registered here stay fail-open at read time:
-        /// the negating filter exposes neither recorded key values nor a key range.)
-        if (key_arg->type != ActionsDAG::ActionType::INPUT)
-            continue;
-
-        read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(id_field.safeGet<String>(), key_arg->result_name, key_arg->result_type);
-    }
+    for (const auto & descr : findAppliedRuntimeFilters(filter_step->getExpression()))
+        read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
 }
 
 }

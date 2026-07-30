@@ -37,6 +37,10 @@ public:
     const String & getFilterName() const { return filter_name; }
     const String & getFilterKey() const { return filter_key; }
 
+    /// Make the built filter record its key values/range (see track_key_range). Called by plan
+    /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
+    void enableKeyRangeTracking() { track_key_range = true; }
+
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;

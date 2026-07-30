@@ -22,44 +22,20 @@ bool isTransparentForSealGating(IQueryPlanStep * step)
     return typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step);
 }
 
-/// Find `__applyFilter(<key>, key_column)` planted by the runtime filter optimization among
-/// the filter conjuncts pushed down to the reading step. Returns {filter key, key column name}.
-std::optional<std::pair<String, String>> findAppliedRuntimeFilter(const ActionsDAG & dag)
+/// The first `__applyFilter` conjunct found in the DAG, if any (see findAppliedRuntimeFilters).
+std::optional<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilter(const ActionsDAG & dag)
 {
-    for (const auto & dag_node : dag.getNodes())
-    {
-        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base)
-            continue;
-        if (dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() != 2)
-            continue;
-
-        /// Argument 0: const String whose VALUE is the runtime filter rendezvous key.
-        const auto * label = dag_node.children[0];
-        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
-            continue;
-        String filter_key(label->column->getDataAt(0));
-
-        /// Argument 1: the probe key column, possibly wrapped in a CAST.
-        const auto * key_arg = dag_node.children[1];
-        while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-               && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
-               && !key_arg->children.empty())
-            key_arg = key_arg->children.front();
-
-        if (key_arg->type != ActionsDAG::ActionType::INPUT)
-            continue;
-
-        return std::make_pair(std::move(filter_key), key_arg->result_name);
-    }
-
-    return {};
+    auto descriptors = findAppliedRuntimeFilters(dag);
+    if (descriptors.empty())
+        return {};
+    return std::move(descriptors.front());
 }
 
 struct ProbeSide
 {
     ReadFromMergeTree * reading = nullptr;
-    /// {filter key, key column name} of the first `__applyFilter` conjunct found on the way.
-    std::optional<std::pair<String, String>> runtime_filter;
+    /// The first `__applyFilter` conjunct found on the way.
+    std::optional<RuntimeFilterIndexAnalysisDescriptor> runtime_filter;
 };
 
 /// The runtime filter is planted as a FilterStep conjunct above the reading step (it is not
@@ -99,7 +75,7 @@ ProbeSide findProbeSide(QueryPlan::Node * node)
 }
 
 /// Find the build-side runtime filter step with the given rendezvous key.
-bool buildSideHasRuntimeFilter(QueryPlan::Node * node, const String & filter_key)
+BuildRuntimeFilterStep * findBuildSideRuntimeFilter(QueryPlan::Node * node, const String & filter_key)
 {
     while (node)
     {
@@ -108,18 +84,18 @@ bool buildSideHasRuntimeFilter(QueryPlan::Node * node, const String & filter_key
         if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(step))
         {
             if (build_step->getFilterKey() == filter_key)
-                return true;
+                return build_step;
         }
         else if (!isTransparentForSealGating(step))
         {
-            return false;
+            return nullptr;
         }
 
         if (node->children.size() != 1)
-            return false;
+            return nullptr;
         node = node->children.front();
     }
-    return false;
+    return nullptr;
 }
 
 void tryMarkJoin(QueryPlan::Node & node)
@@ -141,16 +117,22 @@ void tryMarkJoin(QueryPlan::Node & node)
     if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled())
         return;
 
-    if (!buildSideHasRuntimeFilter(node.children[1 - probe_idx], match->first))
+    auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], match->filter_id);
+    if (!build_step)
         return;
 
     /// The filter can prune ranges only through the primary key.
     const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
-    if (std::find(primary_key_columns.begin(), primary_key_columns.end(), match->second) == primary_key_columns.end())
+    if (std::find(primary_key_columns.begin(), primary_key_columns.end(), match->key_column_name) == primary_key_columns.end())
         return;
 
-    reading->enableSealGatedReading(match->second);
-    join_step->enableSealGatedProbeReading(match->first);
+    /// The filter must record the exact key values (or at least the range envelope) for the
+    /// seal payload to prune anything; this is off by default (it costs a bit at build time)
+    /// unless enable_join_runtime_filters_index_analysis already turned it on.
+    build_step->enableKeyRangeTracking();
+
+    reading->enableSealGatedReading(match->key_column_name);
+    join_step->enableSealGatedProbeReading(match->filter_id);
 }
 
 }
