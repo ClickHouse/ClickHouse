@@ -94,6 +94,33 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     };
 }
 
+static bool keysCanUsePackedStringMethod(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        if (!header.has(key))
+            return true;
+    }
+
+    Sizes key_sizes;
+    return AggregatedDataVariants::chooseMethod(header, keys, key_sizes) == AggregatedDataVariants::Type::key_packed_string;
+}
+
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    if (grouping_sets_params.empty())
+        return keysCanUsePackedStringMethod(header, keys);
+
+    /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+            return true;
+    }
+
+    return false;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;
@@ -997,13 +1024,15 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
-    /// Written only when the legacy method is requested. `QueryPlanSerializationSettings` is a strict named schema:
-    /// `writeChangedBinary` writes every touched entry by name and `readBinary` throws on a name it does not know,
-    /// so writing this one unconditionally would make every serialized aggregation plan unreadable by a peer that
-    /// predates the setting - even for a query that does not group by `String`. Leaving it out keeps the receiver at
-    /// the default (the packed method), which is what the initiator asked for anyway, and a peer too old to know the
-    /// name fails closed on an explicit `false` instead of silently aggregating with the other method.
-    if (!params.enable_packed_string_keys)
+    /// Written only when the legacy method is requested *and* this step can actually choose the single-`String`
+    /// method. `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
+    /// entry by name and `readBinary` throws on a name it does not know, so writing this one whenever the session
+    /// setting is off would make plans for `count()` or `GROUP BY UInt64` - where the setting cannot change anything -
+    /// unreadable by a peer that predates it. Leaving it out keeps the receiver at the default (the packed method),
+    /// which is what the initiator asked for anyway, and a peer too old to know the name fails closed on an explicit
+    /// `false` instead of silently aggregating with the other method.
+    if (!params.enable_packed_string_keys
+        && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 

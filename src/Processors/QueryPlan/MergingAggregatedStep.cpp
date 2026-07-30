@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -202,8 +203,10 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
 
-    /// Written only when the legacy method is requested - see the same condition in `AggregatingStep::serializeSettings`.
-    if (!params.enable_packed_string_keys)
+    /// Written only when the legacy method is requested and this step can actually choose the single-`String` method -
+    /// see the same condition in `AggregatingStep::serializeSettings`.
+    if (!params.enable_packed_string_keys
+        && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 

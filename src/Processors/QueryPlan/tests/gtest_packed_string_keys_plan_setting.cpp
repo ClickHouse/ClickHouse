@@ -1,0 +1,155 @@
+#include <gtest/gtest.h>
+
+#include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Aggregator.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+
+using namespace DB;
+
+/// `enable_packed_string_keys_in_aggregation` must reach the wire only for the steps it can actually change.
+///
+/// `QueryPlanSerializationSettings` is a strict named schema: `readBinary` throws on a name it does not know, so a
+/// peer that predates the setting rejects any plan carrying it. Emitting it for a `count()` or `GROUP BY UInt64`
+/// aggregation - where the single-`String` method is unreachable - would break such a peer for nothing.
+namespace
+{
+
+Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys)
+{
+    return Aggregator::Params(
+        keys,
+        AggregateDescriptions{},
+        /*overflow_row=*/false,
+        /*max_threads=*/1,
+        /*max_block_size=*/65536,
+        /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        /*serialize_string_with_zero_byte=*/false,
+        enable_packed_string_keys);
+}
+
+/// The name as it appears in the binary settings stream written by `writeChangedBinary`.
+bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
+{
+    WriteBufferFromOwnString out;
+    settings.writeChangedBinary(out);
+    return out.str().find("enable_packed_string_keys_in_aggregation") != std::string::npos;
+}
+
+bool aggregatingStepCarriesSetting(const Block & header, const Names & keys, bool enable_packed_string_keys)
+{
+    AggregatingStep step(
+        std::make_shared<const Block>(header),
+        makeParams(keys, enable_packed_string_keys),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        /*max_block_size=*/65536,
+        /*aggregation_in_order_max_block_bytes=*/0,
+        /*merge_threads=*/1,
+        /*temporary_data_merge_threads=*/1,
+        /*storage_has_evenly_distributed_read=*/false,
+        /*group_by_use_nulls=*/false,
+        /*sort_description_for_merging=*/SortDescription{},
+        /*group_by_sort_description=*/SortDescription{},
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*memory_bound_merging_of_aggregation_results_enabled=*/false,
+        /*explicit_sorting_required_for_aggregation_in_order=*/false,
+        /*enable_sharding_aggregator=*/false);
+
+    QueryPlanSerializationSettings settings;
+    step.serializeSettings(settings);
+    return wireCarriesSetting(settings);
+}
+
+bool mergingAggregatedStepCarriesSetting(const Block & header, const Names & keys, bool enable_packed_string_keys)
+{
+    MergingAggregatedStep step(
+        std::make_shared<const Block>(header),
+        makeParams(keys, enable_packed_string_keys),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        /*memory_efficient_aggregation=*/false,
+        /*memory_efficient_merge_threads=*/1,
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*max_block_size=*/65536,
+        /*memory_bound_merging_max_block_bytes=*/0,
+        /*memory_bound_merging_of_aggregation_results_enabled=*/false);
+
+    QueryPlanSerializationSettings settings;
+    step.serializeSettings(settings);
+    return wireCarriesSetting(settings);
+}
+
+Block headerWithKey(const DataTypePtr & type)
+{
+    return Block({ColumnWithTypeAndName(type->createColumn(), type, "k")});
+}
+
+}
+
+TEST(PackedStringKeysPlanSetting, EmittedOnlyForSingleStringKey)
+{
+    const Block string_key = headerWithKey(std::make_shared<DataTypeString>());
+
+    /// The only case that has to be communicated: the initiator asks for the legacy method for a key the packed
+    /// method would otherwise be chosen for.
+    EXPECT_TRUE(aggregatingStepCarriesSetting(string_key, {"k"}, false));
+    EXPECT_TRUE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, false));
+
+    /// The default needs nothing on the wire - the receiver's default is the packed method already.
+    EXPECT_FALSE(aggregatingStepCarriesSetting(string_key, {"k"}, true));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(string_key, {"k"}, true));
+}
+
+TEST(PackedStringKeysPlanSetting, NotEmittedWhenTheMethodIsUnreachable)
+{
+    /// `count()`: no keys at all.
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {}, false));
+
+    /// A single non-`String` key.
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false));
+    EXPECT_FALSE(mergingAggregatedStepCarriesSetting(headerWithKey(std::make_shared<DataTypeUInt64>()), {"k"}, false));
+
+    /// `Nullable(String)` and `LowCardinality(String)` get their own methods.
+    const auto nullable_string = makeNullable(std::make_shared<DataTypeString>());
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(nullable_string), {"k"}, false));
+
+    const auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    EXPECT_FALSE(aggregatingStepCarriesSetting(headerWithKey(low_cardinality_string), {"k"}, false));
+
+    /// More than one key - the packed method is single-key only.
+    auto string_type = std::make_shared<DataTypeString>();
+    Block two_keys({
+        ColumnWithTypeAndName(string_type->createColumn(), string_type, "k"),
+        ColumnWithTypeAndName(string_type->createColumn(), string_type, "k2")});
+    EXPECT_FALSE(aggregatingStepCarriesSetting(two_keys, {"k", "k2"}, false));
+}
+
+TEST(PackedStringKeysPlanSetting, EmittedWhenAnyGroupingSetUsesASingleStringKey)
+{
+    auto string_type = std::make_shared<DataTypeString>();
+    auto number_type = std::make_shared<DataTypeUInt64>();
+    Block header({
+        ColumnWithTypeAndName(string_type->createColumn(), string_type, "s"),
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "n")});
+
+    /// `GROUPING SETS ((s), (n))`: the first set aggregates by a single `String` key.
+    const GroupingSetsParamsList with_string_set = {GroupingSetsParams({"s"}, {"n"}), GroupingSetsParams({"n"}, {"s"})};
+    EXPECT_TRUE(aggregationCanUsePackedStringKeys(header, {"s", "n"}, with_string_set));
+
+    /// `GROUPING SETS ((n), (s, n))`: no set is a single `String` key.
+    const GroupingSetsParamsList without_string_set = {GroupingSetsParams({"n"}, {"s"}), GroupingSetsParams({"s", "n"}, {})};
+    EXPECT_FALSE(aggregationCanUsePackedStringKeys(header, {"s", "n"}, without_string_set));
+}
+
+TEST(PackedStringKeysPlanSetting, EmittedWhenAKeyIsNotInTheHeader)
+{
+    /// Fail closed: an unresolvable key must not silently leave the receiver on the other method.
+    EXPECT_TRUE(aggregationCanUsePackedStringKeys(headerWithKey(std::make_shared<DataTypeUInt64>()), {"absent"}, {}));
+}
