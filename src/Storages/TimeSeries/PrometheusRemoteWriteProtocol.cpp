@@ -3,6 +3,7 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <bit>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
@@ -277,6 +278,24 @@ namespace
             fillMaxTimeColumnImpl<UInt32>(time_series, scale, out_column);
     }
 
+    /// Returns true if `value` is the Prometheus "stale marker": the specific NaN payload
+    /// (`math.Float64frombits(0x7ff0000000000002)` in Prometheus's own Go code) that scrapers and
+    /// remote-write clients use to mark a series as stale (e.g. a scrape target disappeared). Real
+    /// Prometheus's query engine (`value.IsStaleNaN`) recognizes exactly this bit pattern and treats any
+    /// sample carrying it as if the series had no sample at that point ("absent"), never as a literal NaN
+    /// datapoint flowing into aggregations - unlike an ordinary user-supplied NaN, which must still
+    /// propagate as NaN.
+    ///
+    /// This must be detected here, on the raw Float64 straight out of the protobuf, before it is ever
+    /// inserted into the (possibly Float32) "value" column: narrowing this exact bit pattern to Float32
+    /// collapses it to the same canonical quiet-NaN bit pattern (0x7fc00000) that any other NaN also
+    /// narrows to (verified empirically), so the marker becomes indistinguishable from a genuine user NaN
+    /// once stored - there is no reliable way to detect it later at query time.
+    bool isPrometheusStaleMarker(Float64 value)
+    {
+        return std::bit_cast<UInt64>(value) == 0x7FF0000000000002ULL;
+    }
+
     /// Fills the id, timestamp, and value columns for the "samples" table by iterating over the time series.
     /// T is the timestamp type: either DateTime64 (sub-second precision) or UInt32 (second precision).
     template <typename T>
@@ -293,9 +312,16 @@ namespace
             if (!element.samples_size())
                 continue;
 
-            out_id_column.insertManyFrom(id_column_in_tags_table, i, element.samples_size());
             for (const auto & sample : element.samples())
             {
+                /// Drop Prometheus stale markers instead of storing them as ordinary samples: real
+                /// Prometheus treats the series as absent at this point rather than feeding the marker
+                /// into query evaluation (see `isPrometheusStaleMarker` above), so every `_over_time`
+                /// function reading this table must see no row here at all, not a NaN value.
+                if (isPrometheusStaleMarker(sample.value()))
+                    continue;
+
+                out_id_column.insertFrom(id_column_in_tags_table, i);
                 if constexpr (is_decimal<T>)
                     out_timestamp_column.insert(DecimalUtils::convertTo<T>(timestamp_scale, DateTime64{sample.timestamp()}, 3));
                 else

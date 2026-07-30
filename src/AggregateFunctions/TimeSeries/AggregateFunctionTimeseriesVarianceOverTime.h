@@ -136,10 +136,12 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             /// whole window (Welford/Chan, see `Summary` above), so population variance is simply its average.
             /// Due to floating-point rounding the result can be slightly less than zero even though variance is
             /// mathematically non-negative, so a genuinely negative *finite* result is clamped to zero before an
-            /// eventual sqrt. NaN/Inf (e.g. from a NaN/Inf sample in the window - the Prometheus storage path
-            /// stores raw Float64 values unfiltered) must NOT be clamped here: `std::max(0.0, NaN)` would return
-            /// `0.0` (any comparison against NaN is false), silently hiding bad input as a clean zero-variance
-            /// series, so non-finite results are left untouched and propagate through as NaN/Inf.
+            /// eventual sqrt. NaN/Inf (e.g. from a genuine non-finite user sample - the Prometheus storage path
+            /// stores those raw and unfiltered; only the Prometheus stale-marker NaN payload is stripped before
+            /// ingestion, see PrometheusRemoteWriteProtocol.cpp's isPrometheusStaleMarker()) must NOT be clamped
+            /// here: `std::max(0.0, NaN)` would return `0.0` (any comparison against NaN is false), silently
+            /// hiding bad input as a clean zero-variance series, so non-finite results are left untouched and
+            /// propagate through as NaN/Inf.
             Float64 variance = combined.m2 / static_cast<Float64>(combined.count);
             if (std::isfinite(variance) && variance < 0.0)
                 variance = 0.0;

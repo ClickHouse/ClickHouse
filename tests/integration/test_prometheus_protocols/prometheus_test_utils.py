@@ -4,6 +4,7 @@ import math
 import os
 import requests
 import snappy
+import struct
 import sys
 import urllib
 import zipfile
@@ -15,6 +16,14 @@ PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.realpath(__file__)), "pb2"))
 import prompb.remote_pb2 as remote_pb2
 import prompb.types_pb2 as types_pb2
+
+
+# Prometheus' "stale marker": the specific NaN payload (`math.Float64frombits(0x7ff0000000000002)` in
+# Prometheus' own Go code) that scrapers and remote-write clients use to mark a series as stale (e.g. a
+# scrape target disappeared). Real Prometheus' query engine (`value.IsStaleNaN`) recognizes exactly this
+# bit pattern and treats a sample carrying it as if the series had no sample at that point ("absent"),
+# never as a literal NaN datapoint flowing into computations - unlike an ordinary NaN.
+PROMETHEUS_STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 # Converts time series data

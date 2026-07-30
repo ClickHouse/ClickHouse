@@ -78,8 +78,10 @@ DROP TABLE ts_large_magnitude;
 
 -- Regression: a NaN sample anywhere in the window must make stddev/stdvar propagate NaN, not silently
 -- clamp to a valid-looking 0 (`std::max(0.0, NaN)` returns `0.0`, since any comparison against NaN is
--- false). The Prometheus storage path stores raw Float64 sample values in this column unfiltered, so a
--- NaN sample (e.g. a staleness marker or bad input) must not be hidden as clean zero-variance data.
+-- false). The Prometheus storage path stores a genuine non-finite user sample raw and unfiltered (a
+-- Prometheus stale marker is a different, specific NaN payload that is now stripped before ingestion
+-- instead - see PrometheusRemoteWriteProtocol.cpp's isPrometheusStaleMarker()), so bad input like this
+-- must not be hidden as clean zero-variance data.
 CREATE TABLE ts_non_finite(timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
 
 INSERT INTO ts_non_finite VALUES (100, 1), (110, nan), (120, 3);

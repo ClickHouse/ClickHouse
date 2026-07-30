@@ -6,6 +6,7 @@ from helpers.test_tools import tsv_close_to
 import requests
 
 from .prometheus_test_utils import (
+    PROMETHEUS_STALE_NAN,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     execute_range_query_via_http_api,
@@ -175,6 +176,28 @@ def send_test_data():
                 {
                     100: 540000000,
                     110: 540000001,
+                },
+            )
+        ]
+    )
+
+    # Regression: a real Prometheus stale marker (the exact NaN payload Prometheus itself writes when a
+    # scrape target disappears, not just a generic NaN) written via the RemoteWrite protocol must make
+    # every _over_time function reading it treat that point as absent, matching real Prometheus -
+    # see PrometheusRemoteWriteProtocol.cpp's isPrometheusStaleMarker().
+    send_data(
+        [
+            (
+                {"__name__": "stale_marker_test"},
+                {
+                    100: 10,
+                    115: 11,
+                    130: 12,
+                    145: PROMETHEUS_STALE_NAN,
+                    160: 14,
+                    175: 15,
+                    190: 16,
+                    205: 17,
                 },
             )
         ]
@@ -979,6 +1002,60 @@ def test_function_over_time():
             ]
         ],
         eps=1e-9,
+    )
+
+
+# Regression test for a real Prometheus stale marker (`stale_marker_test`, defined in send_test_data():
+# samples at 100,115,...,205 with the sample at 145 replaced by PROMETHEUS_STALE_NAN, the exact NaN
+# payload Prometheus itself writes via RemoteWrite when a scrape target disappears - not just a generic
+# NaN). Real Prometheus treats that one point as if the series had no sample there, so every windowed
+# `_over_time` function must still compute normally over the surrounding real samples instead of
+# propagating NaN through every window that touches it. Expected literals below were captured directly
+# from a real Prometheus 3.5.0 instance fed the identical series via RemoteWrite (same methodology as
+# the other literals in test_function_over_time), and independently cross-checked to match this branch's
+# ClickHouse output bit-for-bit (no `eps` needed for last_over_time; stddev/stdvar use the same `eps`
+# tolerance as their sibling cases above for Welford merge-order ULP differences).
+def test_stale_marker():
+    do_query_test(
+        "stddev_over_time(stale_marker_test[45s])[195s:15s]",
+        205,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "0"], [120, "0.5"], [135, "0.816496580927726"], [150, "0.5"], [165, "1"], [180, "0.5"], [195, "0.816496580927726"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',0),('1970-01-01 00:02:00.000',0.5),('1970-01-01 00:02:15.000',0.816496580927726),('1970-01-01 00:02:30.000',0.5),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0.5),('1970-01-01 00:03:15.000',0.816496580927726)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar_over_time(stale_marker_test[45s])[195s:15s]",
+        205,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "0"], [120, "0.25"], [135, "0.6666666666666666"], [150, "0.25"], [165, "1"], [180, "0.25"], [195, "0.6666666666666666"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',0),('1970-01-01 00:02:00.000',0.25),('1970-01-01 00:02:15.000',0.6666666666666666),('1970-01-01 00:02:30.000',0.25),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0.25),('1970-01-01 00:03:15.000',0.6666666666666666)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # A different (non-variance) `_over_time` function reading the same shared ingestion/selector path,
+    # to confirm the fix isn't specific to stddev_over_time/stdvar_over_time: the stale point (145) must
+    # be skipped, not surfaced as a "last value" of NaN, and the 150 grid point's 20s window contains no
+    # sample at all (matching the analogous gap in the "last_over_time(test[10s])" case above).
+    do_query_test(
+        "last_over_time(stale_marker_test[20s])[220s:15s]",
+        205,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_test"}, "values": [[105, "10"], [120, "11"], [135, "12"], [165, "14"], [180, "15"], [195, "16"]]}]}',
+        [
+            [
+                "[('__name__','stale_marker_test')]",
+                "[('1970-01-01 00:01:45.000',10),('1970-01-01 00:02:00.000',11),('1970-01-01 00:02:15.000',12),('1970-01-01 00:02:45.000',14),('1970-01-01 00:03:00.000',15),('1970-01-01 00:03:15.000',16)]",
+            ]
+        ],
     )
 
 
