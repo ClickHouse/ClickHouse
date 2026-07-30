@@ -239,9 +239,6 @@ void StorageMergeTree::startup()
     /// Do not schedule any background jobs if the table is read-only.
     if (isTableReadonly())
         return;
-
-    /// The table may be located on a disk with metadata in Keeper (e.g. system tables in some cloud configurations),
-    /// and the cleanups below access the disk metadata, so the Keeper requests need a component for tracking.
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
     clearEmptyParts();
