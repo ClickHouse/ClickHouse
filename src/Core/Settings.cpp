@@ -5786,6 +5786,13 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
+    DECLARE(UInt64, iceberg_delete_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg delete manifest files decoded concurrently during query planning.
+
+All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+
+Higher values raise peak memory during planning when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
