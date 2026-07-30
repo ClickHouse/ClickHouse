@@ -24,10 +24,16 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION azureBlobStorage('$connection', '$
 # concurrent in-place overwrite. This exercises the whole path: the `s3_validate_etag_on_read` gate in
 # `StorageObjectStorageSource`, the ETag carried into `ReadBufferFromAzureBlobStorage`, and the check
 # performed on the download response.
+# Every read below is a `SELECT count()`, which `optimize_count_from_files` can answer from the
+# process-global row-count cache (`StorageObjectStorage::getSchemaCache`). That shortcut builds a
+# `ConstChunkGenerator` instead of a read buffer, so no `ReadBufferFromAzureBlobStorage` is created
+# and the ETag is never compared - the assertion would silently pass whatever the production code
+# does. The `s3_validate_etag_on_read = 0` read below populates that cache for this very blob, so
+# pin `use_cache_for_count_from_files = 0` on each validating query to keep it reading the object.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT azure_read_inject_etag_mismatch"
 
 # Validation on (default): the injected mismatch must surface as `S3_OBJECT_CHANGED_DURING_READ`.
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage('$connection', '$container', '$blob', 'CSV', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage('$connection', '$container', '$blob', 'CSV', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1, use_cache_for_count_from_files = 0" 2>&1 \
     | grep -oF "S3_OBJECT_CHANGED_DURING_READ" | head -n 1
 
 # Validation off: the ETag is not propagated, so the same read succeeds.
@@ -40,10 +46,10 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage('$connection', '$c
 # before reading - that refresh is what the production change widened from S3 to Azure. The explicit
 # structure ('n UInt64') bypasses schema inference, so the failure must come from the distributed read
 # and not from inference reading the blob on the coordinator first.
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorageCluster('test_cluster_one_shard_three_replicas_localhost', '$connection', '$container', '$blob', 'CSV', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorageCluster('test_cluster_one_shard_three_replicas_localhost', '$connection', '$container', '$blob', 'CSV', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1, use_cache_for_count_from_files = 0" 2>&1 \
     | grep -oF "S3_OBJECT_CHANGED_DURING_READ" | head -n 1
 
 # Same on the bucket-splitting variant, which wraps the placeholder iterator in
 # ObjectIteratorSplitByBuckets and reads the object on the coordinator as well.
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorageCluster('test_cluster_one_shard_three_replicas_localhost', '$connection', '$container', '$parquet_blob', 'Parquet', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket'" 2>&1 \
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorageCluster('test_cluster_one_shard_three_replicas_localhost', '$connection', '$container', '$parquet_blob', 'Parquet', 'auto', 'n UInt64') SETTINGS s3_validate_etag_on_read = 1, cluster_table_function_split_granularity = 'bucket', use_cache_for_count_from_files = 0" 2>&1 \
     | grep -oF "S3_OBJECT_CHANGED_DURING_READ" | head -n 1
