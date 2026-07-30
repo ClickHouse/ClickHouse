@@ -12238,9 +12238,15 @@ async function updateQueryParams()
             if (params_restore_pending_token !== null) return;
             /// Parameters are tab-owned: persist edited values into the active tab, and keep
             /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
-            /// reload's URL params are never stale relative to the saved tab.
-            const tab = getActiveTab();
-            if (tab) { tab.params = getParamValues(); syncHistory(); }
+            /// reload's URL params are never stale relative to the saved tab. Go through the
+            /// same capture funnel as the other history writers (`captureActiveTab`), not a raw
+            /// `getParamValues()`: after an edit that removed a placeholder, the live inputs (and
+            /// `currentQueryParams`) still describe the PRE-edit text until the asynchronous
+            /// `updateQueryParams` rebuild lands, so a value edited in that window would pair the
+            /// newer draft with the removed placeholder's binding in the entry/URL
+            /// (`/play?param_x=1#SELECT {y:Int32}`) — the capture prunes the snapshot against
+            /// `tab.query` (`queryMentionsParam`) before the entry is rewritten.
+            if (getActiveTab()) { captureActiveTab(); syncHistory(); }
         });
         wrapper.appendChild(input);
 

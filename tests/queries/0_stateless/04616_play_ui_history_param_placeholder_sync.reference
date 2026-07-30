@@ -75,4 +75,12 @@ rename before rebuild: the entry stays clean after the rebuild lands
 rename with a kept placeholder: the binding survives
 rename with a kept placeholder: the entry keeps the binding
 rename with a kept placeholder: the entry carries the new draft
+param edit baseline: the run URL carries both bindings
+param edit before rebuild: the capture prunes the removed binding
+param edit before rebuild: no stale param_x in the entry
+param edit before rebuild: the edited binding reaches the URL
+param edit before rebuild: the entry carries the new draft
+param edit before rebuild: the diverged draft has no run=1
+param edit before rebuild: the landing rebuild keeps the edited binding
+param edit before rebuild: the entry stays clean after the rebuild lands
 OK

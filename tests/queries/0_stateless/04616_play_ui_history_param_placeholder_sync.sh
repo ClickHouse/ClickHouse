@@ -690,6 +690,44 @@ function reset()
     assert_eq('rename with a kept placeholder: the entry keeps the binding', curUrl().includes('param_x=1'), true);
     assert_eq('rename with a kept placeholder: the entry carries the new draft', curState().query, 'SELECT {x:Int32} + 1');
 
+    /// A trusted `param_*` edit is a history writer too: the listener on a live input persists the
+    /// edited values into the active tab and rewrites the current entry (`syncHistory`). After a
+    /// query edit that REMOVED a placeholder, the live inputs (and `currentQueryParams`) still
+    /// describe the pre-edit text until the asynchronous rebuild lands — editing another value in
+    /// that window must not serialize the removed placeholder's binding into the entry/URL
+    /// (`/play?param_x=1&param_y=3#SELECT {y:Int32}`; a reload or copied link would resurrect it).
+    /// The listener goes through the same capture funnel as the other writers, which prunes the
+    /// snapshot against `tab.query` (`queryMentionsParam`); the edited binding itself survives.
+    reset();
+    await type('SELECT {x:Int32} + {y:Int32}');
+    setTrustedParam('x', '1');
+    setTrustedParam('y', '2');
+    await run('SELECT {x:Int32} + {y:Int32}');
+    assert_eq('param edit baseline: the run URL carries both bindings', curUrl().includes('param_x=1') && curUrl().includes('param_y=2'), true);
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                    /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    let release_param_edit_rebuild;
+    tokenize_hold = new Promise(resolve => { release_param_edit_rebuild = resolve; });
+    const param_edit_rebuild = type('SELECT {y:Int32}');   /// removes x; rebuild gated, not landed
+    tokenize_hold = null;
+    setTrustedParam('y', '3');                             /// the stale param-x input is still live
+    assert_params('param edit before rebuild: the capture prunes the removed binding', active().params, { y: '3' });
+    assert_eq('param edit before rebuild: no stale param_x in the entry', curUrl().includes('param_x'), false);
+    assert_eq('param edit before rebuild: the edited binding reaches the URL', curUrl().includes('param_y=3'), true);
+    assert_eq('param edit before rebuild: the entry carries the new draft', curState().query, 'SELECT {y:Int32}');
+    assert_eq('param edit before rebuild: the diverged draft has no run=1', curUrl().includes('run=1'), false);
+    release_param_edit_rebuild();                          /// the rebuild lands
+    await param_edit_rebuild;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    assert_params('param edit before rebuild: the landing rebuild keeps the edited binding', active().params, { y: '3' });
+    assert_eq('param edit before rebuild: the entry stays clean after the rebuild lands', curUrl().includes('param_x'), false);
+
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
 EOF
