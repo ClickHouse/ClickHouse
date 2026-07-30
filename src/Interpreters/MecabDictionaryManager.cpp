@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 
@@ -360,12 +361,17 @@ MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary()
     /// dictionary is complete and can be reused without downloading again.
     const fs::path ready_marker = cache_dir / ".ready";
 
-    /// Keep the archive's original extension: `createArchiveReader` picks the reader by extension.
+    /// The archive type is detected from the file extension (`createArchiveReader`), so the location
+    /// must name an archive with a supported extension. Keep that name for the cached file.
     String archive_name = location.substr(location.find_last_of('/') + 1);
     if (const auto query_pos = archive_name.find('?'); query_pos != String::npos)
         archive_name = archive_name.substr(0, query_pos);
-    if (archive_name.empty())
-        archive_name = "dictionary.tar.gz";
+    if (!hasSupportedArchiveExtension(archive_name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot determine the archive type of the Japanese dictionary from <dictionary_location> '{}'. "
+            "The location must name an archive with a supported extension (for example .tar.gz, .tar.zst or .zip)",
+            location);
     const fs::path archive_path = cache_dir / archive_name;
 
     if (!fs::exists(ready_marker))

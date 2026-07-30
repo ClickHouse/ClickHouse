@@ -183,7 +183,7 @@ The `japanese` tokenizer needs a MeCab dictionary, which is not shipped with Cli
 </tokenizer>
 ```
 
-- `dictionary_location` is the location of an archive (for example `.tar.zst`) of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/). Supported locations:
+- `dictionary_location` is the location of an archive of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/). The location must end in a supported archive extension (for example `.tar.gz`, `.tar.zst` or `.zip`) — the archive type is detected from it — so a URL with no such extension (e.g. `https://example.com/download`) is rejected. Supported locations:
   - a local `file://` path;
   - an `http(s)://` URL, fetched as a plain download (use this for a public or pre-signed object);
   - an S3-compatible object store — AWS S3, GCS, MinIO, on-prem, etc. (not only AWS) — addressed as `s3://`/`gs://`/`oss://` or as a full `http(s)://endpoint/bucket/key` URL. For a private bucket, provide the S3 credentials as child elements of `<japanese>` (see the example below).
