@@ -129,6 +129,7 @@
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                "products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
               ]
             },
