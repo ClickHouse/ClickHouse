@@ -1,3 +1,6 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: Explain output may differ
+
 -- The optimizations below are disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
