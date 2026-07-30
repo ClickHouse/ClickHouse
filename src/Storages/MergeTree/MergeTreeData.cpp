@@ -7495,8 +7495,8 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        /// No hasSecondaryIndex() check: it resolves the index file through the part storage, which
-        /// reads on packed storage, and getSecondaryIndexSize() already returns an empty size for an
+        /// No `hasSecondaryIndex` check: it resolves the index file through the part storage, which
+        /// reads on packed storage, and `getSecondaryIndexSize` already returns an empty size for an
         /// index the part does not have, so subtracting it is a no-op.
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
 

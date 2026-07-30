@@ -1,0 +1,9 @@
+packed	1	Packed
+accounted	1
+untouched	1
+rows	1
+fewer_file_open	1
+fewer_pool_read	1
+sizes_correct	m_a	1
+sizes_correct	m_b	1
+rows_intact	2000
