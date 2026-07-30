@@ -129,12 +129,10 @@ done
 # Therefore, it is crucial to avoid unnecessary inclusion of Settings.h in
 # headers.
 #
-# In most cases, we can include Settings_fwd.h instead, as we usually do not
-# need the full definition of the Settings structure in headers - only declaration.
+# In most cases we can forward-declare Settings instead, as headers usually need only a declaration.
 rg '#include\s*[<"](Core/Settings\.h|[^">]*MergeTreeSettings\.h)[>"]' \
     --glob '*.h' "$ROOT_PATH/src" | \
     grep -v -F \
-        -e 'src/Access/resolveSetting.h' \
-        -e 'src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h' | \
+        -e 'src/Access/resolveSetting.h' | \
     awk '!/\/Functions\// || /\/Functions\/IFunction/' | \
     grep . && echo '^ Too broad Settings.h or MergeTreeSettings.h usage. Use forward declaration instead.'

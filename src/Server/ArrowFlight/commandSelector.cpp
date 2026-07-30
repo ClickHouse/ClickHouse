@@ -365,6 +365,8 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"QueryRunner", "REMOTE TABLE"},
     {"RabbitMQ", "REMOTE TABLE"},
     {"Redis", "REMOTE TABLE"},
+    {"Remote", "REMOTE TABLE"},
+    {"RemoteSecure", "REMOTE TABLE"},
     {"S3", "REMOTE TABLE"},
     {"S3Queue", "REMOTE TABLE"},
     {"URL", "REMOTE TABLE"},

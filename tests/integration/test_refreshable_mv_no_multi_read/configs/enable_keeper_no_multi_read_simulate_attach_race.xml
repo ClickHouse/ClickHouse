@@ -1,0 +1,45 @@
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <heart_beat_interval_ms>0</heart_beat_interval_ms>
+            <election_timeout_lower_bound_ms>0</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
+        </coordination_settings>
+
+        <feature_flags>
+            <multi_read>0</multi_read>
+            <create_if_not_exists>1</create_if_not_exists>
+        </feature_flags>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>localhost</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <!-- Make the refresh task constructor behave as if the Keeper feature flags were present on
+         attach, even though this Keeper lacks MULTI_READ. This deterministically simulates the
+         feature-flag propagation race that happens when a view is re-attached during a restart
+         before its Keeper connection settles. doScheduling must re-detect the missing flags and
+         stop the view gracefully instead of crashing the scheduling thread. -->
+    <fail_points_active>
+        <refresh_mv_skip_attach_feature_flag_check>1</refresh_mv_skip_attach_feature_flag_check>
+    </fail_points_active>
+</clickhouse>

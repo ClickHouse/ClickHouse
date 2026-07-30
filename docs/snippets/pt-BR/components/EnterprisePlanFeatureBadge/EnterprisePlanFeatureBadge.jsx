@@ -10,3 +10,5 @@ export const EnterprisePlanFeatureBadge = ({feature='Este recurso', support=fals
         </div>
     )
 }
+
+export default EnterprisePlanFeatureBadge;

@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
