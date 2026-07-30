@@ -53,6 +53,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"allow_experimental_scann_index", false, false, "New setting. Gates creation of `vector_similarity('scann', ...)` indexes while the ScaNN backend is experimental."},
+            {"scann_num_leaves_to_search", 0, 0, "New setting. Number of IVF partitions to probe at query time for a `vector_similarity('scann', ...)` index. `0` means a balanced automatic value."},
+            {"scann_candidate_pool_size", 0, 0, "New setting. AH candidate pool size for a `vector_similarity('scann', ...)` index before exact reranking. `0` means a balanced automatic value."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -113,9 +116,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
-            {"allow_experimental_scann_index", false, false, "New setting. Gates creation of `vector_similarity('scann', ...)` indexes while the ScaNN backend is experimental."},
-            {"scann_num_leaves_to_search", 0, 0, "New setting. Number of IVF partitions to probe at query time for a `vector_similarity('scann', ...)` index. `0` means a balanced automatic value."},
-            {"scann_candidate_pool_size", 0, 0, "New setting. AH candidate pool size for a `vector_similarity('scann', ...)` index before exact reranking. `0` means a balanced automatic value."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
