@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
@@ -411,6 +412,31 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
+/// Returns the column alias list of `AS alias(col1, col2, ...)` for a subquery table expression, or
+/// an empty list. A resolved subquery already carries the list as projection aliases, and column
+/// pruning shrinks those without shrinking the list, so only an unresolved subquery needs it back.
+/// For a UNION the list lives on the first inner query node, matching where QueryTreeBuilder put it.
+static const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & table_expression_node)
+{
+    static const Names no_aliases;
+
+    QueryTreeNodePtr current = table_expression_node;
+    while (current)
+    {
+        if (const auto * query_node = current->as<QueryNode>())
+            return query_node->isResolved() ? no_aliases : query_node->getProjectionAliasesToOverride();
+
+        const auto * union_node = current->as<UnionNode>();
+        if (!union_node)
+            return no_aliases;
+
+        const auto & queries = union_node->getQueries().getNodes();
+        current = queries.empty() ? nullptr : queries[0];
+    }
+
+    return no_aliases;
+}
+
 static ASTPtr convertIntoTableExpressionAST(
     const QueryTreeNodePtr & table_expression_node,
     const ConvertToASTOptions & convert_to_ast_options
@@ -470,6 +496,21 @@ static ASTPtr convertIntoTableExpressionAST(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expected identifier, table, query, union or table function. Actual {}",
             table_expression_node->formatASTForErrorMessage());
+    }
+
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+    {
+        const auto & column_aliases = getColumnAliasesToRestore(table_expression_node);
+        if (!column_aliases.empty())
+        {
+            auto column_aliases_ast = make_intrusive<ASTExpressionList>();
+            column_aliases_ast->children.reserve(column_aliases.size());
+            for (const auto & column_alias : column_aliases)
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+
+            result_table_expression->column_aliases = std::move(column_aliases_ast);
+            result_table_expression->children.push_back(result_table_expression->column_aliases);
+        }
     }
 
     if (table_expression_modifiers)

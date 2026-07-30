@@ -1,0 +1,36 @@
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1	2
+1
+1
+1
+1
+SELECT x\nFROM\n(\n    SELECT 1\n) AS t(x)
+SELECT __table1.x AS x
+FROM
+(
+    SELECT 7 AS x
+    FROM system.one AS __table2
+) AS __table1
