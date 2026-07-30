@@ -2212,14 +2212,21 @@
         if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
         const runLink = result?.ext?.run_url || runtimeCache.runLink;
         if (runLink) createLinkElement(runLink, 'Run', footerRight);
-        let i = 1;
-        for (const name of nameParams) {
-            if (name === result.name) {
-                break;
+        if (result) {
+            let i = 1;
+            for (const name of nameParams) {
+                if (name === result.name) {
+                    break;
+                }
+                i++;
             }
-            i++;
+            fillInNavigationBar(nameParams.slice(0, i + 1));
+        } else {
+            // The report is missing/expired so there is no result to align to.
+            // Still render the full path as breadcrumbs so the parent layers
+            // remain reachable (e.g. to return to the workflow or PR view).
+            fillInNavigationBar(nameParams);
         }
-        fillInNavigationBar(nameParams.slice(0, i + 1))
     }
 
     function renderNotificationPanels(container, ext, resultName) {
