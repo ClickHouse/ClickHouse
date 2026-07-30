@@ -1,0 +1,56 @@
+-- match set equals the element-wise `=` oracle
+String	[0,1]	[0,1]
+LowCardinality	[0,1]	[0,1]
+LowCardinality(Nullable)	[0,1]	[0,1]
+Nullable	[0,1]	[0,1]
+indexOf String	[0,1]
+indexOf LowCardinality	[0,1]
+countEqual String	[0,1]
+countEqual LowCardinality	[0,1]
+-- a needle wider than the stored values still matches
+String	[0,1]	[0,1]
+LowCardinality	[0,1]	[0,1]
+-- multiplicity and position with both class members in one row
+String	2	1	2
+LowCardinality	2	1	2
+-- constant array, compared as Fields
+1	1	2
+1	1	1
+per row	1	1
+per row	1	1
+per row	1	1
+-- Map keys take the same path
+Map	[0,1]
+Map(LowCardinality)	[0,1]
+-- the rewrite of arrayExists to has must preserve results
+FixedString needle	1
+String needle	1
+-- must not regress: a String needle stays exact, FixedString elements keep working
+String needle on String	[0]	[0]
+String needle on LowCardinality	[0]	[0]
+FixedString(4) elements	[0]	[0]
+LowCardinality(FixedString(3))	[0]	[0]
+wider needle on LowCardinality(FixedString(3))	[0]	[0]
+longer non-NUL String needle	0
+NULL needle	[]
+-- boundary sizes, including needles that cross the 16 byte comparison window
+empty value	[0]	[0]
+one byte	[1,2]	[1,2]
+leading NUL	[3]	[3]
+exactly 16 bytes	[4]	[4]
+padded across 16	[5]	[5]
+padded to 40	[5]	[5]
+empty array	0
+-- the dictionary lookup must not stand in for float equality
+has 0.0	[0,1]	[0,1]	[0,1]
+has -0.0	[0,1]	[0,1]	[0,1]
+has nan	[]	[]	[]
+nan position and count	0	0
+-- a needle of a wider type must not be rounded onto a stored value
+has 1.5	[]	[]
+has 2.5	[]	[]
+has toDecimal64(1.5)	[]
+Float32 element, Float64 needle	[]	[]
+same type needle	[0]	[0]
+has -1 on UInt8	[]	[]	[]
+has 255 on UInt8	[0]	[0]

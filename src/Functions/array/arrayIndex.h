@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -395,7 +396,17 @@ private:
     using ArrayOffset = ColumnArray::Offset;
     using ResultType = typename ConcreteAction::ResultType;
 
-    template <bool IsConst, bool HasNullMapData, bool HasNullMapItem>
+    /// Both operands live in PaddedPODArray, so the AllowOverflow15 primitives may over-read safely.
+    template <bool ZeroPadded>
+    static bool needleEquals(const UInt8 * needle, size_t needle_size, const UInt8 * elem, size_t elem_size)
+    {
+        if constexpr (ZeroPadded)
+            return memequalSmallLikeZeroPaddedAllowOverflow15(needle, needle_size, elem, elem_size);
+        else
+            return memequalSmallAllowOverflow15(needle, needle_size, elem, elem_size);
+    }
+
+    template <bool IsConst, bool HasNullMapData, bool HasNullMapItem, bool ZeroPadded>
     static void processImpl(
         const ColumnString::Chars & data,
         const ColumnArray::Offsets & offsets,
@@ -437,7 +448,7 @@ private:
                         if ((*data_map)[current_offset + j])
                             continue;
 
-                    if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
+                    if (!needleEquals<ZeroPadded>(item_values.data(), item_offsets, &data[string_pos], string_size))
                         continue;
                 }
                 else if constexpr (HasNullMapData)
@@ -450,10 +461,10 @@ private:
                         if (!(*item_map)[i])
                             continue;
                     }
-                    else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    else if (!needleEquals<ZeroPadded>(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
                 }
-                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                else if (!needleEquals<ZeroPadded>(&item_values[value_pos], value_size, &data[string_pos], string_size))
                     continue;
 
                 ConcreteAction::apply(current, j);
@@ -467,7 +478,7 @@ private:
         }
     }
 
-    template <bool IsConst>
+    template <bool IsConst, bool ZeroPadded>
     static void invokeCheckNullMaps(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
@@ -475,23 +486,28 @@ private:
         PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
     {
         if (data_map && item_map)
-            processImpl<IsConst, true, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, true, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else if (data_map)
-            processImpl<IsConst, true, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, false, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else if (item_map)
-            processImpl<IsConst, false, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, true, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else
-            processImpl<IsConst, false, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, false, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
     }
 
 public:
+    /// [zero_padded] must be set only for a constant `FixedString` needle: its trailing NUL padding
+    /// is not part of the value, so equality has to ignore it to agree with `=`.
     static void process(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         Offset item_offsets, PaddedPODArray<ResultType> & result,
-        const NullMap * data_map, const NullMap * item_map)
+        const NullMap * data_map, const NullMap * item_map, bool zero_padded = false)
     {
-        invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        if (zero_padded)
+            invokeCheckNullMaps<true, true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        else
+            invokeCheckNullMaps<true, false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 
     static void process(
@@ -500,7 +516,7 @@ public:
         const ColumnString::Offsets & item_offsets, PaddedPODArray<ResultType> & result,
         const NullMap * data_map, const NullMap * item_map)
     {
-        invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        invokeCheckNullMaps<false, false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 };
 }
@@ -835,6 +851,45 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
+
+    /** The LowCardinality fast path resolves the needle to ONE dictionary index and then compares
+      * indices, so it is sound only when the needle identifies exactly one element value AND the
+      * dictionary's lookup, which is by BYTE identity, coincides with that type's equality.
+      *
+      * This is an allow-list rather than a lossiness check on the cast, because for a same-type
+      * needle the cast is the identity yet byte identity still is not equality: floats have
+      * `+0.0 == -0.0` with different bytes and `NaN != NaN` with equal bytes, so a `Float64` needle
+      * both misses rows a `0.0` needle must match and invents a `NaN` match.
+      */
+    static bool needleMapsToSingleDictionaryValue(const DataTypePtr & element_type, const DataTypePtr & needle_type)
+    {
+        const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));
+        const auto needle = removeNullable(recursiveRemoveLowCardinality(needle_type));
+
+        const WhichDataType which_element(element);
+        const WhichDataType which_needle(needle);
+
+        /// Byte identity is not equality for floats, and a wider type family may round the needle
+        /// onto a different value than it holds (`has(Array(LowCardinality(Int64)), 1.5)`).
+        if (which_element.isFloat() || which_needle.isFloat())
+            return false;
+
+        /// A `FixedString` needle is zero-padded to the element width, so it stays one value only
+        /// while the element type is at least as wide; a `String` element can hold several members
+        /// of the needle's equivalence class, of which the dictionary would find at most one.
+        if (which_needle.isFixedString())
+            return which_element.isFixedString()
+                && assert_cast<const DataTypeFixedString &>(*element).getN()
+                    >= assert_cast<const DataTypeFixedString &>(*needle).getN();
+
+        /// Same reasoning in the other direction: a `String` needle longer than the element width
+        /// still compares equal when the excess is NUL, which a plain dictionary lookup misses.
+        if (which_element.isFixedString())
+            return which_needle.isFixedString();
+
+        return element->equals(*needle);
+    }
+
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
         /// The LowCardinality optimization compares dictionary indices instead of actual values.
@@ -863,6 +918,9 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
+
+        if (!needleMapsToSingleDictionaryValue(array_type.getNestedType(), arguments[1].type))
+            return nullptr;
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
@@ -1159,7 +1217,8 @@ private:
                     item_const_fixedstring->getN(),
                     result->getData(),
                     null_map_data,
-                    null_map_item);
+                    null_map_item,
+                    /*zero_padded=*/ true);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnConst contains not String nor FixedString column");
         }
@@ -1183,6 +1242,61 @@ private:
         return result;
     }
 
+    /** String-family equality is zero-padded exactly when one side is a `FixedString`
+      * (`toFixedString('abc', 5) = 'abc'`), while `String` vs `String` stays exact
+      * (`'V0' = 'V0\0'` is false).
+      */
+    static bool needsZeroPaddedComparison(const DataTypePtr & element_type, const DataTypePtr & needle_type)
+    {
+        const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));
+        const auto needle = removeNullable(recursiveRemoveLowCardinality(needle_type));
+
+        const WhichDataType which_element(element);
+        const WhichDataType which_needle(needle);
+
+        return (which_element.isFixedString() && which_needle.isStringOrFixedString())
+            || (which_needle.isFixedString() && which_element.isStringOrFixedString());
+    }
+
+    /// Compares two string `Field`s as if the shorter one were padded with zero bytes.
+    /// Unlike the `AllowOverflow15` primitives, this may not over-read: a `Field` holds a
+    /// `std::string`, which carries no SIMD padding.
+    static bool zeroPaddedFieldEquals(const Field & lhs, const Field & rhs)
+    {
+        if (lhs.getType() != Field::Types::String || rhs.getType() != Field::Types::String)
+            return accurateEquals(lhs, rhs);
+
+        const auto & a = lhs.safeGet<String>();
+        const auto & b = rhs.safeGet<String>();
+
+        const size_t min_size = std::min(a.size(), b.size());
+        if (0 != memcmp(a.data(), b.data(), min_size))
+            return false;
+
+        const auto & longest = a.size() > b.size() ? a : b;
+        for (size_t i = min_size; i < longest.size(); ++i)
+            if (longest[i] != 0)
+                return false;
+
+        return true;
+    }
+
+    static ResultType linearSearchConstZeroPadded(const Array & arr, const Field & value)
+    {
+        ResultType current = 0;
+        for (size_t i = 0, size = arr.size(); i < size; ++i)
+        {
+            if (!zeroPaddedFieldEquals(arr[i], value))
+                continue;
+
+            ConcreteAction::apply(current, i);
+
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
+        }
+        return current;
+    }
+
     static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
@@ -1193,11 +1307,20 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// `Field` has no `FixedString`, so a `FixedString` value arrives as a NUL-padded `String`
+        /// and exact `Field` equality compares that padding as data.
+        const bool zero_padded = needsZeroPaddedComparison(
+            assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType(), arguments[1].type);
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
-            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            /// Ordering under zero-padded comparison need not match the dictionary/insertion order
+            /// the binary search relies on, so use the linear scan, which is correct either way.
+            if (zero_padded)
+                current = linearSearchConstZeroPadded(arr, value);
+            else if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
                 if (isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
@@ -1245,7 +1368,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!accurateEquals(arr[i], value))
+                    if (zero_padded ? !zeroPaddedFieldEquals(arr[i], value) : !accurateEquals(arr[i], value))
                         continue;
                 }
 
