@@ -295,6 +295,43 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
     }
 }
 
+/// Builds the non-materialized-part default expression for a folded `m['key'] IN (...)` query:
+/// `equals(m['key'], v1) OR ... OR equals(m['key'], vn)`. `in_node` is the original `in`/`globalIn`
+/// function node; its first child is the `m['key']` accessor, rebuilt via convertNodeToAST (the same
+/// round-trip the `m['key'] = v` exact path relies on). Reconstructing the accessor plus literal values
+/// avoids the `in`'s ColumnSet right-hand side, which does not survive convertNodeToAST.
+ASTPtr buildInFallbackAST(const ActionsDAG::Node & in_node, const std::vector<String> & values)
+{
+    if (in_node.children.empty() || values.empty())
+        return nullptr;
+
+    ASTPtr lhs = convertNodeToAST(*in_node.children[0]);
+    if (!lhs)
+        return nullptr;
+
+    auto make_equals = [&](const String & value) -> ASTPtr
+    {
+        auto equals = make_intrusive<ASTFunction>();
+        equals->name = "equals";
+        equals->arguments = make_intrusive<ASTExpressionList>();
+        equals->children.push_back(equals->arguments);
+        equals->arguments->children.push_back(lhs->clone());
+        equals->arguments->children.push_back(make_intrusive<ASTLiteral>(Field(value)));
+        return equals;
+    };
+
+    if (values.size() == 1)
+        return make_equals(values.front());
+
+    auto disjunction = make_intrusive<ASTFunction>();
+    disjunction->name = "or";
+    disjunction->arguments = make_intrusive<ASTExpressionList>();
+    disjunction->children.push_back(disjunction->arguments);
+    for (const auto & value : values)
+        disjunction->arguments->children.push_back(make_equals(value));
+    return disjunction;
+}
+
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -762,7 +799,16 @@ private:
                 ASTPtr default_expression;
 
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
-                    default_expression = convertNodeToAST(function_node);
+                {
+                    /// A folded `m['key'] IN (...)` query carries its literal set values; rebuild the
+                    /// predicate as `OR`-of-`equals` so the non-materialized-part default expression does
+                    /// not degrade the `IN`'s ColumnSet to a NULL literal.
+                    const auto & in_values = condition.search_query->direct_read_in_values;
+                    if (!in_values.empty())
+                        default_expression = buildInFallbackAST(function_node, in_values);
+                    else
+                        default_expression = convertNodeToAST(function_node);
+                }
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));

@@ -2143,14 +2143,16 @@ bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
-    /// One exact token per set element (is_rest = 0, first value), OR'd via FUNCTION_HAS_ANY_TOKENS (one
-    /// multi-token query, so requiresReadingAllTokens folds every posting).
+    /// Each `m['key'] = vi` matches the key's first occurrence (is_rest = 0), so build one exact pair
+    /// token per set element and OR them with FUNCTION_HAS_ANY_TOKENS (a single multi-token query, like
+    /// the mapContainsKeyValue rewrite, so requiresReadingAllTokens forces reading every posting).
     ///
-    /// Direct read mode is None, not Exact — like the generic set path. Exact would replace the predicate
-    /// with a virtual column recomputed from `convertNodeToAST(in(...))` on non-materialized parts, but
-    /// the IN right-hand side is a `ColumnSet` that degrades to NULL through that round-trip, dropping
-    /// those parts' matching rows. None keeps the predicate and uses the index only to prune granules.
+    /// Direct read mode is Exact. The set is a literal (buildOrderedSetInplace produced explicit
+    /// elements), so on parts where the index is not materialized the optimizer rebuilds the predicate
+    /// as `m['key'] = v1 OR ... OR m['key'] = vn` from direct_read_in_values below, avoiding the
+    /// `in(x, NULL)` degradation that a ColumnSet round-trip would cause.
     VectorWithMemoryTracking<String> tokens;
+    std::vector<String> in_values;
     size_t total_row_count = prepared_set->getTotalRowCount();
     for (size_t row = 0; row < total_row_count; ++row)
     {
@@ -2163,14 +2165,17 @@ bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
             return false;
 
         tokens.push_back(encodeMapKeyValueToken(*key, std::string_view(ref.data(), ref.size()), /*is_rest=*/ false));
+        in_values.emplace_back(ref.data(), ref.size());
     }
 
     if (tokens.empty())
         return false;
 
     out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
-    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-        "in", TextSearchMode::Any, TextIndexDirectReadMode::None, std::move(tokens)));
+    auto query = std::make_shared<TextSearchQuery>(
+        "in", TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::move(tokens));
+    query->direct_read_in_values = std::move(in_values);
+    out.text_search_queries.emplace_back(std::move(query));
     return true;
 }
 

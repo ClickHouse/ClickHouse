@@ -85,6 +85,13 @@ struct TextSearchQuery
     const std::vector<TokenValueMatcher> & getValueMatchers() const { return value_matchers; }
     UInt128 getHash() const { return hash; }
 
+    /// Raw String set values for a folded `m['key'] IN (...)` query (empty for every other query).
+    /// The direct-read optimizer uses them to rebuild an `OR`-of-`equals` default expression for parts
+    /// where the index is not materialized, because the original `IN`'s `ColumnSet` cannot be
+    /// reconstructed. Intentionally NOT part of `getHash` — it is redundant with `tokens`, so leaving it
+    /// out keeps the hash stable and the field can be filled in right after construction.
+    std::vector<String> direct_read_in_values;
+
 private:
     void initializeHash();
 
