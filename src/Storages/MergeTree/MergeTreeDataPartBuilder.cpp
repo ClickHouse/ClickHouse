@@ -76,6 +76,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part storage is not set", name);
 
     part_storage->setZeroCopyReplicationEnabled((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+    part_storage->setFlatProjectionStorageInUse(data.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
 
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create projection part in MergeTree table created in old syntax");

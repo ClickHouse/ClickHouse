@@ -41,6 +41,7 @@ public:
     void removeProjectionResidue(const Projection & placement) override;
 
     void setZeroCopyReplicationEnabled(bool value) override { zero_copy_replication_enabled = value; }
+    void setFlatProjectionStorageInUse(bool value) override { flat_projection_storage_in_use = value; }
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -286,6 +287,10 @@ protected:
 
     /// Zero-copy replication policy; default true keeps residue blobs (fail-safe until seeded).
     bool zero_copy_replication_enabled = true;
+
+    /// Whether the table uses the FLAT projection layout; default true is fail-safe (an unset storage still scans for siblings). Gates the
+    /// flat-sibling parts-root scans so the default legacy_nested table pays no per-part listing. See setFlatProjectionStorageInUse.
+    bool flat_projection_storage_in_use = true;
 
     /// The owned projection set. ready=false: never seeded (reads throw); ready=true: authoritative (absent key = no projection). Paths are
     /// derived, so only setRelativePath drops it.

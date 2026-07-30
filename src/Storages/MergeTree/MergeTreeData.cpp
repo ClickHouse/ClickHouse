@@ -5993,6 +5993,8 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+            part_storage->setFlatProjectionStorageInUse(
+                storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
             part_storage->rename(full_path, new_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)
@@ -6036,6 +6038,8 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
             part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+            part_storage->setFlatProjectionStorageInUse(
+                storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
             part_storage->rename(full_path, old_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)

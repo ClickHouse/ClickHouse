@@ -199,6 +199,11 @@ public:
     /// Default true is fail-safe: residue sweeps keep remote blobs.
     virtual void setZeroCopyReplicationEnabled(bool value) = 0;
 
+    /// Whether this table writes projections in the FLAT layout (sibling dirs at the part root). Only then can a `<part>.<name>.proj`
+    /// sibling -- owned or stale residue -- exist, so the flat-sibling parts-root scans are skipped when this is false (the default
+    /// legacy_nested table). Default true is fail-safe: an unset storage keeps scanning.
+    virtual void setFlatProjectionStorageInUse(bool value) = 0;
+
     /// Sub-part storage bound to the projection's directory.
     virtual std::shared_ptr<IDataPartStorage> getProjectionStorage(const std::string & dir_name, bool use_parent_transaction = true) = 0; // NOLINT
     virtual std::shared_ptr<const IDataPartStorage> getProjectionStorage(const std::string & dir_name) const = 0;

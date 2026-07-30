@@ -103,6 +103,7 @@ void DataPartStorageOnDiskBase::seedFrozenCopy(IDataPartStorage & dest_storage) 
             copied.emplace(projection_dir, projection);
     dest_storage.setProjections(std::move(copied));
     dest_storage.setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
+    dest_storage.setFlatProjectionStorageInUse(flat_projection_storage_in_use);
 }
 
 void DataPartStorageOnDiskBase::removeStaleProjectionSiblingAtDestination(
@@ -359,10 +360,12 @@ UInt64 DataPartStorageOnDiskBase::calculateTotalSizeOnDisk() const
 {
     auto disk = volume->getDisk();
     UInt64 res = calculateTotalSizeOnDiskImpl(disk, fs::path(root_path) / part_dir);
-    /// FLAT projections are siblings of the part dir, so the walk above misses them (NESTED ones live inside it).
-    for (const auto & [projection_dir, projection] : detectProjections())
-        if (projection.format == ProjectionStorageFormat::FLAT)
-            res += calculateTotalSizeOnDiskImpl(disk, projection.relativePath());
+    /// FLAT projections are siblings of the part dir, so the walk above misses them (NESTED ones live inside it). Skip the parts-root
+    /// discovery scan for a legacy_nested table, which never writes flat siblings.
+    if (flat_projection_storage_in_use)
+        for (const auto & [projection_dir, projection] : detectProjections())
+            if (projection.format == ProjectionStorageFormat::FLAT)
+                res += calculateTotalSizeOnDiskImpl(disk, projection.relativePath());
     return res;
 }
 
@@ -848,22 +851,27 @@ void DataPartStorageOnDiskBase::rename(
     }
 
     /// Nothing has moved yet, so any existing sibling at a destination name is residue of a failed op on a same-named part; overwriting it
-    /// would resurrect foreign data. Destination disk truth, so scanned.
-    const String dest_prefix = new_part_dir + ".";
-    std::vector<String> stale_siblings;
-    if (volume->getDisk()->existsDirectory(new_root_path))
-        for (auto it = volume->getDisk()->iterateDirectory(new_root_path); it->isValid(); it->next())
-            if (it->name().starts_with(dest_prefix) && Projection::dirNameType(it->name()) != Projection::Status::None)
-                stale_siblings.push_back(it->name());
-
-    const bool keep_shared_residue_blobs = zero_copy_replication_enabled && volume->getDisk()->supportZeroCopyReplication();
-    for (const auto & entry : stale_siblings)
+    /// would resurrect foreign data (it must be swept even when THIS part owns no projection -- the residue belongs to a prior part at the
+    /// same name). Only a flat table can have such siblings, so the default legacy_nested table skips this whole-parts-root listing. A
+    /// table switched flat->legacy_nested is the one gap: its pre-switch residue is no longer swept here (rare; needs same-name reuse).
+    if (flat_projection_storage_in_use)
     {
-        if (log)
-            LOG_WARNING(log, "Removing stale projection sibling {} at rename destination",
-                fullPath(volume->getDisk(), fs::path(new_root_path) / entry));
+        const String dest_prefix = new_part_dir + ".";
+        std::vector<String> stale_siblings;
+        if (volume->getDisk()->existsDirectory(new_root_path))
+            for (auto it = volume->getDisk()->iterateDirectory(new_root_path); it->isValid(); it->next())
+                if (it->name().starts_with(dest_prefix) && Projection::dirNameType(it->name()) != Projection::Status::None)
+                    stale_siblings.push_back(it->name());
 
-        executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(fs::path(new_root_path) / entry / "", keep_shared_residue_blobs, {}); });
+        const bool keep_shared_residue_blobs = zero_copy_replication_enabled && volume->getDisk()->supportZeroCopyReplication();
+        for (const auto & entry : stale_siblings)
+        {
+            if (log)
+                LOG_WARNING(log, "Removing stale projection sibling {} at rename destination",
+                    fullPath(volume->getDisk(), fs::path(new_root_path) / entry));
+
+            executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(fs::path(new_root_path) / entry / "", keep_shared_residue_blobs, {}); });
+        }
     }
 
     /// Entering the live namespace the parent dir moves last (commits after its FLAT siblings); leaving it (temp/delete_tmp_/detached) it
@@ -1618,8 +1626,9 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransac
 void DataPartStorageOnDiskBase::removeRecursive()
 {
     /// Physical teardown uses disk truth, not the owned cache: every FLAT sibling and temp projection dir on disk must go, ownership is
-    /// irrelevant here.
-    const auto detected = detectProjections();
+    /// irrelevant here. A legacy_nested table has no flat siblings, so skip the parts-root discovery scan; any residue that outlives the
+    /// part is left ownerless and reaped by clearOrphanProjectionSiblings.
+    const auto detected = flat_projection_storage_in_use ? detectProjections() : Projections{};
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)
@@ -1634,8 +1643,9 @@ void DataPartStorageOnDiskBase::removeRecursive()
 
 void DataPartStorageOnDiskBase::removeSharedRecursive(bool keep_in_remote_fs)
 {
-    /// See removeRecursive: disk truth, not the owned cache.
-    const auto detected = detectProjections();
+    /// See removeRecursive: disk truth, not the owned cache; skip the scan for a legacy_nested table (stray residue is reaped by
+    /// clearOrphanProjectionSiblings).
+    const auto detected = flat_projection_storage_in_use ? detectProjections() : Projections{};
     executeWriteOperation([&](auto & disk)
     {
         for (const auto & [projection_dir, projection] : detected)
