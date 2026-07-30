@@ -75,6 +75,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -99,6 +100,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -184,6 +190,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 }
@@ -718,6 +726,81 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 }
 
 
+namespace
+{
+
+/// Open the `INTO OUTFILE` target in a way that a `Ctrl+C` can interrupt.
+///
+/// A blocking special file - most notably a FIFO opened for writing while no reader is attached -
+/// parks `open(O_WRONLY)` until a reader appears. Doing that inside the `WriteBufferFromFile`
+/// constructor would happen before any cancellation hook can be installed on the resulting
+/// descriptor, so the first `Ctrl+C` would appear to do nothing and the client would stay stuck.
+///
+/// Instead, open with `O_NONBLOCK`: for a reader-less FIFO that fails immediately with `ENXIO`,
+/// which lets us wait for the sink in an interruptible loop rather than inside the kernel. The
+/// waiting semantics of a blocking `open` are preserved (a FIFO target still waits for its reader),
+/// only now the wait is abandoned as soon as the query is cancelled. For every other target -
+/// including a regular file - the very first `open` succeeds and the loop is not entered at all.
+///
+/// `O_NONBLOCK` is cleared afterwards so that writes keep their usual semantics;
+/// `WriteBufferFromFileDescriptor::setCancellationHook` arranges responsive writes on its own.
+int openOutfileCancellable(const String & file_name, int flags, const std::function<bool()> & is_cancelled)
+{
+    while (true)
+    {
+        int fd = ::open(file_name.c_str(), flags | O_CLOEXEC | O_NONBLOCK, 0666);
+
+        if (fd == -1)
+        {
+            /// `ENXIO` is also how an unattached character device reports that it cannot be opened,
+            /// and a blocking `open` would have failed there instead of waiting - so only a FIFO is
+            /// worth retrying.
+            const int open_errno = errno;
+
+            struct stat file_stat{};
+            const bool wait_for_reader
+                = open_errno == ENXIO && ::stat(file_name.c_str(), &file_stat) == 0 && S_ISFIFO(file_stat.st_mode);
+
+            if (!wait_for_reader)
+            {
+                errno = open_errno;
+                ErrnoException::throwFromPath(
+                    open_errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+                    file_name,
+                    "Cannot open file {}",
+                    file_name);
+            }
+
+            if (is_cancelled())
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Query was cancelled while waiting for {} to be opened for writing",
+                    file_name);
+
+            /// Nothing to poll on here: the descriptor does not exist yet, so waiting for a reader
+            /// to show up is inherently a retry loop. The interval only bounds the reaction time to
+            /// `Ctrl+C`; it does not guard any race.
+            sleepForMilliseconds(20);
+            continue;
+        }
+
+        int file_status_flags = ::fcntl(fd, F_GETFL, 0);
+        if (file_status_flags == -1 || ::fcntl(fd, F_SETFL, file_status_flags & ~O_NONBLOCK) == -1)
+        {
+            int saved_errno = errno;
+            ::close(fd);
+            errno = saved_errno;
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot reset the non-blocking mode for file {}", file_name);
+        }
+
+        return fd;
+    }
+}
+
+}
+
+
 void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
@@ -827,7 +910,20 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
-                auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                /// Acquire the descriptor before handing it over to `WriteBufferFromFile`, so that a
+                /// sink whose `open()` blocks (a reader-less FIFO) does not park the client where no
+                /// cancellation hook exists yet. See `openOutfileCancellable`.
+                int out_file_fd = openOutfileCancellable(
+                    out_file, flags, [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+
+                /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
+                /// covers the case when it throws before doing so.
+                SCOPE_EXIT({
+                    if (out_file_fd != -1)
+                        ::close(out_file_fd);
+                });
+
+                auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
 
                 /// Keep the primary `INTO OUTFILE` sink responsive to cancellation, just like the
                 /// `std_out` result-set path and the `AND STDOUT` mirror below. A non-regular target
