@@ -14,6 +14,9 @@ Negative: predictXGBoost against a non-XGBoost dictionary
 42
 Negative: bad hyperparameters (rejected when the model trains, at first use)
 10
+Negative: an integer target attribute (rejected at first use)
+Positive: a Float32 target agrees with predictXGBoost
+10
 Negative: non-numeric structure (rejected at first use)
 Train on demand with SYSTEM RELOAD DICTIONARY
 LOADED

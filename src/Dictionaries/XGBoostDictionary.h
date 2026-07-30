@@ -18,8 +18,9 @@ namespace DB
 {
 
 /// A computational dictionary that trains an XGBoost model once at load time and then predicts a numeric
-/// target from a feature vector. The feature columns form the complex key, and the single attribute is the
-/// training target. The source supplies the training rows as `(feature_1, ..., feature_k, target)`.
+/// target from a feature vector. The feature columns form the complex key (any native numeric type), and the
+/// single attribute is the training target (`Float32` or `Float64`).
+/// The source supplies the training rows as `(feature_1, ..., feature_k, target)`.
 ///
 /// A `dictGet` call for the target attribute runs inference for the given feature vector. The dedicated
 /// `predictXGBoost` function exposes the same model with the features passed as individual arguments.

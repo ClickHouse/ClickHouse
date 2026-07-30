@@ -14,6 +14,7 @@ DROP DICTIONARY IF EXISTS model_04509_xgb;
 DROP DICTIONARY IF EXISTS model_04509_bad;
 DROP DICTIONARY IF EXISTS model_04509_not_xgb;
 DROP DICTIONARY IF EXISTS model_04509_eager;
+DROP DICTIONARY IF EXISTS model_04509_f32;
 
 DROP TABLE IF EXISTS training_04509;
 DROP TABLE IF EXISTS inference_04509;
@@ -158,6 +159,27 @@ PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(target 'y')) LIFETIME(0);
 SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
 DROP DICTIONARY model_04509_bad;
+
+SELECT 'Negative: an integer target attribute (rejected at first use)';
+
+-- Error: a prediction is a floating-point value and `dictGet` returns the declared attribute type, so an
+-- integer target would truncate every prediction and disagree with predictXGBoost. Only Float32 / Float64
+-- are accepted as the target.
+CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y UInt8 DEFAULT 0)
+PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
+LAYOUT(XGBOOST()) LIFETIME(0);
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY model_04509_bad;
+
+SELECT 'Positive: a Float32 target agrees with predictXGBoost';
+
+-- XGBoost computes in single precision, so narrowing the Float64 prediction to a Float32 target is lossless
+-- and dictGet still matches predictXGBoost on every row.
+CREATE DICTIONARY model_04509_f32 (x1 Float64, x2 Float64, y Float32)
+PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
+LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 10)) LIFETIME(0);
+SELECT sum(predictXGBoost('model_04509_f32', x1, x2) = dictGet('model_04509_f32', 'y', (x1, x2))) FROM inference_04509;
+DROP DICTIONARY model_04509_f32;
 
 SELECT 'Negative: non-numeric structure (rejected at first use)';
 

@@ -121,7 +121,9 @@ ColumnPtr XGBoostDictionary::getColumn(
 
     ColumnPtr predictions = predict(features, {});
 
-    /// `dictGet` must return the declared attribute type; predictions are Float64, so cast to it.
+    /// `dictGet` must return the declared attribute type; predictions are Float64, so cast to it. The target
+    /// is required to be `Float32` or `Float64` (see `registerDictionaryXGBoost`), and XGBoost computes in
+    /// single precision, so this cast is lossless and `dictGet` agrees with `predictXGBoost` exactly.
     return castColumn({predictions, std::make_shared<DataTypeFloat64>(), ""}, attribute_type);
 }
 
@@ -167,24 +169,20 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
             "Dictionary layout `xgboost` is disabled because ClickHouse was built without XGBoost support");
 #else
         /// The structure must be a complex key of one or more numeric feature columns, followed by exactly one
-        /// numeric attribute: the training target.
+        /// floating-point attribute: the training target.
         if (!dict_struct.key || dict_struct.key->empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "XGBoost dictionary must have at least one key column (the numeric features)");
 
-        auto validate_numeric = [](const std::string & role, const DictionaryAttribute & attribute)
+        for (const auto & key_attribute : *dict_struct.key)
         {
-            const WhichDataType which(attribute.type);
+            const WhichDataType which(key_attribute.type);
             if (!which.isNativeNumber() || which.isEnum())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "XGBoost dictionary {} '{}' must be a native numeric type, got {}",
-                    role,
-                    attribute.name,
-                    attribute.type->getName());
-        };
-
-        for (const auto & key_attribute : *dict_struct.key)
-            validate_numeric("feature key", key_attribute);
+                    "XGBoost dictionary feature key '{}' must be a native numeric type, got {}",
+                    key_attribute.name,
+                    key_attribute.type->getName());
+        }
 
         if (dict_struct.attributes.size() != 1)
             throw Exception(
@@ -192,8 +190,15 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
                 "XGBoost dictionary must have exactly one attribute (the training target), got {}",
                 dict_struct.attributes.size());
 
+        /// Check the target data type
         const auto & target_attribute = dict_struct.attributes[0];
-        validate_numeric("target attribute", target_attribute);
+        if (!WhichDataType(target_attribute.type).isNativeFloat())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "XGBoost dictionary target attribute '{}' must be Float32 or Float64, got {}. The model predicts a floating-point "
+                "value, so an integer target would truncate the prediction",
+                target_attribute.name,
+                target_attribute.type->getName());
 
         const String layout_prefix = config_prefix + ".layout.xgboost";
 
@@ -232,7 +237,8 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         Documentation{
             .description = "A computational dictionary that trains an immutable XGBoost model at load time from a source table of "
                            "`(features..., target)` rows, then predicts the target for a feature vector through `dictGet` or the "
-                           "`predictXGBoost` function. The feature columns are the key and the single attribute is the target."
+                           "`predictXGBoost` function. The feature columns are the key (any native numeric type) and the single "
+                           "attribute is the target (`Float32` or `Float64`)."
 #if !USE_XGBOOST
                            " Currently unavailable, because this ClickHouse build does not include XGBoost support."
 #endif

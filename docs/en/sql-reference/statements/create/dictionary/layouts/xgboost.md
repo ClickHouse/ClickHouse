@@ -85,7 +85,7 @@ SELECT dictGet('model', 'y', (1.0, 2.0)) AS prediction;
 
 ## How it works {#how-it-works}
 
-**Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, all rows are streamed into XGBoost and the model is trained once. Feature and target values are read as floats, so all key and attribute columns must be numeric.
+**Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, all rows are streamed into XGBoost and the model is trained once. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
 
 **Predicting (at query time).** To predict, the model takes the feature vector — in the same order as the key columns were declared — and runs it through the trained booster, returning a `Float64`.
 
@@ -108,10 +108,12 @@ Every load trains on the whole source table, and nothing about a trained model s
 
 An `XGBOOST` dictionary has a fixed shape:
 
-- The `PRIMARY KEY` is one or more numeric columns — the features. At query time this "key" is the feature vector you pass in to predict, not a stored lookup key. The feature order is the key-column declaration order, and `predictXGBoost` binds its positional arguments to that order.
-- Alongside them, declare **exactly one numeric attribute**: the target the model learns. It is always inferred as the single column that is not part of the feature key — there is no parameter to name it, and it is an error to declare more than one attribute.
+- The `PRIMARY KEY` is one or more columns of a native numeric type (integers and floats) — the features. At query time this "key" is the feature vector you pass in to predict, not a stored lookup key. The feature order is the key-column declaration order, and `predictXGBoost` binds its positional arguments to that order.
+- Alongside them, declare **exactly one attribute of type `Float32` or `Float64`**: the target the model learns. It is always inferred as the single column that is not part of the feature key — there is no parameter to name it, and it is an error to declare more than one attribute.
 
-All key and attribute columns must be a native numeric type (integers and floats); a non-numeric column is rejected when the dictionary loads, not when you create it.
+A column that does not match these requirements is rejected when the dictionary loads, not when you create it.
+
+The target must be floating-point because a prediction is a floating-point value and `dictGet` returns the declared attribute type: an integer target would truncate every prediction — a probability of `0.73` read back as `0` — and disagree with `predictXGBoost`, which returns a `Float64`. This does not prevent classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
 
 ## Layout parameters {#layout-parameters}
 
@@ -183,5 +185,5 @@ The parameter names map to the prediction parameters of XGBoost's `XGBoosterPred
 ## Notes {#notes}
 
 - **Computational dictionary semantics.** This is a *computational* dictionary: `dictGet(dict, '<target>', (feature_1, ...))` predicts for the given feature vector (the key is the input to predict, not a stored key), and `dictHas` always returns `1`. The dictionary cannot be read back as a table with `SELECT * FROM dict`.
-- **Numeric columns only.** Every feature (key) column and the target attribute must be a native numeric type. Values are read as floats during training and prediction.
+- **Numeric columns only.** Every feature (key) column must be a native numeric type and the target attribute must be `Float32` or `Float64`. Values are read as floats during training and prediction.
 - **Feature order matters.** `predictXGBoost` binds its positional feature arguments to the key columns in declaration order, and the number of feature arguments must match the number of key columns.
