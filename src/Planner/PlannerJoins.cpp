@@ -35,6 +35,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
@@ -1414,24 +1415,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         return storage->getJoinLocked(table_join, params.initial_query_id, params.lock_acquire_timeout, required_column_names);
     }
 
-    /** JOIN with constant.
-      * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
+    /** We have only one way to execute a CROSS JOIN and joins with constant predicate - with `ConstantJoin`.
+      * Therefore, for a query with an explicit CROSS JOIN or constant predicate, it should not fail because
+      * of the `join_algorithm` setting.
       */
-    if (table_join->isJoinWithConstant())
-    {
-        if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
-    }
-
-    /** We have only one way to execute a CROSS JOIN - with a hash join.
-      * Therefore, for a query with an explicit CROSS JOIN, it should not fail because of the `join_algorithm` setting.
-      * If the user expects CROSS JOIN + WHERE to be rewritten to INNER join and to be executed with a specific algorithm,
-      * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
-      */
-    if (table_join->kind() == JoinKind::Cross)
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
+    if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
+        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
