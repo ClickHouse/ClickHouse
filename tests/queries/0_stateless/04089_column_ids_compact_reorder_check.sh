@@ -4,6 +4,11 @@
 # physical substream layout must be REJECTED by CHECK -- full-column reads seek
 # by columns.txt ordinal, so a reorder silently reads swapped columns.  A
 # legitimate RENAME must still PASS (the check resolves by column ID, not name).
+#
+# `min_bytes_for_full_part_storage = 0` forces Full part storage: this test edits
+# `columns.txt` as a standalone on-disk file, which does not exist under Packed
+# storage (all metadata lives inside one blob).  Without this, a randomized
+# `min_bytes_for_full_part_storage` makes the tiny part Packed and the file edit fails.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +25,8 @@ CREATE TABLE t_rename_ok (a UInt32, b String, c Float64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS serialization_info_version = 'with_column_ids',
          min_bytes_for_wide_part = 1000000000,
-         min_rows_for_wide_part = 1000000000;
+         min_rows_for_wide_part = 1000000000,
+         min_bytes_for_full_part_storage = 0;
 "
 echo "INSERT INTO t_rename_ok VALUES (1, 'x', 1.5), (2, 'y', 2.5)" | $CLIENT
 $CLIENT --query "ALTER TABLE t_rename_ok RENAME COLUMN b TO b2"
@@ -34,7 +40,8 @@ CREATE TABLE t_reorder (a UInt32, b String, c Float64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS serialization_info_version = 'with_column_ids',
          min_bytes_for_wide_part = 1000000000,
-         min_rows_for_wide_part = 1000000000;
+         min_rows_for_wide_part = 1000000000,
+         min_bytes_for_full_part_storage = 0;
 "
 echo "INSERT INTO t_reorder VALUES (1, 'x', 1.5), (2, 'y', 2.5)" | $CLIENT
 
