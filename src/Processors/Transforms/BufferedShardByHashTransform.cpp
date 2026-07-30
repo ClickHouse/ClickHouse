@@ -109,8 +109,8 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// When such a port exists, the deadlock with sequential consumers takes priority
     /// over the soft memory bound: we let queues overshoot to feed the asking path.
     /// Under pathological skew (all rows hashing to one shard while a sibling port is
-    /// asking) this can buffer most of the input on the receiving shard; memory is then
-    /// bounded by `max_memory_usage`, not by the soft cap (see comment in the header).
+    /// asking) this can buffer most of the input on the receiving shard, bounded by the
+    /// applicable memory limit rather than by the soft cap (see comment in the header).
     /// Once input finishes, the first pass will finalize the empty ports.
     if (any_queue_at_capacity && !has_pushable_empty_port)
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;

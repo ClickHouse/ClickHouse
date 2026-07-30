@@ -50,9 +50,11 @@ private:
     /// a sequential downstream consumer (e.g. `ConcatProcessor`) would deadlock waiting
     /// for data on the empty path while we back-pressure here. Under pathological hash
     /// skew (all rows hashing to one shard while a sibling port is asking), the bypass
-    /// keeps growing that shard's queue until upstream is exhausted; memory is then
-    /// bounded by `max_memory_usage`, not by this cap. A proper bound would require
-    /// spilling overflow chunks; that is a separate follow-up.
+    /// keeps growing that shard's queue until upstream is exhausted, so this cap is not
+    /// the bound in that state. The queued chunks are tracked memory, so whichever memory
+    /// limit applies still stops the query - by default the server-level one, since
+    /// `max_memory_usage` defaults to 0. A proper bound would require spilling overflow
+    /// chunks; that is a separate follow-up.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     size_t num_shards;
