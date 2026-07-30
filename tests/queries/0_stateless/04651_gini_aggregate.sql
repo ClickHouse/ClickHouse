@@ -31,6 +31,23 @@ SELECT gini(x) FROM (
     SELECT [toUInt64(9007199254740992), toUInt64(9007199254740993)] AS arr
 ) ARRAY JOIN arr AS x;
 
+-- Adjacent wide integer and decimal values remain distinct during finalization.
+SELECT gini(x) > 0 FROM (
+    SELECT [bitShiftLeft(toUInt128(1), 120), bitShiftLeft(toUInt128(1), 120) + toUInt128(1)] AS arr
+) ARRAY JOIN arr AS x;
+SELECT gini(x) > 0 FROM (
+    SELECT [bitShiftLeft(toUInt256(1), 240), bitShiftLeft(toUInt256(1), 240) + toUInt256(1)] AS arr
+) ARRAY JOIN arr AS x;
+SELECT gini(x) > 0 FROM (
+    SELECT [toDecimal128('1000000000000000000000000000000', 0), toDecimal128('1000000000000000000000000000001', 0)] AS arr
+) ARRAY JOIN arr AS x;
+SELECT gini(x) > 0 FROM (
+    SELECT [
+        toDecimal256('1000000000000000000000000000000000000000000000000000000000000', 0),
+        toDecimal256('1000000000000000000000000000000000000000000000000000000000001', 0)
+    ] AS arr
+) ARRAY JOIN arr AS x;
+
 -- Negative values are rejected.
 SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 
