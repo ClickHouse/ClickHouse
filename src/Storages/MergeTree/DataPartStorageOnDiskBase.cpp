@@ -357,7 +357,13 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
 
 UInt64 DataPartStorageOnDiskBase::calculateTotalSizeOnDisk() const
 {
-    return calculateTotalSizeOnDiskImpl(volume->getDisk(), fs::path(root_path) / part_dir);
+    auto disk = volume->getDisk();
+    UInt64 res = calculateTotalSizeOnDiskImpl(disk, fs::path(root_path) / part_dir);
+    /// FLAT projections are siblings of the part dir, so the walk above misses them (NESTED ones live inside it).
+    for (const auto & [projection_dir, projection] : detectProjections())
+        if (projection.format == ProjectionStorageFormat::FLAT)
+            res += calculateTotalSizeOnDiskImpl(disk, projection.relativePath());
+    return res;
 }
 
 std::string DataPartStorageOnDiskBase::getDiskName() const
