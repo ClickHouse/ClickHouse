@@ -149,6 +149,19 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
     }
 }
 
+/// `max_streams_per_hierarchical_merge` means "at most this many inputs per `MergingSortedTransform`",
+/// with `0` disabling hierarchical merging altogether. `1` cannot be honoured: a layer of single-input
+/// mergers does not reduce the number of streams, so building the tree would never terminate. Reject it
+/// instead of silently treating it as `2`, so that the value reported by `system.settings` always
+/// describes the pipeline that is actually built.
+static void checkMaxStreamsPerHierarchicalMerge(size_t max_streams_per_hierarchical_merge)
+{
+    if (max_streams_per_hierarchical_merge == 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting max_streams_per_hierarchical_merge should be 0 (disables hierarchical merging) or >= 2, got 1");
+}
+
 SortingStep::Settings::Settings(const DB::Settings & settings)
 {
     max_block_size = settings[Setting::max_block_size];
@@ -167,6 +180,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
     max_streams_per_hierarchical_merge = settings[Setting::max_streams_per_hierarchical_merge];
+    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -192,6 +206,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
     max_streams_per_hierarchical_merge = settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge];
+    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -400,9 +415,10 @@ void SortingStep::addHierarchicalMergingSorted(
     if (num_streams <= 1)
         return;
 
-    /// Need at least 2 streams per layer to make progress, otherwise infinite loop.
-    if (max_streams_per_layer == 1)
-        max_streams_per_layer = 2;
+    /// Defensive: `SortingStep::Settings::max_streams_per_hierarchical_merge` is a plain public field, so a
+    /// caller can assign to it after construction and bypass the check in the constructors. A layer of
+    /// single-input mergers never reduces the stream count, so the loop below would not terminate.
+    checkMaxStreamsPerHierarchicalMerge(max_streams_per_layer);
 
     auto shared_header = pipeline.getSharedHeader();
     auto make_merger = [&shared_header, &sort_desc, max_block_size, limit, always_read_till_end, use_average_block_sizes, apply_virtual_row_conversions]
