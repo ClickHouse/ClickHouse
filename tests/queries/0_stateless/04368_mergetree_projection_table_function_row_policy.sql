@@ -218,3 +218,44 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'udf_rls_proj', 'p') ORDER
 DROP ROW POLICY rp_udf_rls_proj ON udf_rls_proj;
 DROP FUNCTION rp_visible_04368;
 DROP TABLE udf_rls_proj;
+
+-- A LIMIT must not stop the read before the policy filters. The planner leaves trivial-LIMIT on (it checks
+-- this table function's own storage id, which has no policy), so hiding the first 50 rows and asking for 1
+-- must still return a visible row, not nothing.
+DROP TABLE IF EXISTS limit_rls_proj;
+DROP ROW POLICY IF EXISTS rp_limit_rls_proj ON limit_rls_proj;
+
+CREATE TABLE limit_rls_proj (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO limit_rls_proj SELECT number FROM numbers(1, 100);
+
+ALTER TABLE limit_rls_proj ADD PROJECTION p (SELECT id ORDER BY id);
+ALTER TABLE limit_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_limit_rls_proj ON limit_rls_proj FOR SELECT USING id > 50 TO ALL;
+
+SELECT '-- LIMIT returns visible rows, not rows hidden by the policy (expect 1)';
+SELECT count() FROM (SELECT id FROM mergeTreeProjection(currentDatabase(), 'limit_rls_proj', 'p') LIMIT 1);
+
+DROP ROW POLICY rp_limit_rls_proj ON limit_rls_proj;
+DROP TABLE limit_rls_proj;
+
+-- A policy on a DEFAULT column fails closed when the projection stores only the dependency, not the column:
+-- the stored value can differ from the default expression (explicit c = 5, not b + 1), so resolving `c` from
+-- `b` would filter the wrong value and could expose a hidden row. Enforcement needs the stored `c`.
+DROP TABLE IF EXISTS default_dep_rls_proj;
+DROP ROW POLICY IF EXISTS rp_default_dep_rls_proj ON default_dep_rls_proj;
+
+CREATE TABLE default_dep_rls_proj (a UInt64, b UInt64, c UInt64 DEFAULT b + 1) ENGINE = MergeTree ORDER BY a;
+INSERT INTO default_dep_rls_proj (a, b) VALUES (1, 10), (2, 20);
+INSERT INTO default_dep_rls_proj (a, b, c) VALUES (3, 30, 5);
+
+ALTER TABLE default_dep_rls_proj ADD PROJECTION p (SELECT a, b ORDER BY a);
+ALTER TABLE default_dep_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_default_dep_rls_proj ON default_dep_rls_proj FOR SELECT USING c > 20 TO ALL;
+
+SELECT '-- policy on a DEFAULT column with only its dependency stored: read is refused';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_dep_rls_proj', 'p') ORDER BY a; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_default_dep_rls_proj ON default_dep_rls_proj;
+DROP TABLE default_dep_rls_proj;

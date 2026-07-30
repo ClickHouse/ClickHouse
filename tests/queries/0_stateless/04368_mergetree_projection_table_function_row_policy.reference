@@ -39,3 +39,6 @@ Carol	engineering
 3
 -- UDF-wrapped _part_offset policy is enforced with parent semantics (expect id=1)
 1
+-- LIMIT returns visible rows, not rows hidden by the policy (expect 1)
+1
+-- policy on a DEFAULT column with only its dependency stored: read is refused

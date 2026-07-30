@@ -93,6 +93,12 @@ void StorageFromMergeTreeProjection::read(
             = std::find(column_names.begin(), column_names.end(), row_policy->filter_column_name) == column_names.end();
         query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
             FilterDAGInfo{std::move(row_policy->dag), row_policy->filter_column_name, remove_filter_column});
+
+        /// The planner disables the trivial-LIMIT optimization whenever a row policy applies, but it checks
+        /// the policy through this table function's own storage id, which has none - so the optimization is
+        /// left on and `query_info.trivial_limit` may already be set for `... LIMIT n`. Reading only n rows
+        /// and then filtering could return fewer than n visible rows, so restore that invariant here.
+        query_info.trivial_limit = 0;
     }
 
     /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
