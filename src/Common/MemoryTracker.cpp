@@ -334,6 +334,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     {
         if (memoryTrackerCanThrow(level, true) && enforce_memory_limit)
         {
+            rollback_allocation = false;
+            rollbackAllocation(size);
+
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
@@ -431,6 +434,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
+                rollback_allocation = false;
+                rollbackAllocation(size);
+
                 bool overcommit_result_ignore
                     = overcommit_result == OvercommitResult::NONE || overcommit_result == OvercommitResult::DISABLED;
 
