@@ -2636,7 +2636,11 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
-        if (query_node.hasOrderBy())
+        /// WITH FILL fills the final ordered result, so it must run once on the initiator over the
+        /// merged shard streams, not on each shard (that duplicates fill rows once per shard and
+        /// positions them per-shard rather than globally). Skip it when the plan stops at an
+        /// aggregation state for later merging, mirroring the OFFSET / LIMIT / "Project names" guards below.
+        if (query_node.hasOrderBy() && !query_processing_info.isToAggregationState())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;

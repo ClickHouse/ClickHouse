@@ -2324,7 +2324,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            executeWithFill(query_plan);
+            /// WITH FILL fills the final ordered result, so it must run once on the initiator over the
+            /// merged shard streams, not on each shard (that duplicates fill rows once per shard). Skip
+            /// it when this node stops at an aggregation state for later merging, like the guards below.
+            if (!to_aggregation_stage)
+                executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
