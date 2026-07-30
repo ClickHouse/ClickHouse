@@ -210,14 +210,26 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     {
         if (shared_variant)
             callback(shared_variant);
+        for (const auto & reader : variant_readers)
+        {
+            if (reader.column)
+                callback(reader.column);
+            if (reader.null_map)
+                callback(reader.null_map);
+        }
     }
 
     void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
     {
         if (structure_state)
             callback(structure_state);
-        if (variant_element_state)
-            callback(variant_element_state);
+        for (const auto & reader : variant_readers)
+        {
+            if (reader.state)
+                callback(reader.state);
+            if (reader.null_map_state)
+                callback(reader.null_map_state);
+        }
     }
 };
 
