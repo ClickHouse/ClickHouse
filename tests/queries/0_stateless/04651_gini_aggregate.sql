@@ -23,6 +23,14 @@ SELECT gini(x) FROM (SELECT 1 AS x) WHERE 0;
 -- Sum of values is 0 -> NaN.
 SELECT gini(x) FROM (SELECT 0 AS x FROM numbers(11));
 
+-- Large finite Float64 values do not overflow the accumulation.
+SELECT gini(x) FROM (SELECT [1e308, 1e308] :: Array(Float64) AS arr) ARRAY JOIN arr AS x;
+
+-- Integer differences beyond Float64 precision are preserved.
+SELECT gini(x) FROM (
+    SELECT [toUInt64(9007199254740992), toUInt64(9007199254740993)] AS arr
+) ARRAY JOIN arr AS x;
+
 -- Negative values are rejected.
 SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 
