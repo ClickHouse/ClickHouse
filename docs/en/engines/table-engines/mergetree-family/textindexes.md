@@ -502,12 +502,13 @@ They apply to every text index of the table that does not specify the parameter 
 The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
 Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
 
-The on-disk format version of text indexes is controlled by the table-level setting [`text_index_version`](/operations/settings/merge-tree-settings#text_index_version) (default: `with_positions`).
+The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/operations/settings/merge-tree-settings#text_index_serialization_version) (default: `v2_with_positions`).
 It defines the newest format features that may be used; an index that does not use a feature of the newest allowed format is written in the oldest format that can represent it, so that older servers can still read it.
-During a rolling upgrade, set it to an older version (`with_codec` or `initial`) so that newer servers keep writing the older format that older servers can still read; switch it back to the default once all replicas have been upgraded.
-The `initial` format does not persist the posting list codec type and is therefore only compatible with `text_index_posting_list_codec = none`.
-The `with_positions` format persists token positions for indexes with the `support_phrase_search` argument enabled; such indexes require `text_index_version = 'with_positions'`.
-The [`compatibility`](/operations/settings/settings#compatibility) setting reverts `text_index_version` to an older value automatically when set to a version older than the one that introduced the corresponding format.
+During a rolling upgrade, set it to an older version (`v1_with_codec` or `v0_initial`) so that newer servers keep writing the older format that older servers can still read; switch it back to the default once all replicas have been upgraded.
+The `v0_initial` format does not persist the posting list codec type and is therefore only compatible with `text_index_posting_list_codec = none`; the conflicting combination is rejected on `CREATE TABLE` and `ALTER TABLE`.
+The `v2_with_positions` format persists token positions for indexes with the `support_phrase_search` argument enabled; such indexes require `text_index_serialization_version = 'v2_with_positions'`.
+A setting value that is too old for an existing index is never silently overridden: `CREATE TABLE`, `ALTER TABLE ... ADD INDEX`, and `ALTER TABLE ... MODIFY/RESET SETTING` reject the combination, and if it appears on an existing table in another way (for example, through a default pinned by the `compatibility` setting), any attempt to write the index — an `INSERT`, a merge, or a mutation — fails with an error.
+The [`compatibility`](/operations/settings/settings#compatibility) setting reverts `text_index_serialization_version` to an older value automatically when set to a version older than the one that introduced the corresponding format.
 
 An argument given in the index definition takes precedence over the table setting, for example:
 

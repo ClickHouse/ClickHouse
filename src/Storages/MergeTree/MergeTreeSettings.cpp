@@ -700,7 +700,7 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
-    DECLARE(MergeTreeTextIndexVersion, text_index_version, MergeTreeTextIndexVersion::WithPositions, R"(
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The newest on-disk serialization format version allowed when writing text indexes.
 An index that does not use the features of the newest allowed format is written in the
 oldest format that can represent it, so that older servers can still read it.
@@ -713,10 +713,10 @@ corresponding format.
 
 Possible values:
 
-- `initial` — The original format. Does not persist the posting list codec type and is
+- `v0_initial` — The original format. Does not persist the posting list codec type and is
   therefore only compatible with `text_index_posting_list_codec = none`.
-- `with_codec` — Persists the posting list codec type in the text index header.
-- `with_positions` — Allows persisting token positions for indexes with the
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Allows persisting token positions for indexes with the
   `support_phrase_search` argument enabled (such indexes require this version).
 )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
@@ -2670,15 +2670,15 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
-    /// The 'initial' text index format does not persist the posting list codec type,
+    /// The 'v0_initial' text index format does not persist the posting list codec type,
     /// so it can only be written with codec 'none'. Catch the conflicting combination early, on CREATE and ALTER.
-    if ((*this)[MergeTreeSetting::text_index_version] == MergeTreeTextIndexVersion::Initial
+    if ((*this)[MergeTreeSetting::text_index_serialization_version] == MergeTreeTextIndexSerializationVersion::V0_Initial
         && (*this)[MergeTreeSetting::text_index_posting_list_codec] != TextIndexPostingListCodec::None)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting 'text_index_version' = 'initial' is incompatible with 'text_index_posting_list_codec' = '{}'. "
-            "Set 'text_index_posting_list_codec' to 'none', or 'text_index_version' to 'with_codec'.",
+            "Setting 'text_index_serialization_version' = 'v0_initial' is incompatible with 'text_index_posting_list_codec' = '{}'. "
+            "Set 'text_index_posting_list_codec' to 'none', or 'text_index_serialization_version' to 'v1_with_codec'.",
             (*this)[MergeTreeSetting::text_index_posting_list_codec].toString());
     }
 

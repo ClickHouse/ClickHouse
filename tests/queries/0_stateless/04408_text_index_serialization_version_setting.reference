@@ -1,0 +1,27 @@
+-- default value
+v2_with_positions
+-- invalid value is rejected
+-- v0_initial version: round-trip read
+1024
+512
+0
+-- v0_initial version: merge keeps the format readable
+1024
+512
+-- v1_with_codec version: round-trip read
+512
+512
+-- v2_with_positions version: phrase search round-trip
+512
+512
+0
+-- v2_with_positions version: merge keeps the format readable
+512
+512
+-- v0_initial version is incompatible with a posting list codec
+-- altering into the incompatible combination is also rejected
+-- phrase search index requires the v2_with_positions version
+-- adding a phrase search index on a table pinned to an older version is also rejected
+-- pinning the version on an existing phrase search table is rejected
+512
+-- dropping the phrase search index and pinning the version in one ALTER is allowed

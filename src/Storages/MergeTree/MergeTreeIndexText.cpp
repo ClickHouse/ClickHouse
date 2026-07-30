@@ -73,7 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
-    extern const MergeTreeSettingsMergeTreeTextIndexVersion text_index_version;
+    extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
     extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
 }
 
@@ -90,9 +90,9 @@ static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_P
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 /// The enum values are written verbatim into the text index header and must remain stable.
-static_assert(static_cast<UInt64>(MergeTreeTextIndexVersion::Initial) == 0);
-static_assert(static_cast<UInt64>(MergeTreeTextIndexVersion::WithCodec) == 1);
-static_assert(static_cast<UInt64>(MergeTreeTextIndexVersion::WithPositions) == 2);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
@@ -208,7 +208,7 @@ void DictionarySparseIndex::optimize()
     }
 }
 
-PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexVersion serialization_version_)
+PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_)
     : posting_list_codec(std::move(posting_list_codec_))
     , serialization_version(serialization_version_)
     , raw_postings_buffer(MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -280,9 +280,9 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
                 "Posting list header marks compressed data but no codec is configured");
         }
 
-        if (serialization_version == MergeTreeTextIndexVersion::Initial)
+        if (serialization_version == MergeTreeTextIndexSerializationVersion::V0_Initial)
         {
-            /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
+            /// pre-V1_WithCodec parts don't persist the codec type, but Bitpacking was the only
             /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
             if (posting_list_codec->getType() == IPostingListCodec::Type::None)
                 posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
@@ -507,7 +507,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
 
-    /// Capture the codec after the analysis — for Pre-WithCodec parts the
+    /// Capture the codec after the analysis — for pre-V1_WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
     postings_codec_type = postings_serialization.getPostingListCodec()->getType();
 }
@@ -1083,32 +1083,24 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(MergeTreeTextIndexVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
 {
-    /// The `Initial` format does not persist the codec type, and the per-block index section.
-    /// So a part written in the `Initial` format with a codec would not be readable by older servers,
-    /// which defeats the purpose of writing the old format.
-    if (version == MergeTreeTextIndexVersion::Initial && posting_list_codec_type != IPostingListCodec::Type::None)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index version 'initial' does not support a posting list codec. "
-            "Set 'text_index_posting_list_codec' to 'none', or 'text_index_version' to 'with_codec'.");
-    }
+    /// The `V0_Initial` format does not persist the codec type, and the per-block index section.
+    /// So a part written in the `V0_Initial` format with a codec would not be readable by older servers.
+    if (version == MergeTreeTextIndexSerializationVersion::V0_Initial && posting_list_codec_type != IPostingListCodec::Type::None)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index version 'v0_initial' does not support a posting list codec.");
 
-    /// Formats before `WithPositions` cannot represent positional data. The effective version
-    /// for an index with positions is always `WithPositions` (see `textIndexCreator`).
-    if (has_positions && version < MergeTreeTextIndexVersion::WithPositions)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Text index version {} does not support positions", static_cast<UInt64>(version));
-    }
+    /// Formats before `V2_WithPositions` cannot represent positional data. The combination
+    /// is rejected before any write (see `MergeTreeIndexText::createIndexAggregator`).
+    if (has_positions && version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version {} does not support positions", static_cast<UInt64>(version));
 
     writeVarUInt(static_cast<UInt64>(version), ostr);
 
-    if (version >= MergeTreeTextIndexVersion::WithCodec)
+    if (version >= MergeTreeTextIndexSerializationVersion::V1_WithCodec)
         writeVarUInt(static_cast<UInt64>(posting_list_codec_type), ostr);
 
-    if (version >= MergeTreeTextIndexVersion::WithPositions)
+    if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
@@ -1130,13 +1122,13 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(MergeTreeTextIndexVersion::WithPositions))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
-    header.version = static_cast<MergeTreeTextIndexVersion>(version);
+    header.version = static_cast<MergeTreeTextIndexSerializationVersion>(version);
 
-    if (header.version >= MergeTreeTextIndexVersion::WithCodec)
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V1_WithCodec)
     {
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
@@ -1147,7 +1139,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
     }
 
-    if (header.version >= MergeTreeTextIndexVersion::WithPositions)
+    if (header.version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
     {
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
@@ -1451,7 +1443,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     }
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
-    PostingsSerialization postings_serialization(std::move(postings_codec), params.version);
+    PostingsSerialization postings_serialization(std::move(postings_codec), params.serialization_version);
 
     auto sparse_index_block = serializeTokensAndPostings(
         sorted_tokens,
@@ -1461,7 +1453,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(params.version, sparse_index_block, posting_list_codec_type, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index_block, posting_list_codec_type, params.positions, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1829,7 +1821,20 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
+    checkSerializationVersionForWrite();
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
+}
+
+void MergeTreeIndexText::checkSerializationVersionForWrite() const
+{
+    /// An index with positions cannot be written in a format older than `V2_WithPositions`.
+    if (params.positions && params.serialization_version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write text index '{}' with 'support_phrase_search' enabled because setting "
+            "'text_index_serialization_version' is '{}', but positions require at least 'v2_with_positions'",
+            index.name, SettingFieldMergeTreeTextIndexSerializationVersionTraits::toString(params.serialization_version));
+    }
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
@@ -1968,14 +1973,12 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
 
-    /// The `text_index_version` setting caps the optional format features. An index with positions
-    /// always needs the `WithPositions` format (`textIndexValidator` rejects a lower setting on
-    /// CREATE/ALTER); an index without positions gains nothing from it, so it is written in the
-    /// `WithCodec` format that older servers can read.
-    const MergeTreeTextIndexVersion version_setting = settings[MergeTreeSetting::text_index_version];
-    MergeTreeTextIndexVersion text_index_version = positions
-        ? MergeTreeTextIndexVersion::WithPositions
-        : std::min(version_setting, MergeTreeTextIndexVersion::WithCodec);
+    /// The index is written in the oldest format that can represent it,
+    /// and an index without positions gains nothing from `V2_WithPositions`.
+    const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
+    MergeTreeTextIndexSerializationVersion serialization_version = std::min(
+        version_setting,
+        positions ? MergeTreeTextIndexSerializationVersion::V2_WithPositions : MergeTreeTextIndexSerializationVersion::V1_WithCodec);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
@@ -1984,7 +1987,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         positions,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
-        text_index_version};
+        serialization_version};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -2033,14 +2036,14 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    /// Positions require the `WithPositions` on-disk format, which older servers cannot read,
-    /// so a pinned `text_index_version` contradicts phrase search support. The check is skipped
-    /// on attach so that an existing table in this state (e.g. via the `compatibility` setting)
-    /// still loads; its parts are written in the `WithPositions` format regardless of the pin.
-    if (!attach && positions && settings[MergeTreeSetting::text_index_version] < MergeTreeTextIndexVersion::WithPositions)
+    /// Positions require the `V2_WithPositions` on-disk format, which older servers
+    /// cannot read, so a pinned `text_index_serialization_version` contradicts phrase search support.
+    if (!attach && positions && settings[MergeTreeSetting::text_index_serialization_version] < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index argument '{}' requires setting 'text_index_version' to be at least 'with_positions', but it is '{}'",
-            ARGUMENT_POSITIONS, settings[MergeTreeSetting::text_index_version].toString());
+            "Text index argument '{}' requires setting 'text_index_serialization_version' to be at least 'v2_with_positions', but it is '{}'",
+            ARGUMENT_POSITIONS, settings[MergeTreeSetting::text_index_serialization_version].toString());
+    }
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());

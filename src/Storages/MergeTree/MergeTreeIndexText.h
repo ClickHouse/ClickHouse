@@ -86,7 +86,7 @@ struct MergeTreeIndexTextParams
     size_t positions = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
-    MergeTreeTextIndexVersion version = MergeTreeTextIndexVersion::Initial;
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 using PostingList = roaring::Roaring;
@@ -164,7 +164,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexVersion serialization_version_);
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_);
 
     enum Flags : UInt64
     {
@@ -193,7 +193,7 @@ struct PostingsSerialization
 
 private:
     PostingListCodecPtr posting_list_codec;
-    MergeTreeTextIndexVersion serialization_version;
+    MergeTreeTextIndexSerializationVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
@@ -287,9 +287,9 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexHeader
 {
-    MergeTreeTextIndexVersion version = MergeTreeTextIndexVersion::Initial;
+    MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// Persisted for version >= WithPositions.
+    /// Persisted for version >= V2_WithPositions.
     bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
@@ -310,7 +310,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(MergeTreeTextIndexVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -363,7 +363,7 @@ public:
     const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
-    MergeTreeTextIndexVersion getSerializationVersion() const { return serialization_version; }
+    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -398,7 +398,7 @@ private:
     /// Codec type used to serialize postings in this granule.
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
-    MergeTreeTextIndexVersion serialization_version = MergeTreeTextIndexVersion::Initial;
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 /// Text index granule created on writing of the index.
@@ -546,6 +546,9 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// Throws if the index has features (like positions) that cannot be represented in the current serialization version.
+    void checkSerializationVersionForWrite() const;
 
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     static DataTypePtr getNestedDataType(const DataTypePtr & data_type);

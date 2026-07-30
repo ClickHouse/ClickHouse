@@ -474,11 +474,11 @@ IMPLEMENT_SETTING_ENUM(
      {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
 
 IMPLEMENT_SETTING_ENUM(
-    MergeTreeTextIndexVersion,
+    MergeTreeTextIndexSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"initial", MergeTreeTextIndexVersion::Initial},
-     {"with_codec", MergeTreeTextIndexVersion::WithCodec},
-     {"with_positions", MergeTreeTextIndexVersion::WithPositions}})
+    {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
+     {"v1_with_codec", MergeTreeTextIndexSerializationVersion::V1_WithCodec},
+     {"v2_with_positions", MergeTreeTextIndexSerializationVersion::V2_WithPositions}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,

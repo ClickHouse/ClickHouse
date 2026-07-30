@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-# 26.4 writes the pre-WithCodec header format; the new reader recovers the
+# 26.4 writes the pre-V1WithCodec header format; the new reader recovers the
 # posting list codec from the index DDL. We test both the default codec and
 # 'bitpacking', where DDL recovery is the only way to decode old segments.
 OLD_VERSION_TAG = "26.4"
@@ -21,7 +21,7 @@ def started_cluster():
         )
         # Same as `node`, but its default profile pins `compatibility` to a pre-26.6
         # version. After the upgrade this makes the new binary resolve
-        # `text_index_version` to `initial` on its own, without persisting any setting
+        # `text_index_serialization_version` to `v0_initial` on its own, without persisting any setting
         # into the table metadata, which is the realistic rolling-upgrade knob.
         cluster.add_instance(
             "node_compat",
@@ -116,7 +116,7 @@ def create_and_populate(node, table, posting_list_codec):
 
 
 # Exercise the lazy posting list apply mode against the upgraded binary:
-# pre-WithCodec granules silently fall back to eager mode, while the new-format
+# pre-V1WithCodec granules silently fall back to eager mode, while the new-format
 # part inserted after the upgrade actually uses the cursor-based reader.
 LAZY_APPLY_SETTINGS = {
     "text_index_posting_list_apply_mode": "lazy",
@@ -147,7 +147,7 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
 
     create_and_populate(node, table, posting_list_codec)
 
-    # Ground truth from the old server: pre-WithCodec layout on disk, old reader.
+    # Ground truth from the old server: pre-V1WithCodec layout on disk, old reader.
     assert run_search_queries(node, table) == expected_results()
 
     # Swap the binary but keep the data dir; the new reader must load the
@@ -155,7 +155,7 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     node.restart_with_latest_version()
 
     # Same data, same queries, same answers under the upgraded binary.
-    # Lazy mode falls back to materialize for these pre-WithCodec granules.
+    # Lazy mode falls back to materialize for these pre-V1WithCodec granules.
     assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == expected_results()
 
     # Confirm the text index is engaged after upgrade; without this check a
@@ -209,7 +209,7 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
         == "1"
     )
 
-    # Merge across mixed-format parts: posting lists from the old pre-WithCodec
+    # Merge across mixed-format parts: posting lists from the old pre-V1WithCodec
     # layout and the new layout are read back and re-emitted as one new-format
     # part. Fails if the new reader cannot decode old segments end-to-end.
     node.query(f"OPTIMIZE TABLE {table} FINAL")
@@ -241,7 +241,7 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
 
 
 # --------------------------------------------------------------------------------
-# The tests below focus on the `text_index_version` MergeTree setting that controls
+# The tests below focus on the `text_index_serialization_version` MergeTree setting that controls
 # the on-disk text index format, and on its interaction with the posting list codec
 # across an upgrade and a downgrade.
 # --------------------------------------------------------------------------------
@@ -307,7 +307,7 @@ def test_change_codec_after_upgrade(started_cluster):
     node = started_cluster.instances["node"]
     table = "text_index_change_codec"
 
-    # Old binary, default codec -> pre-WithCodec ('initial') header on disk.
+    # Old binary, default codec -> pre-V1WithCodec ('v0_initial') header on disk.
     create_and_populate(node, table, posting_list_codec=None)
     assert run_search_queries(node, table) == expected_results()
 
@@ -317,28 +317,28 @@ def test_change_codec_after_upgrade(started_cluster):
         assert run_search_queries(node, table) == expected_results()
 
         # Switch the default codec. An index without phrase search support is
-        # written in the 'with_codec' format even under the 'with_positions'
+        # written in the 'v1_with_codec' format even under the 'v2_with_positions'
         # default, so new parts persist the codec type in the header.
         node.query(
             f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'bitpacking'"
         )
 
-        # 'initial' cannot persist the codec type, so 'initial' + a non-'none' codec
+        # 'v0_initial' cannot persist the codec type, so 'v0_initial' + a non-'none' codec
         # is rejected. The guard fires on ALTER, before any part is written.
         error = node.query_and_get_error(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_version = 'initial'"
+            f"ALTER TABLE {table} MODIFY SETTING text_index_serialization_version = 'v0_initial'"
         )
-        assert "text_index_version" in error and "with_codec" in error, error
+        assert "text_index_serialization_version" in error and "v1_with_codec" in error, error
 
-        # The new part is written with 'bitpacking' + the 'with_codec' header, so the
-        # table now mixes 'none'/'initial' and 'bitpacking'/'with_codec' segments.
+        # The new part is written with 'bitpacking' + the 'v1_with_codec' header, so the
+        # table now mixes 'none'/'v0_initial' and 'bitpacking'/'v1_with_codec' segments.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
         assert_index_used(node, table)
 
         # Merge across the two codecs: the reader must decode both layouts and the
-        # writer re-emits a single 'bitpacking'/'with_codec' part.
+        # writer re-emits a single 'bitpacking'/'v1_with_codec' part.
         node.query(f"OPTIMIZE TABLE {table} FINAL")
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
@@ -350,14 +350,14 @@ def test_change_codec_after_upgrade(started_cluster):
 
 
 def test_downgrade_after_writing_on_new_version(started_cluster):
-    """The point of `text_index_version`: a new server can keep writing the old
-    on-disk format so the data survives a rollback. Write 'initial'-format parts
+    """The point of `text_index_serialization_version`: a new server can keep writing the old
+    on-disk format so the data survives a rollback. Write 'v0_initial'-format parts
     with the *new* binary, reset the setting so the metadata stays loadable by the
     old binary, downgrade, and verify the old binary reads everything back."""
     node = started_cluster.instances["node"]
     table = "text_index_downgrade_setting"
 
-    # Old binary, default codec -> 'initial' format on disk.
+    # Old binary, default codec -> 'v0_initial' format on disk.
     create_and_populate(node, table, posting_list_codec=None)
     assert run_search_queries(node, table) == expected_results()
 
@@ -369,27 +369,27 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
 
         # Force the new binary to keep writing the old on-disk format.
         node.query(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_version = 'initial'"
+            f"ALTER TABLE {table} MODIFY SETTING text_index_serialization_version = 'v0_initial'"
         )
 
         # This part and the merged part below are written by the *new* binary, but in
-        # the 'initial' format because of the setting above.
+        # the 'v0_initial' format because of the setting above.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         node.query(f"OPTIMIZE TABLE {table} FINAL")
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
 
-        # An explicit `text_index_version` in the metadata is an unknown setting for
+        # An explicit `text_index_serialization_version` in the metadata is an unknown setting for
         # the old binary and would block ATTACH after the downgrade. Reset it; the
-        # parts already on disk keep their 'initial' format.
-        node.query(f"ALTER TABLE {table} RESET SETTING text_index_version")
+        # parts already on disk keep their 'v0_initial' format.
+        node.query(f"ALTER TABLE {table} RESET SETTING text_index_serialization_version")
 
         node.restart_with_original_version()
         new_version_active = False
 
-        # The old binary reads the parts the new binary wrote in 'initial' format,
-        # including the merged one. This is the downgrade guarantee. A 'with_codec'
+        # The old binary reads the parts the new binary wrote in 'v0_initial' format,
+        # including the merged one. This is the downgrade guarantee. A 'v1_with_codec'
         # part here would instead fail to load on the old server.
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
@@ -403,8 +403,8 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
 
 def test_downgrade_with_compatibility_setting(started_cluster):
     """The realistic rolling-upgrade knob: with `compatibility` pinned to a pre-26.6
-    version in the default profile, the new server resolves `text_index_version` to
-    'initial' on its own, without persisting any setting into the table metadata, so
+    version in the default profile, the new server resolves `text_index_serialization_version` to
+    'v0_initial' on its own, without persisting any setting into the table metadata, so
     the data stays readable after a rollback - no ALTER and no RESET required."""
     node = started_cluster.instances["node_compat"]
     table = "text_index_downgrade_compat"
@@ -418,7 +418,7 @@ def test_downgrade_with_compatibility_setting(started_cluster):
         assert run_search_queries(node, table) == expected_results()
 
         # No ALTER: `compatibility = '26.5'` from the default profile makes the new
-        # binary write the 'initial' format, and nothing is persisted in metadata.
+        # binary write the 'v0_initial' format, and nothing is persisted in metadata.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         node.query(f"OPTIMIZE TABLE {table} FINAL")
@@ -428,8 +428,8 @@ def test_downgrade_with_compatibility_setting(started_cluster):
         node.restart_with_original_version()
         new_version_active = False
 
-        # The metadata never mentioned `text_index_version`, so the old binary loads
-        # the table and reads the 'initial'-format parts the new binary produced.
+        # The metadata never mentioned `text_index_serialization_version`, so the old binary loads
+        # the table and reads the 'v0_initial'-format parts the new binary produced.
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
         assert_index_used(node, table)

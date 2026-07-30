@@ -216,7 +216,7 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
-    return PostingsSerialization(std::move(codec_copy), text_index.getParams().version);
+    return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
@@ -249,7 +249,10 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     input_streams.resize(segments.size());
 
     output_tokens = ColumnString::create();
-    params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
+    text_index.checkSerializationVersionForWrite();
+    params = text_index.getParams();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -565,7 +568,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(params.version, sparse_index, postings_serialization.getPostingListCodec()->getType(), params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index, postings_serialization.getPostingListCodec()->getType(), params.positions, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
