@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: requires S3 disk
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+disk_name="04654_filesystem_cache_parallel_drop"
+
+$CLICKHOUSE_CLIENT -m --query """
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Mi', path = '$disk_name', disk = 's3_disk', drop_cache_threads = 4);
+
+INSERT INTO test SELECT number, randomString(100) FROM numbers(100000);
+"""
+
+$CLICKHOUSE_CLIENT --query "SELECT drop_cache_threads FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'"
+
+$CLICKHOUSE_CLIENT -m --query """
+SYSTEM DROP FILESYSTEM CACHE '$disk_name';
+SELECT count() FROM test SETTINGS enable_filesystem_cache = 1;
+SELECT count() > 0 FROM system.filesystem_cache WHERE cache_name = '$disk_name';
+SYSTEM DROP FILESYSTEM CACHE '$disk_name';
+SELECT count() FROM system.filesystem_cache WHERE cache_name = '$disk_name';
+"""
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE test"

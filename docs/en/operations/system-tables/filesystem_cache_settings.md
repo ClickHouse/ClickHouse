@@ -47,6 +47,7 @@ Contains information about all filesystem cache settings
 - `check_cache_probability` ([Float64](/sql-reference/data-types/float)) — Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element
 - `expose_prometheus_eviction_metrics` ([UInt8](/sql-reference/data-types/int-uint)) — Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.
 - `expose_prometheus_eviction_metrics_per_user` ([UInt8](/sql-reference/data-types/int-uint)) — Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.
+- `drop_cache_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone
 - `is_initialized` ([UInt8](/sql-reference/data-types/int-uint)) — Indicates whether cache was successfully initialized
 - `current_size` ([UInt64](/sql-reference/data-types/int-uint)) — Current cache size
 - `current_elements_num` ([UInt64](/sql-reference/data-types/int-uint)) — Current cache elements (file segments) number
