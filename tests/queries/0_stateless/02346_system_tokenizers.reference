@@ -2,6 +2,7 @@ array
 asciiCJK
 ngrambf_v1
 ngrams
+segmentation
 sparseGrams
 sparse_grams
 splitByNonAlpha
