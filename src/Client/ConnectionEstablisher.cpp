@@ -199,6 +199,12 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
                 continue;
             }
 
+            /// The check at the top of the loop cannot cover the last attempt: there is no next
+            /// iteration to reach it. Without this one, a query cancelled while the final connect was
+            /// in flight leaves the establisher reporting an ordinary soft failure, and the caller
+            /// then reports `ALL_CONNECTION_TRIES_FAILED` instead of the cancellation.
+            CurrentThread::checkIfNotCancelled();
+
             /// Report a soft failure, so the caller can retry on another replica instead of failing
             /// the whole distributed query.
             return;
