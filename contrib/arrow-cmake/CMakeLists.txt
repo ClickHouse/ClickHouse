@@ -82,7 +82,10 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+        "${PROTO_DIR}/orc_proto.proto"
+        # Without these, the generated sources are not regenerated when the schema or
+        # `protoc` itself changes, and a stale `orc_proto.pb.h` is compiled instead.
+        DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE})
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -158,6 +161,8 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnWriter.hh"
         "${ORC_SOURCE_SRC_DIR}/Common.cc"
+        "${ORC_SOURCE_SRC_DIR}/Dictionary.cc"
+        "${ORC_SOURCE_SRC_DIR}/DictionaryLoader.cc"
         "${ORC_SOURCE_SRC_DIR}/Compression.cc"
         "${ORC_SOURCE_SRC_DIR}/Compression.hh"
         "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.cc"
@@ -166,6 +171,7 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.hh"
         "${ORC_SOURCE_SRC_DIR}/Dispatch.hh"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
+        "${ORC_SOURCE_SRC_DIR}/Geospatial.cc"
         "${ORC_SOURCE_SRC_DIR}/Int128.cc"
         "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
         "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.hh"
