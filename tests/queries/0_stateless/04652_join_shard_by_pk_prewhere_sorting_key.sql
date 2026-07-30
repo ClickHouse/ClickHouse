@@ -46,6 +46,22 @@ SELECT 'filter both sides', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FRO
 SELECT 'explicit PREWHERE', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c = 94) AS r ON l.a = r.a))
                           = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c = 94) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
+-- When the condition is a bare column the filter column IS that column, so it is also erased by
+-- name after the DAG runs and adding it back to the outputs is not enough on its own. The cells
+-- above never reach that state: a comparison makes the filter column a computed node, and a
+-- `WHERE` moved by the optimizer is wrapped as well. Only an explicit bare `PREWHERE` does, at any
+-- key position.
+SELECT 'bare PREWHERE key col', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c) AS r ON l.a = r.a))
+                              = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE c) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+
+SELECT 'bare PREWHERE key col mid', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE b) AS r ON l.a = r.a))
+                                  = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE b) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+
+-- Control for the cells above: the flag must be cleared only for a column the sorting key needs, so
+-- a bare filter on a non-key column keeps being removed and must not start leaking into the header.
+SELECT 'control bare PREWHERE non-key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE d != '') AS r ON l.a = r.a))
+                                      = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE d != '') AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+
 -- An outer join reaches the branch only when the filter is on a side the join preserves: a filter on
 -- the non-preserved side stays above the join as a `Filter (WHERE)` step and never becomes PREWHERE.
 SELECT 'LEFT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l LEFT JOIN ok2 AS r ON l.a = r.a WHERE l.c = 94))
@@ -115,6 +131,18 @@ SELECT 'row policy', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 A
                    = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
 DROP ROW POLICY pol_04652 ON ok2;
+
+-- The row-level DAG has the same hole as the PREWHERE one: a policy whose predicate is a bare
+-- sorting-key column makes that column the row-level filter column, so it too is erased by name
+-- after the DAG runs. `b` is truthy for all but the 10 rows where `number % 200 = 0`, so unlike
+-- `b < 1000` above this policy does filter, and the oracle compares the filtered result.
+DROP ROW POLICY IF EXISTS pol_bare_04652 ON ok2;
+CREATE ROW POLICY pol_bare_04652 ON ok2 USING b TO ALL;
+
+SELECT 'bare row policy col', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
+                            = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+
+DROP ROW POLICY pol_bare_04652 ON ok2;
 DROP TABLE ok2;
 
 -- The restore matches inputs by column NAME, never by type, so a LowCardinality key column is
