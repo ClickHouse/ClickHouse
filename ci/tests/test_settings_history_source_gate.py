@@ -74,6 +74,26 @@ def test_default_defined_by_a_constant_outside_the_declaration_files_is_enforced
     assert "no_such_setting_at_all" in error
 
 
+def test_build_definition_config_template_is_enforced(monkeypatch):
+    # Compile definitions such as `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE` select
+    # settings defaults at build time; they are carried by config templates like
+    # src/Common/config.h.in, so a change there must not bypass the current-block rule.
+    kv = _kv(
+        [HISTORY, "src/Common/config.h.in"],
+        [{"namespace": "Session", "name": "no_such_setting_at_all"}],
+    )
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+
+def test_build_definition_cmake_files_are_enforced(monkeypatch):
+    for build_file in ("CMakeLists.txt", "src/CMakeLists.txt", "cmake/limit_jobs.cmake"):
+        kv = _kv(
+            [HISTORY, build_file],
+            [{"namespace": "Session", "name": "no_such_setting_at_all"}],
+        )
+        assert "no_such_setting_at_all" in _run(monkeypatch, kv), build_file
+
+
 def test_declaration_file_change_is_enforced(monkeypatch):
     kv = _kv(
         [HISTORY, "src/Core/Settings.cpp"],

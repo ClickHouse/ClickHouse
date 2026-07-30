@@ -596,7 +596,10 @@ def check_settings_changes_history():
     again in this release. The gate deliberately keys off any src/ source file rather than the
     declaration files alone: a default can come from a constant defined elsewhere (for example
     `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
-    and a narrower gate would let such a change be recorded in an older block unnoticed.
+    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
+    definitions are treated the same way: defaults also switch on compile definitions such as
+    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
+    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
 
     Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
     queue), fail rather than silently pass - a green here would defeat the purpose."""
@@ -615,18 +618,27 @@ def check_settings_changes_history():
         # The history file was not changed in this run - nothing to validate.
         return ""
 
-    # A change that touches no C++ source besides this file cannot have changed any setting's
-    # compiled default, so it is a historical correction (fixing what a past release recorded),
-    # not a default change made now - it must not be forced into the current version block.
-    # Enforce the current-block rule as soon as any other source file changed: defaults are not
-    # only written in the declaration files, they can come from constants defined anywhere (for
-    # example src/Core/Defines.h), so anything narrower would leave a silent hole. The price is
-    # over-strictness for a change that corrects an old entry and edits unrelated code in the
-    # same commit - the message below says how to proceed.
-    other_sources_changed = any(
-        f != path and f.startswith("src/") and f.endswith((".h", ".cpp", ".inc"))
-        for f in changed_files
-    )
+    # A change that touches no default-bearing source besides this file cannot have changed any
+    # setting's compiled default, so it is a historical correction (fixing what a past release
+    # recorded), not a default change made now - it must not be forced into the current version
+    # block. Enforce the current-block rule as soon as any other source file changed: defaults
+    # are not only written in the declaration files, they can come from constants defined
+    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
+    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
+    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
+    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
+    # silent hole. The price is over-strictness for a change that corrects an old entry and
+    # edits unrelated code in the same commit - the message below says how to proceed.
+    def is_default_bearing_source(f):
+        if f == path:
+            return False
+        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
+            return True
+        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
+            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
+        )
+
+    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
     if not other_sources_changed:
         return ""
 
