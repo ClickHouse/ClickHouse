@@ -51,21 +51,17 @@ DROP DATABASE db1;
 创建以下表和用户，供后续示例使用。
 
 <div id="creating-a-sample-database-table-and-rows">
-  #### 创建示例数据库、表和行
+  #### 创建示例数据库、表和数据行
 </div>
 
 <Steps>
-  <Step>
-    ##### 创建测试数据库
-
+  <Step title="创建测试数据库" id="create-a-test-database">
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 创建表
-
+  <Step title="创建表" id="create-a-table">
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -77,9 +73,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 向表中插入示例行
-
+  <Step title="向表中插入示例行" id="populate">
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -91,9 +85,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 验证表
-
+  <Step title="验证表" id="verify">
     ```sql title="查询"
     SELECT *
     FROM db1.table1
@@ -111,20 +103,16 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 创建 `column_user`
-
-    创建一个普通用户，用于演示对某些列的访问限制：
+  <Step title={<>创建 <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
+    创建一个普通用户，用于演示如何限制对某些列的访问：
 
     ```sql
     CREATE USER column_user IDENTIFIED BY 'password';
     ```
   </Step>
 
-  <Step>
-    ##### 创建 `row_user`
-
-    创建一个普通用户，用于演示对具有特定值的行实施访问限制：
+  <Step title={<>创建 <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
+    创建一个普通用户，用于演示如何限制对具有特定值的行的访问：
 
     ```sql
     CREATE USER row_user IDENTIFIED BY 'password';
@@ -145,65 +133,49 @@ DROP DATABASE db1;
 角色用于为特定权限定义用户组，而不是逐个管理用户。
 
 <Steps>
-  <Step>
-    ##### 创建一个角色，将该角色的用户限制为只能查看数据库 `db1` 中 `table1` 表的 `column1`：
-
+  <Step title={<>创建一个角色，将该角色的用户限制为只能查看数据库 <code>db1</code> 中 <code>table1</code> 表的 <code>column1</code>：</>} id="create-column-role">
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### 设置权限，允许查看 `column1`
-
+  <Step title={<>设置权限，允许查看 <code>column1</code></>} id="set-column-privileges">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### 将用户 `column_user` 添加到角色 `column1_users`
-
+  <Step title={<>将用户 <code>column_user</code> 添加到角色 <code>column1_users</code></>} id="add-column-user-to-role">
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step>
-    ##### 创建一个角色，将该角色的用户限制为只能查看选定的行；在本例中，仅能查看 `column1` 中包含 `A` 的行
-
+  <Step title={<>创建一个角色，将该角色的用户限制为只能查看选定的行；在本例中，仅能查看 <code>column1</code> 中包含 <code>A</code> 的行</>} id="create-row-role">
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 将 `row_user` 添加到角色 `A_rows_users`
-
+  <Step title={<>将 <code>row_user</code> 添加到角色 <code>A_rows_users</code></>} id="add-row-user-to-role">
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step>
-    ##### 创建一条策略，仅允许查看 `column1` 值为 `A` 的行
-
+  <Step title={<>创建一条策略，仅允许查看 <code>column1</code> 值为 <code>A</code> 的行</>} id="create-row-policy">
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 为数据库和表设置权限
-
+  <Step title="为数据库和表设置权限" id="set-db-table-privileges">
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 为其他角色授予显式权限，使其仍可访问所有行
-
+  <Step title="为其他角色授予显式权限，使其仍可访问所有行" id="grant-other-roles-access">
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -224,17 +196,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### 使用 `clickhouse_admin` 用户登录 ClickHouse 客户端
-
+  <Step title={<>使用 <code>clickhouse_admin</code> 用户登录 ClickHouse 客户端</>} id="login-admin-user">
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step>
-    ##### 验证管理员用户对数据库、表和所有行的访问权限。
-
+  <Step title="验证管理员用户对数据库、表和所有行的访问权限。" id="verify-admin-access">
     ```sql
     SELECT *
     FROM db1.table1
@@ -252,17 +220,13 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 使用 `column_user` 用户登录 ClickHouse 客户端
-
+  <Step title={<>使用 <code>column_user</code> 用户登录 ClickHouse 客户端</>} id="login-column-user">
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### 测试使用所有列执行 `SELECT`
-
+  <Step title={<>测试使用所有列执行 <code>SELECT</code></>} id="test-select-all-columns">
     ```sql
     SELECT *
     FROM db1.table1
@@ -285,9 +249,7 @@ DROP DATABASE db1;
     </Note>
   </Step>
 
-  <Step>
-    ##### 验证仅查询已指定且允许访问的列的 `SELECT` 查询：
-
+  <Step title={<>验证仅查询已指定且允许访问的列的 <code>SELECT</code> 查询：</>} id="verify-allowed-columns">
     ```sql
     SELECT
         id,
@@ -313,17 +275,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### 使用 `row_user` 登录 ClickHouse 客户端
-
+  <Step title={<>使用 <code>row_user</code> 登录 ClickHouse 客户端</>} id="login-row-user">
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### 查看可访问的行
-
+  <Step title="查看可访问的行" id="view-available-rows">
     ```sql
     SELECT *
     FROM db1.table1
@@ -353,41 +311,31 @@ DROP DATABASE db1;
 例如，如果 `role1` 只允许查询 `column1`，而 `role2` 允许查询 `column1` 和 `column2`，那么该用户将有权访问这两列。
 
 <Steps>
-  <Step>
-    ##### 使用管理员账户，创建一个按行和列限制且带默认角色的新用户
-
+  <Step title="使用管理员账户，创建一个按行和列限制且带默认角色的新用户" id="create-restricted-user">
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 移除 `A_rows_users` 角色先前的权限
-
+  <Step title={<>移除 <code>A_rows_users</code> 角色先前的权限</>} id="remove-prior-privileges">
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 仅允许 `A_row_users` 角色查询 `column1`
-
+  <Step title={<>仅允许 <code>A_row_users</code> 角色查询 <code>column1</code></>} id="allow-column1-select">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### 使用 `row_and_column_user` 登录 ClickHouse 客户端
-
+  <Step title={<>使用 <code>row_and_column_user</code> 登录 ClickHouse 客户端</>} id="login-restricted-user">
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step>
-    ##### 使用所有列进行测试：
-
+  <Step title="使用所有列进行测试：" id="test-all-columns-restricted">
     ```sql
     SELECT *
     FROM db1.table1
@@ -406,9 +354,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### 使用受限的允许列进行测试：
-
+  <Step title="使用受限的允许列进行测试：" id="test-limited-columns">
     ```sql
     SELECT
         id,
