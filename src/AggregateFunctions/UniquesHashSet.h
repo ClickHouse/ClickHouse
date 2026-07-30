@@ -353,12 +353,10 @@ public:
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
                 std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
-
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
                 }
-
                 i += insert_many_batch_size;
 
                 std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
