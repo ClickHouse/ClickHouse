@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
@@ -55,10 +57,8 @@ public:
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
 
-    /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
-    /// (when supported), which is possible because readBigAt is asynchronous on its own. If a (small-object)
-    /// initial prefetch is in flight it is consumed first: the requested range is served from the prefetched
-    /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
+    /// NOTE: readBigAt does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
+    /// (when supported). An in-flight prefetch is consumed first if it may cover the head of the range.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
     /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
@@ -88,6 +88,13 @@ private:
     Memory<> prefetch_buffer;
     /// mutable: a pending prefetch may be consumed from the const readBigAt().
     mutable std::future<IAsynchronousReader::Result> prefetch_future;
+    /// Guards consumption of prefetch_future from readBigAt, which may be called concurrently.
+    /// The sequential interface must not be called in parallel with readBigAt, so it takes no locks.
+    mutable std::mutex prefetch_future_mutex;
+    /// The file range an in-flight prefetch may cover; readBigAt checks it (without consuming the
+    /// prefetch) to decide whether the prefetch may serve its range. Zero end means none pending.
+    size_t prefetch_window_begin = 0;
+    mutable std::atomic<size_t> prefetch_window_end{0};
 
     /// When using userspace page cache, we directly use memory owned by the cache instead of
     /// allocating our own buffers.
