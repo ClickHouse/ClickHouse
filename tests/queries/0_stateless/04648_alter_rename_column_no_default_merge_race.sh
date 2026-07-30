@@ -210,8 +210,13 @@ ${CLICKHOUSE_CLIENT} --query="
     ALTER TABLE t_rename_no_default_patch_rename RENAME COLUMN a TO b SETTINGS alter_sync = 0;
     SYSTEM START MERGES t_rename_no_default_patch_rename;
 "
+# The threshold has to exceed what four empty strings occupy (9 bytes here), or preserving the target
+# column while dropping the patch value still passes. The value itself cannot be asserted: logical b
+# reads back empty until the rename materializes, so an exact-value check would fail on a correct
+# server in exactly the state this phase exists to cover. Phase 4 asserts the value because it has no
+# pending rename.
 if optimize_or_skip t_rename_no_default_patch_rename; then
-    assert_kept t_rename_no_default_patch_rename b 1 "patch-only column, rename target"
+    assert_kept t_rename_no_default_patch_rename b 10 "patch-only column, rename target"
 fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_patch_rename"
