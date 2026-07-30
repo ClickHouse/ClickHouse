@@ -56,6 +56,8 @@ def main() -> int:
 
     right = f"{args.ch_path}/clickhouse"
     assert Path(right).is_file(), f"No binary under test at {right}"
+    # CI release artifacts arrive without the executable bit.
+    Path(right).chmod(0o755)
 
     info = Info()
     build_type = "build_arm_release" if Utils.is_arm() else "build_amd_release"
@@ -75,12 +77,16 @@ def main() -> int:
     left = f"{reference_dir}/clickhouse"
     results.append(
         Result.from_commands_run(
-            name="Download reference build",
+            name="Prepare binaries",
             command=[
                 f"mkdir -p {reference_dir}",
                 f"wget -nv -O {left} {link}",
                 f"chmod +x {left}",
+                # Both builds are self-extracting: the first run replaces the ~1GB wrapper in place
+                # with the multi-GB real ELF. Do that here, deliberately and once per binary, so
+                # that no measured round ever pays for decompression. Also needs the disk for it.
                 f"{left} local --version",
+                f"{right} local --version",
             ],
         )
     )
