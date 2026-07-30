@@ -220,6 +220,57 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
+/** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
+  * type - while the generated values are written into a column of the column's own type, which truncates whatever
+  * does not fit its range. A truncated value wraps around, so the generated sequence stops being monotonic, while
+  * the query plan keeps assuming that the stream is still sorted by the fill columns after WITH FILL. Downstream
+  * steps relying on that property then return wrong results: DISTINCT in order, for example, reads the stream as a
+  * sequence of sorted runs, so it deduplicates within wrong ranges (and hits the
+  * `Equal values are not contiguous within the range assumed to be sorted` assertion in a debug build).
+  * Reject such bounds instead of filling with wrapped-around values.
+  */
+static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
+{
+    /// Only integers wrap around. Float bounds saturate, and they are inexact for a narrower column type anyway,
+    /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
+    WhichDataType which(type);
+    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime())
+        return;
+
+    auto is_representable = [&type](const Field & value)
+    {
+        auto column = type->createColumn();
+        column->insert(value);
+        return equals((*column)[0], value);
+    };
+
+    if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL FROM value {} is out of range of the ORDER BY column type {}",
+            applyVisitor(FieldVisitorToString(), descr.fill_from),
+            type->getName());
+
+    /// TO is an exclusive bound, so it is enough that the last value it admits is representable: for example,
+    /// `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, all of which fit.
+    if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
+    {
+        /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are
+        /// filled through their own type, so the check above has already accepted their bounds.
+        Int64 last_admitted_value = 0;
+        const bool admits_a_representable_value = descr.fill_to.getType() == Field::Types::Int64
+            && !common::subOverflow(descr.fill_to.safeGet<Int64>(), static_cast<Int64>(direction), last_admitted_value)
+            && is_representable(Field(last_admitted_value));
+
+        if (!admits_a_representable_value)
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL TO value {} is out of range of the ORDER BY column type {}",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                type->getName());
+    }
+}
+
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
@@ -295,6 +346,8 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
+
+        checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
