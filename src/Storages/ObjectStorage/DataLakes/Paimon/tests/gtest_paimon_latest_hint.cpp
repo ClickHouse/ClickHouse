@@ -443,10 +443,18 @@ TEST(PaimonIncrementalRead, DiscardsWatermarkFromAnEarlierTableGeneration)
         << "the watermark of the dropped table must not be inherited by the recreated one";
     EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(new_generation, new_generation));
 
-    /// Watermarks written before generation tracking carry no marker and keep the previous
-    /// behaviour, and a table whose identity was not latched has nothing to compare against.
-    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, new_generation));
+    /// A watermark written before generation tracking existed carries no marker, so it may equally
+    /// be this table's progress or progress inherited from a dropped one: it is of unknown
+    /// generation and must not be trusted, because trusting it is the only direction that can skip
+    /// data.  Discarding it takes the initial-read branch, which always commits a watermark and so
+    /// latches the marker - the unmarked state is left behind after a single batch, whether or not
+    /// that batch had any new snapshots to read.
+    EXPECT_FALSE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, new_generation))
+        << "an unmarked watermark may have been inherited from a dropped table at the same keeper_path";
+    /// A table whose identity could not be latched has nothing to compare against, so the watermark
+    /// is taken at face value there.
     EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(old_generation, 0));
+    EXPECT_TRUE(PaimonMetadata::isCommittedWatermarkFromSameTable(std::nullopt, 0));
 }
 
 #endif

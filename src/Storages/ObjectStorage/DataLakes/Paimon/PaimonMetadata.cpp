@@ -688,11 +688,15 @@ bool PaimonMetadata::isCommittedWatermarkFromSameTable(std::optional<Int64> comm
     /// watermark is taken at face value (same as before identity tracking existed).
     if (current_table_identity == 0)
         return true;
-    /// A watermark written before identity tracking existed carries no generation marker.  It is
-    /// attributed to the current table: that is the pre-existing behaviour, and the marker is
-    /// recorded on the next commit, so this window closes after one committed batch.
+    /// A watermark written before generation tracking existed carries no marker, so the generation
+    /// it belongs to is unknown: it may equally be this table's own progress or progress inherited
+    /// from a dropped table at the same `keeper_path`.  Trusting it is the only option that can skip
+    /// data, so it is discarded and the current table is read from its first snapshot instead
+    /// (fail-close: the failure direction is re-reading, never skipping).  Discarding also means the
+    /// initial-read branch of collectIncrementalDataFiles is taken, which always commits a
+    /// watermark - and therefore latches the marker - so this happens at most once per table.
     if (!committed_table_identity.has_value())
-        return true;
+        return false;
     return *committed_table_identity == current_table_identity;
 }
 
@@ -714,15 +718,18 @@ std::optional<Int64> PaimonMetadata::getCommittedSnapshotId() const
     /// `keeper_path` would skip the new table's data.  The recorded generation marker catches it:
     /// the recreated table has a different `schema-0` `timeMillis`, so the stale watermark is
     /// discarded and the new table is read from its beginning instead of being partly skipped.
+    /// A watermark written before generation tracking existed has no marker at all and is therefore
+    /// of unknown generation - it is discarded as well, once, on the first read after the upgrade.
     auto committed_table_identity = persistent_components.stream_state->getCommittedTableIdentity();
     if (!isCommittedWatermarkFromSameTable(committed_table_identity, persistent_components.schema0_time_millis))
     {
         LOG_WARNING(log,
-            "Committed snapshot {} in Keeper at {} belongs to a different generation of the underlying Paimon table "
-            "(recorded schema-0 timeMillis {}, current {}); discarding it and reading the current table from its "
+            "Committed snapshot {} in Keeper at {} does not belong to the current generation of the underlying Paimon "
+            "table (recorded schema-0 timeMillis {}, current {}); discarding it and reading the current table from its "
             "first snapshot instead of skipping data.",
             *committed_snapshot_id, persistent_components.stream_state->getKeeperPath(),
-            *committed_table_identity, persistent_components.schema0_time_millis);
+            committed_table_identity.has_value() ? toString(*committed_table_identity) : "none",
+            persistent_components.schema0_time_millis);
         return std::nullopt;
     }
 
