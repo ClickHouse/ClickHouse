@@ -36,6 +36,10 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     # mingw-w64's `off_t` is 32 bits unless this is set, which would cap file offsets at 2 GiB.
     # It also makes `fseeko`/`ftello`/`stat` and friends resolve to their 64-bit variants.
     add_definitions(-D _FILE_OFFSET_BITS=64)
+    # `O_CLOEXEC` asks that a descriptor not survive into a child process. Windows has no `exec`,
+    # so it spells the same idea as handle inheritance: `_O_NOINHERIT`, from the same <fcntl.h>
+    # that every user of `O_CLOEXEC` already includes to get `open`.
+    add_definitions(-D O_CLOEXEC=_O_NOINHERIT)
     # Note: deliberately no `_POSIX_C_SOURCE`/`_GNU_SOURCE` here. mingw-w64 already exposes
     # the POSIX-flavoured CRT names we use (`strdup`, `fileno`, `getpid`, ...) without them,
     # and claiming POSIX conformance on a platform that does not have it makes third-party

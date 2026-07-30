@@ -1,3 +1,8 @@
+/// Compares the process's effective user against the owner of the data directory. Not built on
+/// Windows: there is no `uid_t` and no `pwd.h`; the equivalent check would go through SIDs and
+/// is only meaningful for the server, which is not built there either.
+#if !defined(OS_WINDOWS)
+
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -61,3 +66,5 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
 }
 
 }
+
+#endif
