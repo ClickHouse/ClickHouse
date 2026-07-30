@@ -569,6 +569,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
     , collect_stats(table_join->collectAnalyzeStats())
+    , collect_matched_right(table_join->collectExactMatches())
     , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
@@ -653,7 +654,7 @@ void MergeJoin::setTotals(const Block & totals_block)
     IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
-    if (is_right || is_full || collect_stats)
+    if (is_right || is_full || collect_matched_right)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
@@ -1065,9 +1066,8 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         }
         else
         {
-            /// ANY LEFT emits a single right row (range.right_start) per equal range.
-            if (collect_stats)
-                right_block_info.setUsed(range.right_start, 1);
+            if (collect_matched_right)
+                right_block_info.setUsed(range.right_start, range.right_length);
             joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
         }
 
@@ -1155,10 +1155,8 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
             break;
 
         matched_rows += range.left_length;
-        /// ANY/SEMI emit a single right row (range.right_start) per equal range.
-        /// SEMI does not output right columns, so only ANY needs the right participation mark.
-        if (collect_stats && !is_semi_join)
-            right_block_info.setUsed(range.right_start, 1);
+        if (collect_matched_right)
+            right_block_info.setUsed(range.right_start, range.right_length);
         joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);
@@ -1327,9 +1325,8 @@ StepAnalysisReport MergeJoin::getAnalysisReport() const
     const UInt64 matched_left = matched_left_rows.load(std::memory_order_relaxed);
     report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
 
-    /// Distinct right rows that ended up in the output. For SEMI (right side not in the
-    /// output) no rows are marked, so it is a truthful 0.
-    const UInt64 matched_right = used_rows_bitmap ? used_rows_bitmap->countUsed() : 0;
+    const std::optional<UInt64> matched_right
+        = used_rows_bitmap ? std::optional<UInt64>(used_rows_bitmap->countUsed()) : std::nullopt;
 
     const bool in_memory = is_in_memory.load(std::memory_order_relaxed);
     MetricList right_metrics = joinSideMetrics(getTotalRowCount(), matched_right);

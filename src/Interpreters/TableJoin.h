@@ -225,6 +225,8 @@ private:
 
     bool collect_analyze_stats = false;
 
+    bool collect_exact_matches = false;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -287,6 +289,9 @@ public:
 
     bool collectAnalyzeStats() const { return collect_analyze_stats; }
     void setCollectAnalyzeStats(bool value) { collect_analyze_stats = value; }
+
+    bool collectExactMatches() const { return collect_exact_matches; }
+    void setCollectExactMatches(bool value) { collect_exact_matches = value; }
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;

@@ -80,6 +80,10 @@ struct ExplainPlanOptions
     bool pretty = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: collect precise per-row matched-rows statistics for the right side of
+    /// joins. Off by default because it needs an extra per-row bitmap and, for ANY/SEMI/ANTI joins,
+    /// forces the join to keep all right rows per key.
+    bool matches = false;
 
     SettingsChanges toSettingsChanges() const;
 };

@@ -691,6 +691,8 @@ private:
 
     void reinitUsedFlags();
 
+    bool leftMatchedStatsAvailable() const;
+
     void doDebugAsserts() const;
 };
 }

@@ -145,7 +145,7 @@ Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & ind
     return new_columns;
 }
 
-size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
+size_t equalRangeLength(const FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
     const size_t start_pos = impl.getRow();
@@ -167,8 +167,14 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
             break;
     }
 
-    impl.pos = run_end;
     return run_end - start_pos;
+}
+
+size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
+{
+    const size_t length = equalRangeLength(impl);
+    impl.pos = impl.getRow() + length;
+    return length;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
@@ -392,10 +398,12 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
     SharedHeaders & input_headers_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    bool collect_exact_matches_)
     : input_headers(input_headers_)
     , kind(kind_)
     , strictness(strictness_)
+    , collect_exact_matches(collect_exact_matches_)
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
@@ -433,7 +441,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         join_ptr->getTableJoin().strictness(),
         join_ptr->getTableJoin().getOnlyClause(),
         input_headers_,
-        max_block_size_)
+        max_block_size_,
+        join_ptr->getTableJoin().collectExactMatches())
 {
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
@@ -814,7 +823,8 @@ struct AnyJoinImpl
                      AnyJoinState & any_join_state,
                      int null_direction_hint,
                      size_t & matched_left,
-                     size_t & matched_right)
+                     size_t & matched_right,
+                     bool collect_exact_matches)
     {
         chassert(enabled);
 
@@ -845,7 +855,8 @@ struct AnyJoinImpl
                     size_t lnum = nextDistinct(left_cursor);
                     right_map.resize_fill(right_map.size() + lnum, rpos);
                     matched_left += lnum;
-                    matched_right += 1;
+                    if (collect_exact_matches)
+                        matched_right += equalRangeLength(right_cursor);
                 }
 
                 if constexpr (isRightOrFull(kind))
@@ -853,17 +864,18 @@ struct AnyJoinImpl
                     size_t rnum = nextDistinct(right_cursor);
                     left_map.resize_fill(left_map.size() + rnum, lpos);
                     matched_right += rnum;
-                    matched_left += 1;
+                    if (collect_exact_matches)
+                        matched_left += equalRangeLength(left_cursor);
                 }
 
                 if constexpr (isInner(kind))
                 {
-                    nextDistinct(left_cursor);
-                    nextDistinct(right_cursor);
+                    size_t lnum = nextDistinct(left_cursor);
+                    size_t rnum = nextDistinct(right_cursor);
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
-                    matched_left += 1;
-                    matched_right += 1;
+                    matched_left += lnum;
+                    matched_right += rnum;
                 }
             }
             else if (cmp < 0)
@@ -967,7 +979,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right);
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right, collect_exact_matches);
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -1275,7 +1287,7 @@ MergeJoinTransform::MergeJoinTransform(
         limit_hint_,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
-        kind_, strictness_, on_clause_, input_headers, max_block_size)
+        kind_, strictness_, on_clause_, input_headers, max_block_size, false)
 {
 }
 

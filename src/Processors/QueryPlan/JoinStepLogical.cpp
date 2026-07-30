@@ -1107,6 +1107,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
     table_join->setCollectAnalyzeStats(optimization_settings.collect_analyze_stats);
+    table_join->setCollectExactMatches(optimization_settings.collect_exact_matches);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)

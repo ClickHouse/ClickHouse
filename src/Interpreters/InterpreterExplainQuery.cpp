@@ -482,6 +482,7 @@ struct QueryAnalyzeSettings
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
+        {"matches", query_plan_options.matches},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -1184,6 +1185,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
             optimization_settings.collect_analyze_stats = true;
+            optimization_settings.collect_exact_matches = analyzed.query_plan_options.matches;
 
             watch.restart();
             plan.optimize(optimization_settings);

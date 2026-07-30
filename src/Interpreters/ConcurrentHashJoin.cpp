@@ -510,8 +510,10 @@ StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
         if (!stats)
             continue;
         counters.left_rows += stats->getInputLeft();
-        counters.matched_left += stats->getMatchedLeft();
-        counters.matched_right += stats->getMatchedRight();
+        if (auto matched_left = stats->getMatchedLeft())
+            counters.matched_left = counters.matched_left.value_or(0) + *matched_left;
+        if (auto matched_right = stats->getMatchedRight())
+            counters.matched_right = counters.matched_right.value_or(0) + *matched_right;
     }
 
     StepAnalysisReport report = buildMatchedRowsReport(counters);

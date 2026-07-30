@@ -19,9 +19,7 @@ namespace DB
 namespace
 {
 
-/// `Format::Time` is shown as an absolute duration plus its share of the stage time
-/// (sum of elapsed time across the stage's processors), uniformly for any producing step.
-String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed_ns)
+String formatStepMetricValue(const StepMetric & metric)
 {
     if (metric.format == StepMetric::Format::Raw)
         return std::visit([](const auto & value) -> String
@@ -51,8 +49,8 @@ String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed
         case StepMetric::Format::Time:
         {
             String result = formatReadableTime(numeric);
-            if (stage_sum_elapsed_ns != 0)
-                result += fmt::format(" ({:.1f}%)", 100.0 * numeric / static_cast<double>(stage_sum_elapsed_ns));
+            if (metric.share_of_stage_time)
+                result += fmt::format(" ({:.1f}%)", *metric.share_of_stage_time);
             return result;
         }
         case StepMetric::Format::Percent:
@@ -89,9 +87,9 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
             out << " · ";
         first = false;
         if (metric.name.empty())
-            out << formatStepMetricValue(metric, 0);
+            out << formatStepMetricValue(metric);
         else
-            out << metric.name << " " << formatStepMetricValue(metric, 0);
+            out << metric.name << " " << formatStepMetricValue(metric);
     }
     out << "\n";
 }
@@ -158,7 +156,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
         << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : "Unknown");
 
     for (const auto & metric : stage.inline_metrics)
-        out << " · " << metric.name << " " << formatStepMetricValue(metric, stage.sum_elapsed_ns);
+        out << " · " << metric.name << " " << formatStepMetricValue(metric);
 
     out << "\n";
 
@@ -171,7 +169,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
             if (!first)
                 out << " · ";
             first = false;
-            out << metric.name << " " << formatStepMetricValue(metric, 0);
+            out << metric.name << " " << formatStepMetricValue(metric);
         }
         out << "\n";
     }

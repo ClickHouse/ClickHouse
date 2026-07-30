@@ -1,75 +1,121 @@
 #pragma once
 
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <base/types.h>
 #include <Core/Joins.h>
+
+#include <atomic>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
 
 enum class LeftMatchedSource
 {
-    MatchedRowsSize,
-    MatchedRowsComplement,
-    NotInOutput,
+    ReplicationOffsets,
+    DefaultRowMarkers,
+    OutputFilter,
+    OutputFilterComplement,
     Unsupported,
 };
 
 enum class RightMatchedSource
 {
     NonJoinedComplement,
-    LeftMatchCount,
     RefsBitmap,
-    AllRight,
-    NotInOutput,
     Unsupported,
 };
 
 constexpr LeftMatchedSource leftMatchedSource(JoinKind kind, JoinStrictness strictness)
 {
     if (kind == JoinKind::Cross || kind == JoinKind::Comma)
-        return LeftMatchedSource::MatchedRowsSize;
-
-    const bool is_any = strictness == JoinStrictness::Any;
-    const bool is_anti = strictness == JoinStrictness::Anti;
-    const bool is_semi = strictness == JoinStrictness::Semi;
-
-    if (kind == JoinKind::Full && is_any)
         return LeftMatchedSource::Unsupported;
 
-    if (kind == JoinKind::Left && is_anti)
-        return LeftMatchedSource::MatchedRowsComplement;
+    if (strictness == JoinStrictness::All && isLeftOrFull(kind))
+        return LeftMatchedSource::DefaultRowMarkers;
 
-    if (kind == JoinKind::Right && (is_semi || is_anti))
-        return LeftMatchedSource::NotInOutput;
+    if (strictness == JoinStrictness::All)
+        return LeftMatchedSource::ReplicationOffsets;
 
-    return LeftMatchedSource::MatchedRowsSize;
+    if (kind == JoinKind::Left && strictness == JoinStrictness::Anti)
+        return LeftMatchedSource::OutputFilterComplement;
+
+    if (kind == JoinKind::Left && strictness == JoinStrictness::Semi)
+        return LeftMatchedSource::OutputFilter;
+
+    if (kind == JoinKind::Inner && (strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Asof))
+        return LeftMatchedSource::OutputFilter;
+
+    if (kind == JoinKind::Right && strictness == JoinStrictness::RightAny)
+        return LeftMatchedSource::OutputFilter;
+
+    return LeftMatchedSource::Unsupported;
 }
 
 constexpr RightMatchedSource rightMatchedSource(JoinKind kind, JoinStrictness strictness)
 {
     if (kind == JoinKind::Cross || kind == JoinKind::Comma)
-        return RightMatchedSource::AllRight;
-
-    const bool is_any = strictness == JoinStrictness::Any;
-    const bool is_anti = strictness == JoinStrictness::Anti;
-    const bool is_semi = strictness == JoinStrictness::Semi;
-
-    if (kind == JoinKind::Full && is_any)
         return RightMatchedSource::Unsupported;
 
-    if (kind == JoinKind::Left && (is_semi || is_anti))
-        return RightMatchedSource::NotInOutput;
+    if (kind == JoinKind::Full && strictness == JoinStrictness::Any)
+        return RightMatchedSource::Unsupported;
 
-    if ((kind == JoinKind::Inner && is_any) || (kind == JoinKind::Right && is_semi))
-        return RightMatchedSource::LeftMatchCount;
-
-    if (kind == JoinKind::Right || kind == JoinKind::Full)
+    if (isRightOrFull(kind)
+        && (strictness == JoinStrictness::All
+            || strictness == JoinStrictness::Any
+            || strictness == JoinStrictness::RightAny
+            || strictness == JoinStrictness::Anti))
         return RightMatchedSource::NonJoinedComplement;
 
-    return RightMatchedSource::RefsBitmap;
+    if (isInnerOrLeft(kind) && strictness == JoinStrictness::All)
+        return RightMatchedSource::RefsBitmap;
+
+    return RightMatchedSource::Unsupported;
 }
+
+/// Per-block/per-row bitmap of right-table rows that found a match, maintained ONLY for
+/// EXPLAIN ANALYZE statistics. It is intentionally separate from `JoinStuff::JoinUsedFlags`
+/// (which the join maintains for RIGHT/FULL non-joined output): mixing a profiling concern into
+/// that correctness-critical structure would violate single-responsibility. This owns just the
+/// small subset of functionality the statistics need.
+class MatchedRightBitmap
+{
+public:
+    /// Allocate flags (all false) for a stored right block. Called once per block after build.
+    void allocate(UInt32 block_no, size_t rows)
+    {
+        per_row_flags[block_no] = std::vector<std::atomic_bool>(rows);
+    }
+
+    /// Mark a single right row as matched (idempotent, thread-safe).
+    void setMatched(UInt32 block_no, size_t row_num)
+    {
+        auto it = per_row_flags.find(block_no);
+        chassert(it != per_row_flags.end());
+
+        auto & flag = it->second[row_num];
+        if (!flag.load(std::memory_order_relaxed))
+            flag.store(true, std::memory_order_relaxed);
+    }
+
+    /// Number of distinct right rows marked as matched.
+    size_t countMatched() const
+    {
+        size_t result = 0;
+        for (const auto & [_, flags] : per_row_flags)
+            for (const auto & flag : flags)
+                result += flag.load(std::memory_order_relaxed);
+        return result;
+    }
+
+private:
+    /// Keyed by RowRef::block_no (globally unique across ConcurrentHashJoin slots).
+    std::unordered_map<UInt32, std::vector<std::atomic_bool>> per_row_flags;
+};
 
 class MatchedRowsStats
 {
@@ -77,27 +123,30 @@ public:
 
     MatchedRowsStats(JoinKind, JoinStrictness, UInt64 right_total_);
 
-    void collectProbeBlock(UInt64 probed_block_size, UInt64 matched_left_rows);
+    void collectProbeBlock(UInt64 probed_block_size, UInt64 matched_left);
 
     void markRightMatched(UInt64 ref_word);
 
     void collectNonJoined(UInt64 non_joined_rows);
 
     void prepareRightBitmap(const HashJoin::StoredBlocksList & stored_blocks);
+    bool hasRightBitmap() const { return right_rows_bitmap != nullptr; }
+
+    void enableLeftMatched() { left_matched_enabled = true; }
+    bool hasLeftMatched() const { return left_matched_enabled; }
 
     UInt64 getInputLeft() const { return left_rows_total.load(std::memory_order_relaxed); }
     UInt64 getInputRight() const { return right_rows_total; }
-    UInt64 getMatchedLeft() const;
-    UInt64 getMatchedRight() const;
+    std::optional<UInt64> getMatchedLeft() const;
+    std::optional<UInt64> getMatchedRight() const;
 
 private:
 
-    using MatchedRightRows = JoinStuff::JoinUsedFlags;
-
-    std::unique_ptr<MatchedRightRows> right_rows_bitmap;
+    std::unique_ptr<MatchedRightBitmap> right_rows_bitmap;
     UInt64 right_rows_total = 0;
     std::atomic<UInt64> left_rows_total = 0;
     std::atomic<UInt64> left_rows_matched = 0;
+    bool left_matched_enabled = false;
     std::atomic<UInt64> non_joined_right_rows = 0;
 
     JoinKind join_kind;

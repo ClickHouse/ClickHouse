@@ -1270,7 +1270,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 JoinResultPtr HashJoin::joinBlockImplCross(Block block) const
 {
     if (matched_rows_stats)
-        matched_rows_stats->collectProbeBlock(block.rows(), block.rows());
+        matched_rows_stats->collectProbeBlock(block.rows(), 0);
     return std::make_unique<CrossJoinResult>(*this, std::move(block));
 }
 
@@ -2144,6 +2144,12 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
+
+        /// Every stored block was replaced by a merged one with a fresh `block_no`, so the bitmap
+        /// keyed by the old numbers is stale. Nothing has been marked yet - the probe runs later.
+        if (matched_rows_stats && matched_rows_stats->hasRightBitmap())
+            matched_rows_stats->prepareRightBitmap(data->columns);
+
         doDebugAsserts();
     }
 }
@@ -2705,6 +2711,28 @@ void HashJoin::tryConvertToFixedHashMap()
         reinitUsedFlags();
 }
 
+bool HashJoin::leftMatchedStatsAvailable() const
+{
+    switch (leftMatchedSource(kind, strictness))
+    {
+        case LeftMatchedSource::Unsupported:
+            return false;
+
+        case LeftMatchedSource::ReplicationOffsets:
+        case LeftMatchedSource::OutputFilter:
+        case LeftMatchedSource::OutputFilterComplement:
+            return true;
+
+        case LeftMatchedSource::DefaultRowMarkers:
+            /// The markers live in `LazyOutput::row_refs`, which the probe fills only when there is
+            /// something to materialize lazily, or when `matches = 1` asks it to. The residual path
+            /// derives the same figure without them.
+            return table_join->getMixedJoinExpression() != nullptr
+                || sample_block_with_columns_to_add.columns() != 0
+                || table_join->collectExactMatches();
+    }
+}
+
 void HashJoin::onBuildPhaseFinish()
 {
     reinitUsedFlags();
@@ -2725,7 +2753,11 @@ void HashJoin::onBuildPhaseFinish()
     if (table_join->collectAnalyzeStats())
     {
         matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
-        if (rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
+
+        if (leftMatchedStatsAvailable())
+            matched_rows_stats->enableLeftMatched();
+
+        if (table_join->collectExactMatches() && rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
             matched_rows_stats->prepareRightBitmap(data->columns);
     }
 

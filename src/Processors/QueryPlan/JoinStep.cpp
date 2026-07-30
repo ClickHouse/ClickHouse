@@ -4,6 +4,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -229,7 +230,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
 StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & processors_by_group) const
 {
-    if (join->getName() != "FullSortingMergeJoin")
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
         return join->getAnalysisReport();
 
     JoinAnalysisCounters counters;
@@ -239,11 +240,13 @@ StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & process
         {
             if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
             {
-                const auto c = merge_join->getJoinAnalysisCounters();
-                counters.left_rows += c.left_rows;
-                counters.matched_left += c.matched_left;
-                counters.right_rows += c.right_rows;
-                counters.matched_right += c.matched_right;
+                const auto join_counters = merge_join->getJoinAnalysisCounters();
+                counters.left_rows += join_counters.left_rows;
+                if (join_counters.matched_left)
+                    counters.matched_left = counters.matched_left.value_or(0) + *join_counters.matched_left;
+                counters.right_rows += join_counters.right_rows;
+                if (join_counters.matched_right)
+                    counters.matched_right = counters.matched_right.value_or(0) + *join_counters.matched_right;
             }
         }
     }
@@ -285,7 +288,7 @@ String JoinStep::getStepGroupName(size_t group) const
         case JoinStage::Build: return "build";
         case JoinStage::Probe: return "probe";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStage group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

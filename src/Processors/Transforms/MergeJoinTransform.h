@@ -239,7 +239,8 @@ public:
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
-                       size_t max_block_size_);
+                       size_t max_block_size_,
+                       bool collect_exact_matches_);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
@@ -256,12 +257,21 @@ public:
     /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
     JoinAnalysisCounters getJoinAnalysisCounters() const
     {
-        return {
-            .left_rows = stat.num_rows[0],
-            .matched_left = stat.matched_left,
-            .right_rows = stat.num_rows[1],
-            .matched_right = stat.matched_right,
-        };
+        JoinAnalysisCounters counters;
+        counters.left_rows = stat.num_rows[0];
+        counters.right_rows = stat.num_rows[1];
+        counters.matched_left = stat.matched_left;
+        counters.matched_right = stat.matched_right;
+
+        if (strictness == JoinStrictness::Any && !collect_exact_matches)
+        {
+            if (isLeft(kind))
+                counters.matched_right = std::nullopt;
+            else if (isRight(kind))
+                counters.matched_left = std::nullopt;
+        }
+
+        return counters;
     }
 
 private:
@@ -299,6 +309,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
+    bool collect_exact_matches;
 
     size_t max_block_size;
     int null_direction_hint = 1;

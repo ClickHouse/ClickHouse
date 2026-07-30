@@ -518,8 +518,22 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
     if (const auto * match_stats = in_memory_join.getMatchStats())
     {
         left_rows_total += match_stats->getInputLeft();
-        matched_left += match_stats->getMatchedLeft();
-        matched_right += match_stats->getMatchedRight();
+
+        /// A bucket whose right keys happen to be unique promotes ALL to RightAny on its own, which
+        /// can make a metric unavailable for that bucket alone. Summing the rest would understate it.
+        auto fold_side = [](std::optional<UInt64> value, std::optional<UInt64> & total, bool & available)
+        {
+            if (available && value)
+                total = total.value_or(0) + *value;
+            else
+            {
+                available = false;
+                total.reset();
+            }
+        };
+
+        fold_side(match_stats->getMatchedLeft(), matched_left, matched_left_available);
+        fold_side(match_stats->getMatchedRight(), matched_right, matched_right_available);
     }
 }
 

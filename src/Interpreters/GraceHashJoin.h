@@ -11,6 +11,8 @@
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
 
+#include <optional>
+
 #include <mutex>
 
 namespace DB
@@ -60,8 +62,10 @@ class GraceHashJoin final : public IJoin
         TemporaryDataBuffer::Stat right_spill;
 
         UInt64 left_rows_total = 0;
-        UInt64 matched_left = 0;
-        UInt64 matched_right = 0;
+        std::optional<UInt64> matched_left;
+        std::optional<UInt64> matched_right;
+        bool matched_left_available = true;
+        bool matched_right_available = true;
 
         void foldIn(const HashJoin & in_memory_join);
     };
