@@ -283,6 +283,13 @@ DROP TABLE clear_column_direct_ttl_no_match;
 -- cleared column. A projection or skip index over such a column must be rebuilt rather than
 -- hardlinked, otherwise it keeps serving the pre-mutation value. MODIFY COLUMN below is a
 -- metadata-only change (it schedules no mutation), so the rewrite happens on the clear.
+-- min_bytes_for_full_part_storage = 0 pins Full storage: the runner randomizes that threshold,
+-- and a Packed part takes the all-column mutation path, which rebuilds the artifacts anyway
+-- and would make the assertions below pass without exercising the rebuild selection.
+-- enable_block_number_column and enable_block_offset_column are pinned off for the same reason
+-- in the other direction: the runner randomizes both, and with either one on the mutation does
+-- not recompute the MATERIALIZED columns at all (master behaves the same way), so the rows below
+-- would describe a case the run never reached.
 DROP TABLE IF EXISTS clear_column_unrelated_materialized;
 
 CREATE TABLE clear_column_unrelated_materialized
@@ -291,12 +298,12 @@ CREATE TABLE clear_column_unrelated_materialized
     c Int64,
     d Int64 MATERIALIZED c + 1,
     other Int64 MATERIALIZED 1,
-    PROJECTION p (SELECT other, count() GROUP BY other),
-    INDEX ix other TYPE minmax GRANULARITY 1
+    PROJECTION p (SELECT other, count() GROUP BY other)
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1, min_bytes_for_full_part_storage = 0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO clear_column_unrelated_materialized (id, c) VALUES (1, 10), (2, 20);
 
@@ -312,7 +319,37 @@ SELECT id, c, d, other FROM clear_column_unrelated_materialized ORDER BY id;
 -- ... and the projection must agree with it instead of returning the stale other = 1.
 SELECT other, count() FROM clear_column_unrelated_materialized
 GROUP BY other ORDER BY other SETTINGS force_optimize_projection = 1;
--- The skip index must also see the new value.
-SELECT count() FROM clear_column_unrelated_materialized WHERE other = 2;
 
 DROP TABLE clear_column_unrelated_materialized;
+
+-- Same for a skip index on such a column. Kept in its own table so the index, and not a
+-- projection, has to answer the query, and forced so that a silent decline to use it cannot
+-- pass as a base scan. Both directions are asserted: a stale index prunes away the rows that
+-- now match and does not bring back the rows that no longer match.
+DROP TABLE IF EXISTS clear_column_unrelated_materialized_index;
+
+CREATE TABLE clear_column_unrelated_materialized_index
+(
+    id Int64,
+    c Int64,
+    d Int64 MATERIALIZED c + 1,
+    other Int64 MATERIALIZED 1,
+    INDEX ix other TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1, min_bytes_for_full_part_storage = 0,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO clear_column_unrelated_materialized_index (id, c) VALUES (1, 10), (2, 20);
+
+ALTER TABLE clear_column_unrelated_materialized_index MODIFY COLUMN other Int64 MATERIALIZED 2 SETTINGS mutations_sync = 2;
+ALTER TABLE clear_column_unrelated_materialized_index CLEAR COLUMN c SETTINGS mutations_sync = 2;
+
+SELECT id, c, d, other FROM clear_column_unrelated_materialized_index ORDER BY id;
+SELECT count() FROM clear_column_unrelated_materialized_index
+WHERE other = 2 SETTINGS force_data_skipping_indices = 'ix';
+SELECT count() FROM clear_column_unrelated_materialized_index
+WHERE other = 1 SETTINGS force_data_skipping_indices = 'ix';
+
+DROP TABLE clear_column_unrelated_materialized_index;
