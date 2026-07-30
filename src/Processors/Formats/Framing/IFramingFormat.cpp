@@ -26,6 +26,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char framing_throw_after_writing_packet[];
+    extern const char framing_throw_during_payload_reset[];
     extern const char framing_pump_logs_throw[];
 }
 
@@ -158,23 +159,44 @@ void IFramingFormat::flushOut()
 void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
 {
     std::string & data = payload.str();
-    if (!data.empty())
+
+    /// `payload.str()` finalized the buffer, so it has to be restarted for the output format to write
+    /// into it again - also when there was nothing to write, in which case nothing was emitted and the
+    /// fail-close window below is not needed.
+    if (data.empty())
     {
-        writing = true;
-        writePayloadPacket(kind, data);
-
-        /// Test-only: emulate a packet write throwing after some bytes have reached `out` but before the
-        /// payload buffer is cleared, to check that the exception recovery fails closed (the `writing`
-        /// flag stays set, so the retried `finalize` becomes a no-op via `failClosedAfterPartialWrite`)
-        /// instead of re-emitting this packet.
-        fiu_do_on(FailPoints::framing_throw_after_writing_packet,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing a framing packet");
-        });
-
-        writing = false;
+        payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
+        return;
     }
+
+    /// The fail-close window deliberately covers the payload reset as well, not only the packet write:
+    /// `restart` allocates when it shrinks a payload buffer that grew past the cap, and until it
+    /// succeeds `payload` still holds the bytes of the packet that has just been written. Closing the
+    /// window before the reset would let a throw there (an allocation failure) reach the exception
+    /// recovery path with those bytes still buffered, so the retried `finalize` would emit the very
+    /// same `data` packet a second time after the one that already reached the wire.
+    writing = true;
+    writePayloadPacket(kind, data);
+
+    /// Test-only: emulate a packet write throwing after some bytes have reached `out` but before the
+    /// payload buffer is cleared, to check that the exception recovery fails closed (the `writing`
+    /// flag stays set, so the retried `finalize` becomes a no-op via `failClosedAfterPartialWrite`)
+    /// instead of re-emitting this packet.
+    fiu_do_on(FailPoints::framing_throw_after_writing_packet,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing a framing packet");
+    });
+
+    /// Test-only: emulate the payload reset below throwing, which leaves the bytes of the packet that
+    /// has just been written buffered in `payload`. The exception recovery must fail closed instead of
+    /// re-emitting them as a duplicate packet.
+    fiu_do_on(FailPoints::framing_throw_during_payload_reset,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while resetting the framing payload buffer");
+    });
+
     payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
+    writing = false;
 }
 
 void IFramingFormat::pumpLogs()
