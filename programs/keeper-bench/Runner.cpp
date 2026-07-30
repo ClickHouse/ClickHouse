@@ -842,18 +842,18 @@ struct SetupNodeCollector
             std::make_shared<DB::DiskLocal>("Keeper-snapshots", setup_nodes_snapshot_path));
 
         snapshot_manager.emplace(1, keeper_context);
-        auto snapshot_result = snapshot_manager->restoreFromLatestSnapshot();
-        if (snapshot_result.storage == nullptr)
+        initial_storage = Coordination::KeeperStorage::create(
+            /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+        auto buffer = snapshot_manager->deserializeLatestSnapshotBufferFromDisk();
+        if (buffer)
         {
-            std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperMemoryStorage>(
-                /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
-            initial_storage->initializeSystemNodes();
+            snapshot_manager->deserializeSnapshotFromBuffer(buffer, *initial_storage);
+            std::cerr << "Loaded initial nodes from snapshot" << std::endl;
         }
         else
         {
-            std::cerr << "Loaded initial nodes from snapshot" << std::endl;
-            initial_storage = std::move(snapshot_result.storage);
+            std::cerr << "No initial snapshot found" << std::endl;
+            initial_storage->initializeSystemNodes();
         }
     }
 
@@ -940,7 +940,7 @@ struct SetupNodeCollector
     {
         std::lock_guard lock(nodes_mutex);
 
-        if (initial_storage->container.contains(path))
+        if (initial_storage->nodes_storage->getCommittedNodeSimple(path, /*out_stats=*/nullptr, /*out_data=*/nullptr))
             return;
 
         new_nodes = true;
@@ -968,7 +968,7 @@ struct SetupNodeCollector
         static Coordination::ACLs default_acls = getDefaultACLs();
 
         auto multi_create_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(create_ops, default_acls);
-        initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false);
+        initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false, /*digest=*/std::nullopt, /*log_idx=*/0);
         auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid);
         if (responses.size() > 1 || responses[0].response->error != Coordination::Error::ZOK)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid response after trying to create a node {}", responses[0].response->error);
@@ -985,7 +985,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
+        DB::KeeperStorageSnapshot snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -993,9 +993,9 @@ struct SetupNodeCollector
 
     std::mutex nodes_mutex;
     DB::KeeperContextPtr keeper_context;
-    std::shared_ptr<Coordination::KeeperMemoryStorage> initial_storage;
+    std::shared_ptr<Coordination::KeeperStorage> initial_storage;
     std::unordered_set<std::string> nodes_created_during_replay;
-    std::optional<Coordination::KeeperSnapshotManager<Coordination::KeeperMemoryStorage>> snapshot_manager;
+    std::optional<Coordination::KeeperSnapshotManager> snapshot_manager;
     bool new_nodes = false;
 };
 

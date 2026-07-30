@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -25,7 +26,8 @@ public:
         MutableDataPartStoragePtr temporary_storage_,
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
-        String marks_file_extension_);
+        String marks_file_extension_,
+        const MergeTreeSettings & storage_settings);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -58,6 +60,10 @@ private:
     size_t num_processed_rows = 0;
     /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
+    /// Estimated memory retained by each index builder.
+    std::vector<size_t> estimated_allocated_bytes;
+    size_t max_processed_tokens;
+    size_t max_allocated_bytes;
 };
 
 /// Task that merges text indexes from data parts,
@@ -78,7 +84,8 @@ public:
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
-        const MergeTreeWriterSettings & writer_settings_);
+        const MergeTreeWriterSettings & writer_settings_,
+        bool sync_);
 
     ~MergeTextIndexesTask() noexcept override;
 
@@ -115,6 +122,8 @@ private:
     /// If not null, posting list values must be recalculated using merged offsets.
     std::shared_ptr<MergedPartOffsets> merged_part_offsets;
     MergeTreeWriterSettings writer_settings;
+    /// Whether to fsync the produced index files in `finalize` (merge/mutation `need_sync`).
+    bool sync;
     size_t step_time_ms;
 
     std::vector<MergeTreeIndexInputStreams> input_streams;
@@ -133,6 +142,8 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
     PostingList output_postings;
+    /// Positions accumulated for the current token (phrase query support).
+    PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

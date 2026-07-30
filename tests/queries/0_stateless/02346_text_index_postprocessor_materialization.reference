@@ -1,0 +1,36 @@
+1. Index-build path and row-scan path agree when postprocessor drops tokens.
+0
+1
+1
+1
+1
+2. Partially materialized index.
+1
+1
+1
+1
+1
+1
+0
+3. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.
+2
+2
+0
+4. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.
+2
+2
+0
+5. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
+2
+2
+2
+2
+6. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
+2
+2
+2
+7. Array column + non-array tokenizer: unmaterialized (row-scan) and indexed parts agree.
+2
+2
+2
+0

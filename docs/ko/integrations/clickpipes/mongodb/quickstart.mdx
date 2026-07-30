@@ -1,0 +1,392 @@
+---
+title: 'ClickHouse에서 JSON 다루기'
+sidebarTitle: 'JSON 다루기'
+slug: /integrations/clickpipes/mongodb/quickstart
+description: 'ClickPipes를 통해 MongoDB에서 ClickHouse로 복제된 JSON 데이터를 다루는 일반적인 패턴'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+이 가이드는 ClickPipes를 통해 MongoDB에서 ClickHouse로 복제된 JSON 데이터를 다루는 일반적인 패턴을 설명합니다.
+
+예를 들어, 고객 주문을 추적하기 위해 MongoDB에 `t1` 컬렉션을 만들었다고 가정하겠습니다:
+
+```javascript
+db.t1.insertOne({
+  "order_id": "ORD-001234",
+  "customer_id": 98765,
+  "status": "completed",
+  "total_amount": 299.97,
+  "order_date": new Date(),
+  "shipping": {
+    "method": "express",
+    "city": "Seattle",
+    "cost": 19.99
+  },
+  "items": [
+    {
+      "category": "electronics",
+      "price": 149.99
+    },
+    {
+      "category": "accessories",
+      "price": 24.99
+    }
+  ]
+})
+```
+
+MongoDB CDC Connector는 네이티브 JSON 데이터 타입을 사용해 MongoDB 문서를 ClickHouse로 복제합니다. ClickHouse의 복제된 테이블 `t1`에는 다음 행이 들어 있습니다:
+
+```shell
+Row 1:
+──────
+_id:                "68a4df4b9fe6c73b541703b0"
+doc:                {"_id":"68a4df4b9fe6c73b541703b0","customer_id":"98765","items":[{"category":"electronics","price":149.99},{"category":"accessories","price":24.99}],"order_date":"2025-08-19T20:32:11.705Z","order_id":"ORD-001234","shipping":{"city":"Seattle","cost":19.99,"method":"express"},"status":"completed","total_amount":299.97}
+_peerdb_synced_at:  2025-08-19 20:50:42.005000000
+_peerdb_is_deleted: 0
+_peerdb_version:    0
+```
+
+<div id="table-schema">
+  ## 테이블 스키마
+</div>
+
+복제된 테이블은 다음과 같은 표준 스키마를 사용합니다:
+
+```shell
+┌─name───────────────┬─type──────────┐
+│ _id                │ String        │
+│ doc                │ JSON          │
+│ _peerdb_synced_at  │ DateTime64(9) │
+│ _peerdb_version    │ Int64         │
+│ _peerdb_is_deleted │ Int8          │
+└────────────────────┴───────────────┘
+```
+
+* `_id`: MongoDB의 기본 키
+* `doc`: JSON 데이터 타입으로 복제된 MongoDB 문서
+* `_peerdb_synced_at`: 행이 마지막으로 동기화된 시점을 기록합니다
+* `_peerdb_version`: 행의 버전을 추적하며, 행이 업데이트되거나 삭제되면 값이 증가합니다
+* `_peerdb_is_deleted`: 행이 삭제되었는지 여부를 나타냅니다
+
+<div id="replacingmergetree-table-engine">
+  ### ReplacingMergeTree 테이블 엔진
+</div>
+
+ClickPipes는 `ReplacingMergeTree` 테이블 엔진 계열을 사용해 MongoDB 컬렉션을 ClickHouse에 매핑합니다. 이 엔진에서는 특정 기본 키(primary key)(`_id`)에 대해 더 최신 버전(`_peerdb_version`)의 문서를 삽입하는 방식으로 업데이트를 표현하므로, 업데이트, 교체, 삭제를 버전이 부여된 삽입으로 효율적으로 처리할 수 있습니다.
+
+`ReplacingMergeTree`는 백그라운드에서 중복을 비동기적으로 제거합니다. 동일한 행에 중복이 없음을 확실히 보장하려면 [`FINAL` 수정자](/ko/reference/statements/select/from#final-modifier)를 사용하십시오. 예시:
+
+```sql
+SELECT * FROM t1 FINAL;
+```
+
+<div id="handling-deletes">
+  ### 삭제 처리
+</div>
+
+MongoDB에서 삭제된 데이터는 `_peerdb_is_deleted` 컬럼에 삭제 표시가 된 새 행으로 전파됩니다. 일반적으로 쿨리에서는 이러한 행이 제외되도록 필터링하는 것이 좋습니다:
+
+```sql
+SELECT * FROM t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+각 쿼리에서 필터를 지정하는 대신, 삭제된 행이 자동으로 제외되도록 행 수준 정책을 만들 수도 있습니다:
+
+```sql
+CREATE ROW POLICY policy_name ON t1
+FOR SELECT USING _peerdb_is_deleted = 0;
+```
+
+<div id="querying-json-data">
+  ## JSON 데이터 쿼리
+</div>
+
+점 표기법으로 JSON 필드를 직접 쿼리할 수 있습니다:
+
+```sql title="Query"
+SELECT
+    doc.order_id,
+    doc.shipping.method
+FROM t1;
+```
+
+```shell title="Result"
+┌-─doc.order_id─┬─doc.shipping.method─┐
+│ ORD-001234    │ express             │
+└───────────────┴─────────────────────┘
+```
+
+점 표기법을 사용해 *중첩된 객체 필드*를 쿼리할 때는 [`^`](/ko/reference/data-types/newjson#reading-json-sub-objects-as-sub-columns) 연산자를 추가해야 합니다:
+
+```sql title="Query"
+SELECT doc.^shipping as shipping_info FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_info──────────────────────────────────────┐
+│ {"city":"Seattle","cost":19.99,"method":"express"} │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="dynamic-type">
+  ### Dynamic type
+</div>
+
+ClickHouse에서는 JSON의 각 field가 `Dynamic` type입니다. Dynamic type을 사용하면 ClickHouse는 사전에 type을 몰라도 어떤 type의 값이든 저장할 수 있습니다. 이는 `toTypeName` 함수를 사용해 확인할 수 있습니다:
+
+```sql title="Query"
+SELECT toTypeName(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type────┐
+│ Dynamic │
+└─────────┘
+```
+
+필드의 실제 데이터 타입을 확인하려면 `dynamicType` 함수를 사용하면 됩니다. 같은 필드 이름이라도 행마다 데이터 타입이 서로 다를 수 있다는 점에 유의하십시오:
+
+```sql title="Query"
+SELECT dynamicType(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type──┐
+│ Int64 │
+└───────┘
+```
+
+[일반 함수](/ko/reference/functions/regular-functions/regular-functions-index)는 일반 컬럼과 마찬가지로 Dynamic 타입에서도 작동합니다:
+
+**예시 1: 날짜 파싱**
+
+```sql title="Query"
+SELECT parseDateTimeBestEffortOrNull(doc.order_date) AS order_date FROM t1;
+```
+
+```shell title="Result"
+┌─order_date──────────┐
+│ 2025-08-19 20:32:11 │
+└─────────────────────┘
+```
+
+**예시 2: 조건부 로직**
+
+```sql title="Query"
+SELECT multiIf(
+    doc.total_amount < 100, 'less_than_100',
+    doc.total_amount < 1000, 'less_than_1000',
+    '1000+') AS spendings
+FROM t1;
+```
+
+```shell title="Result"
+┌─spendings──────┐
+│ less_than_1000 │
+└────────────────┘
+```
+
+**예시 3: 배열 연산**
+
+```sql title="Query"
+SELECT length(doc.items) AS item_count FROM t1;
+```
+
+```shell title="Result"
+┌─item_count─┐
+│          2 │
+└────────────┘
+```
+
+<div id="field-casting">
+  ### 필드 형 변환
+</div>
+
+ClickHouse의 [집계 함수](/ko/reference/functions/aggregate-functions/combinators)는 Dynamic 데이터 타입에 직접 사용할 수 없습니다. 예를 들어 Dynamic 데이터 타입에 `sum` 함수를 직접 사용하면 다음과 같은 오류가 발생합니다:
+
+```sql
+SELECT sum(doc.shipping.cost) AS shipping_cost FROM t1;
+-- DB::Exception: 집계 함수 sum의 인수로 Dynamic 유형은 사용할 수 없습니다. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+집계 함수를 사용하려면 `CAST` 함수 또는 `::` 구문으로 필드를 적절한 데이터 타입으로 변환하십시오:
+
+```sql title="Query"
+SELECT sum(doc.shipping.cost::Float32) AS shipping_cost FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_cost─┐
+│         19.99 │
+└───────────────┘
+```
+
+<Note>
+  Dynamic 타입에서 기본 데이터 타입(`dynamicType`으로 결정됨)으로 캐스팅하는 작업은 성능이 매우 뛰어납니다. ClickHouse가 이미 값을 내부적으로 해당 기본 타입으로 저장하기 때문입니다.
+</Note>
+
+<div id="flattening-json">
+  ## JSON 평탄화
+</div>
+
+<div id="normal-view">
+  ### 일반 뷰
+</div>
+
+JSON 테이블을 기반으로 일반 뷰를 생성하면 평탄화, 형 변환, 변환 로직을 캡슐화하여 관계형 테이블처럼 데이터를 쿼리할 수 있습니다. 일반 뷰는 기반 데이터는 저장하지 않고 쿼리 자체만 저장하므로 가볍습니다. 예시는 다음과 같습니다:
+
+```sql
+CREATE VIEW v1 AS
+SELECT
+    CAST(doc._id, 'String') AS object_id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+이 뷰의 스키마는 다음과 같습니다:
+
+```shell
+┌─name────────────┬─type───────────┐
+│ object_id       │ String         │
+│ order_id        │ String         │
+│ customer_id     │ Int64          │
+│ status          │ String         │
+│ total_amount    │ Decimal(18, 2) │
+│ order_date      │ DateTime64(3)  │
+│ shipping_info   │ JSON           │
+│ items           │ Dynamic        │
+└─────────────────┴────────────────┘
+```
+
+이제 평탄화된 테이블을 쿼리하듯이 뷰도 쿼리할 수 있습니다:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM v1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="refreshable-materialized-view">
+  ### 갱신 가능 구체화 뷰
+</div>
+
+[갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)를 생성할 수 있습니다. 이를 사용하면 행 중복 제거를 위한 쿼리 실행을 예약하고, 그 결과를 평탄화된 대상 테이블에 저장할 수 있습니다. 예약된 갱신이 실행될 때마다 대상 테이블은 최신 쿼리 결과로 대체됩니다.
+
+이 방식의 가장 큰 장점은 `FINAL` 키워드를 사용하는 쿼리가 갱신 시 한 번만 실행된다는 점입니다. 따라서 이후 대상 테이블을 조회하는 쿼리에서는 `FINAL`을 사용할 필요가 없습니다.
+
+단점은 대상 테이블의 데이터가 가장 최근 갱신 시점을 기준으로만 최신 상태를 유지한다는 점입니다. 많은 사용 사례에서는 몇 분에서 몇 시간까지의 갱신 주기가 데이터 최신성과 쿼리 성능 사이에서 좋은 균형을 제공합니다.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+이제 `flattened_t1` 테이블(table)을 `FINAL` 수정자 없이 직접 쿼리할 수 있습니다:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="incremental-materialized-view">
+  ### 증분형 materialized view
+</div>
+
+실시간으로 평탄화된 컬럼에 액세스하려면 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)를 생성할 수 있습니다. 테이블에 업데이트가 자주 발생한다면, 업데이트가 일어날 때마다 머지가 트리거되므로 materialized view에서 `FINAL` 수정자를 사용하는 것은 권장되지 않습니다. 대신 materialized view 위에 일반 뷰를 만들어 쿼리 시점에 데이터를 중복 제거할 수 있습니다.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic,
+    `_peerdb_version` Int64,
+    `_peerdb_synced_at` DateTime64(9),
+    `_peerdb_is_deleted` Int8
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW imv TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items,
+    _peerdb_version,
+    _peerdb_synced_at,   
+    _peerdb_is_deleted
+FROM t1;
+
+CREATE VIEW flattened_t1_final AS
+SELECT * FROM flattened_t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+이제 다음과 같이 뷰 `flattened_t1_final`을 쿼리할 수 있습니다:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1_final
+AND shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
