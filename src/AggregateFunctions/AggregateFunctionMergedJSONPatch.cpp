@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/WriteHelpers.h>
@@ -87,11 +88,10 @@ struct AggregateFunctionMergedJSONPatchData
 
     /// Efficient sort-key value. Stores Int64/UInt64 inline (no allocation), String in-place,
     /// and falls back to a heap-allocated Field only for exotic types (Float, Decimal, UUID, …).
-    /// Comparisons dispatch on a small enum; for Nullable(T) keys where null and non-null rows
-    /// produce different kinds, the comparison falls back to Field::operator<.
+    /// Comparisons dispatch on a small enum; for Nullable(scalar) keys where null and non-null
+    /// rows produce different kinds, the comparison falls back to Field::operator<.
     ///
-    /// Variant and Dynamic sort keys are rejected at registration time: their correct column
-    /// comparison order cannot be reproduced faithfully via Field.
+    /// Composite and Variant/Dynamic sort key types are rejected at registration time.
     ///
     /// All leaf paths in one input row share the same sort key. To avoid copying a potentially
     /// large String N times (once per path), SortKeyData is ref-counted via boost::intrusive_ptr
@@ -798,18 +798,23 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
             "Illegal type {} of first argument for aggregate function {}. Expected type JSON",
             argument_types[0]->getName(), name);
 
-    /// Variant and Dynamic are technically isComparable() but their column comparison order
-    /// (by discriminator index / type name) differs from Field::operator< (by Field::Types::which).
-    /// Accepting them would silently pick the wrong winner for cross-type comparisons.
-    /// ClickHouse itself rejects Variant/Dynamic in ORDER BY for the same reason.
-    const auto sort_key_type_id = argument_types[1]->getTypeId();
-    if (sort_key_type_id == TypeIndex::Variant || sort_key_type_id == TypeIndex::Dynamic)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of second argument for aggregate function {}. "
-            "Variant and Dynamic are not supported as sort key types because their comparison "
-            "order cannot be preserved faithfully when going through Field. "
-            "Use a specific subcolumn (e.g. key.UInt64) as the sort key instead.",
-            argument_types[1]->getName(), name);
+    /// Only scalar sort-key types are supported. Composite types (Tuple, Array, Map) may
+    /// contain Variant or Dynamic elements whose column comparison order (by discriminator
+    /// index / type name) differs from Field::operator<, silently picking the wrong winner.
+    /// Variant and Dynamic are rejected directly for the same reason.
+    /// Nullable(scalar) is allowed; the cross-kind null comparison is handled correctly.
+    {
+        const IDataType * key_type = argument_types[1].get();
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(key_type))
+            key_type = nullable->getNestedType().get();
+        WhichDataType which(key_type->getTypeId());
+        if (which.isVariant() || which.isDynamic() || which.isTuple() || which.isArray() || which.isMap())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument for aggregate function {}. "
+                "Composite and Variant/Dynamic sort key types are not supported. "
+                "Use a scalar sort key (e.g. a numeric version or timestamp column).",
+                argument_types[1]->getName(), name);
+    }
 
     if (!argument_types[1]->isComparable())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

@@ -450,12 +450,11 @@ FROM (
     SELECT CAST('{"t":{"x":10,"y":20}}', 'JSON(t Tuple(x UInt32, y UInt32))'), 2
 );
 
--- Variant sort key must be rejected at registration time (Field ordering differs from ColumnVariant::compareAt).
-CREATE TABLE t_variant_key (json JSON, key Variant(UInt64, String)) ENGINE=Memory;
-SELECT mergedJSONPatch(json, key) FROM t_variant_key; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-DROP TABLE t_variant_key;
-
--- Dynamic sort key must also be rejected.
-CREATE TABLE t_dynamic_key (json JSON, key Dynamic) ENGINE=Memory;
-SELECT mergedJSONPatch(json, key) FROM t_dynamic_key; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-DROP TABLE t_dynamic_key;
+-- Composite and Variant/Dynamic sort keys must be rejected at registration time.
+CREATE TABLE t_bad_sort_keys (json JSON, v Variant(UInt64, String), d Dynamic, t Tuple(UInt32, UInt32), a Array(UInt32), m Map(String, UInt32)) ENGINE=Memory;
+SELECT mergedJSONPatch(json, v) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT mergedJSONPatch(json, d) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT mergedJSONPatch(json, t) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT mergedJSONPatch(json, a) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT mergedJSONPatch(json, m) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+DROP TABLE t_bad_sort_keys;
