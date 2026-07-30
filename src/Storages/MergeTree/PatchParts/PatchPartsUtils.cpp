@@ -35,7 +35,7 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
     std::shared_ptr<const KeyDescription> sorting_key;
     const auto & patch_part_index = patch_part->getPatchPartIndex();
 
-    if (patch_part_index.getFormatVersion() == PatchPartIndex::V2_FORMAT_VERSION)
+    if (patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V2)
     {
         /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
         /// with if the table's sorting key was changed by ALTER after the patch had been written.
@@ -54,6 +54,21 @@ static String getColumnsHash(Names column_names)
         hash.update(name);
 
     return getSipHash128AsHexString(hash);
+}
+
+static Names getColumnNamesWithTypes(const ColumnsDescription & columns_desc)
+{
+    Names names_with_types;
+
+    for (const auto & column : columns_desc.getAllPhysical())
+        names_with_types.emplace_back(column.name + ' ' + column.type->getName());
+
+    return names_with_types;
+}
+
+String getColumnsHashWithTypes(const ColumnsDescription & columns_desc)
+{
+    return getColumnsHash(getColumnNamesWithTypes(columns_desc));
 }
 
 static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
@@ -140,10 +155,7 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
 
     /// Include column types so that patches with the same column names but different
     /// types go to different partitions: one patch partition must have one schema.
-    Names names_for_hash;
-    for (const auto & column : patch_part_desc.getAllPhysical())
-        names_for_hash.emplace_back(column.name + ' ' + column.type->getName());
-
+    auto names_for_hash = getColumnNamesWithTypes(patch_part_desc);
     names_for_hash.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
     auto columns_hash = getColumnsHash(std::move(names_for_hash));
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));

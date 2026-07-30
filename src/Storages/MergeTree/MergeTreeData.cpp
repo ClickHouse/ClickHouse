@@ -11450,8 +11450,13 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
 
 PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
+    const auto & patch_part_index = patch_part.getPatchPartIndex();
+
     /// This metadata depends only on the structure of the patch part.
-    auto cache_key = getStructureHashOfPatch(patch_part.info.getPartitionId());
+    /// Patches V2 has information about the names and types of the columns in hash in the partition id.
+    auto cache_key = patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V1
+        ? getColumnsHashWithTypes(patch_part.getColumnsDescription())
+        : getStructureHashOfPatch(patch_part.info.getPartitionId());
 
     std::lock_guard lock(patch_parts_metadata_mutex);
     auto & patch_metadata = patch_parts_metadata_cache[cache_key];
@@ -11463,24 +11468,20 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
     /// in the dedicated arena like the rest of the per-table metadata.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    const auto & patch_part_index = patch_part.getPatchPartIndex();
+    patch_metadata.version = patch_part_index.getFormatVersion();
 
-    switch (patch_part_index.getFormatVersion())
+    switch (patch_metadata.version)
     {
-        case PatchPartIndex::V1_FORMAT_VERSION:
+        case MergeTreePatchPartsVersion::V1:
         {
-            patch_metadata.version = MergeTreePatchPartsVersion::V1;
             patch_metadata.metadata = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
             break;
         }
-        case PatchPartIndex::V2_FORMAT_VERSION:
+        case MergeTreePatchPartsVersion::V2:
         {
-            patch_metadata.version = MergeTreePatchPartsVersion::V2;
             patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), patch_part_index.getSortingKeyDesc(), local_context);
             break;
         }
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", static_cast<UInt32>(patch_part_index.getFormatVersion()));
     }
 
     return patch_metadata;

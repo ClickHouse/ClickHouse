@@ -16,16 +16,10 @@ struct KeyDescription;
 class PatchPartIndex
 {
 public:
-    /// On-disk format version of the patch part.
-    ///  0 = legacy v1 (sorted by `_part, _part_offset`, applied with `Merge` or `Join` mode).
-    ///  1 = v2 (sorted by `sorting_key..., _block_number, _block_offset`, applied with `MergeOnKey`).
-    static constexpr UInt8 V1_FORMAT_VERSION = 0;
-    static constexpr UInt8 V2_FORMAT_VERSION = 1;
-    static constexpr UInt8 MAX_SUPPORTED_FORMAT_VERSION = V2_FORMAT_VERSION;
-
+    static constexpr UInt8 MAX_SUPPORTED_FORMAT_VERSION = static_cast<UInt8>(MergeTreePatchPartsVersion::V2);
     static constexpr auto FILENAME = "source_parts.dat";
 
-    PatchPartIndex(UInt8 format_version_, String sorting_key_desc_);
+    PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_);
 
     bool empty() const { return min_max_versions_by_part.empty(); }
     UInt64 getMinDataVersion() const { return min_data_version; }
@@ -34,7 +28,7 @@ public:
     UInt64 getMinDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).first; }
     UInt64 getMaxDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).second; }
 
-    UInt8 getFormatVersion() const { return format_version; }
+    MergeTreePatchPartsVersion getFormatVersion() const { return format_version; }
 
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
     const String & getSortingKeyDesc() const { return sorting_key_desc; }
@@ -53,7 +47,7 @@ public:
     static PatchPartIndex build(
         const Block & block,
         UInt64 data_version,
-        UInt8 format_version,
+        MergeTreePatchPartsVersion format_version,
         String sorting_key_desc);
 
     static PatchPartIndex merge(const DataPartsVector & source_parts);
@@ -74,7 +68,7 @@ private:
 
     UInt64 min_data_version = 0;
     UInt64 max_data_version = 0;
-    UInt8 format_version = V1_FORMAT_VERSION;
+    MergeTreePatchPartsVersion format_version = MergeTreePatchPartsVersion::V1;
     /// One-line text of the sorting key the v2 patch was written with.
     String sorting_key_desc;
 };

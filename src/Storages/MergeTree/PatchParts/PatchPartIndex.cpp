@@ -21,11 +21,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PatchPartIndex::PatchPartIndex(UInt8 format_version_, String sorting_key_desc_)
+PatchPartIndex::PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_)
     : format_version(format_version_)
     , sorting_key_desc(std::move(sorting_key_desc_))
 {
-    if (format_version == V1_FORMAT_VERSION && !sorting_key_desc.empty())
+    if (format_version == MergeTreePatchPartsVersion::V1 && !sorting_key_desc.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
 }
 
@@ -90,7 +90,7 @@ PatchParts PatchPartIndex::getPatchParts(
     NameSet names_for_join;
     bool has_merge = false;
 
-    if (format_version == V2_FORMAT_VERSION)
+    if (format_version == MergeTreePatchPartsVersion::V2)
     {
         bool use_patch = false;
 
@@ -163,7 +163,7 @@ PatchParts PatchPartIndex::getPatchParts(
 PatchPartIndex PatchPartIndex::build(
     const Block & block,
     UInt64 data_version,
-    UInt8 format_version,
+    MergeTreePatchPartsVersion format_version,
     String sorting_key_)
 {
     const auto & column_part_name = block.getByName("_part").column;
@@ -222,9 +222,9 @@ PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
 
 void PatchPartIndex::writeBinary(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(format_version, out);
+    writeBinaryLittleEndian(static_cast<UInt8>(format_version), out);
 
-    if (format_version == V2_FORMAT_VERSION)
+    if (format_version == MergeTreePatchPartsVersion::V2)
     {
         writeStringBinary(sorting_key_desc, out);
     }
@@ -248,10 +248,12 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
     if (read_version > MAX_SUPPORTED_FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(read_version));
 
-    if (read_version == V2_FORMAT_VERSION)
+    auto format_version = static_cast<MergeTreePatchPartsVersion>(read_version);
+
+    if (format_version == MergeTreePatchPartsVersion::V2)
         readStringBinary(read_sorting_key_desc, in);
 
-    PatchPartIndex res(read_version, std::move(read_sorting_key_desc));
+    PatchPartIndex res(format_version, std::move(read_sorting_key_desc));
 
     UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
@@ -280,17 +282,15 @@ PatchPartIndex buildPatchPartIndex(
     auto & data_version_column = block.getByName(PartDataVersionColumn::name).column;
     data_version_column = PartDataVersionColumn::type->createColumnConst(block.rows(), data_version)->convertToFullColumnIfConst();
 
-    UInt8 format_version = PatchPartIndex::V1_FORMAT_VERSION;
     String sorting_key_desc;
 
     if (patch_metadata.version == MergeTreePatchPartsVersion::V2)
     {
-        format_version = PatchPartIndex::V2_FORMAT_VERSION;
         auto sorting_key_expr_list = getTableSortingKeyExpressionFromPatch(patch_metadata.metadata->getSortingKey());
         sorting_key_desc = sorting_key_expr_list->formatWithSecretsOneLine();
     }
 
-    return PatchPartIndex::build(block, data_version, format_version, std::move(sorting_key_desc));
+    return PatchPartIndex::build(block, data_version, patch_metadata.version, std::move(sorting_key_desc));
 }
 
 }
