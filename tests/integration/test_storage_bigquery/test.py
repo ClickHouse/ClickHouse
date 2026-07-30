@@ -523,6 +523,53 @@ def test_same_clickhouse_type_schema_drift_rejected():
     node.query("DROP TABLE bq_same_type_drift")
 
 
+def test_schema_snapshot_is_re_established_after_reload():
+    # The drift checks compare the live schema against the snapshot the query was analyzed with. Table
+    # metadata persists the mapped ClickHouse columns, not the BigQuery schema, so `DETACH`/`ATTACH` (and
+    # a server restart, which takes the same code path) drops the snapshot and the next read or write
+    # re-establishes it from the live schema. A schema change made while the table was detached is
+    # therefore adopted rather than rejected - the declared columns are still validated against the live
+    # schema, and the rows are decoded with it, so nothing is silently mismapped.
+    #
+    # `bin` is `BYTES`, whose wire payload is base64-encoded, and retyping it to `STRING` keeps the mapped
+    # ClickHouse type `String` - the drift that only `bigQueryFieldsIdentical` can see - while leaving the
+    # payload readable, so the change of decoding rules is directly observable.
+    settings = {
+        "enable_nullable_tuple_type": 1
+    }  # `test_types` has a NULLABLE RECORD column.
+
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_reload")
+    node.query(
+        f"CREATE TABLE bq_reload ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
+        f"base_url = '{BASE_URL}', access_token = '{ACCESS_TOKEN}')",
+        settings=settings,
+    )
+    assert node.query("SELECT bin FROM bq_reload LIMIT 1 FORMAT TSV") == "binary-data\n"
+
+    node.query("DETACH TABLE bq_reload")
+    mock_reset()
+    mock_ctl("/__retype_schema__?table=test_types&column=bin&type=STRING")
+    node.query("ATTACH TABLE bq_reload")
+
+    # The first read after the reload takes its snapshot now, so there is nothing older to compare it
+    # against: the read is not rejected, and it decodes with the live `STRING` rules, returning the raw
+    # base64 text instead of the decoded bytes.
+    assert (
+        node.query("SELECT bin FROM bq_reload LIMIT 1 FORMAT TSV")
+        == "YmluYXJ5LWRhdGE=\n"
+    )
+    # Exactly one `tables.get`: the snapshot fetch doubles as the live schema, so the drift check does not
+    # issue a second request only to compare the schema against itself.
+    assert len(mock_stats()["schema_requests"]) == 1
+
+    # Once the snapshot is established, the guarantee is back: a further drift is rejected.
+    mock_ctl("/__retype_schema__?table=test_types&column=bin&type=BYTES")
+    error = node.query_and_get_error("SELECT bin FROM bq_reload LIMIT 1")
+    assert "changed between query analysis and execution" in error
+    node.query("DROP TABLE bq_reload")
+
+
 def test_write_schema_drift_rejected():
     # The write path re-fetches the live schema before streaming any row, and rejects the INSERT if the
     # touched columns no longer match the analyzed snapshot. Without that check the rows would be sent

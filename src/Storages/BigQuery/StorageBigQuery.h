@@ -66,7 +66,11 @@ public:
 private:
     /// The BigQuery schema is fetched lazily on the first read or write (not at server startup),
     /// and the declared columns are validated against it.
-    const BigQueryFields & getFields(ContextPtr query_context) const;
+    /// `snapshot_is_live` is set when this very call had to establish the snapshot, so the snapshot *is*
+    /// the live schema and the drift checks in `read` and `write` have nothing older to compare against.
+    /// That is the case for a persistent table on its first read or write after `CREATE`, `ATTACH`, or a
+    /// server restart, because the table metadata persists only the mapped ClickHouse columns.
+    const BigQueryFields & getFields(ContextPtr query_context, bool & snapshot_is_live) const;
 
     BigQueryConfiguration configuration;
     /// Shared across queries so that an OAuth access token is minted once and reused until it expires,

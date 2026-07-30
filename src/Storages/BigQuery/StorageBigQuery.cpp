@@ -423,9 +423,10 @@ BigQueryFields StorageBigQuery::fetchTableSchema(
     return parseBigQueryTableSchema(table_object);
 }
 
-const BigQueryFields & StorageBigQuery::getFields(ContextPtr query_context) const
+const BigQueryFields & StorageBigQuery::getFields(ContextPtr query_context, bool & snapshot_is_live) const
 {
     std::lock_guard lock(fields_mutex);
+    snapshot_is_live = !fields;
     if (!fields)
         fields = fetchTableSchema(configuration, query_context, token_provider);
     return *fields;
@@ -442,7 +443,8 @@ Pipe StorageBigQuery::read(
 {
     storage_snapshot->check(column_names);
 
-    const auto & all_fields = getFields(context);
+    bool snapshot_is_live = false;
+    const auto & all_fields = getFields(context, snapshot_is_live);
     const auto & columns = storage_snapshot->metadata->getColumns();
 
     NameSet requested(column_names.begin(), column_names.end());
@@ -525,7 +527,17 @@ Pipe StorageBigQuery::read(
     /// possible. That residual window is inherent to `tabledata.list` (a positional, name-less response with
     /// no way to pin the schema across the read) and is documented as a limitation; it is the same class of
     /// exposure as any other external-table engine reading a remote table that is concurrently altered.
-    const auto current_fields = fetchTableSchema(configuration, context, token_provider);
+    ///
+    /// The window starts when the snapshot is taken, which is *not* always earlier than this point: table
+    /// metadata persists only the mapped ClickHouse columns, so a persistent table takes its snapshot on the
+    /// first read or write after `CREATE`, `ATTACH`, or a server restart, i.e. in this very call. Then the
+    /// snapshot is the live schema, there is nothing older to compare it against, and a second `tables.get`
+    /// would only re-fetch what we just read - so reuse the snapshot instead of paying for that request. The
+    /// declared columns are still validated against it above, and the row data is still decoded from it, so
+    /// a change made while the server was down is adopted rather than silently mismapped. Extending the
+    /// guarantee across reloads would require persisting the BigQuery wire schema in the table metadata,
+    /// which the explicit-column-list form of `ENGINE = BigQuery(...)` never captures in the first place.
+    const auto current_fields = snapshot_is_live ? all_fields : fetchTableSchema(configuration, context, token_provider);
     BigQueryFields current_selected;
     current_selected.reserve(selected.size());
     for (const auto & field : current_fields)
@@ -563,7 +575,8 @@ SinkToStoragePtr StorageBigQuery::write(
     ContextPtr context,
     bool /*async_insert*/)
 {
-    const auto & analyzed_fields = getFields(context);
+    bool snapshot_is_live = false;
+    const auto & analyzed_fields = getFields(context, snapshot_is_live);
     const auto sample_block = metadata_snapshot->getSampleBlock();
 
     /// Fail-close write-side schema-drift check, the counterpart of the pre-read check in `read`. The
@@ -576,7 +589,12 @@ SinkToStoragePtr StorageBigQuery::write(
     /// remote column becomes `STRING` the very same `"123"` payload keeps being accepted, silently storing
     /// strings for a column the local table still declares as `Int64`. Re-fetch the live schema and check
     /// the written columns against it, and against the analyzed snapshot, before streaming any row.
-    const auto current_fields = fetchTableSchema(configuration, context, token_provider);
+    ///
+    /// As in `read`, when this very call established the snapshot (a persistent table on its first read or
+    /// write after `CREATE`, `ATTACH`, or a server restart, because the metadata persists only the mapped
+    /// ClickHouse columns) the snapshot is the live schema, so reuse it instead of issuing a second
+    /// `tables.get` that would compare it against itself.
+    const auto current_fields = snapshot_is_live ? analyzed_fields : fetchTableSchema(configuration, context, token_provider);
 
     BigQueryFields sink_fields;
     for (const auto & column : sample_block)
