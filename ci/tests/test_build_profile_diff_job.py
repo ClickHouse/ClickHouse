@@ -571,39 +571,61 @@ def test_compile_times_key_baselines_by_file_and_library():
     assert "(clickhouse-keeper-lib)" not in section.body
 
 
-def test_extend_master_shas_pages_past_the_anchored_chain():
-    """The per-TU candidate set is extended beyond the ~100-commit chain.
+def test_extend_master_shas_walks_the_first_parent_chain():
+    """The extension follows ``parents[0]``, not the raw commit listing.
 
-    ``master_track_commits_sha`` spans only a day or two of master, while the
-    per-TU compile baseline advertises TU_BASE_DAYS: without extension a
-    warmup trace inside that window but older than the chain's tail is
-    invisible. Paging is anchored at the chain's oldest commit and stops once
-    the fetched history is older than the window.
+    ``repos/.../commits?sha=...`` interleaves merged PRs' second-parent
+    commits with the master merge commits. Taking the listing verbatim has two
+    failure modes: the PR commits pollute the baseline candidate set and burn
+    the page budget, and their commit dates - set when the PR branch was
+    authored, arbitrarily far in the past - fire the TU_BASE_DAYS cutoff long
+    before the first-parent history reaches it, silently truncating the
+    baseline window into a false-green compile-time comparison. The fixture
+    models the real API: every listing carries ancient-dated PR commits, and
+    the first one ends with them.
     """
     import datetime
 
     recent = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    pages = {
-        1: [{"sha": f"c{i}", "date": recent} for i in range(100)],
-        # The second page crosses the TU_BASE_DAYS cutoff: paging must stop.
-        2: [{"sha": f"d{i}", "date": recent} for i in range(99)]
-        + [{"sha": "ancient", "date": "2000-01-01T00:00:00Z"}],
-        3: [{"sha": "never-fetched", "date": "2000-01-01T00:00:00Z"}],
+    ancient = "2000-01-01T00:00:00Z"
+
+    def master(i, date=recent):
+        return {"sha": f"m{i}", "date": date, "parents": [f"m{i + 1}", f"p{i}-0"]}
+
+    def pr_commits(i):
+        # A merged PR's own commits: reachable, ancient-dated, second-parent.
+        return [{"sha": f"p{i}-{j}", "date": ancient, "parents": [f"p{i}-{j + 1}"]} for j in range(2)]
+
+    listings = {
+        # Anchored at the kv chain's tail. Interleaves master merges m0..m19
+        # with each PR's own ancient commits, and ENDS with ancient PR commits
+        # - the raw-listing date check would stop here and keep them all.
+        "m0": [master(0)] + sum((pr_commits(i) + [master(i + 1)] for i in range(19)), []) + pr_commits(19),
+        # The walk re-anchors at the first first-parent sha not fetched yet.
+        # m25 crosses the TU_BASE_DAYS cutoff: the walk stops there.
+        "m20": [master(20)] + sum((pr_commits(20 + i) + [master(21 + i)] for i in range(4)), []) + [
+            {"sha": "m25", "date": ancient, "parents": ["m26", "p25-0"]}
+        ],
     }
     calls = []
 
     def fake_list_page(anchor, page):
         calls.append((anchor, page))
-        return pages[page]
+        return listings[anchor]
 
-    shas = job.extend_master_shas(["a", "b", "c0"], list_page=fake_list_page)
-    # Anchored at the chain's oldest commit; the chain itself stays in front.
-    assert calls[0] == ("c0", 1)
-    assert shas[:3] == ["a", "b", "c0"]
-    # Deduplicated (the anchor reappears on page 1) and stopped at the cutoff.
-    assert shas.count("c0") == 1
-    assert "d42" in shas and "ancient" in shas
-    assert [page for _, page in calls] == [1, 2]
+    shas = job.extend_master_shas(["a", "b", "m0"], list_page=fake_list_page)
+    # Anchored at the chain's oldest commit; the chain itself stays in front,
+    # deduplicated (the anchor leads its own listing).
+    assert calls[0] == ("m0", 1)
+    assert shas[:3] == ["a", "b", "m0"]
+    assert shas.count("m0") == 1
+    # The whole first-parent chain is there, in order, past the ancient-dated
+    # PR commits that end the first listing...
+    assert shas[3:] == [f"m{i}" for i in range(1, 26)]
+    # ...and none of the merged PRs' own commits leaked into the baseline set.
+    assert not any(sha.startswith("p") for sha in shas)
+    # The cutoff fired on the first-parent chain itself: m26 is never wanted.
+    assert calls == [("m0", 1), ("m20", 1)]
 
     # Fail-close: a GitHub API failure must propagate and fail the (allow_failure)
     # job, not silently degrade to the un-extended chain - the shallow chain hides
@@ -616,6 +638,14 @@ def test_extend_master_shas_pages_past_the_anchored_chain():
     # An empty chain never reaches the API: nothing to anchor the extension on.
     assert job.extend_master_shas([], list_page=failing_list_page) == []
 
+    # Fail-close: a listing that does not start with its own anchor cannot
+    # anchor a baseline chain (the walk could never advance).
+    def anchorless_list_page(anchor, page):
+        return [{"sha": "unrelated", "date": recent, "parents": []}]
+
+    with pytest.raises(RuntimeError, match="does not contain it"):
+        job.extend_master_shas(["a"], list_page=anchorless_list_page)
+
 
 def test_seed_master_shas_anchors_the_local_chain_on_the_baseline():
     """A local run seeds the master chain from ``--base-sha``.
@@ -623,23 +653,38 @@ def test_seed_master_shas_anchors_the_local_chain_on_the_baseline():
     ``LocalInfo`` carries no ``master_track_commits_sha`` kv metadata, so
     without seeding the warmup and per-TU baseline lookups see an empty
     candidate set and ``compare_compile_times`` builds ``commit_sha IN ()``.
-    The seed is the first page of the baseline's ancestors - anchored, like
-    the CI chain, so it never contains commits the PR does not have.
+    The seed mirrors the store_data hook's kv data: the first ~100
+    first-parent ancestors of the baseline - anchored, like the CI chain, so
+    it never contains commits the PR does not have, and filtered to master
+    commits only, like the CI chain, even though the raw listing interleaves
+    merged PRs' own commits.
     """
-    calls = []
+    recent = "2026-01-01T00:00:00Z"
 
     def fake_list_page(anchor, page):
-        calls.append((anchor, page))
-        return [{"sha": "basesha", "date": "2026-01-01T00:00:00Z"}] + [
-            {"sha": f"c{i}", "date": "2026-01-01T00:00:00Z"} for i in range(99)
-        ]
+        # An endless synthetic history: each master commit s<i> is followed in
+        # the listing by one merged-PR commit p<i> (second parent).
+        start = 0 if anchor == "basesha" else int(anchor[1:])
+        first = {"sha": anchor, "date": recent, "parents": [f"s{start + 1}", f"p{start}"]}
+        rest = sum(
+            (
+                [
+                    {"sha": f"p{i}", "date": recent, "parents": [f"p{i}x"]},
+                    {"sha": f"s{i + 1}", "date": recent, "parents": [f"s{i + 2}", f"p{i + 1}"]},
+                ]
+                for i in range(start, start + 49)
+            ),
+            [],
+        )
+        return ([first] + rest)[:100]
 
     shas = job.seed_master_shas("basesha", list_page=fake_list_page)
-    assert calls == [("basesha", 1)]
     # The baseline itself leads the chain, so `find_warmup_baseline` and the
     # per-TU baseline consider it and everything behind it.
     assert shas[0] == "basesha"
+    # Capped at the kv-chain shape (~100), first-parent commits only.
     assert len(shas) == 100
+    assert shas[1:] == [f"s{i}" for i in range(1, 100)]
 
 
 def test_comment_attributes_only_object_sizes_to_the_warmup_sha():

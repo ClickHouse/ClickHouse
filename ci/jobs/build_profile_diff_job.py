@@ -367,14 +367,21 @@ def get_master_shas(info) -> List[str]:
     return shas
 
 
-# How many 100-commit pages extend_master_shas fetches at most. ClickHouse
-# master merges up to ~100 commits a day, so 20 pages (~2000 commits) cover
-# the TU_BASE_DAYS window with margin.
-EXTEND_MAX_PAGES = 20
+# How many 100-commit listing fetches the first-parent walk performs at most.
+# `repos/.../commits` interleaves merged PRs' own commits with the master
+# merge commits, so one 100-commit page typically advances the first-parent
+# chain by only ~25-50 commits. ClickHouse master merges up to ~100 commits a
+# day, so 60 fetches cover the TU_BASE_DAYS window with margin.
+EXTEND_MAX_PAGES = 60
 
 
 def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
-    """One page of the commits reachable from `anchor_sha`, newest first."""
+    """One page of the commits reachable from `anchor_sha`, newest first.
+
+    This is NOT the first-parent chain: the listing interleaves merged PRs'
+    second-parent commits. Each entry carries its parent shas so that
+    `_walk_first_parent` can reconstruct the chain client-side.
+    """
     out = subprocess.run(
         [
             "gh",
@@ -383,7 +390,7 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
             # profile rows in the CI logs cluster carry public-repo shas.
             f"repos/ClickHouse/ClickHouse/commits?sha={anchor_sha}&per_page=100&page={page}",
             "--jq",
-            "[.[] | {sha: .sha, date: .commit.committer.date}]",
+            "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
         ],
         capture_output=True,
         text=True,
@@ -393,18 +400,56 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     return json.loads(out)
 
 
+def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):
+    """The first-parent chain from `anchor_sha`, newest first.
+
+    `repos/.../commits?sha=...` lists ALL commits reachable from the anchor,
+    merged PRs' second-parent commits included, so the listing itself must not
+    be taken for the master chain: the extra commits burn the page budget, and
+    their commit dates - set when the PR branch was authored, arbitrarily far
+    in the past - would fire a date cutoff long before the first-parent
+    history reaches it. The chain is therefore reconstructed by following
+    `parents[0]` through the fetched pages, and every fetch is re-anchored at
+    the first first-parent sha not fetched yet, so each fetch is guaranteed to
+    advance the walk (a listing starts with its own anchor).
+
+    The walk stops once the chain's own tail crosses `cutoff` (ISO 8601 UTC,
+    compares lexicographically), reaches the root, or - when `max_commits` is
+    positive - reaches that length. Returns `(chain, complete)`: `complete` is
+    False when the fetch budget ran out first.
+    """
+    commits: dict = {}
+    chain: List[str] = []
+    wanted = anchor_sha
+    pages = 0
+    while True:
+        while wanted in commits:
+            commit = commits[wanted]
+            chain.append(wanted)
+            if commit["date"] < cutoff or not commit["parents"] or len(chain) == max_commits:
+                return chain, True
+            wanted = commit["parents"][0]
+        if pages >= max_pages:
+            return chain, False
+        pages += 1
+        for commit in list_page(wanted, 1):
+            commits.setdefault(commit["sha"], commit)
+        if wanted not in commits:
+            # Fail-close, like a failing fetch: a listing that does not start
+            # with its own anchor cannot anchor a baseline chain.
+            raise RuntimeError(f"the commit listing anchored at {wanted} does not contain it")
+
+
 def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_page=_list_commits_page) -> List[str]:
     """Extend the anchored chain far enough back to cover the per-TU window.
 
     `master_track_commits_sha` holds only ~100 first-parent commits - a day or
     two of master - while the per-TU compile baseline advertises TU_BASE_DAYS:
     a warmup trace inside that window but older than the chain's tail would be
-    invisible to `compare_compile_times`. Page older history from the GitHub
-    API, anchored at the chain's oldest commit, so every added sha is an
-    ancestor of the PR's merge base (a baseline must never contain changes the
-    PR does not have). The listing follows all parents, not just the first
-    one, but the extra shas are harmless: only commits master actually built
-    carry pull_request_number = 0 warmup profile rows.
+    invisible to `compare_compile_times`. Walk the first-parent history from
+    the chain's oldest commit (`_walk_first_parent`), so every added sha is a
+    master commit and an ancestor of the PR's merge base (a baseline must
+    never contain changes the PR does not have).
 
     Fail-close: a GitHub API failure propagates and fails the job (which is
     `allow_failure`) instead of degrading to the un-extended ~100-sha chain.
@@ -415,21 +460,17 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     if not master_shas:
         return master_shas
     cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    chain, complete = _walk_first_parent(master_shas[-1], cutoff, EXTEND_MAX_PAGES, list_page)
+    seen = set(master_shas)
     shas = list(master_shas)
-    seen = set(shas)
-    anchor = master_shas[-1]
-    for page in range(1, EXTEND_MAX_PAGES + 1):
-        commits = list_page(anchor, page)
-        for commit in commits:
-            if commit["sha"] not in seen:
-                seen.add(commit["sha"])
-                shas.append(commit["sha"])
-        # ISO 8601 UTC dates compare lexicographically.
-        if len(commits) < 100 or commits[-1]["date"] < cutoff:
-            return shas
-    # Hitting the page cap is a bounded, loud partial (~2000 commits, well past
-    # the window under normal merge rates), unlike the unbounded API failure.
-    print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
+    for sha in chain:
+        if sha not in seen:
+            seen.add(sha)
+            shas.append(sha)
+    if not complete:
+        # Hitting the fetch cap is a bounded, loud partial (well past the
+        # window under normal merge rates), unlike the unbounded API failure.
+        print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
     return shas
 
 
@@ -437,13 +478,17 @@ def seed_master_shas(anchor_sha: str, list_page=_list_commits_page) -> List[str]
     """The master chain for a local run, anchored at the provided baseline.
 
     Local runs have no `master_track_commits_sha` kv metadata (`LocalInfo`
-    carries none), so the chain is seeded with the first ~100 ancestors of the
-    `--base-sha` commit from the GitHub API - the same shape, and the same
-    anchoring guarantee (every sha is an ancestor of the baseline), that the
-    store_data hook records in CI. `extend_master_shas` then grows it further
-    back for the per-TU window as usual.
+    carries none), so the chain is seeded with the first ~100 first-parent
+    ancestors of the `--base-sha` commit from the GitHub API - the same shape,
+    and the same anchoring guarantee (every sha is a master commit reachable
+    from the baseline), that the store_data hook records in CI.
+    `extend_master_shas` then grows it further back for the per-TU window as
+    usual.
     """
-    return [commit["sha"] for commit in list_page(anchor_sha, 1)]
+    chain, complete = _walk_first_parent(anchor_sha, "0", EXTEND_MAX_PAGES, list_page, max_commits=100)
+    if not complete:
+        print(f"WARNING: the seeded master chain holds only {len(chain)} commits after {EXTEND_MAX_PAGES} pages")
+    return chain
 
 
 def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
