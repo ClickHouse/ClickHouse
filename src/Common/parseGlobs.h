@@ -206,6 +206,13 @@ public:
     bool hasEnums() const { return has_enums; }
     bool hasQuestionOrAsterisk() const { return has_question_or_asterisk; }
 
+    /// Byte offset of the first glob expression (wildcard, range or enum) in the input,
+    /// or std::string::npos when the whole pattern is literal text. Unlike
+    /// find_first_of("*?{") on the raw string, a literal brace group such as "{a}" or
+    /// "{}" does not count as a glob. Use this to split a path into its literal prefix
+    /// and the glob suffix under this parser's classification.
+    size_t firstGlobPosition() const;
+
     bool hasExactlyOneEnum() const;
 
 private:

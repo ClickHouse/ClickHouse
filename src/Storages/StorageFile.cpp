@@ -193,7 +193,15 @@ void listFilesWithRegexpMatchingImpl(
         }
     };
 
-    const size_t first_glob_pos = for_match.find_first_of("*?{");
+    /// Split the pattern into its literal prefix and the glob suffix using the same
+    /// classification as the matcher. Under the AST parser a literal brace group such as
+    /// "{a}" is not a glob, so a path like "data_{x}.csv" must take the exact-path branch
+    /// below (a raw find_first_of("*?{") would misroute it to directory enumeration, which
+    /// changes observable behavior — e.g. an exactly-named readable file inside an
+    /// unlistable directory would not be found).
+    const size_t first_glob_pos = use_glob_ast
+        ? GlobAST::GlobString(for_match).firstGlobPosition()
+        : for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
     {
@@ -435,7 +443,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         /// so we don't make a list of files here.
         paths.push_back(pattern);
     }
-    else if (pattern.find_first_of("*?{") == std::string::npos)
+    else if (use_glob_ast ? !GlobAST::GlobString(pattern).hasGlobs() : pattern.find_first_of("*?{") == std::string::npos)
     {
         if (!fs::is_directory(pattern))
         {

@@ -80,6 +80,14 @@ public:
         bool hasSchemaHashWildcard() const;
         bool hasGlobsIgnorePlaceholders() const;
         bool hasGlobs() const;
+        /// Setting-aware variants: with use_glob_ast the path is classified by the AST
+        /// parser (GlobAST::GlobString), under which a literal brace group such as "{a}"
+        /// is not a glob; otherwise they fall back to the raw "*?{" scan above. Callers
+        /// that gate read/write behavior on "does this path glob" must use these with the
+        /// same use_glob_ast_parser value as the read path, or reads and writes disagree
+        /// about whether the table is readonly.
+        bool hasGlobsIgnorePlaceholders(bool use_glob_ast) const;
+        bool hasGlobs(bool use_glob_ast) const;
         std::string cutGlobs(bool supports_partial_prefix) const;
     };
 

@@ -723,6 +723,30 @@ TEST(Common, GlobASTExpansionSize)
               GlobAST::GlobString("{a,b}{c,d}{e,f}").expand().size());
 }
 
+TEST(Common, GlobASTFirstGlobPosition)
+{
+    /// Offset of the first glob expression under the AST classification; npos when the
+    /// whole pattern is literal. Differs from find_first_of("*?{") on literal brace
+    /// groups, which are not globs.
+    EXPECT_EQ(GlobAST::GlobString("").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("file.csv").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("data_{x}.csv").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("{a}").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("{}").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("a{b").firstGlobPosition(), std::string::npos);
+
+    EXPECT_EQ(GlobAST::GlobString("*").firstGlobPosition(), 0);
+    EXPECT_EQ(GlobAST::GlobString("a*b").firstGlobPosition(), 1);
+    EXPECT_EQ(GlobAST::GlobString("ab?").firstGlobPosition(), 2);
+    EXPECT_EQ(GlobAST::GlobString("**/x").firstGlobPosition(), 0);
+    EXPECT_EQ(GlobAST::GlobString("/a/{1..3}/x").firstGlobPosition(), 3);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}/x").firstGlobPosition(), 0);
+    /// Literal '{' from a "{{" pair precedes the enum that starts at the second brace.
+    EXPECT_EQ(GlobAST::GlobString("a{{b,c}}").firstGlobPosition(), 2);
+    /// The literal brace group does not stop the scan; the later wildcard does.
+    EXPECT_EQ(GlobAST::GlobString("data_{x}.csv/*").firstGlobPosition(), 13);
+}
+
 TEST(Common, GlobASTRangeOverflow)
 {
     /// Large range cardinality must not overflow.

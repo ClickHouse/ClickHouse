@@ -713,7 +713,11 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.hasGlobsIgnorePlaceholders())
+    /// Classify the path with the same parser as the read side (see getPathSample and
+    /// StorageObjectStorageSource::createFileIterator): with use_glob_ast_parser = 1 a
+    /// literal brace group like "{a}" is not a glob, so a table on such a path is
+    /// readable as an exact key and must stay writable too.
+    if (raw_path.hasGlobsIgnorePlaceholders(local_context->getSettingsRef()[Setting::use_glob_ast_parser]))
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -766,7 +770,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -784,7 +788,9 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
-    if (path.hasGlobsIgnorePlaceholders())
+    /// Same parser contract as write and the read side: a literal brace group is not a
+    /// glob under use_glob_ast_parser = 1 and must not make the table readonly.
+    if (path.hasGlobsIgnorePlaceholders(context->getSettingsRef()[Setting::use_glob_ast_parser]))
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,

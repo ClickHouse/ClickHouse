@@ -209,6 +209,21 @@ size_t GlobString::expansionSize(bool expand_ranges) const
     return result;
 }
 
+size_t GlobString::firstGlobPosition() const
+{
+    size_t offset = 0;
+
+    for (const auto & expression : expressions)
+    {
+        if (expression.type() != ExpressionType::CONSTANT)
+            return offset;
+        /// A CONSTANT's data is a view into the input, so its size is its exact extent there.
+        offset += std::get<std::string_view>(expression.getData()).size();
+    }
+
+    return std::string::npos;
+}
+
 bool GlobString::hasExactlyOneEnum() const
 {
     size_t enum_counter = 0;

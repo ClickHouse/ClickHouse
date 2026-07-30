@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
@@ -246,7 +248,7 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().hasGlobsIgnorePlaceholders(),
+        getRawPath().hasGlobsIgnorePlaceholders(context->getSettingsRef()[Setting::use_glob_ast_parser]),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
@@ -297,9 +299,29 @@ bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
     return cleaned.find_first_of("*?{") != std::string::npos;
 }
 
+bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders(bool use_glob_ast) const
+{
+    if (!use_glob_ast)
+        return hasGlobsIgnorePlaceholders();
+    if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
+        return hasGlobs(use_glob_ast);
+    /// Strip the placeholders before parsing: to the glob parser "{_partition_id}" would
+    /// look like a single-alternative enum, not a placeholder.
+    String cleaned = PartitionedSink::replaceWildcards(path, "");
+    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
+    return GlobAST::GlobString(cleaned).hasGlobs();
+}
+
 bool StorageObjectStorageConfiguration::Path::hasGlobs() const
 {
     return path.find_first_of("*?{") != std::string::npos;
+}
+
+bool StorageObjectStorageConfiguration::Path::hasGlobs(bool use_glob_ast) const
+{
+    if (!use_glob_ast)
+        return hasGlobs();
+    return GlobAST::GlobString(path).hasGlobs();
 }
 
 std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
