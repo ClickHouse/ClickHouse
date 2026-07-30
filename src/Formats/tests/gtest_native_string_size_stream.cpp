@@ -110,13 +110,14 @@ TEST(NativeStringSizeStream, WireLayout)
     Block block;
     addColumn(block, "s", "String", {Field("ab"), Field("c"), Field("")});
 
-    /// New revision: has_custom byte, then all sizes as UInt64 little-endian, then concatenated data.
+    /// New revision: has_custom byte, then cumulative byte offsets as UInt64 little-endian (as-is,
+    /// like Array offsets), then concatenated data. For "ab", "c", "" the offsets are 2, 3, 3.
     {
         auto data = writeToString(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
         const char expected_tail[] = "\x00"
                                      "\x02\x00\x00\x00\x00\x00\x00\x00"
-                                     "\x01\x00\x00\x00\x00\x00\x00\x00"
-                                     "\x00\x00\x00\x00\x00\x00\x00\x00"
+                                     "\x03\x00\x00\x00\x00\x00\x00\x00"
+                                     "\x03\x00\x00\x00\x00\x00\x00\x00"
                                      "abc";
         String tail(expected_tail, sizeof(expected_tail) - 1);
         ASSERT_GE(data.size(), tail.size());
@@ -138,26 +139,26 @@ TEST(NativeStringSizeStream, WireLayout)
     }
 }
 
-TEST(NativeStringSizeStream, CorruptedSizeStreamWraparound)
+TEST(NativeStringSizeStream, CorruptedOffsetStream)
 {
     Block block;
     addColumn(block, "s", "String", {Field("abcdefgh"), Field("ijklmnop")});
     auto data = writeToString(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
 
-    /// The column tail is [UInt64 size, UInt64 size, 16 bytes of data]. Rewrite the sizes to
-    /// [0xfffffffffffffff0, 0x20]: they sum to 0x10 with a wraparound, so a naive total matches
-    /// the data that is actually present while the offset of row 0 points far past it.
+    /// The column tail is [UInt64 offset, UInt64 offset, 16 bytes of data]. Rewrite the offsets to
+    /// [0xfffffffffffffff0, 0x20]: the first offset points far past the data and the pair is not
+    /// monotonic, so the reader must reject the stream instead of building an inconsistent column.
     ASSERT_EQ(data.substr(data.size() - 16), "abcdefghijklmnop");
-    const char corrupted_sizes[] = "\xf0\xff\xff\xff\xff\xff\xff\xff"
-                                   "\x20\x00\x00\x00\x00\x00\x00\x00";
-    data.replace(data.size() - 32, 16, corrupted_sizes, 16);
+    const char corrupted_offsets[] = "\xf0\xff\xff\xff\xff\xff\xff\xff"
+                                     "\x20\x00\x00\x00\x00\x00\x00\x00";
+    data.replace(data.size() - 32, 16, corrupted_offsets, 16);
 
     ReadBufferFromString in(data);
     NativeReader reader(in, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
     try
     {
         reader.read();
-        FAIL() << "expected INCORRECT_DATA for a wrapped-around size stream";
+        FAIL() << "expected INCORRECT_DATA for a corrupted offset stream";
     }
     catch (const Exception & e)
     {
@@ -165,11 +166,10 @@ TEST(NativeStringSizeStream, CorruptedSizeStreamWraparound)
     }
 }
 
-TEST(NativeStringSizeStream, TruncatedSizeStreamWithRowsOffset)
+TEST(NativeStringSizeStream, TruncatedOffsetStreamWithRowsOffset)
 {
-    /// rows_offset is nonzero when a seeked read skips rows inside a granule. The size stream
-    /// here carries a single size, while rows_offset = 2 alone needs two: the reader must
-    /// report a parse error instead of wrapping num_read_rows - rows_offset around.
+    /// The offsets stream here carries a single value, while rows_offset = 2 and limit = 2 need
+    /// four: the reader must report a parse error instead of reading past the end of the stream.
     auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
 
     String stream_data("\x05\x00\x00\x00\x00\x00\x00\x00", 8);
@@ -187,7 +187,7 @@ TEST(NativeStringSizeStream, TruncatedSizeStreamWithRowsOffset)
     try
     {
         serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/ 2, /*limit=*/ 2, settings, state, nullptr);
-        FAIL() << "expected INCORRECT_DATA for a truncated size stream";
+        FAIL() << "expected INCORRECT_DATA for a truncated offsets stream";
     }
     catch (const Exception & e)
     {
@@ -199,7 +199,7 @@ TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
 {
     /// The flattened Dynamic representation serializes its subtypes through the same
     /// revision-dependent settings, so a flattened `String` alternative also uses the
-    /// size-stream layout at the new revision and round-trips.
+    /// offsets layout at the new revision and round-trips.
     Block block;
     addColumn(block, "d", "Dynamic", {Field("alpha"), Field(UInt64(7)), Field("beta"), Field("")});
 
@@ -220,8 +220,8 @@ TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
 TEST(NativeStringSizeStream, AllEmptyNestedString)
 {
     /// Array(String) with every row [] drives SerializationArray to serialize the nested String
-    /// column with an empty slice (offset == 0, limit == 0). The size-stream writer must emit an
-    /// empty payload there instead of underflowing `offset + limit - 1` to an out-of-bounds index.
+    /// column with an empty slice (offset == 0, limit == 0). The offsets writer must emit an empty
+    /// payload there instead of underflowing `offset + limit - 1` to an out-of-bounds index.
     Block block;
     addColumn(block, "arr", "Array(String)", {Array{}, Array{}, Array{}});
     assertBlocksEqual(block, roundTrip(block, DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));

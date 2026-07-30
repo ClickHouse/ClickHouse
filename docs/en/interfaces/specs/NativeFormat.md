@@ -64,7 +64,7 @@ The Native format builds on four primitive encodings.
 |-----------------|----------|-------------|
 | VarUInt         | 1–10 B   | LEB-128 variable-length unsigned integer |
 | Fixed-width int | 1, 2, 4, 8, 16, 32 B | Little-endian, two's complement for signed |
-| String          | variable | VarUInt length prefix + raw bytes per value; a separate [size stream](#string-type) at revision `54488`+ |
+| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54488`+ |
 | Bool            | 1 B      | `0x00` = false, non-zero = true |
 
 ### VarUInt {#varuint}
@@ -339,7 +339,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
-| Size-stream `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54488` | `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [size-stream layout](#string-type) (all sizes as `UInt64`, then all data concatenated). At or above the threshold the size-stream layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of `LowCardinality(String)`, which keeps the per-value layout. |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54488` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of `LowCardinality(String)`, which keeps the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
@@ -371,7 +371,7 @@ The `Native` *output* format defaults to revision **`0`**. This covers `SELECT .
 
 Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`.
 
-Because the parameter lands on the whole query context, it reaches every `NativeWriter` built for that request, not only the result stream. In particular a server-side write such as `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` over HTTP with a raised `?client_protocol_version=` writes the file at that revision. This is long-standing behavior (it predates the size-stream serialization and applies to `BlockInfo` and `has_custom_serialization` too), and it is asymmetric: the read side (below) is not raised the same way, so such a file does not read back through `file(...)`. Leave `client_protocol_version` off a request that writes data meant to be read again. `INTO OUTFILE` and local `clickhouse-client` output have no such knob and stay at `0`.
+Because the parameter lands on the whole query context, it reaches every `NativeWriter` built for that request, not only the result stream. In particular a server-side write such as `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...` over HTTP with a raised `?client_protocol_version=` writes the file at that revision. This is long-standing behavior (it predates the String offsets serialization and applies to `BlockInfo` and `has_custom_serialization` too), and it is asymmetric: the read side (below) is not raised the same way, so such a file does not read back through `file(...)`. Leave `client_protocol_version` off a request that writes data meant to be read again. `INTO OUTFILE` and local `clickhouse-client` output have no such knob and stay at `0`.
 
 #### `FORMAT Native` input — revision 0 by default, raisable over HTTP {#revision-input}
 
@@ -734,25 +734,25 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 01 63                    row 2: length 1, "c"
 ```
 
-**Size-stream layout** — at revision `54488` and above: two concatenated streams, all sizes first, then all data:
+**Offsets layout** — at revision `54488` and above: two concatenated streams, the cumulative byte offsets first, then all data:
 
 ```text
-[UInt64 × num_rows: byte_length per row, little-endian]
-[Σ byte_length bytes: all values concatenated, no separators]
+[UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
+[last offset bytes: all values concatenated, no separators]
 ```
 
-A decoder reads `8 × num_rows` bytes of sizes, sums them, and then reads the whole data blob in one piece — which permits exact buffer preallocation and bulk copying instead of per-row parsing. A column with `num_rows = 0` contributes no bytes in either stream.
+The offsets are sent as-is, the same way an `Array` sends its offsets over the native protocol. Offset `i` is the end position of value `i` in the data blob, so the size of value `i` is `offset[i] - offset[i-1]` (with `offset[-1] = 0`) and the last offset is the total size of the data blob. A decoder reads `8 × num_rows` bytes of offsets and then reads the whole data blob in one piece, using the last offset as its exact length — which permits exact buffer preallocation and bulk copying instead of per-row parsing, and needs no size-to-offset conversion. A column with `num_rows = 0` contributes no bytes in either stream.
 
 The same 3 strings `["ab", "", "c"]` (27 bytes total):
 
 ```text
-02 00 00 00 00 00 00 00  row 0 size: 2
-00 00 00 00 00 00 00 00  row 1 size: 0
-01 00 00 00 00 00 00 00  row 2 size: 1
+02 00 00 00 00 00 00 00  row 0 offset: 2  (end of "ab")
+02 00 00 00 00 00 00 00  row 1 offset: 2  (end of "", so unchanged)
+03 00 00 00 00 00 00 00  row 2 offset: 3  (end of "c")
 61 62 63                 "ab" + "" + "c"
 ```
 
-At or above the threshold the size-stream layout applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality(String)`](#lowcardinality) column always keeps the per-value layout, at every revision.
+At or above the threshold the offsets layout applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality(String)`](#lowcardinality) column always keeps the per-value layout, at every revision.
 
 In both layouts ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller.
 
@@ -773,7 +773,7 @@ The two string types compared:
 
 | Property               | `String`              | `FixedString(N)`            |
 |------------------------|-----------------------|-----------------------------|
-| Per-row length prefix  | Yes (VarUInt), or a separate size stream at revision `54488`+ | No |
+| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54488`+ | No |
 | Row size               | Variable              | Exactly `N` bytes           |
 | Total column bytes     | Variable              | `N × num_rows`              |
 | NUL-byte padding       | n/a                   | Right-padded by server      |

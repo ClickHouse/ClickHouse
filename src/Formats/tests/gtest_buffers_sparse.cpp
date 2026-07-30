@@ -18,7 +18,7 @@ using namespace DB;
 /// The Buffers format carries no per-column serialization kind, so a ColumnSparse reaching the
 /// writer must be densified before the type-level serializer (which only accepts a dense column).
 /// Build a sparse String column explicitly and round-trip it through Buffers at both the default
-/// (per-value) and the size-stream revisions.
+/// (per-value) and the offsets revisions.
 TEST(BuffersFormat, SparseStringColumn)
 {
     constexpr size_t n = 10;

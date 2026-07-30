@@ -713,25 +713,29 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     }
 
     const auto & column_string = typeid_cast<const ColumnString &>(column);
-    serializeStringSizes(column, *size_stream, offset, limit);
+    const auto & offsets = column_string.getOffsets();
+
+    /// The separate stream carries per-row sizes on disk (position independent, so a granule can be
+    /// read on its own) and the cumulative byte offsets as-is over the network - the same layout
+    /// Array uses for its offsets. Sending offsets skips the size conversion and lets the reader
+    /// preallocate the exact amount of memory.
+    if (settings.position_independent_encoding)
+    {
+        serializeStringSizes(column, *size_stream, offset, limit);
+    }
+    else
+    {
+        const UInt64 base = offset == 0 ? 0 : offsets[offset - 1];
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(static_cast<UInt64>(offsets[i] - base), *size_stream);
+    }
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
     if (!stream)
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
-    /// Empty slice: nothing to write. SerializationArray calls the nested serializer with limit == 0
-    /// for an all-empty Array(String) (offset == 0 too) so the substream getters still run for
-    /// Compact parts; both getters were visited above. Return before the offset arithmetic, which is
-    /// unsigned and would otherwise wrap `offset + limit - 1` to a huge out-of-bounds index.
-    if (limit == 0)
-    {
-        settings.path.pop_back();
-        return;
-    }
-
     /// Serialize string data
-    const auto & offsets = column_string.getOffsets();
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
     size_t end = offsets[offset + limit - 1];
     size_t bytes = end - begin;
@@ -799,9 +803,88 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         return;
     }
 
-    /// String column is not in the cache.
-    /// First, read sizes.
     settings.path.back() = Substream::StringSizes;
+
+    /// Over the network the separate stream carries the cumulative byte offsets as-is (see the
+    /// serializer), so read them and rebuild the column directly, without the size-to-offset
+    /// conversion. This path only runs for a single range per block, so it does not need the
+    /// per-range size column state that the on-disk path keeps.
+    if (!settings.position_independent_encoding)
+    {
+        ReadBuffer * size_stream = settings.getter(settings.path);
+        if (!size_stream)
+        {
+            settings.path.pop_back();
+            return;
+        }
+
+        auto offsets_column = ColumnUInt64::create();
+        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*offsets_column, *size_stream, 0, rows_offset + limit, 0);
+        const auto & wire_offsets = offsets_column->getData();
+        const size_t num_read_rows = wire_offsets.size();
+        if (num_read_rows < rows_offset + limit)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected end of the offsets stream of String column: read {} offsets, while {} were expected",
+                num_read_rows,
+                rows_offset + limit);
+
+        /// Validate the offsets before touching the column. A corrupted or desynchronized stream can
+        /// carry non-monotonic or absurd offsets; without this the column would end up internally
+        /// inconsistent, or an absurd size would reach the allocator sanity check (a logical error
+        /// that aborts debug and sanitizer builds). Report a regular error instead.
+        static constexpr UInt64 max_total_string_size = 1ULL << 48;
+        for (size_t i = 0; i < num_read_rows; ++i)
+        {
+            const UInt64 prev = i == 0 ? 0 : wire_offsets[i - 1];
+            if (wire_offsets[i] < prev || wire_offsets[i] > max_total_string_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "String offsets stream is corrupted (offset {} at row {}, previous {}): most likely the data is corrupted",
+                    wire_offsets[i],
+                    i,
+                    prev);
+        }
+
+        settings.path.back() = Substream::Regular;
+        auto * stream = settings.getter(settings.path);
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
+
+        const UInt64 bytes_to_skip = rows_offset == 0 ? 0 : wire_offsets[rows_offset - 1];
+        const UInt64 total_bytes = num_read_rows == 0 ? 0 : wire_offsets[num_read_rows - 1];
+        const UInt64 bytes_to_read = total_bytes - bytes_to_skip;
+
+        auto mutable_column = column->assumeMutable();
+        auto & string_column = assert_cast<ColumnString &>(*mutable_column);
+        auto & offsets = string_column.getOffsets();
+        auto & data = string_column.getChars();
+        const size_t initial_data_size = data.size();
+        const IColumn::Offset prev_last_offset = offsets.empty() ? 0 : offsets.back();
+
+        /// Grow the data first and append the offsets last, so a throw leaves the column unchanged.
+        offsets.reserve(offsets.size() + limit);
+        data.resize(initial_data_size + bytes_to_read);
+        stream->ignore(bytes_to_skip);
+        try
+        {
+            stream->readBigStrict(reinterpret_cast<char *>(&data[initial_data_size]), bytes_to_read);
+        }
+        catch (...)
+        {
+            data.resize(initial_data_size);
+            throw;
+        }
+        for (size_t i = rows_offset; i < num_read_rows; ++i)
+            offsets.push_back(prev_last_offset + (wire_offsets[i] - bytes_to_skip));
+
+        column = std::move(mutable_column);
+        settings.path.pop_back();
+        return;
+    }
+
+    /// On disk the separate stream carries per-row sizes.
+    /// First, read sizes.
     size_t num_read_rows = 0;
     DeserializeBinaryBulkStateStringWithSizeStream * string_state = nullptr;
 
@@ -830,17 +913,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         return;
     }
 
-    /// The bulk number deserialization tolerates a short stream and can append fewer than
-    /// rows_offset + limit sizes without throwing. Everything below subtracts rows_offset from
-    /// num_read_rows, so a truncated size stream must be reported here, before the subtraction
-    /// wraps around.
-    if (num_read_rows < rows_offset)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Unexpected end of the size stream of String column: read {} sizes, while at least {} were expected",
-            num_read_rows,
-            rows_offset);
-
     /// Read string data.
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
@@ -851,50 +923,21 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto mutable_column = column->assumeMutable();
     auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
     auto & offsets = mutable_string_column.getOffsets();
+    size_t prev_last_offset = offsets.back();
+    size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
+    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
+        bytes_to_skip += sizes_data[i];
 
-    /// Validate the sizes before mutating the column. If the stream is corrupted or
-    /// desynchronized, the sizes are garbage: a single absurd value would reach the allocator
-    /// sanity check (a logical error, which aborts debug and sanitizer builds), and several
-    /// values can overflow the cumulative offsets and produce an internally inconsistent
-    /// column with offsets pointing past the data. Report a regular error before anything
-    /// is committed.
-    static constexpr size_t max_total_string_size = 1ULL << 48;
-    size_t bytes_to_skip = 0;
-    size_t bytes_to_read = 0;
-    for (size_t i = prev_size; i != prev_size + num_read_rows; ++i)
-    {
-        size_t size = sizes_data[i];
-        auto & total = (i < prev_size + rows_offset) ? bytes_to_skip : bytes_to_read;
-        if (size > max_total_string_size || total > max_total_string_size - size)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Too large total size of String column computed from the size stream (row size {}, accumulated {}): "
-                "most likely the data is corrupted",
-                size,
-                total);
-        total += size;
-    }
-
+    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
+    size_t bytes_to_read = offsets.back() - prev_last_offset;
     auto & data = mutable_string_column.getChars();
     size_t initial_size = data.size();
-
-    /// Grow the data first and append the offsets last, so that if anything below throws, the
-    /// column stays exactly as it was (shrinking a PODArray does not throw).
-    offsets.reserve(offsets.size() + (num_read_rows - rows_offset));
-    stream->ignore(bytes_to_skip);
     data.resize(initial_size + bytes_to_read);
-    try
-    {
-        stream->readBigStrict(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
-    }
-    catch (...)
-    {
-        data.resize(initial_size);
-        throw;
-    }
-    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
+    stream->ignore(bytes_to_skip);
+    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+    data.resize(initial_size + bytes_to_read);
     column = std::move(mutable_column);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();

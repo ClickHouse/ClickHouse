@@ -2,7 +2,6 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 
 namespace DB
@@ -107,7 +106,7 @@ void IRowOutputFormat::updateSerializationsIfNeeded(const Columns & columns)
     if (supportsSpecialSerializationKinds())
     {
         for (size_t i = 0; i != columns.size(); ++i)
-            serializations[i] = types[i]->getSerialization(*types[i]->getSerializationInfo(*columns[i], SerializationInfoSettings::enableAllSupportedSerializations()));
+            serializations[i] = types[i]->getSerialization(*types[i]->getSerializationInfo(*columns[i]));
     }
 }
 

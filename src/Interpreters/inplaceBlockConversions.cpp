@@ -32,7 +32,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 namespace DB
 {
@@ -333,7 +332,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i]->isSparse())
             continue;
 
-        auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i], SerializationInfoSettings::enableAllSupportedSerializations()));
+        auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)

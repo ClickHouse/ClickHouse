@@ -28,7 +28,6 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 namespace DB
 {
@@ -146,7 +145,7 @@ public:
         resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
         type_serialization_ptr->serializeBinary(*column, row_num, *data(place).compressed_buf, {});
@@ -178,7 +177,7 @@ public:
         resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
         ISerialization::SerializeBinaryBulkSettings settings;
