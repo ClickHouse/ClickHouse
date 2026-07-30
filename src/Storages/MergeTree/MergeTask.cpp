@@ -2192,6 +2192,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
+        part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
@@ -2352,6 +2353,10 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             for (size_t part_idx = 0; part_idx < global_ctx->future_part->parts.size(); ++part_idx)
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
+
+                /// An empty part contributes nothing to the merged index and its files are empty.
+                if (part->rows_count == 0)
+                    continue;
 
                 if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
                 {
