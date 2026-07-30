@@ -67,6 +67,62 @@ SELECT count(explain) FROM (EXPLAIN SELECT id FROM tab WHERE hasToken(text, 'alp
 
 DROP TABLE tab;
 
+SELECT 'Array and Map carriers reach the optimization through the shared direct-read query';
+
+CREATE TABLE tab_array (
+	id UInt64,
+	arr Array(String),
+	INDEX idx arr TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_array SELECT number, if(number % 2 = 0, ['foo', 'bar'], ['baz']) FROM numbers(1000);
+
+SELECT '-- fires: has (single token)';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_array WHERE has(arr, 'foo')) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_array WHERE has(arr, 'foo');
+SELECT count() FROM tab_array WHERE has(arr, 'foo') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: hasAny (union)';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_array WHERE hasAny(arr, ['foo', 'baz'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_array WHERE hasAny(arr, ['foo', 'baz']);
+SELECT count() FROM tab_array WHERE hasAny(arr, ['foo', 'baz']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: hasAll (intersection)';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_array WHERE hasAll(arr, ['foo', 'bar'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_array WHERE hasAll(arr, ['foo', 'bar']);
+SELECT count() FROM tab_array WHERE hasAll(arr, ['foo', 'bar']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+DROP TABLE tab_array;
+
+CREATE TABLE tab_map (
+	id UInt64,
+	m Map(String, String),
+	INDEX idx_keys mapKeys(m) TYPE text(tokenizer = array),
+	INDEX idx_values mapValues(m) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_map SELECT number, if(number % 2 = 0, map('k0', 'v0', 'k1', 'v1'), map('k2', 'v2')) FROM numbers(1000);
+
+SELECT '-- fires: mapContains (key)';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE mapContains(m, 'k0')) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_map WHERE mapContains(m, 'k0');
+SELECT count() FROM tab_map WHERE mapContains(m, 'k0') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- fires: mapContainsValue';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0')) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0');
+SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- does not fire: m[k] = v needs a residual recheck (hint mode, not exact)';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE m['k0'] = 'v0') WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab_map WHERE m['k0'] = 'v0';
+
+DROP TABLE tab_map;
+
 SELECT 'Partially materialized text index';
 
 CREATE TABLE tab_partial (

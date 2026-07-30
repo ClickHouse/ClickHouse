@@ -34,6 +34,30 @@ Inject trivial count optimization from the text index into the query plan
 741
 -- does not fire: not a bare count()
 0
+Array and Map carriers reach the optimization through the shared direct-read query
+-- fires: has (single token)
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'foo\'))
+500
+500
+-- fires: hasAny (union)
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'baz\', \'foo\']))
+1000
+1000
+-- fires: hasAll (intersection)
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'bar\', \'foo\']))
+500
+500
+-- fires: mapContains (key)
+└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = \'k0\'))
+500
+500
+-- fires: mapContainsValue
+└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = \'v0\'))
+500
+500
+-- does not fire: m[k] = v needs a residual recheck (hint mode, not exact)
+0
+500
 Partially materialized text index
 -- one part without the index, one part with it
 1
