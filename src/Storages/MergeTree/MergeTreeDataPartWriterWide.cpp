@@ -181,6 +181,12 @@ void MergeTreeDataPartWriterWide::addStreams(
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
+        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
+        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
+        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
+        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
+        /// pure-float `Tuple`.
+
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
@@ -272,6 +278,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets && offset_substreams.contains(stream_name))
             return nullptr;
+
 
         return &column_streams.at(stream_name)->compressed_hashing;
     };
@@ -486,6 +493,10 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     const Granule & granule)
 {
     const auto & serialization = getSerialization(name_and_type.name);
+
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto enumerate_settings = getEnumerateSettings(settings);
+
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
@@ -507,8 +518,6 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
-    auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
@@ -567,6 +576,33 @@ void MergeTreeDataPartWriterWide::writeColumn(
         auto & stream = column_streams.at(stream_name);
         return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
     };
+
+    /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float> require the array
+    /// dimension to be set before compression starts (for 1D arrays it's simply the length). The dimension
+    /// is a property of the whole column, so compute it once here rather than rescanning the entire column
+    /// on every granule below - the per-granule scan would make SZ3 writes O(rows * granules) in the
+    /// insert/merge hot path. This must run before serializing any granule, because serialization may
+    /// already fill a compressed buffer and trigger compression.
+    {
+        auto vector_dim_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+        auto vector_dim_enumerate_settings = getEnumerateSettings(settings);
+        serialization->enumerateStreams(vector_dim_enumerate_settings, [&] (const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+
+            auto stream_name = getStreamName(name_and_type, substream_path);
+            if (stream_name.empty())
+                return;
+
+            bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
+            if (is_offsets && offset_substreams.contains(stream_name))
+                return;
+
+            auto compression_codec = column_streams.at(stream_name)->compressor.getCodec();
+            setVectorDimensionsIfNeeded(compression_codec, &column);
+        }, vector_dim_data);
+    }
 
     for (const auto & granule : granules)
     {

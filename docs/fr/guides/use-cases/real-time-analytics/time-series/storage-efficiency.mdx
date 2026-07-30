@@ -1,0 +1,130 @@
+---
+title: "Efficacité du stockage - séries temporelles"
+sidebarTitle: "Efficacité du stockage"
+description: "Améliorer l'efficacité du stockage des séries temporelles"
+slug: /use-cases/time-series/storage-efficiency
+keywords: ['séries temporelles', 'efficacité du stockage', 'compression', 'rétention des données', 'TTL', 'optimisation du stockage', 'utilisation du disque']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Après avoir vu comment interroger notre jeu de données de statistiques Wikipedia, intéressons-nous à l&#39;optimisation du stockage dans ClickHouse.
+Cette section présente des techniques pratiques pour réduire les besoins en stockage tout en préservant les performances des requêtes.
+
+<div id="time-series-type-optimization">
+  ## Optimisation des types
+</div>
+
+L’approche générale pour optimiser l’efficacité du stockage consiste à utiliser les types de données les plus adaptés.
+Prenons les colonnes `project` et `subproject`. Ces colonnes sont de type String, mais contiennent un nombre relativement faible de valeurs uniques :
+
+```sql
+SELECT
+    uniq(project),
+    uniq(subproject)
+FROM wikistat;
+```
+
+```text
+┌─uniq(project)─┬─uniq(subproject)─┐
+│          1332 │              130 │
+└───────────────┴──────────────────┘
+```
+
+Cela signifie que nous pouvons utiliser le type de données LowCardinality(), qui repose sur un encodage par dictionnaire. ClickHouse stocke ainsi l’identifiant interne de la valeur au lieu de la valeur de chaîne d’origine, ce qui permet à son tour d’économiser beaucoup d’espace :
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `project` LowCardinality(String),
+MODIFY COLUMN `subproject` LowCardinality(String)
+```
+
+Nous avons également utilisé un type UInt64 pour la colonne `hits`, qui occupe 8 octets, mais dont la valeur maximale est relativement faible :
+
+```sql
+SELECT max(hits)
+FROM wikistat;
+```
+
+```text
+┌─max(hits)─┐
+│    449017 │
+└───────────┘
+```
+
+Compte tenu de cette valeur, nous pouvons utiliser `UInt32` à la place, qui n’occupe que 4 octets et permet de stocker jusqu’à ~4 milliards comme valeur maximale :
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `hits` UInt32;
+```
+
+Cela réduira d’au moins moitié la taille de cette colonne en mémoire. Notez que sa taille sur disque restera inchangée en raison de la compression. Mais attention : choisissez des types de données qui ne soient pas trop petits !
+
+<div id="time-series-specialized-codecs">
+  ## Codecs spécialisés
+</div>
+
+Lorsque l’on traite des données séquentielles, comme des séries temporelles, on peut encore améliorer l’efficacité du stockage en utilisant des codecs spécialisés.
+L’idée générale est de stocker les écarts entre les valeurs plutôt que les valeurs absolues elles-mêmes, ce qui réduit considérablement l’espace nécessaire pour des données qui évoluent lentement :
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `time` CODEC(Delta, ZSTD);
+```
+
+Nous avons utilisé le codec Delta pour la colonne `time`, qui convient bien aux données de séries temporelles.
+
+Une clé d&#39;ordonnancement bien choisie peut aussi faire gagner de l&#39;espace disque.
+Comme nous voulons généralement filtrer par chemin, nous allons ajouter `path` à la clé de tri.
+Cela nécessite de recréer la table.
+
+Ci-dessous, nous pouvons voir la commande `CREATE` pour notre table initiale et la table optimisée :
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+```sql
+CREATE TABLE optimized_wikistat
+(
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `project` LowCardinality(String),
+    `subproject` LowCardinality(String),
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (path, time);
+```
+
+Et regardons l’espace occupé par les données dans chaque table :
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    count() AS parts
+FROM system.parts
+WHERE table LIKE '%wikistat%'
+GROUP BY ALL;
+```
+
+```text
+┌─table──────────────┬─uncompressed─┬─compressed─┬─parts─┐
+│ wikistat           │ 35.28 GiB    │ 12.03 GiB  │     1 │
+│ optimized_wikistat │ 30.31 GiB    │ 2.84 GiB   │     1 │
+└────────────────────┴──────────────┴────────────┴───────┘
+```
+
+La table optimisée n’occupe qu’un peu moins d’un quart de l’espace une fois compressée.
