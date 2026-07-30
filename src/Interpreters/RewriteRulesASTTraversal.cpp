@@ -327,6 +327,14 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             /// only for a successful `REWRITE`.) Like the pre-match guard this counts the
             /// non-`children` members the matcher walks, not only `children`.
             checkRewriteRuleASTLimits(*ast, settings);
+            /// A rule can also rewrite a query into rule DDL (`CREATE RULE` / `ALTER RULE`),
+            /// whose templates (`source_query` / `resulting_query`) live outside both `children`
+            /// and `forEachRewriteRuleNonChildAST` and are therefore invisible to the check above,
+            /// while the next rule's matcher still hashes them through the rule-DDL node's
+            /// `updateTreeHashImpl`. Bound them here for the same reason they are bounded for the
+            /// submitted query above, so no intermediate carrier of a rule template escapes
+            /// `max_ast_elements` / `max_ast_depth`.
+            checkRewriteRuleTemplateLimits(*ast, settings);
         }
     }
 
