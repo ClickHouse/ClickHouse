@@ -1,4 +1,5 @@
 import io
+import json
 import time
 
 import pytest
@@ -553,7 +554,7 @@ def test_remove_orphan_files_ignores_pinned_metadata(started_cluster_iceberg_wit
     )
 
     time.sleep(2)
-    instance.query(
+    raw = instance.query(
         f"ALTER TABLE {table_name} EXECUTE remove_orphan_files('{OrphanTestEnv.now_ts()}');",
         settings=ICEBERG_SETTINGS,
     )

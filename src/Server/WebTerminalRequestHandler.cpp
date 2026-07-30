@@ -1,5 +1,4 @@
 #include <Server/WebTerminalRequestHandler.h>
-#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
@@ -339,9 +338,9 @@ void WebTerminalRequestHandler::serveHTML(HTTPServerRequest & request, HTTPServe
     setResponseDefaultHeaders(response);
 
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto buf = responseWriteBuffer(request, response);
-    buf.get()->write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
-    buf.get()->finalize();
+    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+    wb.write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
+    wb.finalize();
 }
 
 
@@ -924,18 +923,11 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
 void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    /// The web terminal is enabled by default. `enable_webterminal` is the
-    /// production setting; `allow_experimental_webterminal` is its former
-    /// (experimental) name, still honored for backward compatibility when the
-    /// new name is not present in the config.
-    bool enabled = server.config().getBool(
-        "enable_webterminal",
-        server.config().getBool("allow_experimental_webterminal", true));
-    if (!enabled)
+    if (!server.config().getBool("allow_experimental_webterminal", false))
     {
         response.setContentType("text/plain; charset=UTF-8");
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
-        *response.send() << "Web terminal is disabled. See the `enable_webterminal` server configuration.\n";
+        *response.send() << "Web terminal is disabled. See the `allow_experimental_webterminal` server configuration.\n";
         return;
     }
 

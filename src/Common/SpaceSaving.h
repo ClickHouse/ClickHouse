@@ -139,10 +139,10 @@ public:
             return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
         }
 
-        TKey key{};
-        size_t hash{};
-        UInt64 count{};
-        UInt64 error{};
+        TKey key;
+        size_t hash;
+        UInt64 count;
+        UInt64 error;
     };
 
     explicit SpaceSaving(size_t c = 0)

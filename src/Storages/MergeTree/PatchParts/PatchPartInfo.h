@@ -76,7 +76,7 @@ enum class PatchMode
 template <typename TDataPartPtr>
 struct PatchPartInfoBase
 {
-    PatchMode mode{};
+    PatchMode mode;
     TDataPartPtr part;
     Names source_parts;
     /// Data version of source part to which this patch is applied.

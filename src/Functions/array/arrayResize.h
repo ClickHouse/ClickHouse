@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class FunctionArrayResize final : public IFunction
+class FunctionArrayResize : public IFunction
 {
 public:
     static constexpr auto name = "arrayResize";

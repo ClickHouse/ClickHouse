@@ -28,7 +28,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -66,8 +65,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
@@ -81,8 +78,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace MergeTreeSetting
@@ -122,26 +117,6 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
-DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
-{
-    if (!type_ast || !type_ast->as<ASTExpressionList>())
-         return {};
-
-    return createEnumAdd(type_ast, is_enum16);
-}
-
-/// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
-/// InterpreterCreateQuery so that ALTER ADD/MODIFY COLUMN behaves like CREATE TABLE.
-void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null_modifier)
-{
-    if (!null_modifier)
-        return;
-    if (data_type->isNullable())
-        throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
-    if (*null_modifier)
-        data_type = makeNullable(data_type);
-}
-
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -160,7 +135,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -218,7 +192,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
 
         if (ast_col_decl.getDefaultExpression())
@@ -257,9 +230,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
                 command.settings_resets.emplace(identifier.name());
             }
         }
-
-        if (command_ast->add_enum_values)
-            command.add_enum_values = command_ast->add_enum_values;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -382,21 +352,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.constraint_name = ast_constraint_decl.name;
 
         command.if_not_exists = command_ast->if_not_exists;
-
-        return command;
-    }
-    if (command_ast->type == ASTAlterCommand::MODIFY_CONSTRAINT)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.constraint_decl = command_ast->constraint_decl->clone();
-        command.type = AlterCommand::MODIFY_CONSTRAINT;
-
-        const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
-
-        command.constraint_name = ast_constraint_decl.name;
-
-        command.if_exists = command_ast->if_exists;
 
         return command;
     }
@@ -539,7 +494,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_REFRESH;
-        command.refresh = command_ast->refresh->ptr();
+        command.refresh = command_ast->refresh;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
@@ -921,30 +876,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
     }
-    else if (type == MODIFY_CONSTRAINT)
-    {
-        auto constraints = metadata.constraints.getConstraints();
-        auto modify_it = std::find_if(
-            constraints.begin(),
-            constraints.end(),
-            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
-
-        if (modify_it == constraints.end())
-        {
-            if (if_exists)
-                return;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to modify",
-                    constraint_name);
-        }
-
-        /// Replace the declaration in place so the constraint keeps its position.
-        *modify_it = constraint_decl;
-        metadata.constraints = ConstraintsDescription(constraints);
-    }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(
-            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, &metadata.partition_key, context);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)
@@ -1022,7 +956,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+                effective_settings.applyChange(change);
                 any_mt_setting = true;
             }
         }
@@ -1273,11 +1207,7 @@ bool AlterCommand::isCommentAlter() const
     }
     if (type == MODIFY_COLUMN)
     {
-        /// Placement (FIRST/AFTER) and per-column SETTINGS change the replicated
-        /// /columns (ColumnsDescription::operator== compares column order and
-        /// settings, ignoring only the comment), so they are not comment-only.
-        return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr
-            && settings_changes.empty() && settings_resets.empty() && after_column.empty() && !first;
+        return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr;
     }
     return false;
 }
@@ -1342,6 +1272,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.type = MutationCommand::Type::READ_COLUMN;
         result.column_name = column_name;
         result.data_type = data_type;
+        result.predicate = nullptr;
     }
     else if (type == DROP_COLUMN)
     {
@@ -1349,6 +1280,9 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
+        if (partition)
+            result.partition = partition;
+        result.predicate = nullptr;
     }
     else if (type == DROP_INDEX)
     {
@@ -1356,6 +1290,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = index_name;
         if (clear)
             result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
     }
     else if (type == DROP_STATISTICS)
     {
@@ -1364,6 +1302,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         if (clear)
             result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
     {
@@ -1371,6 +1313,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = projection_name;
         if (clear)
             result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1379,10 +1325,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast_text = ast->formatWithSecretsOneLine();
-    const auto & settings = context->getSettingsRef();
-    result.max_parser_depth = settings[Setting::max_parser_depth];
-    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
+    result.ast = ast->clone();
     apply(metadata, context);
     return result;
 }
@@ -1422,8 +1365,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
-            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
@@ -1452,13 +1394,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
-    const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1514,7 +1455,6 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
-    std::unordered_set<String> columns_with_full_type_modify;
 
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
@@ -1532,114 +1472,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
-            if (!command.ignore)
-            {
-                if (command.add_enum_values)
-                {
-                    if (columns_with_full_type_modify.contains(command.column_name))
-                    {
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Cannot combine `MODIFY COLUMN` with an explicit type and `MODIFY COLUMN ... ADD ENUM VALUES` "
-                            "in a single ALTER query");
-                    }
-
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
-                    if (!has_column)
-                        throw Exception(
-                            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
-                            backQuote(command.column_name));
-
-                }
-                else if (command.data_type)
-                    columns_with_full_type_modify.emplace(command.column_name);
-            }
-
             if (has_column)
             {
                 const auto & column_from_table = columns.get(command.column_name);
-                struct EnumTypeInfo
-                {
-                    const IDataTypeEnum * enum_type = nullptr;
-                    bool is_nullable = false;
-                    bool is_enum16 = false;
-                };
-
-                auto get_enum_type = [](const IDataType * dt) -> EnumTypeInfo
-                {
-                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum *>(dt);
-                    if (column_enum_type)
-                    {
-                        bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type);
-                        return {column_enum_type, false, is_enum16};
-                    }
-
-                    const auto * column_nullable_type = dynamic_cast<const DataTypeNullable *>(dt);
-                    if (column_nullable_type)
-                    {
-                        const auto * column_nullable_enum_type = dynamic_cast<const IDataTypeEnum *>(column_nullable_type->getNestedType().get());
-                        if (column_nullable_enum_type)
-                        {
-                            bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_nullable_enum_type);
-                            return {column_nullable_enum_type, true, is_enum16};
-                        }
-                    }
-                    return {};
-                };
-
-                if (command.add_enum_values)
-                {
-                    EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
-                    if (!eti.enum_type)
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot ADD ENUM VALUES to column {}", command.column_name);
-
-                    DataTypePtr enum_dt = tryCreateAddToEnumType(command.add_enum_values, eti.is_enum16);
-                    if (enum_dt)
-                    {
-                        const auto * column_enum_type = eti.enum_type;
-                        if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(enum_dt.get());
-                            alter_enum_type && alter_enum_type->isAdd())
-                        {
-                            if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
-                            {
-                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(alter_enum_type))
-                                    command.data_type = mergeEnumTypes<Int8>(*base_enum8, *add_enum8);
-                                else
-                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
-                            }
-                            else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
-                            {
-                                if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(alter_enum_type))
-                                    command.data_type = mergeEnumTypes<Int16>(*base_enum16, *add_enum16);
-                                else
-                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
-                            }
-                            else
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
-                            }
-
-
-                            if (eti.is_nullable)
-                            {
-                                command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
-                            }
-
-                            /// Advance the working snapshot so that a subsequent command in the same
-                            /// ALTER statement (e.g. another `ADD ENUM VALUES` on the same column) merges
-                            /// against the already-extended type instead of the original one. Without this,
-                            /// `MODIFY COLUMN x ADD ENUM VALUES('a'), MODIFY COLUMN x ADD ENUM VALUES('b')`
-                            /// would lose `a`, because the commands are applied sequentially afterwards.
-                            columns.modify(command.column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
-                        }
-                    }
-                }
-
                 if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
                 {
                     command.default_kind = column_from_table.default_desc.kind;
@@ -1683,14 +1518,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
-    /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
-    /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
-    /// to its target using the target metadata and never evaluates its own column defaults, so a default
-    /// over a virtual column is inert there and is left out of this set.
-    NameSet insert_time_default_columns;
-    bool defaults_evaluated_at_insert_time = true;
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-        defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -2057,10 +1884,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2077,10 +1900,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
             }
         }
     }
@@ -2091,7 +1910,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
@@ -2120,7 +1939,7 @@ static MutationCommand createMaterializeTTLCommand()
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
-    command.ast_text = ast->formatWithSecretsOneLine();
+    command.ast = std::move(ast);
     return command;
 }
 
@@ -2137,10 +1956,6 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     /// to metadata that already contains auto-added statistics would throw a duplicate error.
     removeImplicitStatistics(metadata.columns);
 
-    const auto & settings = context->getSettingsRef();
-    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
-    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
-
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -2150,12 +1965,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{
-                .ast_text = alter_cmd.ast->formatWithSecretsOneLine(),
-                .max_parser_depth = max_parser_depth,
-                .max_parser_backtracks = max_parser_backtracks,
-                .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
-            });
+            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
         }
     }
 
