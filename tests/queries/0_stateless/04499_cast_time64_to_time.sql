@@ -6,8 +6,14 @@ SELECT CAST(CAST('10:00:00' AS Time64) AS Time) = CAST('10:00:00' AS Time);
 SELECT CAST(CAST('10:00:00.987' AS Time64(3)) AS Time) = CAST('10:00:00' AS Time);
 SELECT toTypeName(CAST(CAST('10:00:00' AS Time64) AS Time));
 
--- accurateCastOrNull must also succeed and never null out a valid value.
-SELECT accurateCastOrNull(CAST('01:02:03.5' AS Time64(1)), 'Time') = CAST('01:02:03' AS Time);
+-- accurateCast/accurateCastOrNull treat fractional or out-of-range Time64 as inexact, independently of overflow mode.
+SELECT isNull(accurateCastOrNull(CAST('01:02:03.5' AS Time64(1)), 'Time'));
+SELECT accurateCastOrNull(CAST('01:02:03.0' AS Time64(1)), 'Time') = CAST('01:02:03' AS Time);
+SELECT isNull(accurateCastOrNull(CAST(toDecimal64(3600001, 0) AS Time64(0)), 'Time'));
+SELECT isNull(accurateCastOrNull(CAST(toDecimal64(3600001, 0) AS Time64(0)), 'Time')) SETTINGS date_time_overflow_behavior = 'throw';
+SELECT accurateCast(CAST('01:02:03.5' AS Time64(1)), 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(CAST(toDecimal64(3600001, 0) AS Time64(0)), 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toTime(CAST('10:00:00.987' AS Time64(3))) = CAST('10:00:00' AS Time);
 
 -- Out-of-range Time64 (built via Decimal64 -> Time64, which does not clamp) must clamp the stored value.
 SELECT CAST(CAST(toDecimal64(3600001, 0) AS Time64(0)) AS Time) = CAST(3599999 AS Time);
@@ -66,27 +72,27 @@ SELECT CAST('01:02:03.0' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));
 -- Nullable probes must be precision-filtered too; with transform_null_in they reach the set unwrapped.
 SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time));
 SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time)) SETTINGS transform_null_in = 1;
-SELECT materialize(CAST('2020-01-01 00:00:00.5' AS Nullable(DateTime64(1)))) IN (SELECT CAST('2020-01-01 00:00:00' AS DateTime)) SETTINGS transform_null_in = 1;
 
 -- Out-of-range whole-second Time64 probes must not match after clamping.
 SELECT CAST(toDecimal64(3600001, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
 SELECT CAST(toDecimal64(-3600001, 0) AS Time64(0)) IN (SELECT CAST(-3599999 AS Time));
 SELECT CAST(toDecimal64(3599999, 0) AS Time64(0)) IN (SELECT CAST(3599999 AS Time));
 
--- Same for DateTime64 probes, which saturate at the DateTime range boundaries.
-SELECT CAST(toDecimal64(4294967296, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
-SELECT CAST(toDecimal64(-1, 0) AS DateTime64(0)) IN (SELECT toDateTime(0));
-SELECT CAST(toDecimal64(4294967295, 0) AS DateTime64(0)) IN (SELECT toDateTime(4294967295));
-
--- Cross-family probes are exact when the target scale fits; only digits below the target scale are lossy.
+-- Other conversions keep the accurate-cast path: exact cross-family probes match.
 SELECT CAST('14:45:40.123' AS Time64(3)) IN (SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC'));
-SELECT CAST('14:45:40.123' AS Time64(3)) IN (SELECT toDateTime64('1970-01-01 14:45:40.1', 1, 'UTC'));
-SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC') IN (SELECT CAST('14:45:40.123' AS Time64(3)));
-SELECT toDateTime64('1970-01-01 14:45:40.123', 3, 'UTC') IN (SELECT toDateTime64('1970-01-01 14:45:40.1', 1, 'UTC'));
+SELECT CAST('00:00:01.5' AS Time64(1)) IN (SELECT toDecimal64(1.5, 1));
 
--- Composite probes: lossy Time64/DateTime64 values nested in Array/Tuple/Map must not match either.
+-- A NULL probe row is never marked lossy, whatever its hidden payload.
+SELECT isNull(nullIf(CAST('01:02:03.5' AS Time64(1)), CAST('01:02:03.5' AS Time64(1))));
+SELECT nullIf(CAST('01:02:03.5' AS Time64(1)), CAST('01:02:03.5' AS Time64(1))) IN (SELECT CAST(NULL AS Nullable(Time))) SETTINGS transform_null_in = 1;
+SELECT nullIf(CAST('01:02:03.5' AS Time64(1)), CAST('01:02:03.5' AS Time64(1))) NOT IN (SELECT CAST(NULL AS Nullable(Time))) SETTINGS transform_null_in = 1;
+
+-- Composite probes: lossy Time64 values nested in Array/Tuple/Map must not match either.
 SELECT [CAST('01:02:03.5' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);
 SELECT [CAST('01:02:03.0' AS Time64(1))] IN (SELECT [CAST('01:02:03' AS Time)]);
 SELECT map('k', CAST('01:02:03.5' AS Time64(1))) IN (SELECT map('k', CAST('01:02:03' AS Time)));
 SELECT (CAST('01:02:03.5' AS Time64(1)), 1) IN (SELECT (CAST('01:02:03' AS Time), 1));
-SELECT [CAST('2020-01-01 00:00:00.5' AS DateTime64(1))] IN (SELECT [CAST('2020-01-01 00:00:00' AS DateTime)]);
+
+-- LowCardinality on the target side is looked through, including inside composites.
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT [CAST(toDecimal64(3600001, 0) AS Time64(0))] IN (SELECT [toLowCardinality(CAST(3599999 AS Time))]);
