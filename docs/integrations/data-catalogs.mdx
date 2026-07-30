@@ -46,7 +46,7 @@ Before you connect a catalog, confirm the following:
 Select your catalog below for guidance and prerequisites. Then fill in the connection parameters, along with a **Database name** — the ClickHouse database that exposes your catalog tables in the SQL console.
 
 <Tabs>
-<Tab title="AWS Glue">
+<Tab title="AWS Glue" id="aws-glue">
 
 [AWS Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog) exposes [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables registered in the Glue Data Catalog.
 
@@ -77,7 +77,7 @@ Glue supports multiple table formats, but ClickHouse only reads **Iceberg** tabl
 </Note>
 
 </Tab>
-<Tab title="Unity Catalog (Iceberg)">
+<Tab title="Unity Catalog (Iceberg)" id="unity-iceberg">
 
 Query Unity Catalog [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables that use external storage locations, using OAuth client credentials from a Databricks service principal. See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-iceberg) for full setup.
 
@@ -95,7 +95,7 @@ In the flyout:
 4. Enter a **Database name** for the ClickHouse database that exposes your Unity Catalog tables.
 
 </Tab>
-<Tab title="Unity Catalog (Delta)">
+<Tab title="Unity Catalog (Delta)" id="unity-delta">
 
 Query Unity Catalog [Delta Lake](/reference/engines/table-engines/integrations/deltalake) tables that use external storage locations, using a Databricks Personal Access Token (PAT). See the [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog#read-delta) for full setup.
 
@@ -117,7 +117,7 @@ Iceberg and Delta use different authentication in the UI. This will require two 
 </Note>
 
 </Tab>
-<Tab title="REST catalog">
+<Tab title="REST catalog" id="rest">
 
 Connect to any catalog that implements the [Iceberg REST Catalog](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml) specification. See the [REST catalog guide](/guides/use-cases/data-warehousing/rest-catalog) for full setup.
 
@@ -137,7 +137,7 @@ In the flyout:
 5. Enter a **Database name** for the ClickHouse database that exposes your REST catalog tables.
 
 </Tab>
-<Tab title="Microsoft OneLake">
+<Tab title="Microsoft OneLake" id="onelake">
 
 Query [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables in Microsoft Fabric OneLake using Azure AD application credentials. See the [Fabric OneLake guide](/guides/use-cases/data-warehousing/onelake-catalog) for full setup.
 
@@ -156,7 +156,7 @@ In the flyout:
 4. Enter a **Database name** for the ClickHouse database that exposes your OneLake tables.
 
 </Tab>
-<Tab title="Polaris">
+<Tab title="Polaris" id="polaris">
 
 Connect to a Snowflake Open Catalog (Polaris) deployment for [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables. See the [Polaris catalog guide](/guides/use-cases/data-warehousing/polaris-catalog) for full setup.
 
@@ -175,7 +175,7 @@ In the flyout:
 5. Enter a **Database name** for the ClickHouse database that exposes your Polaris tables.
 
 </Tab>
-<Tab title="BigLake Metastore">
+<Tab title="BigLake Metastore" id="biglake">
 
 Connect to Google Cloud BigLake Metastore (aka Lakehouse runtime catalog) for [Iceberg](/reference/engines/table-engines/integrations/iceberg) tables in GCS. See the [BigLake Metastore guide](/guides/use-cases/data-warehousing/biglake-catalog) for full setup.
 
