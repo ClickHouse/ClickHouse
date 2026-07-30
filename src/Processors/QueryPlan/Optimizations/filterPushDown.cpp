@@ -1391,11 +1391,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (subplanEmitsTotals(branch))
                 return 0;
 
-        /// This rewrite forces every branch input header to the pushed-down filter's output header,
-        /// which assumes the step forwards each branch unchanged. Its constructor instead
-        /// materializes a column that is not Const with the same value in every branch, so when an
-        /// input header differs from the output the forced header reinstates a constness the branch
-        /// does not emit. Skip that case, exactly as for UnionStep.
+        /// Forcing the filter's output header onto a branch whose input header is not the output one
+        /// would reinstate a constness that branch does not emit, as for UnionStep.
         const auto & set_key_header = *intersect_or_except->getOutputHeader();
         for (const auto & input_header : child->getInputHeaders())
             if (!blocksHaveEqualStructure(*input_header, set_key_header))
