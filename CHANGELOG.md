@@ -21,6 +21,81 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release a9f0a82553aa72af5d99e50760226e49036012c9 (a9f0a82553a) FIXME as compared to 1e31a058a12bbc5c0f4f8c0a761057d16c58a639 (1e31a058a12)
+
+#### Backward Incompatible Change
+* The experimental `ALP` codec now performs `Float32` scaling arithmetic in `Float64`, which eliminates exceptions on decimal data and significantly improves compression ratios. [#111627](https://github.com/ClickHouse/ClickHouse/pull/111627) ([Raufs Dunamalijevs](https://github.com/rienath)).
+
+#### New Feature
+* Added a new filesystem cache setting `system_cache_extensions` that controls which files are stored in the system cache when `use_split_cache` is enabled. [#111575](https://github.com/ClickHouse/ClickHouse/pull/111575) ([Kirill](https://github.com/kirillgarbar)).
+
+#### Performance Improvement
+* Optimize `nullIf(key, sentinel) = const` predicates to build key ranges and enable primary key, partition, and skip-index pruning. [#107308](https://github.com/ClickHouse/ClickHouse/pull/107308) ([Aditya Kumar](https://github.com/adityaksolves)).
+* Asynchronous logging now uses a bounded lock-free queue: threads writing log messages never block on a mutex or wake up the logging threads. [#107363](https://github.com/ClickHouse/ClickHouse/pull/107363) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+
+#### Improvement
+* When an `INSERT` fails because a materialized view's `TO` target table rejects the write while the insert pipeline is being built (for example the target is a `View`, or it does not support transactions), the error message now names the materialized view and its target table instead of only reporting the bare storage error. [#107234](https://github.com/ClickHouse/ClickHouse/pull/107234) ([Groene AI](https://github.com/groeneai)).
+* Processing protobuf messages with `input_format_protobuf_oneof_presence` we do not require exact match of tags to allow schema changes. [#109174](https://github.com/ClickHouse/ClickHouse/pull/109174) ([Ilya Golshtein](https://github.com/ilejn)).
+* The `basic` statistics `NullCount` sub-statistic is renamed to `DefaultCount`: instead of counting `NULL` rows of a `Nullable` column, `build` now counts rows equal to the column type's intrinsic default via `IColumn::getNumberOfDefaultRows`. [#109977](https://github.com/ClickHouse/ClickHouse/pull/109977) ([Han Fei](https://github.com/hanfei1991)).
+* Support iceberg local concurrent. [#110284](https://github.com/ClickHouse/ClickHouse/pull/110284) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Added the `DuplicationDataHashComputations` ProfileEvent, which counts the column-wise data-hash computations performed while deduplicating INSERTed blocks to `*MergeTree` tables. [#111173](https://github.com/ClickHouse/ClickHouse/pull/111173) ([Valery Petrov](https://github.com/valerypetrov)).
+* Reduce CPU usage when making snapshot for huge amout of files. [#112297](https://github.com/ClickHouse/ClickHouse/pull/112297) ([Han Fei](https://github.com/hanfei1991)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix column-name corruption and `BAD_ARGUMENTS` exception caused by the setting `inject_random_order_for_select_without_order_by`. With the setting enabled, multi-column SELECTs no longer fail and output column names (e.g. for `CREATE TABLE AS SELECT`, `CREATE VIEW AS SELECT`, `JSONEachRow`) are preserved instead of being replaced with internal `__subquery_column_<UUID>` aliases. [#105896](https://github.com/ClickHouse/ClickHouse/pull/105896) ([Groene AI](https://github.com/groeneai)).
+* Fix `NOT_FOUND_COLUMN_IN_BLOCK` in the native Parquet V3 reader (regression from [#93542](https://github.com/ClickHouse/ClickHouse/issues/93542)) when a `PREWHERE` had conjuncts sharing a common intermediate expression. [#107059](https://github.com/ClickHouse/ClickHouse/pull/107059) ([Groene AI](https://github.com/groeneai)).
+* Prevents bugs when using deferred prewhere with `optimise_move_to_prewhere=1`. When PREWHERE is applied after FINAL, moving WHERE conditions to PREWHERE must be skipped, otherwise they escape the deferral and run before a deferred row policy. [#109703](https://github.com/ClickHouse/ClickHouse/pull/109703) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Fixed `BAD_GET` error when comparing an `Array(String)` column with an array literal (`arr = ['x']`) when the column has a `text`, `tokenbf_v1` or `ngrambf_v1` skip index. Such a comparison is now treated as a full scan by the index instead of failing the whole query. [#110057](https://github.com/ClickHouse/ClickHouse/pull/110057) ([Groene AI](https://github.com/groeneai)).
+* Fix writes through data-lake table functions (e.g. `INSERT INTO FUNCTION icebergS3(...)`) producing parquet files whose string columns lost the `String` type annotation, making the written data unreadable for external readers such as Spark. Such writes now use the same format settings as writes through the table engine. [#110465](https://github.com/ClickHouse/ClickHouse/pull/110465) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fix wrong `IS NULL` / `IS NOT NULL` / `count()` results with `optimize_functions_to_subcolumns` on a column that was made `Nullable` by a metadata-only `ALTER MODIFY COLUMN T` to `Nullable(T)`. For parts written before the conversion, the `.null` subcolumn was filled from the storage-type default (NULL) instead of being derived from the physically-present parent column, so existing not-null rows were wrongly reported as NULL. [#110584](https://github.com/ClickHouse/ClickHouse/pull/110584) ([Groene AI](https://github.com/groeneai)).
+* Fix wrong query results from the optimize_and_compare_chain optimization (enabled by default): a condition derived by transitivity from a < b AND b < c could use different comparison semantics than the original conditions when the chain mixes types with pair-specific conversion rules (e.g. Enum vs String, Decimal vs Float64, FixedString of different widths). Transitive conditions are now derived only within groups of types sharing a single comparison order. [#110621](https://github.com/ClickHouse/ClickHouse/pull/110621) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Now RestCatalog throw proper exception instead of silence or "UNKNOWN_TABLE" in case of stale credentials. [#111379](https://github.com/ClickHouse/ClickHouse/pull/111379) ([alesapin](https://github.com/alesapin)).
+* Fix a race in executable UDFs, the `executable` table engine, and executable dictionaries where an `fcntl` on an already-closed file descriptor could corrupt an unrelated descriptor of a concurrent query (stripping `O_NONBLOCK`), which could make queries hang indefinitely. [#111779](https://github.com/ClickHouse/ClickHouse/pull/111779) ([Raúl Marín](https://github.com/Algunenano)).
+* Fixed quadratic complexity in `countSubstringsCaseInsensitiveUTF8`, which made the function take minutes on a haystack of a few megabytes with many matches. The character offset of each match is now maintained incrementally instead of being recounted from the start of the row. [#112003](https://github.com/ClickHouse/ClickHouse/pull/112003) ([Groene AI](https://github.com/groeneai)).
+* Fixed a `LOGICAL_ERROR` (`Type mismatch when building statistics for column`) during a `MergeTree` mutation of a table whose column type was changed by a metadata-only `ALTER MODIFY COLUMN` (for example `Enum8` to `Int8` or `DateTime` to `UInt32`) while the column carries statistics. The mutation now recomputes only the statistics of columns it actually rewrites and carries the rest over unchanged, and a column rewritten by `MATERIALIZE COLUMN`, by an `UPDATE` of a column a `MATERIALIZED` column depends on, or by `CLEAR COLUMN` now gets its statistics recomputed instead of keeping stale content. [#112009](https://github.com/ClickHouse/ClickHouse/pull/112009) ([Groene AI](https://github.com/groeneai)).
+* Fixed a wrong result for a `JOIN` whose `ON` expression contains a constant conjunct, for example `ON l.id = r.id AND CAST(NULL AS Nullable(UInt8))`. The constant was silently dropped by query plan optimization, so the join ran as if it were not there: `INNER`, `LEFT SEMI` and `RIGHT SEMI` joins returned matched rows where a never-true condition must return none, and `RIGHT ANTI` returned no rows instead of all of them. [#112155](https://github.com/ClickHouse/ClickHouse/pull/112155) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Fixed wrong results, wrongly ordered `ORDER BY` output and a `BAD_TYPE_OF_FIELD` exception when the primary key is an `Array` or `Tuple` and the query applies `plus`, `minus`, `multiply`, `divide` or `intDiv` to it. Arithmetic on a compound value is evaluated element-wise, while the comparison of a compound value is lexicographic, so primary key analysis no longer treats such an expression as monotonic. [#112339](https://github.com/ClickHouse/ClickHouse/pull/112339) ([Groene AI](https://github.com/groeneai)).
+* Fixed `Code: 62 ... You must not specify ANY or ALL for PASTE JOIN. (SYNTAX_ERROR)` raised by a remote server for a query containing a `PASTE JOIN` that is shipped to another server, for example when the left table is a `Distributed` table or a `*Cluster` table function. The formatter printed `ALL PASTE JOIN`, a spelling the parser rejects, so the receiving server could not parse the query it was sent. [#112404](https://github.com/ClickHouse/ClickHouse/pull/112404) ([Groene AI](https://github.com/groeneai)).
+
+#### Build/Testing/Packaging Improvement
+* Updated the bundled Apache Thrift library to version 0.24.0. [#111278](https://github.com/ClickHouse/ClickHouse/pull/111278) ([Groene AI](https://github.com/groeneai)).
+* Use `libarchive` 3.8.9. [#112434](https://github.com/ClickHouse/ClickHouse/pull/112434) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* N/A - test-only change. [#103288](https://github.com/ClickHouse/ClickHouse/pull/103288) ([Groene AI](https://github.com/groeneai)).
+* Speed up 02428_parameterized_view by batching client invocations. [#103687](https://github.com/ClickHouse/ClickHouse/pull/103687) ([Groene AI](https://github.com/groeneai)).
+* Not applicable — test-only change. [#103877](https://github.com/ClickHouse/ClickHouse/pull/103877) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Stabilize 03599_lightweight_delete_vertical_merge under slow sanitizer runners. [#105427](https://github.com/ClickHouse/ClickHouse/pull/105427) ([Groene AI](https://github.com/groeneai)).
+* Not for changelog. [#105613](https://github.com/ClickHouse/ClickHouse/pull/105613) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 02562_native_tskv_default_for_omitted_fields. [#107101](https://github.com/ClickHouse/ClickHouse/pull/107101) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 04051_pk_analysis_stats under parallel replicas. [#107306](https://github.com/ClickHouse/ClickHouse/pull/107306) ([Groene AI](https://github.com/groeneai)).
+* Add regression test for lazy materialization with projection PREWHERE (multi-column). [#108098](https://github.com/ClickHouse/ClickHouse/pull/108098) ([Groene AI](https://github.com/groeneai)).
+* Harden 01396_inactive_replica_cleanup_nodes_zookeeper to surface poll errors. [#108213](https://github.com/ClickHouse/ClickHouse/pull/108213) ([Groene AI](https://github.com/groeneai)).
+* Tolerate transient readonly replica in replication.lib KILL MUTATION cleanup. [#108455](https://github.com/ClickHouse/ClickHouse/pull/108455) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 02497_remote_disk_fat_column (Memory limit exceeded). [#108457](https://github.com/ClickHouse/ClickHouse/pull/108457) ([Groene AI](https://github.com/groeneai)).
+* Make test_lag_after_recovery deterministic. [#108458](https://github.com/ClickHouse/ClickHouse/pull/108458) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `03100_lwu_07_merge_patches`. [#108594](https://github.com/ClickHouse/ClickHouse/pull/108594) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 03365_column_ttl_should_rebuild_skp_idx_and_proj. [#108805](https://github.com/ClickHouse/ClickHouse/pull/108805) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky 03821_drop_workload_during_query_race leaking global workload state. [#108978](https://github.com/ClickHouse/ClickHouse/pull/108978) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 03096_order_by_system_tables. [#109365](https://github.com/ClickHouse/ClickHouse/pull/109365) ([Groene AI](https://github.com/groeneai)).
+* fix S3Queue logging in ObjectStorageQueuePostProcessor.cpp. [#109487](https://github.com/ClickHouse/ClickHouse/pull/109487) ([Bharat Nallan](https://github.com/bharatnc)).
+* Fix flaky 04408_array_fold_cancellation under sanitizers. [#110942](https://github.com/ClickHouse/ClickHouse/pull/110942) ([Groene AI](https://github.com/groeneai)).
+* AutoReleases: gate commit selection on real release artifacts (shared contract), grant write-all, move to amd-release-maker. [#111177](https://github.com/ClickHouse/ClickHouse/pull/111177) ([Alexei Fedotov](https://github.com/leshikus)).
+* ### Description. [#111775](https://github.com/ClickHouse/ClickHouse/pull/111775) ([Groene AI](https://github.com/groeneai)).
+* Not applicable — test-only change. [#112006](https://github.com/ClickHouse/ClickHouse/pull/112006) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Functional tests: ignore benign filesystem-cache background-download No such key. [#112157](https://github.com/ClickHouse/ClickHouse/pull/112157) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix a rare flake in 04320_url_engine_dispatch_partition_and_format (NOT ILIKE '%auto%' matched the random database name test_q2autogn), and make clickhouse-test generate word-free database names by alternating letters and digits. [#112312](https://github.com/ClickHouse/ClickHouse/pull/112312) ([Pedro Ferreira](https://github.com/PedroTadim)).
+* Sync changes. [#112318](https://github.com/ClickHouse/ClickHouse/pull/112318) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Add a test for the per-part minmax index over block columns during mutations. [#112343](https://github.com/ClickHouse/ClickHouse/pull/112343) ([Groene AI](https://github.com/groeneai)).
+* Not applicable — test-only change. [#112379](https://github.com/ClickHouse/ClickHouse/pull/112379) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Fix 01666_merge_tree_max_query_limit under parallel replicas. [#112385](https://github.com/ClickHouse/ClickHouse/pull/112385) ([Groene AI](https://github.com/groeneai)).
+* S3Queue - add a new helper isSettingChangeableInPlace. [#112391](https://github.com/ClickHouse/ClickHouse/pull/112391) ([Bharat Nallan](https://github.com/bharatnc)).
+* Track host CPU/RAM usage in praktika jobs. [#112436](https://github.com/ClickHouse/ClickHouse/pull/112436) ([Max Kainov](https://github.com/maxknv)).
+* Not for changelog: fixes behavior of the experimental `parallel_replicas_plan_based` feature, which is under active development. [#112443](https://github.com/ClickHouse/ClickHouse/pull/112443) ([Igor Nikonov](https://github.com/devcrafter)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="268"></a> ClickHouse release 26.8, FIXME (in progress)
 
 #### Backward Incompatible Change
