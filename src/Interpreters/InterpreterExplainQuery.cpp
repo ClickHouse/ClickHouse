@@ -831,9 +831,25 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
     /// valid `SQL SECURITY DEFINER` / `NONE` view explain would be denied because the user lacks direct
     /// access to the base table. `InDepthQueryTreeVisitorWithContext` tracks the scope context as it
     /// descends into `QueryNode` / `UnionNode` children.
+    ///
+    /// A parameterized view is not a `TableNode`: `QueryAnalyzer::resolveTableFunction` resolves `pv(...)`
+    /// into a `TableFunctionNode` that owns the view's storage (built by
+    /// `Context::buildParameterizedViewStorage`). Real execution checks `SELECT` on that view object all
+    /// the same - the planner does it for exactly this node type in
+    /// `prepareBuildQueryPlanForTableExpression` - so such nodes are collected here too. Every other table
+    /// function is skipped, as in the planner: its own access check happens in `ITableFunction::execute`.
     class CollectTablesVisitor : public InDepthQueryTreeVisitorWithContext<CollectTablesVisitor>
     {
     public:
+        struct TableExpression
+        {
+            IQueryTreeNode * node;
+            StoragePtr storage;
+            StorageID storage_id;
+            StorageSnapshotPtr storage_snapshot;
+            ContextPtr scope_context;
+        };
+
         explicit CollectTablesVisitor(const ContextPtr & context)
             : InDepthQueryTreeVisitorWithContext(context)
         {
@@ -842,32 +858,47 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         void enterImpl(QueryTreeNodePtr & node)
         {
             if (auto * table_node = node->as<TableNode>())
-                tables.emplace_back(table_node, getContext());
+            {
+                tables.emplace_back(TableExpression{
+                    table_node, table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), getContext()});
+                return;
+            }
+
+            if (auto * table_function_node = node->as<TableFunctionNode>())
+            {
+                const auto & storage = table_function_node->getStorage();
+                const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+                if (storage_view && storage_view->isParameterizedView())
+                    tables.emplace_back(TableExpression{
+                        table_function_node,
+                        storage,
+                        table_function_node->getStorageID(),
+                        table_function_node->getStorageSnapshot(),
+                        getContext()});
+            }
         }
 
-        std::vector<std::pair<TableNode *, ContextPtr>> tables;
+        std::vector<TableExpression> tables;
     };
 
     CollectTablesVisitor visitor(query_context);
     visitor.visit(query_tree);
 
-    /// A `TableNode` instance is unique per scope, so each pair identifies one table in one scope.
-    /// Guard against the same node being visited twice (shared subtrees) so we check it only once.
-    std::unordered_set<const TableNode *> checked_tables;
-    for (auto & [table_node, scope_context] : visitor.tables)
+    /// A table expression node instance is unique per scope, so each entry identifies one table in one
+    /// scope. Guard against the same node being visited twice (shared subtrees) so we check it only once.
+    std::unordered_set<const IQueryTreeNode *> checked_tables;
+    for (auto & [node, storage, storage_id, storage_snapshot, scope_context] : visitor.tables)
     {
         /// StorageDummy is created on preliminary stages; ignore access check for it (as the planner does).
-        if (typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+        if (typeid_cast<const StorageDummy *>(storage.get()))
             continue;
 
-        const auto & storage_id = table_node->getStorageID();
-
-        if (!checked_tables.emplace(table_node).second)
+        if (!checked_tables.emplace(node).second)
             continue;
 
         /// Columns selected from this specific table instance, so a base table referenced both directly
         /// and through an inlined view is checked with the right column set in each scope.
-        auto column_names = collectSelectedColumnsForTableNode(query_tree, *table_node, scope_context);
+        auto column_names = collectSelectedColumnsForTableExpression(query_tree, *node, storage_id, scope_context);
         if (!column_names.empty())
         {
             /// In case of cross-replication we don't know what database is used for the table on the
@@ -884,7 +915,7 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
             /// early `hasDatabase` guard used to) would let `count()`-style queries bypass the check.
             auto access = scope_context->getAccess();
             bool has_accessible_column = false;
-            for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
+            for (const auto & column : storage_snapshot->metadata->getColumns())
             {
                 if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
                 {
@@ -908,16 +939,15 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// on its base tables is denied, exactly as a plain `SELECT` through the view is.
         ///
         /// This covers both a regular, non-parameterized view that is not inlined (`analyzer_inline_views = 0`,
-        /// the default) and a parameterized view: `QueryAnalyzer::resolveTableFunction` turns `pv(...)` into a
-        /// fake `TableNode` whose storage (built by `Context::buildParameterizedViewStorage`) already holds
-        /// the parameter-substituted inner query and the view's SQL security, so exactly the same recursive
-        /// pass applies. Without it a user with `SELECT` on the parameterized view but not on its base table
+        /// the default) and a parameterized view, whose `TableFunctionNode` storage already holds the
+        /// parameter-substituted inner query and the view's SQL security, so exactly the same recursive pass
+        /// applies. Without it a user with `SELECT` on the parameterized view but not on its base table
         /// could `EXPLAIN QUERY TREE SELECT * FROM pv(...)` (or `EXPLAIN SYNTAX` when expansion is skipped for
         /// `FINAL` / `SAMPLE` / `SQL SECURITY DEFINER` / `NONE`) and read metadata that real execution rejects
         /// in `StorageView::readImpl`. Inlined views already expose their base tables as `TableNode`s handled
         /// by the loop above, so they are not double-checked here.
-        if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
-            checkViewBaseTableAccess(table_node->getStorage(), table_node->getStorageSnapshot(), scope_context, column_names);
+        if (typeid_cast<const StorageView *>(storage.get()))
+            checkViewBaseTableAccess(storage, storage_snapshot, scope_context, column_names);
     }
 }
 
@@ -972,19 +1002,27 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// the caller must then not dump anything the skipped check was supposed to protect.
 bool checkAccessForExplainedSelect(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
 {
-    auto query_tree = buildQueryTree(explained_query, query_context);
-    auto query_tree_pass_manager = QueryTreePassManager(query_context);
+    /// `joined_subquery_requires_alias` is a convenience restriction on how a query may be written, not
+    /// an access rule, and an unexpanded parameterized view call in a `JOIN` carries no alias of its own.
+    /// Resolving the original query for the check must not fail on it: the check would then be skipped
+    /// and the caller would fall back to dumping the query unexpanded. The relaxation applies only to
+    /// this throwaway tree - the dump itself is still produced under the query's own settings.
+    auto check_context = Context::createCopy(query_context);
+    check_context->setSetting("joined_subquery_requires_alias", false);
+
+    auto query_tree = buildQueryTree(explained_query, check_context);
+    auto query_tree_pass_manager = QueryTreePassManager(check_context);
     addQueryTreePasses(query_tree_pass_manager);
     size_t pass_index = passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(passes);
 
     if (run_passes && pass_index >= 1)
     {
         query_tree_pass_manager.run(query_tree, pass_index);
-        checkAccessRightsForQueryTree(query_tree, query_context);
+        checkAccessRightsForQueryTree(query_tree, check_context);
         return true;
     }
 
-    return resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, query_context);
+    return resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, check_context);
 }
 
 /// Collect the outermost `SELECT`s of an explained statement. For a plain `EXPLAIN SYNTAX SELECT ...`

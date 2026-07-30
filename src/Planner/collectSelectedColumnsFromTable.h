@@ -19,4 +19,10 @@ std::vector<String> collectSelectedColumnsFromTable(QueryTreeNodePtr & query_tre
 /// an inlined view): each `TableNode` instance then owns only the columns selected from it in its own scope.
 std::vector<String> collectSelectedColumnsForTableNode(QueryTreeNodePtr & query_tree, const TableNode & table_node, const ContextPtr & context);
 
+/// Same as above for a table expression that is not necessarily a `TableNode`: a parameterized view is
+/// resolved into a `TableFunctionNode` that owns the view's storage, and the columns selected from it
+/// have that node as their column source.
+std::vector<String> collectSelectedColumnsForTableExpression(
+    QueryTreeNodePtr & query_tree, const IQueryTreeNode & table_expression, const StorageID & storage_id, const ContextPtr & context);
+
 }

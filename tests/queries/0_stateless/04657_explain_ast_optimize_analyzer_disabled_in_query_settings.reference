@@ -1,0 +1,4 @@
+SELECT      analyzer disabled in query: OK, view body not revealed
+EXPLAIN AST analyzer disabled in query: OK, view body revealed
+SELECT      session default          : ACCESS_DENIED
+EXPLAIN AST session default          : ACCESS_DENIED

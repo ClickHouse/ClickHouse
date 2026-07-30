@@ -1,0 +1,18 @@
+-- enable_analyzer = 1
+SELECT      pv_definer base_only: ACCESS_DENIED
+SELECT      pv_definer full     : OK, view body not revealed
+EXPLAIN AST pv_definer base_only: ACCESS_DENIED
+EXPLAIN AST pv_definer full     : OK, view body revealed
+SELECT      pv_none base_only: ACCESS_DENIED
+SELECT      pv_none full     : OK, view body not revealed
+EXPLAIN AST pv_none base_only: ACCESS_DENIED
+EXPLAIN AST pv_none full     : OK, view body revealed
+-- enable_analyzer = 0
+SELECT      pv_definer base_only: OK, view body not revealed
+SELECT      pv_definer full     : OK, view body not revealed
+EXPLAIN AST pv_definer base_only: OK, view body revealed
+EXPLAIN AST pv_definer full     : OK, view body revealed
+SELECT      pv_none base_only: OK, view body not revealed
+SELECT      pv_none full     : OK, view body not revealed
+EXPLAIN AST pv_none base_only: OK, view body revealed
+EXPLAIN AST pv_none full     : OK, view body revealed
