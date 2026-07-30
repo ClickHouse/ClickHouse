@@ -345,6 +345,10 @@ private:
     /// header), so scalar subqueries in their arguments must be executed for real instead of
     /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
     bool table_function_arguments_in_resolve_process = false;
+
+    /// True while a parameterized view argument value is resolved: a scalar subquery there must
+    /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
+    bool parameterized_view_arguments_in_resolve_process = false;
 };
 
 }
