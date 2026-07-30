@@ -224,6 +224,7 @@ EphemeralLocksInPartitions::EphemeralLocksInPartitions(
     const std::optional<String> & znode_data,
     zkutil::ZooKeeper & zookeeper_,
     const std::set<String> & partition_ids,
+    const String & host_check_path,
     std::optional<int32_t> expected_block_numbers_version)
     : zookeeper(&zookeeper_)
 {
@@ -255,13 +256,17 @@ EphemeralLocksInPartitions::EphemeralLocksInPartitions(
             String partition_path = block_numbers_path + "/" + partition;
 
             Coordination::Requests create_ops;
+            /// Check that the table is not being dropped ("host" is the first node that is removed on replica drop).
+            create_ops.push_back(zkutil::makeCheckRequest(host_check_path, -1));
             create_ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
             create_ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
 
             Coordination::Responses create_responses;
             Coordination::Error code = zookeeper_.tryMulti(create_ops, create_responses);
+            /// `ZNODEEXISTS` means someone else has created the partition znode meanwhile, that is fine.
+            /// A failed host check surfaces as `ZNONODE` and aborts the whole operation - the replica is being dropped.
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-                throw Coordination::Exception(code);
+                zkutil::KeeperMultiException::check(code, create_ops, create_responses);
         }
 
         /// The creates above bump the block_numbers_path version. If the caller requested

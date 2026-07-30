@@ -116,6 +116,10 @@ public:
     /// Acquires block number locks only in the specified partitions (not all).
     /// If expected_block_numbers_version is provided, a version check on block_numbers_path
     /// is included in the multi-op. Throws ZBADVERSION if a new partition appeared.
+    /// `host_check_path` is the path of the replica's `host` znode: it is checked when a missing
+    /// `block_numbers/<partition>` znode has to be created, so that a replica that is already
+    /// being dropped cannot create new partition znodes (the same guard the single-partition
+    /// `StorageReplicatedMergeTree::allocateBlockNumber` uses).
     EphemeralLocksInPartitions(
         const String & block_numbers_path,
         const String & path_prefix,
@@ -123,6 +127,7 @@ public:
         const std::optional<String> & znode_data,
         zkutil::ZooKeeper & zookeeper_,
         const std::set<String> & partition_ids,
+        const String & host_check_path,
         std::optional<int32_t> expected_block_numbers_version = std::nullopt);
 
     EphemeralLocksInPartitions() = default;

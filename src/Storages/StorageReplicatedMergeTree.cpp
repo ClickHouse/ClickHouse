@@ -6840,6 +6840,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
                 block_data,
                 *zookeeper,
                 affected,
+                fs::path(replica_path) / "host",
                 has_pruned_commands ? std::optional<int32_t>(block_numbers_stat.version) : std::nullopt);
 
             PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
