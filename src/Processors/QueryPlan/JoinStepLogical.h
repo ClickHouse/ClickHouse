@@ -217,12 +217,18 @@ protected:
     /// Set only on the join that correlated subquery decorrelation creates to produce its result
     /// stream, and records which of the two inputs carries the subquery. That input's totals and
     /// extremes are not part of the subquery's value, so the physical join drops them instead of
-    /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized, and it
-    /// does not need to be: a totals-carrying subquery never reaches a serialized plan, because
-    /// make_distributed_plan refuses such a plan up front (planHasUnsupportedDistributedStep, see
-    /// optimizeTree.cpp) and findQueryForParallelReplicas declines a decorrelated join tree. A
-    /// serialization round trip therefore does drop this member, and that is harmless: the only plans
-    /// that reach `serialize` are ones with no totals to drop.
+    /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized, so a round
+    /// trip drops it. Every route that can serialize a plan enforces what this member provides by its
+    /// own mechanism:
+    ///  - make_distributed_plan: planHasUnsupportedDistributedStep refuses a totals-carrying plan
+    ///    (optimizeTree.cpp, makeDistributed.cpp).
+    ///  - parallel replicas: findQueryForParallelReplicas declines a decorrelated join tree.
+    ///  - a set-subquery plan serialized recursively (Serialization.cpp, SetsSerialization.cpp), which
+    ///    findParallelReplicasQuery.cpp permits under parallel_replicas_allow_in_with_subquery:
+    ///    addCreatingSetsTransform drops totals and extremes itself (QueryPipelineBuilder.cpp).
+    ///  - serialize_query_plan (SelectStreamFactory.cpp): a correlated subquery cannot coexist with a
+    ///    remote table at all, refused during analysis by validateCorrelatedSubqueries
+    ///    (ValidationUtils.cpp), so no marked join reaches this route.
     std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Dummy stats retrieved from hints, used for debugging

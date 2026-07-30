@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache
+
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- The JSONCompact statistics block carries a wall-clock time, which no reference can pin.
@@ -88,12 +91,13 @@ SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
 -- contains no TotalsHavingStep, so a check that recognized step types could be defeated by it.
 -- Dropping the carrier input's streams at the join cannot be, because it never inspects steps.
 
--- The cache below is a server-wide resource shared with every concurrently running test, and its
--- policy declines a write outright when the cache is full of live entries, which would make the rows
--- that assert the warm entry and the hit fail. query_cache_tag is folded into the entry key, so tagging
--- our statements both isolates our entry and lets this drop free the space for it without touching any
--- other test's entries, unlike an untagged SYSTEM DROP QUERY CACHE.
-SYSTEM DROP QUERY CACHE TAG '04327_totals';
+-- The cache below is a server-wide resource whose policy declines a write outright when the cache is
+-- full of live entries, which would make the rows that assert the warm entry and the hit fail. Only an
+-- unscoped drop frees that capacity: a per-tag drop removes entries carrying our tag, and capacity is
+-- a property of the one server-global cache that no tag, key or database can scope. Dropping every
+-- entry is why this test is no-parallel. query_cache_tag stays because it keys our entry distinctly
+-- and makes the system.query_cache assertion below specific.
+SYSTEM DROP QUERY CACHE;
 
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0,
@@ -132,6 +136,9 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '04327_cache_correlated'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
+
+-- Leave the shared cache as this test found it.
+SYSTEM DROP QUERY CACHE;
 
 DROP TABLE u_04327;
 DROP TABLE t_04327;
