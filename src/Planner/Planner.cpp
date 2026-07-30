@@ -704,7 +704,14 @@ void addAggregationStep(QueryPlan & query_plan,
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
-    if (settings[Setting::force_aggregation_in_order])
+    /// With GROUPING SETS, `AggregatingStep::transformPipeline` returns from the grouping-sets branch
+    /// before any `AggregatingInOrderTransform` is built, so in-order state here only misleads later
+    /// steps: with `enable_memory_bound_merging_of_aggregation_results` a distributed query would take
+    /// `MergingAggregatedStep::applyOrder` and then fail in `MergingAggregatedStep::transformPipeline`.
+    const bool force_aggregation_in_order
+        = settings[Setting::force_aggregation_in_order] && aggregation_analysis_result.grouping_sets_parameters_list.empty();
+
+    if (force_aggregation_in_order)
     {
         group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
         sort_description_for_merging = group_by_sort_description;
@@ -745,7 +752,7 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order],
+        force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
