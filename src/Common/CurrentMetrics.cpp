@@ -430,6 +430,7 @@
     M(TimeSeriesTagsDeduplicationCacheBytes, "Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
+    M(MultiSearchAutomatonCacheBytes, "Total size in bytes of compiled Aho-Corasick automata currently retained by the multiSearch automaton cache.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
     M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
     M(SerializationCacheCount, "Total number of entries in the serialization cache") \

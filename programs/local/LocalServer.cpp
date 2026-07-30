@@ -29,6 +29,7 @@
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Functions/MultiSearchAhoCorasickCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/loadMetadata.h>
@@ -147,6 +148,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
+    extern const ServerSettingsUInt64 multi_search_automaton_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
@@ -1758,6 +1760,10 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
     }
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
+
+#if USE_AHO_CORASICK
+    setMultiSearchAutomatonCacheMaxSize(server_settings[ServerSetting::multi_search_automaton_cache_size]);
+#endif
 
     NamedCollectionFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
