@@ -68,6 +68,25 @@ This is most often caused by rows containing large `BLOB`, `TEXT`, or `JSON` val
   Set it in your server configuration (e.g. `my.cnf` or the DB Parameter Group) as well so it persists across restarts.
 - **If a single row is larger than 1G:** resync the pipe.
 
+### Why is my pipe failing with a partial JSON binlog error? {#binlog-partial-json-unsupported}
+
+If your pipe fails with an error similar to:
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+it means the source MySQL server has [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) set to `PARTIAL_JSON`. With this option enabled, MySQL logs updates to `JSON` columns as partial diffs (only the changed paths) rather than the full document. ClickPipes cannot apply these partial diffs, so CDC can't progress.
+
+To resolve it:
+
+- **Disable `PARTIAL_JSON` on the source.** Set the value back to empty:
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  Clear it in your server configuration (e.g. `my.cnf` or the DB Parameter Group) as well so it persists across restarts.
+- **Resync the pipe** so replication resumes from a clean offset.
+
 ### Why am I getting a TLS certificate validation error when connecting to MySQL? {#tls-certificate-validation-error}
 
 When connecting to MySQL, you may encounter certificate errors like `x509: certificate is not valid for any names` or `x509: certificate signed by unknown authority`. These occur because ClickPipes enables TLS encryption by default.
