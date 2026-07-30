@@ -17,6 +17,8 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
+#include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
@@ -567,6 +569,22 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
             if (!is_deprecated_syntax && engine_args.size() >= 6)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+        }
+
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
+        /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
