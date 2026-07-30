@@ -964,13 +964,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
-    /// MATERIALIZED columns recomputed because of a CLEAR COLUMN. Clearing resets the base column
-    /// to its type default and rewrites every recomputable MATERIALIZED column against the cleared
-    /// value, so their new values likewise drive dependencies (e.g. a TTL DELETE WHERE that
-    /// references such a column). Without seeding these, getColumnDependencies sees no TTL input
-    /// change, execute_ttl_type stays NONE and the part keeps stale rows_where_ttl_info.
-    /// This must list the same columns the CLEAR COLUMN recompute below actually writes, otherwise
-    /// a rewritten column's projections / skip indices / statistics are hardlinked stale.
+    /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
+    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
     {
@@ -1679,13 +1674,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// Recompute MATERIALIZED columns after a CLEAR COLUMN. The cleared column entered the
-    /// readonly stage above with its type-default value, so the level-ordered stages emitted
-    /// here evaluate a chain (m2 MATERIALIZED m1 MATERIALIZED src) in dependency order: m1
-    /// against the cleared src, then m2 against the freshly recomputed m1.
-    /// The set stays every recomputable MATERIALIZED column, as before: only the ordering
-    /// changes, so a column that does not depend on the cleared one keeps being re-evaluated
-    /// at its current expression.
+    /// The cleared column entered the readonly stage above with its type-default value, so these
+    /// level-ordered stages evaluate each hop against the freshly written value of the previous one.
     if (need_recalculate_materialized_for_clear)
         emit_materialized_recompute_stages(clear_affected_materialized);
 
