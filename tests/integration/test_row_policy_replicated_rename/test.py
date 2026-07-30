@@ -110,16 +110,37 @@ def _wait_entity(instance, predicate_sql, expected, attempts=60, delay=0.5):
     assert last == expected
 
 
-def _wait_policy_visible(instances, short_name):
+def _wait_policy_visible(instances, short_name, database, table):
+    """The predicate names the EXACT binding, not just the short name.
+
+    A bare `count() == 1` on the short name cannot distinguish the binding this arm just created
+    from a leftover one carrying the same short name, so it would return on the wrong entity and the
+    FILTERED setup loop right after it would measure that instead. Asserting `(database, table)`
+    removes the ambiguity for the cost of nothing: this is still setup-only tolerance, and every
+    read that measures the fix stays exact and un-retried.
+
+    A peer's cached copy of a REMOVED policy is not the hazard here -- measured, it does not
+    normally survive. `ZooKeeperReplicator::removeEntity` does take an early return when the UUID is
+    already gone from Keeper (`:310-311`, because `removeZooKeeper` returns false at `:326-334`) and
+    so skips `removeEntityNoLock`, but the uuid-children list watch cleans up regardless:
+    `refreshEntities(all=false)` calls `memory_storage.removeAllExcept(entity_uuids)` (`:617`), which
+    drops every cached id absent from Keeper. Measured on this fixture, a peer's copy is gone within
+    0.25s of a `shared1`-only DROP, and survives only while that peer is partitioned from Keeper --
+    and is purged 0.5s after the partition heals.
+
+    `table` is the `db.tbl` table name, or "" for a database-wide (`ON db.*`) policy, which is what
+    `system.row_policies.table` prints for `ANY_TABLE_MARK` (verified)."""
     for n in instances:
         _wait_entity(
             n,
-            f"SELECT count() FROM system.row_policies WHERE short_name = '{short_name}'",
-            "1\n",
+            "SELECT database, table FROM system.row_policies "
+            f"WHERE short_name = '{short_name}' AND database = '{database}' "
+            f"AND table = '{table}'",
+            f"{database}\t{table}\n",
         )
 
 
-def _wait_grant_visible(instances, user="rp_user"):
+def _wait_grant_visible(instances, database, user="rp_user"):
     """Waiting for the POLICY does not prove the GRANT has arrived: the two travel by structurally
     independent channels. A freshly created policy reaches peers through the uuid-children list watch
     (ZooKeeperReplicator getChildrenWatch), whose `all=false` path refreshes only NEW uuids, while a
@@ -130,14 +151,20 @@ def _wait_grant_visible(instances, user="rp_user"):
     a security assertion, so this is a setup-robustness wait like _wait_policy_visible: it adds
     tolerance to no assertion, and every read that measures the fix stays exact and un-retried.
 
-    `SELECT ... ON db.*` and `SELECT ... ON *.*` both produce exactly ONE system.grants row
-    (verified: the row differs only in whether `database` is set), so one predicate covers both the
-    per-database sites and the `*.*` site."""
+    Like the policy wait, the predicate asserts the grant's SCOPE rather than merely that one row
+    exists for the user, so a leftover grant with a different scope cannot satisfy it.
+    `SELECT ... ON db.*` and `SELECT ... ON *.*` both produce exactly ONE `system.grants` row
+    differing only in whether `database` is set, so projecting `database` distinguishes them.
+
+    Pass the database name for an `ON db.*` grant, or None for the `ON *.*` site: `database` is
+    Nullable and is NULL for `*.*` (verified -- it renders as the TSV `\\N`, not as an empty
+    string), so the expectation is built here rather than left to each caller."""
+    expected = "\\N\n" if database is None else f"{database}\n"
     for n in instances:
         _wait_entity(
             n,
-            f"SELECT count() FROM system.grants WHERE user_name = '{user}'",
-            "1\n",
+            f"SELECT database FROM system.grants WHERE user_name = '{user}'",
+            expected,
         )
 
 
@@ -309,8 +336,8 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
         shared1.query("SELECT storage FROM system.row_policies WHERE short_name = 'rp_a'")
         == "replicated\n"
     )
-    _wait_policy_visible(shared_nodes[:2], "rp_a")
-    _wait_grant_visible(shared_nodes[:2])
+    _wait_policy_visible(shared_nodes[:2], "rp_a", db, "ta")
+    _wait_grant_visible(shared_nodes[:2], db)
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
@@ -362,8 +389,8 @@ def test_no_rekey_for_server_outside_the_renaming_group(started_cluster):
         f"CREATE ROW POLICY rp_a ON {db}.ta FOR SELECT USING dept = 'eng' TO rp_user"
     )
     _sync(shared_nodes[:2], db, ["ta"])
-    _wait_policy_visible(shared_nodes, "rp_a")
-    _wait_grant_visible(shared_nodes)
+    _wait_policy_visible(shared_nodes, "rp_a", db, "ta")
+    _wait_grant_visible(shared_nodes, db)
     for n in shared_nodes:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
@@ -414,9 +441,9 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
     shared1.query(
         f"CREATE ROW POLICY rp_db ON {db}.* FOR SELECT USING dept = 'eng' TO rp_user"
     )
-    _wait_policy_visible(shared_nodes[:2], "rp_a")
-    _wait_policy_visible(shared_nodes[:2], "rp_db")
-    _wait_grant_visible(shared_nodes[:2])
+    _wait_policy_visible(shared_nodes[:2], "rp_a", db, "ta")
+    _wait_policy_visible(shared_nodes[:2], "rp_db", db, "")
+    _wait_grant_visible(shared_nodes[:2], None)
     for n in shared_nodes[:2]:
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 

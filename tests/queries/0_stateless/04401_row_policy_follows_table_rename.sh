@@ -378,6 +378,29 @@ run_user "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dict2"
 ${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'dp' AND database = '${CLICKHOUSE_DATABASE}'"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY dp ON ${CLICKHOUSE_DATABASE}.dict2"
 
+# `EXCHANGE DICTIONARIES` sets both `exchange` and `dictionary` on the `ASTRenameQuery`
+# (`ParserRenameQuery`), so it reaches the same path with `exchange_tables` true and both directions
+# must follow. Giving the two policies the SAME short name is the point: the swap is only
+# collision-free because `applyRowPolicyRekeys` parks each policy under a unique
+# `tempRekeyTableName` first, so a same-short-name exchange exercises that two-phase move.
+echo '-- EXCHANGE DICTIONARIES with the same policy short name on both dictionaries'
+${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.xdictA (id UInt64, dept String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB '${CLICKHOUSE_DATABASE}')) LAYOUT(FLAT()) LIFETIME(0)"
+${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.xdictB (id UInt64, dept String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB '${CLICKHOUSE_DATABASE}')) LAYOUT(FLAT()) LIFETIME(0)"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY xdp ON ${CLICKHOUSE_DATABASE}.xdictA FOR SELECT USING dept = 'eng' TO ${USER}"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY xdp ON ${CLICKHOUSE_DATABASE}.xdictB FOR SELECT USING dept = 'fin' TO ${USER}"
+echo 'before (xdictA filtered to eng -> id 1, xdictB filtered to fin -> id 2):'
+run_user "SELECT groupArray(id) FROM ${CLICKHOUSE_DATABASE}.xdictA"
+run_user "SELECT groupArray(id) FROM ${CLICKHOUSE_DATABASE}.xdictB"
+${CLICKHOUSE_CLIENT} --query "EXCHANGE DICTIONARIES ${CLICKHOUSE_DATABASE}.xdictA AND ${CLICKHOUSE_DATABASE}.xdictB"
+echo 'after exchange (both policies followed their data -> the two answers swapped):'
+run_user "SELECT groupArray(id) FROM ${CLICKHOUSE_DATABASE}.xdictA"
+run_user "SELECT groupArray(id) FROM ${CLICKHOUSE_DATABASE}.xdictB"
+${CLICKHOUSE_CLIENT} --query "SELECT table, select_filter FROM system.row_policies WHERE short_name = 'xdp' AND database = '${CLICKHOUSE_DATABASE}' ORDER BY table"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xdp ON ${CLICKHOUSE_DATABASE}.xdictA"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY xdp ON ${CLICKHOUSE_DATABASE}.xdictB"
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.xdictA"
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.xdictB"
+
 # The cross-database rejection applies to dictionaries for the same reason as to tables: an ON db.*
 # policy cannot follow the object out of its database.
 echo '-- cross-database RENAME DICTIONARY rejected when a database-wide (db.*) policy applies'

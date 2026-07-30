@@ -109,6 +109,15 @@ before (eng only -> 1 row of 2):
 after rename (policy followed -> still 1 row, and bound to dict2):
 1
 dict2
+-- EXCHANGE DICTIONARIES with the same policy short name on both dictionaries
+before (xdictA filtered to eng -> id 1, xdictB filtered to fin -> id 2):
+[1]
+[2]
+after exchange (both policies followed their data -> the two answers swapped):
+[2]
+[1]
+xdictA	dept = \'fin\'
+xdictB	dept = \'eng\'
 -- cross-database RENAME DICTIONARY rejected when a database-wide (db.*) policy applies
 NOT_IMPLEMENTED
 after rejected cross-db dictionary rename (dictionary not moved, db-wide policy still bound):

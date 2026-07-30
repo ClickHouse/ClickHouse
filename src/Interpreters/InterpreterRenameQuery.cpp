@@ -539,15 +539,23 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
 
         /// Preflight the row-policy transition before the Replicated branch below enqueues the DDL
-        /// entry. Past that enqueue the canonical metadata rename is committed, so a replica that
-        /// cannot apply the transition can no longer reject the rename -- and the resulting failure is
-        /// not retriable (DDLWorker's `no_sense_to_retry` list covers neither ACCESS_STORAGE_READONLY
-        /// nor ACCESS_ENTITY_ALREADY_EXISTS, so the entry throws UNFINISHED and wedges the queue).
-        /// Rejecting here costs nothing and is the last point at which nothing is committed. The
-        /// initiator can only validate what it can see: row policies in a node-local storage are not
-        /// replicated by the DDL queue, so a peer whose OWN state is inapplicable still fails there.
-        /// This bounds that divergence to the peer-only case, it does not remove it. In-tree
-        /// precedent for initiator-side pre-enqueue validation: DatabaseReplicated::checkQueryValid.
+        /// entry, so that a rename the initiator itself can see is inapplicable is rejected before
+        /// any entry is written to Keeper: the error is reported directly, rather than raised later
+        /// from inside the replayed entry.
+        ///
+        /// Commit-safety on this path does not depend on this hoist. Below the branch the preflight
+        /// would still precede the first mutation of the rename (`removeDependencies` /
+        /// `renameTable`), so an initiator-visible rejection already left nothing committed either
+        /// way; the hoist only avoids writing a transient doomed entry.
+        ///
+        /// The initiator can only validate what it can see. Row policies in a node-local storage
+        /// are not replicated by the DDL queue, so replicas can hold different ones, and a replica
+        /// whose own state blocks the move applies the rename anyway and leaves its policy on the
+        /// old name: that name keeps filtering there, while the new name on that replica is filtered
+        /// by whatever policy already sat on it. The replicas end up filtering differently.
+        /// Preflighting here bounds that divergence to the peer-only case, it does not remove it.
+        /// In-tree precedent for initiator-side pre-enqueue validation:
+        /// `DatabaseReplicated::checkQueryValid`.
         std::vector<RowPolicyRekey> row_policy_rekeys = collectAndPreflightRowPolicyRekeys(
             access_control, rename, getContext(), elem, exchange_tables);
 
