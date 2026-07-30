@@ -120,7 +120,6 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -836,10 +835,8 @@ void IcebergMetadata::createInitial(
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        const bool precondition_failed
-            = (e.code() == ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
-            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-        if (if_not_exists && precondition_failed)
+        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
+            && e.message().find("PreconditionFailed") != String::npos)
             return;
         throw;
     }
