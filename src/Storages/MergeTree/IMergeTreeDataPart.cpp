@@ -1238,16 +1238,28 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
 
         size_t file_size = reader.getFileSize(filename);
         auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
-
         CompressedReadBuffer compressed_buf(*file_buf);
-        fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+        try
         {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
-        });
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
 
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        if (column_stat)
-            result.emplace(column_desc->name, std::move(column_stat));
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in packed file {} of part {})",
+                column_desc->name,
+                filename,
+                ColumnsStatistics::FILENAME,
+                name);
+            throw;
+        }
     }
 
     return result;
@@ -1269,14 +1281,26 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
-        fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+        try
         {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
-        });
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
 
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        if (column_stat)
-            result.emplace(column_desc->name, std::move(column_stat));
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in part {})",
+                column_desc->name,
+                filename,
+                name);
+            throw;
+        }
     }
 
     return result;

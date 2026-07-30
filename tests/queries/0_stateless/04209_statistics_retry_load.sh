@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-replicated-database, no-random-settings
 # Tag no-parallel: toggles a server-global failpoint.
 # Tag no-replicated-database: hypothetical indexes are session-scoped and not replicated.
+# Tag no-random-settings: keeps the statistics paths and settings deterministic.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +22,8 @@ cleanup()
 expect_error()
 {
     local expected_error="$1"
-    local query="$2"
+    local expected_context="$2"
+    local query="$3"
     local output
 
     if output=$(${CLICKHOUSE_CLIENT} --multiquery --query "$query" 2>&1); then
@@ -29,10 +31,13 @@ expect_error()
         return 1
     fi
 
-    if ! printf '%s\n' "$output" | grep -qF "$expected_error"; then
-        printf '%s\n' "$output" >&2
-        return 1
-    fi
+    for expected in "$expected_error" "$expected_context"
+    do
+        if ! printf '%s\n' "$output" | grep -qF "$expected"; then
+            printf '%s\n' "$output" >&2
+            return 1
+        fi
+    done
 }
 
 trap cleanup EXIT
@@ -67,24 +72,28 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT merge_tree_load_statistics_throw"
 
 # Both statistics storage representations must propagate a deserialize failure.
-expect_error "CANNOT_READ_ALL_DATA" "
+expect_error "CANNOT_READ_ALL_DATA" \
+    "(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)" "
     SELECT count() FROM t_full WHERE a > 500000
     SETTINGS use_statistics_for_part_pruning = 1, use_statistics_cache = 1
 "
-expect_error "CANNOT_READ_ALL_DATA" "
+expect_error "CANNOT_READ_ALL_DATA" \
+    "(while loading statistics for column a from file statistics_a.stats in part all_1_1_0)" "
     SELECT count() FROM t_packed WHERE a > 500000
     SETTINGS use_statistics_for_part_pruning = 1, use_statistics_cache = 0
 "
 
 # Query planning must propagate the same load failure.
-expect_error "CANNOT_READ_ALL_DATA" "
+expect_error "CANNOT_READ_ALL_DATA" \
+    "(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)" "
     SELECT sum(b) FROM t_full WHERE a > 500000 AND b < 500
     SETTINGS use_statistics = 1, use_statistics_cache = 0,
              use_statistics_for_part_pruning = 0,
              enable_analyzer = 0, optimize_move_to_prewhere = 1
 "
 
-expect_error "CANNOT_READ_ALL_DATA" "
+expect_error "CANNOT_READ_ALL_DATA" \
+    "(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)" "
     CREATE HYPOTHETICAL INDEX idx_a ON t_full (a) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF empirical = 0 SELECT * FROM t_full WHERE a > 500000
     SETTINGS use_statistics_for_part_pruning = 0;
