@@ -1,6 +1,11 @@
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
+-- Some CI configurations set DISTINCT size limits at the server level; pin them to unlimited so that
+-- only the per-query SETTINGS below control the behavior.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
+
 DROP TABLE IF EXISTS t_distinct_limit;
 CREATE TABLE t_distinct_limit (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 INSERT INTO t_distinct_limit SELECT number FROM numbers(800);
