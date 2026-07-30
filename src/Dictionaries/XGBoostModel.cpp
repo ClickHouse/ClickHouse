@@ -228,8 +228,14 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
         for (uint64_t i = 0; i < out_dim; ++i)
             out_len *= out_shape[i];
 
-        // Should have predicted the number of inputted rows
-        chassert(rows == out_len);
+        /// One prediction per input row is the only shape a dictionary can serve: `predictXGBoost` and
+        /// `dictGet` both return a single `Float64` per row.
+        if (out_len != rows)
+            throw Exception(
+                ErrorCodes::XGBOOST_ERROR,
+                "The model predicted {} value(s) for {} row(s). Only models that predict a single value per row are supported",
+                out_len,
+                rows);
 
         auto & data = result->getData();
         data.resize(out_len);
@@ -278,6 +284,15 @@ UnorderedMapWithMemoryTracking<String, String> XGBoostModel::sanitizeTrainingPar
     {
         if (!allowed_keys.contains(key))
             throw Exception(ErrorCodes::XGBOOST_ERROR, "Unknown or forbidden training parameter '{}'", key);
+
+        /// Disable multiclass objectives
+        if (key == "objective" && value.starts_with("multi:"))
+            throw Exception(
+                ErrorCodes::XGBOOST_ERROR,
+                "Objective '{}' is not supported: multiclass training requires the 'num_class' parameter, which an XGBoost "
+                "dictionary does not accept, because it predicts exactly one Float64 per row. Use a regression objective, or "
+                "'binary:logistic' for two-class classification",
+                value);
 
         // If we found num_iterations, record this value and do not add it to the final map
         if (key == "num_iterations")

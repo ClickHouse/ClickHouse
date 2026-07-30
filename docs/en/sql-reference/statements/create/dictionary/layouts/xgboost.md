@@ -13,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthedocs.io/) gradient-boosted model once, at load time, from a source table of training rows, then predicts a numeric target for any feature vector you pass in. The feature columns are the dictionary key and the single attribute is the target the model learns.
 
-It is suited to tabular regression and classification where the features are numeric — for example forecasting a value from several measurements, or scoring rows against a learned target.
+It is suited to tabular regression and binary classification where the features are numeric — for example forecasting a value from several measurements, or scoring rows against a learned target. Multiclass objectives are not supported (see [Layout parameters](#layout-parameters)).
 
 :::note
 The XGBoost integration is experimental. Enable it with the `allow_experimental_xgboost` setting before creating an `XGBOOST` dictionary or calling `predictXGBoost`:
@@ -113,7 +113,7 @@ An `XGBOOST` dictionary has a fixed shape:
 
 A column that does not match these requirements is rejected when the dictionary loads, not when you create it.
 
-The target must be floating-point because a prediction is a floating-point value and `dictGet` returns the declared attribute type: an integer target would truncate every prediction — a probability of `0.73` read back as `0` — and disagree with `predictXGBoost`, which returns a `Float64`. This does not prevent classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
+The target must be floating-point because a prediction is a floating-point value and `dictGet` returns the declared attribute type: an integer target would truncate every prediction — a probability of `0.73` read back as `0` — and disagree with `predictXGBoost`, which returns a `Float64`. This does not prevent binary classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
 
 ## Layout parameters {#layout-parameters}
 
@@ -123,7 +123,7 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | --- | --- |
 | `num_iterations` | Number of boosting rounds (how many trees to train). A positive integer, used as the training loop count rather than forwarded to the booster. Default `100`. |
 | `booster` | Booster type: `gbtree`, `gblinear`, or `dart`. |
-| `objective` | Learning objective, e.g. `reg:squarederror`, `binary:logistic`, `multi:softmax`. |
+| `objective` | Learning objective, e.g. `reg:squarederror` or `binary:logistic`. Must be an objective that predicts a single value per row; multiclass objectives (`multi:softmax`, `multi:softprob`) are rejected — see the note below. |
 | `eval_metric` | Evaluation metric(s) used during training. |
 | `seed` | Random number seed. |
 | `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). |
@@ -144,6 +144,10 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `max_leaves` | Maximum number of leaf nodes (used with `grow_policy` `lossguide`). |
 | `max_bin` | Maximum number of discrete bins used to bucket continuous features (used with `tree_method` `hist`). |
 | `num_parallel_tree` | Number of trees grown per boosting round (a value `> 1` trains a boosted random forest). |
+
+:::note
+Multiclass objectives are not supported. `multi:softmax` and `multi:softprob` require XGBoost's `num_class` parameter, which is not in the list above, and `multi:softprob` predicts one probability per class per row while a dictionary returns exactly one `Float64` per row. A dictionary whose `objective` starts with `multi:` is rejected when the model trains. Use a regression objective, or `binary:logistic` for two-class classification.
+:::
 
 You can define the dictionary with `CREATE DICTIONARY` DDL (as in the quickstart above).
 

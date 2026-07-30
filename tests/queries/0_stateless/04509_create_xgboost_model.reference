@@ -9,16 +9,30 @@ Positive: predict with prediction parameters
 10
 10
 Negative: prediction parameters
+Error: unknown or forbidden prediction parameter
+Error: prediction parameter Map value is not numeric
+Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported
+Error: prediction parameter Map key is not a String
 Negative: predictXGBoost arguments
+Error: a feature argument is not numeric
+Error: predicting against a dictionary that does not exist
+Error: feature count mismatch (more features supplied than the model expects)
 Negative: predictXGBoost against a non-XGBoost dictionary
 42
 Negative: bad hyperparameters (rejected when the model trains, at first use)
+Error: unknown or forbidden training parameter
+Error: num_iterations must be a positive integer
+Error: a multiclass objective is rejected, because num_class is not an accepted training parameter
+Error: num_class itself is not an accepted training parameter
 10
+Error: target is not a valid parameter, because the target is inferred
 Negative: an integer target attribute (rejected at first use)
+Error: only Float32 and Float64 are accepted as the target
 Positive: a Float32 target agrees with predictXGBoost
 10
 Negative: non-numeric structure (rejected at first use)
 Train on demand with SYSTEM RELOAD DICTIONARY
 LOADED
 1
+Error: num_iterations must be a positive integer, rejected at SYSTEM RELOAD DICTIONARY
 LOADED

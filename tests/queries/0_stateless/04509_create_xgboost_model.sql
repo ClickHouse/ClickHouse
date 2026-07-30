@@ -88,28 +88,28 @@ SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2, map('type', 0)))) 
 
 SELECT 'Negative: prediction parameters';
 
--- Error: unknown/forbidden prediction parameter.
+SELECT 'Error: unknown or forbidden prediction parameter';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('not_a_predict_param', 1)); -- { serverError XGBOOST_ERROR }
 
--- Error: prediction-parameter Map value is not numeric.
+SELECT 'Error: prediction parameter Map value is not numeric';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 'x')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Error: prediction 'type' other than 0 (value) or 1 (margin) emits several values per row and is unsupported.
+SELECT 'Error: prediction type other than 0 (value) or 1 (margin) emits several values per row and is unsupported';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 2)); -- { serverError XGBOOST_ERROR }
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map('type', 4)); -- { serverError XGBOOST_ERROR }
 
--- Error: prediction-parameter Map key is not a String.
+SELECT 'Error: prediction parameter Map key is not a String';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, map(1, 2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Negative: predictXGBoost arguments';
 
--- Error: a feature argument is not numeric.
+SELECT 'Error: a feature argument is not numeric';
 SELECT predictXGBoost('model_04509_xgb', 'x', 2.0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Error: predicting against a dictionary that does not exist.
+SELECT 'Error: predicting against a dictionary that does not exist';
 SELECT predictXGBoost('model_04509_missing', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 
--- Error: feature count mismatch (more features supplied than the model expects).
+SELECT 'Error: feature count mismatch (more features supplied than the model expects)';
 SELECT predictXGBoost('model_04509_xgb', 1.0, 2.0, 3.0); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Negative: predictXGBoost against a non-XGBoost dictionary';
@@ -131,17 +131,33 @@ DROP TABLE not_xgb_04509_src;
 
 SELECT 'Negative: bad hyperparameters (rejected when the model trains, at first use)';
 
--- Error: unknown/forbidden training parameter.
+SELECT 'Error: unknown or forbidden training parameter';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(not_a_training_param 1)) LIFETIME(0);
 SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
 DROP DICTIONARY model_04509_bad;
 
--- Error: num_iterations must be a positive integer.
+SELECT 'Error: num_iterations must be a positive integer';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(num_iterations 0)) LIFETIME(0);
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+DROP DICTIONARY model_04509_bad;
+
+-- A multiclass objective needs 'num_class', which is not an accepted training parameter, because a
+-- dictionary predicts exactly one Float64 per row.
+SELECT 'Error: a multiclass objective is rejected, because num_class is not an accepted training parameter';
+CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
+PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
+LAYOUT(XGBOOST(objective 'multi:softmax')) LIFETIME(0);
+SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
+DROP DICTIONARY model_04509_bad;
+
+SELECT 'Error: num_class itself is not an accepted training parameter';
+CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
+PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
+LAYOUT(XGBOOST(objective 'multi:softprob' num_class 3)) LIFETIME(0);
 SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError XGBOOST_ERROR }
 DROP DICTIONARY model_04509_bad;
 
@@ -152,8 +168,9 @@ LAYOUT(XGBOOST()) LIFETIME(0);
 SELECT sum(isFinite(predictXGBoost('model_04509_infer', x1, x2))) FROM inference_04509;
 DROP DICTIONARY model_04509_infer;
 
--- Error: 'target' is not a valid parameter. The target is inferred, so a 'target' key is forwarded to
--- XGBoost as an unknown hyperparameter and rejected when the model trains.
+-- The target is inferred, so a 'target' key is forwarded to XGBoost as an unknown hyperparameter and
+-- rejected when the model trains.
+SELECT 'Error: target is not a valid parameter, because the target is inferred';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(target 'y')) LIFETIME(0);
@@ -162,9 +179,9 @@ DROP DICTIONARY model_04509_bad;
 
 SELECT 'Negative: an integer target attribute (rejected at first use)';
 
--- Error: a prediction is a floating-point value and `dictGet` returns the declared attribute type, so an
--- integer target would truncate every prediction and disagree with predictXGBoost. Only Float32 / Float64
--- are accepted as the target.
+-- A prediction is a floating-point value and `dictGet` returns the declared attribute type, so an integer
+-- target would truncate every prediction and disagree with predictXGBoost.
+SELECT 'Error: only Float32 and Float64 are accepted as the target';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y UInt8 DEFAULT 0)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST()) LIFETIME(0);
@@ -224,7 +241,7 @@ DROP DICTIONARY model_04509_eager;
 -- A bad configuration is rejected at SYSTEM RELOAD DICTIONARY, which forces training synchronously and
 -- rethrows the error.
 
--- Error: num_iterations must be a positive integer.
+SELECT 'Error: num_iterations must be a positive integer, rejected at SYSTEM RELOAD DICTIONARY';
 CREATE DICTIONARY model_04509_eager (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(num_iterations 0)) LIFETIME(0);
