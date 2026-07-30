@@ -5783,7 +5783,9 @@ function showImagePreview(url, owner) {
 /// following the cursor while it moves, and hide it when the cursor leaves. `owner` is the
 /// result element the link belongs to, so the preview can be torn down with that result.
 function attachImagePreview(link, url, owner) {
-    link.title = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
+    /// The gesture is opt-in, so it has to be discoverable: the tooltip shown while the
+    /// cursor rests on the link is what tells the user the modifier reveals a preview.
+    link.title = 'Ctrl/Cmd for preview';
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
