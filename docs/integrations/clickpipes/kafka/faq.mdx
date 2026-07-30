@@ -57,7 +57,7 @@ No. ClickPipes requires the Event Hubs namespace to have the Kafka surface enabl
 </Accordion>
 
 <Accordion title="Does Azure Schema Registry work with ClickPipes?">
-No. ClickPipes only supports schema registries that are API-compatible with the Confluent Schema Registry, which isn't the case for Azure Schema Registry. If you require support for this schema registry, [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
+No. ClickPipes supports Confluent-compatible registries and AWS Glue Schema Registry, but not Azure Schema Registry. See [Schema registries for Kafka ClickPipe](/integrations/clickpipes/kafka/schema-registries) for the current support matrix. If you require Azure Schema Registry support, [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
 </Accordion>
 
 <Accordion title="What permissions does my policy need to consume from Azure Event Hubs?">
