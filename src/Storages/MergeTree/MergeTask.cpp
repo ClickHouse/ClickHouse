@@ -906,6 +906,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     global_ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
+        global_ctx->metadata_snapshot,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         global_ctx->new_data_part->ttl_infos,
         global_ctx->time_of_merge);

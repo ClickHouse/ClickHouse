@@ -9565,10 +9565,12 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(
+    const StorageMetadataPtr & metadata_snapshot,
+    size_t part_size_compressed,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t current_time) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
@@ -12167,11 +12169,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// An empty part has zero size, so this chooses the minimal compression method:
-    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
-    /// compression method with zero thresholds on absolute and relative part size.
-    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
-    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
+    /// Zero size picks the minimal compression method. Empty TTL infos so no `RECOMPRESS` codec is selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
