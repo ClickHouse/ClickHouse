@@ -46,9 +46,12 @@
     <query>SELECT sum(intDiv(small_u, 997)) FROM div256</query>
     <query>SELECT sum(intDiv(u, small_u + 1)) FROM div256</query>
 
-    <!-- Decimal256 formatting divides by the scale multiplier, which is 10^40 here. -->
-    <query>SELECT sum(length(toString(d40))) FROM div256</query>
-    <query>SELECT sum(length(toDecimalString(d40, 40))) FROM div256</query>
+    <!-- Decimal256 formatting divides by the scale multiplier, which is 10^40 here. It is several
+         hundred times more expensive per row than the queries above, so these two run over a small
+         part of the table: over the whole of it they take longer than the 15 seconds a single query
+         is allowed, which fails the whole test. -->
+    <query>SELECT sum(length(toString(d40))) FROM (SELECT d40 FROM div256 LIMIT 200000)</query>
+    <query>SELECT sum(length(toDecimalString(d40, 40))) FROM (SELECT d40 FROM div256 LIMIT 200000)</query>
 
     <drop_query>DROP TABLE IF EXISTS div256</drop_query>
 </test>
