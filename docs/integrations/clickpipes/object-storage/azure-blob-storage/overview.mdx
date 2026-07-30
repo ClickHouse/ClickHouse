@@ -120,7 +120,7 @@ ABS ClickPipes use two distinct network paths for metadata discovery and data in
 IP-based access control **doesn't work** if your Azure Blob Storage container is in the same Azure region as your ClickHouse Cloud service. When both services are co-located, traffic is routed through Azure's internal network, rather than the public internet.
 </Warning>
 
-* For **IP-based access control**, the [IP network rules](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) for your Azure Storage firewall must allow the static IPs for the ClickPipes service region listed [here](/integrations/clickpipes/home#list-of-static-ips), as well as the [static IPs](/products/cloud/guides/data-sources/cloud-endpoints-api) for the ClickHouse Cloud service. To obtain the static IPs for your ClickHouse Cloud region, open a terminal and run:
+* For **IP-based access control**, the [IP network rules](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) for your Azure Storage firewall must allow the static IPs for the ClickPipes service region listed [here](/integrations/clickpipes/networking/static-ips), as well as the [static IPs](/products/cloud/guides/data-sources/cloud-endpoints-api) for the ClickHouse Cloud service. To obtain the static IPs for your ClickHouse Cloud region, open a terminal and run:
 
     ```bash
     # Replace <your-region> with your ClickHouse Cloud region
