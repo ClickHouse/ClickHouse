@@ -240,6 +240,10 @@ void StorageMergeTree::startup()
     if (isTableReadonly())
         return;
 
+    /// The table may be located on a disk with metadata in Keeper (e.g. system tables in some cloud configurations),
+    /// and the cleanups below access the disk metadata, so the Keeper requests need a component for tracking.
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
+
     clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
