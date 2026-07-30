@@ -301,6 +301,72 @@ private:
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
     /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
+    UInt8 getEventLevelStrictIncrease(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
+    {
+        /// Events with the same timestamp cannot extend each other. Keep their updates pending until the whole timestamp group is processed.
+        VectorWithMemoryTracking<std::optional<UInt64>> first_timestamps(events_size);
+        std::array<std::optional<UInt64>, MAX_EVENTS> pending_first_timestamps{};
+        std::array<UInt8, MAX_EVENTS> pending_events{};
+
+        size_t group_begin = 0;
+        while (group_begin < events_list.size())
+        {
+            const T & timestamp = events_list[group_begin].first;
+            size_t pending_events_size = 0;
+
+            size_t group_end = group_begin;
+            while (group_end < events_list.size() && events_list[group_end].first == timestamp)
+            {
+                const auto event_idx = events_list[group_end].second - 1;
+                if (event_idx == 0)
+                {
+                    if (!pending_first_timestamps[0].has_value())
+                        pending_events[pending_events_size++] = 0;
+                    pending_first_timestamps[0] = static_cast<UInt64>(timestamp);
+                }
+                else if (first_timestamps[event_idx - 1].has_value())
+                {
+                    const auto first_timestamp = first_timestamps[event_idx - 1].value();
+                    if (timestamp <= first_timestamp + window)
+                    {
+                        auto & pending_event = pending_first_timestamps[event_idx];
+                        if (!pending_event.has_value())
+                        {
+                            pending_events[pending_events_size++] = static_cast<UInt8>(event_idx);
+                            pending_event = first_timestamp;
+                        }
+                        else if (pending_event.value() < first_timestamp)
+                        {
+                            pending_event = first_timestamp;
+                        }
+
+                        if (event_idx + 1 == events_size)
+                            return events_size;
+                    }
+                }
+                ++group_end;
+            }
+
+            /// For later timestamps, the match with the latest first event leaves the widest remaining window.
+            for (size_t i = 0; i < pending_events_size; ++i)
+            {
+                const size_t event = pending_events[i];
+                if (!first_timestamps[event].has_value() || first_timestamps[event].value() < pending_first_timestamps[event].value())
+                    first_timestamps[event] = pending_first_timestamps[event];
+                pending_first_timestamps[event].reset();
+            }
+
+            group_begin = group_end;
+        }
+
+        for (size_t event = first_timestamps.size(); event > 0; --event)
+        {
+            if (first_timestamps[event - 1].has_value())
+                return static_cast<UInt8>(event);
+        }
+        return 0;
+    }
+
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
@@ -499,6 +565,8 @@ private:
 
         if constexpr (Data::strict_once_enabled)
             return getEventLevelStrictOnce(data.events_list);
+        else if (strict_increase && !strict_deduplication && !strict_order)
+            return getEventLevelStrictIncrease(data.events_list);
         else
             return getEventLevelNonStrictOnce(data.events_list);
     }
