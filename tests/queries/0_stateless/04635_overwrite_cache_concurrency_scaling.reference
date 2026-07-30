@@ -1,0 +1,7 @@
+parallel read pipeline
+5000	11	11	1
+10000	10	10
+readers kept one snapshot
+480000	1
+invalid admission setting rejected
+invalid publication thread setting rejected

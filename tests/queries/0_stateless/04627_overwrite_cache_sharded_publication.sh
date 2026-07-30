@@ -173,8 +173,8 @@ $CLICKHOUSE_CLIENT -q "SELECT 'rollback-old-reader', count() FROM $table WHERE t
 reader_pid=$!
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT overwrite_cache_pause_after_lookup_ids PAUSE"
 $CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_before_rollback"
-if timeout 1 tail --pid="$writer_pid" -f /dev/null; then
-    echo "Rollback completed before a reader released its entry identifier" >&2
+if ! timeout 10 tail --pid="$writer_pid" -f /dev/null; then
+    echo "Rollback waited for a reader holding an entry identifier" >&2
     exit 1
 fi
 $CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_after_lookup_ids"

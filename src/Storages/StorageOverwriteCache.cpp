@@ -5,9 +5,9 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Core/Block.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromString.h>
@@ -27,18 +27,22 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/KVStorageUtils.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/KVStorageUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/extractKeyExpressionList.h>
-#include <Common/Exception.h>
+#include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <algorithm>
 #include <cctype>
@@ -49,6 +53,13 @@
 namespace ProfileEvents
 {
 extern const Event OverwriteCacheEqualVersionTies;
+}
+
+namespace CurrentMetrics
+{
+extern const Metric LocalThread;
+extern const Metric LocalThreadActive;
+extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -133,31 +144,120 @@ String getStringSetting(const SettingChange & change)
     return change.value.safeGet<String>();
 }
 
+Columns buildSelectedColumns(
+    const Columns & source_columns,
+    const ColumnPtr & selector,
+    const std::vector<bool> & keep_uncompressed,
+    UInt64 max_threads,
+    bool decompress_sources,
+    UInt64 & allocated_bytes)
+{
+    const auto select_column = [selector, decompress_sources](const ColumnPtr & source, bool keep)
+    {
+        auto materialized_source = decompress_sources ? source->decompress() : source;
+        auto selected = materialized_source->index(*selector, 0);
+        if (!keep)
+            selected = selected->compress(/*force_compression=*/true);
+        return selected;
+    };
+
+    Columns result(source_columns.size());
+    std::vector<UInt64> column_bytes(source_columns.size());
+    const size_t thread_count = std::min<size_t>(max_threads, source_columns.size());
+    constexpr size_t min_rows_for_parallel_column_build = 8192;
+
+    if (thread_count <= 1 || selector->size() < min_rows_for_parallel_column_build)
+    {
+        for (size_t position = 0; position < source_columns.size(); ++position)
+        {
+            result[position] = select_column(source_columns[position], keep_uncompressed[position]);
+            column_bytes[position] = result[position]->allocatedBytes();
+        }
+    }
+    else
+    {
+        struct SharedResult
+        {
+            Columns columns;
+            std::vector<UInt64> bytes;
+        };
+
+        auto shared_result = std::make_shared<SharedResult>();
+        shared_result->columns.resize(source_columns.size());
+        shared_result->bytes.resize(source_columns.size());
+
+        ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, thread_count);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DEFAULT_THREAD_POOL);
+        for (size_t position = 0; position < source_columns.size(); ++position)
+        {
+            const auto source = source_columns[position];
+            const bool keep = keep_uncompressed[position];
+            runner.enqueueAndKeepTrack(
+                [shared_result, select_column, source, keep, position]
+                {
+                    auto selected = select_column(source, keep);
+                    shared_result->bytes[position] = selected->allocatedBytes();
+                    shared_result->columns[position] = std::move(selected);
+                });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+        result = std::move(shared_result->columns);
+        column_bytes = std::move(shared_result->bytes);
+    }
+
+    allocated_bytes = 0;
+    for (const UInt64 bytes : column_bytes)
+    {
+        if (allocated_bytes > std::numeric_limits<UInt64>::max() - bytes)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` segment memory accounting overflow");
+        allocated_bytes += bytes;
+    }
+    return result;
+}
+
 OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
 {
     OverwriteCacheSettings result;
     result.max_memory_bytes = std::numeric_limits<UInt64>::max();
-    if (!storage_def.settings)
-        return result;
-
-    for (const auto & change : storage_def.settings->changes)
+    bool max_pending_insert_bytes_set = false;
+    if (storage_def.settings)
     {
-        if (change.name == "max_memory_bytes")
-            result.max_memory_bytes = getUInt64Setting(change);
-        else if (change.name == "equal_version_tiebreak_columns")
-            result.equal_version_tiebreak_columns = parseColumnList(getStringSetting(change), change.name);
-        else if (change.name == "compress_segments")
-            result.compress_segments = getUInt64Setting(change) != 0;
-        else if (change.name == "persist_mode")
-            result.persist_mode = parseOverwriteCachePersistMode(getStringSetting(change));
-        else if (change.name == "disk")
-            result.disk_name = getStringSetting(change);
-        else
-            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {} for storage `OverwriteCache`", backQuote(change.name));
+        for (const auto & change : storage_def.settings->changes)
+        {
+            if (change.name == "max_memory_bytes")
+                result.max_memory_bytes = getUInt64Setting(change);
+            else if (change.name == "max_pending_insert_bytes")
+            {
+                result.max_pending_insert_bytes = getUInt64Setting(change);
+                max_pending_insert_bytes_set = true;
+            }
+            else if (change.name == "max_concurrent_insert_preparations")
+                result.max_concurrent_insert_preparations = getUInt64Setting(change);
+            else if (change.name == "max_insert_publication_threads")
+                result.max_insert_publication_threads = getUInt64Setting(change);
+            else if (change.name == "equal_version_tiebreak_columns")
+                result.equal_version_tiebreak_columns = parseColumnList(getStringSetting(change), change.name);
+            else if (change.name == "compress_segments")
+                result.compress_segments = getUInt64Setting(change) != 0;
+            else if (change.name == "persist_mode")
+                result.persist_mode = parseOverwriteCachePersistMode(getStringSetting(change));
+            else if (change.name == "disk")
+                result.disk_name = getStringSetting(change);
+            else
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {} for storage `OverwriteCache`", backQuote(change.name));
+        }
     }
 
     if (!result.max_memory_bytes)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires a positive `max_memory_bytes`");
+    if (!max_pending_insert_bytes_set)
+        result.max_pending_insert_bytes = std::min<UInt64>(result.max_memory_bytes, 1ULL << 30);
+    if (!result.max_pending_insert_bytes)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `max_pending_insert_bytes`");
+    if (!result.max_concurrent_insert_preparations)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `max_concurrent_insert_preparations`");
+    if (!result.max_insert_publication_threads)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `max_insert_publication_threads`");
     return result;
 }
 
@@ -202,8 +302,9 @@ void validateColumn(const ColumnsDescription & columns, const String & name, con
 
 bool isOverwriteCacheSetting(std::string_view name)
 {
-    return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments"
-        || name == "persist_mode" || name == "disk";
+    return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments" || name == "persist_mode"
+        || name == "disk" || name == "max_pending_insert_bytes" || name == "max_concurrent_insert_preparations"
+        || name == "max_insert_publication_threads";
 }
 
 class OverwriteCacheSink final : public SinkToStorage
@@ -228,12 +329,15 @@ class OverwriteCacheSource final : public ISource
 public:
     OverwriteCacheSource(
         SharedHeader header_,
-        StorageOverwriteCache::ReadResult result_,
+        const StorageOverwriteCache & storage_,
+        StorageOverwriteCache::ReadGuardPtr read_guard_,
+        std::vector<StorageOverwriteCache::EntryId> entry_ids_,
         std::vector<size_t> positions_,
         size_t max_block_size_)
         : ISource(std::move(header_))
-        , read_guard(std::move(result_.guard))
-        , rows(std::move(result_.rows))
+        , storage(storage_)
+        , read_guard(std::move(read_guard_))
+        , entry_ids(std::move(entry_ids_))
         , positions(std::move(positions_))
         , max_block_size(std::max<size_t>(1, max_block_size_))
     {
@@ -244,32 +348,41 @@ public:
 protected:
     Chunk generate() override
     {
-        if (offset >= rows.size())
-            return {};
-
-        const size_t rows_to_emit = std::min(max_block_size, rows.size() - offset);
         const auto & header = getPort().getHeader();
         MutableColumns columns(header.columns());
         for (size_t i = 0; i < columns.size(); ++i)
             columns[i] = header.getByPosition(i).type->createColumn();
 
+        StorageOverwriteCache::RowDataPtrs rows;
+        rows.reserve(std::min(max_block_size, entry_ids.size() - offset));
+        while (offset < entry_ids.size() && rows.size() < max_block_size)
+        {
+            if ((offset & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while resolving `OverwriteCache` rows");
+            if (auto row = storage.resolveEntry(entry_ids[offset], read_guard->generation()))
+                rows.push_back(std::move(*row));
+            ++offset;
+        }
+
+        if (rows.empty())
+            return {};
+
         for (size_t output_position = 0; output_position < positions.size(); ++output_position)
         {
-            for (size_t row = offset; row < offset + rows_to_emit; ++row)
+            for (const auto & row : rows)
             {
-                const auto & source_column = segment_columns.get(*rows[row].segment, positions[output_position]);
-                columns[output_position]->insertFrom(source_column, rows[row].segment_row);
+                const auto & source_column = segment_columns.get(*row.segment, positions[output_position]);
+                columns[output_position]->insertFrom(source_column, row.segment_row);
             }
         }
 
-        offset += rows_to_emit;
-        return Chunk(std::move(columns), rows_to_emit);
+        return Chunk(std::move(columns), rows.size());
     }
 
 private:
-    /// Keep the guard before rows so rows release their segment references before the epoch is released.
+    const StorageOverwriteCache & storage;
     StorageOverwriteCache::ReadGuardPtr read_guard;
-    StorageOverwriteCache::RowDataPtrs rows;
+    std::vector<StorageOverwriteCache::EntryId> entry_ids;
     StorageOverwriteCache::SegmentColumnCache segment_columns;
     std::vector<size_t> positions;
     size_t max_block_size;
@@ -286,10 +399,12 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const StorageOverwriteCache & storage_,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        size_t num_streams_)
         : SourceStepWithFilter(std::move(sample_block_), column_names_, query_info_, storage_snapshot_, context_)
         , storage(storage_)
         , max_block_size(std::max<size_t>(1, max_block_size_))
+        , num_streams(std::max<size_t>(1, num_streams_))
     {
     }
 
@@ -303,11 +418,9 @@ public:
         /// the optimizer could push down, and when the predicate contains a subquery the resulting
         /// `DelayedCreatingSetsStep` stops the push-down walk before it reaches that step at all.
         /// `ReadFromMergeTree` reconciles the same two sources of the predicate for the same reason.
-        const ActionsDAG * filter_dag
-            = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
+        const ActionsDAG * filter_dag = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
 
-        std::tie(filter_keys, all_scan)
-            = getFilterKeys(storage.getKeyColumns(), storage.getKeyColumnTypes(), filter_dag, context);
+        std::tie(filter_keys, all_scan) = getFilterKeys(storage.getKeyColumns(), storage.getKeyColumnTypes(), filter_dag, context);
         if (!all_scan)
         {
             read_kind = ReadKind::Primary;
@@ -317,26 +430,26 @@ public:
         auto indexes = storage.getLookupIndexSnapshot();
         for (auto & index : indexes)
         {
-            auto [keys, requires_scan]
-                = getFilterKeys(index.columns, index.types, filter_dag, context);
+            auto [keys, requires_scan] = getFilterKeys(index.columns, index.types, filter_dag, context);
             if (!requires_scan)
             {
                 lookup_filters.push_back({std::move(index), std::move(keys)});
                 all_scan = false;
             }
         }
-        std::ranges::stable_sort(lookup_filters, [&](const LookupFilter & lhs, const LookupFilter & rhs)
-        {
-            return lhs.index.columns.size() > rhs.index.columns.size();
-        });
+        std::ranges::stable_sort(
+            lookup_filters,
+            [&](const LookupFilter & lhs, const LookupFilter & rhs) { return lhs.index.columns.size() > rhs.index.columns.size(); });
         std::unordered_set<String> covered_columns;
-        std::erase_if(lookup_filters, [&](const LookupFilter & filter)
-        {
-            bool contributes_column = false;
-            for (const auto & column : filter.index.columns)
-                contributes_column |= covered_columns.emplace(column).second;
-            return !contributes_column;
-        });
+        std::erase_if(
+            lookup_filters,
+            [&](const LookupFilter & filter)
+            {
+                bool contributes_column = false;
+                for (const auto & column : filter.index.columns)
+                    contributes_column |= covered_columns.emplace(column).second;
+                return !contributes_column;
+            });
         if (!all_scan)
             read_kind = ReadKind::Lookup;
     }
@@ -372,13 +485,11 @@ public:
                 std::vector<String> serialized_keys;
                 while (iterator != lookup_filter.keys->cend())
                 {
-                    auto batch = serializeKeysToRawString(
-                        iterator, lookup_filter.keys->cend(), lookup_filter.index.types, max_block_size);
+                    auto batch = serializeKeysToRawString(iterator, lookup_filter.keys->cend(), lookup_filter.index.types, max_block_size);
                     serialized_keys.insert(
                         serialized_keys.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
                 }
-                requests.push_back(
-                    {lookup_filter.index.guard, lookup_filter.index.index, std::move(serialized_keys)});
+                requests.push_back({lookup_filter.index.guard, lookup_filter.index.index, std::move(serialized_keys)});
             }
             result = storage.getRowsForLookupRequests(requests);
         }
@@ -388,10 +499,24 @@ public:
         for (const auto & column : *getOutputHeader())
             positions.push_back(storage.getColumnPosition(column.name));
 
-        auto source = std::make_shared<OverwriteCacheSource>(
-            getOutputHeader(), std::move(result), std::move(positions), max_block_size);
-        source->setStorageLimits(query_info.storage_limits);
-        pipeline.init(Pipe(std::move(source)));
+        constexpr size_t min_rows_per_stream = 8192;
+        const size_t rows_per_stream = std::max(max_block_size, min_rows_per_stream);
+        const size_t stream_count
+            = std::max<size_t>(1, std::min(num_streams, (result.entry_ids.size() + rows_per_stream - 1) / rows_per_stream));
+
+        Pipes pipes;
+        pipes.reserve(stream_count);
+        for (size_t stream = 0; stream < stream_count; ++stream)
+        {
+            const size_t begin = result.entry_ids.size() * stream / stream_count;
+            const size_t end = result.entry_ids.size() * (stream + 1) / stream_count;
+            std::vector<StorageOverwriteCache::EntryId> entry_ids(result.entry_ids.begin() + begin, result.entry_ids.begin() + end);
+            auto source = std::make_shared<OverwriteCacheSource>(
+                getOutputHeader(), storage, result.guard, std::move(entry_ids), positions, max_block_size);
+            source->setStorageLimits(query_info.storage_limits);
+            pipes.emplace_back(std::move(source));
+        }
+        pipeline.init(Pipe::unitePipes(std::move(pipes)));
     }
 
     void describeActions(FormatSettings & format_settings) const override
@@ -417,6 +542,7 @@ private:
 
     const StorageOverwriteCache & storage;
     size_t max_block_size;
+    size_t num_streams;
     FieldVectorPtr filter_keys;
     std::vector<LookupFilter> lookup_filters;
     bool all_scan = true;
@@ -541,13 +667,14 @@ void StorageOverwriteCache::loadPersistedData()
     loading = true;
     try
     {
-        persistence->load([&](OverwriteCachePersistence::LoadedRecord && record)
-        {
-            if (!record.deleted_keys.empty())
-                deleteKeys(record.deleted_keys);
-            else
-                insertBlock(record.block, record.segment_id);
-        });
+        persistence->load(
+            [&](OverwriteCachePersistence::LoadedRecord && record)
+            {
+                if (!record.deleted_keys.empty())
+                    deleteKeys(record.deleted_keys);
+                else
+                    insertBlock(record.block, record.segment_id);
+            });
     }
     catch (...)
     {
@@ -615,8 +742,8 @@ String StorageOverwriteCache::serializeColumns(const Block & block, size_t row, 
     return out.str();
 }
 
-String StorageOverwriteCache::serializeRowColumns(
-    const RowData & row, const std::vector<size_t> & positions, SegmentColumnCache & cache) const
+String
+StorageOverwriteCache::serializeRowColumns(const RowData & row, const std::vector<size_t> & positions, SegmentColumnCache & cache) const
 {
     WriteBufferFromOwnString out;
     for (const auto position : positions)
@@ -624,8 +751,7 @@ String StorageOverwriteCache::serializeRowColumns(
     return out.str();
 }
 
-void StorageOverwriteCache::insertValueIntoColumn(
-    const RowData & row, size_t position, IColumn & column, SegmentColumnCache & cache) const
+void StorageOverwriteCache::insertValueIntoColumn(const RowData & row, size_t position, IColumn & column, SegmentColumnCache & cache) const
 {
     column.insertFrom(cache.get(*row.segment, position), row.segment_row);
 }
@@ -649,14 +775,14 @@ int StorageOverwriteCache::compareWinner(const Block & block, size_t lhs_row, si
 int StorageOverwriteCache::compareWinner(const Block & block, size_t lhs_row, const RowData & rhs) const
 {
     /// The version and tie-break columns of a segment are never compressed, so they can be compared in place.
-    if (const int result = block.getByPosition(version_position).column->compareAt(
-            lhs_row, rhs.segment_row, *rhs.segment->columns[version_position], 1))
+    if (const int result
+        = block.getByPosition(version_position).column->compareAt(lhs_row, rhs.segment_row, *rhs.segment->columns[version_position], 1))
         return result;
 
     for (const auto position : tiebreak_positions)
     {
-        if (const int result = block.getByPosition(position).column->compareAt(
-                lhs_row, rhs.segment_row, *rhs.segment->columns[position], 1))
+        if (const int result
+            = block.getByPosition(position).column->compareAt(lhs_row, rhs.segment_row, *rhs.segment->columns[position], 1))
             return result;
     }
 
@@ -704,20 +830,23 @@ StorageOverwriteCache::ReadGuard::ReadGuard(const StorageOverwriteCache & storag
             storage.active_readers[epoch].notify_all();
     }
 
-    /// Registering the snapshot under the same lock a writer uses to compute the pruning watermark
-    /// keeps a writer from dropping a version this guard is about to rely on.
-    std::lock_guard registry_lock(storage.snapshot_registry_mutex);
+    snapshot_shard = static_cast<UInt8>(getThreadId() % snapshot_shard_count);
+    auto & registry = storage.snapshot_registry[snapshot_shard];
+    /// Registering the snapshot under the same shard lock a writer uses to compute the pruning
+    /// watermark keeps a writer from dropping a version this guard is about to rely on.
+    std::lock_guard registry_lock(registry.mutex);
     snapshot_generation = storage.published_generation.load(std::memory_order_acquire);
-    ++storage.live_snapshots[snapshot_generation];
+    ++registry.generations[snapshot_generation];
 }
 
 StorageOverwriteCache::ReadGuard::~ReadGuard()
 {
     {
-        std::lock_guard registry_lock(storage.snapshot_registry_mutex);
-        const auto it = storage.live_snapshots.find(snapshot_generation);
-        if (it != storage.live_snapshots.end() && --it->second == 0)
-            storage.live_snapshots.erase(it);
+        auto & registry = storage.snapshot_registry[snapshot_shard];
+        std::lock_guard registry_lock(registry.mutex);
+        const auto it = registry.generations.find(snapshot_generation);
+        if (it != registry.generations.end() && --it->second == 0)
+            registry.generations.erase(it);
     }
 
     if (storage.active_readers[epoch].fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -726,14 +855,19 @@ StorageOverwriteCache::ReadGuard::~ReadGuard()
 
 UInt64 StorageOverwriteCache::oldestLiveGeneration() const
 {
-    std::lock_guard registry_lock(snapshot_registry_mutex);
-    if (live_snapshots.empty())
-        return published_generation.load(std::memory_order_acquire);
-    return live_snapshots.begin()->first;
+    UInt64 oldest = published_generation.load(std::memory_order_acquire);
+    for (const auto & registry : snapshot_registry)
+    {
+        std::lock_guard registry_lock(registry.mutex);
+        if (!registry.generations.empty())
+            oldest = std::min(oldest, registry.generations.begin()->first);
+    }
+    return oldest;
 }
 
 std::unique_ptr<StorageOverwriteCache::EntryVersion> StorageOverwriteCache::takeVersion()
 {
+    std::lock_guard pool_lock(recycled_versions_mutex);
     if (!recycled_versions)
         return std::make_unique<EntryVersion>();
     auto version = std::move(recycled_versions);
@@ -744,6 +878,7 @@ std::unique_ptr<StorageOverwriteCache::EntryVersion> StorageOverwriteCache::take
 
 void StorageOverwriteCache::recycleVersions(std::unique_ptr<EntryVersion> chain)
 {
+    std::lock_guard pool_lock(recycled_versions_mutex);
     while (chain)
     {
         auto version = std::move(chain);
@@ -788,7 +923,7 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
 {
     if (entry_id == 0 || entry_id > entries.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` entry identifier");
-    std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
+    std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
     for (const auto * version = entries.at(entry_id).head.get(); version; version = version->older.get())
     {
         if (version->generation > snapshot_generation)
@@ -804,7 +939,46 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
 
 void StorageOverwriteCache::insertBlock(const Block & input_block)
 {
+    if (input_block.rows() == 0)
+        return;
+
+    const UInt64 pending_bytes = input_block.allocatedBytes();
+    acquireInsertPreparation(pending_bytes);
+    SCOPE_EXIT({ releaseInsertPreparation(pending_bytes); });
     insertBlock(input_block, 0);
+}
+
+void StorageOverwriteCache::acquireInsertPreparation(UInt64 bytes)
+{
+    if (bytes > settings.max_pending_insert_bytes)
+        throw Exception(
+            ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            "`OverwriteCache` insert preparation requires {} bytes, exceeding `max_pending_insert_bytes` = {}",
+            bytes,
+            settings.max_pending_insert_bytes);
+
+    std::unique_lock lock(insert_admission_mutex);
+    insert_admission_changed.wait(
+        lock,
+        [&]
+        {
+            return active_insert_preparations < settings.max_concurrent_insert_preparations
+                && pending_insert_bytes <= settings.max_pending_insert_bytes - bytes;
+        });
+    ++active_insert_preparations;
+    pending_insert_bytes += bytes;
+}
+
+void StorageOverwriteCache::releaseInsertPreparation(UInt64 bytes)
+{
+    {
+        std::lock_guard lock(insert_admission_mutex);
+        chassert(active_insert_preparations != 0);
+        chassert(pending_insert_bytes >= bytes);
+        --active_insert_preparations;
+        pending_insert_bytes -= bytes;
+    }
+    insert_admission_changed.notify_all();
 }
 
 void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay_segment_id)
@@ -881,6 +1055,27 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
     };
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_catalog_snapshot);
+
+    UInt64 publication_ticket = 0;
+    {
+        std::unique_lock order_lock(publication_order_mutex);
+        publication_ticket = next_publication_ticket++;
+        publication_order_changed.wait(order_lock, [&] { return publication_ticket == serving_publication_ticket; });
+    }
+    const auto release_publication_turn = [&]
+    {
+        {
+            std::lock_guard order_lock(publication_order_mutex);
+            ++serving_publication_ticket;
+        }
+        publication_order_changed.notify_all();
+    };
+    bool publication_turn_released = false;
+    SCOPE_EXIT({
+        if (!publication_turn_released)
+            release_publication_turn();
+    });
+
     std::unique_lock writer_lock(writer_mutex);
     if (lookup_positions_snapshot != lookup_index_positions)
     {
@@ -946,15 +1141,18 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
         selector->insertValue(mutation.source_row);
 
     auto segment = std::make_shared<RowSegment>();
-    segment->columns.reserve(block.columns());
-    for (size_t position = 0; position < block.columns(); ++position)
-    {
-        auto selected = block.getByPosition(position).column->index(*selector, 0);
-        if (!keep_uncompressed[position])
-            selected = selected->compress(/*force_compression=*/true);
-        segment->allocated_bytes += selected->allocatedBytes();
-        segment->columns.push_back(std::move(selected));
-    }
+    Columns source_columns;
+    source_columns.reserve(block.columns());
+    for (const auto & column : block)
+        source_columns.push_back(column.column);
+    ColumnPtr selector_ptr = std::move(selector);
+    segment->columns = buildSelectedColumns(
+        source_columns,
+        selector_ptr,
+        keep_uncompressed,
+        settings.max_insert_publication_threads,
+        /*decompress_sources=*/false,
+        segment->allocated_bytes);
     segment->live_rows.store(block_mutation_count, std::memory_order_relaxed);
     segment->entry_ids.resize(block_mutation_count);
     if (persistence->isEnabled())
@@ -994,8 +1192,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
         if (mutation.is_new || !mutation.previous || !mutation.previous->segment)
             continue;
         mutated_entry_ids.push_back(mutation.entry_id);
-        auto [it, inserted] = segment_compaction_positions.emplace(
-            mutation.previous->segment.get(), segment_compactions.size());
+        auto [it, inserted] = segment_compaction_positions.emplace(mutation.previous->segment.get(), segment_compactions.size());
         if (inserted)
         {
             segment_compactions.emplace_back();
@@ -1034,9 +1231,8 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
             if (std::ranges::binary_search(mutated_entry_ids, entry_id))
                 continue;
             const auto & entry = entries.at(entry_id);
-            std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
-            if (!entry.head || entry.head->row.segment.get() != compaction.source.get()
-                || entry.head->row.segment_row != row)
+            std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
+            if (!entry.head || entry.head->row.segment.get() != compaction.source.get() || entry.head->row.segment_row != row)
                 continue;
             compaction.live_entries.emplace_back(entry_id, entry.head->row);
         }
@@ -1058,15 +1254,14 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
         }
 
         auto compacted_segment = std::make_shared<RowSegment>();
-        compacted_segment->columns.reserve(compaction.source->columns.size());
-        for (size_t position = 0; position < compaction.source->columns.size(); ++position)
-        {
-            auto selected = compaction.source->columns[position]->decompress()->index(*compaction_selector, 0);
-            if (!keep_uncompressed[position])
-                selected = selected->compress(/*force_compression=*/true);
-            compacted_segment->allocated_bytes += selected->allocatedBytes();
-            compacted_segment->columns.push_back(std::move(selected));
-        }
+        ColumnPtr compaction_selector_ptr = std::move(compaction_selector);
+        compacted_segment->columns = buildSelectedColumns(
+            compaction.source->columns,
+            compaction_selector_ptr,
+            keep_uncompressed,
+            settings.max_insert_publication_threads,
+            /*decompress_sources=*/true,
+            compacted_segment->allocated_bytes);
         compacted_segment->live_rows.store(compaction.live_entries.size(), std::memory_order_relaxed);
         compacted_segment->entry_ids.reserve(compaction.live_entries.size());
         if (persistence->isEnabled())
@@ -1240,8 +1435,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
                 auto & mutation = mutations[primary_order[position]];
                 mutation.key = std::string_view(shard.arena->insert(mutation.key.data(), mutation.key.size()), mutation.key.size());
             }
-            primary_shard_bytes_delta[shard_index]
-                = shard.entries.getBufferSizeInBytes() + shard.arena->allocatedBytes() - bytes_before;
+            primary_shard_bytes_delta[shard_index] = shard.entries.getBufferSizeInBytes() + shard.arena->allocatedBytes() - bytes_before;
             if (prospective_bytes > std::numeric_limits<UInt64>::max() - primary_shard_bytes_delta[shard_index])
                 throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` primary-index memory accounting overflow");
             prospective_bytes += primary_shard_bytes_delta[shard_index];
@@ -1292,7 +1486,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
             auto version = takeVersion();
             version->row = std::move(*mutation.row);
             version->generation = new_generation;
-            std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
+            std::unique_lock lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
             version->older = std::move(entry.head);
             entry.head = std::move(version);
             mutation.version_installed = true;
@@ -1348,7 +1542,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
             auto & entry = entries.at(mutation.entry_id);
             std::unique_ptr<EntryVersion> discarded;
             {
-                std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
+                std::unique_lock lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
                 discarded = std::move(entry.head);
                 entry.head = std::move(discarded->older);
             }
@@ -1408,15 +1602,51 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
         reclaim_bytes += retired_segment->allocated_bytes;
     total_size_bytes.fetch_sub(reclaim_bytes, std::memory_order_relaxed);
 
-    /// Drop the versions no live snapshot can reach any more. A reader holding an older snapshot keeps
-    /// its versions instead of forcing this writer to wait for it.
+    UInt64 persistence_sequence = 0;
+    if (persistence->isEnabled())
+    {
+        if (loading)
+        {
+            for (const auto & retired_segment : retired_segments)
+            {
+                if (retired_segment->persistent_id)
+                    retired_during_load.push_back(retired_segment->persistent_id);
+            }
+        }
+        else
+        {
+            OverwriteCachePersistence::Commit commit;
+            commit.generation = new_generation;
+            commit.added.reserve(added_segments.size());
+            for (const auto & added_segment : added_segments)
+                commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
+            commit.removed.reserve(retired_segments.size());
+            for (const auto & retired_segment : retired_segments)
+            {
+                if (retired_segment->persistent_id)
+                    commit.removed.push_back(retired_segment->persistent_id);
+            }
+            /// Enqueue under `writer_mutex`, so persistence records keep publication-generation order.
+            persistence_sequence = persistence->enqueue(std::move(commit));
+        }
+    }
+
+    /// `clearData` takes this mutex exclusively after taking `writer_mutex`. Acquiring shared ownership
+    /// before releasing the writer prevents it from clearing entries under post-publication pruning.
+    std::shared_lock entry_lifetime_lock(entry_lifetime_mutex);
+    writer_lock.unlock();
+    publication_turn_released = true;
+    release_publication_turn();
+
+    /// Drop versions no live snapshot can reach. This work no longer extends the serial publication
+    /// section; later writers synchronize with it only on the row stripes they actually share.
     const UInt64 watermark = oldestLiveGeneration();
     for (const auto & mutation : mutations)
     {
         auto & entry = entries.at(mutation.entry_id);
         std::unique_ptr<EntryVersion> obsolete;
         {
-            std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
+            std::unique_lock lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
             for (auto * version = entry.head.get(); version; version = version->older.get())
             {
                 if (version->generation <= watermark)
@@ -1428,38 +1658,11 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
         }
         recycleVersions(std::move(obsolete));
     }
+    entry_lifetime_lock.unlock();
 
-    if (!persistence->isEnabled())
-        return;
-
-    if (loading)
-    {
-        for (const auto & retired_segment : retired_segments)
-        {
-            if (retired_segment->persistent_id)
-                retired_during_load.push_back(retired_segment->persistent_id);
-        }
-        return;
-    }
-
-    OverwriteCachePersistence::Commit commit;
-    commit.generation = new_generation;
-    commit.added.reserve(added_segments.size());
-    for (const auto & added_segment : added_segments)
-        commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
-    commit.removed.reserve(retired_segments.size());
-    for (const auto & retired_segment : retired_segments)
-    {
-        if (retired_segment->persistent_id)
-            commit.removed.push_back(retired_segment->persistent_id);
-    }
-
-    const UInt64 sequence = persistence->enqueue(std::move(commit));
-    /// The wait releases the writer lock first, so a durable write never holds up another publication.
-    /// The log is written in order, so waiting for this sequence covers every publication before it.
-    writer_lock.unlock();
-    if (settings.persist_mode == OverwriteCachePersistMode::Sync)
-        persistence->waitDurable(sequence);
+    /// The durable wait is outside both publication ordering and entry lifetime protection.
+    if (persistence_sequence && settings.persist_mode == OverwriteCachePersistMode::Sync)
+        persistence->waitDurable(persistence_sequence);
 }
 
 void StorageOverwriteCache::deleteBlock(const Block & block)
@@ -1551,8 +1754,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
     std::unordered_map<RowSegment *, size_t> segment_compaction_positions;
     for (const auto & deletion : deletions)
     {
-        auto [it, inserted]
-            = segment_compaction_positions.emplace(deletion.previous->segment.get(), segment_compactions.size());
+        auto [it, inserted] = segment_compaction_positions.emplace(deletion.previous->segment.get(), segment_compactions.size());
         if (inserted)
         {
             segment_compactions.emplace_back();
@@ -1583,8 +1785,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         /// A rewritten segment coexists with its source until the readers of the previous epoch drain, so
         /// it needs room beside it. Freeing memory must never fail for want of memory, so a segment whose
         /// source-sized upper bound does not fit is simply left alone instead of failing the `DELETE`.
-        const UInt64 headroom
-            = settings.max_memory_bytes - std::min(bytes_before + compaction_budget, settings.max_memory_bytes);
+        const UInt64 headroom = settings.max_memory_bytes - std::min(bytes_before + compaction_budget, settings.max_memory_bytes);
         if (compaction.source->allocated_bytes > headroom)
             continue;
         compaction_budget += compaction.source->allocated_bytes;
@@ -1599,7 +1800,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
             if (std::ranges::binary_search(deleted_entry_ids, entry_id))
                 continue;
             const auto & entry = entries.at(entry_id);
-            std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
+            std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
             if (!entry.head || entry.head->row.segment.get() != compaction.source.get() || entry.head->row.segment_row != row)
                 continue;
             compaction.live_entries.emplace_back(entry_id, entry.head->row);
@@ -1624,15 +1825,14 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         }
 
         auto compacted_segment = std::make_shared<RowSegment>();
-        compacted_segment->columns.reserve(compaction.source->columns.size());
-        for (size_t position = 0; position < compaction.source->columns.size(); ++position)
-        {
-            auto selected = compaction.source->columns[position]->decompress()->index(*compaction_selector, 0);
-            if (!keep_uncompressed[position])
-                selected = selected->compress(/*force_compression=*/true);
-            compacted_segment->allocated_bytes += selected->allocatedBytes();
-            compacted_segment->columns.push_back(std::move(selected));
-        }
+        ColumnPtr compaction_selector_ptr = std::move(compaction_selector);
+        compacted_segment->columns = buildSelectedColumns(
+            compaction.source->columns,
+            compaction_selector_ptr,
+            keep_uncompressed,
+            settings.max_insert_publication_threads,
+            /*decompress_sources=*/true,
+            compacted_segment->allocated_bytes);
         compacted_segment->live_rows.store(compaction.live_entries.size(), std::memory_order_relaxed);
         compacted_segment->entry_ids.reserve(compaction.live_entries.size());
         if (persistence->isEnabled())
@@ -1672,7 +1872,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
             auto version = takeVersion();
             version->row = deletion.row ? std::move(*deletion.row) : RowData{};
             version->generation = new_generation;
-            std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+            std::unique_lock lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
             version->older = std::move(entry.head);
             entry.head = std::move(version);
             deletion.version_installed = true;
@@ -1694,7 +1894,7 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
             auto & entry = entries.at(deletion.entry_id);
             std::unique_ptr<EntryVersion> discarded;
             {
-                std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+                std::unique_lock lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
                 discarded = std::move(entry.head);
                 entry.head = std::move(discarded->older);
             }
@@ -1721,13 +1921,47 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         reclaim_bytes += retired_segment->allocated_bytes;
     total_size_bytes.fetch_sub(reclaim_bytes, std::memory_order_relaxed);
 
+    UInt64 persistence_sequence = 0;
+    if (persistence->isEnabled())
+    {
+        if (loading)
+        {
+            for (const auto & retired_segment : retired_segments)
+            {
+                if (retired_segment->persistent_id)
+                    retired_during_load.push_back(retired_segment->persistent_id);
+            }
+        }
+        else
+        {
+            /// A deletion has to be recorded even though it creates no segment: the segment it emptied a
+            /// row of is not superseded by anything, so replaying that segment alone would bring the key back.
+            OverwriteCachePersistence::Commit commit;
+            commit.generation = new_generation;
+            commit.deleted_keys = serialized_keys;
+            commit.added.reserve(added_segments.size());
+            for (const auto & added_segment : added_segments)
+                commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
+            commit.removed.reserve(retired_segments.size());
+            for (const auto & retired_segment : retired_segments)
+            {
+                if (retired_segment->persistent_id)
+                    commit.removed.push_back(retired_segment->persistent_id);
+            }
+            persistence_sequence = persistence->enqueue(std::move(commit));
+        }
+    }
+
+    std::shared_lock entry_lifetime_lock(entry_lifetime_mutex);
+    writer_lock.unlock();
+
     const UInt64 watermark = oldestLiveGeneration();
     for (const auto & deletion : deletions)
     {
         auto & entry = entries.at(deletion.entry_id);
         std::unique_ptr<EntryVersion> obsolete;
         {
-            std::lock_guard lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
+            std::unique_lock lock(row_mutexes[rowLockIndex(deletion.entry_id)]);
             for (auto * version = entry.head.get(); version; version = version->older.get())
             {
                 if (version->generation <= watermark)
@@ -1739,39 +1973,10 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         }
         recycleVersions(std::move(obsolete));
     }
+    entry_lifetime_lock.unlock();
 
-    if (!persistence->isEnabled())
-        return deleted_rows;
-
-    if (loading)
-    {
-        for (const auto & retired_segment : retired_segments)
-        {
-            if (retired_segment->persistent_id)
-                retired_during_load.push_back(retired_segment->persistent_id);
-        }
-        return deleted_rows;
-    }
-
-    /// A deletion has to be recorded even though it creates no segment: the segment it emptied a row of
-    /// is not superseded by anything, so replaying that segment alone would bring the key back.
-    OverwriteCachePersistence::Commit commit;
-    commit.generation = new_generation;
-    commit.deleted_keys = serialized_keys;
-    commit.added.reserve(added_segments.size());
-    for (const auto & added_segment : added_segments)
-        commit.added.push_back({added_segment->persistent_id, added_segment->columns, added_segment->entry_ids.size()});
-    commit.removed.reserve(retired_segments.size());
-    for (const auto & retired_segment : retired_segments)
-    {
-        if (retired_segment->persistent_id)
-            commit.removed.push_back(retired_segment->persistent_id);
-    }
-
-    const UInt64 sequence = persistence->enqueue(std::move(commit));
-    writer_lock.unlock();
-    if (settings.persist_mode == OverwriteCachePersistMode::Sync)
-        persistence->waitDurable(sequence);
+    if (persistence_sequence && settings.persist_mode == OverwriteCachePersistMode::Sync)
+        persistence->waitDurable(persistence_sequence);
 
     return deleted_rows;
 }
@@ -1804,12 +2009,7 @@ void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr
     /// The rows to delete are produced by the read path, so a `DELETE` accepts exactly the predicates a
     /// `SELECT` accepts: a complete `KEYS` tuple, or one or more declared lookup indexes.
     MutationsInterpreter interpreter(
-        storage_ptr,
-        metadata_snapshot,
-        commands,
-        metadata_snapshot->getColumns().getNamesOfPhysical(),
-        context,
-        mutation_settings);
+        storage_ptr, metadata_snapshot, commands, metadata_snapshot->getColumns().getNamesOfPhysical(), context, mutation_settings);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter.execute());
     PullingPipelineExecutor executor(pipeline);
@@ -1823,16 +2023,16 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(c
 {
     ReadResult result;
     result.guard = std::make_shared<ReadGuard>(*this);
-    result.rows.reserve(serialized_keys.size());
+    result.entry_ids.reserve(serialized_keys.size());
     std::unordered_set<EntryId> seen;
     for (const auto & key : serialized_keys)
     {
         const auto entry = findEntry(key, StringViewHash{}(key));
         if (!entry || !seen.emplace(*entry).second)
             continue;
-        if (auto row = resolveEntry(*entry, result.guard->generation()))
-            result.rows.push_back(std::move(*row));
+        result.entry_ids.push_back(*entry);
     }
+    std::ranges::sort(result.entry_ids);
     return result;
 }
 
@@ -1870,12 +2070,13 @@ StorageOverwriteCache::getPostingIds(const LookupIndexPtr & index, const std::ve
         std::shared_lock lock(shard.mutex);
         if (const auto * posting = shard.find(key, hash))
         {
-            posting->forEach([&](EntryId entry_id)
-            {
-                if ((result.size() & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
-                result.push_back(entry_id);
-            });
+            posting->forEach(
+                [&](EntryId entry_id)
+                {
+                    if ((result.size() & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
+                    result.push_back(entry_id);
+                });
         }
     }
     std::ranges::sort(result);
@@ -1955,14 +2156,7 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequest
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_ids);
 
-    result.rows.reserve(entry_ids.size());
-    for (size_t position = 0; position < entry_ids.size(); ++position)
-    {
-        if ((position & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while resolving `OverwriteCache` postings");
-        if (auto row = resolveEntry(entry_ids[position], result.guard->generation()))
-            result.rows.push_back(std::move(*row));
-    }
+    result.entry_ids = std::move(entry_ids);
     return result;
 }
 
@@ -2021,8 +2215,7 @@ Chunk StorageOverwriteCache::getByKeys(
     {
         WriteBufferFromOwnString out;
         for (size_t key_index = 0; key_index < keys.size(); ++key_index)
-            key_column_types[key_index]->getDefaultSerialization()->serializeBinary(
-                *keys[key_index].column, row, out, format_settings);
+            key_column_types[key_index]->getDefaultSerialization()->serializeBinary(*keys[key_index].column, row, out, format_settings);
         serialized_keys.push_back(out.str());
     }
 
@@ -2059,13 +2252,13 @@ void StorageOverwriteCache::read(
     ContextPtr context,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    size_t)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
     auto sample = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
     query_plan.addStep(
         std::make_unique<ReadFromOverwriteCache>(
-            column_names, query_info, storage_snapshot, context, std::move(sample), *this, max_block_size));
+            column_names, query_info, storage_snapshot, context, std::move(sample), *this, max_block_size, num_streams));
 }
 
 SinkToStoragePtr StorageOverwriteCache::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool)
@@ -2076,6 +2269,7 @@ SinkToStoragePtr StorageOverwriteCache::write(const ASTPtr &, const StorageMetad
 void StorageOverwriteCache::clearData()
 {
     std::lock_guard writer_lock(writer_mutex);
+    std::unique_lock entry_lifetime_lock(entry_lifetime_mutex);
     for (auto & index : lookup_indexes)
     {
         for (auto & shard : index->shards)
@@ -2127,7 +2321,8 @@ void StorageOverwriteCache::checkAlterIsPossible(const AlterCommands & commands,
     }
     std::ranges::sort(columns, {}, [&](const String & column) { return key_order.at(column); });
     if (commands.front().type == AlterCommand::ADD_LOOKUP_INDEX && columns == key_columns)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX` duplicates the complete `KEYS` tuple, which already has a primary index");
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX` duplicates the complete `KEYS` tuple, which already has a primary index");
 
     std::shared_lock lock(lookup_catalog_mutex);
     const bool exists = std::ranges::find(lookup_index_columns, columns) != lookup_index_columns.end();
@@ -2159,19 +2354,20 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     const auto table_id = getStorageID();
     const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    ASTPtr metadata_indexes = new_metadata.lookup_indexes
-        ? new_metadata.lookup_indexes->clone()
-        : make_intrusive<ASTExpressionList>();
+    ASTPtr metadata_indexes = new_metadata.lookup_indexes ? new_metadata.lookup_indexes->clone() : make_intrusive<ASTExpressionList>();
     auto & metadata_index_list = metadata_indexes->as<ASTExpressionList &>();
 
     if (drop_index)
     {
-        const auto erase_begin = std::remove_if(metadata_index_list.children.begin(), metadata_index_list.children.end(), [&](const ASTPtr & index_ast)
-        {
-            auto current_columns = extractIdentifierList(*index_ast, "lookup `INDEX` clause");
-            std::ranges::sort(current_columns, {}, [&](const String & column) { return key_order.at(column); });
-            return current_columns == columns;
-        });
+        const auto erase_begin = std::remove_if(
+            metadata_index_list.children.begin(),
+            metadata_index_list.children.end(),
+            [&](const ASTPtr & index_ast)
+            {
+                auto current_columns = extractIdentifierList(*index_ast, "lookup `INDEX` clause");
+                std::ranges::sort(current_columns, {}, [&](const String & column) { return key_order.at(column); });
+                return current_columns == columns;
+            });
         metadata_index_list.children.erase(erase_begin, metadata_index_list.children.end());
         new_metadata.lookup_indexes = metadata_index_list.children.empty() ? nullptr : metadata_indexes;
         auto prepared_metadata = std::make_shared<const StorageInMemoryMetadata>(new_metadata);
@@ -2196,8 +2392,9 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
         next_lookup_index_column_types.erase(next_lookup_index_column_types.begin() + position);
         next_lookup_indexes.erase(next_lookup_indexes.begin() + position);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(
-            context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        DatabaseCatalog::instance()
+            .getDatabase(table_id.database_name)
+            ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
         {
             std::unique_lock lock(lookup_catalog_mutex);
@@ -2307,8 +2504,9 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     metadata_index_list.children.push_back(makeLookupIndexAST(columns));
     new_metadata.lookup_indexes = metadata_indexes;
     auto prepared_metadata = std::make_shared<const StorageInMemoryMetadata>(new_metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(
-        context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance()
+        .getDatabase(table_id.database_name)
+        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     shadow->accounted_bytes.store(index_bytes, std::memory_order_relaxed);
     {
@@ -2368,8 +2566,8 @@ void StorageOverwriteCache::backupData(
     for (const auto & file_name : file_names)
     {
         const auto file_path = std::filesystem::path(data_path) / file_name;
-        BackupEntryPtr entry = std::make_shared<BackupEntryFromImmutableFile>(
-            disk, file_path, /*copy_encrypted=*/false, disk->getFileSize(file_path));
+        BackupEntryPtr entry
+            = std::make_shared<BackupEntryFromImmutableFile>(disk, file_path, /*copy_encrypted=*/false, disk->getFileSize(file_path));
         backup_entries.emplace_back(data_path_in_backup_fs / file_name, wrapBackupEntryWith(std::move(entry), pin));
     }
 
@@ -2386,9 +2584,8 @@ void StorageOverwriteCache::restoreDataFromBackup(
     if (!restorer.isNonEmptyTableAllowed() && total_size_rows.load(std::memory_order_relaxed))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageOverwriteCache>(shared_from_this()), backup, data_path_in_backup]
-        { storage->restoreDataImpl(backup, data_path_in_backup); });
+    restorer.addDataRestoreTask([storage = std::static_pointer_cast<StorageOverwriteCache>(shared_from_this()), backup, data_path_in_backup]
+                                { storage->restoreDataImpl(backup, data_path_in_backup); });
 }
 
 void StorageOverwriteCache::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
@@ -2483,8 +2680,7 @@ void registerStorageOverwriteCache(StorageFactory & factory)
                 for (const auto & column : index_columns)
                 {
                     if (!key_set.contains(column))
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "Lookup-index column {} must be declared in `KEYS`", backQuote(column));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup-index column {} must be declared in `KEYS`", backQuote(column));
                     if (!index_column_set.emplace(column).second)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate column {} in lookup `INDEX`", backQuote(column));
                 }
@@ -2507,9 +2703,8 @@ void registerStorageOverwriteCache(StorageFactory & factory)
             /// to restore. Asking for one anyway is a request that cannot be honoured rather than a
             /// default to quietly override.
             const bool persist_mode_given = args.storage_def->settings
-                && std::ranges::any_of(
-                       args.storage_def->settings->changes,
-                       [](const SettingChange & change) { return change.name == "persist_mode"; });
+                && std::ranges::any_of(args.storage_def->settings->changes,
+                                       [](const SettingChange & change) { return change.name == "persist_mode"; });
             if (args.query.isTemporary())
             {
                 if (persist_mode_given && settings.persist_mode != OverwriteCachePersistMode::None)

@@ -7,16 +7,17 @@
 #include <Storages/IStorage.h>
 #include <Storages/OverwriteCachePersistence.h>
 
+#include <base/StringViewHash.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
 #include <Common/SharedMutex.h>
-#include <base/StringViewHash.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
+#include <condition_variable>
 #include <deque>
 #include <limits>
 #include <map>
@@ -38,6 +39,9 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 struct OverwriteCacheSettings
 {
     UInt64 max_memory_bytes = 0;
+    UInt64 max_pending_insert_bytes = 0;
+    UInt64 max_concurrent_insert_preparations = 8;
+    UInt64 max_insert_publication_threads = 8;
     Names equal_version_tiebreak_columns;
     bool compress_segments = false;
     OverwriteCachePersistMode persist_mode = OverwriteCachePersistMode::Async;
@@ -100,13 +104,14 @@ public:
     private:
         const StorageOverwriteCache & storage;
         UInt8 epoch = 0;
+        UInt8 snapshot_shard = 0;
         UInt64 snapshot_generation = 0;
     };
     using ReadGuardPtr = std::shared_ptr<ReadGuard>;
     struct ReadResult
     {
         ReadGuardPtr guard;
-        RowDataPtrs rows;
+        std::vector<EntryId> entry_ids;
     };
     struct LookupIndex;
     using LookupIndexPtr = std::shared_ptr<LookupIndex>;
@@ -141,7 +146,7 @@ public:
     String getName() const override { return "OverwriteCache"; }
 
     bool prefersLargeBlocks() const override { return false; }
-    bool supportsParallelInsert() const override { return false; }
+    bool supportsParallelInsert() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -165,8 +170,12 @@ public:
     void shutdown(bool is_drop) override;
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void backupData(
+        BackupEntriesCollector & backup_entries_collector,
+        const String & data_path_in_backup,
+        const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(
+        RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & lock_holder) override;
@@ -194,6 +203,7 @@ public:
 
     ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
     ReadResult getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const;
+    RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
     size_t getColumnPosition(const String & column_name) const;
     void insertValueIntoColumn(const RowData & row, size_t position, IColumn & column, SegmentColumnCache & cache) const;
 
@@ -234,8 +244,8 @@ private:
     }
 
     /// A publication takes one version per row and usually hands it straight back once the previous
-    /// one becomes unreachable, so recycling keeps that off the allocator. Writer-only: every caller
-    /// holds `writer_mutex`.
+    /// one becomes unreachable, so recycling keeps that off the allocator. Post-publication pruning
+    /// may return versions while the next writer takes them, so the pool has its own mutex.
     std::unique_ptr<EntryVersion> takeVersion();
     void recycleVersions(std::unique_ptr<EntryVersion> chain);
     static constexpr size_t max_recycled_versions = 1 << 16;
@@ -310,6 +320,7 @@ private:
     static constexpr size_t primary_shard_count = 256;
     static constexpr size_t posting_shard_count = 256;
     static constexpr size_t row_lock_count = 4096;
+    static constexpr size_t snapshot_shard_count = 64;
     static_assert(primary_shard_count == 256 && posting_shard_count == 256, "shardIndex takes the top eight hash bits");
 
     /// A small initial capacity keeps the fixed cost of a nearly empty shard low.
@@ -321,6 +332,12 @@ private:
         PrimaryMap entries;
         /// Owns the key bytes referenced by `entries`.
         std::unique_ptr<Arena> arena = std::make_unique<Arena>();
+    };
+
+    struct SnapshotRegistryShard
+    {
+        mutable std::mutex mutex;
+        std::map<UInt64, size_t> generations;
     };
 
 public:
@@ -395,8 +412,7 @@ public:
 
             UInt64 allocatedBytes() const
             {
-                return static_cast<UInt64>(narrow.capacity()) * sizeof(UInt32)
-                    + static_cast<UInt64>(wide.capacity()) * sizeof(EntryId);
+                return static_cast<UInt64>(narrow.capacity()) * sizeof(UInt32) + static_cast<UInt64>(wide.capacity()) * sizeof(EntryId);
             }
 
             std::vector<UInt32> narrow;
@@ -444,12 +460,13 @@ private:
     UInt64 oldestLiveGeneration() const;
     void drainReaders();
     std::optional<EntryId> findEntry(std::string_view key, size_t hash) const;
-    RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
     std::vector<EntryId> getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
     UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
-    void intersectPostingIds(
-        std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
+    void
+    intersectPostingIds(std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
     void clearData();
+    void acquireInsertPreparation(UInt64 bytes);
+    void releaseInsertPreparation(UInt64 bytes);
 
     const String version_column;
     const Names key_columns;
@@ -471,19 +488,33 @@ private:
     std::vector<DataTypes> lookup_index_column_types;
 
     mutable std::mutex writer_mutex;
+    /// Insert callers prepare independently, then enter publication in ticket order. Other operations
+    /// still use `writer_mutex` directly because they already hold an exclusive table-level lock.
+    mutable std::mutex publication_order_mutex;
+    mutable std::condition_variable publication_order_changed;
+    UInt64 next_publication_ticket = 0;
+    UInt64 serving_publication_ticket = 0;
+    mutable std::mutex insert_admission_mutex;
+    mutable std::condition_variable insert_admission_changed;
+    UInt64 active_insert_preparations = 0;
+    UInt64 pending_insert_bytes = 0;
+    /// Keeps entry storage alive while post-publication version pruning runs outside `writer_mutex`.
+    mutable SharedMutex entry_lifetime_mutex;
     mutable SharedMutex lookup_catalog_mutex;
     std::array<PrimaryShard, primary_shard_count> primary_shards;
     std::vector<LookupIndexPtr> lookup_indexes;
     EntryTable entries;
-    mutable std::array<std::mutex, row_lock_count> row_mutexes;
+    mutable std::array<SharedMutex, row_lock_count> row_mutexes;
+    mutable std::mutex recycled_versions_mutex;
     std::unique_ptr<EntryVersion> recycled_versions;
     size_t recycled_version_count = 0;
     EntryId next_entry_id = 1;
 
     std::atomic<UInt64> published_generation = 0;
     /// Snapshot generations of the live read guards, so a writer knows which versions it may drop.
-    mutable std::mutex snapshot_registry_mutex;
-    mutable std::map<UInt64, size_t> live_snapshots;
+    /// A reader touches only the shard selected by its thread, while a writer scans all shards to
+    /// compute the reclamation watermark.
+    mutable std::array<SnapshotRegistryShard, snapshot_shard_count> snapshot_registry;
     /// Only the paths that release entry storage outright - `TRUNCATE`, `DROP` and `DROP INDEX` -
     /// wait for readers. Publishing a block never does.
     mutable std::atomic<UInt8> active_reader_epoch = 0;
