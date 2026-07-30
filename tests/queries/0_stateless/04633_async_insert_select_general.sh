@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# No tags needed: this file only exercises basic async routing across protocols.
-
-# Note: async_insert defaults on for this server, so the setting is only made explicit.
+# Exercises basic async insert routing across protocols; no tags needed.
+# async_insert defaults on for this server; the setting below is made explicit only for clarity.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,15 +33,14 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # Case 1: plain INSERT ... SELECT over HTTP routes to the async queue.
-# wait_for_async_insert is forced to 1 by the implementation so rows are
-# visible immediately after the HTTP response is received.
+# wait_for_async_insert is forced to 1, so rows are visible right after the HTTP response returns.
 Q=$(urlencode "INSERT INTO test_async_sel SELECT number::UInt32 AS id, 'async_' || toString(number) AS v FROM numbers(3)")
 ${CLICKHOUSE_CURL} -sS -X POST \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=${Q}" -d ""
 ${CLICKHOUSE_CLIENT} -q "SELECT id, v FROM test_async_sel ORDER BY id"
 
-# asynchronous_insert_log can lag even after wait_for_async_insert=1; poll with bounded retry.
-for _ in $(seq 1 60); do
+# One flush after the insert should already see it; short retry is just a safety net.
+for _ in $(seq 1 10); do
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
     count=$(${CLICKHOUSE_CLIENT} -q "
         SELECT count()
@@ -56,7 +54,7 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 
-# Confirm a Preprocessed entry exists confirming pushQueryWithBlock was used.
+# Confirms a Preprocessed entry exists, i.e. pushQueryWithBlock was used.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT status, data_kind
     FROM system.asynchronous_insert_log
@@ -68,8 +66,8 @@ ${CLICKHOUSE_CLIENT} -q "
     LIMIT 1
 "
 
-# Case 2: INSERT ... SELECT FROM input() over HTTP with getClientHTTPHeader still works.
-# This validates that the input() path is not broken by the general SELECT routing.
+# Case 2: INSERT ... SELECT FROM input() over HTTP with getClientHTTPHeader still works,
+# i.e. general SELECT routing does not break the input() path.
 Q=$(urlencode "INSERT INTO test_async_sel_input SELECT id, v, getClientHTTPHeader('X-My-Header') FROM input('id UInt32, v String') FORMAT TSV")
 printf '10\tinput_val\n' | ${CLICKHOUSE_CURL} -sS -X POST \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&allow_get_client_http_header=1&query=${Q}" \
@@ -78,14 +76,13 @@ printf '10\tinput_val\n' | ${CLICKHOUSE_CURL} -sS -X POST \
     --data-binary @-
 ${CLICKHOUSE_CLIENT} -q "SELECT id, v, hdr FROM test_async_sel_input ORDER BY id"
 
-# Case 3: the same routing applies over the native TCP protocol (clickhouse-client),
-# not only HTTP. A single small block still goes through the async queue.
+# Case 3: same routing applies over native TCP (clickhouse-client), not only HTTP.
 ${CLICKHOUSE_CLIENT} --async_insert=1 --wait_for_async_insert=1 -q "
     INSERT INTO test_async_sel_tcp SELECT number::UInt32 AS id, 'tcp_' || toString(number) AS v FROM numbers(2)
 "
 ${CLICKHOUSE_CLIENT} -q "SELECT id, v FROM test_async_sel_tcp ORDER BY id"
 
-for _ in $(seq 1 60); do
+for _ in $(seq 1 10); do
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
     count=$(${CLICKHOUSE_CLIENT} -q "
         SELECT count()
@@ -107,8 +104,8 @@ ${CLICKHOUSE_CLIENT} -q "
       AND table = 'test_async_sel_tcp'
 "
 
-# Case 4: wait_for_async_insert is forced on this path. Even with wait_for_async_insert=0
-# the rows are visible immediately after the HTTP call returns.
+# Case 4: wait_for_async_insert is forced on this path: rows are visible right after the HTTP
+# call returns even with wait_for_async_insert=0.
 Q=$(urlencode "INSERT INTO test_async_sel_wait SELECT number::UInt32 AS id, 'wait_' || toString(number) AS v FROM numbers(2)")
 ${CLICKHOUSE_CURL} -sS -X POST \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=${Q}" -d ""
