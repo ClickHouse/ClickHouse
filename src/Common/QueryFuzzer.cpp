@@ -1017,6 +1017,58 @@ ASTPtr QueryFuzzer::makeFuzzedAsteriskLikeMatcher()
     return matcher;
 }
 
+/// Virtual columns of every engine family: MergeTree, object storage, data lakes, `File` / `URL`,
+/// `Distributed`, queue engines and MaterializedPostgreSQL. They take read paths regular columns
+/// don't, and a name the queried storage doesn't expose only costs an UNKNOWN_IDENTIFIER.
+static const Strings virtual_columns
+    = {"_block_number",
+       "_block_offset",
+       "_change_type",
+       "_commit_timestamp",
+       "_commit_version",
+       "_data_lake_snapshot_version",
+       "_database",
+       "_disk_name",
+       "_error",
+       "_etag",
+       "_file",
+       "_key",
+       "_offset",
+       "_part",
+       "_part_data_version",
+       "_part_granule_offset",
+       "_part_index",
+       "_part_offset",
+       "_part_starting_offset",
+       "_part_uuid",
+       "_partition",
+       "_partition_id",
+       "_partition_value",
+       "_path",
+       "_raw_message",
+       "_row_exists",
+       "_row_number",
+       "_sample_factor",
+       "_shard_num",
+       "_sign",
+       "_size",
+       "_table",
+       "_time",
+       "_timestamp",
+       "_timestamp_ms",
+       "_topic",
+       "_version"};
+
+ASTPtr QueryFuzzer::makeFuzzedVirtualColumn()
+{
+    const String & name = pickRandomly(fuzz_rand, virtual_columns);
+
+    /// Occasionally qualify it (`t._part`), which resolves through a different code path.
+    if (fuzz_rand() % 8 == 0 && !table_like.empty())
+        return make_intrusive<ASTIdentifier>(std::vector<String>{table_like[fuzz_rand() % table_like.size()].first, name});
+    return make_intrusive<ASTIdentifier>(name);
+}
+
 ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
 {
     if (column_like.empty())
@@ -4208,6 +4260,11 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                     multiif_func->arguments->children.emplace_back(else_val);
                     new_child = multiif_func;
                 }
+            }
+            else if (fuzz_rand() % 800 == 0)
+            {
+                /// Reference a virtual column of whatever the query reads from.
+                new_child = makeFuzzedVirtualColumn();
             }
             else
             {

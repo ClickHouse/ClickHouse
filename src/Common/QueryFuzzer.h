@@ -232,6 +232,9 @@ private:
     ASTPtr makeFuzzedAsteriskLikeMatcher();
     /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
     ASTPtr makeFuzzedColumnTransformers();
+    /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
+    /// occasionally qualified with a known table name.
+    ASTPtr makeFuzzedVirtualColumn();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
