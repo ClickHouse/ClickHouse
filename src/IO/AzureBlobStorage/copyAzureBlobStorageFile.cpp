@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <IO/AzureBlobStorage/retryAzureOperation.h>
 #include <Common/getRandomASCIIString.h>
 
 
@@ -404,6 +405,7 @@ void copyAzureBlobStorageFile(
         if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
+        std::optional<Azure::Storage::Blobs::StartBlobCopyOperation> async_operation;
         try
         {
             auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
@@ -422,6 +424,7 @@ void copyAzureBlobStorageFile(
 
                 LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
                 block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+                is_native_copy_done = true;
             }
             else
             {
@@ -432,33 +435,11 @@ void copyAzureBlobStorageFile(
                         copy_options.Metadata[key] = value;
                 }
 
-                Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
-
-                auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
-                auto properties_model = copy_response.Value;
-
-                auto copy_status = properties_model.CopyStatus;
-                auto copy_status_description = properties_model.CopyStatusDescription;
-
-
-                if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
-                {
-                    LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
-                }
-                else
-                {
-                    if (copy_status.HasValue())
-                        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
-                    throw Exception(
-                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                        "Copy from {} to {} didn't complete with success status (operation is done {})",
-                        src_blob,
-                        dest_blob,
-                        operation.IsDone());
-                }
+                /// Only *start* the server-side copy inside this try: a failure here happens before any copy
+                /// is in flight, so the catch below can still safely fall back to read+write. Polling is done
+                /// after the try, where a transient failure must not switch copy mechanisms mid-flight.
+                async_operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
             }
-            is_native_copy_done = true;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -487,10 +468,35 @@ void copyAzureBlobStorageFile(
         }
         catch (const Azure::Core::Credentials::AuthenticationException & e)
         {
-            /// Credential/RBAC token failure during native copy: fall back to read+write.
+            /// Credential/RBAC token failure while starting the copy: fall back to read+write.
             LOG_TRACE(log, "Copy operation hit an authentication error ({}); will retry using read & write. "
                            "source container = {} blob = {} and destination container = {} blob = {}",
                       e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
+        }
+
+        /// StartCopyFromUri succeeded, so a server-side copy is now in flight. Poll it to completion on the
+        /// SAME operation; a transient poll failure is retried here and never falls back to read+write --
+        /// that would start a second writer to dest_blob while the copy is still pending.
+        if (async_operation.has_value())
+        {
+            auto copy_response = retryAzureOperation(
+                [&] { return async_operation->PollUntilDone(std::chrono::milliseconds(100)); },
+                settings->max_single_download_retries, dest_blob, log);
+            auto properties_model = copy_response.Value;
+            auto copy_status = properties_model.CopyStatus;
+            auto copy_status_description = properties_model.CopyStatusDescription;
+
+            if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+            {
+                LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+                is_native_copy_done = true;
+            }
+            else if (copy_status.HasValue())
+                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), async_operation->IsDone());
+            else
+                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})",
+                                src_blob, dest_blob, async_operation->IsDone());
         }
     }
     if (!is_native_copy_done)
