@@ -1822,6 +1822,75 @@ TEST(SZ3Test, DecompressFreesScratchBufferOnTruncatedPayload)
     }
     ASSERT_TRUE(saw_rejection) << "A truncated SZ3 payload must be rejected, not silently accepted";
 }
+
+TEST(SZ3Test, LorenzoRegSerializesAndDecodesRegressionCoefficients)
+{
+    /// Companion to the SQL test 04604_sz3_codec_lorenzo_reg: a positive signal that this data shape really
+    /// exercises the `ALGO_LORENZO_REG` loaders whose `remaining_length` accounting was fixed
+    /// (`RegressionPredictor::load` and `ComposedPredictor::load` decrement it by the bytes the Huffman
+    /// `decode` consumed, not by the uncompressed index count). A plain round trip could silently pass
+    /// through the bit-exact `ALGO_LOSSLESS` fallback, or through a lossy block in which no block selected
+    /// the regression predictor, and then a regression in the fixed loaders would go unnoticed.
+    auto codec = makeCodec("SZ3('ALGO_LORENZO_REG', 'ABS', 0.01)", std::make_shared<DataTypeFloat64>());
+
+    /// The same data shape as the SQL test: a smooth signal with a linear trend, so the per-block predictor
+    /// selection picks the regression predictor for the blocks.
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = static_cast<double>(i) * 0.5 + std::sin(static_cast<double>(i) * 0.1);
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    /// The stored config must keep ALGO_LORENZO_REG: SZ3 rewrites `cmprAlgo` to ALGO_LOSSLESS when the
+    /// lossy result does not win over plain zstd, and that path would never reach the fixed loaders.
+    {
+        SZ3::Config config;
+        SZ_load_config(config, encoded.data() + sz3StreamOffset(), encoded_size - sz3StreamOffset());
+        ASSERT_EQ(config.cmprAlgo, SZ3::ALGO_LORENZO_REG) << "Test setup expects an ALGO_LORENZO_REG block";
+        ASSERT_EQ(config.num, num_values);
+    }
+
+    /// The regression-coefficient stream must be non-empty. Its element count is the first field of the
+    /// inner buffer: `BlockwiseDecomposition::save` writes the Lorenzo fallback predictor (nothing), then
+    /// `ComposedPredictor::save` writes each sub-predictor - the Lorenzo predictor (nothing), then the
+    /// regression predictor, which starts with the count of its quantized coefficients. A zero count would
+    /// mean no block selected the regression predictor, and `RegressionPredictor::load` would never run
+    /// the fixed decode.
+    {
+        const std::vector<unsigned char> inner = sz3ExtractInnerBuffer(encoded.data());
+        ASSERT_GE(inner.size(), sizeof(size_t));
+        size_t coeff_count = 0;
+        memcpy(&coeff_count, inner.data(), sizeof(coeff_count));
+        ASSERT_GT(coeff_count, 0u) << "Expected at least one regression-predicted block";
+        /// Every regression-predicted 1-D block stores two quantized coefficients (slope and intercept).
+        ASSERT_EQ(coeff_count % 2, 0u);
+    }
+
+    /// Decompression must decode those coefficients. Before the fix, `RegressionPredictor::load`
+    /// understated `remaining_length` (the uncompressed coefficient count overshoots the Huffman-compressed
+    /// stream size), so the following `encoder.load` rejected the block with "SZ3 Huffman: encoded length
+    /// exceeds compressed buffer" (CORRUPTED_DATA) and the data was unreadable. The round trip must also be
+    /// lossy - within the ABS bound but not bit-exact - proving the quantizer path produced the block.
+    PODArray<char> decoded(source_size);
+    const UInt32 decoded_size = codec->decompress(encoded.data(), encoded_size, decoded.data());
+    ASSERT_EQ(decoded_size, source_size);
+    const auto * decoded_values = reinterpret_cast<const Float64 *>(decoded.data());
+    Float64 max_error = 0.0;
+    size_t changed = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        max_error = std::max(max_error, std::fabs(values[i] - decoded_values[i]));
+        changed += (values[i] != decoded_values[i]) ? 1 : 0;
+    }
+    ASSERT_LE(max_error, 0.011);
+    ASSERT_GT(changed, 0u) << "Expected a lossy round trip; a bit-exact result means the lossless fallback was used";
+}
 #endif
 
 /// Expects getCompressionCodecForFile to reject the block with the given error code.

@@ -3,37 +3,18 @@
     {
       "group": "Home",
       "icon": "house",
-      "pages": [],
-      "root": "integrations/language-clients/index"
+      "pages": [
+        "integrations/language-clients/index"
+      ]
     },
-    {
-      "group": "JavaScript",
-      "icon": "/images/integrations/logos/node_js.svg",
-      "pages": [],
-      "root": "integrations/language-clients/js"
-    },
+    { "$ref": "js/navigation.json" },
     { "$ref": "python/navigation.json" },
     { "$ref": "go/navigation.json" },
     { "$ref": "java/navigation.json" },
     { "$ref": "csharp/navigation.json" },
-    {
-      "group": "Rust",
-      "icon": "/images/integrations/logos/rust.webp",
-      "pages": [],
-      "root": "integrations/language-clients/rust"
-    },
-    {
-      "group": "C++",
-      "icon": "/images/integrations/logos/logo_cpp.svg",
-      "pages": [],
-      "root": "integrations/language-clients/cpp"
-    },
-    {
-      "group": "C",
-      "icon": "/images/integrations/logos/logo_c.svg",
-      "pages": [],
-      "root": "integrations/language-clients/c"
-    },
+    { "$ref": "rust/navigation.json" },
+    { "$ref": "cpp/navigation.json" },
+    { "$ref": "c/navigation.json" },
     {
       "group": "Third-party clients",
       "icon": "users",

@@ -39,9 +39,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 * Docker مُثبّت على جهازك
 
 <Steps>
-  <Step>
-    ## إعداد بنية الدليل وبيئة الاختبار
-
+  <Step title="إعداد بنية الدليل وبيئة الاختبار" id="set-up">
     <ExampleFiles />
 
     في هذا الدليل العملي، ستستخدم [Docker compose](https://docs.docker.com/compose/) لإعداد مجموعة ClickHouse. يمكن تعديل هذا الإعداد ليناسب أجهزة محلية منفصلة، أو أجهزة افتراضية، أو نسخ سحابية أيضًا.
@@ -141,9 +139,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## تهيئة عقد ClickHouse
-
+  <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
     ### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
@@ -211,7 +207,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | المجلد                                                    | File                                                                                                                                                                             |
+    | الدليل                                                    | الملف                                                                                                                                                                            |
     | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
@@ -237,7 +233,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
     [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
 
-    #### تهيئة الكلستر
+    #### تهيئة العنقود
 
     يتم ضبط إعدادات العنقود في القسم `<remote_servers>`.
     وهنا يُعرَّف اسم العنقود `cluster_1S_2R`.
@@ -364,7 +360,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | مجلد                                                     | File                                                                                                                                                                          |
+    | المجلد                                                   | File                                                                                                                                                                          |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -377,9 +373,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## إعداد ClickHouse Keeper
-
+  <Step title="إعداد ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### إعداد Keeper
 
     <KeeperConfig />
@@ -395,9 +389,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## اختبر الإعداد
-
+  <Step title="اختبر الإعداد" id="test-the-setup">
     تأكد من أن Docker يعمل على جهازك.
     ابدأ العنقود باستخدام الأمر `docker-compose up` من الدليل الجذر `cluster_1S_2R`:
 
@@ -476,9 +468,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في الخطوة التالية، ستنشئ جدولًا في العنقود.
   </Step>
 
-  <Step>
-    ## أنشئ قاعدة بيانات
-
+  <Step title="أنشئ قاعدة بيانات" id="creating-a-database">
     الآن بعد أن تحققت من أن العنقود مُهيّأ بشكل صحيح ويعمل، ستعيد
     إنشاء الجدول نفسه المستخدم في الدليل العملي لمجموعة البيانات النموذجية
     [UK property prices](/ar/get-started/sample-datasets/uk-price-paid). وتتألف هذه المجموعة من نحو 30 مليون صف لأسعار بيع
@@ -535,9 +525,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## أنشئ جدولًا على العنقود
-
+  <Step title="أنشئ جدولًا على العنقود" id="creating-a-table">
     الآن بعد إنشاء قاعدة البيانات، أنشئ جدولًا على العنقود.
     نفّذ الاستعلام التالي من أي عميل على أحد المضيفات:
 
@@ -589,9 +577,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## إدراج البيانات
-
+  <Step title="إدراج البيانات" id="inserting-data">
     نظرًا لأن مجموعة البيانات كبيرة وتستغرق بضع دقائق لاستيعابها بالكامل، سنبدأ بإدراج جزء صغير منها فحسب.
 
     أدرج مجموعة فرعية أصغر من البيانات باستخدام الاستعلام أدناه من `clickhouse-01`:

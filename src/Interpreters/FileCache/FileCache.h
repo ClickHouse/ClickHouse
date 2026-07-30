@@ -129,7 +129,7 @@ public:
 
     OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
 
-    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size = std::nullopt) const;
 
     String getKeyPath(const Key & key, const OriginInfo & origin) const;
 
@@ -328,6 +328,7 @@ private:
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
+    const std::set<std::string> system_cache_extensions;
 
     const bool skip_cache_on_disk_failure;
     std::atomic<bool> expose_eviction_metrics;
