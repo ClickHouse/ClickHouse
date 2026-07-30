@@ -449,3 +449,13 @@ FROM (
     UNION ALL
     SELECT CAST('{"t":{"x":10,"y":20}}', 'JSON(t Tuple(x UInt32, y UInt32))'), 2
 );
+
+-- Variant sort key must be rejected at registration time (Field ordering differs from ColumnVariant::compareAt).
+CREATE TABLE t_variant_key (json JSON, key Variant(UInt64, String)) ENGINE=Memory;
+SELECT mergedJSONPatch(json, key) FROM t_variant_key; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+DROP TABLE t_variant_key;
+
+-- Dynamic sort key must also be rejected.
+CREATE TABLE t_dynamic_key (json JSON, key Dynamic) ENGINE=Memory;
+SELECT mergedJSONPatch(json, key) FROM t_dynamic_key; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+DROP TABLE t_dynamic_key;
