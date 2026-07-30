@@ -4,14 +4,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Almost every statement below is sent over HTTP with curl rather than through `clickhouse client`.
-# The fixtures are a handful of rows each and no query does real work, so the runtime of this test is
-# entirely the cost of starting a client process ~170 times, and that process is a sanitizer build:
-# measured against one ASan server, a client spawn costs 0.54 s against 0.009 s for curl, so the
-# transport alone accounted for ~92 s of a ~118 s run and tripped the flaky check's 180 s limit.
+# Almost every statement below is sent over HTTP with curl rather than through `clickhouse client`,
+# because on a sanitizer build a client spawn costs 0.54 s against 0.009 s for curl.
 # Randomized settings reach both transports - TestCase.add_effective_settings fills
 # CLICKHOUSE_URL_PARAMS from the same draw as CLICKHOUSE_CLIENT_OPT - so the pins and the hostile
 # arms below behave identically either way.
+#
+# Every fixture row is inserted with `VALUES`, not `SELECT <constants>`. Both write one level-0 part
+# per statement, but `INSERT ... SELECT` builds a query pipeline sized by `max_threads`
+# (InterpreterInsertQuery.cpp:135-139), so a single-row insert fans out to one thread per core:
+# measured 150 threads and 69 s of server CPU per test run, against 2 threads and 0.06 s for `VALUES`.
 #
 # `optimize_lazy_final` is `query_plan_optimize_lazy_final && allow_experimental_analyzer`
 # (QueryPlanOptimizationSettings.cpp), so with the old analyzer the optimization never runs and every
@@ -75,20 +77,20 @@ DROP TABLE IF EXISTS t_mix;
 CREATE TABLE t (k UInt64, flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t;
-INSERT INTO t SELECT 1, 0, 1;
-INSERT INTO t SELECT 1, 1, 2;
-INSERT INTO t SELECT 2, 1, 1;
-INSERT INTO t SELECT 2, 0, 2;
-INSERT INTO t SELECT 3, 1, 1;
-INSERT INTO t SELECT 3, 1, 2;
+INSERT INTO t VALUES (1, 0, 1);
+INSERT INTO t VALUES (1, 1, 2);
+INSERT INTO t VALUES (2, 1, 1);
+INSERT INTO t VALUES (2, 0, 2);
+INSERT INTO t VALUES (3, 1, 1);
+INSERT INTO t VALUES (3, 1, 2);
 
 CREATE TABLE t_sk (k UInt64, sk UInt64, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY (k, sk) SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_sk;
-INSERT INTO t_sk SELECT 1, 7, 1;
-INSERT INTO t_sk SELECT 1, 7, 2;
-INSERT INTO t_sk SELECT 2, 9, 1;
-INSERT INTO t_sk SELECT 2, 9, 2;
+INSERT INTO t_sk VALUES (1, 7, 1);
+INSERT INTO t_sk VALUES (1, 7, 2);
+INSERT INTO t_sk VALUES (2, 9, 1);
+INSERT INTO t_sk VALUES (2, 9, 2);
 
 -- Two independent pre-FINAL filters, one per column, arranged so that dropping either one changes
 -- the selected winner into a row the post-merge filter then rejects. Key 4's version ladder is
@@ -99,19 +101,19 @@ INSERT INTO t_sk SELECT 2, 9, 2;
 CREATE TABLE t_two (k UInt64, flag UInt8, tier UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_two;
-INSERT INTO t_two SELECT 4, 0, 1, 1;
-INSERT INTO t_two SELECT 4, 0, 9, 2;
-INSERT INTO t_two SELECT 4, 1, 1, 3;
+INSERT INTO t_two VALUES (4, 0, 1, 1);
+INSERT INTO t_two VALUES (4, 0, 9, 2);
+INSERT INTO t_two VALUES (4, 1, 1, 3);
 
 CREATE TABLE t_del (k UInt64, flag UInt8, version UInt64, is_deleted UInt8)
 ENGINE = ReplacingMergeTree(version, is_deleted) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_del;
-INSERT INTO t_del SELECT 1, 0, 1, 0;
-INSERT INTO t_del SELECT 1, 1, 2, 0;
-INSERT INTO t_del SELECT 2, 1, 1, 0;
-INSERT INTO t_del SELECT 2, 0, 2, 0;
-INSERT INTO t_del SELECT 3, 0, 1, 0;
-INSERT INTO t_del SELECT 3, 0, 2, 1;
+INSERT INTO t_del VALUES (1, 0, 1, 0);
+INSERT INTO t_del VALUES (1, 1, 2, 0);
+INSERT INTO t_del VALUES (2, 1, 1, 0);
+INSERT INTO t_del VALUES (2, 0, 2, 0);
+INSERT INTO t_del VALUES (3, 0, 1, 0);
+INSERT INTO t_del VALUES (3, 0, 2, 1);
 
 -- Tables whose sorting key makes the part splitter decline BEFORE it looks at the parts:
 -- isSafePrimaryKey rejects Float and Nullable keys, and a sorting key that mixes ASC with DESC is
@@ -120,24 +122,24 @@ INSERT INTO t_del SELECT 3, 0, 2, 1;
 CREATE TABLE t_float (k Float64, flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_float;
-INSERT INTO t_float SELECT 1.5, 0, 1;
-INSERT INTO t_float SELECT 1.5, 1, 2;
-INSERT INTO t_float SELECT 2.5, 0, 1;
+INSERT INTO t_float VALUES (1.5, 0, 1);
+INSERT INTO t_float VALUES (1.5, 1, 2);
+INSERT INTO t_float VALUES (2.5, 0, 1);
 
 CREATE TABLE t_null (k Nullable(UInt64), flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1, allow_nullable_key = 1;
 SYSTEM STOP MERGES t_null;
-INSERT INTO t_null SELECT 1, 0, 1;
-INSERT INTO t_null SELECT 1, 1, 2;
-INSERT INTO t_null SELECT 2, 0, 1;
+INSERT INTO t_null VALUES (1, 0, 1);
+INSERT INTO t_null VALUES (1, 1, 2);
+INSERT INTO t_null VALUES (2, 0, 1);
 
 CREATE TABLE t_rev (a UInt64, b UInt64, flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY (a ASC, b DESC)
 SETTINGS index_granularity = 1, allow_experimental_reverse_key = 1, allow_nullable_key = 1;
 SYSTEM STOP MERGES t_rev;
-INSERT INTO t_rev SELECT 1, 5, 0, 1;
-INSERT INTO t_rev SELECT 1, 5, 1, 2;
-INSERT INTO t_rev SELECT 2, 6, 0, 1;
+INSERT INTO t_rev VALUES (1, 5, 0, 1);
+INSERT INTO t_rev VALUES (1, 5, 1, 2);
+INSERT INTO t_rev VALUES (2, 6, 0, 1);
 
 -- Float key (so the splitter declines before inspecting the parts, as for t_float) PLUS a text index,
 -- which is the one combination that reaches the third precondition those early declines re-test: a
@@ -148,9 +150,9 @@ CREATE TABLE t_txt (k Float64, flag UInt8, version UInt64, s String,
                     INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_txt;
-INSERT INTO t_txt SELECT 3.5, 0, 1, 'alpha beta';
-INSERT INTO t_txt SELECT 3.5, 1, 2, 'alpha gamma';
-INSERT INTO t_txt SELECT 4.5, 0, 1, 'alpha delta';
+INSERT INTO t_txt VALUES (3.5, 0, 1, 'alpha beta');
+INSERT INTO t_txt VALUES (3.5, 1, 2, 'alpha gamma');
+INSERT INTO t_txt VALUES (4.5, 0, 1, 'alpha delta');
 
 -- Every key sits in exactly one part, so all parts are non-intersecting and the read is replaced by a
 -- plain non-FINAL read. That replacement needs no winner-selection read, so it must remain available
@@ -158,9 +160,9 @@ INSERT INTO t_txt SELECT 4.5, 0, 1, 'alpha delta';
 CREATE TABLE t_fp (k UInt64, flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_fp;
-INSERT INTO t_fp SELECT 1, 0, 1;
-INSERT INTO t_fp SELECT 2, 1, 1;
-INSERT INTO t_fp SELECT 3, 0, 1;
+INSERT INTO t_fp VALUES (1, 0, 1);
+INSERT INTO t_fp VALUES (2, 1, 1);
+INSERT INTO t_fp VALUES (3, 0, 1);
 
 -- Key 1 is spread over two parts while keys 2 and 10 are each alone, so the split is partial: the
 -- lazy branch handles key 1 and the non-intersecting half is unioned back. Key 1's overall winner is
@@ -169,10 +171,10 @@ INSERT INTO t_fp SELECT 3, 0, 1;
 CREATE TABLE t_mix (k UInt64, flag UInt8, version UInt64)
 ENGINE = ReplacingMergeTree(version) ORDER BY k SETTINGS index_granularity = 1;
 SYSTEM STOP MERGES t_mix;
-INSERT INTO t_mix SELECT 1, 0, 1;
-INSERT INTO t_mix SELECT 1, 1, 2;
-INSERT INTO t_mix SELECT 2, 0, 1;
-INSERT INTO t_mix SELECT 10, 0, 1;
+INSERT INTO t_mix VALUES (1, 0, 1);
+INSERT INTO t_mix VALUES (1, 1, 2);
+INSERT INTO t_mix VALUES (2, 0, 1);
+INSERT INTO t_mix VALUES (10, 0, 1);
 "
 
 # ORDER BY on the FINAL query disables the optimization (readsInOrder), so the results are
