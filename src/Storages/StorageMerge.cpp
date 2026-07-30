@@ -1731,10 +1731,20 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
+    /// Reading in reverse order with FINAL is supported only for ReplacingMergeTree
+    /// (see `ReadFromMergeTree::requestReadingInOrder`). Check all the tables upfront,
+    /// because the loop below switches the children to the in-order reading one by one,
+    /// and a child must not be switched when a later child rejects the request
+    /// and the optimization is abandoned.
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
-        return false;
+    {
+        for (const auto & [database_name, storage, lock, table_name] : selected_tables)
+        {
+            const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+            if (!merge_tree || merge_tree->merging_params.mode != MergeTreeData::MergingParams::Replacing)
+                return false;
+        }
+    }
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {

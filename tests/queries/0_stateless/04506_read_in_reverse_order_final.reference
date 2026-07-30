@@ -37,3 +37,14 @@ non-overlapping parts
 collapsing not in reverse
 Ok
 0	0
+merge table over replacing
+Ok
+Ok
+4	4
+3	4
+merge table over mixed engines
+Ok
+Ok
+Ok
+5	5
+4	4

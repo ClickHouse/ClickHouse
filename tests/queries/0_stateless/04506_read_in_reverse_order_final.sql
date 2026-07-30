@@ -135,3 +135,33 @@ SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok')
 SELECT x, y FROM t_reverse_final FINAL ORDER BY x DESC;
 
 DROP TABLE t_reverse_final;
+
+-- A Merge table reads in reverse order when all children support it.
+CREATE TABLE t_reverse_final_r1 (x Int32, y Int32) ENGINE = ReplacingMergeTree ORDER BY x;
+CREATE TABLE t_reverse_final_r2 (x Int32, y Int32) ENGINE = ReplacingMergeTree ORDER BY x;
+INSERT INTO t_reverse_final_r1 VALUES (1, 1), (3, 3);
+INSERT INTO t_reverse_final_r1 VALUES (3, 4);
+INSERT INTO t_reverse_final_r2 VALUES (2, 2), (4, 4);
+
+CREATE TABLE t_reverse_final_m (x Int32, y Int32) ENGINE = Merge(currentDatabase(), '^t_reverse_final_r[0-9]$');
+
+SELECT 'merge table over replacing';
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
+    EXPLAIN PLAN actions = 1 SELECT * FROM t_reverse_final_m FINAL ORDER BY x DESC LIMIT 2
+) WHERE explain like '%ReadType%';
+SELECT * FROM t_reverse_final_m FINAL ORDER BY x DESC LIMIT 2;
+
+-- A child that is not a ReplacingMergeTree disables reading in reverse order for the whole Merge table.
+CREATE TABLE t_reverse_final_r3 (x Int32, y Int32) ENGINE = AggregatingMergeTree ORDER BY x;
+INSERT INTO t_reverse_final_r3 VALUES (5, 5);
+
+SELECT 'merge table over mixed engines';
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok') FROM (
+    EXPLAIN PLAN actions = 1 SELECT * FROM t_reverse_final_m FINAL ORDER BY x DESC LIMIT 2
+) WHERE explain like '%ReadType%';
+SELECT * FROM t_reverse_final_m FINAL ORDER BY x DESC LIMIT 2;
+
+DROP TABLE t_reverse_final_m;
+DROP TABLE t_reverse_final_r1;
+DROP TABLE t_reverse_final_r2;
+DROP TABLE t_reverse_final_r3;
