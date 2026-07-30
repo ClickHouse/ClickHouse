@@ -200,7 +200,11 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     infrastructure outage) the per-test list is empty or partial and the
     pre-inversion `ERROR` already tells the truth. Preserve it instead of
     overwriting with a validation verdict - an infra-induced failure is
-    never counted as a validation. See #105789.
+    never counted as a validation. See #105789. A server crash caused by
+    the regression test itself does NOT hit this guard: in bugfix
+    validation `FTResultsProcessor` keeps the aborted-run culprit as
+    `FAIL` (instead of demoting it to `ERROR` as in normal runs), so the
+    crash is counted as a reproduction below.
 
     The aggregate check is not enough: `FTResultsProcessor` can leave the
     top-level status `OK` while still emitting `ERROR` per-test rows
@@ -383,6 +387,16 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    # The xfail inversion (and therefore the "a crash on master HEAD is a
+    # reproduction" reading of a server death) only applies when the PR is
+    # labelled as a bugfix; an unlabelled run of this job executes the sanity
+    # test instead, where a crash is an ordinary infra failure and must keep
+    # its ERROR classification in `FTResultsProcessor`.
+    is_labeled_bugfix_validation = is_bugfix_validation and (
+        Labels.PR_BUGFIX in info.pr_labels
+        or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
+    )
+
     # If this PR only touches test files (no production/config code changed),
     # this job only needs to run if one of the changed tests would even be
     # selected here - and, when the job is also hash-batched (N/M), only the
@@ -395,6 +409,8 @@ def main():
         not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
+        and not is_excluded_from_llvm
         and not is_per_test_coverage
         and not args.test
     ):
@@ -679,7 +695,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
@@ -964,7 +980,10 @@ def main():
                 build_type=build_types[0] if is_bugfix_validation else None,
             )
 
-        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+        test_result = ft_res_processor.run(
+            runner_exit_code=runner_exit_code,
+            is_bugfix_validation=is_labeled_bugfix_validation,
+        )
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
@@ -1118,7 +1137,8 @@ def main():
                         build_type=bugfix_bt,
                     )
                     bt_result = ft_res_processor_bt.run(
-                        runner_exit_code=bt_runner_exit_code
+                        runner_exit_code=bt_runner_exit_code,
+                        is_bugfix_validation=is_labeled_bugfix_validation,
                     )
 
                     # Check fatal messages for this build type. As with the
@@ -1291,7 +1311,7 @@ def main():
 
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
-    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+    if is_labeled_bugfix_validation and test_result:
         # `invert_bugfix_validation_status` returns True when the bug did not
         # reproduce on this arch. In that case it sets `test_result` to
         # SKIPPED; the SKIPPED status must also be propagated to the top-level
