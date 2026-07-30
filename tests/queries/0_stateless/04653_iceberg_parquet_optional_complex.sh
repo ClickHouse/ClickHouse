@@ -6,9 +6,9 @@
 # (list/map/struct) was written to Parquet with `FieldRepetitionType::REQUIRED`, because
 # Array/Map are never wrapped in `Nullable` in the ClickHouse type, so the optionality is
 # not recoverable from the type and the Parquet writer never consulted the per-path Iceberg
-# metadata the ORC writer already uses. The footer then contradicted the Iceberg schema
-# published by the same commit, which spec-compliant external readers (Spark, Trino,
-# pyiceberg) reject.
+# metadata the ORC writer already uses. A `REQUIRED` group cannot encode a null container, so a
+# null list/map/struct was silently read back as an empty one, and the footer contradicted the
+# Iceberg schema published by the same commit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +27,7 @@ trap 'rm -rf "${USER_FILES_PATH}/${BASE}"* 2>/dev/null' EXIT
 # The `node` lines are what localize the level: a leaf's `maxdef` counts the nullable ancestors
 # along its whole chain and therefore cannot say WHICH ancestor contributed, so it reads the same
 # whether the container group or a node beneath it carries the OPTIONAL. Which node carries it is
-# the property an external Iceberg reader validates against the published schema.
+# what has to match the published Iceberg schema.
 read -r -d '' PROBE <<'PY'
 import glob, sys
 import pyarrow.parquet as pq
