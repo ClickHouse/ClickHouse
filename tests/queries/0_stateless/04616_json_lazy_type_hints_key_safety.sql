@@ -4,8 +4,10 @@
 -- A lazy metadata-only type-hint change skips the mutation branch, so it must be refused when it
 -- changes the on-disk serialization of a value persisted positionally in the primary/partition
 -- key or a secondary index (those are read back with the current type without per-part CAST).
--- Changes on columns not feeding such a structure, or where the persisted result type is stable,
--- must stay metadata-only.
+-- The check is on the on-disk types of the subcolumns the key/index expression reads, not on the
+-- expression result type: a type-sensitive expression such as reinterpretAsString(j.a) keeps the
+-- same result type while its persisted bytes change. Changes on columns not feeding such a
+-- structure, or that leave the on-disk type of every fed subcolumn unchanged, stay metadata-only.
 
 SET enable_json_type = 1;
 SET allow_experimental_json_lazy_type_hints = 1;
@@ -57,34 +59,50 @@ SELECT 'add unrelated path, count j.a >= 40 after reload (expect 24):',
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
--- ALLOW: key wraps the subcolumn in a function with a stable result type
+-- REJECT (conservative): key wraps the subcolumn in a value-preserving function.
+-- toString(j.a) yields the same string for the affected values, but losslessness
+-- of the persisted key value cannot be proven statically, so once j.a changes
+-- type the ALTER is rejected.
 -- ============================================================
-CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY (toString(j.a), id)
-SETTINGS index_granularity = 4;
-INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(64);
-ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64);
-SELECT 'toString(j.a) key, type change -> metadata-only mutations:',
-    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
-DETACH TABLE t_json_key_safety;
-ATTACH TABLE t_json_key_safety;
-SELECT 'toString(j.a) key, count after reload (expect 1):',
-    count() FROM t_json_key_safety WHERE toString(j.a) = '40';
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY (toString(j.a), id);
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'toString(j.a) key, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
--- ALLOW: skip index wraps the subcolumn in a function with a stable result type
+-- REJECT: key wraps the subcolumn in a type-sensitive function whose result type
+-- is stable (String) but whose persisted bytes change with the subcolumn type,
+-- e.g. reinterpretAsString(j.a) writes 4 bytes for Int32 and 8 for Int64 (and a
+-- different string for negatives). A result-type-only check wrongly allowed this
+-- and corrupted primary.idx.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY (reinterpretAsString(j.a), id);
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'reinterpretAsString(j.a) key, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT (conservative): skip index wraps the subcolumn in toString(j.a).
 -- ============================================================
 CREATE TABLE t_json_key_safety
 (id UInt32, j JSON(a Int32), INDEX idx toString(j.a) TYPE set(0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4;
-INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(64);
-ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64);
-SELECT 'toString(j.a) skip index, type change -> metadata-only mutations:',
-    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
-DETACH TABLE t_json_key_safety;
-ATTACH TABLE t_json_key_safety;
-SELECT 'toString(j.a) skip index, count after reload (expect 1):',
-    count() FROM t_json_key_safety WHERE toString(j.a) = '40' SETTINGS force_data_skipping_indices = 'idx';
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'toString(j.a) skip index, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: skip index wraps the subcolumn in a type-sensitive reinterpretAsString(j.a).
+-- ============================================================
+CREATE TABLE t_json_key_safety
+(id UInt32, j JSON(a Int32), INDEX idx reinterpretAsString(j.a) TYPE set(0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'reinterpretAsString(j.a) skip index, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE t_json_key_safety;
 
 -- ============================================================

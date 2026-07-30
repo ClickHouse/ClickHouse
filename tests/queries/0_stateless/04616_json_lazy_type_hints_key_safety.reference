@@ -3,10 +3,10 @@ PARTITION BY subcolumn, type change -> reject:
 skip index on subcolumn, type change -> reject:
 add unrelated path, key unchanged -> metadata-only mutations:	0
 add unrelated path, count j.a >= 40 after reload (expect 24):	24
-toString(j.a) key, type change -> metadata-only mutations:	0
-toString(j.a) key, count after reload (expect 1):	1
-toString(j.a) skip index, type change -> metadata-only mutations:	0
-toString(j.a) skip index, count after reload (expect 1):	1
+toString(j.a) key, subcolumn type change -> reject:
+reinterpretAsString(j.a) key, subcolumn type change -> reject:
+toString(j.a) skip index, subcolumn type change -> reject:
+reinterpretAsString(j.a) skip index, subcolumn type change -> reject:
 projection on whole column -> metadata-only mutations:	0
 projection read after reload:	0	0
 projection read after reload:	1	1

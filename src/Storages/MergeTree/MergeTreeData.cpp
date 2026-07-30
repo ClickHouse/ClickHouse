@@ -5328,58 +5328,61 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// serialization but skips the mutation branch above, so it never rebuilds `primary.idx`,
             /// the partition-key files, or `skp_idx_*` files. For ordinary column reads this is fine
             /// (old parts are read with their old type and CAST), but the primary/partition key and
-            /// secondary indexes persist the *result* of an expression, serialized positionally and
+            /// secondary indexes persist the result of an expression, serialized positionally and
             /// read back with the current type without per-part CAST reconciliation. Refuse the change
-            /// when it alters the result type of such a persisted expression that depends on this
-            /// column; otherwise the stale on-disk bytes become unreadable/misread with the new type.
+            /// when it alters the on-disk type of a subcolumn that such a persisted expression reads;
+            /// otherwise the stale on-disk bytes become unreadable/misread with the new type.
+            ///
+            /// The check compares the types of the input subcolumns the expression reads, not the
+            /// expression's result type: a type-sensitive expression such as `reinterpretAsString(j.a)`
+            /// keeps the same result type (`String`) while a change of `j.a` from `Int32` to `Int64`
+            /// changes the bytes it writes into the persisted structure. Being conservative, we reject
+            /// whenever any subcolumn of this column that feeds the expression changes type, even for
+            /// value-preserving wrappers such as `toString(j.a)`, since losslessness cannot be proven
+            /// statically.
             const auto & old_columns_desc = old_metadata.getColumns();
+            const auto & new_columns_desc = new_metadata.getColumns();
 
-            auto expression_depends_on_column = [&](const ExpressionActionsPtr & expr) -> bool
+            auto expression_uses_changed_subcolumn = [&](const ExpressionActionsPtr & expr) -> bool
             {
                 if (!expr)
                     return false;
                 for (const auto & required : expr->getRequiredColumns())
                 {
-                    if (required == command.column_name)
-                        return true;
-                    auto storage_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
-                    if (storage_column && storage_column->getNameInStorage() == command.column_name)
+                    /// Keep only (sub)columns that belong to the column being altered.
+                    auto old_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
+                    if (!old_column || old_column->getNameInStorage() != command.column_name)
+                        continue;
+
+                    /// The same (sub)column resolved against the post-ALTER schema. If it disappeared
+                    /// (e.g. a typed path removed) or its type changed, its persisted serialization is
+                    /// no longer the one on disk.
+                    auto new_column = new_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
+                    if (!new_column || new_column->type->getName() != old_column->type->getName())
                         return true;
                 }
-                return false;
-            };
-
-            auto result_types_changed = [](const DataTypes & old_result_types, const DataTypes & new_result_types) -> bool
-            {
-                if (old_result_types.size() != new_result_types.size())
-                    return true;
-                for (size_t i = 0; i < old_result_types.size(); ++i)
-                    if (old_result_types[i]->getName() != new_result_types[i]->getName())
-                        return true;
                 return false;
             };
 
             /// Primary/sorting key -> `primary.idx`. A full mutation cannot perform this either
             /// (altering a key column / key subcolumn is forbidden), so no hint to disable the setting.
             if (old_metadata.hasSortingKey()
-                && expression_depends_on_column(old_metadata.getSortingKey().expression)
-                && result_types_changed(old_metadata.getSortingKey().data_types, new_metadata.getSortingKey().data_types))
+                && expression_uses_changed_subcolumn(old_metadata.getSortingKey().expression))
             {
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the type of a value used in the primary/sorting key; "
+                    "ALTER of column {} changes the on-disk type of a subcolumn used in the primary/sorting key; "
                     "this is forbidden because the primary index cannot be rebuilt by a metadata-only ALTER",
                     backQuoteIfNeed(command.column_name));
             }
 
             /// Partition key -> partition value / minmax files.
             if (old_metadata.hasPartitionKey()
-                && expression_depends_on_column(old_metadata.getPartitionKey().expression)
-                && result_types_changed(old_metadata.getPartitionKey().data_types, new_metadata.getPartitionKey().data_types))
+                && expression_uses_changed_subcolumn(old_metadata.getPartitionKey().expression))
             {
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the type of a value used in the partition key; "
+                    "ALTER of column {} changes the on-disk type of a subcolumn used in the partition key; "
                     "this is forbidden because the partition key representation cannot be rebuilt by a metadata-only ALTER",
                     backQuoteIfNeed(command.column_name));
             }
@@ -5390,26 +5393,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             const auto & new_indices = new_metadata.getSecondaryIndices();
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
-                if (old_index.isImplicitlyCreated() || !expression_depends_on_column(old_index.expression))
+                if (old_index.isImplicitlyCreated() || !expression_uses_changed_subcolumn(old_index.expression))
                     continue;
 
+                /// If the index is dropped in the same ALTER there is nothing left to corrupt.
                 auto new_index_it = std::find_if(
                     new_indices.begin(), new_indices.end(),
                     [&](const IndexDescription & index) { return index.name == old_index.name; });
                 if (new_index_it == new_indices.end())
                     continue;
 
-                if (result_types_changed(old_index.data_types, new_index_it->data_types))
-                {
-                    throw Exception(
-                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "ALTER of column {} changes the type of a value stored by the skip index '{}'; "
-                        "a metadata-only ALTER cannot rebuild the index. Disable setting "
-                        "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
-                        "or drop the index first",
-                        backQuoteIfNeed(command.column_name),
-                        old_index.name);
-                }
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
+                    "a metadata-only ALTER cannot rebuild the index. Disable setting "
+                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
+                    "or drop the index first",
+                    backQuoteIfNeed(command.column_name),
+                    old_index.name);
             }
 
             /// Projections are intentionally not checked here for the only current lazy conversion
