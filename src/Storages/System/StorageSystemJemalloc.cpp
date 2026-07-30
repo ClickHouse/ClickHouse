@@ -1,5 +1,4 @@
 #include <Columns/ColumnsNumber.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -24,7 +23,7 @@ namespace DB
 
 #if USE_JEMALLOC
 
-static UInt64 getJeMallocValue(const char * name)
+UInt64 getJeMallocValue(const char * name)
 {
     UInt64 value{};
     size_t size = sizeof(value);
@@ -40,7 +39,7 @@ static UInt64 getJeMallocValue(const char * name)
     return value;
 }
 
-static void fillJemallocBins(MutableColumns & res_columns)
+void fillJemallocBins(MutableColumns & res_columns)
 {
     /// Bins for small allocations
     auto small_bins_count = getJeMallocValue("arenas.nbins");
@@ -90,7 +89,7 @@ static void fillJemallocBins(MutableColumns & res_columns)
 
 #else
 
-static void fillJemallocBins(MutableColumns &)
+void fillJemallocBins(MutableColumns &)
 {
     LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }
@@ -161,6 +160,3 @@ Pipe StorageSystemJemallocBins::read(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocBins) }

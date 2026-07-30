@@ -29,7 +29,7 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 ```text
 ┌─library_name───────┬─license_type─┬─license_path────────────────────────┐
 │ aws-c-common       │ Apache       │ /contrib/aws-c-common/LICENSE       │
-│ boost              │ Boost        │ /contrib/boost/LICENSE_1_0.txt      │
+│ base64             │ BSD 2-clause │ /contrib/aklomp-base64/LICENSE      │
 │ brotli             │ MIT          │ /contrib/brotli/LICENSE             │
 │ [...]              │ [...]        │ [...]                               │
 └────────────────────┴──────────────┴─────────────────────────────────────┘

@@ -10,7 +10,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/filesystemHelpers.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -38,7 +37,7 @@ bool isStringOrNull(const IDataType & type)
 }
 
 /// A function to read file as a string.
-class FunctionFile final : public IFunction
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
@@ -145,7 +144,7 @@ public:
 
             try
             {
-                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
+                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
@@ -180,7 +179,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](/reference/functions/table-functions/file) table function.
+Also see the [`file`](../table-functions/file.md) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
