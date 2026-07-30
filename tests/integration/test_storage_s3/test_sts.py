@@ -312,3 +312,55 @@ def test_sts_credentials_cache(started_cluster):
         )
         == 10
     )
+
+
+def test_sts_backup_restore(started_cluster):
+    # BACKUP/RESTORE TO S3 assembles its S3 credentials separately from the s3()/s3Cluster() path
+    # (registerBackupEngineS3 / BackupIO_S3), so it needs its own positive coverage: a role_arn-based
+    # STS assume-role destination, no explicit keys, and no s3_allow_server_credentials_in_user_queries
+    # opt-in. The AssumeRole is signed with the server's ambient credentials and only the assumed
+    # role's credentials sign the backup writes/reads.
+    instance = started_cluster.instances["s3_with_environment_credentials_disabled"]
+    backup_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_backup"
+
+    instance.query("DROP TABLE IF EXISTS t_sts_backup SYNC")
+    instance.query("CREATE TABLE t_sts_backup (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("INSERT INTO t_sts_backup SELECT number FROM numbers(100)")
+
+    # Wrong role session name: the assume yields credentials MinIO rejects, so the backup fails at S3
+    # (not the restriction). Proves the role is actually assumed and used, not bypassed.
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"""
+            BACKUP TABLE t_sts_backup TO S3(
+                '{backup_url}_wrong',
+                extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
+            SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
+        """
+        )
+    assert "server-managed credentials" not in ei.value.stderr, ei.value.stderr
+    assert "403" in ei.value.stderr or "Access Denied" in ei.value.stderr, ei.value.stderr
+
+    # Correct role session name: the assume yields working credentials, so the backup succeeds.
+    assert "BACKUP_CREATED" in instance.query(
+        f"""
+        BACKUP TABLE t_sts_backup TO S3(
+            '{backup_url}',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+    """
+    )
+
+    instance.query("DROP TABLE t_sts_backup SYNC")
+
+    # RESTORE goes through the same role_arn STS path on the read side and must recover the data.
+    assert "RESTORED" in instance.query(
+        f"""
+        RESTORE TABLE t_sts_backup FROM S3(
+            '{backup_url}',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+    """
+    )
+    assert "100" == instance.query("SELECT count() FROM t_sts_backup").strip()
+    assert "4950" == instance.query("SELECT sum(x) FROM t_sts_backup").strip()
+
+    instance.query("DROP TABLE t_sts_backup SYNC")
