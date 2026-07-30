@@ -181,8 +181,9 @@ public:
 
         /// Do not lift a split into a fragment that would contain a non-serializable step, or a MergeTree
         /// read which must not be executed on every replica (the broadcast side is never checked by
-        /// collectReadsToDistribute, which only follows the coordinated side). Not lifting keeps the
-        /// coordinated read's split below the join, so that read is still distributed.
+        /// collectReadsToDistribute, which only follows the coordinated side). This is the only place where
+        /// a join is rejected: not lifting keeps the coordinated read's split below the join, so that read
+        /// is still distributed and only the join itself stays local.
         /// These walk the whole subtree, so they run last: a join with nothing to lift never pays for them.
         if (!subtreeIsShippable(node) || subtreeHasUnshippableRead(node))
             return;
@@ -376,13 +377,11 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
         /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
         /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
+        /// Whether the join itself can ship is decided later, by liftSplitAboveJoin: this runs before any
+        /// split marker exists, and rejecting the join here would leave the coordinated read unmarked, so
+        /// nothing at all would be distributed.
         const auto coordinated_index = coordinatedJoinSideIndex(node);
         if (!coordinated_index)
-            return {};
-
-        /// A join whose subtree has a non-serializable step cannot ship in a fragment; keep it local. The
-        /// check walks the whole subtree, so it runs after the cheap join-kind test above.
-        if (!subtreeIsShippable(node))
             return {};
 
         return collectReadsToDistribute(node->children.at(*coordinated_index));

@@ -30,10 +30,10 @@ SET query_plan_join_swap_table = 'false';
 -- the local plan which holds the join.
 SELECT 'parallel_replicas_for_non_replicated_merge_tree=0 steps:', arrayStringConcat(groupArray(step), ' ')
 FROM (
-    SELECT extract(explain, '(Union|Join|Aggregating|ReadFromMergeTree|ReadFromParallelReplicas)$') AS step
-    FROM (EXPLAIN optimize = 1, description = 0, header = 0
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
           SELECT count() FROM rmt_fact LEFT JOIN mt_dim ON rmt_fact.k = mt_dim.k)
-    WHERE step != ''
+    WHERE step IN ('Aggregating', 'Union', 'Join', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
 ) SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
 SELECT count(), sum(mt_dim.v)
@@ -42,10 +42,10 @@ SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
 SELECT 'parallel_replicas_for_non_replicated_merge_tree=1 steps:', arrayStringConcat(groupArray(step), ' ')
 FROM (
-    SELECT extract(explain, '(Union|Join|Aggregating|ReadFromMergeTree|ReadFromParallelReplicas)$') AS step
-    FROM (EXPLAIN optimize = 1, description = 0, header = 0
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
           SELECT count() FROM rmt_fact LEFT JOIN mt_dim ON rmt_fact.k = mt_dim.k)
-    WHERE step != ''
+    WHERE step IN ('Aggregating', 'Union', 'Join', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
 ) SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1;
 
 SELECT count(), sum(mt_dim.v)
