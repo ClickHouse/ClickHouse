@@ -42476,6 +42476,54 @@
       "staged": false
     },
     {
+      "fileId": "7e5e500088f31cf0914c5293d55992360a09fa7acdc303488707cfcfbcf237ea",
+      "versionId": "c305e10fe230519189f9540f1aa6e6ddbf9875c5582f5ea71779a5cbeccfa98e",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-07-23T21:28:40.713Z",
+          "fileName": "es/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "811e49716324b60153703500e85471b9285b6c75df20425d34da51e1b006263b"
+        },
+        "ja": {
+          "updatedAt": "2026-07-23T21:28:40.713Z",
+          "fileName": "ja/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "09e903de1ab9a2dde25a47124d73937dbdb11c251a2a49674f7f796041e1cf48"
+        },
+        "ko": {
+          "updatedAt": "2026-07-23T21:28:40.714Z",
+          "fileName": "ko/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "dc6816949575003c9cc7a490c99a9608e4f57fe2aca2c88e49f228440d1463e8"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-07-23T21:28:40.714Z",
+          "fileName": "pt-BR/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "5bd5194978a8ab75cf432098e30f4daa01202db006d5dbc1507e5a33864f2a0d"
+        },
+        "ru": {
+          "updatedAt": "2026-07-23T21:28:40.723Z",
+          "fileName": "ru/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "74a2f8bacc7cc0ef390ec4f99810d2e023c7bdef2ce6bf2cf66d73868f42c2e8"
+        },
+        "zh": {
+          "updatedAt": "2026-07-23T21:28:40.723Z",
+          "fileName": "zh/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "7b2048f7389b1e72311b7f9b187ffa81aca148cd49c4f69226822f59dfbbedef"
+        },
+        "ar": {
+          "updatedAt": "2026-07-23T21:28:40.724Z",
+          "fileName": "ar/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "36743862119ca96c54f5731463904690684c6c332e548c70fc94017b8d52b9ea"
+        },
+        "fr": {
+          "updatedAt": "2026-07-23T21:28:40.724Z",
+          "fileName": "fr/integrations/language-clients/third-party/moose-olap.mdx",
+          "postProcessHash": "e1b881947b1b03dfa5a1352dbc5bfa296b8adfd19b3e86337d144f5421b0151d"
+        }
+      },
+      "fileName": "integrations/language-clients/third-party/moose-olap.mdx",
+      "staged": false
+    },
+    {
       "fileId": "569cc10519f465770e19b31896fe4231de09b915fc39ce676cb94b03731d3467",
       "versionId": "2ee73a7a27117db05650be077e9101ffd888a3bf7bb61a4cd20e7bb07f11a3a4",
       "translations": {

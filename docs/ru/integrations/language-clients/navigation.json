@@ -34,6 +34,7 @@
       "group": "Сторонние клиенты",
       "icon": "users",
       "pages": [
+        "ru/integrations/language-clients/third-party/moose-olap",
         "ru/integrations/language-clients/third-party/client-libraries"
       ]
     }
