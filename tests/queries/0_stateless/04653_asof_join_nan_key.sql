@@ -97,9 +97,17 @@ SELECT 'BFloat16 fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) A
 -- something this cell can detect. What it does detect is the `NaN` exclusion, which answered 99 before.
 SELECT 'Nullable fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toNullable(3.5) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, nullIf(arrayJoin([1.0, 2.0, 3.0, 4.5, 0. / 0.]), 4.5) AS t, toUInt8(multiIf(t IS NULL, 88, isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t <= r.t SETTINGS join_algorithm = 'full_sorting_merge';
 
--- NULL and NaN exclusions compose: the NULL row was already skipped, the NaN row is now too, so 13
--- (the largest finite value below 5.0) is the answer.
+-- Both exclusions active at once on the hash path: the `NULL` row is dropped by the pre-existing
+-- filter in `HashJoin::addBlockToJoin` and the `NaN` row by the new `insert` guard, so 13 (the
+-- largest finite value at or below 5.0) is the answer. This is a composition control, not a liveness
+-- probe: an unfixed build answers 13 here in most runs anyway, because which wrong row a scrambled
+-- lookup vector returns is itself nondeterministic. The cell above is what pins the `Nullable` guard.
 SELECT 'Nullable fin ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toNullable(5.0) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([toNullable(1.0), 2.0, 3.0, NULL, 0. / 0.]) AS t, toUInt8(multiIf(t IS NULL, 88, isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
+
+-- A `Nullable` NaN on the PROBE side must match nothing on the hash path too: this is the only cell
+-- that pins `SortedLookupVector::findAsof`'s guard for the `Nullable` wrapper. Measured `[13]` on an
+-- unfixed build in 12 of 12 runs and `[]` here in 10 of 10, so it is discriminating and not flaky.
+SELECT 'Nullable nan probe ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toNullable(0. / 0.) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([toNullable(1.0), 2.0, 3.0, NULL]) AS t, toUInt8(multiIf(t IS NULL, 88, 10 + t)) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'hash';
 
 -- USING resolves to the same ASOF clause as ON.
 SELECT 'USING nan left' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, 0. / 0. AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, arrayJoin([1.0, 2.0, 3.0]) AS t, toUInt8(7) AS v) AS r USING (e, t) SETTINGS join_algorithm = 'hash';
