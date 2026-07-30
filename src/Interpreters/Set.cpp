@@ -309,113 +309,163 @@ Columns Set::getSetElements() const
     return result;
 }
 
-template <typename DataTypeWithSubSeconds>
-static void fillLossySubSecondFlags(const DataTypeWithSubSeconds & from_type, const IColumn & column, const IDataType & to_type, PaddedPODArray<UInt8> & lossy_flags)
+static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
-    using FieldType = typename DataTypeWithSubSeconds::FieldType;
-    constexpr bool from_time64 = std::is_same_v<DataTypeWithSubSeconds, DataTypeTime64>;
+    // Handle nullable columns
+    const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
+    const IColumn * original_nested_column = original_nullable_column
+        ? &original_nullable_column->getNestedColumn()
+        : column_to_cast.column.get();
 
-    WhichDataType which_to(to_type);
-    /// Rescaling within the same family truncates, exactly like the Field conversion, so it is not lossy here.
-    if ((from_time64 && which_to.isTime64()) || (!from_time64 && which_to.isDateTime64()))
-        return;
+    // Check if the original column is of ColumnDecimal<DateTime64> type
+    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
+    if (!original_decimal_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
 
-    UInt32 source_scale = from_type.getScale();
-    UInt32 target_scale = 0;
-    if (const auto * to_datetime64 = typeid_cast<const DataTypeDateTime64 *>(&to_type))
-        target_scale = to_datetime64->getScale();
-    else if (const auto * to_time64 = typeid_cast<const DataTypeTime64 *>(&to_type))
-        target_scale = to_time64->getScale();
+    // Get the data array from the original column
+    const auto & original_data = original_decimal_column->getData();
+    size_t vec_res_size = original_data.size();
 
-    /// Sub-second digits that do not fit the target scale are dropped by the cast.
-    const Int64 fraction_multiplier = source_scale > target_scale ? common::exp10_i32(source_scale - target_scale) : 1;
+    // Prepare the precision null map
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
+    NullMap & precision_null_map = precision_null_map_column->getData();
 
-    /// Whole seconds are clamped/saturated only by these targets; other casts preserve the value,
-    /// project it (seconds of day) or throw on overflow.
-    const bool check_range = which_to.isDateTime() || (from_time64 && which_to.isTime());
-    const Int64 min_whole_seconds = which_to.isDateTime() ? 0 : -3599999;                 /// epoch / -999:59:59
-    const Int64 max_whole_seconds = which_to.isDateTime() ? Int64(0xFFFFFFFF) : 3599999;  /// == MAX_DATETIME_TIMESTAMP / MAX_TIME_TIMESTAMP
-
-    if (fraction_multiplier == 1 && !check_range)
-        return;
-
-    const auto * decimal_column = typeid_cast<const ColumnDecimal<FieldType> *>(&column);
-    if (!decimal_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for {}", from_type.getName());
-
-    const auto & data = decimal_column->getData();
-    const Int64 scale_multiplier = source_scale >= 1 ? common::exp10_i32(source_scale) : 1;
-    for (size_t i = 0; i < data.size(); ++i)
+    // Determine which rows should be null based on precision loss
+    const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_to_cast.type.get());
+    auto scale = datetime64_type->getScale();
+    if (scale >= 1)
     {
-        Int64 value = data[i];
-        bool lossy = fraction_multiplier > 1 && (value % fraction_multiplier) != 0;
-        if (check_range)
+        Int64 scale_multiplier = common::exp10_i32(scale);
+        for (size_t row = 0; row < vec_res_size; ++row)
         {
-            Int64 whole = value / scale_multiplier;
-            if (value < 0 && (value % scale_multiplier) != 0)
-                --whole;
-            lossy = lossy || whole < min_whole_seconds || whole > max_whole_seconds;
+            Int64 value = original_data[row];
+            if (value % scale_multiplier != 0)
+                precision_null_map[row] = 1; // Mark as null due to precision loss
+            else
+                precision_null_map[row] = 0;
         }
-        if (lossy)
-            lossy_flags[i] = 1;
     }
+
+    return precision_null_map_column;
 }
 
-/// Marks positions whose DateTime64/Time64 values, possibly nested in Array/Tuple/Map, would be cast
-/// to a lower-precision type lossily (sub-second precision or out-of-range whole seconds).
-static void markLossyProbeValues(const DataTypePtr & from_type_wrapped, const IColumn & column_wrapped, const DataTypePtr & to_type_wrapped, PaddedPODArray<UInt8> & lossy_flags)
-{
-    DataTypePtr from_type = removeNullable(from_type_wrapped);
-    DataTypePtr to_type = removeNullable(to_type_wrapped);
-    const IColumn * column = &column_wrapped;
-    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column))
-        column = &nullable_column->getNestedColumn();
+/// The plain Time64 -> Time cast truncates sub-second digits and clamps out-of-range whole seconds,
+/// so lossy probe rows are instead marked below and treated like NULL keys.
 
-    WhichDataType which(from_type);
-    if (which.isDateTime64())
+/// Type-only pre-check: true when every differing leaf of (from, to) is a Time64 -> Time conversion,
+/// recursing through Array/Tuple/Map and looking through Nullable and target LowCardinality wrappers.
+static bool timeLossPlanCovers(const DataTypePtr & from_wrapped, const DataTypePtr & to_wrapped, bool & has_time64_to_time)
+{
+    DataTypePtr from_type = removeNullable(from_wrapped);
+    DataTypePtr to_type = removeNullable(removeLowCardinality(to_wrapped));
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    if (WhichDataType(from_type).isTime64() && WhichDataType(to_type).isTime())
     {
-        fillLossySubSecondFlags(assert_cast<const DataTypeDateTime64 &>(*from_type), *column, *to_type, lossy_flags);
+        has_time64_to_time = true;
+        return true;
     }
-    else if (which.isTime64())
-    {
-        fillLossySubSecondFlags(assert_cast<const DataTypeTime64 &>(*from_type), *column, *to_type, lossy_flags);
-    }
-    else if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get()))
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get()))
     {
         const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-        if (!to_array)
-            return;
-        const auto & array_column = assert_cast<const ColumnArray &>(*column);
-        PaddedPODArray<UInt8> element_lossy_flags(array_column.getData().size(), 0);
-        markLossyProbeValues(from_array->getNestedType(), array_column.getData(), to_array->getNestedType(), element_lossy_flags);
-        const auto & offsets = array_column.getOffsets();
-        size_t prev_offset = 0;
-        for (size_t row = 0; row < offsets.size(); ++row)
-        {
-            for (size_t pos = prev_offset; pos < offsets[row]; ++pos)
-                lossy_flags[row] |= element_lossy_flags[pos];
-            prev_offset = offsets[row];
-        }
+        return to_array && timeLossPlanCovers(from_array->getNestedType(), to_array->getNestedType(), has_time64_to_time);
     }
-    else if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get()))
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get()))
     {
         const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
         if (!to_tuple || to_tuple->getElements().size() != from_tuple->getElements().size())
-            return;
-        const auto & tuple_column = assert_cast<const ColumnTuple &>(*column);
+            return false;
         for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
-            markLossyProbeValues(from_tuple->getElements()[i], tuple_column.getColumn(i), to_tuple->getElements()[i], lossy_flags);
+            if (!timeLossPlanCovers(from_tuple->getElements()[i], to_tuple->getElements()[i], has_time64_to_time))
+                return false;
+        return true;
     }
-    else if (const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get()))
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get()))
     {
         const auto * to_map = typeid_cast<const DataTypeMap *>(to_type.get());
-        if (!to_map)
-            return;
-        const auto & map_column = assert_cast<const ColumnMap &>(*column);
-        markLossyProbeValues(from_map->getNestedType(), map_column.getNestedColumn(), to_map->getNestedType(), lossy_flags);
+        return to_map && timeLossPlanCovers(from_map->getNestedType(), to_map->getNestedType(), has_time64_to_time);
     }
+    return false;
 }
 
+/// Per-position lossy flags for a tree accepted by timeLossPlanCovers. NULL positions are never marked.
+static PaddedPODArray<UInt8> collectTimeLossFlags(const DataTypePtr & from_wrapped, const IColumn & column, const DataTypePtr & to_wrapped)
+{
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&column))
+    {
+        auto flags = collectTimeLossFlags(removeNullable(from_wrapped), nullable_column->getNestedColumn(), to_wrapped);
+        const auto & null_map = nullable_column->getNullMapData();
+        for (size_t i = 0; i < flags.size(); ++i)
+            if (null_map[i])
+                flags[i] = 0;
+        return flags;
+    }
+
+    DataTypePtr from_type = removeNullable(from_wrapped);
+    DataTypePtr to_type = removeNullable(removeLowCardinality(to_wrapped));
+
+    PaddedPODArray<UInt8> flags(column.size(), 0);
+
+    if (WhichDataType(from_type).isTime64() && WhichDataType(to_type).isTime())
+    {
+        const auto & data = assert_cast<const ColumnDecimal<Time64> &>(column).getData();
+        const auto scale = assert_cast<const DataTypeTime64 &>(*from_type).getScale();
+        const Int64 scale_multiplier = scale >= 1 ? common::exp10_i32(scale) : 1;
+        static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
+        for (size_t i = 0; i < data.size(); ++i)
+        {
+            const Int64 value = data[i];
+            const bool fractional = (value % scale_multiplier) != 0;
+            /// Round toward negative infinity, like the cast does.
+            Int64 whole = value / scale_multiplier;
+            if (value < 0 && fractional)
+                --whole;
+            if (fractional || whole < -max_time_seconds || whole > max_time_seconds)
+                flags[i] = 1;
+        }
+    }
+    else if (const auto * array_column = typeid_cast<const ColumnArray *>(&column))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+        if (from_array && to_array)
+        {
+            auto element_flags = collectTimeLossFlags(from_array->getNestedType(), array_column->getData(), to_array->getNestedType());
+            const auto & offsets = array_column->getOffsets();
+            size_t prev_offset = 0;
+            for (size_t row = 0; row < offsets.size(); ++row)
+            {
+                for (size_t pos = prev_offset; pos < offsets[row]; ++pos)
+                    flags[row] |= element_flags[pos];
+                prev_offset = offsets[row];
+            }
+        }
+    }
+    else if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column))
+    {
+        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get());
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
+        if (from_tuple && to_tuple && from_tuple->getElements().size() == to_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
+            {
+                auto element_flags = collectTimeLossFlags(from_tuple->getElements()[i], tuple_column->getColumn(i), to_tuple->getElements()[i]);
+                for (size_t row = 0; row < flags.size(); ++row)
+                    flags[row] |= element_flags[row];
+            }
+        }
+    }
+    else if (const auto * map_column = typeid_cast<const ColumnMap *>(&column))
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get());
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to_type.get());
+        if (from_map && to_map)
+            return collectTimeLossFlags(from_map->getNestedType(), map_column->getNestedColumn(), to_map->getNestedType());
+    }
+    return flags;
+}
 static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
@@ -437,6 +487,45 @@ static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnU
         merged_null_map[i] = null_map1[i] || null_map2[i];
 
     return merged_null_map_column;
+}
+
+void Set::processDateTime64Column(
+    const ColumnWithTypeAndName & column_to_cast,
+    ColumnPtr & result,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map) const
+{
+    // Check for sub-second precision and create a null map
+    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+
+    // Extract existing null map and nested column from the result
+    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
+    const IColumn * nested_result_column = result_nullable_column
+        ? &result_nullable_column->getNestedColumn()
+        : result.get();
+
+    ColumnPtr existing_null_map_column = result_nullable_column
+        ? result_nullable_column->getNullMapColumnPtr()
+        : nullptr;
+
+    if (transform_null_in)
+    {
+        if (!null_map_holder)
+            null_map_holder = filtered_null_map_column;
+        else
+            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
+
+        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
+        if (!null_map_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
+
+        null_map = &null_map_column->getData();
+    }
+    else
+    {
+        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
+        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
+    }
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -499,9 +588,40 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
 
+        /// Trees whose only inexact conversions are Time64 -> Time use a plain cast plus an explicit loss
+        /// map: an accurate cast would throw for composite probes, and a composite cast result cannot be
+        /// wrapped in Nullable. The type-only pre-check keeps unrelated IN queries allocation-free.
+        bool has_time64_to_time = false;
+        const bool time_loss_plan = timeLossPlanCovers(column_to_cast.type, data_types[i], has_time64_to_time) && has_time64_to_time;
+        if (time_loss_plan)
+        {
+            auto lossy_flags = collectTimeLossFlags(column_to_cast.type, *column_to_cast.column, data_types[i]);
+            bool has_lossy_values = false;
+            for (const auto flag : lossy_flags)
+                has_lossy_values |= flag != 0;
+            if (has_lossy_values)
+            {
+                if (!accumulated_lossy_null_map)
+                {
+                    accumulated_lossy_null_map = ColumnUInt8::create();
+                    accumulated_lossy_null_map->getData() = std::move(lossy_flags);
+                }
+                else
+                {
+                    auto & accumulated = accumulated_lossy_null_map->getData();
+                    for (size_t row = 0; row < accumulated.size(); ++row)
+                        accumulated[row] |= lossy_flags[row];
+                }
+            }
+        }
+
         if (use_cast_accurate_or_null)
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            if (time_loss_plan)
+                /// Lossy rows are already marked; exact rows must convert, so cast plainly keeping the Nullable shape.
+                result = castColumn(column_to_cast, column_to_cast.type->isNullable() ? makeNullable(data_types[i]) : data_types[i], cast_cache.get());
+            else
+                result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
@@ -514,7 +634,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             {
                 auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
                 const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                ColumnWithTypeAndName nested_to_cast(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name);
+                result = time_loss_plan
+                    ? castColumn(nested_to_cast, data_types[i], cast_cache.get())
+                    : castColumnAccurate(nested_to_cast, data_types[i], cast_cache.get());
                 if (!null_map_holder)
                 {
                     null_map_holder = column_nullable.getNullMapColumnPtr();
@@ -535,29 +658,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             }
             else
             {
-                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+                result = time_loss_plan
+                    ? castColumn(column_to_cast, data_types[i], cast_cache.get())
+                    : castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
             }
         }
 
-        // DateTime64/Time64 probe values (possibly nested in Array/Tuple/Map) that would be cast lossily must not match.
-        auto lossy_flags_column = ColumnUInt8::create(column_to_cast.column->size(), static_cast<UInt8>(0));
-        markLossyProbeValues(column_to_cast.type, *column_to_cast.column, data_types[i], lossy_flags_column->getData());
-        bool has_lossy_values = false;
-        for (const auto flag : lossy_flags_column->getData())
-            has_lossy_values |= flag != 0;
-        if (has_lossy_values)
+        // If the original column is DateTime64, check for sub-second precision
+        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
         {
-            if (!accumulated_lossy_null_map)
-            {
-                accumulated_lossy_null_map = std::move(lossy_flags_column);
-            }
-            else
-            {
-                auto & accumulated = accumulated_lossy_null_map->getData();
-                const auto & current = lossy_flags_column->getData();
-                for (size_t row = 0; row < accumulated.size(); ++row)
-                    accumulated[row] |= current[row];
-            }
+            processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
 
         // Append the result to materialized columns
