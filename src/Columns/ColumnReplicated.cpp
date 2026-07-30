@@ -128,12 +128,15 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 namespace
 {
 
+/// Used on ColumnReplicated::convertToFullColumnIfReplicated to check whether the fast path is worth
+/// Break-even is around 8 elements per row
+constexpr uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
+
 /// Materializes Replicated(Array) into a full ColumnArray: Each array row is appended as one contiguous element range
 /// via a single insertRangeFrom, instead of gathering the nested data element by element as the generic path
 template <typename T>
 ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
 {
-    const auto & src_offsets = src.getOffsets();
     const IColumn & src_data = src.getData();
     size_t num_rows = row_indexes.size();
 
@@ -144,8 +147,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
-        total_elements += src_offsets[row] - src_offsets[row - 1];
+        total_elements += src.sizeAt(row);
         res_offsets[i] = total_elements;
     }
     auto res_data = src_data.cloneEmpty();
@@ -153,7 +155,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data, src.offsetAt(row), src.sizeAt(row));
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
@@ -176,7 +178,7 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
 
 }
 
-/// The generic index path (nested_column->index())) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
+/// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
 /// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
 /// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
