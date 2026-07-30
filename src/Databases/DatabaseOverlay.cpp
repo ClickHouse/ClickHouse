@@ -666,6 +666,41 @@ std::vector<LightWeightTableDetails> DatabaseOverlay::getLightweightTablesIterat
     return result;
 }
 
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIterator(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    /// A read-only facade has no detached tables of its own: `ATTACH` and `DETACH` through it are
+    /// rejected, so a name detached in a source database is not part of the facade's namespace.
+    /// Reporting the sources' detached tables here would also expose them to a caller granted only
+    /// on the facade, which is exactly what the read-only facade must not do.
+    if (readonly)
+        return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(SnapshotDetachedTables{});
+
+    /// In `clickhouse-local` the overlay owns its underlying databases and a `DETACH` goes to one of
+    /// them, so report the union of their detached tables, as for the attached ones. The first
+    /// listed source wins for a name detached in several of them. A source that does not implement
+    /// detached tables at all (`DatabaseFilesystem`) still propagates its own error, exactly as it
+    /// does when it is queried directly.
+    SnapshotDetachedTables detached_tables;
+    for (const auto & db : resolveDatabases())
+    {
+        for (auto table_it = db->getDetachedTablesIterator(context_, filter_by_table_name, skip_not_loaded);
+             table_it->isValid();
+             table_it->next())
+        {
+            detached_tables.emplace(
+                table_it->table(),
+                SnapshotDetachedTable{
+                    .database = table_it->database(),
+                    .table = table_it->table(),
+                    .uuid = table_it->uuid(),
+                    .metadata_path = table_it->metadataPath(),
+                    .is_permanently = table_it->isPermanently()});
+        }
+    }
+    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(detached_tables));
+}
+
 bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : resolveDatabases())

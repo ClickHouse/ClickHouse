@@ -97,6 +97,12 @@ public:
         bool skip_not_loaded,
         const TablesFilter & tables_filter) const override;
 
+    /// `IDatabase` answers with `NOT_IMPLEMENTED` by default, but whole-server scans of detached
+    /// tables (`system.detached_tables`, `system.tables` with `is_detached`) walk every database, so
+    /// an `Overlay` must answer instead of aborting those queries.
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
     bool empty() const override;
 
     void shutdown() override;

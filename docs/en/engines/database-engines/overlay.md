@@ -169,6 +169,11 @@ count each physical table exactly once. Because a read-only `Overlay` facade own
 tables of its own and merely re-exposes its sources, it is skipped by these whole-server
 scans so that an overlay-backed table is never listed or counted twice.
 
+For the same reason a read-only `Overlay` reports no detached tables in `system.detached_tables`:
+`ATTACH` and `DETACH` through the facade are rejected, so a table detached in a source database is
+not part of the facade's namespace and is reported for the source database only. A facade being
+present never makes a whole-server scan of the detached tables fail.
+
 The dual-grant checks are fail-closed even when a source database is broken or unreachable
 (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that
 resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove
