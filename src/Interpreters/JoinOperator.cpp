@@ -76,6 +76,10 @@ namespace Setting
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+
+    extern const SettingsBool query_plan_hash_join_subset_keys_auto;
+    extern const SettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
+    extern const SettingsDouble query_plan_hash_join_subset_keys_min_kept_selectivity;
 }
 
 namespace QueryPlanSerializationSetting
@@ -127,6 +131,10 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+
+    extern const QueryPlanSerializationSettingsBool query_plan_hash_join_subset_keys_auto;
+    extern const QueryPlanSerializationSettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
+    extern const QueryPlanSerializationSettingsDouble query_plan_hash_join_subset_keys_min_kept_selectivity;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -186,6 +194,10 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
+
+    query_plan_hash_join_subset_keys_auto = query_settings[Setting::query_plan_hash_join_subset_keys_auto];
+    query_plan_hash_join_subset_keys_min_rows = query_settings[Setting::query_plan_hash_join_subset_keys_min_rows];
+    query_plan_hash_join_subset_keys_min_kept_selectivity = query_settings[Setting::query_plan_hash_join_subset_keys_min_kept_selectivity];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -241,6 +253,10 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
+
+    query_plan_hash_join_subset_keys_auto = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto];
+    query_plan_hash_join_subset_keys_min_rows = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows];
+    query_plan_hash_join_subset_keys_min_kept_selectivity = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_kept_selectivity];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -296,6 +312,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto] = query_plan_hash_join_subset_keys_auto;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows] = query_plan_hash_join_subset_keys_min_rows;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_kept_selectivity] = query_plan_hash_join_subset_keys_min_kept_selectivity;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)

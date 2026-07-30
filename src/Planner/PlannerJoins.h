@@ -246,6 +246,10 @@ struct JoinAlgorithmParams
     bool join_any_take_last_row;
 
     UInt64 hash_table_key_hash;
+    /// Parent-independent SipHash of the right subtree (without this join's equi-key
+    /// contribution). Used to derive `hash_table_key_hash` after `demoteLowNdvKeysToResidual`
+    /// has finalized which equi keys actually live in the hash table.
+    UInt64 right_subtree_raw_hash = 0;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 

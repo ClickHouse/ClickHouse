@@ -44,6 +44,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -265,14 +266,13 @@ struct RuntimeHashStatisticsContext
     /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
     /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
     /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
-    /// sub-joins built earlier in the same reorder loop). Returns the derived right-side key,
-    /// suitable for `JoinStepLogical::setRightHashTableCacheKey`.
+    /// sub-joins built earlier in the same reorder loop). Returns the right child's raw subtree
+    /// hash (suitable for `JoinStepLogical::setRightSubtreeRawHash`); the parent join's
+    /// per-side contribution is applied at the consumer once it knows the kept equi-key set
+    /// (so demoted keys do not pollute the cache key).
     ///
-    /// Each child's final cache key combines its parent-independent subtree hash with the
-    /// parent join's per-side contribution (see `cache_keys` doc above for why both are
-    /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
-    /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
-    /// from the original tree's parent contribution that was stamped into `cache_keys`.
+    /// `cache_keys` still tracks the full combined key (raw XOR parent contribution) because
+    /// downstream code (e.g. parallel-replicas consistency check) compares whole subtrees.
     UInt64 deriveCacheKeysForNewJoin(
         const QueryPlan::Node * left_child_node,
         const QueryPlan::Node * right_child_node,
@@ -302,7 +302,7 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        return right_key;
+        return raw_right;
     }
 };
 
@@ -343,8 +343,28 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+static const ActionsDAG::Node * combineFiltersForRowEstimate(
+    const ActionsDAG::Node * existing_filter,
+    const ActionsDAG::Node * new_filter,
+    std::list<ActionsDAG> & temporary_filter_dags)
+{
+    if (!existing_filter)
+        return new_filter;
+    if (!new_filter)
+        return existing_filter;
+
+    auto combined_filter_dag = ActionsDAG::buildFilterActionsDAG({existing_filter, new_filter});
+    if (!combined_filter_dag || combined_filter_dag->getOutputs().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to combine filters for row-count estimation");
+
+    temporary_filter_dags.emplace_back(std::move(*combined_filter_dag));
+    return temporary_filter_dags.back().getOutputs().front();
+}
+
+static RelationStats estimateReadRowsCountImpl(
+    QueryPlan::Node & node,
+    const ActionsDAG::Node * filter,
+    std::list<ActionsDAG> & temporary_filter_dags)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -426,7 +446,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        return estimateReadRowsCountImpl(*reading->getSubplanReferenceRoot(), filter, temporary_filter_dags);
     }
 
     if (node.children.size() != 1)
@@ -434,7 +454,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -443,7 +463,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -452,14 +472,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        const auto * combined_filter = combineFiltersForRowEstimate(filter, predicate, temporary_filter_dags);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), combined_filter, temporary_filter_dags);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -474,7 +495,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -485,14 +506,24 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
 #endif
 
+    /// Generic pass-through for any single-input transformation that preserves the row count
+    /// (e.g. `BuildRuntimeFilterStep`, `ExtractColumnsStep`). Without this, an upstream
+    /// optimization adding such a step on the right subtree would hide the underlying
+    /// `ReadFromMergeTree` from this walker and force callers to fall back to no stats.
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCountImpl(*node.children.front(), filter, temporary_filter_dags);
 
     return {};
+}
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+{
+    std::list<ActionsDAG> temporary_filter_dags;
+    return estimateReadRowsCountImpl(node, filter, temporary_filter_dags);
 }
 
 
@@ -1376,10 +1407,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto & new_node = nodes.emplace_back();
 
-            UInt64 right_table_key = query_graph_builder.context->statistics_context
+            UInt64 right_raw_hash = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
-            if (right_table_key)
-                join_step->setRightHashTableCacheKey(right_table_key);
+            if (right_raw_hash)
+                join_step->setRightSubtreeRawHash(right_raw_hash);
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};

@@ -75,7 +75,8 @@ public:
     ~JoinStepLogical() override;
 
     String getName() const override { return "JoinLogical"; }
-    String getSerializationName() const override { return "Join"; }
+    String getSerializationName() const override { return serializationName(); }
+    static String serializationName() { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -177,8 +178,18 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
-    void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
+    UInt64 getRightSubtreeRawHash() const { return right_subtree_raw_hash; }
+    void setRightSubtreeRawHash(UInt64 right_subtree_raw_hash_) { right_subtree_raw_hash = right_subtree_raw_hash_; }
+
+    /// Full `HashTablesStatistics` cache key for this join's right (build) side: the
+    /// parent-independent `right_subtree_raw_hash` combined with the contribution of the
+    /// right equi-key set, matching the key under which the hash table is stored during
+    /// physical conversion. Used by the join runtime filter to look up a size hint. Returns
+    /// the key for the join's current equi-key set; if some keys are later demoted to a
+    /// residual filter (`demoteLowNdvKeysToResidual`) the physical hash table is keyed on the
+    /// kept subset, so this lookup may miss - a miss only means the filter is sized without a
+    /// hint, never an incorrect result.
+    UInt64 getRightHashTableCacheKey() const;
 
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
@@ -206,7 +217,12 @@ protected:
     std::optional<UInt64> left_rows_estimation = {};
     std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
-    UInt64 right_hash_table_cache_key = 0;
+    /// Parent-independent SipHash of the right-subtree plan (NOT including this join's
+    /// per-side equi-key contribution). The final cache key used for `HashTablesStatistics`
+    /// lookup is `right_subtree_raw_hash ^ contribution(kept_right_equi_keys)` and is computed
+    /// at consumption time (after `demoteLowNdvKeysToResidual` has decided which equi keys
+    /// remain in the hash table), so the cache key reflects the actual hash-table key set.
+    UInt64 right_subtree_raw_hash = 0;
 
     String left_table_label;
     String right_table_label;

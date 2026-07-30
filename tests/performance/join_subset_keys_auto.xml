@@ -1,0 +1,52 @@
+<test>
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <use_statistics>1</use_statistics>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jks_perf_left
+        (
+            high_card UInt64 STATISTICS(uniq),
+            low_card  UInt64 STATISTICS(uniq),
+            payload   UInt64
+        ) ENGINE = MergeTree ORDER BY low_card
+    </create_query>
+
+    <create_query>
+        CREATE TABLE jks_perf_right
+        (
+            high_card UInt64 STATISTICS(uniq),
+            low_card  UInt64 STATISTICS(uniq),
+            extra     UInt64
+        ) ENGINE = MergeTree ORDER BY high_card
+    </create_query>
+
+    <!--
+        10x cardinality ratio between the two equality keys (mirrors issue #102595):
+          high_card NDV = 10_000_000 (near-unique)
+          low_card  NDV =  1_000_000 (intDiv(number, 10))
+
+        Plain join on both keys; the query opts in to `query_plan_hash_join_subset_keys_auto`
+        explicitly because the setting is off by default. On master / without the
+        setting, both keys go into the hash table (~10M entries). With the setting,
+        the planner keeps `low_card` and pushes `high_card` to a residual probe-time
+        equality filter. Memory drops ~2x; runtime in the same shape ranges from no
+        change to a clear improvement depending on cache pressure.
+    -->
+    <fill_query>INSERT INTO jks_perf_left  SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO jks_perf_right SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
+
+    <fill_query>OPTIMIZE TABLE jks_perf_left  FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE jks_perf_right FINAL</fill_query>
+
+    <query>
+        SELECT count() FROM jks_perf_left l JOIN jks_perf_right r
+            ON l.high_card = r.high_card AND l.low_card = r.low_card
+        SETTINGS query_plan_hash_join_subset_keys_auto = 1
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS jks_perf_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS jks_perf_right</drop_query>
+</test>

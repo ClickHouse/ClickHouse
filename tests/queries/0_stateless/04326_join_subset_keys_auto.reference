@@ -1,0 +1,13 @@
+count_on	50000
+Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+Clauses: [(__table1.request_id) = (__table2.request_id)]
+Residual filter: equals(__table1.user_id, __table2.user_id)
+rows_gate	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+selectivity_gate	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+algo_gate	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+algo_gate_auto_count	50000
+algo_gate_auto_plan	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+right_any_count	5000
+right_any_plan	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
+filtered_picks_real_discriminator	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.keep_col, __table2.drop_col)]
+filtered_below_min_rows	Clauses: [(__table1.user_id, __table1.request_id) = (__table2.user_id, __table2.request_id)]
