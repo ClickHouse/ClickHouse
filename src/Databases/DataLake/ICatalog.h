@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -278,6 +279,8 @@ public:
     {
         return std::nullopt;
     }
+
+    virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
 
     /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
     /// ready to be published by `commitSettingsChanges`.
