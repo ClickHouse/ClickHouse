@@ -46,3 +46,14 @@ SELECT
     min(variantElement(v, 'String')),
     max(variantElement(v, 'String'))
 FROM file(currentDatabase() || '_04512_nulls.orc', ORC);
+
+-- Distinct Variant branches that map to the same ORC type would produce an ORC union with
+-- duplicate branch types, which the reader rejects, so the writer must reject them up front.
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_dup.orc', ORC, 'v Variant(Int32, UInt32)')
+SELECT 42::Int32::Variant(Int32, UInt32); -- { serverError ILLEGAL_COLUMN }
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_dup.orc', ORC, 'v Variant(IPv4, Int32)')
+SELECT 42::Int32::Variant(IPv4, Int32); -- { serverError ILLEGAL_COLUMN }
+-- A LowCardinality branch is rejected earlier, by the generic unsupported-type check (the writer
+-- only strips LowCardinality from top-level columns), so it cannot collide with a plain branch.
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_dup.orc', ORC, 'v Variant(LowCardinality(String), String)')
+SELECT CAST(NULL, 'Variant(LowCardinality(String), String)'); -- { serverError ILLEGAL_COLUMN }

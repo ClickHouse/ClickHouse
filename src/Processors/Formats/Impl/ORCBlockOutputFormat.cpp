@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
+#include <unordered_map>
+
 #if USE_ORC
 
 #include <Common/assert_cast.h>
@@ -242,10 +244,25 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         {
             const auto & variant_type = assert_cast<const DataTypeVariant &>(*unwrapped);
             auto union_type = orc::createUnionType();
+            /// ORC keeps one physical stream per union branch and identifies a branch only by its
+            /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
+            /// both ORC `int`) would produce a union with duplicate branches, which the reader
+            /// rejects. Reject such a `Variant` up front instead of writing an unreadable file.
+            std::unordered_map<String, String> variant_by_orc_type;
             /// A union child is addressed by its type name, the way a `Variant` subcolumn is
             /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
             for (const auto & nested_type : variant_type.getVariants())
-                union_type->addUnionChild(getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName())));
+            {
+                auto child_type = getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName()));
+                auto [it, inserted] = variant_by_orc_type.emplace(child_type->toString(), nested_type->getName());
+                if (!inserted)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Type {} is not supported for ORC output format: variants {} and {} are both written as ORC type '{}', "
+                        "and ORC unions with duplicate branch types cannot be read back",
+                        unwrapped->getName(), it->second, nested_type->getName(), it->first);
+                union_type->addUnionChild(std::move(child_type));
+            }
             result = std::move(union_type);
             break;
         }
