@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -319,6 +320,9 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (string_size < serialize_string_with_zero_byte)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
