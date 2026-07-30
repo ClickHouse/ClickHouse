@@ -402,8 +402,17 @@ SELECT '-- and through a Merge whose origin type matches the leaf --';
 SELECT count() FROM sub_merge PREWHERE j.a = 1;
 SELECT count() FROM sub_merge PREWHERE t.a < 5;
 
+SELECT '-- the auto WHERE -> PREWHERE move admits subcolumns through their origin too --';
+-- The AST-level optimizer consults the same contract; run it by disabling the plan-level one.
+SELECT sum(x) FROM sub_buf WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
+SELECT sum(x) FROM sub_merge WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
+EXPLAIN SYNTAX SELECT sum(x) FROM sub_merge WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
+
 SELECT '-- a subcolumn of a type-drifted origin stays rejected --';
 SELECT count() FROM sub_merge_bad PREWHERE t.a < 5; -- { serverError ILLEGAL_PREWHERE }
+-- The auto-move refuses it too, keeping the filter above the read.
+SELECT sum(x) FROM sub_merge_bad WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
+EXPLAIN SYNTAX SELECT sum(x) FROM sub_merge_bad WHERE t.a < 5 SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0;
 
 SELECT '-- a row policy consuming a subcolumn maps to its origin for the push decision --';
 CREATE ROW POLICY rp_04652_sub ON sub_buf FOR SELECT USING t.a < 3 TO CURRENT_USER;

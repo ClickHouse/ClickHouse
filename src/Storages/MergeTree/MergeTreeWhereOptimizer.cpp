@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -695,8 +696,10 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     if (!supported_columns.has_value())
         return true;
 
+    /// The contract lists top-level names; a subcolumn is admitted through its origin column.
+    const auto & columns_description = storage_metadata->getColumns();
     for (const auto & column : columns)
-        if (!supported_columns->contains(column))
+        if (!prewhereSupportedColumnsContain(*supported_columns, columns_description, column))
             return false;
 
     return true;
