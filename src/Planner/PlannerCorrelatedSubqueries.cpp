@@ -261,16 +261,8 @@ QueryPlan decorrelateQueryPlan(
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
-        /// The decorrelation domain must be the DISTINCT set of correlated column values (Neumann/Kemper
-        /// unnesting). CommonSubplanReferenceStep streams every outer row, so when the outer query has
-        /// duplicate correlated values (e.g. from a CROSS JOIN) the inner subplan is evaluated once per
-        /// duplicate, inflating aggregates. Deduplicate here; the outer duplicates are restored by the
-        /// final equi-join back onto the full outer plan.
-        /// This DISTINCT is an internal implementation detail, not a user DISTINCT, so it must run
-        /// unbounded with THROW (like makeInternalDecorrelationJoinUnbounded). Inheriting the user's
-        /// max_rows_in_distinct / distinct_overflow_mode would let overflow_mode='break' truncate the
-        /// domain to a partial result (re-introducing the missing-rows/under-counted bug this fix
-        /// restores), or raise SET_SIZE_LIMIT_EXCEEDED on queries with no user-visible DISTINCT.
+        /// Needed to simulate the Duplicate Eliminating Join. Runs with internal unbounded limits so
+        /// that a user's max_rows_in_distinct / distinct_overflow_mode can never truncate the domain.
         {
             SizeLimits distinct_limits(/*max_rows_=*/0, /*max_bytes_=*/0, OverflowMode::THROW);
             rhs_plan.addStep(std::make_unique<DistinctStep>(
