@@ -466,7 +466,7 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
     if (marks_after > marks_before)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Ranges refiner returned {} marks for a cut of {} marks of part {}, refinement may only drop marks",
-            marks_after, marks_before, info.data_part->name);
+            marks_after, marks_before, info.data_part_info->getPartName());
 
     if (marks_after < marks_before)
         ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, marks_before - marks_after);

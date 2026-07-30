@@ -296,9 +296,9 @@ bool MergeTreeReadPoolParallelReplicas::cutMoreRangesToRead(size_t part_idx, siz
     const auto & current_task = buffered_ranges.front();
     const auto & part = per_part_infos[part_idx];
 
-    bool same_part = !part->data_part->isProjectionPart()
-        ? part->data_part->info == current_task.info
-        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name);
+    bool same_part = !part->data_part_info->isProjectionPart()
+        ? part->data_part_info->getPartInfo() == current_task.info
+        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName());
 
     if (!same_part)
         return false;

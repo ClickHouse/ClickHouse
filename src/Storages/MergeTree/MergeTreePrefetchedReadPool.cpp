@@ -106,7 +106,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         }
 
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
-            task.read_info->data_part, task.read_info->patch_parts, task.ranges);
+            task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
         readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
 
@@ -307,7 +307,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
                 continue;
 
             thread_task->patches_ranges = ranges_in_patch_parts.getRanges(
-                thread_task->read_info->data_part, thread_task->read_info->patch_parts, thread_task->ranges);
+                thread_task->read_info->data_part_info->getDataPart(), thread_task->read_info->patch_parts, thread_task->ranges);
         }
 
         return createTask(*thread_task, previous_task);
