@@ -758,11 +758,7 @@ RegexpJITMatcher getRegexpJITMatcher(
         return {};
     }
 
-    /// Charged here rather than next to the compilation itself: every throw between the two, including
-    /// the cache insertion, is swallowed above and leaves the caller on the interpreted loop, so an
-    /// earlier increment would report a matcher the caller never received. Only this function reaches the
-    /// regexp JIT, and `compiled_here` keeps it a compile rather than a cache hit. The other writers of
-    /// the shared cache charge `CompileFunction` instead.
+    /// Must stay below the catch above: every throw it swallows leaves the caller on the interpreted loop.
     if (compiled_here)
         ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
