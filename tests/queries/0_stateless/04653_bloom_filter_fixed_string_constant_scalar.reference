@@ -10,6 +10,8 @@ A7 Nullable(String) idx vs FixedString(3)	1
 A8 LowCardinality(FixedString(3)) idx vs FixedString(5)	1
 A9 String idx vs LowCardinality(FixedString(3)) const	1
 A10 String idx vs LowCardinality(Nullable(FixedString(3))) const	1
+A13 String idx vs Variant(FixedString(3)) const	1
+A14 String idx vs Dynamic(FixedString(3)) const	1
 B1 String idx vs String const still prunes	1
 B2 FixedString(3) idx vs String const still prunes	1
 B3 FixedString(3) idx vs FixedString(2) const still prunes	1

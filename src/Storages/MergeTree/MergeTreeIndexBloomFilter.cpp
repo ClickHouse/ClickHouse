@@ -875,14 +875,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             /// `LowCardinality` and `Nullable` are peeled off the constant type because `tryGetConstant`
             /// peels only an outer `Nullable`, so `LowCardinality(Nullable(FixedString(N)))` reaches
             /// here wrapped. Same rule as in `KeyCondition::extractAtomFromTree`.
+            /// `Variant` and `Dynamic` erase the active type: the declared wrapper is kept while the
+            /// `Field` already carries the nested padded bytes, so a `FixedString` alternative cannot
+            /// be told apart from a `String` one here and both are treated as possibly padded.
             if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
             {
-                const bool constant_is_fixed_string
-                    = WhichDataType(removeLowCardinalityAndNullable(value_type)).isFixedString();
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
                 const size_t constant_bytes = value_field.safeGet<String>().size();
                 const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
 
-                if (constant_is_fixed_string && !fixed_index_type)
+                if (constant_may_be_fixed_string && !fixed_index_type)
                     return false;
 
                 if (fixed_index_type && fixed_index_type->getN() < constant_bytes)

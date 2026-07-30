@@ -77,6 +77,14 @@ SELECT 'A8 LowCardinality(FixedString(3)) idx vs FixedString(5)', (SELECT count(
 SELECT 'A9 String idx vs LowCardinality(FixedString(3)) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(FixedString(3)))) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(FixedString(3))));
 SELECT 'A10 String idx vs LowCardinality(Nullable(FixedString(3))) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(Nullable(FixedString(3))))) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS LowCardinality(Nullable(FixedString(3)))));
 
+-- Variant and Dynamic erase the active type: the declared type stays Variant/Dynamic while the
+-- constant Field already holds the nested padded bytes, so a type-based FixedString test alone
+-- cannot see them and the padding-unsound cell must be declined on the wrapper instead.
+SELECT 'A13 String idx vs Variant(FixedString(3)) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)));
+SELECT 'A14 String idx vs Dynamic(FixedString(3)) const', (SELECT count() FROM bf_str_log WHERE v = CAST(toFixedString('V0', 3) AS Dynamic)) = (SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS Dynamic));
+
+SELECT count() FROM bf_str_idx WHERE v = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 -- Direction B: pruning is preserved wherever the conversion is faithful. Each row asserts the
 -- granule REDUCTION extracted from the plan text rather than pinning an exact plan rendering in
 -- the .reference, so it keeps testing "the index still prunes" across plan-format churn.
