@@ -79,6 +79,7 @@ class HostMetricsCollector:
         self._samples: List[Dict[str, float]] = []
         self._mem_total_kb = 0
         self._disk_total_kb = 0
+        self._cpu_count = 0
         # Set in start() by probing disk_path; a bad path disables only the disk
         # series, never CPU/RAM/PSI.
         self._disk_available = False
@@ -107,6 +108,7 @@ class HostMetricsCollector:
         if self._started:
             return self
         self._started = True
+        self._cpu_count = self._read_cpu_count()
         # Truncate any stale file from a previous run in the same workspace.
         try:
             Path(self._out_file).parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +252,22 @@ class HostMetricsCollector:
         except OSError as e:
             print(f"WARNING: Failed to append host metrics sample: {e}")
 
+    def _read_cpu_count(self) -> int:
+        """Number of logical CPUs from the per-cpu lines in ``/proc/stat``.
+
+        Matches the whole-VM denominator of the aggregate ``cpu`` line, so it is
+        the right capacity for weighting CPU utilization by "core-seconds".
+        """
+        try:
+            count = 0
+            with open(self._CPU_STAT, "r", encoding="utf8") as f:
+                for line in f:
+                    if line.startswith("cpu") and len(line) > 3 and line[3].isdigit():
+                        count += 1
+            return count or 1
+        except OSError:
+            return 1
+
     def _read_cpu_times(self) -> Tuple[int, int]:
         """Return (idle_all, total) jiffies from the aggregate ``cpu`` line."""
         with open(self._CPU_STAT, "r", encoding="utf8") as f:
@@ -374,6 +392,7 @@ class HostMetricsCollector:
             "fine_interval": self._fine_interval,
             "duration": samples[-1]["t"] if samples else 0,
             "mem_total_gb": mem_total_gb,
+            "cpu_count": self._cpu_count,
             "n_raw": self._n_fine,
             "n_windows": len(samples),
             "peaks": peaks,
@@ -432,6 +451,18 @@ class HostMetricsCollector:
         result.append(last)
         return [[t, a, p] for t, a, p in result]
 
+    @staticmethod
+    def qualifies(metrics: Optional[Dict]) -> bool:
+        """Whether a job is substantial enough to label / count for the pipeline
+        utilization KPI: it ran long enough OR on a host with enough RAM. Short
+        jobs on small runners are too noisy and not worth right-sizing.
+        """
+        if not metrics:
+            return False
+        duration = metrics.get("duration") or 0
+        mem_gb = metrics.get("mem_total_gb") or 0
+        return duration >= Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC or mem_gb > Settings.HOST_METRICS_MIN_LABEL_MEM_GB
+
     @classmethod
     def classify(cls, metrics: Optional[Dict]) -> List[Tuple[str, str]]:
         """Derive over/under-utilization labels from a compacted metrics dict.
@@ -444,15 +475,11 @@ class HostMetricsCollector:
         near-full disk are surfaced as their own warnings.
         """
         labels: List[Tuple[str, str]] = []
-        if not metrics:
-            return labels
-        duration = metrics.get("duration") or 0
-        mem_gb = metrics.get("mem_total_gb") or 0
-        # Label only jobs worth right-sizing: either long enough, or on a host
-        # with substantial RAM (costly, so worth flagging even if short).
-        if duration < Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC and mem_gb <= Settings.HOST_METRICS_MIN_LABEL_MEM_GB:
+        if not cls.qualifies(metrics):
             return labels
 
+        duration = metrics.get("duration") or 0
+        mem_gb = metrics.get("mem_total_gb") or 0
         peaks = metrics.get("peaks", {})
         averages = metrics.get("averages", {})
         psi = metrics.get("psi", {})
@@ -469,14 +496,11 @@ class HostMetricsCollector:
         # over a long build) is noise, not pressure, so require a fraction of
         # the runtime rather than any non-zero value.
         mem_full_ratio = mem_full_s / duration if duration else 0
-        if (
-            mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT
-        ) or mem_full_ratio > cls._MEM_STALL_RATIO:
+        if (mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT) or mem_full_ratio > cls._MEM_STALL_RATIO:
             labels.append(
                 (
                     "ram-pressure",
-                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s "
-                    f"({round(100 * mem_full_ratio)}% of runtime) - consider more RAM",
+                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s ({round(100 * mem_full_ratio)}% of runtime) - consider more RAM",
                 )
             )
         elif mem_peak is not None and mem_peak < cls._UNDER_MEM_PCT:

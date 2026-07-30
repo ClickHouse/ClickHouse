@@ -38,9 +38,7 @@ class StorageUsage(MetaClasses.SerializableSingleton):
     def _init(cls):
         if not StorageUsage.exist():
             print("NOTE: UsageStorage data will be initialized")
-            StorageUsage(
-                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
-            ).dump()
+            StorageUsage(downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}).dump()
 
     @classmethod
     def add_downloaded(cls, file_path):
@@ -115,3 +113,92 @@ class ComputeUsage(MetaClasses.SerializableSingleton):
         else:
             self.set_usage(runner_str, duration, job_name)
         return self
+
+
+@dataclasses.dataclass
+class PipelineUtilization(MetaClasses.SerializableSingleton):
+    """Whole-pipeline CPU/RAM utilization and CPU/mem/io stall, accumulated over
+    all jobs that qualified for host-metrics labelling.
+
+    Each job is weighted by its provisioned resource-time - core-seconds
+    (cpu_count * duration) for CPU/io, GB-seconds (mem_total_gb * duration) for
+    RAM - so a bigger runner and/or a longer job impacts the KPI more. Values
+    are kept as running sums so merging across jobs is exact; the percentages
+    are derived on read (see to_summary). Lets a whole pipeline be monitored for
+    over-provisioning (low utilization) or contention (high stall) and be
+    normalized across differently-sized runners.
+    """
+
+    jobs: int = 0
+    wall_time_s: float = 0.0  # sum of qualifying job durations (context only)
+    cpu_core_s: float = 0.0  # sum(cpu_count * duration) - provisioned core-seconds
+    mem_gb_s: float = 0.0  # sum(mem_total_gb * duration) - provisioned GB-seconds
+    cpu_used_area: float = 0.0  # sum(avg_cpu% * cpu_count * duration)
+    mem_used_area: float = 0.0  # sum(avg_mem% * mem_total_gb * duration)
+    cpu_stall_area: float = 0.0  # sum(cpu_stall% * cpu_count * duration)
+    mem_stall_area: float = 0.0  # sum(mem_stall% * mem_total_gb * duration)
+    io_stall_area: float = 0.0  # sum(io_stall% * cpu_count * duration)
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def merge_with(self, other: "PipelineUtilization"):
+        self.jobs += other.jobs
+        self.wall_time_s += other.wall_time_s
+        self.cpu_core_s += other.cpu_core_s
+        self.mem_gb_s += other.mem_gb_s
+        self.cpu_used_area += other.cpu_used_area
+        self.mem_used_area += other.mem_used_area
+        self.cpu_stall_area += other.cpu_stall_area
+        self.mem_stall_area += other.mem_stall_area
+        self.io_stall_area += other.io_stall_area
+        return self
+
+    @classmethod
+    def file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/pipeline_utilization.json"
+
+    @classmethod
+    def from_job_metrics(cls, metrics: Dict[str, Any]) -> "PipelineUtilization":
+        """Build the single-job contribution from a compacted metrics dict.
+
+        A short job contributes small resource-time weight even when it
+        qualified via runner size, so it naturally impacts the KPI less.
+        """
+        duration = metrics.get("duration") or 0
+        cores = metrics.get("cpu_count") or 1
+        gb = metrics.get("mem_total_gb") or 0
+        averages = metrics.get("averages", {})
+        psi = metrics.get("psi", {})
+        cpu_avg = averages.get("cpu") or 0
+        mem_avg = averages.get("mem") or 0
+        # stall% over the run = stall_seconds / duration * 100; multiplied by the
+        # resource-time weight (cores*duration) the duration cancels out.
+        cpu_stall_s = psi.get("cpu_s", 0) or 0
+        mem_stall_s = psi.get("mem_some_s", 0) or 0
+        io_stall_s = psi.get("io_some_s", 0) or 0
+        return cls(
+            jobs=1,
+            wall_time_s=duration,
+            cpu_core_s=cores * duration,
+            mem_gb_s=gb * duration,
+            cpu_used_area=cpu_avg * cores * duration,
+            mem_used_area=mem_avg * gb * duration,
+            cpu_stall_area=cpu_stall_s * cores * 100.0,
+            mem_stall_area=mem_stall_s * gb * 100.0,
+            io_stall_area=io_stall_s * cores * 100.0,
+        )
+
+    def to_summary(self) -> Dict[str, Any]:
+        """Derive the human-facing utilization/stall percentages."""
+
+        def pct(area, weight):
+            return round(area / weight, 1) if weight else 0.0
+
+        return {
+            "jobs": self.jobs,
+            "wall_time_s": round(self.wall_time_s, 1),
+            "cpu_util_pct": pct(self.cpu_used_area, self.cpu_core_s),
+            "mem_util_pct": pct(self.mem_used_area, self.mem_gb_s),
+            "cpu_stall_pct": pct(self.cpu_stall_area, self.cpu_core_s),
+            "mem_stall_pct": pct(self.mem_stall_area, self.mem_gb_s),
+            "io_stall_pct": pct(self.io_stall_area, self.cpu_core_s),
+        }

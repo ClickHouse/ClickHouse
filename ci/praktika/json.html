@@ -1372,6 +1372,66 @@
         statusContainer.appendChild(wrapper);
     }
 
+    // Whole-pipeline utilization KPI, accumulated across qualifying jobs into
+    // the workflow Result (see PipelineUtilization). Only present on the
+    // workflow-level result; values are capacity-time-weighted running sums, so
+    // the percentages are derived here as area / provisioned-resource-seconds.
+    function addPipelineUtilizationWidget(u) {
+        if (!u || !u.cpu_core_s) return;
+        const CPU_COLOR = "#4e79a7";
+        const MEM_COLOR = "#e15759";
+        const pct = (area, weight) => (weight ? area / weight : 0);
+        const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
+        const memUtil = pct(u.mem_used_area, u.mem_gb_s);
+        const cpuStall = pct(u.cpu_stall_area, u.cpu_core_s);
+        const memStall = pct(u.mem_stall_area, u.mem_gb_s);
+        const ioStall = pct(u.io_stall_area, u.cpu_core_s);
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "0.8em";
+        title.style.marginBottom = "2px";
+        title.textContent = `pipeline utilization (${u.jobs} job${u.jobs === 1 ? "" : "s"})`;
+        wrapper.appendChild(title);
+
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        const utilCol = mkCol("left");
+        addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
+        addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
+        cols.appendChild(utilCol);
+
+        const stallCol = mkCol("right");
+        stallCol.style.opacity = "0.7";
+        addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
+        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%`);
+        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%`);
+        cols.appendChild(stallCol);
+
+        wrapper.appendChild(cols);
+        statusContainer.appendChild(wrapper);
+    }
+
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
 
@@ -2346,6 +2406,7 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+        addPipelineUtilizationWidget(result.ext?.pipeline_utilization)
         addHostMetricsChart(result.ext?.metrics)
     }
 
