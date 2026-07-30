@@ -25,7 +25,7 @@ Support for RPE depends on the cloud provider and region your data source is hos
 | Provider                                                        | Supported | Notes |
 | --------------------------------------------------------------- | --------- | ----- |
 | [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink)     | Yes       | For data sources hosted on AWS. Cross-region connectivity can be configured using a VPC endpoint service. |
-| [GCP Private Service Connect](/integrations/clickpipes/networking/gcp-psc) | Yes       | For data sources hosted on GCP. Cross-region connectivity via Global Access is not supported yet; use [SSH tunneling](#ssh-tunneling) to reach a private data source in unsupported GCP regions. |
+| [GCP Private Service Connect](/integrations/clickpipes/networking/gcp-psc) | Yes       | For `AlloyDB` data sources hosted on GCP. Cross-region connectivity via Global Access is not supported yet; use [SSH tunneling](#ssh-tunneling) to reach a private `AlloyDB` data source in an unsupported GCP region. |
 | [Azure Private Link](/integrations/clickpipes/networking/azure-privatelink)| No        | Use [SSH tunneling](#ssh-tunneling) to reach a private Azure data source. |
 
 ## SSH tunneling {#ssh-tunneling}
