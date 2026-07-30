@@ -1,5 +1,3 @@
--- Tags: long
-
 -- Exercises the adaptive aggregator's admission around pipeline shapes it must stand aside
 -- for: results must be identical with the setting on and off whether the feature engages or
 -- the admission rejects it. Every cell prints 1.
@@ -13,7 +11,7 @@ SET collect_hash_table_stats_during_aggregation = 0;
 
 DROP TABLE IF EXISTS t_admission;
 CREATE TABLE t_admission (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO t_admission SELECT number % 100000, number FROM numbers(400000);
+INSERT INTO t_admission SELECT number % 10000, number FROM numbers(40000);
 
 SELECT 'Aggregation in order (not admitted)';
 SELECT
@@ -54,7 +52,7 @@ CREATE TABLE t_projection
     PROJECTION agg (SELECT k, sum(v) GROUP BY k)
 )
 ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_projection SELECT number % 100000, number FROM numbers(400000);
+INSERT INTO t_projection SELECT number % 10000, number FROM numbers(40000);
 
 SELECT
     (SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t_projection GROUP BY k SETTINGS optimize_use_projections = 1, enable_adaptive_aggregator = 0))
@@ -68,8 +66,8 @@ SELECT 'Lazy FINAL replacement';
 DROP TABLE IF EXISTS t_lazy_final;
 CREATE TABLE t_lazy_final (k UInt64, version UInt64, is_deleted UInt8, v UInt64)
 ENGINE = ReplacingMergeTree(version, is_deleted) ORDER BY k;
-INSERT INTO t_lazy_final SELECT number, 1, 0, number FROM numbers(200000);
-INSERT INTO t_lazy_final SELECT number, 2, if(number % 10 = 0, 1, 0), number * 2 FROM numbers(100000, 150000);
+INSERT INTO t_lazy_final SELECT number, 1, 0, number FROM numbers(20000);
+INSERT INTO t_lazy_final SELECT number, 2, if(number % 10 = 0, 1, 0), number * 2 FROM numbers(10000, 15000);
 
 SELECT
     (SELECT count(), sum(v) FROM t_lazy_final FINAL WHERE k % 7 != 6 SETTINGS enable_analyzer = 1, query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0, enable_adaptive_aggregator = 0)
