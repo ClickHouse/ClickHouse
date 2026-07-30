@@ -34,7 +34,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-FAILPOINTS = ("azure_inject_forbidden_response", "azure_inject_auth_failure")
+FAILPOINTS = (
+    "azure_inject_forbidden_response",
+    "azure_inject_auth_failure",
+    "azure_inject_timeout",
+)
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -148,6 +152,31 @@ def test_azure_auth_failure_at_merge_not_broken_part(started_cluster):
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure")
+
+
+def test_azure_timeout_read_is_retried(started_cluster):
+    # A transient request timeout to Azure surfaces as an HTTP 408; it must be retried, not fail the read
+    # (issue #110724). azure_inject_timeout is a ONCE failpoint, so exactly one Azure request fails with a
+    # 408: with the fix the read retries past it and returns the data; without it (408 treated as
+    # non-retryable) the read gives up on the first attempt and the query fails. A retried transient error
+    # also never reaches the reportBroken()/POTENTIALLY_BROKEN_DATA_PART path for a healthy part.
+    node.query(
+        """
+        CREATE TABLE t_timeout_read (k UInt64, v String)
+        ENGINE = MergeTree() ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("INSERT INTO t_timeout_read SELECT number, toString(number) FROM numbers(100)")
+    assert node.query("SELECT count() FROM t_timeout_read").strip() == "100"
+
+    _drop_caches()
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_timeout")
+    try:
+        assert node.query("SELECT sum(k) FROM t_timeout_read").strip() == "4950"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_timeout")
 
 
 def test_batch_delete_failure_is_logged(started_cluster):

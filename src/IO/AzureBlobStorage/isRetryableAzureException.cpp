@@ -16,6 +16,10 @@ bool isRetryableAzureException(const Azure::Core::RequestFailedException & e)
     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
         return true;
 
+    /// A request timeout (incl. a synthetic 408 built from a transport timeout) is transient; retry it (#110724).
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::RequestTimeout)
+        return true;
+
     /// Retry other 5xx errors just in case.
     return e.StatusCode >= Azure::Core::Http::HttpStatusCode::InternalServerError;
 }

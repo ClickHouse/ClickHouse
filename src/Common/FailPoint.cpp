@@ -73,6 +73,7 @@ static struct InitFiu
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     REGULAR(azure_inject_auth_failure) \
+    ONCE(azure_inject_timeout) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
