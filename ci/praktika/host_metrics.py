@@ -446,7 +446,10 @@ class HostMetricsCollector:
         if not metrics:
             return labels
         duration = metrics.get("duration") or 0
-        if duration < Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC:
+        mem_gb = metrics.get("mem_total_gb") or 0
+        # Label only jobs worth right-sizing: either long enough, or on a host
+        # with substantial RAM (costly, so worth flagging even if short).
+        if duration < Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC and mem_gb <= Settings.HOST_METRICS_MIN_LABEL_MEM_GB:
             return labels
 
         peaks = metrics.get("peaks", {})
@@ -455,7 +458,6 @@ class HostMetricsCollector:
         mem_peak = peaks.get("mem")
         cpu_avg = averages.get("cpu")
         disk_peak = peaks.get("disk")
-        mem_gb = metrics.get("mem_total_gb")
         disk_gb = metrics.get("disk_total_gb")
         mem_full_s = psi.get("mem_full_s", 0)
         cpu_s = psi.get("cpu_s", 0)

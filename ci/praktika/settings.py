@@ -82,9 +82,11 @@ class _Settings:
     # Filesystem whose used% is tracked as the "disk" series. Defaults to the
     # working directory, i.e. the disk the job actually writes to.
     HOST_METRICS_DISK_PATH: str = "."
-    # Only jobs that ran at least this long are labelled over/under-utilized -
-    # shorter jobs are too noisy and not worth right-sizing. 30 minutes.
-    HOST_METRICS_MIN_LABEL_DURATION_SEC: float = 1800.0
+    # Jobs are labelled over/under-utilized only when they ran at least this
+    # long OR ran on a host with more than HOST_METRICS_MIN_LABEL_MEM_GB of RAM;
+    # short jobs on small runners are too noisy and not worth right-sizing.
+    HOST_METRICS_MIN_LABEL_DURATION_SEC: int = 1800
+    HOST_METRICS_MIN_LABEL_MEM_GB: int = 15
 
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
@@ -220,6 +222,7 @@ _USER_DEFINED_SETTINGS = [
     "HOST_METRICS_FILE",
     "HOST_METRICS_DISK_PATH",
     "HOST_METRICS_MIN_LABEL_DURATION_SEC",
+    "HOST_METRICS_MIN_LABEL_MEM_GB",
 ]
 
 
