@@ -36,8 +36,10 @@ SELECT tup, tup.a, tup.v, tup.s FROM t_null_carrying_wide;
 \N	\N	\N	\N
 (2,2,'2')	2	2	2
 \N	\N	\N	\N
+-- `count` skips the NULL values of a `Variant`, so `count(tup.v)` counts only the rows where the outer
+-- tuple is not NULL, like `count(tup.s)` does. `count` over a `Dynamic` still counts its NULLs.
 SELECT count(tup.a), count(tup.v), count(tup.s) FROM t_null_carrying_wide;
-4	4	2
+4	2	2
 -- Element subcolumns of Variant and Dynamic are Nullable built from the discriminators; the outer null
 -- map must be combined into their null maps as well.
 SELECT tup.a.UInt64, tup.v.UInt64, isNull(tup.a.UInt64), isNull(tup.v.UInt64) FROM t_null_carrying_wide;
@@ -62,7 +64,7 @@ SELECT tup, tup.a, tup.v, tup.s FROM t_null_carrying_compact;
 (2,2,'2')	2	2	2
 \N	\N	\N	\N
 SELECT count(tup.a), count(tup.v), count(tup.s) FROM t_null_carrying_compact;
-4	4	2
+4	2	2
 SELECT tup.a.UInt64, tup.v.UInt64, isNull(tup.a.UInt64), isNull(tup.v.UInt64) FROM t_null_carrying_compact;
 0	0	0	0
 \N	\N	1	1
@@ -80,7 +82,7 @@ SELECT tup.a, tup.v, tup.s, isNull(tup.a), isNull(tup.v), isNull(tup.s) FROM t_n
 2	2	2	0	0	0
 \N	\N	\N	1	1	1
 SELECT count(tup.a), count(tup.v), count(tup.s) FROM t_null_carrying_mem;
-4	4	2
+4	2	2
 DROP TABLE t_null_carrying_mem;
 -- A plain LowCardinality(T) element cannot be wrapped in Nullable, so the extracted subcolumn is promoted
 -- to LowCardinality(Nullable(T)) and rows where the outer tuple is NULL read as NULL through it.
