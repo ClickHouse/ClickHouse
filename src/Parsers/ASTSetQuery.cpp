@@ -1,4 +1,7 @@
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
@@ -20,6 +23,11 @@ static constexpr std::string_view format_avro_schema_registry_url = "format_avro
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -218,6 +226,122 @@ void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
+}
+
+void ASTSetQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SetQuery");
+
+    if (is_standalone)
+        w.writeBool("is_standalone", true);
+
+    if (!changes.empty())
+    {
+        w.writeKey("changes");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < changes.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(changes[i].name, o, fs);
+            /// Write "value" key and the field as a JSON object via writeFieldValue.
+            /// We use a trick: writeFieldValue writes, "key":{field_json},
+            /// but since we just wrote {"name":"..." the comma is exactly what we need.
+            w.writeFieldValue("value", changes[i].value);
+            o << '}';
+        }
+        o << ']';
+    }
+
+    if (!default_settings.empty())
+    {
+        w.writeKey("default_settings");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < default_settings.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            writeJSONString(default_settings[i], o, fs);
+        }
+        o << ']';
+    }
+
+    if (!query_parameters.empty())
+    {
+        w.writeKey("query_parameters");
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
+        for (size_t i = 0; i < query_parameters.size(); ++i)
+        {
+            if (i > 0) o << ',';
+            o << "{\"name\":";
+            writeJSONString(query_parameters[i].first, o, fs);
+            o << ",\"value\":";
+            writeJSONString(query_parameters[i].second, o, fs);
+            o << '}';
+        }
+        o << ']';
+    }
+}
+
+void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    is_standalone = r.getBool("is_standalone");
+
+    if (r.has("changes"))
+    {
+        auto arr = r.getArray("changes");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'changes' is not an array during AST JSON deserialization");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto change_obj = arr->getObject(i);
+            if (!change_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
+            SettingChange change;
+            /// Read the name through `JSONObjectReader` so a non-string value is rejected with
+            /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a setting name).
+            JSONObjectReader change_reader(*change_obj);
+            change.name = change_reader.getString("name");
+            auto value_obj = change_obj->getObject("value");
+            if (!value_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
+            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            changes.push_back(std::move(change));
+        }
+    }
+
+    if (r.has("default_settings"))
+    {
+        default_settings = r.readStringArray("default_settings");
+    }
+
+    if (r.has("query_parameters"))
+    {
+        auto arr = r.getArray("query_parameters");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'query_parameters' is not an array during AST JSON deserialization");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            /// `query_parameters` is a non-AST array; count each pair against `max_ast_elements` so a
+            /// tiny-AST payload cannot carry millions of parameters and allocate/format them unbounded.
+            countJSONDeserializationElement();
+            auto param_obj = arr->getObject(i);
+            if (!param_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'query_parameters' array during AST JSON deserialization", i);
+            /// Read both scalars strictly so a non-string name/value is rejected rather than coerced.
+            JSONObjectReader param_reader(*param_obj);
+            query_parameters.emplace_back(
+                param_reader.getString("name"),
+                param_reader.getString("value"));
+        }
+    }
 }
 
 bool ASTSetQuery::hasSecretParts() const

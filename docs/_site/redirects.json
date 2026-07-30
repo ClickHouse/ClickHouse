@@ -1,5 +1,61 @@
 [
   {
+    "source": "/docs/products/bring-your-own-cloud",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/managed-postgres/migrations/clickhouse-cloud",
+    "destination": "/products/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "source": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
+  },
+  {
+    "source": "/concepts/features/operations/update/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-the-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/products/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
+    "source": "/cloud/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/reference/faq-aws",
+    "destination": "/products/bring-your-own-cloud/reference/faq"
+  },
+  {
     "source": "/concepts/features/operations/delete/delete-mutations",
     "destination": "/reference/statements/alter/delete"
   },
@@ -5040,7 +5096,7 @@
     "source": "/integrations/sql-clients/"
   },
   {
-    "destination": "/concepts/features/interfaces/cli",
+    "destination": "/concepts/features/interfaces/client",
     "source": "/integrations/sql-clients/cli"
   },
   {
@@ -5648,7 +5704,7 @@
     "source": "/interfaces/third-party/integrations"
   },
   {
-    "destination": "/integrations/language-clients/third-party/moose-olap",
+    "destination": "/integrations/language-clients/third-party/client-libraries",
     "source": "/interfaces/third-party/moose-olap"
   },
   {
@@ -52544,19 +52600,11 @@
     "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes"
   },
   {
-    "destination": "/chdb/api/python",
-    "source": "/chdb/guides/python-udf"
-  },
-  {
     "destination": "/products/cloud/features/sql-console-features/clickstack",
     "source": "/cloud/manage/clickstack"
   },
   {
-    "destination": "/products/cloud/features/data-catalogs",
-    "source": "/integrations/data-catalogs"
-  },
-  {
-    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes",
     "source": "/integrations/estuary/clickpipes"
   },
   {
@@ -54214,5 +54262,33 @@
   {
     "destination": "/zh/clickstack/demo-days/2026/2026-06-12",
     "source": "/zh/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "/integrations/language-clients/third-party/client-libraries",
+    "source": "/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/concepts/features/interfaces/client",
+    "source": "/integrations/connectors/sql-clients/cli"
+  },
+  {
+    "destination": "/concepts/features/interfaces/client",
+    "source": "/docs/integrations/sql-clients/cli"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/static-ips",
+    "source": "/integrations/clickpipes/static-ips"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/aws-privatelink",
+    "source": "/integrations/clickpipes/aws-privatelink"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/gcp-psc",
+    "source": "/integrations/clickpipes/gcp-psc"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/azure-privatelink",
+    "source": "/integrations/clickpipes/azure-privatelink"
   }
 ]
