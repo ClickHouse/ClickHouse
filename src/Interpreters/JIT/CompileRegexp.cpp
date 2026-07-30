@@ -678,10 +678,6 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
 
     auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
 
-    /// Only this function reaches the regexp JIT, and only on a compile rather than on a cache hit. The
-    /// other writers of the shared cache charge `CompileFunction` instead.
-    ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
-
     /// `compileModule` has already registered the module in the JIT instance; it is released only by
     /// `deleteCompiledModule` (called from `~CompiledRegexpHolder`). Until the holder is constructed and
     /// takes ownership, there is an unmanaged gap: if `make_shared` throws (e.g. `bad_alloc`), the module
@@ -689,15 +685,18 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     /// The raw pointer stays valid even after `jit` is moved from, because `regexp_jit_instance` keeps the
     /// `CHJIT` alive.
     CHJIT * jit_ptr = jit.get();
+    std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+        holder = std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
     }
     catch (...)
     {
         jit_ptr->deleteCompiledModule(compiled_module);
         throw;
     }
+
+    return holder;
 }
 
 }
@@ -731,6 +730,8 @@ RegexpJITMatcher getRegexpJITMatcher(
             return {};
     }
 
+    /// Set inside the loader, so it stays false on a cache hit, where nothing is compiled.
+    bool compiled_here = false;
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
@@ -738,13 +739,16 @@ RegexpJITMatcher getRegexpJITMatcher(
         {
             auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
             {
-                return compileMatcher(*program);
+                auto compiled = compileMatcher(*program);
+                compiled_here = true;
+                return compiled;
             });
             holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
         }
         else
         {
             holder = compileMatcher(*program);
+            compiled_here = true;
         }
     }
     catch (...)
@@ -753,6 +757,14 @@ RegexpJITMatcher getRegexpJITMatcher(
         tryLogCurrentException(getLogger("CompileRegexp"), "Failed to JIT-compile a regular expression, falling back to RE2");
         return {};
     }
+
+    /// Charged here rather than next to the compilation itself: every throw between the two, including
+    /// the cache insertion, is swallowed above and leaves the caller on the interpreted loop, so an
+    /// earlier increment would report a matcher the caller never received. Only this function reaches the
+    /// regexp JIT, and `compiled_here` keeps it a compile rather than a cache hit. The other writers of
+    /// the shared cache charge `CompileFunction` instead.
+    if (compiled_here)
+        ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
     RegexpJITMatcher result;
     result.func = holder->func;
