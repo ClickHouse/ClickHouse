@@ -587,7 +587,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -1008,7 +1010,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
-    new_metadata_file_content->set(Iceberg::f_last_column_id, columns.size());
     new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
 
     Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
@@ -1016,6 +1017,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    /// Top-level columns get ids 1..N; nested tuple/array/map children get ids
+    /// N+1.. via the shared `iter`. After the loop `iter` is the max assigned
+    /// field id, which is what last-column-id must record (not the top-level
+    /// column count) so a later ADD COLUMN does not reuse a nested field id.
     Int32 iter = static_cast<Int32>(columns.size());
     Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
@@ -1029,6 +1034,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
+    new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);

@@ -172,6 +172,7 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
+
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -656,6 +657,11 @@ void IcebergMetadata::mutate(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
+    /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
+    /// retry loop, bound to the metadata version actually being mutated. That closes
+    /// the TOCTOU gap a pre-check here would leave for concurrent writers committing
+    /// non-Parquet data files between the check and the write.
+
     DB::Iceberg::mutate(
         commands,
         context,
@@ -678,6 +684,8 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
+
+    Iceberg::validateMutationWriteFormat(write_format);
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
@@ -1352,7 +1360,13 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+            /// update_row_numbers_info = true: every transform that can precede this one (the
+            /// position-delete transform, an earlier equality-delete filter) maintains
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            return std::make_shared<FilterTransform>(
+                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
+                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                /*update_row_numbers_info=*/true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }
