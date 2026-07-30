@@ -51,6 +51,7 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
+#include <Analyzer/Passes/PushSubcolumnsIntoSubqueriesPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
@@ -270,6 +271,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+    /// Should run before RemoveUnusedProjectionColumnsPass, so that a column replaced
+    /// with its subcolumns can be removed from the subquery projection if it is not used anywhere else.
+    manager.addPass(std::make_unique<PushSubcolumnsIntoSubqueriesPass>());
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());

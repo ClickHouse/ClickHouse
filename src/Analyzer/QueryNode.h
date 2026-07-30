@@ -644,6 +644,19 @@ public:
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
+    /// Add an additional projection column to the resolved query node
+    void addProjectionColumn(QueryTreeNodePtr projection_node, NameAndTypePair projection_column)
+    {
+        getProjection().getNodes().push_back(std::move(projection_node));
+        projection_columns.push_back(std::move(projection_column));
+    }
+
+    /// Returns true if projection column names are overridden with explicit aliases, e.g. `(SELECT ...) AS t(a, b)`
+    bool hasProjectionAliasesToOverride() const
+    {
+        return !projection_aliases_to_override.empty();
+    }
+
     bool isCorrelated() const
     {
         return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();

@@ -1,0 +1,92 @@
+subquery
+Output: json.a, json.b
+Output: json.a, json.b
+1	x
+2	y
+1	x
+2	y
+subquery, disabled optimization
+Output: getSubcolumn(json, \'a\'), getSubcolumn(json, \'b\')
+Output: json
+nested JSON path
+Output: json.c.d
+Output: json.c.d
+10
+\N
+CTE
+Output: json.a
+Output: json.a
+1
+2
+two levels of subqueries
+Output: json.a
+Output: json.a
+1
+2
+view
+Output: json.a
+Output: json.a
+1
+2
+Tuple and Array subcolumns
+Output: tup.a, tup.b, arr.size0
+Output: tup.a, tup.b, arr.size0
+1	one	3
+2	two	0
+Nullable null subcolumn without JOIN
+Output: n.null
+Output: n.null
+0
+1
+whole column and subcolumn
+Output: json, json.a
+Output: json, json.a
+{"a":1,"b":"x","c":{"d":10}}	1
+{"a":2,"b":"y"}	2
+subcolumn in WHERE
+Output: id
+Output: id
+1
+subcolumn as GROUP BY key
+Output: json.a
+Output: json.a
+1
+2
+subcolumn in aggregate function
+Output: max(tup.a)
+Output: tup.a
+2
+subcolumn of a GROUP BY key is not pushed down
+Output: getSubcolumn(tup, \'a\')
+Output: tup
+1
+2
+not pushed into DISTINCT subquery
+Output: getSubcolumn(json, \'a\')
+Output: id, json, tup, n, arr
+1
+2
+not pushed into UNION
+Output: getSubcolumn(json, \'a\')
+│     Output: json
+Output: json
+1
+1
+2
+2
+not pushed into aggregating subquery
+Output: getSubcolumn(any(tup), \'a\')
+Output: tup
+1
+pushed for INNER JOIN
+Output: json.a, tup.a
+│  Output:
+│     Output: id, json.a
+Output: id, tup.a
+1	1
+2	2
+not pushed to the right side of LEFT JOIN
+Output: 3, getSubcolumn(n, \'null\')
+│  Output:
+│     Output: 3, n
+3	1
