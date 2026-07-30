@@ -2,6 +2,9 @@
 # Tags: zookeeper, no-fasttest, no-shared-merge-tree, no-replicated-database
 # no-shared-merge-tree, no-replicated-database: tables without UUIDs exist only in an Ordinary database.
 
+# The first Ordinary database on the server makes it warn that the engine is deprecated.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
