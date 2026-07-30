@@ -376,12 +376,26 @@ class LakeDataGenerator:
         micros = self._rand_int(0, 999999)
         return start + timedelta(seconds=secs, microseconds=micros)
 
-    def _rand_decimal(self, precision, scale, non_negative=False):
+    # Decimal-mapped wide integers: the decimal has enough digits for every value of the
+    # source type, but its own maximum can exceed the type's (DECIMAL(20, 0) vs `UInt64`),
+    # so bound generation to the source range or the read-back cast overflows
+    DECIMAL_HINT_MAX_ABS = {
+        "UInt64": 2**64 - 1,
+        "UInt128": 2**128 - 1,
+        "UInt256": 2**256 - 1,
+        "Int128": 2**127 - 1,
+        "Int256": 2**255 - 1,
+    }
+
+    def _rand_decimal(self, precision, scale, non_negative=False, max_abs=None):
         # Set context a bit higher to avoid rounding surprises
         getcontext().prec = max(precision, 38)
         int_digits = precision - scale
         # Largest integer part allowed (e.g., p=5,s=2 -> int_digits=3 -> up to 999)
         max_int = 10**int_digits - 1
+        if max_abs is not None:
+            # Integer-mapped columns (scale 0): stay inside the source type range
+            max_int = min(max_int, int(max_abs))
         if random.randint(1, 100) <= 10:
             # All-9s extreme at full precision
             int_part = max(0, max_int)
@@ -486,7 +500,10 @@ class LakeDataGenerator:
             # UInt columns may be DECIMAL-mapped in data files; ClickHouse throws
             # casting a negative decimal back to the unsigned declared type
             return self._rand_decimal(
-                dtype.precision, dtype.scale, ch_hint.startswith("UInt")
+                dtype.precision,
+                dtype.scale,
+                ch_hint.startswith("UInt"),
+                self.DECIMAL_HINT_MAX_ABS.get(ch_hint),
             )
         if isinstance(dtype, StringType):
             # Time columns are STRING-mapped in data files; ClickHouse casts the strings
@@ -819,12 +836,16 @@ class LakeDataGenerator:
         if isinstance(dtype, DoubleType):
             return self._float_literal(float(self._rand_float(-1e9, 1e9)), "DOUBLE")
         if isinstance(dtype, DecimalType):
-            # Same constraint as the file path: no negative literals for UInt columns
-            non_negative = self._ch_hint_strip(ch_type).startswith("UInt")
-            return (
-                f"CAST('{self._rand_decimal(dtype.precision, dtype.scale, non_negative)}'"
-                f" AS DECIMAL({dtype.precision}, {dtype.scale}))"
+            # Same constraints as the file path: no negative literals for UInt columns,
+            # and values inside the source type range
+            hint = self._ch_hint_strip(ch_type)
+            value = self._rand_decimal(
+                dtype.precision,
+                dtype.scale,
+                hint.startswith("UInt"),
+                self.DECIMAL_HINT_MAX_ABS.get(hint),
             )
+            return f"CAST('{value}' AS DECIMAL({dtype.precision}, {dtype.scale}))"
         if isinstance(dtype, (StringType, CharType, VarcharType)):
             s = (
                 (
