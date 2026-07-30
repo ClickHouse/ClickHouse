@@ -85,7 +85,7 @@ Once you have identified the visualizations that matter most, the next step is c
 
 ### Consolidate visualizations into shared views {#consolidate-visualizations-into-shared-views}
 
-All materialized views in ClickStack should group data by a time interval using functions such as [`toStartOfMinute`](/reference/functions/regular-functions/date-time-functions#tostartofminute). However, many visualizations also share additional grouping keys such as service name, span name, or status code. When multiple visualizations use the same grouping dimensions, they can often be served by a single materialized view.
+All materialized views in ClickStack should group data by a time interval using functions such as [`toStartOfMinute`](/reference/functions/regular-functions/date-time-functions#toStartOfMinute). However, many visualizations also share additional grouping keys such as service name, span name, or status code. When multiple visualizations use the same grouping dimensions, they can often be served by a single materialized view.
 
 For example (for traces):
 

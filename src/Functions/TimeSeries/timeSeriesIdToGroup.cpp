@@ -87,7 +87,7 @@ REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified identifier of a time series.
-See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeseriesstoretags).
+See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {

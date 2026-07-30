@@ -66,7 +66,7 @@ Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
 There is no supertype for types Int32, DateTime, Int8 ...
 ```
 
-## arrayAUCPR {#arrayaucpr}
+## arrayAUCPR {#arrayAUCPR}
 
 Introduced in: v20.4.0
 
@@ -121,7 +121,7 @@ SELECT arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 └─────────────────────────────────────────────────┘
 ```
 
-## arrayAll {#arrayall}
+## arrayAll {#arrayAll}
 
 Introduced in: v1.1.0
 
@@ -165,7 +165,7 @@ SELECT arrayAll(x, y -> x=y, [1, 2, 3], [1, 1, 1])
 0
 ```
 
-## arrayAutocorrelation {#arrayautocorrelation}
+## arrayAutocorrelation {#arrayAutocorrelation}
 
 Introduced in: v26.4.0
 
@@ -231,7 +231,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 [1, 0.4]
 ```
 
-## arrayAvg {#arrayavg}
+## arrayAvg {#arrayAvg}
 
 Introduced in: v21.1.0
 
@@ -278,7 +278,7 @@ SELECT arrayAvg(x, y -> x*y, [2, 3], [2, 3]) AS res;
 6.5
 ```
 
-## arrayBottomK {#arraybottomk}
+## arrayBottomK {#arrayBottomK}
 
 Introduced in: v26.6.0
 
@@ -370,7 +370,7 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
-## arrayCompact {#arraycompact}
+## arrayCompact {#arrayCompact}
 
 Introduced in: v20.1.0
 
@@ -402,7 +402,7 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
 [1,nan,2,3]
 ```
 
-## arrayConcat {#arrayconcat}
+## arrayConcat {#arrayConcat}
 
 Introduced in: v1.1.0
 
@@ -434,7 +434,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 [1, 2, 3, 4, 5, 6]
 ```
 
-## arrayCount {#arraycount}
+## arrayCount {#arrayCount}
 
 Introduced in: v1.1.0
 
@@ -471,7 +471,7 @@ SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)
 5
 ```
 
-## arrayCumSum {#arraycumsum}
+## arrayCumSum {#arrayCumSum}
 
 Introduced in: v1.1.0
 
@@ -515,7 +515,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 [2, 6, 12]
 ```
 
-## arrayCumSumNonNegative {#arraycumsumnonnegative}
+## arrayCumSumNonNegative {#arrayCumSumNonNegative}
 
 Introduced in: v18.12.0
 
@@ -559,7 +559,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 [2, 0, 6]
 ```
 
-## arrayDifference {#arraydifference}
+## arrayDifference {#arrayDifference}
 
 Introduced in: v1.1.0
 
@@ -606,7 +606,7 @@ SELECT arrayDifference([0, 10000000000000000000]);
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct {#arraydistinct}
+## arrayDistinct {#arrayDistinct}
 
 Introduced in: v1.1.0
 
@@ -638,7 +638,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 [1,2,3]
 ```
 
-## arrayDotProduct {#arraydotproduct}
+## arrayDotProduct {#arrayDotProduct}
 
 Introduced in: v23.5.0
 
@@ -692,7 +692,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 32    Float64
 ```
 
-## arrayElement {#arrayelement}
+## arrayElement {#arrayElement}
 
 Introduced in: v1.1.0
 
@@ -765,7 +765,7 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
-## arrayElementOrNull {#arrayelementornull}
+## arrayElementOrNull {#arrayElementOrNull}
 
 Introduced in: v1.1.0
 
@@ -824,7 +824,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 NULL
 ```
 
-## arrayEnumerate {#arrayenumerate}
+## arrayEnumerate {#arrayEnumerate}
 
 Introduced in: v1.1.0
 
@@ -884,7 +884,7 @@ ARRAY JOIN
 └────┴────────────────┴─────────────┴─────┘
 ```
 
-## arrayEnumerateDense {#arrayenumeratedense}
+## arrayEnumerateDense {#arrayEnumerateDense}
 
 Introduced in: v18.12.0
 
@@ -916,7 +916,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 [1,2,1,3]
 ```
 
-## arrayEnumerateDenseRanked {#arrayenumeratedenseranked}
+## arrayEnumerateDenseRanked {#arrayEnumerateDenseRanked}
 
 Introduced in: v20.1.0
 
@@ -983,7 +983,7 @@ SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 [[1, 1, 2, 3], [1, 2, 3, 4]]
 ```
 
-## arrayEnumerateUniq {#arrayenumerateuniq}
+## arrayEnumerateUniq {#arrayEnumerateUniq}
 
 Introduced in: v1.1.0
 
@@ -1067,7 +1067,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-## arrayEnumerateUniqRanked {#arrayenumerateuniqranked}
+## arrayEnumerateUniqRanked {#arrayEnumerateUniqRanked}
 
 Introduced in: v20.1.0
 
@@ -1149,7 +1149,7 @@ SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 [[1, 1, 1], [1, 2, 1], [1]]
 ```
 
-## arrayExcept {#arrayexcept}
+## arrayExcept {#arrayExcept}
 
 Introduced in: v25.9.0
 
@@ -1220,7 +1220,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ['apple', 'cherry']
 ```
 
-## arrayExists {#arrayexists}
+## arrayExists {#arrayExists}
 
 Introduced in: v1.1.0
 
@@ -1254,7 +1254,7 @@ SELECT arrayExists(x, y -> x=y, [1, 2, 3], [0, 0, 0])
 0
 ```
 
-## arrayFill {#arrayfill}
+## arrayFill {#arrayFill}
 
 Introduced in: v20.1.0
 
@@ -1303,7 +1303,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 [5, 5, 6, 6]
 ```
 
-## arrayFilter {#arrayfilter}
+## arrayFilter {#arrayFilter}
 
 Introduced in: v1.1.0
 
@@ -1352,7 +1352,7 @@ SELECT
 [2]
 ```
 
-## arrayFirst {#arrayfirst}
+## arrayFirst {#arrayFirst}
 
 Introduced in: v1.1.0
 
@@ -1395,7 +1395,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 0 UInt8
 ```
 
-## arrayFirstIndex {#arrayfirstindex}
+## arrayFirstIndex {#arrayFirstIndex}
 
 Introduced in: v1.1.0
 
@@ -1437,7 +1437,7 @@ SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f'])
 0
 ```
 
-## arrayFirstOrNull {#arrayfirstornull}
+## arrayFirstOrNull {#arrayFirstOrNull}
 
 Introduced in: v1.1.0
 
@@ -1482,7 +1482,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 NULL Nullable(UInt8)
 ```
 
-## arrayFlatten {#arrayflatten}
+## arrayFlatten {#arrayFlatten}
 
 Introduced in: v20.1.0
 
@@ -1523,7 +1523,7 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 [1, 2, 3]
 ```
 
-## arrayFold {#arrayfold}
+## arrayFold {#arrayFold}
 
 Introduced in: v23.10.0
 
@@ -1593,7 +1593,7 @@ SELECT arrayFold(
 300
 ```
 
-## arrayIntersect {#arrayintersect}
+## arrayIntersect {#arrayIntersect}
 
 Introduced in: v1.1.0
 
@@ -1629,7 +1629,7 @@ arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 └────────────────────┴────────────────────────┘
 ```
 
-## arrayJaccardIndex {#arrayjaccardindex}
+## arrayJaccardIndex {#arrayJaccardIndex}
 
 Introduced in: v23.7.0
 
@@ -1662,7 +1662,7 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 0.3333333333333333
 ```
 
-## arrayJoin {#arrayjoin}
+## arrayJoin {#arrayJoin}
 
 Introduced in: v1.1.0
 
@@ -1886,7 +1886,7 @@ ORDER BY
 └─────────────┴──────────┴─────────┘
 ```
 
-## arrayLast {#arraylast}
+## arrayLast {#arrayLast}
 
 Introduced in: v1.1.0
 
@@ -1929,7 +1929,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 0 UInt8
 ```
 
-## arrayLastIndex {#arraylastindex}
+## arrayLastIndex {#arrayLastIndex}
 
 Introduced in: v1.1.0
 
@@ -1973,7 +1973,7 @@ SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']);
 0
 ```
 
-## arrayLastOrNull {#arraylastornull}
+## arrayLastOrNull {#arrayLastOrNull}
 
 Introduced in: v1.1.0
 
@@ -2016,7 +2016,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 NULL Nullable(UInt8)
 ```
 
-## arrayLevenshteinDistance {#arraylevenshteindistance}
+## arrayLevenshteinDistance {#arrayLevenshteinDistance}
 
 Introduced in: v25.4.0
 
@@ -2048,7 +2048,7 @@ SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])
 1
 ```
 
-## arrayLevenshteinDistanceWeighted {#arraylevenshteindistanceweighted}
+## arrayLevenshteinDistanceWeighted {#arrayLevenshteinDistanceWeighted}
 
 Introduced in: v25.4.0
 
@@ -2083,7 +2083,7 @@ SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 
 14
 ```
 
-## arrayMap {#arraymap}
+## arrayMap {#arrayMap}
 
 Introduced in: v1.1.0
 
@@ -2126,7 +2126,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 [(1, 4),(2, 5),(3, 6)]
 ```
 
-## arrayMax {#arraymax}
+## arrayMax {#arrayMax}
 
 Introduced in: v21.1.0
 
@@ -2173,7 +2173,7 @@ SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 12
 ```
 
-## arrayMin {#arraymin}
+## arrayMin {#arrayMin}
 
 Introduced in: v21.1.0
 
@@ -2220,7 +2220,7 @@ SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
 4
 ```
 
-## arrayNormalizedGini {#arraynormalizedgini}
+## arrayNormalizedGini {#arrayNormalizedGini}
 
 Introduced in: v25.1.0
 
@@ -2253,7 +2253,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
 ```
 
-## arrayPartialReverseSort {#arraypartialreversesort}
+## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Introduced in: v23.2.0
 
@@ -2338,7 +2338,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 [0, 1, 2]
 ```
 
-## arrayPartialShuffle {#arraypartialshuffle}
+## arrayPartialShuffle {#arrayPartialShuffle}
 
 Introduced in: v23.2.0
 
@@ -2349,7 +2349,7 @@ Value of limit shall be in range `[1..n]`. Values outside of that range are equi
 <Note>
 This function will not materialize constants.
 
-The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayshuffle).
+The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
 </Note>
     
 
@@ -2436,7 +2436,7 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## arrayPartialSort {#arraypartialsort}
+## arrayPartialSort {#arrayPartialSort}
 
 Introduced in: v23.2.0
 
@@ -2521,7 +2521,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 [2, 1, 0]
 ```
 
-## arrayPopBack {#arraypopback}
+## arrayPopBack {#arrayPopBack}
 
 Introduced in: v1.1.0
 
@@ -2553,7 +2553,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 [1, 2]
 ```
 
-## arrayPopFront {#arraypopfront}
+## arrayPopFront {#arrayPopFront}
 
 Introduced in: v1.1.0
 
@@ -2585,7 +2585,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 [2, 3]
 ```
 
-## arrayProduct {#arrayproduct}
+## arrayProduct {#arrayProduct}
 
 Introduced in: v21.1.0
 
@@ -2632,7 +2632,7 @@ SELECT arrayProduct(x, y -> x+y, [2, 2], [2, 2]) AS res;
 16
 ```
 
-## arrayPushBack {#arraypushback}
+## arrayPushBack {#arrayPushBack}
 
 Introduced in: v1.1.0
 
@@ -2675,7 +2675,7 @@ SELECT arrayPushBack(['a'], 'b') AS res;
 ['a','b']
 ```
 
-## arrayPushFront {#arraypushfront}
+## arrayPushFront {#arrayPushFront}
 
 Introduced in: v1.1.0
 
@@ -2717,7 +2717,7 @@ SELECT arrayPushFront(['b'], 'a') AS res;
 ['a','b']
 ```
 
-## arrayROCAUC {#arrayrocauc}
+## arrayROCAUC {#arrayROCAUC}
 
 Introduced in: v20.4.0
 
@@ -2773,7 +2773,7 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 0.75
 ```
 
-## arrayRandomSample {#arrayrandomsample}
+## arrayRandomSample {#arrayRandomSample}
 
 Introduced in: v23.10.0
 
@@ -2820,7 +2820,7 @@ SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
 [[3,4],[5,6]]
 ```
 
-## arrayReduce {#arrayreduce}
+## arrayReduce {#arrayReduce}
 
 Introduced in: v1.1.0
 
@@ -2883,7 +2883,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReduceInRanges {#arrayreduceinranges}
+## arrayReduceInRanges {#arrayReduceInRanges}
 
 Introduced in: v20.4.0
 
@@ -2924,7 +2924,7 @@ SELECT arrayReduceInRanges(
 └─────────────────────────────┘
 ```
 
-## arrayRemove {#arrayremove}
+## arrayRemove {#arrayRemove}
 
 Introduced in: v25.11.0
 
@@ -2969,7 +2969,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ['a', 'b']
 ```
 
-## arrayResize {#arrayresize}
+## arrayResize {#arrayResize}
 
 Introduced in: v1.1.0
 
@@ -3016,7 +3016,7 @@ SELECT arrayResize([1], 3, NULL);
 [1,NULL,NULL]
 ```
 
-## arrayReverse {#arrayreverse}
+## arrayReverse {#arrayReverse}
 
 Introduced in: v1.1.0
 
@@ -3053,7 +3053,7 @@ SELECT arrayReverse([1, 2, 3])
 [3,2,1]
 ```
 
-## arrayReverseFill {#arrayreversefill}
+## arrayReverseFill {#arrayReverseFill}
 
 Introduced in: v20.1.0
 
@@ -3103,7 +3103,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 [5, 6, 6, 2]
 ```
 
-## arrayReverseSort {#arrayreversesort}
+## arrayReverseSort {#arrayReverseSort}
 
 Introduced in: v1.1.0
 
@@ -3160,7 +3160,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 [4,3,5]
 ```
 
-## arrayReverseSplit {#arrayreversesplit}
+## arrayReverseSplit {#arrayReverseSplit}
 
 Introduced in: v20.1.0
 
@@ -3194,7 +3194,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 [[1], [2, 3, 4], [5]]
 ```
 
-## arrayRotateLeft {#arrayrotateleft}
+## arrayRotateLeft {#arrayRotateLeft}
 
 Introduced in: v23.8.0
 
@@ -3236,7 +3236,7 @@ SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;
 [5,6,1,2,3,4]
 ```
 
-## arrayRotateRight {#arrayrotateright}
+## arrayRotateRight {#arrayRotateRight}
 
 Introduced in: v23.8.0
 
@@ -3278,7 +3278,7 @@ SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;
 [3,4,5,6,1,2]
 ```
 
-## arrayShiftLeft {#arrayshiftleft}
+## arrayShiftLeft {#arrayShiftLeft}
 
 Introduced in: v23.8.0
 
@@ -3333,7 +3333,7 @@ SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;
 [3,4,5,6,42,42]
 ```
 
-## arrayShiftRight {#arrayshiftright}
+## arrayShiftRight {#arrayShiftRight}
 
 Introduced in: v23.8.0
 
@@ -3390,7 +3390,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 [42, 42, 1, 2, 3, 4]
 ```
 
-## arrayShingles {#arrayshingles}
+## arrayShingles {#arrayShingles}
 
 Introduced in: v24.1.0
 
@@ -3423,7 +3423,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 [[1, 2, 3], [2, 3, 4]]
 ```
 
-## arrayShuffle {#arrayshuffle}
+## arrayShuffle {#arrayShuffle}
 
 Introduced in: v23.2.0
 
@@ -3476,7 +3476,7 @@ SELECT arrayShuffle([1, 2, 3, 4], 41);
 [3,2,1,4]
 ```
 
-## arraySimilarity {#arraysimilarity}
+## arraySimilarity {#arraySimilarity}
 
 Introduced in: v25.4.0
 
@@ -3511,7 +3511,7 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 0.2222222222222222
 ```
 
-## arraySlice {#arrayslice}
+## arraySlice {#arraySlice}
 
 Introduced in: v1.1.0
 
@@ -3545,7 +3545,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 [2, NULL, 4]
 ```
 
-## arraySort {#arraysort}
+## arraySort {#arraySort}
 
 Introduced in: v1.1.0
 
@@ -3611,7 +3611,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 [-inf,-4,1,2,3,inf,nan,nan,NULL,NULL]
 ```
 
-## arraySplit {#arraysplit}
+## arraySplit {#arraySplit}
 
 Introduced in: v20.1.0
 
@@ -3643,7 +3643,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 [[1, 2, 3], [4, 5]]
 ```
 
-## arraySum {#arraysum}
+## arraySum {#arraySum}
 
 Introduced in: v21.1.0
 
@@ -3690,7 +3690,7 @@ SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);
 8
 ```
 
-## arraySymmetricDifference {#arraysymmetricdifference}
+## arraySymmetricDifference {#arraySymmetricDifference}
 
 Introduced in: v25.4.0
 
@@ -3732,7 +3732,7 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_differen
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## arrayTopK {#arraytopk}
+## arrayTopK {#arrayTopK}
 
 Introduced in: v26.6.0
 
@@ -3820,7 +3820,7 @@ SELECT arrayTopK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['a','c']
 ```
 
-## arrayTranspose {#arraytranspose}
+## arrayTranspose {#arrayTranspose}
 
 Introduced in: v26.4.0
 
@@ -3874,7 +3874,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a', 'c'], ['b', 'd']]
 ```
 
-## arrayUnion {#arrayunion}
+## arrayUnion {#arrayUnion}
 
 Introduced in: v24.10.0
 
@@ -3911,7 +3911,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 └─────────────┴────────────────┴──────────────┘
 ```
 
-## arrayUniq {#arrayuniq}
+## arrayUniq {#arrayUniq}
 
 Introduced in: v1.1.0
 
@@ -3970,7 +3970,7 @@ SELECT arrayUniq([1, 2, 3, 1], [4, 5, 6, 4])
 3
 ```
 
-## arrayWithConstant {#arraywithconstant}
+## arrayWithConstant {#arrayWithConstant}
 
 Introduced in: v20.1.0
 
@@ -4004,7 +4004,7 @@ SELECT arrayWithConstant(3, 1)
 [1, 1, 1]
 ```
 
-## arrayZip {#arrayzip}
+## arrayZip {#arrayZip}
 
 Introduced in: v20.1.0
 
@@ -4036,7 +4036,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 [('a', 5), ('b', 2), ('c', 1)]
 ```
 
-## arrayZipUnaligned {#arrayzipunaligned}
+## arrayZipUnaligned {#arrayZipUnaligned}
 
 Introduced in: v20.1.0
 
@@ -4068,7 +4068,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 [('a', 1),(NULL, 2),(NULL, 3)]
 ```
 
-## countEqual {#countequal}
+## countEqual {#countEqual}
 
 Introduced in: v1.1.0
 
@@ -4144,7 +4144,7 @@ SELECT empty([]);
 1
 ```
 
-## emptyArrayDate {#emptyarraydate}
+## emptyArrayDate {#emptyArrayDate}
 
 Introduced in: v1.1.0
 
@@ -4176,7 +4176,7 @@ SELECT emptyArrayDate()
 []
 ```
 
-## emptyArrayDateTime {#emptyarraydatetime}
+## emptyArrayDateTime {#emptyArrayDateTime}
 
 Introduced in: v1.1.0
 
@@ -4208,7 +4208,7 @@ SELECT emptyArrayDateTime()
 []
 ```
 
-## emptyArrayFloat32 {#emptyarrayfloat32}
+## emptyArrayFloat32 {#emptyArrayFloat32}
 
 Introduced in: v1.1.0
 
@@ -4240,7 +4240,7 @@ SELECT emptyArrayFloat32()
 []
 ```
 
-## emptyArrayFloat64 {#emptyarrayfloat64}
+## emptyArrayFloat64 {#emptyArrayFloat64}
 
 Introduced in: v1.1.0
 
@@ -4272,7 +4272,7 @@ SELECT emptyArrayFloat64()
 []
 ```
 
-## emptyArrayInt16 {#emptyarrayint16}
+## emptyArrayInt16 {#emptyArrayInt16}
 
 Introduced in: v1.1.0
 
@@ -4304,7 +4304,7 @@ SELECT emptyArrayInt16()
 []
 ```
 
-## emptyArrayInt32 {#emptyarrayint32}
+## emptyArrayInt32 {#emptyArrayInt32}
 
 Introduced in: v1.1.0
 
@@ -4336,7 +4336,7 @@ SELECT emptyArrayInt32()
 []
 ```
 
-## emptyArrayInt64 {#emptyarrayint64}
+## emptyArrayInt64 {#emptyArrayInt64}
 
 Introduced in: v1.1.0
 
@@ -4368,7 +4368,7 @@ SELECT emptyArrayInt64()
 []
 ```
 
-## emptyArrayInt8 {#emptyarrayint8}
+## emptyArrayInt8 {#emptyArrayInt8}
 
 Introduced in: v1.1.0
 
@@ -4400,7 +4400,7 @@ SELECT emptyArrayInt8()
 []
 ```
 
-## emptyArrayString {#emptyarraystring}
+## emptyArrayString {#emptyArrayString}
 
 Introduced in: v1.1.0
 
@@ -4432,7 +4432,7 @@ SELECT emptyArrayString()
 []
 ```
 
-## emptyArrayToSingle {#emptyarraytosingle}
+## emptyArrayToSingle {#emptyArrayToSingle}
 
 Introduced in: v1.1.0
 
@@ -4477,7 +4477,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
-## emptyArrayUInt16 {#emptyarrayuint16}
+## emptyArrayUInt16 {#emptyArrayUInt16}
 
 Introduced in: v1.1.0
 
@@ -4509,7 +4509,7 @@ SELECT emptyArrayUInt16()
 []
 ```
 
-## emptyArrayUInt32 {#emptyarrayuint32}
+## emptyArrayUInt32 {#emptyArrayUInt32}
 
 Introduced in: v1.1.0
 
@@ -4541,7 +4541,7 @@ SELECT emptyArrayUInt32()
 []
 ```
 
-## emptyArrayUInt64 {#emptyarrayuint64}
+## emptyArrayUInt64 {#emptyArrayUInt64}
 
 Introduced in: v1.1.0
 
@@ -4573,7 +4573,7 @@ SELECT emptyArrayUInt64()
 []
 ```
 
-## emptyArrayUInt8 {#emptyarrayuint8}
+## emptyArrayUInt8 {#emptyArrayUInt8}
 
 Introduced in: v1.1.0
 
@@ -4674,7 +4674,7 @@ SELECT has('{"a": {"b": 1}}'::JSON, 'a.b')
 1
 ```
 
-## hasAll {#hasall}
+## hasAll {#hasAll}
 
 Introduced in: v1.1.0
 
@@ -4764,7 +4764,7 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])
 0
 ```
 
-## hasAny {#hasany}
+## hasAny {#hasAny}
 
 Introduced in: v1.1.0
 
@@ -4843,7 +4843,7 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])
 1
 ```
 
-## hasSubstr {#hassubstr}
+## hasSubstr {#hasSubstr}
 
 Introduced in: v20.6.0
 
@@ -4956,7 +4956,7 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 Raises a `NO_COMMON_TYPE` exception
 ```
 
-## indexOf {#indexof}
+## indexOf {#indexOf}
 
 Introduced in: v1.1.0
 
@@ -5003,7 +5003,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 3
 ```
 
-## indexOfAssumeSorted {#indexofassumesorted}
+## indexOfAssumeSorted {#indexOfAssumeSorted}
 
 Introduced in: v24.12.0
 
@@ -5151,7 +5151,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 └─────┴──────────────┴─────────────────┘
 ```
 
-## notEmpty {#notempty}
+## notEmpty {#notEmpty}
 
 Introduced in: v1.1.0
 
@@ -5192,7 +5192,7 @@ SELECT notEmpty([1,2]);
 1
 ```
 
-## randomHadamardTransform {#randomhadamardtransform}
+## randomHadamardTransform {#randomHadamardTransform}
 
 Introduced in: v26.7.0
 

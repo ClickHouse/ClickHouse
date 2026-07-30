@@ -289,7 +289,7 @@ SELECT m['key2'] FROM tab;
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontainskey).
+To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
 ```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -306,7 +306,7 @@ SELECT m['key1'] FROM tab;
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#cast):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -476,7 +476,7 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 **See Also**
 
 - [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
+- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
 - [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
 
 ## Related content {#related-content}

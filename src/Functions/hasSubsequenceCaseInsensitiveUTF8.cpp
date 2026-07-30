@@ -25,7 +25,7 @@ using FunctionHasSubsequenceCaseInsensitiveUTF8 = HasSubsequenceImpl<NameHasSubs
 
 REGISTER_FUNCTION(hasSubsequenceCaseInsensitiveUTF8)
 {
-    FunctionDocumentation::Description description = "Like [`hasSubsequenceUTF8`](#hassubsequenceutf8) but searches case-insensitively.";
+    FunctionDocumentation::Description description = "Like [`hasSubsequenceUTF8`](#hasSubsequenceUTF8) but searches case-insensitively.";
     FunctionDocumentation::Syntax syntax = "hasSubsequenceCaseInsensitiveUTF8(haystack, needle)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "UTF8-encoded string in which the search is performed.", {"String"}},

@@ -613,7 +613,7 @@ REGISTER_FUNCTION(ReinterpretAs)
 {
     FunctionDocumentation::Description description_reinterpretAsUInt8 = R"(
 Reinterprets the input value as a value of type UInt8.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
 )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt8 = "reinterpretAsUInt8(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt8 = {
@@ -645,7 +645,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsUInt16 = R"(
 Reinterprets the input value as a value of type UInt16.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt16 = "reinterpretAsUInt16(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt16 = {
@@ -677,7 +677,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsUInt32 = R"(
 Reinterprets the input value as a value of type UInt32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt32 = "reinterpretAsUInt32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt32 = {
@@ -709,7 +709,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsUInt64 = R"(
 Reinterprets the input value as a value of type UInt64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt64 = "reinterpretAsUInt64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt64 = {
@@ -741,7 +741,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsUInt128 = R"(
 Reinterprets the input value as a value of type UInt128.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt128 = "reinterpretAsUInt128(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt128 = {
@@ -773,7 +773,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsUInt256 = R"(
 Reinterprets the input value as a value of type UInt256.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsUInt256 = "reinterpretAsUInt256(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt256 = {
@@ -805,7 +805,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt8 = R"(
 Reinterprets the input value as a value of type Int8.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt8 = "reinterpretAsInt8(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt8 = {
@@ -837,7 +837,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt16 = R"(
 Reinterprets the input value as a value of type Int16.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt16 = "reinterpretAsInt16(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt16 = {
@@ -869,7 +869,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt32 = R"(
 Reinterprets the input value as a value of type Int32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt32 = "reinterpretAsInt32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt32 = {
@@ -901,7 +901,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt64 = R"(
 Reinterprets the input value as a value of type Int64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt64 = "reinterpretAsInt64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt64 = {
@@ -933,7 +933,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt128 = R"(
 Reinterprets the input value as a value of type Int128.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt128 = "reinterpretAsInt128(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt128 = {
@@ -965,7 +965,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsInt256 = R"(
 Reinterprets the input value as a value of type Int256.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsInt256 = "reinterpretAsInt256(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsInt256 = {
@@ -997,7 +997,7 @@ SELECT
 
     FunctionDocumentation::Description description_reinterpretAsFloat32 = R"(
 Reinterprets the input value as a value of type Float32.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFloat32 = "reinterpretAsFloat32(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFloat32 = {
@@ -1025,7 +1025,7 @@ SELECT reinterpretAsUInt32(toFloat32(0.2)) AS x, reinterpretAsFloat32(x)
 
     FunctionDocumentation::Description description_reinterpretAsFloat64 = R"(
 Reinterprets the input value as a value of type Float64.
-Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
     )";
     FunctionDocumentation::Syntax syntax_reinterpretAsFloat64 = "reinterpretAsFloat64(x)";
     FunctionDocumentation::Arguments arguments_reinterpretAsFloat64 = {

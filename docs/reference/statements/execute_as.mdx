@@ -31,8 +31,8 @@ GRANT IMPERSONATE ON * TO user3;
 ```
 allow user `user2` to execute commands `EXECUTE AS user1 ...` and also allow user `user3` to execute commands as any user.
 
-While impersonating another user function [currentUser()](/reference/functions/regular-functions/other-functions#currentuser) returns the name of that other user,
-and function [authenticatedUser()](/reference/functions/regular-functions/other-functions#authenticateduser) returns the name of the user who has been actually authenticated.
+While impersonating another user function [currentUser()](/reference/functions/regular-functions/other-functions#currentUser) returns the name of that other user,
+and function [authenticatedUser()](/reference/functions/regular-functions/other-functions#authenticatedUser) returns the name of the user who has been actually authenticated.
 
 ## Examples {#examples}
 

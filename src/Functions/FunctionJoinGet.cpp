@@ -277,7 +277,7 @@ SELECT joinGet(some_table, 'name', 1, 11);
     FunctionDocumentation::Description description_joinGetOrNull = R"(
 Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
-Unlike [`joinGet`](#joinget) it returns `NULL` when the key is missing.
+Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
 
 :::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).

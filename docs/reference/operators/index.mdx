@@ -18,17 +18,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
-For tuple negation: [tupleNegate](/reference/functions/regular-functions/tuple-functions#tuplenegate).
+For tuple negation: [tupleNegate](/reference/functions/regular-functions/tuple-functions#tupleNegate).
 
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](/reference/functions/regular-functions/tuple-functions#tuplemultiplybynumber), for scalar product: [dotProduct](/reference/functions/regular-functions/array-functions#arraydotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber), for scalar product: [dotProduct](/reference/functions/regular-functions/array-functions#arrayDotProduct).
 
 `a / b` – The `divide(a, b)` function.
 
-For dividing tuple by number: [tupleDivideByNumber](/reference/functions/regular-functions/tuple-functions#tupledividebynumber).
+For dividing tuple by number: [tupleDivideByNumber](/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -36,11 +36,11 @@ For dividing tuple by number: [tupleDivideByNumber](/reference/functions/regular
 
 `a + b` – The `plus(a, b)` function.
 
-For tuple addiction: [tuplePlus](/reference/functions/regular-functions/tuple-functions#tupleplus).
+For tuple addiction: [tuplePlus](/reference/functions/regular-functions/tuple-functions#tuplePlus).
 
 `a - b` – The `minus(a, b)` function.
 
-For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple-functions#tupleminus).
+For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple-functions#tupleMinus).
 
 ## Comparison Operators {#comparison-operators}
 
@@ -394,7 +394,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 **See Also**
 
 - [Interval](/reference/data-types/special-data-types/interval) data type
-- [toInterval](/reference/functions/regular-functions/type-conversion-functions#tointervalyear) type conversion functions
+- [toInterval](/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) type conversion functions
 
 ### Date and Time Addition {#date-time-addition}
 
@@ -448,7 +448,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 
 ### AT TIME ZONE and AT LOCAL {#at-time-zone}
 
-The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `DateTime64` value to a different timezone. They are syntactic sugar for the existing [`toTimeZone`](/reference/functions/regular-functions/date-time-functions#totimezone) function:
+The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `DateTime64` value to a different timezone. They are syntactic sugar for the existing [`toTimeZone`](/reference/functions/regular-functions/date-time-functions#toTimezone) function:
 
 | Syntax | Equivalent |
 |---|---|
@@ -498,7 +498,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 **See Also**
 
-- [`toTimeZone`](/reference/functions/regular-functions/date-time-functions#totimezone)
+- [`toTimeZone`](/reference/functions/regular-functions/date-time-functions#toTimezone)
 - [`timeZone`](/reference/functions/regular-functions/date-time-functions#timezone)
 
 ## Logical AND Operator {#logical-and-operator}

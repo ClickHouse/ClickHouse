@@ -69,7 +69,7 @@ public:
 REGISTER_FUNCTION(CurrentSchema)
 {
     FunctionDocumentation::Description description = R"(
-Same as function [`currentDatabase`](#currentdatabase) but
+Same as function [`currentDatabase`](#currentDatabase) but
 - accepts a boolean argument which is ignored
 - returns the database name as an array with a single value.
 

@@ -28,7 +28,7 @@ If substring `needle` is empty, these rules apply:
 - if `start_pos >= 1` and `start_pos <= length(haystack) + 1`: return `start_pos`
 - otherwise: return `0`
 
-The same rules also apply to functions [`locate`](#locate), [`positionCaseInsensitive`](#positioncaseinsensitive), [`positionUTF8`](#positionutf8) and [`positionCaseInsensitiveUTF8`](#positioncaseinsensitiveutf8).
+The same rules also apply to functions [`locate`](#locate), [`positionCaseInsensitive`](#positionCaseInsensitive), [`positionUTF8`](#positionUTF8) and [`positionCaseInsensitiveUTF8`](#positionCaseInsensitiveUTF8).
     )";
     FunctionDocumentation::Syntax syntax = "position(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments = {

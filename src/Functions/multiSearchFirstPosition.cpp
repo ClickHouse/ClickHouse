@@ -24,7 +24,7 @@ REGISTER_FUNCTION(MultiSearchFirstPosition)
     FunctionDocumentation::Description description = R"(
 Like [`position`](#position) but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
 
-Functions [`multiSearchFirstPositionCaseInsensitive`](#multisearchfirstpositioncaseinsensitive), [`multiSearchFirstPositionUTF8`](#multisearchfirstpositionutf8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multisearchfirstpositioncaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchFirstPositionCaseInsensitive`](#multiSearchFirstPositionCaseInsensitive), [`multiSearchFirstPositionUTF8`](#multiSearchFirstPositionUTF8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multiSearchFirstPositionCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchFirstPosition(haystack, needle1[, needle2, ...])";
     FunctionDocumentation::Arguments arguments = {

@@ -23,7 +23,7 @@ REGISTER_FUNCTION(MultiSearchAny)
     FunctionDocumentation::Description description = R"(
 Checks if at least one of a number of needle strings matches the haystack string.
 
-Functions [`multiSearchAnyCaseInsensitive`](#multisearchanycaseinsensitive), [`multiSearchAnyUTF8`](#multisearchanyutf8) and [`multiSearchAnyCaseInsensitiveUTF8`](#multisearchanycaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchAnyCaseInsensitive`](#multiSearchAnyCaseInsensitive), [`multiSearchAnyUTF8`](#multiSearchAnyUTF8) and [`multiSearchAnyCaseInsensitiveUTF8`](#multiSearchAnyCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchAny(haystack, needle1[, needle2, ...])";
     FunctionDocumentation::Arguments arguments = {

@@ -77,7 +77,7 @@ SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-Notice how the functions require both a reference to the `String` column `tags` and a path in the JSON to extract. Nested paths require functions to be nested e.g. `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')` which extracts the column `tags.car.year`. The extraction of nested paths can be simplified through the functions [`JSON_QUERY`](/reference/functions/regular-functions/json-functions#json_query) and [`JSON_VALUE`](/reference/functions/regular-functions/json-functions#json_value).
+Notice how the functions require both a reference to the `String` column `tags` and a path in the JSON to extract. Nested paths require functions to be nested e.g. `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')` which extracts the column `tags.car.year`. The extraction of nested paths can be simplified through the functions [`JSON_QUERY`](/reference/functions/regular-functions/json-functions#JSON_QUERY) and [`JSON_VALUE`](/reference/functions/regular-functions/json-functions#JSON_VALUE).
 
 Consider the extreme case with the `arxiv` dataset where we consider the entire body to be a `String`.
 
@@ -681,7 +681,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/document
 0 rows in set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
 ```
 
-Querying this structure requires using the [`indexOf`](/reference/functions/regular-functions/array-functions#indexof) function to identify the index of the required key (which should be consistent with the order of the values). This can be used to access the values array column i.e. `values[indexOf(keys, 'status')]`. We still require a JSON parsing method for the request column - in this case, `simpleJSONExtractString`.
+Querying this structure requires using the [`indexOf`](/reference/functions/regular-functions/array-functions#indexOf) function to identify the index of the required key (which should be consistent with the order of the values). This can be used to access the values array column i.e. `values[indexOf(keys, 'status')]`. We still require a JSON parsing method for the request column - in this case, `simpleJSONExtractString`.
 
 ```sql
 SELECT toUInt16(values[indexOf(keys, 'status')])                           AS status,

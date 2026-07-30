@@ -226,7 +226,7 @@ LIMIT 10;
 
 ## Applying functions to map values {#applying-functions-to-map-values}
 Alternatively, we can compute the average price using `avgMap`.
-Those values have a lot of decimal points, which we can clean up by using the [`mapApply`](/reference/functions/regular-functions/tuple-map-functions#mapapply) function to call the [`floor`](/reference/functions/regular-functions/rounding-functions#floor) function on each value in the map:
+Those values have a lot of decimal points, which we can clean up by using the [`mapApply`](/reference/functions/regular-functions/tuple-map-functions#mapApply) function to call the [`floor`](/reference/functions/regular-functions/rounding-functions#floor) function on each value in the map:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year

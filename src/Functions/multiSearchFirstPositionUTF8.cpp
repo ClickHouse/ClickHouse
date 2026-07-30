@@ -22,7 +22,7 @@ using FunctionMultiSearchFirstPositionUTF8
 REGISTER_FUNCTION(MultiSearchFirstPositionUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [multiSearchFirstPosition](#multisearchfirstposition) but assumes `haystack` and `needle` to be UTF-8 strings.
+Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchFirstPositionUTF8(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {

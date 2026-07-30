@@ -19,7 +19,7 @@ For simple log and trace exploration, the ClickStack UI (HyperDX) provides a [Lu
 
 <Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Search" size="lg"/>
 
-The search interface supports this familiar syntax but translates it behind the scenes into efficient SQL `WHERE` clauses, making the experience familiar for Kibana users while still allowing users to leverage the power of SQL when needed. This allows you to exploit the full range of [string search functions](/reference/functions/regular-functions/string-search-functions), [similarity functions](/reference/functions/regular-functions/string-functions#stringjaccardindex) and [date time functions](/reference/functions/regular-functions/date-time-functions) in ClickHouse.
+The search interface supports this familiar syntax but translates it behind the scenes into efficient SQL `WHERE` clauses, making the experience familiar for Kibana users while still allowing users to leverage the power of SQL when needed. This allows you to exploit the full range of [string search functions](/reference/functions/regular-functions/string-search-functions), [similarity functions](/reference/functions/regular-functions/string-functions#stringJaccardIndex) and [date time functions](/reference/functions/regular-functions/date-time-functions) in ClickHouse.
 
 <Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg"/>
 
@@ -45,7 +45,7 @@ Both ClickStack and Elasticsearch provide flexible query languages to enable int
 | Inclusive/exclusive     | `duration:{100 TO 200}` (exclusive)    | Same                                   | `{}` denotes exclusive bounds. `*` in ranges aren't supported. e.g. `duration:[100 TO *]`|
 | Exists check            | N/A                       | `_exists_:user` or `field:*` | `_exists_` isn't supported. Use `LogAttributes.log.file.path: *` for `Map` columns e.g. `LogAttributes`. For root columns, these have to exist and will have a default value if not included in the event. To search for default values or missing columns use the same syntax as Elasticsearch ` ServiceName:*` or `ServiceName != ''`. |
 | Regex                   |      `match` function          | `name:/joh?n(ath[oa]n)/` | Not currently supported in Lucene syntax. You can use SQL and the [`match`](/reference/functions/regular-functions/string-search-functions#match) function or other [string search functions](/reference/functions/regular-functions/string-search-functions).|
-| Fuzzy match             |      `editDistance('quikc', field) = 1` | `quikc~` | Not currently supported in Lucene syntax. Distance functions can be used in SQL e.g. `editDistance('rror', SeverityText) = 1` or [other similarity functions](/reference/functions/regular-functions/string-functions#jarosimilarity). |
+| Fuzzy match             |      `editDistance('quikc', field) = 1` | `quikc~` | Not currently supported in Lucene syntax. Distance functions can be used in SQL e.g. `editDistance('rror', SeverityText) = 1` or [other similarity functions](/reference/functions/regular-functions/string-functions#jaroSimilarity). |
 | Proximity search        | Not supported                       | `"fox quick"~5` | Not currently supported in Lucene syntax. |
 | Boosting                | `quick^2 fox` | `quick^2 fox` | Not supported in ClickStack at present. |
 | Field wildcard          | `service.*:error` | `service.*:error` | Not supported in ClickStack at present. |

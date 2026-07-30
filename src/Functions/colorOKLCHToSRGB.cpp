@@ -55,7 +55,7 @@ It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chro
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
-The conversion is the inverse of [`colorSRGBToOKLCH`](#colorsrgbtooklch):
+The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 
 1) OKLCH to OKLab.
 2) OKLab to Linear sRGB

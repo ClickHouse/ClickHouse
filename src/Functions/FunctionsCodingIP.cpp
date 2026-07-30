@@ -1314,7 +1314,7 @@ SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
     /// IPv6CIDRToRange function
     FunctionDocumentation::Description description_ipv6cidr = R"(
 Takes an IPv6 address with its Classless Inter-Domain Routing (CIDR) prefix length and returns the subnet's address range as a tuple of two IPv6 values: the lowest and highest addresses in that subnet.
-For the IPv4 version see [`IPv4CIDRToRange`](#ipv4cidrtorange).
+For the IPv4 version see [`IPv4CIDRToRange`](#IPv4CIDRToRange).
     )";
     FunctionDocumentation::Syntax syntax_ipv6cidr = "IPv6CIDRToRange(ipv6, cidr)";
     FunctionDocumentation::Arguments arguments_ipv6cidr = {
@@ -1340,7 +1340,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
     // IPv4CIDRToRange function
     FunctionDocumentation::Description description_ipv4cidr = R"(
 Takes an IPv4 address with its Classless Inter-Domain Routing (CIDR) prefix length and returns the subnet's address range as a tuple of two IPv4 values: the first and last addresses in that subnet.
-For the IPv6 version see [`IPv6CIDRToRange`](#ipv4cidrtorange).
+For the IPv6 version see [`IPv6CIDRToRange`](#IPv4CIDRToRange).
     )";
     FunctionDocumentation::Syntax syntax_ipv4cidr = "IPv4CIDRToRange(ipv4, cidr)";
     FunctionDocumentation::Arguments arguments_ipv4cidr = {
@@ -1366,7 +1366,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
     /// isIPv4String function
     FunctionDocumentation::Description description_isipv4 = R"(
 Determines whether the input string is an IPv4 address or not.
-For the IPv6 version see [`isIPv6String`](#isipv6string).
+For the IPv6 version see [`isIPv6String`](#isIPv6String).
     )";
     FunctionDocumentation::Syntax syntax_isipv4 = "isIPv4String(string)";
     FunctionDocumentation::Arguments arguments_isipv4 = {
@@ -1401,7 +1401,7 @@ ARRAY JOIN addr;
     /// isIPv6String function
     FunctionDocumentation::Description description_isipv6 = R"(
 Determines whether the input string is an IPv6 address or not.
-For the IPv4 version see [`isIPv4String`](#isipv4string).
+For the IPv4 version see [`isIPv4String`](#isIPv4String).
     )";
     FunctionDocumentation::Syntax syntax_isipv6 = "isIPv6String(string)";
     FunctionDocumentation::Arguments arguments_isipv6 = {
@@ -1458,7 +1458,7 @@ Interprets the input using big-endian byte ordering.
     /// IPv4NumToStringClassC function
     FunctionDocumentation::Description description_ipv4numtostringclassc = R"(
 Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format),
-similar to [`IPv4NumToString`](#ipv4numtostring) but using `xxx` instead of the last octet.
+similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the last octet.
     )";
     FunctionDocumentation::Syntax syntax_ipv4numtostringclassc = "IPv4NumToStringClassC(num)";
     FunctionDocumentation::Arguments arguments_ipv4numtostringclassc = {{"num", "IPv4 address as UInt32 number.", {"UInt32"}}};
@@ -1497,7 +1497,7 @@ LIMIT 10
 
     /// IPv4StringToNum function
     FunctionDocumentation::Description description_ipv4stringtonum = R"(
-Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to its corresponding 32-bit integer representation. (The reverse of [`IPv4NumToString`](#ipv4numtostring)).
+Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to its corresponding 32-bit integer representation. (The reverse of [`IPv4NumToString`](#IPv4NumToString)).
 If the IPv4 address has an invalid format, an exception is thrown.
     )";
     FunctionDocumentation::Syntax syntax_ipv4stringtonum = "IPv4StringToNum(string)";

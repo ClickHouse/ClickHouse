@@ -153,7 +153,7 @@ See [parameter docs](/reference/engines/table-engines/mergetree-family/mergetree
 The usage of `tokenbf_v1` indexes for full-text search is deprecated in ClickHouse versions `>= 26.2` in favor of `text` indexes (see [here](/reference/engines/table-engines/mergetree-family/textindexes) for further details).
 </Note>
 
-`tokenbf_v1` indexes tokens separated by non-alphanumeric characters. You should use it with [`hasToken`](/reference/functions/regular-functions/string-search-functions#hastoken), `LIKE` word patterns or equals/IN. It supports `String`/`FixedString`/`Map` types.
+`tokenbf_v1` indexes tokens separated by non-alphanumeric characters. You should use it with [`hasToken`](/reference/functions/regular-functions/string-search-functions#hasToken), `LIKE` word patterns or equals/IN. It supports `String`/`FixedString`/`Map` types.
 
 See [Token bloom filter](/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) and [Bloom filter types](/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) pages for more details.
 

@@ -2914,7 +2914,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 - Other types are not supported.
 - `Union` is supported only for reading: each ORC `Union` column is read as a [Variant](/sql-reference/data-types/variant.md) over the union's branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported. Writing `Variant` columns as ORC `Union` is not supported yet.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
+- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 

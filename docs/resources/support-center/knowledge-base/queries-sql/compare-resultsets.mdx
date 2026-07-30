@@ -34,7 +34,7 @@ WITH
     ) AS q2_resultset_hash
 SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
 ```
-The example uses a [CTE](/reference/statements/select/with) to calculate sums of the [cityHash](/reference/functions/regular-functions/hash-functions#cityhash64) value of each row in these two queries and will return `1` if the two resultsets are identical.
+The example uses a [CTE](/reference/statements/select/with) to calculate sums of the [cityHash](/reference/functions/regular-functions/hash-functions#cityHash64) value of each row in these two queries and will return `1` if the two resultsets are identical.
 
 Using some integers sequence data and some pretty formatting:
 

@@ -30,7 +30,7 @@ function_aliases AS (
 SELECT
     format(
         '{}{}{}{}{}{}{}{}{}',
-        '## ' || fd.name || ' ' || printf('{#%s}', lowerUTF8(fd.name)) || '\n\n',
+        '## ' || fd.name || ' ' || printf('{#%s}', fd.name) || '\n\n',
         'Introduced in: v' || fd.introduced_in || '\n\n',
         fd.description || '\n\n',
         if(coalesce(fd.deterministic, 1) = 0, ':::note\nThis function is non-deterministic: it can return different results for the same arguments.\n:::\n\n', ''),

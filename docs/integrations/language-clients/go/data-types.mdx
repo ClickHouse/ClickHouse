@@ -577,7 +577,7 @@ Due to Go's lack of a built-in Decimal type, we recommend using the third-party 
 <Note>
 You may be tempted to use Float instead to avoid third-party dependencies. However, be aware that [Float types in ClickHouse aren't recommended when accurate values are required](/reference/data-types/float).
 
-If you still choose to use Go's built-in Float type on the client side, you must explicitly convert Decimal to Float using the [toFloat64() function](/reference/functions/regular-functions/type-conversion-functions#tofloat64) or [its variants](/reference/functions/regular-functions/type-conversion-functions#tofloat64orzero) in your ClickHouse queries. Be aware that this conversion may result in loss of precision.
+If you still choose to use Go's built-in Float type on the client side, you must explicitly convert Decimal to Float using the [toFloat64() function](/reference/functions/regular-functions/type-conversion-functions#toFloat64) or [its variants](/reference/functions/regular-functions/type-conversion-functions#toFloat64OrZero) in your ClickHouse queries. Be aware that this conversion may result in loss of precision.
 </Note>
 
 ```go

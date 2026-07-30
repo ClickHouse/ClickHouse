@@ -166,7 +166,7 @@ If you would like to use this function in a [materialized view](/sql-reference/s
 :::
 
 See also:
-- [`runningDifference`](/sql-reference/functions/other-functions#runningdifference)
+- [`runningDifference`](/sql-reference/functions/other-functions#runningDifference)
     )";
     FunctionDocumentation::Syntax syntax = "deltaSum(x1[, x2, ...])";
     FunctionDocumentation::Arguments arguments = {

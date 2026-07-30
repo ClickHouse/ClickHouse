@@ -190,7 +190,7 @@ As in the first row, `dt_1` and `dt64_1` are converted to `Europe/Berlin`, while
 
 ClickHouse also comes with a set of functions that let us convert between the different data types.
 
-For example, we can use [`toDate`](/reference/functions/regular-functions/type-conversion-functions#todate) to convert a `DateTime` value to the `Date` type:
+For example, we can use [`toDate`](/reference/functions/regular-functions/type-conversion-functions#toDate) to convert a `DateTime` value to the `Date` type:
 
 ```sql
 SELECT
@@ -210,7 +210,7 @@ date_only:                2025-03-12
 toTypeName(date_only):    Date
 ```
 
-We can use [`toDateTime64`](/reference/functions/regular-functions/type-conversion-functions#todatetime64) to convert `DateTime` to `DateTime64`:
+We can use [`toDateTime64`](/reference/functions/regular-functions/type-conversion-functions#toDateTime64) to convert `DateTime` to `DateTime64`:
 
 ```sql
 SELECT
@@ -230,7 +230,7 @@ date_only:                2025-03-12 12:35:01.000
 toTypeName(date_only):    DateTime64(3)
 ```
 
-And we can use [`toDateTime`](/reference/functions/regular-functions/type-conversion-functions#todatetime) to go from `Date` or `DateTime64` back to `DateTime`:
+And we can use [`toDateTime`](/reference/functions/regular-functions/type-conversion-functions#toDateTime) to go from `Date` or `DateTime64` back to `DateTime`:
 
 ```sql
 SELECT

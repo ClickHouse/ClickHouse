@@ -246,7 +246,7 @@ The preprocessor is only applied on the text index path, so results may differ b
 This inconsistency is tolerated to improve the usability of full-text search.
 :::
 
-Unlike [`hasToken`](#hastoken), [`hasAnyTokens`](#hasanytokens) and [`hasAllTokens`](#hasalltokens), `hasPhrase` requires the tokens to appear in the same order
+Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0
 because "brown" appears between "quick" and "fox".
     )";

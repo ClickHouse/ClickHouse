@@ -168,7 +168,7 @@ ARRAY JOIN features
 ```
 
 It can be fixed by casting `multipolygon.properties.coordinates` to `Array(Array(Array(Tuple(Float64,Float64))))`.
-To do so, we can use the function [arrayMap(func,arr1,...)](/reference/functions/regular-functions/array-functions#arraymap).
+To do so, we can use the function [arrayMap(func,arr1,...)](/reference/functions/regular-functions/array-functions#arrayMap).
 
 ```sql
 SELECT distinct

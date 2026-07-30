@@ -22,7 +22,7 @@ using FunctionMultiSearchCaseInsensitiveUTF8
 REGISTER_FUNCTION(MultiSearchAnyCaseInsensitiveUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [multiSearchAnyUTF8](#multisearchanyutf8) but ignores case.
+Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchAnyCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {

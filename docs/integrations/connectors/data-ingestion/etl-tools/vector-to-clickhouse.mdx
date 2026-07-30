@@ -128,7 +128,7 @@ An example of one such log event is shown below:
 192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
 ```
 
-There are various functions in ClickHouse to parse the above string. The [`splitByWhitespace`](/reference/functions/regular-functions/splitting-merging-functions#splitbywhitespace) function parses a string by whitespace and returns each token in an array.
+There are various functions in ClickHouse to parse the above string. The [`splitByWhitespace`](/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) function parses a string by whitespace and returns each token in an array.
 To demonstrate, run the following command:
 
 ```sql title="Query"
@@ -142,7 +142,7 @@ SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / 
 A few of the strings have some extra characters, and the user agent (the browser details) didn't need to be parsed, but
 the resulting array is close to what is needed.
 
-Similar to `splitByWhitespace`, the [`splitByRegexp`](/reference/functions/regular-functions/splitting-merging-functions#splitbyregexp) function splits a string into an array based on a regular expression.
+Similar to `splitByWhitespace`, the [`splitByRegexp`](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) function splits a string into an array based on a regular expression.
 Run the following command, which returns two strings.
 
 ```sql
@@ -157,7 +157,7 @@ Notice that the second string returned is the user agent successfully parsed fro
 
 Before looking at the final `CREATE MATERIALIZED VIEW` command, let's view a couple more functions used to clean up the data.
 For example, the value of `RequestMethod` is `"GET` containing an unwanted double-quote.
-You can use the [`trimBoth` (alias `trim`)](/reference/functions/regular-functions/string-functions#trimboth) function to remove the double quote:
+You can use the [`trimBoth` (alias `trim`)](/reference/functions/regular-functions/string-functions#trimBoth) function to remove the double quote:
 
 ```sql
 SELECT trim(LEADING '"' FROM '"GET')

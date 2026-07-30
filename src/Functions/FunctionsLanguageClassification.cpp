@@ -258,7 +258,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
 
     FunctionDocumentation::Description description_mixed = R"(
-Similar to the [`detectLanguage`](#detectlanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
 :::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.

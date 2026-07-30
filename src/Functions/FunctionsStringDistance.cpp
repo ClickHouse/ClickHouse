@@ -1033,7 +1033,7 @@ Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_
     FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, {}, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
 
     FunctionDocumentation::Description description_jaccard_utf8 = R"(
-Like [`stringJaccardIndex`](#stringjaccardindex) but for UTF8-encoded strings.
+Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
 )";
     FunctionDocumentation::Syntax syntax_jaccard_utf8 = "stringJaccardIndexUTF8(s1, s2)";
     FunctionDocumentation::Arguments arguments_jaccard_utf8 = {

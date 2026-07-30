@@ -69,7 +69,7 @@ ClickHouse supports two forms of CASE:
 
 1. `CASE WHEN ... THEN ... ELSE ... END`
    <br/>
-   This form allows full flexibility and is internally implemented using the [multiIf](/reference/functions/regular-functions/conditional-functions#multiif) function. Each condition is evaluated independently, and expressions can include non-constant values.
+   This form allows full flexibility and is internally implemented using the [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf) function. Each condition is evaluated independently, and expressions can include non-constant values.
 
 ```sql
 SELECT
@@ -498,7 +498,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 └──────────────────────────┘
 ```
 
-## multiIf {#multiif}
+## multiIf {#multiIf}
 
 Introduced in: v1.1.0
 

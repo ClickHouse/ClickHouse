@@ -330,7 +330,7 @@ SELECT '123'::UInt32
 
     /// accurateCast documentation
     FunctionDocumentation::Description accurateCast_description = R"(
-Converts a value to a specified data type. Unlike [`CAST`](#cast), `accurateCast` performs stricter type checking and throws an exception if the conversion would result in a loss of data precision or if the conversion is not possible.
+Converts a value to a specified data type. Unlike [`CAST`](#CAST), `accurateCast` performs stricter type checking and throws an exception if the conversion would result in a loss of data precision or if the conversion is not possible.
 
 This function is safer than regular `CAST` as it prevents precision loss and invalid conversions.
     )";
@@ -371,9 +371,9 @@ SELECT accurateCast('123.45', 'Float64')
     /// accurateCastOrNull documentation
     FunctionDocumentation::Description accurateCastOrNull_description = R"(
 Converts a value to a specified data type.
-Like [`accurateCast`](#accuratecast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
+Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
 
-This function combines the safety of [`accurateCast`](#accuratecast) with graceful error handling.
+This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
     )";
     FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
     FunctionDocumentation::Arguments accurateCastOrNull_arguments = {

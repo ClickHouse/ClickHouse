@@ -40,7 +40,7 @@ ENGINE = MergeTree
 ORDER BY toYYYYMMDD(timestamp)
 ```
 
-3. We want to lowercase the `author` column, which is easily done with the [`lower` function](/reference/functions/regular-functions/string-functions#lower). We also want to split the `comment` string into tokens and store the result in the `tokens` column, which can be done using the [`extractAll` function](/reference/functions/regular-functions/string-search-functions#extractall). You do all of this in one `clickhouse-client` command - notice how the `comments.tsv` file is piped into the `clickhouse-client` using the `<` operator:
+3. We want to lowercase the `author` column, which is easily done with the [`lower` function](/reference/functions/regular-functions/string-functions#lower). We also want to split the `comment` string into tokens and store the result in the `tokens` column, which can be done using the [`extractAll` function](/reference/functions/regular-functions/string-search-functions#extractAll). You do all of this in one `clickhouse-client` command - notice how the `comments.tsv` file is piped into the `clickhouse-client` using the `<` operator:
 
 ```bash
 clickhouse-client \

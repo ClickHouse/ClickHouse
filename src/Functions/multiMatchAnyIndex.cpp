@@ -19,7 +19,7 @@ using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<MultiMatchAnyImpl<
 
 REGISTER_FUNCTION(MultiMatchAnyIndex)
 {
-    FunctionDocumentation::Description description = "Like [`multiMatchAny`](#multimatchany) but returns any index that matches the haystack.";
+    FunctionDocumentation::Description description = "Like [`multiMatchAny`](#multiMatchAny) but returns any index that matches the haystack.";
     FunctionDocumentation::Syntax syntax = "multiMatchAnyIndex(haystack, [pattern1, pattern2, ..., patternn])";
     FunctionDocumentation::Arguments arguments =
     {

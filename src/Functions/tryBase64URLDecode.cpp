@@ -18,7 +18,7 @@ using FunctionBase64Decode = FunctionBaseXXConversion<Base64DecodeImpl>;
 REGISTER_FUNCTION(TryBase64URLDecode)
 {
     FunctionDocumentation::Description description = R"(
-Like [`base64URLDecode`](#base64urldecode), but returns an empty string in case of error.
+Like [`base64URLDecode`](#base64URLDecode), but returns an empty string in case of error.
 )";
     FunctionDocumentation::Syntax syntax = "tryBase64URLDecode(encoded)";
     FunctionDocumentation::Arguments arguments = {

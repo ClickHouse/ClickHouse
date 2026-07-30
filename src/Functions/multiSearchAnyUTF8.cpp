@@ -20,7 +20,7 @@ using FunctionMultiSearchUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<NameM
 REGISTER_FUNCTION(MultiSearchAnyUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [multiSearchAny](#multisearchany) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
+Like [multiSearchAny](#multiSearchAny) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {

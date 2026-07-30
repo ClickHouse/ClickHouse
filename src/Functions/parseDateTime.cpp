@@ -2399,7 +2399,7 @@ SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
     /// parseDateTimeOrZero documentation
     FunctionDocumentation::Description parseDateTimeOrZero_description = R"(
-Same as [`parseDateTime`](#parsedatetime) but returns zero date when it encounters an unparsable date format.
+Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeOrZero_syntax = "parseDateTimeOrZero(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeOrZero_arguments = {
@@ -2427,7 +2427,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
     /// parseDateTimeOrNull documentation
     FunctionDocumentation::Description parseDateTimeOrNull_description = R"(
-Same as [`parseDateTime`](#parsedatetime) but returns `NULL` when it encounters an unparsable date format.
+Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeOrNull_syntax = "parseDateTimeOrNull(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeOrNull_arguments = {
@@ -2486,7 +2486,7 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
     /// parseDateTime64OrZero documentation
     FunctionDocumentation::Description parseDateTime64OrZero_description = R"(
-Same as [`parseDateTime64`](#parsedatetime64) but returns zero date when it encounters an unparsable date format.
+Same as [`parseDateTime64`](#parseDateTime64) but returns zero date when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTime64OrZero_syntax = "parseDateTime64OrZero(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTime64OrZero_arguments = {
@@ -2514,7 +2514,7 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
     /// parseDateTime64OrNull documentation
     FunctionDocumentation::Description parseDateTime64OrNull_description = R"(
-Same as [`parseDateTime64`](#parsedatetime64) but returns `NULL` when it encounters an unparsable date format.
+Same as [`parseDateTime64`](#parseDateTime64) but returns `NULL` when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTime64OrNull_syntax = "parseDateTime64OrNull(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTime64OrNull_arguments = {
@@ -2544,7 +2544,7 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
     FunctionDocumentation::Description parseDateTimeInJodaSyntax_description = R"(
 Parses a date and time string according to a Joda date format string.
 
-This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
 It parses a String argument using a Joda-style format String. Returns a DateTime type.
 
 Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
@@ -2575,7 +2575,7 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
     /// parseDateTimeInJodaSyntaxOrZero documentation
     FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrZero_description = R"(
-Same as [`parseDateTimeInJodaSyntax`](#parsedatetimeinjodasyntax) but returns zero date when it encounters an unparsable date format.
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns zero date when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrZero_syntax = "parseDateTimeInJodaSyntaxOrZero(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrZero_arguments = {
@@ -2603,7 +2603,7 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
     /// parseDateTimeInJodaSyntaxOrNull documentation
     FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrNull_description = R"(
-Same as [`parseDateTimeInJodaSyntax`](#parsedatetimeinjodasyntax) but returns `NULL` when it encounters an unparsable date format.
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrNull_syntax = "parseDateTimeInJodaSyntaxOrNull(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrNull_arguments = {
@@ -2633,7 +2633,7 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
     FunctionDocumentation::Description parseDateTime64InJodaSyntax_description = R"(
 Parses a date and time string with sub-second precision according to a Joda date format string.
 
-This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax) for DateTime64.
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
 It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 0000 to 9999 with sub-second precision (high precisions cover a narrower range because the value is stored in an `Int64` number of ticks: precision 8 reaches about 4892 and precision 9 spans 1677 to 2262).
 
 Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
@@ -2664,7 +2664,7 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
     /// parseDateTime64InJodaSyntaxOrZero documentation
     FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrZero_description = R"(
-Same as [`parseDateTime64InJodaSyntax`](#parsedatetime64injodasyntax) but returns zero date when it encounters an unparsable date format.
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns zero date when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrZero_syntax = "parseDateTime64InJodaSyntaxOrZero(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrZero_arguments = {
@@ -2692,7 +2692,7 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
     /// parseDateTime64InJodaSyntaxOrNull documentation
     FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrNull_description = R"(
-Same as [`parseDateTime64InJodaSyntax`](#parsedatetime64injodasyntax) but returns `NULL` when it encounters an unparsable date format.
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
     )";
     FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrNull_syntax = "parseDateTime64InJodaSyntaxOrNull(time_string, format[, timezone])";
     FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrNull_arguments = {

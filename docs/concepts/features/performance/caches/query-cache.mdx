@@ -220,16 +220,16 @@ Also, results of queries with non-deterministic functions are not cached by defa
 - functions which return the current date or time: [`now()`](/reference/functions/regular-functions/date-time-functions#now),
   [`today()`](/reference/functions/regular-functions/date-time-functions#today),
   [`yesterday()`](/reference/functions/regular-functions/date-time-functions#yesterday) etc.,
-- functions which return random values: [`randomString()`](/reference/functions/regular-functions/random-functions#randomstring),
-  [`fuzzBits()`](/reference/functions/regular-functions/random-functions#fuzzbits) etc.,
+- functions which return random values: [`randomString()`](/reference/functions/regular-functions/random-functions#randomString),
+  [`fuzzBits()`](/reference/functions/regular-functions/random-functions#fuzzBits) etc.,
 - functions whose result depends on the size and order or the internal chunks used for query processing:
-  [`nowInBlock()`](/reference/functions/regular-functions/date-time-functions#nowinblock) etc.,
-  [`rowNumberInBlock()`](/reference/functions/regular-functions/other-functions#rownumberinblock),
-  [`runningDifference()`](/reference/functions/regular-functions/other-functions#runningdifference),
-  [`blockSize()`](/reference/functions/regular-functions/other-functions#blocksize) etc.,
-- functions which depend on the environment: [`currentUser()`](/reference/functions/regular-functions/other-functions#currentuser),
-  [`queryID()`](/reference/functions/regular-functions/other-functions#queryid),
-  [`getMacro()`](/reference/functions/regular-functions/other-functions#getmacro) etc.
+  [`nowInBlock()`](/reference/functions/regular-functions/date-time-functions#nowInBlock) etc.,
+  [`rowNumberInBlock()`](/reference/functions/regular-functions/other-functions#rowNumberInBlock),
+  [`runningDifference()`](/reference/functions/regular-functions/other-functions#runningDifference),
+  [`blockSize()`](/reference/functions/regular-functions/other-functions#blockSize) etc.,
+- functions which depend on the environment: [`currentUser()`](/reference/functions/regular-functions/other-functions#currentUser),
+  [`queryID()`](/reference/functions/regular-functions/other-functions#queryID),
+  [`getMacro()`](/reference/functions/regular-functions/other-functions#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_nondeterministic_function_handling](/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling).

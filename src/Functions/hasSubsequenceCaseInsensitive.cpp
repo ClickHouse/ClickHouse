@@ -23,7 +23,7 @@ using FunctionHasSubsequenceCaseInsensitive = HasSubsequenceImpl<NameHasSubseque
 
 REGISTER_FUNCTION(hasSubsequenceCaseInsensitive)
 {
-    FunctionDocumentation::Description description = "Like [`hasSubsequence`](#hassubsequence) but searches case-insensitively.";
+    FunctionDocumentation::Description description = "Like [`hasSubsequence`](#hasSubsequence) but searches case-insensitively.";
     FunctionDocumentation::Syntax syntax = "hasSubsequenceCaseInsensitive(haystack, needle)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String"}},

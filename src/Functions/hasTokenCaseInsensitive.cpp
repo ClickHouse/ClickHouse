@@ -31,7 +31,7 @@ Performs case insensitive lookup of needle in haystack using tokenbf_v1 index.
 
 :::note
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
-We recommend using [`hasAnyTokens`](#hasanytokens) and [`hasAllTokens`](#hasalltokens) instead.
+We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
 :::
             )",
             .syntax = "hasTokenCaseInsensitive(haystack, needle)",
@@ -46,7 +46,7 @@ Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. R
 
 :::note
 This function has certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
-We recommend using [`hasAnyTokens`](#hasanytokens) and [`hasAllTokens`](#hasalltokens) instead.
+We recommend using [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens) instead.
 :::
             )",
             .syntax = "hasTokenCaseInsensitiveOrNull(haystack, needle)",

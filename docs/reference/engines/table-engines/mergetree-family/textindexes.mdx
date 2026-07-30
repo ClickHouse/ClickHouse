@@ -101,8 +101,8 @@ ORDER BY key
 Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
-- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapkeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapvalues) functions), and
-- [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#jsonallpaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#jsonallvalues) functions).
+- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions), and
+- [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -145,8 +145,8 @@ ALTER TABLE table DROP INDEX text_idx;
 
 **Tokenizer argument (mandatory)**. The `tokenizer` argument specifies the tokenizer:
 
-- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (see function [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitbynonalpha)).
-- `splitByString(S)` splits strings along certain user-defined separator strings `S` (see function [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitbystring)).
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (see function [splitByNonAlpha](/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (see function [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
@@ -154,7 +154,7 @@ ALTER TABLE table DROP INDEX text_idx;
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
-- `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (see function [sparseGrams](/reference/functions/regular-functions/string-functions#sparsegrams)).
+- `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (see function [sparseGrams](/reference/functions/regular-functions/string-functions#sparseGrams)).
   Unless specified explicitly, `min_length` and `max_length` default to 3 and 100.
   If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned.
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
@@ -172,7 +172,7 @@ This can generally be done by passing the separator strings in order of descendi
 If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
 </Note>
 
-To understand how a tokenizer split the input string, you can use the [tokens](/reference/functions/regular-functions/splitting-merging-functions#tokens) and [tokensForLikePattern](/reference/functions/regular-functions/splitting-merging-functions#tokensforlikepattern) functions:
+To understand how a tokenizer split the input string, you can use the [tokens](/reference/functions/regular-functions/splitting-merging-functions#tokens) and [tokensForLikePattern](/reference/functions/regular-functions/splitting-merging-functions#tokensForLikePattern) functions:
 
 Example:
 
@@ -191,9 +191,9 @@ For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly hand
 <a id="preprocessor-argument-optional"></a>**Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
 
 Typical use cases for the preprocessor argument include
-1. Lower/upper-casing, or case folding to enable case-insensitive matching, e.g., [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerutf8), [caseFoldUTF8](/reference/functions/regular-functions/string-functions#casefoldutf8).
-2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/reference/functions/regular-functions/string-functions#normalizeutf8nfc), [normalizeUTF8NFD](/reference/functions/regular-functions/string-functions#normalizeutf8nfd), [normalizeUTF8NFKC](/reference/functions/regular-functions/string-functions#normalizeutf8nfkc), [normalizeUTF8NFKD](/reference/functions/regular-functions/string-functions#normalizeutf8nfkd), [normalizeUTF8NFKCCasefold](/reference/functions/regular-functions/string-functions#normalizeutf8nfkccasefold), [toValidUTF8](/reference/functions/regular-functions/string-functions#tovalidutf8).
-3. Removing or transforming unwanted characters or substrings, such as accents e.g. [extractTextFromHTML](/reference/functions/regular-functions/string-functions#extracttextfromhtml), [substring](/reference/functions/regular-functions/string-functions#substring), [idnaEncode](/reference/functions/regular-functions/string-functions#idnaencode), [translate](/reference/functions/regular-functions/string-replace-functions#translate), [removeDiacriticsUTF8](/reference/functions/regular-functions/string-functions#removediacriticsutf8).
+1. Lower/upper-casing, or case folding to enable case-insensitive matching, e.g., [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerUTF8), [caseFoldUTF8](/reference/functions/regular-functions/string-functions#caseFoldUTF8).
+2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/reference/functions/regular-functions/string-functions#normalizeUTF8NFC), [normalizeUTF8NFD](/reference/functions/regular-functions/string-functions#normalizeUTF8NFD), [normalizeUTF8NFKC](/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC), [normalizeUTF8NFKD](/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD), [normalizeUTF8NFKCCasefold](/reference/functions/regular-functions/string-functions#normalizeUTF8NFKCCasefold), [toValidUTF8](/reference/functions/regular-functions/string-functions#toValidUTF8).
+3. Removing or transforming unwanted characters or substrings, such as accents e.g. [extractTextFromHTML](/reference/functions/regular-functions/string-functions#extractTextFromHTML), [substring](/reference/functions/regular-functions/string-functions#substring), [idnaEncode](/reference/functions/regular-functions/string-functions#idnaEncode), [translate](/reference/functions/regular-functions/string-replace-functions#translate), [removeDiacriticsUTF8](/reference/functions/regular-functions/string-functions#removeDiacriticsUTF8).
 
 The preprocessor expression must transform an input value of type [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring) to a value of the same type.
 If the text index was build on a column of type `Nullable(T)` or `LowCardinality(T)` column, then the preprocessor expression should accept nullable or low-cardinality values (i.e. not throw an exception).
@@ -223,7 +223,7 @@ For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAll
 For an optimal user experience, we therefore recommend using preprocessor expressions.
 </Note>
 
-Functions [hasToken](/reference/functions/regular-functions/string-search-functions#hastoken), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasalltokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasanytokens), and [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasphrase) use the preprocessor to first transform the search term before tokenizing it.
+Functions [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), and [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
 Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
@@ -313,7 +313,7 @@ Typical use cases for the postprocessor argument include:
    For example, with English stemming "running", "runs", and "run" all stem to "run", so a query for any of these variants matches all of them.
    ClickHouse provides a built-in [stem](/reference/functions/regular-functions/nlp-functions#stem) function for several languages.
    Example: `stem(str, 'en')`
-4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerutf8).
+4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerUTF8).
    For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
 
 The postprocessor expression transforms tokens of type [String](/reference/data-types/string) to tokens of the same type.
@@ -438,24 +438,24 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 |---|---|---|---|
 | `=` | yes | all | yes |
 | `IN` | yes | all | yes |
-| [hasToken](/reference/functions/regular-functions/string-search-functions#hastoken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
-| [hasAnyTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasanytokens) | yes | all | yes |
-| [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasalltokens) | yes | all | yes |
-| [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasanytokens) | no (array elements are tokens as-is) | all | yes |
-| [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasalltokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasphrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
-| [startsWith](/reference/functions/regular-functions/string-functions#startswith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [endsWith](/reference/functions/regular-functions/string-functions#endswith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
+| [hasAnyTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | yes | all | yes |
+| [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
+| [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
-| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapcontainskey)               | yes | all | yes |
-| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapcontainsvalue)           | yes | all | yes |
-| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapcontainskeylike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapcontainsvaluelike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
+| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
+| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
-| [hasAny](/reference/functions/regular-functions/array-functions#hasany)                               | yes | `array` | yes |
-| [hasAll](/reference/functions/regular-functions/array-functions#hasall)                               | yes | `array` | yes |
+| [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
+| [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports a *direct read (without hint)* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
@@ -632,7 +632,7 @@ See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for de
 
 #### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
 
-[multiSearchAny](/reference/functions/regular-functions/string-search-functions#multisearchany) and its UTF-8 variant [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multisearchanyutf8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multimatchany) tests whether any of several regular expressions matches.
+[multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny) tests whether any of several regular expressions matches.
 These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
 A granule is read if any needle may be present in it.
 
@@ -660,7 +660,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
-Similar to `LIKE`, functions [startsWith](/reference/functions/regular-functions/string-functions#startswith) and [endsWith](/reference/functions/regular-functions/string-functions#endswith) can only use a text index, if complete tokens can be extracted from the search term.
+Similar to `LIKE`, functions [startsWith](/reference/functions/regular-functions/string-functions#startsWith) and [endsWith](/reference/functions/regular-functions/string-functions#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 When a text index uses a postprocessor, these functions can still use the index in Hint mode if the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the index is not used for that predicate.
 
@@ -694,7 +694,7 @@ We recommend using `hasAnyTokens` and `hasAllTokens` instead.
 The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` are not text-index-aware — they always run as a full row scan even on text-indexed columns. For case-insensitive matching, use a `lower(...)` preprocessor or postprocessor and combine it with `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 </Note>
 
-Function [hasToken](/reference/functions/regular-functions/string-search-functions#hastoken) matches against a single given token.
+Function [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken) matches against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
@@ -706,7 +706,7 @@ SELECT count() FROM table WHERE hasToken(comment, 'clickhouse');
 
 #### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasanytokens) and [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasalltokens) match against one or all of the given tokens.
+Functions [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) and [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) match against one or all of the given tokens.
 
 These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
 See the function documentation for more info.
@@ -725,7 +725,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 #### `hasPhrase` {#functions-example-hasphrase}
 
-Function [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasphrase) matches against a phrase: all tokens must appear consecutively and in the same order as in the search string.
+Function [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) matches against a phrase: all tokens must appear consecutively and in the same order as in the search string.
 
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
@@ -754,7 +754,7 @@ SELECT count() FROM table WHERE has(array, 'clickhouse');
 
 #### `hasAny` and `hasAll` {#functions-example-hasany-hasall}
 
-Array functions [hasAny](/reference/functions/regular-functions/array-functions#hasany) and [hasAll](/reference/functions/regular-functions/array-functions#hasall) test whether the indexed array column contains any or all of a constant set of needle strings.
+Array functions [hasAny](/reference/functions/regular-functions/array-functions#hasAny) and [hasAll](/reference/functions/regular-functions/array-functions#hasAll) test whether the indexed array column contains any or all of a constant set of needle strings.
 
 Example:
 
@@ -765,7 +765,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapcontainskey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
+Function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapKeys(map)` expression.
 
@@ -779,7 +779,7 @@ SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 
 #### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
-Function [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map.
+Function [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapValues(map)` expression.
 
@@ -791,7 +791,7 @@ SELECT count() FROM table WHERE mapContainsValue(map, 'clickhouse');
 
 #### `mapContainsKeyLike` and `mapContainsValueLike` {#functions-example-mapcontainslike}
 
-The functions [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapcontainskeylike) and [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapcontainsvaluelike) match a pattern against all keys or values (respectively) of a map.
+The functions [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) and [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) match a pattern against all keys or values (respectively) of a map.
 
 Example:
 
@@ -878,14 +878,14 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 As log volume grows, these queries become slow.
 
 The solution is creating a text index for the [Map](/reference/data-types/map) keys and values.
-Use [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapkeys) to create a text index when you need to find logs by field names or attribute types:
+Use [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
 ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
 ```
 
-Use [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapvalues) to create a text index when you need to search within the actual content of attributes:
+Use [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
@@ -910,8 +910,8 @@ SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 Text indexes can be used with `JSON` columns in three ways:
 
 1. **Indexes on specific subcolumns** — create a text index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
-2. **Path-based indexes with [JSONAllPaths](/reference/functions/regular-functions/json-functions#jsonallpaths)** — indexes *all paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
-3. **Value-based indexes with [JSONAllValues](/reference/functions/regular-functions/json-functions#jsonallvalues)** — indexes *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
+2. **Path-based indexes with [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths)** — indexes *all paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
+3. **Value-based indexes with [JSONAllValues](/reference/functions/regular-functions/json-functions#JSONAllValues)** — indexes *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
 
 #### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -975,7 +975,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 
 #### Path-based indexes with JSONAllPaths {#json-indexes-jsonallpaths}
 
-Similar to `Map` columns, text indexes can be created on [JSON](/reference/data-types/newjson) columns using [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#jsonallpaths).
+Similar to `Map` columns, text indexes can be created on [JSON](/reference/data-types/newjson) columns using [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths).
 The index stores the set of JSON paths present in each granule and uses them to skip granules where a queried path is absent.
 
 Example index definition:
@@ -1053,7 +1053,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 
 #### Value-based indexes with JSONAllValues {#json-indexes-jsonallvalues}
 
-Text indexes can be used to accelerate searches on [JSON](/reference/data-types/newjson) columns via function [`JSONAllValues`](/reference/functions/regular-functions/json-functions#jsonallvalues).
+Text indexes can be used to accelerate searches on [JSON](/reference/data-types/newjson) columns via function [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues).
 
 `JSONAllValues` returns all values from a JSON column as `Array(String)`.
 Values of non-string datatypes (e.g. integers and arrays) are converted to their text representation.
