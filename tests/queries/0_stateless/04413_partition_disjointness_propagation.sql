@@ -10,6 +10,10 @@ SET enable_parallel_replicas = 0;
 SET max_rows_in_distinct = 0;
 SET max_bytes_in_distinct = 0;
 
+-- Some CI configurations also set `max_rows_to_group_by` as a safety net, which would disable
+-- independent per-partition aggregation and hide the `Skip merging: 1` markers below.
+SET max_rows_to_group_by = 0;
+
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Skip stream merging: 1` lines.
 SET explain_query_plan_default = 'legacy';
