@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 import traceback
@@ -9,24 +10,27 @@ from .settings import Settings
 
 
 class HostMetricsCollector:
-    """Samples whole-VM CPU and RAM usage in a background thread.
+    """Samples whole-VM CPU, RAM and disk usage in a background thread.
 
-    Dependency-free: reads ``/proc/stat`` and ``/proc/meminfo`` directly, so it
-    reflects the load of the whole host (not just this process) regardless of
-    whether the job itself runs inside Docker.
+    Dependency-free: reads ``/proc/stat`` and ``/proc/meminfo`` and calls
+    ``os.statvfs`` directly, so it reflects the load of the whole host (not just
+    this process) regardless of whether the job itself runs inside Docker.
 
-    Spike handling. ``/proc`` is read at a fine cadence
+    Three usage series are tracked (all as 0-100%): ``cpu`` (busy%), ``mem``
+    (used%) and ``disk`` (used% of the workspace filesystem).
+
+    Spike handling. Inputs are read at a fine cadence
     (``HOST_METRICS_FINE_INTERVAL_SEC``) but the timeline emits one aggregated
     point per reporting window (``HOST_METRICS_SAMPLE_INTERVAL_SEC``) carrying
     both the window average and its peak, so a short CPU burst or a transient
     RAM allocation shows up as the window's peak instead of being averaged away.
     Two signals are peak-exact and independent of the sampling rate:
 
-    * ``peaks`` - the maximum CPU%/RAM% seen across every fine sample.
-    * ``psi`` - Linux Pressure Stall Information (``/proc/pressure/*``). The
-      kernel accumulates stalled time continuously, so reading the totals once
-      at start and once at stop captures all CPU/memory contention during the
-      run, even stalls shorter than the sampling interval.
+    * ``peaks`` - the maximum CPU%/RAM%/disk% seen across every fine sample.
+    * ``psi`` - Linux Pressure Stall Information (``/proc/pressure/*``, for cpu,
+      memory and io). The kernel accumulates stalled time continuously, so
+      reading the totals once at start and once at stop captures all contention
+      during the run, even stalls shorter than the sampling interval.
 
     Each aggregated sample is appended to a ``jsonl`` file so partial data
     survives if the runner is killed (e.g. on an OOM or a hard timeout). On
@@ -42,6 +46,7 @@ class HostMetricsCollector:
     _MEMINFO = "/proc/meminfo"
     _PSI_CPU = "/proc/pressure/cpu"
     _PSI_MEM = "/proc/pressure/memory"
+    _PSI_IO = "/proc/pressure/io"
 
     def __init__(
         self,
@@ -49,22 +54,26 @@ class HostMetricsCollector:
         interval: float = Settings.HOST_METRICS_SAMPLE_INTERVAL_SEC,
         fine_interval: float = Settings.HOST_METRICS_FINE_INTERVAL_SEC,
         max_points: int = Settings.HOST_METRICS_MAX_POINTS,
+        disk_path: str = Settings.HOST_METRICS_DISK_PATH,
     ):
         self._out_file = out_file
         self._report_interval = max(0.1, float(interval))
         # Fine cadence never exceeds the reporting window and stays sane.
         self._fine_interval = min(self._report_interval, max(0.05, float(fine_interval)))
         self._max_points = max(2, int(max_points))
+        self._disk_path = disk_path
         self._available = Path(self._CPU_STAT).exists() and Path(self._MEMINFO).exists()
         self._psi_available = Path(self._PSI_CPU).exists()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        # Aggregated per-window samples: {t, cpu, mem, cpu_peak, mem_peak}.
+        # Aggregated per-window samples: {t, cpu, mem, disk, *_peak}.
         self._samples: List[Dict[str, float]] = []
         self._mem_total_kb = 0
+        self._disk_total_kb = 0
         # Exact global peaks over every fine sample (never decimated away).
         self._cpu_peak = 0.0
         self._mem_peak = 0.0
+        self._disk_peak = 0.0
         self._n_fine = 0
         self._psi_start: Optional[Dict[str, int]] = None
         self._psi_end: Optional[Dict[str, int]] = None
@@ -114,6 +123,7 @@ class HostMetricsCollector:
         window_start = start
         win_cpu: List[float] = []
         win_mem: List[float] = []
+        win_disk: List[float] = []
 
         def flush_window(now: float):
             if not win_cpu:
@@ -122,13 +132,16 @@ class HostMetricsCollector:
                 "t": round(now - start, 1),
                 "cpu": round(sum(win_cpu) / len(win_cpu), 1),
                 "mem": round(sum(win_mem) / len(win_mem), 1),
+                "disk": round(sum(win_disk) / len(win_disk), 1),
                 "cpu_peak": round(max(win_cpu), 1),
                 "mem_peak": round(max(win_mem), 1),
+                "disk_peak": round(max(win_disk), 1),
             }
             self._samples.append(sample)
             self._append_to_fs(sample)
             win_cpu.clear()
             win_mem.clear()
+            win_disk.clear()
 
         while not self._stop_event.is_set():
             # Sleep first so the first emitted sample already has a valid CPU
@@ -139,6 +152,7 @@ class HostMetricsCollector:
                 cpu_pct = self._cpu_percent(prev_cpu, cur_cpu)
                 prev_cpu = cur_cpu
                 mem_pct = self._mem_percent()
+                disk_pct = self._read_disk_percent()
             except Exception as e:
                 # A transient /proc read failure must not kill the collector.
                 print(f"WARNING: Host metrics sample failed: {e}")
@@ -146,10 +160,12 @@ class HostMetricsCollector:
                 continue
             win_cpu.append(cpu_pct)
             win_mem.append(mem_pct)
+            win_disk.append(disk_pct)
             self._n_fine += 1
             # Exact global peaks, immune to windowing/decimation.
             self._cpu_peak = max(self._cpu_peak, cpu_pct)
             self._mem_peak = max(self._mem_peak, mem_pct)
+            self._disk_peak = max(self._disk_peak, disk_pct)
             now = time.monotonic()
             if now - window_start >= self._report_interval:
                 flush_window(now)
@@ -203,18 +219,38 @@ class HostMetricsCollector:
         used = total_kb - available_kb
         return round(max(0.0, min(100.0, 100.0 * used / total_kb)), 1)
 
+    def _read_disk_percent(self) -> float:
+        """Return the workspace filesystem used%, matching ``df`` semantics."""
+        st = os.statvfs(self._disk_path)
+        if not st.f_blocks:
+            return 0.0
+        self._disk_total_kb = st.f_blocks * st.f_frsize // 1024
+        used = st.f_blocks - st.f_bfree
+        # df's percentage excludes root-reserved blocks: used / (used + avail).
+        denom = used + st.f_bavail
+        if denom <= 0:
+            return 0.0
+        return round(max(0.0, min(100.0, 100.0 * used / denom)), 1)
+
     def _read_psi(self) -> Optional[Dict[str, int]]:
         """Read cumulative PSI stall totals (microseconds), or None if absent.
 
         ``/proc/pressure/cpu`` has only a ``some`` line; ``/proc/pressure/memory``
-        has both ``some`` (any task stalled) and ``full`` (all tasks stalled).
+        and ``/proc/pressure/io`` have both ``some`` (any task stalled) and
+        ``full`` (all tasks stalled).
         """
         if not self._psi_available:
             return None
         try:
 
             def total_for(path: str, kind: str) -> int:
-                with open(path, "r", encoding="utf8") as f:
+                # A single missing resource (e.g. io pressure) must not drop the
+                # others, so treat an absent file as zero rather than failing.
+                try:
+                    f = open(path, "r", encoding="utf8")
+                except FileNotFoundError:
+                    return 0
+                with f:
                     for line in f:
                         parts = line.split()
                         if parts and parts[0] == kind:
@@ -227,6 +263,8 @@ class HostMetricsCollector:
                 "cpu_some": total_for(self._PSI_CPU, "some"),
                 "mem_some": total_for(self._PSI_MEM, "some"),
                 "mem_full": total_for(self._PSI_MEM, "full"),
+                "io_some": total_for(self._PSI_IO, "some"),
+                "io_full": total_for(self._PSI_IO, "full"),
             }
         except (OSError, ValueError) as e:
             print(f"WARNING: Failed to read PSI: {e}")
@@ -243,27 +281,35 @@ class HostMetricsCollector:
             "cpu_s": secs("cpu_some"),
             "mem_some_s": secs("mem_some"),
             "mem_full_s": secs("mem_full"),
+            "io_some_s": secs("io_some"),
+            "io_full_s": secs("io_full"),
         }
 
     def _compact(self, samples: List[Dict[str, float]]) -> Dict:
         cpu_points = [(s["t"], s["cpu"], s["cpu_peak"]) for s in samples]
         mem_points = [(s["t"], s["mem"], s["mem_peak"]) for s in samples]
+        disk_points = [(s["t"], s["disk"], s["disk_peak"]) for s in samples]
         mem_total_gb = round(self._mem_total_kb / 1024.0 / 1024.0, 2)
+        disk_total_gb = round(self._disk_total_kb / 1024.0 / 1024.0, 2)
         result = {
             "interval": self._report_interval,
             "fine_interval": self._fine_interval,
             "duration": samples[-1]["t"] if samples else 0,
             "mem_total_gb": mem_total_gb,
+            "disk_total_gb": disk_total_gb,
             "n_raw": self._n_fine,
             "n_windows": len(samples),
             "peaks": {
                 "cpu": round(self._cpu_peak, 1),
                 "mem": round(self._mem_peak, 1),
                 "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
+                "disk": round(self._disk_peak, 1),
+                "disk_gb": round(disk_total_gb * self._disk_peak / 100.0, 2),
             },
             "series": {
                 "cpu": self._decimate(cpu_points, self._max_points),
                 "mem": self._decimate(mem_points, self._max_points),
+                "disk": self._decimate(disk_points, self._max_points),
             },
         }
         psi = self._psi_delta()

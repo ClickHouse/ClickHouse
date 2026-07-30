@@ -1123,7 +1123,8 @@
         if (!metrics || !metrics.series || !metrics.peaks) return;
         const cpu = metrics.series.cpu || [];
         const mem = metrics.series.mem || [];
-        if (cpu.length < 2 && mem.length < 2) return;
+        const disk = metrics.series.disk || [];
+        if (cpu.length < 2 && mem.length < 2 && disk.length < 2) return;
 
         const statusContainer = document.getElementById("status-container");
         const wrapper = document.createElement("div");
@@ -1132,6 +1133,7 @@
 
         const CPU_COLOR = "#4e79a7";
         const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
 
         // Series points are [t, avg, peak].
         const avgOf = (p) => p[1];
@@ -1139,10 +1141,11 @@
         // Exact global peaks (max over every fine sample, never decimated away).
         const cpuPeak = metrics.peaks.cpu;
         const memPeak = metrics.peaks.mem;
+        const diskPeak = metrics.peaks.disk;
+        const lastT = (s) => (s.length ? s[s.length - 1][0] : 0);
         const duration = Math.max(
             metrics.duration || 0,
-            cpu.length ? cpu[cpu.length - 1][0] : 0,
-            mem.length ? mem[mem.length - 1][0] : 0,
+            lastT(cpu), lastT(mem), lastT(disk),
             1
         );
 
@@ -1167,10 +1170,15 @@
         title.textContent = "host usage";
         const legend = document.createElement("div");
         legend.style.fontSize = "0.85em";
+        legend.style.textAlign = "right";
         legend.innerHTML =
             `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak &nbsp;` +
             `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
-            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : "");
+            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : "") +
+            (disk.length
+                ? ` &nbsp;<span style="color:${DISK_COLOR}">■</span> disk ${diskPeak.toFixed(0)}%` +
+                  (metrics.disk_total_gb ? ` of ${metrics.disk_total_gb}GB` : "")
+                : "");
         header.appendChild(title);
         header.appendChild(legend);
         wrapper.appendChild(header);
@@ -1183,6 +1191,8 @@
             if (psi.cpu_s != null) parts.push(`cpu stalled ${psi.cpu_s}s`);
             if (psi.mem_some_s != null) parts.push(`mem stalled ${psi.mem_some_s}s`);
             if (psi.mem_full_s) parts.push(`mem stalled(all) ${psi.mem_full_s}s`);
+            if (psi.io_some_s != null) parts.push(`io stalled ${psi.io_some_s}s`);
+            if (psi.io_full_s) parts.push(`io stalled(all) ${psi.io_full_s}s`);
             if (parts.length) {
                 const psiLine = document.createElement("div");
                 psiLine.style.fontSize = "0.75em";
@@ -1257,6 +1267,8 @@
             svg.appendChild(path);
         };
         // Faint peak envelope behind the solid average line for each metric.
+        mkPath(disk, DISK_COLOR, peakOf, "1", "0.35");
+        mkPath(disk, DISK_COLOR, avgOf, "1.2", "1");
         mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
         mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
         mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
@@ -1296,14 +1308,15 @@
             const cx = xScale(t);
             cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
             cursor.setAttribute("stroke-opacity", 0.4);
-            const c = nearest(cpu, t), m = nearest(mem, t);
+            const c = nearest(cpu, t), m = nearest(mem, t), d = nearest(disk, t);
             const fmtPt = (label, color, p) =>
                 `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
                 ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>`;
             tip.innerHTML =
                 `${fmtT(t)}<br>` +
                 (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
-                (m ? fmtPt("ram", MEM_COLOR, m) : "");
+                (m ? fmtPt("ram", MEM_COLOR, m) + (d ? "<br>" : "") : "") +
+                (d ? fmtPt("disk", DISK_COLOR, d) : "");
             tip.style.display = "block";
             const left = Math.min(
                 (e.clientX - rect.left) + 8,

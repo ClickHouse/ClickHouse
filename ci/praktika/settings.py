@@ -79,6 +79,9 @@ class _Settings:
     # payload injected into the Result stays small regardless of job duration.
     HOST_METRICS_MAX_POINTS: int = 400
     HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
+    # Filesystem whose used% is tracked as the "disk" series. Defaults to the
+    # working directory, i.e. the disk the job actually writes to.
+    HOST_METRICS_DISK_PATH: str = "."
 
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
