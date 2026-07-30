@@ -992,6 +992,42 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_ambient_parquet_field_id_settings_are_ignored(started_cluster):
+    # A catalog table gets its `FormatSettings` from the query context in
+    # `DatabaseDataLake::tryGetTableImpl`, so a user whose profile or session
+    # enables `output_format_parquet_auto_assign_field_ids` /
+    # `output_format_parquet_column_field_ids` would carry those values into
+    # every write. The Iceberg metadata is the authoritative source of Parquet
+    # `field_id`s, so the write-time guard in `ParquetBlockOutputFormat` would
+    # reject such an `INSERT`. These ambient values must be ignored for
+    # catalog tables instead, exactly like for the `ENGINE = Iceberg*` path.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ambient_field_ids_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    field_id_settings = {
+        "output_format_parquet_auto_assign_field_ids": 1,
+        "output_format_parquet_column_field_ids": "{'x': '1'}",
+    }
+    write_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **field_id_settings,
+    }
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node, root_namespace, table_name, "(x String)"
+    )
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings=write_settings)
+    assert (
+        node.query(f"SELECT * FROM {table_ref}", settings=field_id_settings) == "AAPL\n"
+    )
+
+
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
     # compression exercises IcebergMetadata::createInitial and the
