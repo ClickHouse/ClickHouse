@@ -66,6 +66,15 @@ struct RowRef
     /// same on little- and big-endian systems: block_no (with INLINE_FLAG in its MSB) lands in the
     /// high half and row_no in the low half, matching the refWord* decoders below either way.
     UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
+
+    /// The word must be one `encode` produced, so the constructor's bounds check is redundant.
+    static RowRef fromWord(UInt64 word)
+    {
+        RowRef ref;
+        ref.row_no = static_cast<UInt32>(word);
+        ref.block_no = static_cast<UInt32>(word >> 32);
+        return ref;
+    }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
