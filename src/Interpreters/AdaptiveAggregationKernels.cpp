@@ -1047,8 +1047,8 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         if constexpr (requires { impl.reserveAdditionalStringViewKeys(size_t{}); })
         {
             /// Sampled only while a reserve can still fire: `update_reserve` requires unseen
-            /// records to remain, so the final block of a backlog - and the pressure drain's
-            /// whole single-chunk backlog - would count keys nothing ever reads.
+            /// records to remain, so the final block of a backlog would count keys nothing
+            /// ever reads.
             if (!reserved && processed + (slice_end - slice_begin) < total_records)
             {
                 for (size_t j = slice_begin; j < slice_end; ++j)
@@ -1165,32 +1165,32 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVar
     return table;
 }
 
-size_t Aggregator::drainOneStagedChunk(
+size_t Aggregator::drainStagedBatch(
     AggregatedDataVariants & table,
-    StagedChunkPtr & chunk,
+    const std::vector<StagedChunkPtr> & chunks,
     std::atomic<bool> & is_cancelled,
-    PaddedPODArray<AggregateDataPtr> & places_scratch,
-    std::vector<StagedChunkPtr> & single_scratch) const
+    PaddedPODArray<AggregateDataPtr> & places_scratch) const
 {
     size_t drained = 0;
-    single_scratch[0] = chunk;
-    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
-    {
-        const size_t records = chunk->keys.recordsForBucket(b);
-        if (!records)
-            continue;
-        Arena * arena = table.aggregates_pools.at(b).get();
-
-        visitTwoLevelVariant(
-            table,
-            [&](auto & method)
+    visitTwoLevelVariant(
+        table,
+        [&](auto & method)
+        {
+            for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
             {
+                if (is_cancelled.load(std::memory_order_relaxed))
+                    return;
+
+                size_t records = 0;
+                for (const auto & chunk : chunks)
+                    records += chunk->keys.recordsForBucket(b);
+                if (!records)
+                    continue;
+
                 drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
-                    method, arena, single_scratch, b, records, places_scratch, is_cancelled);
-            });
-    }
-    single_scratch[0].reset();
-    chunk.reset();
+                    method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
+            }
+        });
     return drained;
 }
 
@@ -1230,20 +1230,18 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
-    std::vector<StagedChunkPtr> single(1);
 
     size_t drained_records = 0;
-    for (auto & chunk : chunks)
+    size_t begin = 0;
+    /// A cancelled query stops at the next batch; the leftover chunks drop with this vector.
+    /// The in-flight batch is dropped too, not requeued: bucket-major progress means parts of
+    /// every one of its chunks may already be in the table.
+    while (begin < chunks.size() && !shared.cancelled.load(std::memory_order_relaxed))
     {
-        /// A cancelled query stops at the next chunk; the leftovers go back to the backlogs,
-        /// where they die with the session.
-        if (shared.cancelled.load(std::memory_order_relaxed))
-            break;
-
-        /// Detach and write before absorbing another chunk, so a part stays close to the
-        /// floor and only one detached table exists at a time. The current memory reading is
-        /// deliberately not consulted: the query is external already, and skipping the spill
-        /// during a dip would only let the remainder grow into one arbitrarily large table.
+        /// Detach and write before absorbing another batch, so only one detached table exists
+        /// at a time. The current memory reading is deliberately not consulted: the query is
+        /// external already, and skipping the spill during a dip would only let the remainder
+        /// grow into one arbitrarily large table.
         if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys)
         {
             auto full = std::move(shared.early_drain_variants);
@@ -1251,12 +1249,22 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
             spillDetachedAdaptiveTable(shared, *full);
         }
 
-        drained_records += drainOneStagedChunk(*shared.early_drain_variants, chunk, shared.cancelled, places_scratch, single);
-    }
+        /// The batch is capped at the table's remaining capacity to the floor, with a
+        /// quarter-floor minimum so a batch stays worth its bucket-major pass; a part
+        /// therefore overshoots the floor by at most a quarter instead of a whole batch.
+        const size_t batch_target = std::max(
+            adaptive_pressure_spill_min_keys - shared.early_drain_variants->size(), adaptive_pressure_spill_min_keys / 4);
 
-    for (auto & chunk : chunks)
-        if (chunk)
-            shared.backlog.requeue(chunk);
+        size_t batch_records = 0;
+        size_t end = begin;
+        for (; end < chunks.size() && batch_records < batch_target; ++end)
+            batch_records += chunks[end]->keys.size();
+
+        const std::vector<StagedChunkPtr> batch(
+            std::make_move_iterator(chunks.begin() + begin), std::make_move_iterator(chunks.begin() + end));
+        drained_records += drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+        begin = end;
+    }
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.backlog.recordDrained(drained_records);
@@ -1268,7 +1276,6 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const
 {
     PaddedPODArray<AggregateDataPtr> places_scratch;
-    std::vector<StagedChunkPtr> single(1);
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
     /// spill floor of records. Floor-sized batches are drained into a producer-local table
@@ -1308,16 +1315,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
                 shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
 
-            size_t drained_records = 0;
-            for (auto & chunk : batch)
-            {
-                if (shared.cancelled.load(std::memory_order_relaxed))
-                    break;
-                drained_records += drainOneStagedChunk(*shared.early_drain_variants, chunk, shared.cancelled, places_scratch, single);
-            }
-            for (auto & chunk : batch)
-                if (chunk)
-                    shared.backlog.requeue(chunk);
+            const size_t drained_records
+                = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+            batch.clear();
 
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
             shared.backlog.recordDrained(drained_records);
@@ -1368,16 +1368,11 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     auto local = createAdaptiveDrainTable(routing_type);
 
-    size_t drained_records = 0;
-    for (auto & chunk : batch)
-    {
-        if (shared.cancelled.load(std::memory_order_relaxed))
-            break;
-        drained_records += drainOneStagedChunk(*local, chunk, shared.cancelled, places_scratch, single);
-    }
-    for (auto & chunk : batch)
-        if (chunk)
-            shared.backlog.requeue(chunk);
+    const size_t drained_records = drainStagedBatch(*local, batch, shared.cancelled, places_scratch);
+    /// Release the staged memory before the write, not after; the batch is dropped rather
+    /// than requeued even when cancellation stopped the drain early, because bucket-major
+    /// progress means parts of every chunk may already be in the table.
+    batch.clear();
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
     shared.backlog.recordDrained(drained_records);

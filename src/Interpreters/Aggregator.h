@@ -244,13 +244,18 @@ public:
         bool & no_more_keys,
         AdaptiveAggregationProducer * adaptive) const;
 
-    /// One staged chunk into one drain table, bucket slice by bucket slice; frees the chunk.
-    size_t drainOneStagedChunk(
+    /// One claimed batch of staged chunks into one drain table, bucket-major: bucket b's
+    /// slices from all of the batch's chunks drain consecutively, so the destination subtable
+    /// and its arena stay cache-hot across the whole batch instead of being revisited once per
+    /// chunk - the measured win of the pressure drains. The price is that the batch stays
+    /// alive until the pass ends: the callers bound a batch at about one spill floor of
+    /// records and release the chunks right after the call. Stops between buckets when
+    /// cancelled.
+    size_t drainStagedBatch(
         AggregatedDataVariants & table,
-        StagedChunkPtr & chunk,
+        const std::vector<StagedChunkPtr> & chunks,
         std::atomic<bool> & is_cancelled,
-        PaddedPODArray<AggregateDataPtr> & places_scratch,
-        std::vector<StagedChunkPtr> & single_scratch) const;
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// A fresh drain destination of the session's method type, with one arena per bucket.
     AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
