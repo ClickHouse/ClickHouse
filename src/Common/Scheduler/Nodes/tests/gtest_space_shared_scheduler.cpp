@@ -490,3 +490,163 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
         // Immediate destruction
     }
 }
+
+
+/// A minimal allocation for driving the scheduler deterministically: requests are issued without waiting
+/// (so several can be queued while the scheduler thread is parked) and kill signals are recorded. Lock
+/// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
+struct ManualAllocation : public ResourceAllocation
+{
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
+        : ResourceAllocation(*queue_, name_)
+    {
+        if (initial_size > 0)
+            increase_enqueued = true;
+        queue.insertAllocation(*this, initial_size); // scheduler thread may call back after this
+        if (initial_size > 0) // Block until admitted, like MemoryReservation with reserve_memory > 0
+        {
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [this] { return !increase_enqueued || fail_reason; });
+            if (fail_reason)
+                std::rethrow_exception(fail_reason);
+        }
+    }
+
+    ~ManualAllocation() override
+    {
+        {
+            std::unique_lock lock(mutex);
+            if (removed || fail_reason)
+                return;
+        }
+        queue.removeAllocation(*this);
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return removed || fail_reason; });
+    }
+
+    /// Requests an increase without waiting for the approval.
+    void increaseAsync(ResourceCost size)
+    {
+        {
+            std::unique_lock lock(mutex);
+            increase_enqueued = true;
+        }
+        queue.increaseAllocation(*this, size);
+    }
+
+    /// Requests a decrease without waiting for the approval.
+    void decreaseAsync(ResourceCost size)
+    {
+        {
+            std::unique_lock lock(mutex);
+            decrease_enqueued = true;
+        }
+        queue.decreaseAllocation(*this, size);
+    }
+
+    /// Waits until all requests issued so far are approved.
+    void waitSynced()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued); });
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+    }
+
+    size_t killCount()
+    {
+        std::unique_lock lock(mutex);
+        return kills;
+    }
+
+    ResourceCost size()
+    {
+        std::unique_lock lock(mutex);
+        return allocated_size;
+    }
+
+private: // interaction with the scheduler thread
+    void increaseApproved(const IncreaseRequest & increase) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size += increase.size;
+        increase_enqueued = false;
+        cv.notify_all();
+    }
+
+    void decreaseApproved(const DecreaseRequest & decrease) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size -= decrease.size;
+        decrease_enqueued = false;
+        if (decrease.removing_allocation)
+            removed = true;
+        cv.notify_all();
+    }
+
+    void allocationFailed(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        fail_reason = reason;
+        removed = true;
+        allocated_size = 0;
+        cv.notify_all();
+    }
+
+    void killAllocation(const std::exception_ptr &) override
+    {
+        std::unique_lock lock(mutex);
+        ++kills;
+        cv.notify_all();
+    }
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::exception_ptr fail_reason;
+    bool increase_enqueued = false;
+    bool decrease_enqueued = false;
+    bool removed = false;
+    size_t kills = 0;
+    ResourceCost allocated_size = 0;
+};
+
+
+/// An eviction must not be issued while a decrease is pending under the limit: `allocated` still contains
+/// memory that is about to be released, so the kill may be unnecessary. Here `b`'s decrease frees exactly
+/// the room `a`'s increase needs; both requests reach the scheduler in one activation (the scheduler
+/// thread is parked while they are issued), so the eviction decision runs while the decrease is pending.
+/// Without the fix the largest allocation (`a`) is killed even though no eviction was needed at all.
+TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation a(queue, "a", 7000);
+    ManualAllocation b(queue, "b", 3000);
+    // At the limit exactly (10000): any increase overflows and triggers the eviction decision.
+
+    // Park the scheduler so both requests below are queued before either is processed: they arrive in
+    // one activation, and the eviction decision for the increase runs while the decrease is pending.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    b.decreaseAsync(3000); // releases enough room for the increase below
+    a.increaseAsync(2000); // 10000 + 2000 > 10000: over the limit until b's decrease is applied
+
+    release.set_value();
+
+    // The decrease is approved first (total 7000), after which the increase fits (9000 <= 10000):
+    // nobody needs to be evicted. Without the fix, `a` (the largest) is killed by its own increase
+    // even though its increase is then approved anyway once the decrease lands.
+    a.waitSynced();
+    b.waitSynced();
+    ASSERT_EQ(a.killCount(), 0u);
+    ASSERT_EQ(b.killCount(), 0u);
+    EXPECT_EQ(a.size(), 9000);
+    EXPECT_EQ(b.size(), 0);
+}
