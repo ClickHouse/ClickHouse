@@ -18,7 +18,7 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = '', enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
