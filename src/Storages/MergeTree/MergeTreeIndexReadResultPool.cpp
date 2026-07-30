@@ -61,6 +61,12 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
 {
 }
 
+bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
+{
+    /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
+    return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
+}
+
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
 {
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);

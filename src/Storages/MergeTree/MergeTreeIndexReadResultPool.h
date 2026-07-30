@@ -54,6 +54,10 @@ public:
 
     SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
+    /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
+    /// so its result must not be built before the build side has published the filters.
+    bool hasRuntimeFilters() const;
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -237,6 +241,9 @@ public:
 
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
+
+    /// Whether index read results depend on JOIN runtime filters (see MergeTreeSkipIndexReader::hasRuntimeFilters).
+    bool hasRuntimeFilters() const { return skip_index_reader && skip_index_reader->hasRuntimeFilters(); }
 
     void cancel() noexcept;
 
