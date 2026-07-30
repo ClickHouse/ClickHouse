@@ -1,8 +1,6 @@
 -- A single-table predicate merged into a join condition by
--- query_plan_merge_filter_into_join_condition is attached by DPhyp at the leaf join of its
--- relation, the same way dpsize and dpsub do it. Bare dphyp must therefore plan the query
--- (it used to give up and rely on the next algorithm in the chain) and keep the predicate,
--- so all three algorithm chains must return the same count.
+-- query_plan_merge_filter_into_join_condition is unsupported by DPhyp: it returns
+-- nullptr so the next algorithm in the chain handles the query and keeps the predicate.
 
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
@@ -22,13 +20,13 @@ INSERT INTO mff_a SELECT number, number * 10 FROM numbers(10);
 INSERT INTO mff_b SELECT number, number % 10, number * 100 FROM numbers(20);
 INSERT INTO mff_c SELECT number, number % 20, number * 1000 FROM numbers(30);
 
--- dphyp alone attaches the merged single-table predicate at the leaf join of `mff_a`.
+-- dphyp alone cannot attach the merged single-table predicate.
 SELECT count()
 FROM mff_a a, mff_b b, mff_c c
 WHERE a.id = b.a_id AND b.id = c.b_id AND a.val >= 50
-SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp';
+SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
 
--- dphyp,greedy must agree (dphyp succeeds, so greedy is never reached).
+-- dphyp,greedy falls back to greedy, which keeps the predicate.
 SELECT count()
 FROM mff_a a, mff_b b, mff_c c
 WHERE a.id = b.a_id AND b.id = c.b_id AND a.val >= 50

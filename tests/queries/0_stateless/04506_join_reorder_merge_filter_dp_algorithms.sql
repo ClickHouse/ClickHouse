@@ -1,8 +1,7 @@
 -- Filters merged into the join graph (`query_plan_merge_filters_into_join`) become single-relation
 -- predicates whose relation id can be >= 2 after flattening nested joins. The DP-based join order
--- algorithms (`dpsize`, `dpsub`, `dphyp`) must attach such predicates at the leaf join of their
--- relation and must not silently drop them (which returned rows that should have been filtered out)
--- nor give up on them (which turned bare `dphyp` into an `EXPERIMENTAL_FEATURE_ERROR`).
+-- algorithms (`dpsize`, `dpsub`) must attach such predicates at the leaf join of their relation and
+-- must not silently drop them (which returned rows that should have been filtered out).
 
 SET enable_analyzer = 1;
 SET join_use_nulls = 0;
@@ -49,13 +48,6 @@ SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', query_plan_filter_
 SELECT ta.id, r.dx FROM ta JOIN (SELECT tc.id AS id, td.x AS dx FROM tc JOIN td ON tc.id = td.id WHERE td.x > 0) r ON ta.id = r.id
 ORDER BY ALL
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_filter_push_down = 0;
-
--- Bare `dphyp` (no fallback algorithm in the chain) must plan this query too: the graph is
--- connected by equi-join predicates and the only non-connecting predicate is the merged
--- single-relation `td.x > 0`, which `dphyp` attaches at the leaf join of `td`.
-SELECT ta.id, r.dx FROM ta JOIN (SELECT tc.id AS id, td.x AS dx FROM tc JOIN td ON tc.id = td.id WHERE td.x > 0) r ON ta.id = r.id
-ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', query_plan_filter_push_down = 0;
 
 -- A pair of relations connected only by a non-equi predicate must still produce a valid plan
 -- in `dpsize` (a cross join with the predicate as a condition), not an exception.
