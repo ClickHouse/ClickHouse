@@ -67,7 +67,7 @@ SELECT ...
 
 By default a materialized CTE stores its data in a temporary `Memory` table. You can instead choose the `Set` engine so that a prepared set is reused across references instead of being rebuilt each time:
 
-- `Set` — for a CTE that is referenced only on the right-hand side of `x IN t`. The result is stored as a prepared set and reused by every `IN`. A `Set`-engine CTE cannot be read as a table.
+- `Set` — for a CTE that is referenced only on the right-hand side of `x IN t`. The result is stored as a prepared set and reused by every `IN`. A `Set`-engine CTE cannot be read as a table, and (unlike a `Memory` one) it is not used for skip-index or primary-key pruning, because it is only filled while the query runs.
 
 The engine only takes effect when the CTE is referenced more than once; a CTE referenced a single time is inlined regardless of the specified engine (see the tip below).
 

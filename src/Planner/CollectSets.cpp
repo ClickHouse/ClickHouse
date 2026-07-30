@@ -107,7 +107,10 @@ public:
             if (sets.findStorage(set_key))
                 return;
             auto ast = in_second_argument->toAST();
-            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
+            /// A materialized CTE with ENGINE = Set is filled later within this same query, so it must
+            /// not be treated as a ready (empty) set while planning.
+            const bool wait_for_creation = second_argument_table->getMaterializedCTE() != nullptr;
+            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID(), wait_for_creation);
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {

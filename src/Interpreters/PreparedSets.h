@@ -73,7 +73,10 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
+    /// `wait_for_creation` is for a storage filled later within the same query (a materialized CTE
+    /// with ENGINE = Set): report the set as not ready until it is filled, so that it is not treated
+    /// as a ready empty set.
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id, bool wait_for_creation_ = false);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -83,10 +86,13 @@ public:
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
+    bool isReady() const;
+
     Hash hash;
     ASTPtr ast;
     std::optional<StorageID> storage_id;
     SetPtr set;
+    bool wait_for_creation;
 };
 
 using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
@@ -223,7 +229,7 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id, bool wait_for_creation = false);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(

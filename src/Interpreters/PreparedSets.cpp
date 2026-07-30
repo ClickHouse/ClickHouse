@@ -100,15 +100,18 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
-    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
-SetPtr FutureSetFromStorage::get() const { return set; }
+FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_, bool wait_for_creation_)
+    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)), wait_for_creation(wait_for_creation_) {}
+
+bool FutureSetFromStorage::isReady() const { return !wait_for_creation || (set && set->isCreated()); }
+
+SetPtr FutureSetFromStorage::get() const { return isReady() ? set : nullptr; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 {
-    return set->hasExplicitSetElements() ? set : nullptr;
+    return isReady() && set->hasExplicitSetElements() ? set : nullptr;
 }
 
 
@@ -653,9 +656,9 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, C
     return from_tuple;
 }
 
-FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id)
+FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id, bool wait_for_creation)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id), wait_for_creation);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)

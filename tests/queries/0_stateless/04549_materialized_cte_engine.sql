@@ -18,6 +18,17 @@ SELECT
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT countIf(number IN s) AS in_s, countIf(number NOT IN s) AS not_in_s FROM numbers(20);
 
+-- A Set-engine CTE is filled during the query, so it must not be taken for a ready (empty) set
+-- while planning: these two shapes returned 0 before the set was made readiness-aware.
+CREATE TABLE tm (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO tm SELECT number FROM numbers(1000);
+
+WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
+SELECT count() FROM tm WHERE x IN s AND x IN s;
+
+WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
+SELECT count() FROM tm PREWHERE x IN s WHERE x IN s;
+
 -- Single-use CTE is inlined regardless of the specified engine; result matches the plain form.
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT count() FROM numbers(100) WHERE number IN s;
