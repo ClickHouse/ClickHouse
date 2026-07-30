@@ -66,8 +66,8 @@ sudo ./llvm.sh 21
 </div>
 
 <Note>
-Rust 是 ClickHouse 的可选依赖。
-如果未安装 Rust，ClickHouse 的某些功能将不会被编译进去。
+  Rust 是 ClickHouse 的可选依赖。
+  如果未安装 Rust，ClickHouse 的某些功能将不会被编译进去。
 </Note>
 
 首先，请按照官方 [Rust 文档](https://www.rust-lang.org/tools/install) 中的步骤安装 `rustup`。
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-## 构建 ClickHouse
+  ## 构建 ClickHouse
 </div>
 
 我们建议在 `ClickHouse` 内创建一个单独的目录 `build`，用于存放所有构建制品：
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-如果你想使用 gdb 等调试器，请在上述命令中添加 `-D DEBUG_O_LEVEL="0"`，以移除所有编译器优化，因为这些优化可能会影响 gdb 查看或访问变量。
+  如果你想使用 gdb 等调试器，请在上述命令中添加 `-D DEBUG_O_LEVEL="0"`，以移除所有编译器优化，因为这些优化可能会影响 gdb 查看或访问变量。
 </Note>
 
 运行 ninja 开始构建：
@@ -133,16 +133,16 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-`clickhouse-server`、`clickhouse-client` 以及类似的二进制文件，在构建完成后都是 `programs/` 目录中指向 `clickhouse` 可执行文件的符号链接。
+  `clickhouse-server`、`clickhouse-client` 以及类似的二进制文件，在构建完成后都是 `programs/` 目录中指向 `clickhouse` 可执行文件的符号链接。
 </Note>
 
 <Tip>
-CMake 为上述命令提供了简写方式：
+  CMake 为上述命令提供了简写方式：
 
-```sh
-cmake -S . -B build  # 配置构建，在仓库顶层目录中运行
-cmake --build build  # 编译
-```
+  ```sh
+  cmake -S . -B build  # 配置构建，在仓库顶层目录中运行
+  cmake --build build  # 编译
+  ```
 </Tip>
 
 <div id="running-the-clickhouse-executable">

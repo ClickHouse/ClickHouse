@@ -165,6 +165,26 @@ Pour quitter le client, appuyez sur `Ctrl+D` ou saisissez l’une des commandes 
 * `q`, `Q` ou `:q`
 * `logout` ou `logout;`
 
+<div id="getting-help">
+  ### Obtenir de l’aide
+</div>
+
+Vous pouvez consulter la documentation de n’importe quelle fonction, moteur de table, type de données, format, paramètre ou autre composant du système sans quitter le client. Saisissez `help` suivi d’un nom (les formes équivalentes `/help`, `man` et `/man` fonctionnent également) :
+
+```text
+help domainWithoutWWW
+```
+
+La recherche est insensible à la casse et interroge la table [`system.documentation`](/fr/reference/system-tables/documentation). La documentation correspondante est affichée dans le terminal à partir du Markdown, avec du texte en gras/en italique, des tableaux et des blocs de code avec coloration syntaxique. Lorsqu’un même nom correspond à plusieurs composants (par exemple `file`, qui est à la fois une fonction et un moteur de table), ils sont tous affichés.
+
+Lorsqu’aucune correspondance exacte n’est trouvée, le client liste les noms similaires (en tolérant les fautes de frappe) ainsi que les composants dont la documentation mentionne ce mot :
+
+```text
+help maxx_threads
+```
+
+Saisir simplement `help` affiche un bref résumé d’utilisation.
+
 <div id="processing-info">
   ### Informations sur le traitement des requêtes
 </div>
@@ -480,14 +500,16 @@ Pour mieux maîtriser les paramètres de l’IA, configurez-les dans le fichier 
             {/* Modèle à utiliser (les valeurs par défaut varient selon le fournisseur) */}
             <model>gpt-4o</model>
 
-            {/* Facultatif : point de terminaison d’API personnalisé pour les services compatibles OpenAI */}
+            {/* Facultatif : point de terminaison de l’API personnalisé pour les services compatibles OpenAI */}
             {/* <base_url>https://openrouter.ai/api</base_url> */}
 
             {/* Paramètres d’exploration du schéma */}
             <enable_schema_access>true</enable_schema_access>
 
             {/* Paramètres de génération */}
-            <temperature>0.0</temperature>
+            {/* Facultatif : `temperature` n’est envoyé au modèle que lorsqu’il est défini ici.
+                 Il est omis par défaut, car certains modèles rejettent ce paramètre. */}
+            {/* <temperature>0.0</temperature> */}
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -511,14 +533,16 @@ Pour mieux maîtriser les paramètres de l’IA, configurez-les dans le fichier 
       # Modèle à utiliser
       model: gpt-4o
 
-      # Facultatif : point de terminaison d’API personnalisé pour les services compatibles OpenAI
+      # Facultatif : point de terminaison de l’API personnalisé pour les services compatibles OpenAI
       # base_url: https://openrouter.ai/api
 
       # Active l’accès au schéma - permet à l’IA d’interroger les informations sur les bases de données et les tables
       enable_schema_access: true
 
       # Paramètres de génération
-      temperature: 0.0      # Contrôle le niveau d’aléa (0.0 = déterministe)
+      # `temperature` n’est envoyé au modèle que lorsqu’il est défini ici ; il est omis par défaut
+      # car certains modèles rejettent ce paramètre.
+      # temperature: 0.0    # Contrôle le niveau d’aléa (0.0 = déterministe)
       max_tokens: 1000      # Longueur maximale de la réponse
       timeout_seconds: 30   # Délai d’expiration de la requête
       max_steps: 10         # Nombre maximal d’étapes d’exploration du schéma
@@ -591,7 +615,7 @@ ai:
 </Accordion>
 
 <Accordion title="Paramètres de génération">
-  * `temperature` - Contrôle le niveau d’aléa, 0.0 = déterministe, 1.0 = créatif (par défaut : `0.0`)
+  * `temperature` - Contrôle le niveau d’aléa, 0.0 = déterministe, 1.0 = créatif. Omis par défaut et envoyé au modèle uniquement lorsqu’il est explicitement défini, car certains modèles rejettent ce paramètre.
   * `max_tokens` - Longueur maximale de la réponse en tokens (par défaut : `1000`)
   * `system_prompt` - Instructions personnalisées pour l’IA (facultatif)
 </Accordion>
@@ -930,15 +954,17 @@ Voir [Paramètres](/fr/reference/settings/session-settings) pour la liste des pa
   ### Options de formatage
 </div>
 
-| Option                            | Description                                                                                                                                                                                                                                                           | Valeur par défaut                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `-f [ --format ] <format>`        | Utilisez le format spécifié pour afficher le résultat. <br /><br />Consultez [Formats des données d’entrée et de sortie](/fr/reference/formats/index) pour obtenir la liste des formats pris en charge.                                                                  | `TabSeparated`                                                    |
-| `--pager <command>`               | Redirigez toute la sortie vers cette commande. Généralement `less` (par ex. `less -S` pour afficher des jeux de résultats très larges) ou une commande similaire.                                                                                                     | -                                                                 |
-| `-E [ --vertical ]`               | Utilisez le [format Vertical](/fr/reference/formats/Vertical) pour afficher le résultat. Cela équivaut à `–-format Vertical`. Dans ce format, chaque valeur est affichée sur une ligne distincte, ce qui est utile pour afficher des tables avec de nombreuses colonnes. | -                                                                 |
-| `--echo [ <bool> ]`               | Affiche chaque requête avant son exécution. Accepte une valeur booléenne facultative.                                                                                                                                                                                 | `true` en mode interactif, `false` en mode non interactif (batch) |
-| `--echo-formatted [ <bool> ]`     | Met en forme les requêtes affichées. Accepte une valeur booléenne facultative.                                                                                                                                                                                        | `true` en mode interactif, `false` en mode non interactif (batch) |
-| `--echo-query-id [ <bool> ]`      | Affiche l’ID de la requête avant son exécution. Accepte une valeur booléenne facultative.                                                                                                                                                                             | `true` en mode interactif, `false` en mode non interactif (batch) |
-| `--highlight [ --hilite ] <bool>` | Active ou désactive la coloration syntaxique de l’invite de commande et des requêtes affichées.                                                                                                                                                                       | `true`                                                            |
+| Option                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Valeur par défaut                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `-f [ --format ] <format>`        | Utilisez le format spécifié pour afficher le résultat. <br /><br />Consultez [Formats des données d’entrée et de sortie](/fr/reference/formats/index) pour obtenir la liste des formats pris en charge.                                                                                                                                                                                                                                                                                                                                                                                                                | `TabSeparated`                                                    |
+| `--pager <command>`               | Redirigez toute la sortie vers cette commande. Généralement `less` (par ex. `less -S` pour afficher des jeux de résultats très larges) ou une commande similaire.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | -                                                                 |
+| `-E [ --vertical ]`               | Utilisez le [format Vertical](/fr/reference/formats/Vertical) pour afficher le résultat. Cela équivaut à `–-format Vertical`. Dans ce format, chaque valeur est affichée sur une ligne distincte, ce qui est utile pour afficher des tables avec de nombreuses colonnes.                                                                                                                                                                                                                                                                                                                                               | -                                                                 |
+| `--echo [ <bool> ]`               | Affiche chaque requête avant son exécution. Accepte une valeur booléenne facultative.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `true` en mode interactif, `false` en mode non interactif (batch) |
+| `--echo-formatted [ <bool> ]`     | Met en forme les requêtes affichées. Accepte une valeur booléenne facultative.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `true` en mode interactif, `false` en mode non interactif (batch) |
+| `--echo-query-id [ <bool> ]`      | Affiche l’identifiant de requête avant son exécution. Accepte une valeur booléenne facultative.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `true` en mode interactif, `false` en mode non interactif (batch) |
+| `--echo-query-separator <string>` | Affiche ce séparateur avant la requête affichée et mise en forme (nécessite `--echo-formatted`), afin de distinguer plus facilement la requête saisie de son écho remis en forme.                                                                                                                                                                                                                                                                                                                                                                                                                                   | Vide (désactivé)                                                  |
+| `--highlight [ --hilite ] <bool>` | Active ou désactive la coloration syntaxique de l’invite de commande et des requêtes affichées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `true`                                                            |
+| `--hints <bool>`                  | Affiche pendant la saisie des indications d’autocomplétion (texte « fantôme » intégré) correspondant à la meilleure suggestion lorsque le curseur se trouve à la fin de l’entrée. Parcourez les indications avec Haut/Bas (ou Ctrl-Haut/Ctrl-Bas) ; acceptez l’indication intégrée avec Tab ou Droite ; `Enter` n’accepte une indication qu’après sa sélection explicite et, sinon, exécute la requête ; `Tab` ouvre également la liste classique de complétion. Nécessite `--highlight` (les indications ont besoin de couleur) et le mécanisme de suggestion (ainsi, `--disable_suggestion` les désactive aussi). | `true`                                                            |
 
 <div id="command-line-options-execution-details">
   ### Détails d’exécution

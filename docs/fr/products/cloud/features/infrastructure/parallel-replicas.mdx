@@ -61,7 +61,7 @@ La figure ci-dessus illustre ce qui se passe lorsqu&#39;un client interroge une 
   </li>
 </ol>
 
-Lorsque l&#39;on ajoute des réplicas à l&#39;ensemble, le processus reste globalement le même, la seule
+Lorsque l&#39;on ajoute des répliques à l&#39;ensemble, le processus reste globalement le même, la seule
 différence étant qu&#39;une seule réplique de chaque shard exécutera la requête.
 Cela signifie qu&#39;un plus grand nombre de requêtes peut alors être traité en parallèle.
 
@@ -71,23 +71,23 @@ Cela signifie qu&#39;un plus grand nombre de requêtes peut alors être traité 
 
 ClickHouse Cloud présente une architecture très différente de celle décrite ci-dessus.
 (Voir [&quot;Architecture de ClickHouse Cloud&quot;](/fr/products/cloud/reference/architecture)
-pour plus de détails). Avec la séparation du calcul et du stockage, ainsi qu&#39;une capacité de stockage virtuellement
+pour plus de détails). Avec la séparation du calcul et du stockage, ainsi qu’une capacité de stockage virtuellement
 infinie, le besoin de shards devient moins important.
 
-La figure ci-dessous montre l&#39;architecture de ClickHouse Cloud :
+La figure ci-dessous montre l’architecture de ClickHouse Cloud :
 
 <Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="architecture non shardée" />
 
-Cette architecture permet d&#39;ajouter et de supprimer des répliques presque
+Cette architecture permet d’ajouter et de supprimer des répliques presque
 instantanément, ce qui garantit une très forte scalabilité du cluster. Le cluster
-ClickHouse Keeper (illustré à droite) garantit l&#39;existence d&#39;une source de vérité unique
+ClickHouse Keeper (illustré à droite) garantit l’existence d’une source de vérité unique
 pour les métadonnées. Les répliques peuvent récupérer les métadonnées depuis le cluster ClickHouse Keeper
 et conservent toutes les mêmes données. Les données elles-mêmes sont stockées dans
-le stockage objet, et le cache SSD permet d&#39;accélérer les requêtes.
+le stockage objet, et le cache SSD permet d’accélérer les requêtes.
 
-Mais comment distribuer désormais l&#39;exécution des requêtes sur plusieurs serveurs ? Dans une
-architecture shardée, c&#39;était assez évident puisque chaque shard pouvait effectivement
-exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu&#39;il n&#39;y a pas de sharding ?
+Mais comment distribuer désormais l’exécution des requêtes sur plusieurs serveurs ? Dans une
+architecture shardée, c’était assez évident puisque chaque shard pouvait effectivement
+exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu’il n’y a pas de sharding ?
 
 <div id="introducing-parallel-replicas">
   ## Présentation des répliques parallèles
@@ -116,7 +116,7 @@ Avec les répliques parallèles :
   </li>
 
   <li>
-    Le nœud analyse l&#39;index de chaque partie et sélectionne les bonnes parties et
+    Le nœud analyse l&#39;index de chaque part et sélectionne les bonnes parts et
     granules à traiter.
   </li>
 
@@ -147,7 +147,7 @@ de fonctionner parfaitement :
 
   <li>
     La réplication dans ClickHouse est asynchrone ; à un instant donné, certaines répliques peuvent ne pas
-    avoir les mêmes parties.
+    avoir les mêmes parts.
   </li>
 
   <li>
@@ -333,14 +333,14 @@ cette section.
   le label `comp-parallel-replicas`.
 </Note>
 
-| Limitation                                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Requêtes complexes                                                 | Actuellement, les répliques parallèles fonctionnent assez bien pour les requêtes simples. Des couches de complexité comme les CTE, les sous-requêtes, les JOIN, les requêtes à structure non plate, etc. peuvent avoir un impact négatif sur les performances des requêtes.                                                                                                                                                                                                                                        |
-| Petites requêtes                                                   | Si vous exécutez une requête qui ne traite pas beaucoup de lignes, l’exécuter sur plusieurs répliques peut ne pas améliorer les performances, étant donné que le temps réseau nécessaire à la coordination entre les répliques peut entraîner des cycles supplémentaires dans l’exécution de la requête. Vous pouvez limiter ces problèmes en utilisant le paramètre : [`parallel_replicas_min_number_of_rows_per_replica`](/fr/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica). |
-| Les répliques parallèles sont désactivés avec FINAL                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Les projections ne sont pas utilisées avec les répliques parallèles |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Données à forte cardinalité et agrégation complexe                 | Une agrégation à forte cardinalité qui doit envoyer beaucoup de données peut ralentir considérablement vos requêtes.                                                                                                                                                                                                                                                                                                                                                                                              |
-| Compatibilité avec le nouvel analyseur                             | Le nouvel analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Limitation                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requêtes complexes                                                  | Actuellement, les répliques parallèles fonctionnent assez bien pour les requêtes simples. Des couches de complexité comme les CTE, les sous-requêtes, les JOIN, les requêtes à structure non plate, etc. peuvent avoir un impact négatif sur les performances des requêtes.                                                                                                                                                                                                                                            |
+| Petites requêtes                                                    | Si vous exécutez une requête qui ne traite pas beaucoup de lignes, l’exécuter sur plusieurs répliques peut ne pas améliorer les performances, étant donné que le temps réseau nécessaire à la coordination entre les répliques peut entraîner des cycles supplémentaires dans l’exécution de la requête. Vous pouvez limiter ces problèmes en utilisant le paramètre : [`parallel_replicas_min_number_of_rows_per_replica`](/fr/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica). |
+| Les répliques parallèles sont désactivés avec FINAL                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Les projections ne sont pas utilisées avec les répliques parallèles |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Données à forte cardinalité et agrégation complexe                  | Une agrégation à forte cardinalité qui doit envoyer beaucoup de données peut ralentir considérablement vos requêtes.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Compatibilité avec l’analyseur                                      | L’analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 <div id="settings-related-to-parallel-replicas">
   ## Paramètres liés aux répliques parallèles
@@ -505,7 +505,7 @@ WHERE type='type3'
 GROUP BY toYear(timestamp) LIMIT 10
 ```
 
-Voyons le pipeline de requête sans réplica parallèle :
+Voyons le pipeline de requête sans réplique parallèle :
 
 ```sql title="EXPLAIN PIPELINE (without parallel replica)"
 EXPLAIN PIPELINE graph = 1, compact = 0 

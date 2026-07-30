@@ -100,7 +100,27 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
         new_state->variant_state = variant_state ? variant_state->clone() : nullptr;
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        /// The flattened states are mutated while reading, so they must be deep-cloned as well;
+        /// otherwise a prefix-cache clone would share them with the cached original.
+        new_state->flattened_indexes_state = flattened_indexes_state ? flattened_indexes_state->clone() : nullptr;
+        for (size_t i = 0; i != flattened_states.size(); ++i)
+            new_state->flattened_states[i] = flattened_states[i] ? flattened_states[i]->clone() : nullptr;
         return new_state;
+    }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (variant_state)
+            callback(variant_state);
+        if (structure_state)
+            callback(structure_state);
+        for (const auto & flattened_state : flattened_states)
+        {
+            if (flattened_state)
+                callback(flattened_state);
+        }
+        if (flattened_indexes_state)
+            callback(flattened_indexes_state);
     }
 };
 
