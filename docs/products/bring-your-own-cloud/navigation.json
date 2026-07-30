@@ -19,7 +19,6 @@
     {
       "group": "Onboarding",
       "pages": [
-        "products/bring-your-own-cloud/onboarding/aws",
         "products/bring-your-own-cloud/onboarding/standard",
         {
           "group": "Customization",

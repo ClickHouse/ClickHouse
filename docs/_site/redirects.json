@@ -1,5 +1,13 @@
 [
   {
+    "source": "/products/bring-your-own-cloud/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
     "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
     "destination": "/products/bring-your-own-cloud/onboarding/standard"
   },
