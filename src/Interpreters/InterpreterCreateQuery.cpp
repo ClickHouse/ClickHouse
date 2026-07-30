@@ -37,6 +37,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1863,6 +1864,31 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    /// Snapshot whether the user wrote an explicit ENGINE before `setEngine` fills in a default below.
+    /// Used to detect an engine-less `CREATE TABLE` on a `DataLakeCatalog` database.
+    const bool engine_user_specified = create.storage && create.storage->engine;
+
+    /// Capture explicit unsupported storage clauses before `setEngine` merges the source's clauses for
+    /// `CREATE TABLE ... AS` and makes explicit and inherited indistinguishable; rejected in the check below.
+    /// The clauses are unsupported on both DataLakeCatalog create paths (engine-less and explicit
+    /// `ENGINE = Iceberg*`). Engine SETTINGS are meaningful only with an explicit engine (they are real
+    /// data-lake storage settings, e.g. `iceberg_format_version`), so they are rejected only on the
+    /// engine-less path where they would be silently dropped.
+    const char * datalake_unsupported_storage_clause = nullptr;
+    if (create.storage)
+    {
+        if (create.storage->primary_key)
+            datalake_unsupported_storage_clause = "PRIMARY KEY";
+        else if (create.storage->sample_by)
+            datalake_unsupported_storage_clause = "SAMPLE BY";
+        else if (create.storage->ttl_table)
+            datalake_unsupported_storage_clause = "TTL";
+        else if (create.storage->unique_key)
+            datalake_unsupported_storage_clause = "UNIQUE KEY";
+        else if (create.storage->settings && !engine_user_specified)
+            datalake_unsupported_storage_clause = "engine SETTINGS";
+    }
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -1935,12 +1961,85 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.cluster.empty())
     {
+        checkDatabaseSupportsOnClusterDDL(database);
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);
     }
 
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+
+    if (database && database->isDatalakeCatalog())
+    {
+        if (create.is_ordinary_view || create.is_materialized_view || create.is_window_view
+            || create.is_dictionary || create.attach || create.is_clone_as
+            || create.replace_table || create.replace_view)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DataLakeCatalog supports only plain CREATE TABLE; "
+                "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
+
+        if (engine_user_specified)
+        {
+            if (!create.storage->engine->name.starts_with("Iceberg"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DataLakeCatalog only supports Iceberg-family table engines; got '{}'",
+                    create.storage->engine->name);
+
+            database->validateCreateTableEngine(create.storage->engine->name);
+        }
+
+        /// For `CREATE TABLE ... AS` the storage is later rebuilt to keep only PARTITION BY / ORDER BY, so
+        /// these explicit clauses (captured before `setEngine`) can only be rejected here.
+        if (datalake_unsupported_storage_clause)
+        {
+            if (engine_user_specified)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DataLakeCatalog CREATE TABLE with an explicit table engine supports only "
+                    "PARTITION BY, ORDER BY, and engine SETTINGS; "
+                    "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported "
+                    "(got {})", datalake_unsupported_storage_clause);
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
+                "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported "
+                "(got {})", datalake_unsupported_storage_clause);
+        }
+
+        /// Both create paths persist only column names/types (plus PARTITION BY / ORDER BY) into the
+        /// initial Iceberg metadata, and the table is re-instantiated from the catalog on every access,
+        /// so any other column property or secondary structure would be silently lost. Reject them here,
+        /// before any catalog or storage work; `properties` also covers columns inherited via
+        /// `CREATE TABLE ... AS`. `DatabaseDataLake::createTable` re-validates the engine-less path
+        /// at the AST level.
+        for (const auto & column : properties.columns)
+        {
+            if (column.default_desc.expression || column.default_desc.kind != ColumnDefaultKind::Default)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column '{}': {} is not yet supported by DataLakeCatalog table creation",
+                    column.name, toString(column.default_desc.kind));
+
+            /// Implicit auto-statistics on a `CREATE TABLE ... AS` source do not count as an explicit
+            /// column property (same distinction as `formatColumns`).
+            if (!column.comment.empty() || column.codec || column.ttl
+                || !column.settings.empty() || column.statistics.hasExplicitStatistics())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column '{}': COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY "
+                    "are not supported by DataLakeCatalog table creation",
+                    column.name);
+        }
+
+        if (!properties.indices.empty() || !properties.constraints.empty() || !properties.projections.empty()
+            || (create.columns_list && (create.columns_list->primary_key || create.columns_list->primary_key_from_columns)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
+
+        /// The comment is not persisted in Iceberg metadata or catalog properties,
+        /// so reject it instead of silently dropping it.
+        if (create.comment)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table COMMENT is not supported by DataLakeCatalog table creation "
+                "(note: CREATE TABLE ... AS inherits the comment from the source table)");
+    }
 
     if (create.isTemporary() && create.replace_table)
     {
@@ -1981,7 +2080,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard, mode);
+    bool created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
     ddl_guard.reset();
 
     if (!created)   /// Table already exists
@@ -2066,7 +2165,7 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool engine_user_specified)
 {
     if (create.isTemporary())
     {
@@ -2161,6 +2260,59 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
+    }
+
+    auto & create_query = query_ptr->as<ASTCreateQuery &>();
+    if (database->isDatalakeCatalog() && !engine_user_specified)
+    {
+        /// Extract partition/order from the source table if CREATE TABLE ... AS was used.
+        if (!as_table_saved.empty())
+        {
+            String as_database_name = getContext()->resolveDatabase(as_database_saved);
+            StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+            auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+
+            /// `setEngine` merged the source's engine, SETTINGS and clauses into `create_query.storage`; none
+            /// apply to a `DataLakeCatalog` table, so rebuild it keeping only the partition and sorting keys
+            /// (explicit ones take precedence, the source's are the fallback). Unsupported explicit clauses
+            /// were already rejected in `createTable`.
+            ASTPtr partition_by;
+            ASTPtr order_by;
+            if (create_query.storage)
+            {
+                if (create_query.storage->partition_by)
+                    partition_by = create_query.storage->partition_by->clone();
+                if (create_query.storage->order_by)
+                    order_by = create_query.storage->order_by->clone();
+            }
+
+            if (!partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                partition_by = as_storage_metadata->getPartitionKeyAST()->clone();
+            if (!order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                order_by = as_storage_metadata->getSortingKeyAST()->clone();
+
+            auto storage_ast = make_intrusive<ASTStorage>();
+            create_query.set(create_query.storage, storage_ast);
+            if (partition_by)
+                create_query.storage->set(create_query.storage->partition_by, partition_by);
+            if (order_by)
+                create_query.storage->set(create_query.storage->order_by, order_by);
+        }
+
+        /// Ensure columns are in the query AST (mainly for `CREATE TABLE ... AS source`). `formatColumns` keeps
+        /// every column modifier (COMMENT, CODEC, TTL, SETTINGS, STATISTICS, defaults) so `DatabaseDataLake`
+        /// rejects the unsupported ones rather than silently dropping them.
+        if (!create_query.columns_list
+            || !create_query.columns_list->columns
+            || create_query.columns_list->columns->children.empty())
+        {
+            auto columns_declare_list = make_intrusive<ASTColumns>();
+            columns_declare_list->set(columns_declare_list->columns, formatColumns(properties.columns));
+            create_query.set(create_query.columns_list, columns_declare_list);
+        }
+
+        database->createTable(getContext(), create.getTable(), nullptr, query_ptr);
+        return true;
     }
 
     data_path = database->getTableDataPath(create);
@@ -2279,7 +2431,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             is_restore_from_backup);
 
         /// If schema was inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
@@ -2593,7 +2744,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, /*engine_user_specified=*/false);
         ddl_guard.reset();
         chassert(done);
         created = true;

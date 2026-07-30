@@ -24,6 +24,7 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+std::string storageTypeToScheme(StorageType type);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -245,6 +246,9 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    /// Catalog-wide base location for new tables, e.g. `s3://warehouse/data`. Empty if unknown.
+    virtual String getDefaultBaseLocation() const { return ""; }
+
     /// Creates new table in catalog.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
@@ -266,7 +270,8 @@ public:
         Int32 previous_schema_id) const;
 
     /// Drop table from catalog.
-    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+    /// If purge, the catalog is requested to also delete underlying data files.
+    virtual void dropTable(const String & namespace_name, const String & table_name, bool purge) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".

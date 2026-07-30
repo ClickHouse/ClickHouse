@@ -14,6 +14,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
@@ -572,6 +573,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     try
     {
+        /// Worker-side guard
+        checkQueryDatabasesSupportOnClusterDDL(task.query, context);
+
         auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());

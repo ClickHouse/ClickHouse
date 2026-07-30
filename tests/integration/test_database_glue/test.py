@@ -895,6 +895,56 @@ def test_create_gzip_metadata(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_table_engine_backend_mismatch_rejected(started_cluster):
+    # Glue has a fixed S3 backend and reopens every table with it, so an explicit Iceberg engine
+    # pinning a different backend must be rejected up front instead of yielding an unreadable table.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_engine_backend_mismatch_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    for engine in [
+        "IcebergAzure('http://acc.blob.core.windows.net/cont/tbl/', 'acc', 'key')",
+        "IcebergLocal('/var/lib/clickhouse/user_files/tbl/')",
+        "IcebergHDFS('hdfs://namenode:9000/tbl/')",
+    ]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.mismatch` (x String) ENGINE = {engine}",
+            settings={
+                "allow_experimental_database_glue_catalog": 1,
+                "allow_database_glue_catalog": 1,
+            },
+        )
+        assert (
+            "would be reopened with the catalog's storage backend and become unreadable" in error
+        ), error
+        assert "stores tables on S3" in error, error
+
+    # Positive control: the matching S3 engine and the generic Iceberg engine are accepted.
+    create_clickhouse_glue_table(
+        started_cluster, node, root_namespace, f"{test_ref}_s3", "(x String)"
+    )
+    assert (
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{test_ref}_s3`") == "0\n"
+    )
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{test_ref}_generic` (x String) "
+        f"ENGINE = Iceberg('http://minio1:9001/warehouse-glue/{test_ref}_generic/', "
+        f"'{minio_access_key}', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert (
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{test_ref}_generic`")
+        == "0\n"
+    )
+
+
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -977,6 +1027,14 @@ def test_drop_table(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     assert len(catalog.list_tables(root_namespace)) == 1
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    # ClickHouse's Glue drop only removes the catalog entry and does not delete the data files, so a purge
+    # drop is rejected and the table is left intact.
+    error = node.query_and_get_error(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS data_lake_delete_data_on_drop = 1"
+    )
+    assert "not supported for the Glue catalog" in error
+    assert len(catalog.list_tables(root_namespace)) == 1
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0

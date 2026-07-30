@@ -52,6 +52,7 @@ The following settings are supported:
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
+| `default_base_location` | Base URI for new tables when the catalog does not report `default-base-location`. New tables are placed under `<default_base_location>/<namespace>/<table>` (e.g. `s3://warehouse/data`) |
 | `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
@@ -63,6 +64,95 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+
+## Creating tables {#creating-tables}
+
+An Iceberg table in a `DataLakeCatalog` database can be created directly from ClickHouse.
+
+:::note
+`CREATE TABLE` and `DROP TABLE` require a catalog that can perform catalog mutations. They are supported
+for Iceberg REST catalogs (including OneLake, BigLake, and Delta Sharing) and for the AWS Glue catalog.
+Other catalog types (Unity, Hive Metastore, Paimon REST) are read-only and reject these statements.
+:::
+
+The location of a newly created table comes from `default_base_location` (a full `s3://bucket/prefix`) when
+set, otherwise the bucket is derived from `storage_endpoint`. With `storage_uri_style = 'virtual_hosted'` the
+bucket cannot be derived from the endpoint unambiguously, so `default_base_location` is required for
+`CREATE TABLE`.
+
+The table name must be quoted with backticks and include the namespace separated by a dot:
+
+```sql
+CREATE TABLE catalog_db.`namespace.table_name`
+(
+    id Int64,
+    name String,
+    value Float64
+)
+PARTITION BY id
+ORDER BY name
+SETTINGS allow_database_iceberg = 1;
+```
+
+Iceberg accepts only a fixed set of partition transforms, so `PARTITION BY`
+must use one of the following expressions:
+
+| Expression                    | Iceberg transform |
+|-------------------------------|-------------------|
+| `<column>`                    | `identity`        |
+| `toYearNumSinceEpoch(<col>)`  | `year`            |
+| `toMonthNumSinceEpoch(<col>)` | `month`           |
+| `toRelativeDayNum(<col>)`     | `day`             |
+| `toRelativeHourNum(<col>)`    | `hour`            |
+| `icebergTruncate(N, <col>)`   | `truncate[N]`     |
+| `icebergBucket(N, <col>)`     | `bucket[N]`       |
+
+Composite partitioning is supported via `PARTITION BY (expr1, expr2, ...)`.
+Other expressions (e.g. `toYYYYMM`, `intDiv`) are rejected at `CREATE TABLE`.
+
+Only the column names and types, `PARTITION BY`, and `ORDER BY` are persisted into the Iceberg
+table metadata. Anything else — the storage clauses `PRIMARY KEY`, `SAMPLE BY`, `TTL`, and
+`UNIQUE KEY`; indices, constraints, and projections; and the column modifiers `DEFAULT`,
+`MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `COMMENT`, `CODEC`, `TTL`, `STATISTICS`, and `SETTINGS` —
+is rejected rather than silently dropped. This applies both with and without an explicit
+`ENGINE` clause. Engine `SETTINGS` are accepted only together with an explicit Iceberg engine,
+where they are the engine's storage settings (e.g. `iceberg_format_version`).
+
+You can also create an Iceberg table that inherits the schema of an existing table:
+
+```sql
+CREATE TABLE catalog_db.`namespace.table_name`
+AS other_db.source_table
+SETTINGS allow_database_iceberg = 1;
+```
+
+If the source table's `PARTITION BY` and `ORDER BY` use only the expressions
+listed above, they are copied into the new Iceberg table.
+
+## Dropping tables {#dropping-tables}
+
+Tables can be dropped from a `DataLakeCatalog` database.
+`DROP TABLE` sends a delete request to the remote catalog, which removes
+the table entry from the catalog.
+
+```sql
+DROP TABLE catalog_db.`namespace.table_name`
+```
+
+By default, ClickHouse does not request the catalog to delete the underlying data. In order to do it, use the `data_lake_delete_data_on_drop` setting:
+
+```sql
+DROP TABLE catalog_db.`namespace.table_name`
+SETTINGS data_lake_delete_data_on_drop = 1
+```
+
+:::note
+Whether data files are actually deleted depends on the catalog itself.
+The `purgeRequested` flag is sent to the catalog, but the catalog may choose to ignore it.
+For the Glue catalog, `DROP TABLE` only removes the catalog entry and does not delete the underlying data
+files, so `DROP TABLE` with `data_lake_delete_data_on_drop = 1` is rejected instead of silently leaving the
+data behind.
+:::
 
 ## Examples {#examples}
 

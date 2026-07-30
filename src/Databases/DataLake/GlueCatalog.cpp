@@ -50,6 +50,7 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -59,6 +60,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::FailPoints
@@ -368,7 +370,7 @@ bool GlueCatalog::tryGetTableMetadata(
         auto setup_specific_properties = [&]
         {
             const auto & table_params = table_outcome.GetParameters();
-            if (table_params.contains("metadata_location"))
+            if (table_params.contains("metadata_location") && !table_params.at("metadata_location").empty())
             {
                 result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
             }
@@ -637,39 +639,84 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     glue_client->CreateDatabase(create_request);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     createNamespaceIfNotExists(namespace_name);
 
-    Aws::Glue::Model::CreateTableRequest request;
-    request.SetDatabaseName(namespace_name);
+    String effective_metadata_path = new_metadata_path;
 
-    Aws::Glue::Model::TableInput table_input;
-    table_input.SetName(table_name);
+    DB::ObjectStoragePtr written_metadata_storage;
+    String written_metadata_file;
 
-    Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
+    if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
+    {
+        String table_location = metadata_content->getValue<String>("location");
+        while (table_location.ends_with('/'))
+            table_location = table_location.substr(0, table_location.size() - 1);
 
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
+        TableMetadata dummy_metadata;
+        auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, dummy_metadata);
 
-    sd.SetLocation(grandparent.c_str());
+        String metadata_filename = table_path + "/metadata/v1.metadata.json";
 
-    table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata_content, oss, 4);
+        String metadata_str = DB::removeEscapedSlashes(oss.str());
 
-    Aws::Map<Aws::String, Aws::String> parameters;
-    parameters["metadata_location"] = new_metadata_path;
-    parameters["table_type"] = "ICEBERG";
+        DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "");
 
-    table_input.SetParameters(parameters);
+        written_metadata_storage = object_storage;
+        written_metadata_file = metadata_filename;
 
-    request.SetTableInput(table_input);
+        effective_metadata_path = "s3://" + bucket_name + "/" + metadata_filename;
+    }
 
-    auto response = glue_client->CreateTable(request);
+    try
+    {
+        Aws::Glue::Model::CreateTableRequest request;
+        request.SetDatabaseName(namespace_name);
 
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+        Aws::Glue::Model::TableInput table_input;
+        table_input.SetName(table_name);
+
+        Aws::Glue::Model::StorageDescriptor sd;
+        if (!effective_metadata_path.empty())
+        {
+            fs::path original_path = effective_metadata_path;
+
+            fs::path parent = original_path.parent_path();
+            fs::path grandparent = parent.parent_path();
+
+            sd.SetLocation(grandparent.c_str());
+        }
+
+        table_input.SetStorageDescriptor(sd);
+        table_input.SetTableType("ICEBERG");
+
+        Aws::Map<Aws::String, Aws::String> parameters;
+        parameters["metadata_location"] = effective_metadata_path;
+        parameters["table_type"] = "ICEBERG";
+
+        table_input.SetParameters(parameters);
+
+        request.SetTableInput(table_input);
+
+        auto response = glue_client->CreateTable(request);
+
+        if (!response.IsSuccess())
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+    }
+    catch (...)
+    {
+        /// Registration in the catalog failed (or we failed while preparing the request). Remove the
+        /// metadata file staged above so a retry is not permanently blocked by the leftover.
+        if (written_metadata_storage)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
+        }
+        throw;
+    }
 }
 
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
@@ -719,8 +766,19 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge) const
 {
+    /// We drop only via Glue's `DeleteTable`, which removes the catalog entry but leaves the data files in
+    /// object storage; deleting them (the client-side purge that e.g. Iceberg's own GlueCatalog performs) is
+    /// not implemented here. Reject a requested purge rather than silently ignore it and orphan the data.
+    /// TODO: implement the client-side purge (delete the table's data/manifest/metadata files, then
+    /// `DeleteTable`) in a follow-up PR so `data_lake_delete_data_on_drop` can be honored for Glue.
+    if (purge)
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "data_lake_delete_data_on_drop is not supported for the Glue catalog: dropping only removes the Glue "
+            "catalog entry and does not delete the underlying data files");
+
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);
     request.SetName(table_name);

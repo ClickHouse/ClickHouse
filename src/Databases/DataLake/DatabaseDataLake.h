@@ -32,6 +32,7 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
+    bool isRemoteDatabase() const override { return true; }
     bool isDatalakeCatalog() const override { return true; }
 
     bool empty() const override;
@@ -71,11 +72,13 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
+    void validateCreateTableEngine(const String & engine_name) const override;
+
     void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
+        ContextPtr context,
+        const String & name,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
+        const ASTPtr & query) override;
 
     void dropTable( /// NOLINT
         ContextPtr context_,

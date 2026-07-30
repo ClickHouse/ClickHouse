@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 import requests
 import pytz
+from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -191,6 +192,7 @@ def started_cluster():
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
+            with_zookeeper=True,
         )
 
         cluster.add_instance(
@@ -203,6 +205,7 @@ def started_cluster():
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
+            with_zookeeper=True,
         )
 
         logging.info("Starting cluster...")
@@ -1124,6 +1127,67 @@ def test_cluster_select(started_cluster):
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines": 1, "enable_parallel_replicas": 2, "cluster_for_parallel_replicas": "cluster_simple"}) == 'pablo\n'
 
 
+def test_on_cluster_ddl_rejected_for_datalake_catalog(started_cluster):
+    # ON CLUSTER DDL against a shared DataLakeCatalog must be rejected on the worker as well as the initiator,
+    # because an initiator that lacks the catalog database locally cannot detect it and enqueues the query anyway.
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_on_cluster_ban_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    engine = (
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+        f"'{minio_access_key}', '{minio_secret_key}')"
+    )
+    ddl_settings = {
+        "allow_experimental_database_iceberg": 1,
+        "allow_database_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "distributed_ddl_output_mode": "throw",
+    }
+
+    # Initiator has the catalog locally: rejected centrally before the query is ever enqueued.
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    err = node1.query_and_get_error(
+        f"CREATE TABLE {qualified} ON CLUSTER cluster_simple (x String) {engine}",
+        settings=ddl_settings,
+    )
+    assert "ON CLUSTER is not supported for DataLakeCatalog" in err, err
+
+    # Initiator lacks the catalog, but a worker (node1) has it, so only the worker guard can fire. The plain
+    # ON CLUSTER control below confirms the query reaches the workers, ruling out an unrelated failure.
+    node2.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+    try:
+        control_table = f"{test_ref}_control"
+        node2.query(
+            f"CREATE TABLE default.{control_table} ON CLUSTER cluster_simple (x Int32) ENGINE = MergeTree ORDER BY x",
+            settings={"distributed_ddl_output_mode": "throw"},
+        )
+        assert node1.query(f"EXISTS TABLE default.{control_table}") == "1\n"
+        node2.query(
+            f"DROP TABLE default.{control_table} ON CLUSTER cluster_simple SYNC",
+            settings={"distributed_ddl_output_mode": "throw"},
+        )
+
+        node2.query_and_get_error(
+            f"CREATE TABLE {qualified} ON CLUSTER cluster_simple (x String) {engine}",
+            settings=ddl_settings,
+        )
+
+        # The shared catalog must be untouched: without the worker guard node1 would have created the table here.
+        catalog = load_catalog_impl(started_cluster)
+        existing_namespaces = {".".join(ns) for ns in catalog.list_namespaces()}
+        if namespace in existing_namespaces:
+            tables = {ident[-1] for ident in catalog.list_tables(namespace)}
+            assert table_name not in tables, f"table must not have been created in the shared catalog: {tables}"
+    finally:
+        # Restore the catalog database on node2 for subsequent tests, even if an assertion above failed.
+        create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+
+
 def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -1291,6 +1355,600 @@ def test_system_tables_with_nullptr_table(started_cluster):
     assert int(result.strip()) > 0
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_create_table_as(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctas_ns"
+    src_table = "src_ctas"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+    for table in ["from_as", "override"]:
+        node.query(
+            f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
+        )
+
+    # Intentional: CTAS must work from a source with a functional partition key.
+    node.query(
+        f"""
+        CREATE TABLE default.{src_table}
+        (
+            id Int64,
+            name String,
+            dt Date
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYearNumSinceEpoch(dt)
+        ORDER BY (id, name)
+    """
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.from_as`
+        AS default.{src_table} SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    # CTAS with explicit PARTITION BY / ORDER BY overriding the source table.
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.override`
+        AS default.{src_table}
+        PARTITION BY id
+        ORDER BY name
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "from_as" in table_names
+    assert "override" in table_names
+
+    tbl = catalog.load_table(f"{namespace}.from_as")
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "dt"]
+
+    tbl = catalog.load_table(f"{namespace}.override")
+    assert len(tbl.spec().fields) == 1
+    assert tbl.spec().fields[0].name == "id"
+    assert str(tbl.spec().fields[0].transform) == "identity"
+
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "dt"]
+
+    # Unsupported storage clauses written explicitly on CREATE ... AS must be rejected, not silently dropped
+    # when the storage is rebuilt to keep only PARTITION BY / ORDER BY.
+    for clause in [
+        "PRIMARY KEY id",
+        "SAMPLE BY id",
+        "TTL toDate('2099-01-01')",
+        "UNIQUE KEY id",
+        "SETTINGS index_granularity = 8192",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.ctas_unsupp` "
+            f"AS default.{src_table} {clause}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "supports only PARTITION BY and ORDER BY" in err
+
+    for table in ["from_as", "override"]:
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
+        )
+    node.query(f"DROP TABLE default.{src_table}")
+
+
+def test_create_table_as_rejects_column_modifiers(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctas_colmod_ns"
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    # Each source table carries a column modifier that Iceberg tables do not support. CREATE TABLE ... AS
+    # must reject it instead of silently creating the Iceberg table with weaker semantics than the source.
+    cases = [
+        ("comment", "id Int64, name String COMMENT 'the name'"),
+        ("codec", "id Int64, name String CODEC(ZSTD)"),
+        ("ttl", "id Int64, dt Date, val Int64 TTL dt + INTERVAL 1 DAY"),
+    ]
+    for src_suffix, cols in cases:
+        src_table = f"src_colmod_{src_suffix}"
+        node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+        node.query(
+            f"CREATE TABLE default.{src_table} ({cols}) ENGINE = MergeTree ORDER BY id"
+        )
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.dst_{src_suffix}` "
+            f"AS default.{src_table} SETTINGS allow_database_iceberg = 1"
+        )
+        assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
+        node.query(f"DROP TABLE default.{src_table}")
+
+
+def test_create_table_explicit_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctex_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.explicit`
+        (
+            id Int64,
+            name String,
+            value Float64
+        )
+        PARTITION BY id
+        ORDER BY name
+        SETTINGS allow_database_iceberg=1;
+    """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[1] for t in tables]
+    assert "explicit" in table_names
+
+    tbl = catalog.load_table(f"{namespace}.explicit")
+    col_names = [f.name for f in tbl.schema().fields]
+    assert col_names == ["id", "name", "value"]
+
+    iceberg_types = {f.name: str(f.field_type) for f in tbl.schema().fields}
+    assert iceberg_types["id"] == "long"
+    assert iceberg_types["name"] == "string"
+    assert iceberg_types["value"] == "double"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.explicit` VALUES (1, 'a', 1.5);",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert (
+        node.query(
+            f"SELECT id, name, value FROM {CATALOG_NAME}.`{namespace}.explicit`"
+        )
+        == "1\ta\t1.5\n"
+    )
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.explicit` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_create_table_nested_namespace(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_nested_ns.a.b"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.nested` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.nested`
+        (
+            id Int64
+        )
+        SETTINGS allow_database_iceberg=1;
+        """
+    )
+
+    tables = catalog.list_tables(namespace)
+    table_names = [t[-1] for t in tables]
+    assert "nested" in table_names
+
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # INSERT exercises RestCatalog::updateMetadata for the nested namespace.
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.nested` VALUES (1);",
+        settings=write_settings,
+    )
+    assert node.query(
+        f"SELECT id FROM {CATALOG_NAME}.`{namespace}.nested`",
+        settings={"allow_database_iceberg": 1},
+    ).strip() == "1"
+
+    # ALTER exercises RestCatalog::updateSchema for the nested namespace.
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{namespace}.nested` ADD COLUMN z Nullable(String);",
+        settings=write_settings,
+    )
+    assert "z" in node.query(
+        f"DESCRIBE TABLE {CATALOG_NAME}.`{namespace}.nested`",
+        settings=write_settings,
+    )
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.nested` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_create_non_table_rejected(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Each DDL flips a distinct flag in the interpreter's "plain CREATE TABLE only" guard.
+    for ddl in [
+        f"CREATE VIEW {CATALOG_NAME}.`ns.v` AS SELECT 1",
+        f"CREATE MATERIALIZED VIEW {CATALOG_NAME}.`ns.mv` ENGINE = Memory AS SELECT 1",
+        f"ATTACH TABLE {CATALOG_NAME}.`ns.attached` (x Int32) ENGINE = Memory",
+        f"CREATE OR REPLACE TABLE {CATALOG_NAME}.`ns.replaced` (x Int32)",
+    ]:
+        err = node.query_and_get_error(ddl, settings={"allow_database_iceberg": 1})
+        assert "supports only plain CREATE TABLE" in err
+
+    node.query("DROP TABLE IF EXISTS default.src_clone")
+    node.query(
+        "CREATE TABLE default.src_clone (x Int32) ENGINE = MergeTree ORDER BY x"
+    )
+    err = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`ns.cloned` CLONE AS default.src_clone",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "supports only plain CREATE TABLE" in err
+    node.query("DROP TABLE default.src_clone")
+
+    err = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`ns.mem` (x Int32) ENGINE = Memory",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "only supports Iceberg-family table engines" in err
+
+
+def test_create_table_unsupported_clauses(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    base_ddl = f"CREATE TABLE {CATALOG_NAME}.`ns.unsupp` (id Int64, name String)"
+    for clause in [
+        "PRIMARY KEY id ORDER BY id",
+        "ORDER BY id SAMPLE BY id",
+        "ORDER BY id TTL toDate('2099-01-01')",
+        "ORDER BY id SETTINGS index_granularity = 8192",
+    ]:
+        err = node.query_and_get_error(
+            f"{base_ddl} {clause}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "supports only PARTITION BY and ORDER BY" in err
+
+    # The table COMMENT is not persisted anywhere, so it is rejected by a separate check.
+    err = node.query_and_get_error(
+        f"{base_ddl} ORDER BY id COMMENT 'tbl comment'",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "Table COMMENT is not supported" in err
+
+    for table_element in [
+        "INDEX idx_name name TYPE bloom_filter GRANULARITY 1",
+        "PROJECTION p (SELECT id ORDER BY name)",
+        "CONSTRAINT c CHECK id > 0",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.unsupp_elem` (id Int64, name String, {table_element}) ORDER BY id",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "does not support PRIMARY KEY, indices" in err
+
+    # Column-level PRIMARY KEY is normalized into the storage-level clause, covered above.
+    for col_clause in [
+        "(id Int64 COMMENT 'pk', name String)",
+        "(id Int64, name String CODEC(ZSTD))",
+        "(id Int64, dt Date TTL dt + INTERVAL 1 DAY)",
+        "(id Int64, name String SETTINGS (max_compress_block_size = 1))",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.unsupp_col` {col_clause} ORDER BY id",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
+
+    for col_clause in [
+        "(id Int64, d Int64 DEFAULT 1)",
+        "(id Int64, d Int64 MATERIALIZED id + 1)",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.unsupp_def` {col_clause} ORDER BY id",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "is not yet supported" in err
+
+
+def test_create_table_with_engine_unsupported_clauses(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    engine = (
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/engine_unsupp/', "
+        f"'{minio_access_key}', '{minio_secret_key}')"
+    )
+
+    # The explicit-ENGINE path persists only column names/types, PARTITION BY, and ORDER BY into the
+    # initial Iceberg metadata, so unsupported storage clauses must be rejected there too, not silently
+    # dropped. Unlike the engine-less path, engine SETTINGS stay allowed: they are real data-lake
+    # storage settings (e.g. `iceberg_format_version`) used during creation.
+    for clause in [
+        "PRIMARY KEY id",
+        "ORDER BY id SAMPLE BY id",
+        "TTL toDate('2099-01-01')",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` (id Int64, name String) {engine} {clause}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported" in err
+
+    for table_element in [
+        "INDEX idx_name name TYPE bloom_filter GRANULARITY 1",
+        "PROJECTION p (SELECT id ORDER BY name)",
+        "CONSTRAINT c CHECK id > 0",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` (id Int64, name String, {table_element}) {engine}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "does not support PRIMARY KEY, indices" in err
+
+    for col_clause in [
+        "(id Int64 COMMENT 'pk', name String)",
+        "(id Int64, name String CODEC(ZSTD))",
+        "(id Int64, dt Date TTL dt + INTERVAL 1 DAY)",
+        "(id Int64, name String SETTINGS (max_compress_block_size = 1))",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` {col_clause} {engine}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
+
+    for col_clause in [
+        "(id Int64, d Int64 DEFAULT 1)",
+        "(id Int64, d Int64 MATERIALIZED id + 1)",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` {col_clause} {engine}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "is not yet supported" in err
+
+    # Modifiers inherited via CREATE TABLE ... AS are rejected on the explicit-ENGINE path too.
+    node.query("DROP TABLE IF EXISTS default.src_engine_colmod")
+    node.query(
+        "CREATE TABLE default.src_engine_colmod (id Int64, name String COMMENT 'the name') "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    err = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` AS default.src_engine_colmod {engine}",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
+    node.query("DROP TABLE default.src_engine_colmod")
+
+    # Positive control: PARTITION BY, ORDER BY, and engine SETTINGS remain supported with an explicit engine.
+    namespace = f"test_engine_supp_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.engine_supp` (id Int64, name String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/engine_supp/', "
+        f"'{minio_access_key}', '{minio_secret_key}') "
+        f"PARTITION BY id ORDER BY name SETTINGS iceberg_format_version = 2",
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.engine_supp`",
+        settings={"allow_database_iceberg": 1},
+    )
+
+
+def test_create_table_invalid_partition_transforms(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_invalid_part_ns"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    # A valid positive transform is accepted (and creates the namespace).
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.good` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.good`
+        (
+            id Int64
+        )
+        PARTITION BY icebergBucket(8, id)
+        SETTINGS allow_database_iceberg=1;
+        """
+    )
+    assert "good" in [t[1] for t in catalog.list_tables(namespace)]
+
+    # Invalid transform parameters must be rejected before any catalog metadata is written.
+    # Otherwise CREATE TABLE could register an unreadable Iceberg table whose partition spec
+    # serializes as bucket[0], bucket[-1], or truncate[0].
+    for i, transform in enumerate(
+        ["icebergBucket(0, id)", "icebergBucket(-1, id)", "icebergTruncate(0, id)"]
+    ):
+        tbl = f"bad_{i}"
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.{tbl}` (id Int64) "
+            f"PARTITION BY {transform} SETTINGS allow_database_iceberg=1"
+        )
+        assert "requires a positive" in err, err
+        assert tbl not in [t[1] for t in catalog.list_tables(namespace)]
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.good` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_create_table_namespace_location(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = f"test_ns_location_{uuid.uuid4().hex[:8]}"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    node.query(
+        f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.first` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(
+        f"""
+        CREATE TABLE {CATALOG_NAME}.`{namespace}.first`
+        (
+            id Int64
+        )
+        SETTINGS allow_database_iceberg=1;
+        """
+    )
+
+    table_location = catalog.load_table(f"{namespace}.first").location().rstrip("/")
+    ns_location = catalog.load_namespace_properties(namespace).get("location")
+
+    # The namespace default location must point at the namespace base, not at the first table's
+    # directory. Otherwise another client creating a table in the same namespace without an explicit
+    # location could be placed under the first table's path.
+    assert ns_location is not None, "namespace is missing its location property"
+    ns_location = ns_location.rstrip("/")
+    assert ns_location != table_location, (
+        f"namespace location {ns_location} must not equal the first table location {table_location}"
+    )
+    assert table_location.startswith(ns_location + "/"), (ns_location, table_location)
+    assert table_location[len(ns_location):].strip("/") == "first", (ns_location, table_location)
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.first` SETTINGS allow_database_iceberg=1"
+    )
+
+
+def test_drop_table_purge(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_drop_purge_ns"
+    catalog = load_catalog_impl(started_cluster)
+    minio_client = Minio(
+        f"{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    for table in ["to_keep", "to_purge"]:
+        node.query(
+            f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{namespace}.{table}` SETTINGS allow_database_iceberg=1"
+        )
+        node.query(
+            f"""
+            CREATE TABLE {CATALOG_NAME}.`{namespace}.{table}`
+            (
+                id Int64
+            )
+            SETTINGS allow_database_iceberg=1;
+        """
+        )
+
+    table_names = [t[1] for t in catalog.list_tables(namespace)]
+    assert "to_keep" in table_names
+    assert "to_purge" in table_names
+
+    def table_prefix(table):
+        location = catalog.load_table(f"{namespace}.{table}").location()
+        assert location.startswith("s3://warehouse-rest/")
+        prefix = location[len("s3://warehouse-rest/"):].rstrip("/") + "/"
+        assert list(
+            minio_client.list_objects("warehouse-rest", prefix=prefix, recursive=True)
+        ), f"Expected metadata under {prefix} before drop"
+        return prefix
+
+    keep_prefix = table_prefix("to_keep")
+    purge_prefix = table_prefix("to_purge")
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_keep` SETTINGS allow_database_iceberg=1"
+    )
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{namespace}.to_purge` SETTINGS allow_database_iceberg=1, data_lake_delete_data_on_drop=1"
+    )
+
+    table_names = [t[1] for t in catalog.list_tables(namespace)]
+    assert "to_keep" not in table_names
+    assert "to_purge" not in table_names
+
+    # A drop without purge unregisters the table from the catalog but must keep its data.
+    assert list(
+        minio_client.list_objects("warehouse-rest", prefix=keep_prefix, recursive=True)
+    ), f"Expected objects under {keep_prefix} to survive a drop without purge"
+
+    remaining = [
+        o.object_name
+        for o in minio_client.list_objects("warehouse-rest", prefix=purge_prefix, recursive=True)
+    ]
+    assert not remaining, f"Expected purge to remove objects under {purge_prefix}, found: {remaining}"
+
 
 
 def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster):

@@ -83,6 +83,8 @@ public:
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
+        if (!table_location.empty() && storage_path.starts_with(table_location))
+            return IcebergPathFromMetadata::deserialize(storage_path);
         if (storage_path.size() > table_root.size()
             && storage_path.starts_with(table_root))
             return IcebergPathFromMetadata::deserialize(table_location + storage_path.substr(table_root.size()));
