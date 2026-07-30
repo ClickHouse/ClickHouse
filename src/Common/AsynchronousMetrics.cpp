@@ -17,6 +17,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -2551,6 +2552,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
             = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
     }
+
+#if USE_SILK
+    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
+        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
+            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
+            "Counters with Time in the name are in nanoseconds." };
+#endif
 
     /// Add more metrics as you wish.
 

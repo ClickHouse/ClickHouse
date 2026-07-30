@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/FiberLocal.h>
 #include <Common/VariableContext.h>
 
 namespace DB
@@ -20,7 +21,7 @@ class TraceCollector;
 struct MemoryTrackerBlockerInThread
 {
 private:
-    static thread_local constinit VariableContext level;
+    static constinit FiberLocal<VariableContext, FiberLocalSlot::MemoryTrackerBlockerLevel, /* default_value = */ VariableContext::Max> level;
 
     std::optional<VariableContext> previous_level;
 

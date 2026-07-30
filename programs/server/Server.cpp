@@ -51,6 +51,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
@@ -205,6 +206,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool allow_experimental_silk_runtime;
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
@@ -1509,6 +1511,13 @@ try
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
+#if USE_SILK
+    if (server_settings[ServerSetting::allow_experimental_silk_runtime])
+    {
+        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+    }
+#endif
+
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
@@ -1546,6 +1555,15 @@ try
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
+    auto stop_silk_fiber_scheduler = [&]{
+#if USE_SILK
+        if (server_settings[ServerSetting::allow_experimental_silk_runtime])
+        {
+            LOG_INFO(log, "Stopping silk fiber scheduler");
+            Silk::destroyFiberScheduler();
+        }
+#endif
+    };
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
@@ -1553,6 +1571,8 @@ try
         DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+
+        stop_silk_fiber_scheduler();
     });
 
     if (page_cache_max_size != 0)

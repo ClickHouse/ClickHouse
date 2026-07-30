@@ -3,7 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <atomic>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
 #include <Common/AsyncTaskExecutor.h>
