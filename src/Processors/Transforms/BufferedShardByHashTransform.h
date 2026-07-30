@@ -62,7 +62,9 @@ private:
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
+    /// Per-shard FIFO of chunks waiting to be pushed downstream. Soft-capped at
+    /// MAX_QUEUE_LENGTH; see that constant for when the cap is bypassed and a queue
+    /// can grow past it.
     std::vector<std::deque<Chunk>> output_queues;
 
     /// Reused across input chunks to skip per-chunk reallocation.
