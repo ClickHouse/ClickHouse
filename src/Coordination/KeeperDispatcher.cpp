@@ -188,7 +188,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             /// Raft startup failed, so we can't join nuraft's commit thread here. That's ok:
             /// closed_all_connections is false, so drainAndCheckQueues only drains and asserts
-            /// nothing. KeeperDispatcher::shutdown does the full ordered sequence later.
+            /// nothing.
             dispatcher->shutdownRequests();
             dispatcher->drainAndCheckQueues(/*closed_all_connections=*/false);
         }

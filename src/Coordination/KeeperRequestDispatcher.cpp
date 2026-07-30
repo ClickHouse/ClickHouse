@@ -355,6 +355,9 @@ void KeeperRequestDispatcher::drainAndCheckQueues(bool closed_all_connections)
 
     if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
     {
+        /// Fixed string, so that a test can assert that the checks below ran, and that they ran
+        /// after nuraft's commit thread was joined.
+        LOG_DEBUG(log, "Checking dispatcher queue byte accounting");
         chassert(requests_queue_bytes.load() == 0);
         chassert(response_bytes_in_all_queues.load() == 0);
     }

@@ -414,6 +414,23 @@ def test_no_logical_error_on_shutdown_with_late_commit(started_cluster):
         assert not node.contains_in_log(
             "Logical error: 'requests_queue_bytes.load() == 0'"
         ), "Keeper hit the request byte accounting assertion during shutdown"
+
+        # The absence of a logical error is not enough: it also holds when the checks never run.
+        # Assert positively that they ran, and that they ran after nuraft's commit thread was
+        # joined, which is the ordering this fix establishes. One grep for both markers keeps
+        # their line positions comparable; only_latest skips rotated logs from earlier tests.
+        markers = node.grep_in_log(
+            "Checking dispatcher queue byte accounting\\|commit thread stopped.",
+            only_latest=True,
+        ).splitlines()
+        checked = [i for i, l in enumerate(markers) if "byte accounting" in l]
+        joined = [i for i, l in enumerate(markers) if "commit thread stopped." in l]
+        assert checked, f"dispatcher never checked its queue byte accounting: {markers}"
+        assert joined, f"nuraft commit thread was never joined: {markers}"
+        assert joined[-1] < checked[-1], (
+            "queue byte accounting was checked before the nuraft commit thread was joined, "
+            f"so a producer could still be running: {markers}"
+        )
     finally:
         stop.set()
         destroy_zk_client(node_zk)
