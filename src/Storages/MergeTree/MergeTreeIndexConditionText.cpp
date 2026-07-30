@@ -127,14 +127,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    const String & rewritten_index_column_name_,
+    const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , rewritten_index_column_name(rewritten_index_column_name_)
+    , normalized_index_column_name(normalized_index_column_name_)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
@@ -892,9 +892,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = hasHeaderColumn(index_column_name);
-    bool has_map_keys_column = hasHeaderColumn(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = hasHeaderColumn(fmt::format("mapValues({})", index_column_name));
+    bool has_index_column = hasIndexForColumn(index_column_name);
+    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
@@ -1550,7 +1550,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return hasHeaderColumn(fmt::format("mapValues({})", column_name));
+            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
         }
         return false;
     }
@@ -1651,7 +1651,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return hasHeaderColumn(node.getColumnName())
+        return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };

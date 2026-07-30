@@ -1753,10 +1753,10 @@ namespace
 {
 
 /// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
-void rewriteEmptyStringComparisons(ASTPtr & ast)
+void normalizeColumnExpression(ASTPtr & ast)
 {
     for (auto & child : ast->children)
-        rewriteEmptyStringComparisons(child);
+        normalizeColumnExpression(child);
 
     const auto * function = ast->as<ASTFunction>();
     if (!function || (function->name != "equals" && function->name != "notEquals")
@@ -1784,17 +1784,17 @@ void rewriteEmptyStringComparisons(ASTPtr & ast)
 
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
-/// expression after the same rewrite, or an empty string if it does not change.
-String getRewrittenIndexColumnName(const IndexDescription & index)
+/// expression after the same rewrite, or `std::nullopt` if it does not change.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
 {
     /// A text index is always defined on a single expression.
     if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
         return {};
 
-    ASTPtr rewritten = index.expression_list_ast->children.front()->clone();
-    rewriteEmptyStringComparisons(rewritten);
+    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    normalizeColumnExpression(normalized);
 
-    String name = rewritten->getColumnName();
+    String name = normalized->getColumnName();
     if (index.sample_block.has(name))
         return {};
 
@@ -1815,7 +1815,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
-    , rewritten_index_column_name(getRewrittenIndexColumnName(index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
 {
 }
 
@@ -1872,7 +1872,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, rewritten_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)

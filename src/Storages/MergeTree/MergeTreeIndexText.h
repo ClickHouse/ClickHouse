@@ -558,7 +558,7 @@ public:
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
-    String rewritten_index_column_name;
+    std::optional<String> normalized_index_column_name;
 };
 
 }
