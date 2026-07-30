@@ -11,7 +11,9 @@ DROP TABLE IF EXISTS t_corr_small;
 
 CREATE TABLE t_corr_big (id UInt64, grp UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_corr_small (grp UInt64, val UInt64) ENGINE = MergeTree ORDER BY grp;
-INSERT INTO t_corr_big SELECT number, number % 100 FROM numbers(100000);
+-- Keep the table small: the correlated scalar aggregate below is expensive per row, and the
+-- flaky check runs this test under sanitizers with randomized low max_threads.
+INSERT INTO t_corr_big SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_corr_small SELECT number * 2, number FROM numbers(50);
 
 -- The buffer setting is pinned to its default (on) so the bug path is provably exercised;
