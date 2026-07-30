@@ -1,6 +1,6 @@
 ---
-description: 'The `gini` function calculates the Gini coefficient of a numeric column,
-  a measure of inequality in a distribution.'
+description: 'The `gini` function calculates the Gini coefficient of a finite,
+  non-negative numeric column, a measure of inequality in a distribution.'
 slug: /sql-reference/aggregate-functions/reference/gini
 title: 'gini'
 doc_type: 'reference'

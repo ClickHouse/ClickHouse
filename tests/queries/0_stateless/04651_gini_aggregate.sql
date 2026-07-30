@@ -34,6 +34,9 @@ SELECT gini(x) FROM (
 -- Negative values are rejected.
 SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 
+-- Infinite values are rejected.
+SELECT gini(x) FROM (SELECT [inf, inf] :: Array(Float64) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
+
 -- NaN inputs are skipped.
 SELECT gini(x) FROM (SELECT [1, 2, nan, 4] :: Array(Float64) AS arr) ARRAY JOIN arr AS x;
 

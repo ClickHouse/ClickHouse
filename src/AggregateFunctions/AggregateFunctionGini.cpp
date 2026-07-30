@@ -58,6 +58,9 @@ struct AggregateFunctionGiniData
         if (isNaN(x))
             return;
 
+        if (!isFinite(x))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support infinite values");
+
         if (x < Value{})
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support negative values");
 
@@ -206,15 +209,15 @@ void registerAggregateFunctionGini(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGini(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) of a column of non-negative numeric values, a measure of inequality in a distribution.
+Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) of a column of finite, non-negative numeric values, a measure of inequality in a distribution.
 
 The result ranges from `0` (perfect equality: all values are the same) to a maximum approaching `1` as `n` grows (perfect inequality: one value holds everything and the rest are zero). For a finite sample of `n` values the maximum is `(n - 1) / n`.
 
-To get the exact value, all the passed values are collected in their input type and then sorted. The final calculation is normalized to avoid overflow. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped.
+To get the exact value, all the passed values are collected in their input type and then sorted. The final calculation is normalized to avoid overflow. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped, while infinite values are rejected.
     )";
     FunctionDocumentation::Syntax syntax = "gini(expr)";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression resulting in non-negative numeric values.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "Expression resulting in finite, non-negative numeric values.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"The Gini coefficient, or `NaN` if there are fewer than 2 values or the sum of the values is 0.", {"Float64"}};
