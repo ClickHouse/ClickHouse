@@ -174,20 +174,24 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
+    /// The element is one of four shapes, distinguished exactly as before by the leading bracket and the
+    /// number of colons. Only the two shapes that carry a port need the endpoint splitting of
+    /// `tryParseIpEndpoint`; the other two are a bare address. Neither path resolves anything: a hostname
+    /// is a valid shape in every case (`example.com`, `example.com:80`) and is rejected, not looked up.
     std::optional<Poco::Net::SocketAddress> address;
     if (!last.empty())
     {
         const auto colons = std::count(last.begin(), last.end(), ':');
-        /// Brackets denote IPv6 with a port; one colon denotes IPv4 or a hostname with a port.
-        /// `tryParseIpEndpoint` rejects hostnames and non-numeric ports.
+
+        /// IPv6 address with a port ("[ipv6]:port"), or IPv4 address (or a hostname) with a port.
         if (last.front() == '[' || colons == 1)
         {
             address = tryParseIpEndpoint(last);
         }
+        /// IPv6 address without a port (unbracketed, hence more than one colon),
+        /// or IPv4 address (or a hostname) without a port.
         else
         {
-            /// Multiple colons denote unbracketed IPv6 without a port; no colon denotes IPv4 or a hostname
-            /// without a port. `Poco::Net::IPAddress::tryParse` rejects hostnames.
             Poco::Net::IPAddress ip;
             if (Poco::Net::IPAddress::tryParse(last, ip))
                 address.emplace(ip, 0);
