@@ -45,6 +45,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
@@ -53,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -650,6 +652,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
+    /// Built here (before the expired-columns decision) so that decision can consult the pending
+    /// mutations of the selected patch parts. The read pipeline below reuses the same snapshot.
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = !patch_parts.empty(),
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
@@ -676,10 +696,30 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
-        /// Any storage column not present in any part and without a default expression is considered expired
+        /// A column absent from all source parts but updated by a selected patch part must not be
+        /// expired: the merged part claims the patch versions, so dropping it loses the patch data.
+        /// Patches store the pre-rename name; translate it as AlterConversions::addPatchPart does.
+        NameSet columns_updated_in_patches;
+        for (const auto & patch : patch_parts)
+        {
+            auto patch_commands = mutations_snapshot->getOnFlyMutationCommandsForPart(patch);
+            AlterConversions patch_conversions(patch_commands, PatchPartsForReader{}, global_ctx->context);
+            for (const auto & col : patch->getColumns())
+            {
+                if (isPatchPartSystemColumn(col.name))
+                    continue;
+                columns_updated_in_patches.emplace(
+                    patch_conversions.columnHasNewName(col.name) ? patch_conversions.getColumnNewName(col.name) : col.name);
+            }
+        }
+
+        /// Any storage column not present in any part, not updated by a selected patch part, and
+        /// without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
+            if (!columns_present_in_parts.contains(storage_column.name)
+                && !columns_updated_in_patches.contains(storage_column.name)
+                && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
@@ -765,22 +805,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         else
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
-
-    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
-
-    MergeTreeData::IMutationsSnapshot::Params params
-    {
-        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = parts_info.min_metadata_version,
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
-        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-    };
-
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
 
     if (!patch_parts.empty())
     {

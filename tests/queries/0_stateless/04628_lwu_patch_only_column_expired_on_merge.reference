@@ -1,0 +1,16 @@
+h_before	1	42
+h_before	2	\N
+h_before	3	\N
+h_after	1	42
+h_after	2	\N
+h_after	3	\N
+h_nonpatch_acol_parts	1
+h_algo	Horizontal
+v_before	1	42
+v_before	2	\N
+v_before	3	\N
+v_after	1	42
+v_after	2	\N
+v_after	3	\N
+v_nonpatch_acol_parts	1
+v_algo	Vertical
