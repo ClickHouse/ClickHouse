@@ -1661,7 +1661,6 @@ class SettingsRandomizer:
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
-        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
     }
 
     dependent_settings = {

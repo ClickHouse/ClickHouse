@@ -550,9 +550,8 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     if (!settings[Setting::use_indexes_refiner_in_read_pools])
         return nullptr;
 
-    /// The skip index reader applies JOIN runtime filters with a once-per-part, fail-open snapshot.
-    /// The refiner builds its result at task-cut time, possibly before the filters are published,
-    /// which would cache it without runtime pruning. Keep the build at reader initialization instead.
+    /// Refining at task-cut time could snapshot JOIN runtime filters before they are published.
+    /// Keep the build at reader initialization instead.
     if (index_build_context->index_reader_pool->hasRuntimeFilters())
         return nullptr;
 
