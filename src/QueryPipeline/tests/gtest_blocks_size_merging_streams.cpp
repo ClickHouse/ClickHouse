@@ -1,12 +1,19 @@
 #include <gtest/gtest.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <Columns/ColumnVector.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
@@ -260,4 +267,51 @@ TEST(MergingSortedTest, HierarchicalMerge)
 
     ASSERT_EQ(hierarchical_result.size(), single_result.size());
     EXPECT_EQ(hierarchical_result, single_result);
+}
+
+TEST(MergingSortedTest, HierarchicalMergeQueryPlanSerializationVersion)
+{
+    auto header = std::make_shared<const Block>(Block{
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "K1"}});
+    auto sort_description = getSortDescription({"K1"});
+
+    auto round_trip = [&](UInt64 version, size_t max_streams_per_hierarchical_merge)
+    {
+        SortingStep::Settings settings(8192);
+        settings.max_streams_per_hierarchical_merge = max_streams_per_hierarchical_merge;
+        SortingStep step(header, sort_description, 0, settings);
+
+        WriteBufferFromOwnString out;
+        SerializedSetsRegistry serialized_sets;
+        IQueryPlanStep::Serialization serialization{out, serialized_sets};
+        serialization.version = version;
+        step.serialize(serialization);
+        out.finalize();
+
+        ReadBufferFromString in(out.str());
+        DeserializedSetsRegistry deserialized_sets;
+        ContextPtr context;
+        SharedHeaders input_headers{header};
+        QueryPlanSerializationSettings plan_settings;
+        IQueryPlanStep::Deserialization deserialization{
+            .in = in,
+            .registry = deserialized_sets,
+            .storage_holders = {},
+            .context = context,
+            .input_headers = input_headers,
+            .output_header = header,
+            .settings = plan_settings,
+            .max_type_complexity = 0,
+            .version = version,
+            .skipping = false,
+        };
+
+        auto deserialized_step = SortingStep::deserialize(deserialization);
+        return assert_cast<const SortingStep &>(*deserialized_step).getSettings().max_streams_per_hierarchical_merge;
+    };
+
+    EXPECT_EQ(round_trip(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE - 1, 16), 0);
+    EXPECT_EQ(round_trip(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE, 0), 0);
+    EXPECT_EQ(round_trip(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE, 2), 2);
+    EXPECT_EQ(round_trip(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE, 16), 16);
 }

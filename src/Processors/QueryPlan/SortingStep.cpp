@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -109,7 +110,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const QueryPlanSerializationSettingsUInt64 max_streams_per_hierarchical_merge;
 }
 
 namespace ErrorCodes
@@ -205,8 +205,6 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
-    max_streams_per_hierarchical_merge = settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge];
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -224,7 +222,6 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
-    settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge] = max_streams_per_hierarchical_merge;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -829,6 +826,9 @@ void SortingStep::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
 
     writeVarUInt(partition_by_description.size(), ctx.out);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE)
+        writeVarUInt(sort_settings.max_streams_per_hierarchical_merge, ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::clone() const
@@ -851,6 +851,17 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     if (partition_desc_size)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE)
+    {
+        readVarUInt(sort_settings.max_streams_per_hierarchical_merge, ctx.in);
+        checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge);
+    }
+    else
+    {
+        /// Older plans always used a single flat merge node.
+        sort_settings.max_streams_per_hierarchical_merge = 0;
+    }
 
     return std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));

@@ -115,8 +115,6 @@ namespace DB
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
-    \
-    DECLARE(UInt64, max_streams_per_hierarchical_merge, 0, "Maximum number of input streams per MergingSortedTransform node; when exceeded a hierarchical merge tree is built to reduce lock contention. Defaults to 0 here (not 16 as in runtime Settings) so that a plan serialized by an older initiator, which does not send this key, keeps the pre-PR flat-merge behavior on a newer worker instead of silently enabling hierarchical merging.", 0) \
 
 
 // clang-format on
