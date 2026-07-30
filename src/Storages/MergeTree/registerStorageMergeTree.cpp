@@ -907,11 +907,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce an experimental codec into existing tables via a config default plus a restart, without
         /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
-        /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
-        /// documented to skip all sanity checks and is left alone.
+        /// profile, which is where such a config default can be legitimately allowed). Because such values
+        /// are not persisted into the table metadata, a session-level opt-in is not durable: the table
+        /// would fail this very check on the next load (short `ATTACH`, server restart), when it runs
+        /// against the default profile. So config-inherited values additionally require the opt-in in the
+        /// default profile — the same policy source `Context::chooseCompressionCodec` uses for the
+        /// server-level `<compression>` config. `FORCE_RESTORE` is documented to skip all sanity checks
+        /// and is left alone.
         const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach;
-        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
+        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
+            const bool session_allows = local_settings[Setting::allow_experimental_codecs];
+            const bool default_profile_allows
+                = context->getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
+
             const auto is_stored_in_definition = [&](std::string_view name)
             {
                 if (!args.storage_def->settings)
@@ -926,8 +935,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 if (codec.empty())
                     return;
-                if (is_fresh_definition || !is_stored_in_definition(name))
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                if (is_stored_in_definition(name))
+                {
+                    /// Stored values are durable: they were gated when they were introduced, so only
+                    /// fresh definitions are checked, against the session setting.
+                    if (is_fresh_definition && !session_allows)
+                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                }
+                else if (!session_allows || !default_profile_allows)
+                {
+                    try
+                    {
+                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    }
+                    catch (Exception & e)
+                    {
+                        if (session_allows)
+                            e.addMessage(
+                                "The value of the setting '{}' is inherited from the <merge_tree> config defaults and is not stored "
+                                "in the table metadata, so enabling 'allow_experimental_codecs' only in the session is not enough: "
+                                "the table would fail to load after a server restart. Enable it in the default profile instead",
+                                name);
+                        throw;
+                    }
+                }
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);

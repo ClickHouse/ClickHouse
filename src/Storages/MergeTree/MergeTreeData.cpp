@@ -5056,10 +5056,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
     /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
-    /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
-    /// counterpart of this check lives in `registerStorageMergeTree`.
-    if (!settings[Setting::allow_experimental_codecs])
+    /// experimental codec must not re-enter the table without the session opting in. Moreover, a reset
+    /// value is no longer stored in the table metadata, so the session opt-in alone is not durable — the
+    /// table would fail to load after a server restart, when the config-inherited value is re-validated
+    /// against the default profile (see `registerStorageMergeTree`, where the CREATE-time counterpart of
+    /// this check lives). Resets therefore additionally require the opt-in in the default profile.
     {
+        const bool session_allows = settings[Setting::allow_experimental_codecs];
+        const bool default_profile_allows
+            = local_context->getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
         std::unique_ptr<MergeTreeSettings> default_settings;
         for (const auto & command : commands)
         {
@@ -5068,22 +5073,39 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
             {
-                String codec;
                 if (command.type == AlterCommand::MODIFY_SETTING)
                 {
                     Field value;
-                    if (command.settings_changes.tryGet(setting_name, value))
-                        codec = value.safeGet<String>();
+                    if (!session_allows && command.settings_changes.tryGet(setting_name, value))
+                    {
+                        const auto & codec = value.safeGet<String>();
+                        if (!codec.empty())
+                            CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    }
                 }
-                else if (command.settings_resets.contains(setting_name))
+                else if (command.settings_resets.contains(setting_name) && (!session_allows || !default_profile_allows))
                 {
                     if (!default_settings)
                         default_settings = getDefaultSettings();
-                    codec = default_settings->get(setting_name).safeGet<String>();
+                    const auto codec = default_settings->get(setting_name).safeGet<String>();
+                    if (codec.empty())
+                        continue;
+                    try
+                    {
+                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    }
+                    catch (Exception & e)
+                    {
+                        if (session_allows)
+                            e.addMessage(
+                                "The post-reset value of the setting '{}' is inherited from the <merge_tree> config defaults and "
+                                "is not stored in the table metadata, so enabling 'allow_experimental_codecs' only in the session "
+                                "is not enough: the table would fail to load after a server restart. Enable it in the default "
+                                "profile instead",
+                                setting_name);
+                        throw;
+                    }
                 }
-
-                if (!codec.empty())
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
             }
         }
     }
