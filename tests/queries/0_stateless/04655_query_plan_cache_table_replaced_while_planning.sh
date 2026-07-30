@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas, no-ordinary-database, no-replicated-database
 # Regression test for the storage-identity race on the query plan cache miss path: a cacheable logical
 # plan bakes in the semantics of the storages that were analyzed (here, a row policy that becomes an
 # explicit `FilterStep`), while the dependencies of the cache entry and the reads of the plan are
@@ -12,13 +12,19 @@
 # happens before dependency collection and execution.
 # The plan cache is a single, server-wide cache inspected via SYSTEM DROP QUERY PLAN CACHE, the
 # failpoint is server-wide, and the row policy applies to all users, so the test runs in isolation
-# (see 04489 for the full rationale of the tags).
+# (see 04489 for the full rationale of the tags). The swap relies on an `Atomic` database freeing the
+# table name while the paused query still holds the old table, so `Ordinary` and `Replicated`
+# databases are excluded.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 policy="policy_04655_${CLICKHOUSE_DATABASE}"
+
+# The failpoint is server-wide: if this test ever leaves it enabled, every other query that builds a
+# cacheable logical plan on the same server pauses forever. Disable it on every exit path.
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_pause_after_logical_plan" 2>/dev/null' EXIT
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t;
@@ -48,7 +54,11 @@ do
     sleep 0.1
 done
 
-$CLICKHOUSE_CLIENT --query "
+# The paused query still holds the old table, so the drop must not wait for the table to be removed
+# for real - `database_atomic_wait_for_drop_and_detach_synchronously` is enabled in the test
+# configuration and would deadlock with the query this test is pausing on purpose. An `Atomic`
+# database frees the name as soon as the table is detached, which is exactly the race being tested.
+$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously 0 --query "
     DROP ROW POLICY $policy ON ${CLICKHOUSE_DATABASE}.t;
     DROP TABLE t;
     CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a;
