@@ -86,22 +86,27 @@ struct StagedChunk
 {
     /// The bucket-grouped key side of a staged chunk, shared by both payload modes: record i's
     /// routing hash (reused by the drain's emplace) is `routing_hashes[i]` and its key bytes
-    /// occupy `key_bytes[key_offsets[i], key_offsets[i + 1])`; bucket b owns the record range
-    /// [bucket_offsets[b], bucket_offsets[b + 1]). The key bytes are staged so that the drain
-    /// emplaces without constructing a hashing state per (chunk, bucket) slice.
+    /// occupy `key_bytes[keyByteOffsetAt(i), keyByteOffsetAt(i) + keySizeAt(i))`; bucket b owns
+    /// the record range [bucket_offsets[b], bucket_offsets[b + 1]). The key bytes are staged so
+    /// that the drain emplaces without constructing a hashing state per (chunk, bucket) slice.
     struct StagedKeys
     {
         PaddedPODArray<UInt64> routing_hashes;
         PaddedPODArray<char> key_bytes;
+        /// Byte offsets of the records' keys, populated only for variable-size (string-kind)
+        /// keys. A fixed-size-key chunk carries no offsets: every position derives from
+        /// `fixed_key_size`, which saves eight bytes per staged record.
         PaddedPODArray<UInt64> key_offsets;
+        /// The staged width of a fixed-size key - `sizeof` of the shared method's key type,
+        /// the exact width the kernels stage - or zero for variable-size keys.
+        UInt64 fixed_key_size = 0;
         std::array<UInt32, ADAPTIVE_AGGREGATION_NUM_BUCKETS + 1> bucket_offsets{};
 
         size_t size() const { return routing_hashes.size(); }
         size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
-        std::string_view keyBytesAt(size_t i) const
-        {
-            return {key_bytes.data() + key_offsets[i], key_offsets[i + 1] - key_offsets[i]};
-        }
+        UInt64 keyByteOffsetAt(size_t i) const { return fixed_key_size ? i * fixed_key_size : key_offsets[i]; }
+        size_t keySizeAt(size_t i) const { return fixed_key_size ? fixed_key_size : key_offsets[i + 1] - key_offsets[i]; }
+        std::string_view keyBytesAt(size_t i) const { return {key_bytes.data() + keyByteOffsetAt(i), keySizeAt(i)}; }
     };
 
     /// Value staging (simple-count aggregation only): the record is the key itself plus a run
@@ -142,15 +147,23 @@ struct StagedChunk
     bool wellFormed() const
     {
         const size_t records = keys.size();
-        if (keys.key_offsets.size() != records + 1 || keys.bucket_offsets.back() != records)
+        if (keys.bucket_offsets.back() != records)
             return false;
-        if (keys.key_offsets.back() != keys.key_bytes.size())
-            return false;
+        if (keys.fixed_key_size)
+        {
+            if (!keys.key_offsets.empty() || keys.key_bytes.size() != records * keys.fixed_key_size)
+                return false;
+        }
+        else
+        {
+            if (keys.key_offsets.size() != records + 1 || keys.key_offsets.back() != keys.key_bytes.size())
+                return false;
+            for (size_t i = 0; i < records; ++i)
+                if (keys.key_offsets[i] > keys.key_offsets[i + 1])
+                    return false;
+        }
         for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
             if (keys.bucket_offsets[b] > keys.bucket_offsets[b + 1])
-                return false;
-        for (size_t i = 0; i < records; ++i)
-            if (keys.key_offsets[i] > keys.key_offsets[i + 1])
                 return false;
         if (const auto * counts = std::get_if<CountPayload>(&payload))
             return counts->multiplicities.size() == records;

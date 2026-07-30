@@ -4,7 +4,6 @@
 /// dispatched over the aggregation-method variants.
 
 #include <bit>
-#include <unordered_set>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -163,9 +162,18 @@ namespace
         {
             if (keys.routing_hashes[j] != hash)
                 continue;
-            const UInt64 j_end = (j + 1 == out) ? byte_pos : keys.key_offsets[j + 1];
-            if (j_end - keys.key_offsets[j] != size || !stagedKeyEquals(keys.key_bytes.data() + keys.key_offsets[j], key))
-                continue;
+            /// A fixed-size-key chunk needs no size comparison: every record is `size` wide.
+            if (keys.fixed_key_size)
+            {
+                if (!stagedKeyEquals(keys.key_bytes.data() + j * keys.fixed_key_size, key))
+                    continue;
+            }
+            else
+            {
+                const UInt64 j_end = (j + 1 == out) ? byte_pos : keys.key_offsets[j + 1];
+                if (j_end - keys.key_offsets[j] != size || !stagedKeyEquals(keys.key_bytes.data() + keys.key_offsets[j], key))
+                    continue;
+            }
             if (static_cast<UInt64>(multiplicities[j]) + multiplicity > std::numeric_limits<UInt32>::max())
                 continue;
             multiplicities[j] += multiplicity;
@@ -174,7 +182,8 @@ namespace
 
         keys.routing_hashes[out] = hash;
         multiplicities[out] = multiplicity;
-        keys.key_offsets[out] = byte_pos;
+        if (!keys.fixed_key_size)
+            keys.key_offsets[out] = byte_pos;
         copyStagedKeyBytes(keys.key_bytes.data() + byte_pos, key);
         byte_pos += size;
         ++out;
@@ -209,6 +218,18 @@ namespace
     /// any: hash-organized tables prefetch by the saved routing hash, string tables locate the
     /// slot from the key bytes and the hash. The two drain loops share this so the dispatch
     /// cannot drift between them.
+    /// Position and width of record j's staged key bytes. A fixed-size-key chunk carries no
+    /// offsets array, and in the drains the width is the compile-time key width, so the
+    /// position is a plain multiplication.
+    template <typename Key>
+    ALWAYS_INLINE std::pair<const char *, size_t> stagedKeyAt(const DB::StagedChunk::StagedKeys & keys, size_t j)
+    {
+        if constexpr (adaptive_key_stages_bytes<Key>)
+            return {keys.key_bytes.data() + keys.key_offsets[j], keys.key_offsets[j + 1] - keys.key_offsets[j]};
+        else
+            return {keys.key_bytes.data() + j * sizeof(Key), sizeof(Key)};
+    }
+
     template <typename Key, typename Impl>
     void ALWAYS_INLINE prefetchStagedKey(Impl & impl, const DB::StagedChunk::StagedKeys & keys, size_t j, size_t slice_end)
     {
@@ -600,9 +621,12 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
 
     auto & keys = block.keys;
     auto & multiplicities = block.payload.emplace<StagedChunk::CountPayload>().multiplicities;
+    if constexpr (!adaptive_key_stages_bytes<SharedKey>)
+        keys.fixed_key_size = sizeof(SharedKey);
     keys.routing_hashes.resize(total);
     multiplicities.resize(total);
-    keys.key_offsets.resize(total + 1);
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        keys.key_offsets.resize(total + 1);
     keys.key_bytes.resize(total_bytes);
 
     size_t out = 0;
@@ -644,11 +668,14 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     }
 
     keys.bucket_offsets[num_buckets] = static_cast<UInt32>(out);
-    keys.key_offsets[out] = byte_pos;
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+    {
+        keys.key_offsets[out] = byte_pos;
+        keys.key_offsets.resize(out + 1);
+    }
 
     keys.routing_hashes.resize(out);
     multiplicities.resize(out);
-    keys.key_offsets.resize(out + 1);
     keys.key_bytes.resize(byte_pos);
 }
 
@@ -670,7 +697,10 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
     /// The sizes are exact and final, and the chunk can sit on a backlog for the rest of the
     /// query, so the arrays are sized without the power-of-two growth headroom.
     keys.routing_hashes.resize_exact(total);
-    keys.key_offsets.resize_exact(total + 1);
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        keys.key_offsets.resize_exact(total + 1);
+    else
+        keys.fixed_key_size = sizeof(SharedKey);
 
     /// Counting sort of the staged misses by bucket: one pass over the records accumulates the
     /// record and key-byte histograms together, one pass over the buckets turns both into
@@ -707,7 +737,8 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
         byte_offset += bytes;
     }
     keys.bucket_offsets[num_buckets] = offset;
-    keys.key_offsets[total] = byte_offset;
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        keys.key_offsets[total] = byte_offset;
 
     keys.key_bytes.resize_exact(byte_offset);
 
@@ -734,7 +765,8 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
         const auto size = staged_key_size(i);
         const auto byte_pos = byte_cursor[b];
         byte_cursor[b] += size;
-        keys.key_offsets[pos] = byte_pos;
+        if constexpr (adaptive_key_stages_bytes<SharedKey>)
+            keys.key_offsets[pos] = byte_pos;
 
         /// The same byte extraction the count path uses: states that expose their padded
         /// column buffers hand the bytes out directly (in particular, the packed-string method
@@ -875,14 +907,16 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     {
         chassert(mini->countsOnly());
         total += mini->keys.size();
-        total_key_bytes += mini->keys.key_offsets[mini->keys.size()];
+        total_key_bytes += mini->keys.key_bytes.size();
     }
 
     auto & keys = chunk.keys;
     auto & multiplicities = chunk.payload.emplace<StagedChunk::CountPayload>().multiplicities;
+    keys.fixed_key_size = minis.front()->keys.fixed_key_size;
     keys.routing_hashes.resize(total);
     multiplicities.resize(total);
-    keys.key_offsets.resize(total + 1);
+    if (!keys.fixed_key_size)
+        keys.key_offsets.resize(total + 1);
     keys.key_bytes.resize(total_key_bytes);
 
     /// The publish dedup only sees one block; keys repeating across the buffered batches are
@@ -949,11 +983,14 @@ void Aggregator::sealValueStagedChunkDeduplicated(
     }
 
     keys.bucket_offsets[num_buckets] = static_cast<UInt32>(out);
-    keys.key_offsets[out] = byte_pos;
+    if (!keys.fixed_key_size)
+    {
+        keys.key_offsets[out] = byte_pos;
+        keys.key_offsets.resize(out + 1);
+    }
 
     keys.routing_hashes.resize(out);
     multiplicities.resize(out);
-    keys.key_offsets.resize(out + 1);
     keys.key_bytes.resize(byte_pos);
 }
 
@@ -1041,6 +1078,9 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
         const auto & block = *block_ptr;
         const auto & keys = block.keys;
+        /// The chunk's key representation must match the method this drain resolves keys for:
+        /// `stagedKeyAt` derives fixed-key positions from the compile-time key width.
+        chassert(keys.fixed_key_size == (adaptive_key_stages_bytes<typename Method::Key> ? 0 : sizeof(typename Method::Key)));
         const size_t slice_begin = keys.bucket_offsets[bucket_index];
         const size_t slice_end = keys.bucket_offsets[bucket_index + 1];
 
@@ -1064,16 +1104,11 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
             {
                 prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
 
+                const auto [key_data, key_size] = stagedKeyAt<typename Method::Key>(keys, j);
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
                 emplaceStagedKey<typename Method::Key, key_storage>(
-                    impl,
-                    keys.key_bytes.data() + keys.key_offsets[j],
-                    keys.key_offsets[j + 1] - keys.key_offsets[j],
-                    keys.routing_hashes[j],
-                    *arena,
-                    it,
-                    inserted);
+                    impl, key_data, key_size, keys.routing_hashes[j], *arena, it, inserted);
 
                 if (inserted)
                     getInlineCountState(it->getMapped()) = multiplicities[j];
@@ -1126,16 +1161,11 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     for (size_t j = slice_begin; j < slice_end; ++j)
     {
         prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
+        const auto [key_data, key_size] = stagedKeyAt<typename Method::Key>(keys, j);
         typename Method::Data::LookupResult it;
         bool inserted = false;
         emplaceStagedKey<typename Method::Key, key_storage>(
-            impl,
-            keys.key_bytes.data() + keys.key_offsets[j],
-            keys.key_offsets[j + 1] - keys.key_offsets[j],
-            keys.routing_hashes[j],
-            *bucket_arena,
-            it,
-            inserted);
+            impl, key_data, key_size, keys.routing_hashes[j], *bucket_arena, it, inserted);
 
         AggregateDataPtr aggregate_data = nullptr;
         if (inserted)

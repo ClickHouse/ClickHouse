@@ -171,7 +171,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
 
     UInt64 total_key_bytes = 0;
     for (const auto & mini : minis)
-        total_key_bytes += mini->keys.key_offsets[mini->keys.size()];
+        total_key_bytes += mini->keys.key_bytes.size();
 
     keys.routing_hashes.resize(total);
     {
@@ -188,7 +188,9 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
             }
     }
 
-    keys.key_offsets.resize(total + 1);
+    keys.fixed_key_size = minis.front()->keys.fixed_key_size;
+    if (!keys.fixed_key_size)
+        keys.key_offsets.resize(total + 1);
     keys.key_bytes.resize(total_key_bytes);
     {
         size_t pos = 0;
@@ -200,15 +202,17 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 const size_t length = mini->keys.recordsForBucket(b);
                 if (!length)
                     continue;
-                const UInt64 src_begin = mini->keys.key_offsets[begin];
-                const UInt64 slice_bytes = mini->keys.key_offsets[begin + length] - src_begin;
+                const UInt64 src_begin = mini->keys.keyByteOffsetAt(begin);
+                const UInt64 slice_bytes = mini->keys.keyByteOffsetAt(begin + length) - src_begin;
                 memcpy(keys.key_bytes.data() + byte_pos, mini->keys.key_bytes.data() + src_begin, slice_bytes);
-                for (size_t j = 0; j < length; ++j)
-                    keys.key_offsets[pos + j] = byte_pos + (mini->keys.key_offsets[begin + j] - src_begin);
+                if (!keys.fixed_key_size)
+                    for (size_t j = 0; j < length; ++j)
+                        keys.key_offsets[pos + j] = byte_pos + (mini->keys.key_offsets[begin + j] - src_begin);
                 pos += length;
                 byte_pos += slice_bytes;
             }
-        keys.key_offsets[total] = byte_pos;
+        if (!keys.fixed_key_size)
+            keys.key_offsets[total] = byte_pos;
     }
 
         auto & argument_columns = chunk->payload.emplace<StagedChunk::AggregatePayload>().argument_columns;
