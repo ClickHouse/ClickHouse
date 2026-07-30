@@ -1,0 +1,23 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/null
+title: 'Источник словаря Null'
+sidebarTitle: 'Null'
+description: 'Настройте пустой источник словаря Null в ClickHouse для тестирования.'
+doc_type: 'reference'
+---
+
+Специальный источник, который можно использовать для создания фиктивных (пустых) словарей.
+Фиктивные словари могут быть полезны для тестирования или в конфигурациях с раздельными узлами хранения данных и выполнения запросов, использующих distributed таблицы.
+
+```sql
+CREATE DICTIONARY null_dict (
+    id              UInt64,
+    val             UInt8,
+    default_val     UInt8 DEFAULT 123,
+    nullable_val    Nullable(UInt8)
+)
+PRIMARY KEY id
+SOURCE(NULL())
+LAYOUT(FLAT())
+LIFETIME(0);
+```

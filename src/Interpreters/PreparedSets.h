@@ -112,6 +112,12 @@ public:
     Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns() const;
+    /// Number of rows on the right-hand side *before* deduplication — the full length of the
+    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
+    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
+    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
+    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
+    size_t getInputRowCount() const;
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;

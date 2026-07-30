@@ -1,0 +1,8 @@
+-- restore without access to the local table-function target: rejected like CREATE
+1
+-- the table was not created by the rejected restore
+0
+-- restore with access to the local table-function target: allowed
+42
+-- restore of a Remote over an absent table-function target: allowed (tolerated non-access failure)
+1

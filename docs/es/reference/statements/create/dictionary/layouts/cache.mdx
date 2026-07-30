@@ -1,0 +1,70 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/cache
+title: 'layout del diccionario cache'
+sidebarTitle: 'cache'
+description: 'Almacena un diccionario en una caché en memoria de tamaño fijo.'
+doc_type: 'reference'
+---
+
+El tipo de layout de diccionario `cached` almacena el diccionario en una caché con un número fijo de celdas.
+Estas celdas contienen elementos de uso frecuente.
+
+La clave del diccionario tiene el tipo [UInt64](/es/reference/data-types/int-uint).
+
+Al buscar en un diccionario, primero se consulta la caché. Para cada block de datos, todas las claves que no se encuentran en la caché o que están desactualizadas se solicitan desde el origen mediante `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Después, los datos recibidos se escriben en la caché.
+
+Si las claves no se encuentran en el diccionario, se crea una tarea de actualización de la caché y se añade a la cola de actualización. Las propiedades de la cola de actualización pueden controlarse con las configuraciones `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+Para los diccionarios cache, se puede establecer el [lifetime](/es/reference/statements/create/dictionary/lifetime) de expiración de los datos de la caché. Si ha pasado más tiempo que `lifetime` desde que se cargaron los datos en una celda, el valor de la celda no se usa y la clave pasa a estar expirada. La clave se vuelve a solicitar la próxima vez que sea necesario usarla. Este comportamiento puede configurarse con la configuración `allow_read_expired_keys`.
+
+Esta es la forma menos eficaz de almacenar diccionarios. La velocidad de la caché depende en gran medida de una configuración correcta y del escenario de uso. Un diccionario de tipo cache funciona bien solo cuando la tasa de aciertos es lo bastante alta (se recomienda un 99% o más). Puede ver la tasa media de aciertos en la table [system.dictionaries](/es/reference/system-tables/dictionaries).
+
+Si la configuración `allow_read_expired_keys` se establece en 1, su valor predeterminado es 0. En ese caso, el diccionario puede admitir actualizaciones asíncronas. Si un cliente solicita claves y todas están en la caché, pero algunas han expirado, el diccionario devolverá al cliente las claves expiradas y las solicitará de forma asíncrona desde el origen.
+
+Para mejorar el rendimiento de la caché, use una subquery con `LIMIT` y llame a la función con el diccionario externamente.
+
+Se admiten todos los tipos de Sources.
+
+Ejemplo de configuraciones:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <layout>
+        <cache>
+            <!-- El tamaño de la caché, en número de celdas. Redondeado hacia arriba a una potencia de dos. -->
+            <size_in_cells>1000000000</size_in_cells>
+            <!-- Permite leer claves expiradas. -->
+            <allow_read_expired_keys>0</allow_read_expired_keys>
+            <!-- Tamaño máximo de la cola de actualización. -->
+            <max_update_queue_size>100000</max_update_queue_size>
+            <!-- Tiempo de espera máximo en milisegundos para insertar una tarea de actualización en la cola. -->
+            <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+            <!-- Tiempo de espera máximo en milisegundos para que se complete la tarea de actualización. -->
+            <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+            <!-- Número máximo de hilos para la actualización del diccionario cache. -->
+            <max_threads_for_updates>4</max_threads_for_updates>
+        </cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Establezca un tamaño de caché lo bastante grande. Debe experimentar para determinar el número de celdas:
+
+1. Establezca un valor.
+2. Ejecute consultas hasta que la caché esté completamente llena.
+3. Evalúe el consumo de memoria usando la table `system.dictionaries`.
+4. Aumente o disminuya el número de celdas hasta alcanzar el consumo de memoria deseado.
+
+<Note>
+  No se recomienda usar ClickHouse como origen para este layout. Las búsquedas en diccionarios requieren lecturas puntuales aleatorias, que no son el patrón de acceso para el que ClickHouse está optimizado.
+</Note>

@@ -106,7 +106,7 @@ This is equivalent to declaring the timestamp and value column types in the samp
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -136,6 +136,11 @@ The _samples_ table must have columns:
 | `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
+
+Columns the engine creates itself get time-series compression codecs:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(Gorilla, ZSTD(1))`. Near-monotonic timestamps barely
+compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
+See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Tags table {#tags-table}
 
@@ -192,8 +197,8 @@ ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
     `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
 TAGS INNER COLUMNS
@@ -205,7 +210,7 @@ TAGS INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -227,8 +232,8 @@ and each target table has its own set of columns:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -247,6 +252,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
+SETTINGS allow_dimensions_outside_sorting_key = 1
 ```
 
 ```sql
@@ -274,18 +280,18 @@ The outer column list is regenerated and not copied.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
-You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause. For example, to store timestamps in microseconds and values as `Float32`:
+You can adjust the types of columns in the inner target tables using the `INNER COLUMNS` clause. For example, to store timestamps in microseconds and values as `Float32` use:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+```
+
+Specifying inner columns without codecs means using the default codec for them:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-The same clause can be used to specify codecs and other column attributes:
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 ## The `id` column {#id-column}
@@ -343,6 +349,13 @@ SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
+
+The [tags](#tags-table) table keeps the tag columns (and the `tags`/`all_tags` Maps) outside its sorting key,
+which `AggregatingMergeTree` rejects by default (see [`allow_dimensions_outside_sorting_key`](../mergetree-family/aggregatingmergetree)).
+This is safe here because those columns are functionally dependent on `id`, which is part of the sorting key, so all
+rows that a background merge collapses together share the same values. When the inner tags table is generated or its
+engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
+for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
 
 ## External target tables {#external-target-tables}
 

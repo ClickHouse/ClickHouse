@@ -20,6 +20,15 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/// UNIQUE KEY — monotonic version number of a per-part delete bitmap.
+/// Each install of a new bitmap uses a strictly higher version. Stored
+/// in the on-disk filename and in cache keys; readers pin a version and
+/// receive the bitmap with the highest installed version not above the
+/// pin. The source of the version (e.g., a per-partition commit sequence
+/// number) is the caller's concern; the bitmap layer only relies on
+/// monotonicity.
+using BitmapVersion = UInt64;
+
 /** UNIQUE KEY per-part delete bitmap — row positions (within a part, 0-based)
   * that are logically deleted.
   *
@@ -29,7 +38,7 @@ class WriteBuffer;
   * choice is internal — the public API is uniformly `UInt64`.
   *
   * Persistence: one file per bitmap version, named
-  *   `delete_bitmap_{block_number}.rbm`
+  *   `delete_bitmap_{csn}.rbm`
   * inside the part directory. Format (all little-endian on the wire):
   *   magic(4) "RBM1" | version(4) | body_size(4) | body[body_size] | crc32(4)
   * `version` (`VERSION_R32` / `VERSION_R64`) selects which roaring layout
@@ -102,15 +111,15 @@ public:
     /// throws on mismatch. Returned bitmap is independent of `in`.
     static std::unique_ptr<DeleteBitmap> deserialize(ReadBuffer & in);
 
-    /// File name convention: `delete_bitmap_{block_number}.rbm`.
-    static std::string fileNameForBlockNumber(UInt64 block_number);
+    /// File name convention: `delete_bitmap_{csn}.rbm`.
+    static std::string fileNameForCSN(BitmapVersion csn);
 
-    /// True if `file_name` matches the canonical `delete_bitmap_{N}.rbm` form.
+    /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
     static bool isDeleteBitmapFile(std::string_view file_name);
 
-    /// Extract N from `delete_bitmap_{N}.rbm`. Caller must have screened the
-    /// name via `isDeleteBitmapFile`; throws if `file_name` does not match.
-    static UInt64 parseBlockNumberFromFileName(std::string_view file_name);
+    /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
+    /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
+    static BitmapVersion parseCSNFromFileName(std::string_view file_name);
 
     /// File-format constants. Exposed so tests can corrupt bytes deterministically.
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian
