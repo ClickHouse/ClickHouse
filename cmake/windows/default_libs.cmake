@@ -16,10 +16,10 @@ include (cmake/compiler_rt_link.cmake)
 # The Win32 libraries after them are the import libraries for the OS DLLs we call:
 # sockets (`ws2_32`), console and file APIs (`kernel32`), security tokens and the
 # registry (`advapi32`), the user's profile directory (`shell32`, `ole32`), symbol
-# lookup for stack traces (`dbghelp`), process memory statistics (`psapi`) and the
-# system CSPRNG (`bcrypt`).
+# lookup for stack traces (`dbghelp`), process memory statistics (`psapi`), the system CSPRNG
+# (`bcrypt`) and the local network interfaces (`iphlpapi`, for `isLocalAddress`).
 set (DEFAULT_LIBS "${DEFAULT_LIBS} -lmingw32 -lmingwex -lmsvcrt -lwinpthread")
-set (DEFAULT_LIBS "${DEFAULT_LIBS} -lws2_32 -lkernel32 -ladvapi32 -lshell32 -lole32 -luserenv -ldbghelp -lpsapi -lbcrypt -luser32 -lntdll")
+set (DEFAULT_LIBS "${DEFAULT_LIBS} -lws2_32 -liphlpapi -lkernel32 -ladvapi32 -lshell32 -lole32 -luserenv -ldbghelp -lpsapi -lbcrypt -luser32 -lntdll")
 
 # Windows takes the default thread stack size from the PE header instead of from a
 # process-wide limit like `RLIMIT_STACK`, and the default is only 1 MiB - too little for our

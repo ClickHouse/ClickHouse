@@ -1,6 +1,14 @@
 #include <Common/isLocalAddress.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#include <ws2ipdef.h>
+#include <iphlpapi.h>
+#include <vector>
+#else
 #include <ifaddrs.h>
+#endif
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -24,6 +32,70 @@ namespace ErrorCodes
 
 namespace
 {
+
+#if defined(OS_WINDOWS)
+
+struct NetworkInterfaces : public boost::noncopyable
+{
+    /// Windows has no `getifaddrs`. `GetAdaptersAddresses` walks the adapters and, for each, a
+    /// list of unicast addresses. Unlike `ifaddrs` the result is one allocation that we own, so
+    /// collect what we need out of it up front rather than keeping the buffer alive.
+    std::vector<Poco::Net::IPAddress> addresses;
+
+    NetworkInterfaces()
+    {
+        /// The call reports the size it needs; the recommended starting buffer is 15 KB, and the
+        /// set of adapters can change between the two calls, hence the retry.
+        ULONG size = 15 * 1024;
+        std::vector<char> buffer;
+        ULONG result = ERROR_BUFFER_OVERFLOW;
+        for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; ++attempt)
+        {
+            buffer.assign(size, 0);
+            result = GetAdaptersAddresses(
+                AF_UNSPEC,
+                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+                nullptr,
+                reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buffer.data()),
+                &size);
+        }
+
+        if (result != NO_ERROR)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot GetAdaptersAddresses, error code: {}", result);
+
+        for (auto * adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buffer.data()); adapter; adapter = adapter->Next)
+        {
+            for (auto * unicast = adapter->FirstUnicastAddress; unicast; unicast = unicast->Next)
+            {
+                const auto * sockaddr = unicast->Address.lpSockaddr;
+                if (!sockaddr)
+                    continue;
+
+                /// Only IP addresses, as in the POSIX branch.
+                if (sockaddr->sa_family == AF_INET)
+                    addresses.emplace_back(&reinterpret_cast<const sockaddr_in *>(sockaddr)->sin_addr, sizeof(in_addr));
+                else if (sockaddr->sa_family == AF_INET6)
+                    addresses.emplace_back(&reinterpret_cast<const sockaddr_in6 *>(sockaddr)->sin6_addr, sizeof(in6_addr));
+            }
+        }
+    }
+
+    bool hasAddress(const Poco::Net::IPAddress & address) const
+    {
+        for (const auto & interface_address : addresses)
+        {
+            /** Compare the addresses without taking into account `scope`, as the POSIX branch
+              * does - see the note there.
+              */
+            if (interface_address.length() == address.length()
+                && 0 == memcmp(interface_address.addr(), address.addr(), address.length()))
+                return true;
+        }
+        return false;
+    }
+};
+
+#else
 
 struct NetworkInterfaces : public boost::noncopyable
 {
@@ -78,6 +150,8 @@ struct NetworkInterfaces : public boost::noncopyable
         freeifaddrs(ifaddr);
     }
 };
+
+#endif
 
 }
 
