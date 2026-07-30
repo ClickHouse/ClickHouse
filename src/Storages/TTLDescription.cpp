@@ -45,6 +45,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -469,32 +471,16 @@ std::vector<ColumnPtr> makeRepresentativeColumns(const DataTypePtr & type, std::
     return {type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()};
 }
 
-/// A fingerprint of a single-row candidate materialization. `ColumnDynamic`/`ColumnVariant` hash the *type*
-/// of the payload stored in the row together with its value, so equal fingerprints mean the two candidates
-/// carry the same payload types.
+/// A fingerprint of a single-row candidate materialization, used to deduplicate candidates when merging
+/// the domains of several selector branches. `ColumnDynamic`/`ColumnVariant` hash the *type* of the
+/// payload stored in the row together with its value, so equal fingerprints mean the two candidates
+/// carry the same payload (and in particular the same payload type).
 UInt64 candidateFingerprint(const ColumnPtr & column)
 {
     SipHash hash;
     hash.update(column->getDataType());
     column->updateHashWithValue(0, hash);
     return hash.get64();
-}
-
-bool sameCandidateMaterializations(const std::vector<ColumnPtr> & lhs, const std::vector<ColumnPtr> & rhs)
-{
-    if (lhs.size() != rhs.size())
-        return false;
-    std::vector<UInt64> lhs_fingerprints;
-    std::vector<UInt64> rhs_fingerprints;
-    lhs_fingerprints.reserve(lhs.size());
-    rhs_fingerprints.reserve(rhs.size());
-    for (const auto & column : lhs)
-        lhs_fingerprints.push_back(candidateFingerprint(column));
-    for (const auto & column : rhs)
-        rhs_fingerprints.push_back(candidateFingerprint(column));
-    std::sort(lhs_fingerprints.begin(), lhs_fingerprints.end());
-    std::sort(rhs_fingerprints.begin(), rhs_fingerprints.end());
-    return lhs_fingerprints == rhs_fingerprints;
 }
 
 /// The positions of the *value* arguments of a selector function - one whose result is always one of its
@@ -589,9 +575,10 @@ std::vector<size_t> getSelectorValueArguments(const String & function_name, size
 /// A *selector* function - `if`, `multiIf`, `coalesce`, `ifNull` - is the exception to the second condition:
 /// its result is always one of its value arguments, so a non-constant control argument can only choose
 /// *which* of their domains the result comes from, never introduce a payload none of them can hold. So when
-/// every value argument has the same materializations and the result type (which rules out a conversion to a
-/// common supertype), the probed domain is propagated after all, and a valid TTL such as
-/// `toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic')))` over `n`, `m UInt32` is accepted.
+/// every value argument has the same type as the result (which rules out a conversion to a common
+/// supertype), the union of their probed domains is propagated after all, and valid TTLs such as
+/// `toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic')))` over `n`, `m UInt32` and
+/// `toDateTime(if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic')))` are accepted.
 ///
 /// Higher-order functions cannot be executed here at all, so their result normally falls back to the static
 /// enumeration too. `arrayMap` is the exception: its result is exactly the array of the values its lambda
@@ -908,12 +895,17 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                 /// with the static enumeration for the parents in that case.
                 ///
                 /// A *selector* function is the exception: its result is always one of its value arguments,
-                /// so whatever its non-constant control arguments choose at execution time, the result stays
-                /// inside the union of the value arguments' domains. When all of them are already known to
-                /// have the same materializations (and the same type as the result, so the selector cannot
-                /// convert them to a common supertype), that union is exactly what the probes above recorded
-                /// and it remains valid: `if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic'))` with
-                /// `n`, `m UInt32` can only ever hold the `UInt32` payload, whichever branch `cond` takes.
+                /// unchanged, so whatever its non-constant control arguments choose at execution time, the
+                /// result stays inside the union of the value arguments' domains. As long as every value
+                /// argument has the same type as the result (so the selector cannot convert the branches to
+                /// a common supertype whose payloads are in neither branch's domain - `Dynamic(UInt32)` and
+                /// `Dynamic(Int32)` branches would produce `Dynamic(Int64)` rows), that union - deduplicated
+                /// by fingerprint - is propagated instead of the static enumeration:
+                /// `if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic'))` with `n`, `m UInt32` can only ever
+                /// hold the `UInt32` payload, whichever branch `cond` takes, and
+                /// `if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic'))` only the `UInt8` one. A branch whose
+                /// domain does contain a state (e.g. `CAST(state, 'Dynamic')`) keeps its state candidate in
+                /// the union, so an unsupported parent consumer is still rejected by its probes.
                 if (result_in_scope && !non_suspect_args_are_constant)
                 {
                     bool selector_domain_is_proven = false;
@@ -921,22 +913,24 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                     if (!value_arguments.empty())
                     {
                         selector_domain_is_proven = true;
-                        const std::vector<ColumnPtr> * common_candidates = nullptr;
+                        std::vector<ColumnPtr> union_candidates;
+                        std::unordered_set<UInt64> union_fingerprints;
                         for (size_t index : value_arguments)
                         {
                             const auto * value_argument = node->children[index];
                             const auto & value_candidates = candidates_of(value_argument);
-                            if (value_candidates.empty() || !value_argument->result_type->equals(*node->result_type)
-                                || (common_candidates && !sameCandidateMaterializations(*common_candidates, value_candidates)))
+                            if (value_candidates.empty() || !value_argument->result_type->equals(*node->result_type))
                             {
                                 selector_domain_is_proven = false;
                                 break;
                             }
-                            common_candidates = &value_candidates;
+                            for (const auto & candidate : value_candidates)
+                                if (union_fingerprints.insert(candidateFingerprint(candidate)).second)
+                                    union_candidates.push_back(candidate);
                         }
 
                         if (selector_domain_is_proven)
-                            candidates.insert(candidates.end(), common_candidates->begin(), common_candidates->end());
+                            candidates.insert(candidates.end(), union_candidates.begin(), union_candidates.end());
                     }
 
                     if (!selector_domain_is_proven)

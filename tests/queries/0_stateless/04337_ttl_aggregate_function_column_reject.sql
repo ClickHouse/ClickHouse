@@ -1224,8 +1224,9 @@ DROP TABLE test_ttl_selector_multi_if_same_domain_accept;
 
 DROP TABLE IF EXISTS test_ttl_selector_different_domains_reject;
 
--- Branches with *different* payload domains keep the fail-closed behaviour: the condition selects which of
--- them the result carries, so the narrowing of neither branch describes the result.
+-- The result of a selector carries the *union* of its branches' payload domains. A string-to-carrier cast
+-- stays on the fail-closed static enumeration (it infers the stored payload from the row contents), so its
+-- synthetic `AggregateFunction` candidate is in the union and keeps the whole selector rejected.
 CREATE TABLE test_ttl_selector_different_domains_reject
 (
     cond UInt8,
@@ -1253,6 +1254,52 @@ TTL toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(s, 'Dynamic'))) + INTERVAL 1 DA
 DROP TABLE test_ttl_selector_different_domains_reject;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+DROP TABLE IF EXISTS test_ttl_selector_literal_branches_accept;
+
+-- Branches whose candidate materializations differ only by *value* still describe the same payload domain:
+-- both literals below can only ever produce the `UInt8` payload, so the union of the branch domains is
+-- propagated and the expression is accepted.
+CREATE TABLE test_ttl_selector_literal_branches_accept
+(
+    cond UInt8,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_literal_branches_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_multi_if_literal_branches_accept;
+
+CREATE TABLE test_ttl_selector_multi_if_literal_branches_accept
+(
+    cond UInt8,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(multiIf(cond, CAST(1, 'Dynamic'), cond > 1, CAST(2, 'Dynamic'), CAST(3, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_multi_if_literal_branches_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_union_of_domains_accept;
+
+-- Branches with genuinely different payload domains are accepted when every payload in the *union* is
+-- consumable: `toDateTime` handles both the `UInt32` payload of the first branch and the `UInt8` payload
+-- of the second one.
+CREATE TABLE test_ttl_selector_union_of_domains_accept
+(
+    cond UInt8,
+    n UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(1, 'Dynamic'))) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_union_of_domains_accept;
 
 DROP TABLE IF EXISTS test_ttl_array_map_accept;
 
