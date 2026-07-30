@@ -3,7 +3,7 @@
 #include <Interpreters/joinDispatch.h>
 namespace DB
 {
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map>
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map> // NOLINT(readability-identifier-naming)
 struct JoinFeatures
 {
     static constexpr bool is_any_join = STRICTNESS == JoinStrictness::Any;
