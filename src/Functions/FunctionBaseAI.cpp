@@ -429,6 +429,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.model = model;
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = max_tokens;
+                ai_request.function_name = getName();
 
                 /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;

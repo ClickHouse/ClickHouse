@@ -212,6 +212,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -2323,7 +2324,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            executeWithFill(query_plan);
+            /// WITH FILL / INTERPOLATE must run only on the finalizing node (to_stage == Complete),
+            /// over the merged stream, not per shard - otherwise fill rows are duplicated after the merge.
+            if (options.to_stage == QueryProcessingStage::Complete)
+                executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
@@ -3004,7 +3008,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]};
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_parallel_single_level_merge]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -3043,7 +3048,12 @@ void InterpreterSelectQuery::executeAggregation(
     else
         group_by_info = nullptr;
 
-    if (!group_by_info && settings[Setting::force_aggregation_in_order])
+    /// `getSortDescriptionFromGroupBy` calls `getColumnName` on every GROUP BY child, but with
+    /// GROUPING SETS those children are `ExpressionList` nodes, so in-order aggregation cannot apply.
+    const bool force_aggregation_in_order
+        = !group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey();
+
+    if (force_aggregation_in_order)
     {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;
@@ -3074,7 +3084,7 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order],
+        force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
