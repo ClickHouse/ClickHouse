@@ -90,15 +90,6 @@ SELECT count() FROM (
     GROUP BY y SETTINGS parallel_replicas_custom_key = 'y + rand()', enable_analyzer = 0
 ) SETTINGS enable_analyzer = 0;
 
--- Stateful custom key (deterministic-in-scope but stateful: timeSeriesTagsToGroup assigns replica-local
--- group ids from a per-query collector, so the same group's rows can get different custom-key values on
--- different replicas) -> must NOT skip the merge -> single merged row per group (3), not partials per replica.
-SELECT 'stateful custom key merged rows analyzer=1';
-SELECT count() FROM (
-    SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
-    GROUP BY y SETTINGS parallel_replicas_custom_key = 'timeSeriesTagsToGroup([], ''k'', toString(y))', enable_analyzer = 1
-) SETTINGS enable_analyzer = 1;
-
 -- A custom key whose value can differ per replica for the same group must not take the no-merge fast
 -- path even when it is deterministic in scope of query and not stateful. Row counts cannot detect this
 -- here: all three "replicas" of the test cluster are the same process, so `getMacro`/`hostName` return
@@ -129,6 +120,24 @@ SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, 
 GROUP BY y ORDER BY y
 SETTINGS parallel_replicas_custom_key = 'timeSeriesStoreTags(toUInt64(y), [], ''k'', toString(y))', enable_analyzer = 1,
     log_comment = '04545_stateful_deterministic_an1';
+
+-- `timeSeriesTagsToGroup` assigns group ids in encounter order from a per-query collector, so the same
+-- group can get different custom-key values on different replicas, and the merge must be kept.
+-- Only the decision is asserted, and the result is discarded with `FORMAT Null`: the encounter order
+-- also varies between threads within one replica, so with several parts the per-replica partials already
+-- disagree before any merge happens. The rows this returns are therefore not stable, and asserting them
+-- (or their count) would measure that instead of whether the merge was kept.
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'timeSeriesTagsToGroup([], ''k'', toString(y))', enable_analyzer = 1,
+    log_comment = '04545_stateful_tags_to_group_an1'
+FORMAT Null;
+
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'timeSeriesTagsToGroup([], ''k'', toString(y))', enable_analyzer = 0,
+    log_comment = '04545_stateful_tags_to_group_an0'
+FORMAT Null;
 
 -- Grouping by the unsafe expression itself must not make it safe to partition on: the replica filter and
 -- the grouping are evaluated separately on each replica, so one group still ends up spread over several
@@ -185,7 +194,8 @@ WITH ['04545_plain_count_an0', '04545_plain_count_an1', '04545_plain_count_range
       '04545_safe_expression_key_an0', '04545_safe_hash_key_an1', '04545_server_constant_an0',
       '04545_server_constant_an1', '04545_server_constant_hostname_an1',
       '04545_server_constant_is_group_key_an0', '04545_server_constant_is_group_key_an1',
-      '04545_stateful_deterministic_an1'] AS probes,
+      '04545_stateful_deterministic_an1', '04545_stateful_tags_to_group_an0',
+      '04545_stateful_tags_to_group_an1'] AS probes,
 (
     SELECT groupArray(query_id) FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query = 1 AND type = 'QueryFinish'
