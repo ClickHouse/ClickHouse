@@ -428,17 +428,20 @@ grep -o -m1 'X-ClickHouse-Format: jsoncompactcolumns' "$header_file"
 cat "$result_file"
 # A lowercased `FORMAT xml` streams rows and then writes its failure as the same top-level
 # `<exception>` trailer at 200 OK, so the page's probe must recognize it under this spelling too.
+# The trailer is indented by a real tab, and POSIX `grep -E` has no `\t` escape (GNU `grep` matches
+# a literal `t` instead), so the tab is spelled out here and interpolated into the patterns.
+tab=$'\t'
 ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
     -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT xml SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
 grep -c '^HTTP/1.1 200 OK' "$header_file"
 grep -o -m1 'X-ClickHouse-Format: xml' "$header_file"
-grep -o -m1 -E '^\t<exception>' "$result_file"
+grep -o -m1 -E "^${tab}<exception>" "$result_file"
 # The same for a lowercased single-document `FORMAT json`: the failure is a top-level `"exception"`
 # member of the one document.
 ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
     -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT json SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
 grep -o -m1 'X-ClickHouse-Format: json' "$header_file"
-grep -o -m1 -E '^\t"exception":' "$result_file"
+grep -o -m1 -E "^${tab}\"exception\":" "$result_file"
 # And for a lowercased `*WithProgress` row stream: a terminal top-level `{"exception":...}` line.
 ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
     -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT jsoneachrowwithprogress SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
