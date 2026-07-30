@@ -2591,7 +2591,7 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 )", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
