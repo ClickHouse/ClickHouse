@@ -1,10 +1,10 @@
 -- m['key'] IN (v1, ..., vn) over a keyValuePairs text index is the union of the exact first-value
--- lookups m['key'] = vi. The index is used to prune granules (at optimize_functions_to_subcolumns=0 the
--- accessor is arrayElement, first occurrence — the occurrence the index pins, is_rest=0). Direct read is
--- intentionally NOT used for the set form: the IN right-hand side is a ColumnSet that does not survive
--- the virtual-column recomputation used for non-materialized parts, so the predicate is kept and only
--- pruning is applied. Results must equal a plain scan on every part, materialized or not. A set with the
--- empty string falls back to a scan, because m['key'] = '' is true for rows lacking the key.
+-- lookups m['key'] = vi. The index prunes granules and, for literal sets, is used for exact direct read:
+-- the folded FUNCTION_HAS_ANY_TOKENS query answers the predicate from the index (the Map column is not
+-- read on materialized parts). For parts where the index is not materialized, the virtual column's
+-- default expression is rebuilt as m['key'] = v1 OR ... OR m['key'] = vn (literals that survive the
+-- round-trip), so no rows are dropped. Results must equal a plain scan on every part, materialized or not.
+-- A set with the empty string falls back to a scan, because m['key'] = '' is true for rows lacking the key.
 
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_idx;
@@ -25,8 +25,11 @@ SELECT id FROM t_mem WHERE m['lvl'] IN ('err', 'warn') ORDER BY id;
 SELECT id FROM t_idx WHERE m['lvl'] IN ('err', 'warn') ORDER BY id SETTINGS use_skip_indexes = 1, optimize_functions_to_subcolumns = 0;
 SELECT id FROM t_idx WHERE m['lvl'] IN ('err', 'warn') ORDER BY id SETTINGS use_skip_indexes = 1, optimize_functions_to_subcolumns = 1;
 
-SELECT '-- direct read is intentionally NOT used for the IN set form (0) --';
+SELECT '-- direct read IS used for the literal IN set form (1) --';
 SELECT 'direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_idx WHERE m['lvl'] IN ('err', 'warn') SETTINGS query_plan_direct_read_from_text_index = 1, optimize_functions_to_subcolumns = 0) WHERE explain LIKE '%__text_index_%';
+
+SELECT '-- direct-read path == plain scan --';
+SELECT id FROM t_idx WHERE m['lvl'] IN ('err', 'warn') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes = 1, optimize_functions_to_subcolumns = 0;
 
 SELECT '-- absent values match nothing --';
 SELECT count() FROM t_idx WHERE m['lvl'] IN ('nope', 'none') SETTINGS use_skip_indexes = 1;

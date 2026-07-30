@@ -8,8 +8,12 @@
 1
 3
 6
--- direct read is intentionally NOT used for the IN set form (0) --
-direct read	0
+-- direct read IS used for the literal IN set form (1) --
+direct read	1
+-- direct-read path == plain scan --
+1
+3
+6
 -- absent values match nothing --
 0
 -- empty string in the set: rows without the key match --
