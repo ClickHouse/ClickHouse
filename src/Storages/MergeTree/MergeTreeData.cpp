@@ -10446,7 +10446,22 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         if (pruning_result.shouldSkipPart(part, max_block_numbers_to_read))
             continue;
 
-        const Estimates estimates = part->getEstimates();
+        const Estimates estimates = [&]()
+        {
+            try
+            {
+                return part->getEstimates();
+            }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to load statistics for part {}, falling back to normal read",
+                    part->name));
+                return Estimates{};
+            }
+        }();
+        if (estimates.empty())
+            return {};
 
         const String agg_key = has_group_by ? part->info.getPartitionId() : String{};
         auto & [partition_values, col_minmax] = partition_minmax[agg_key];

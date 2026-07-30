@@ -731,6 +731,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     /// Try to use column statistics for min/max aggregation.
     if (!candidates.minmax_projection
         && candidates.real.empty()
+        && allow_implicit_projections
         && !metadata->hasUniqueKey()
         && (metadata->hasPartitionKey() || keys.empty()))
     {
