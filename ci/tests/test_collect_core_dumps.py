@@ -7,9 +7,10 @@ Three properties are covered.
 1. A core left by a `clickhouse-client` / `clickhouse-local` process that died on a
    fatal signal is retained. Only server cores used to be collected, because the
    collector globbed `ci/tmp/run_r*` alone, while a client spawned by a `.sh` test
-   dumps into the directory `clickhouse-test` runs from. A stateless test failing
-   with `return code: 139` therefore left no core and no stack anywhere, and the
-   crash could not be root-caused (`00900_long_parquet`, 2026-07-29).
+   dumps into the directory `clickhouse-test` runs from, unless the test changes
+   directory itself. A stateless test failing with `return code: 139` therefore
+   left no core and no stack anywhere, and the crash could not be root-caused
+   (`00900_long_parquet`, 2026-07-29).
 
 2. Collected artifacts do not overwrite each other, and every core actually
    decrypts with the single key the job emits. Every artifact is uploaded under
@@ -51,6 +52,16 @@ IMPORT_TIME_TEMP_DIR = clickhouse_proc_module.temp_dir
 IMPORT_TIME_P_TEMP_DIR = clickhouse_proc_module.p_temp_dir
 
 JOBS_DIR = Path(__file__).resolve().parent.parent / "jobs"
+
+# The expression `functional_tests.py` must use to capture the run's verdict
+# before bugfix validation rewrites it. Pinned as text against the production
+# source and exercised as an expression below, so the two halves of
+# `test_collect_logs_gate_sees_the_pre_inversion_verdict` cannot drift apart:
+# a rewrite of production has to update this literal, which the truth table
+# then re-checks. A string pin also rejects a semantically equivalent rewrite;
+# that is the accepted trade and the convention this module already follows for
+# `prepare_logs(all=...)` and both `client_core_path` values.
+GATE_EXPR = "bool(test_result) and not test_result.is_ok()"
 
 
 def _collector(monkeypatch, tmp_path, client_core_path=None):
@@ -152,6 +163,11 @@ def _keyword(call, name):
         if keyword.arg == name:
             return keyword
     return None
+
+
+def _gate(test_result):
+    """Evaluate `GATE_EXPR`, the pinned collect-logs gate, for one result."""
+    return eval(GATE_EXPR, {"test_result": test_result})  # noqa: S307
 
 
 def _run(command):
@@ -347,7 +363,7 @@ def test_collect_logs_gate_sees_the_pre_inversion_verdict():
     )
 
     assert not test_result.is_ok()
-    captured = bool(test_result) and not test_result.is_ok()
+    captured = _gate(test_result)
     assert captured
 
     assert invert_bugfix_validation_status(test_result) is False
@@ -355,11 +371,31 @@ def test_collect_logs_gate_sees_the_pre_inversion_verdict():
     assert test_result.is_ok()
     assert captured
 
-    # And the module must read the verdict before the inversion, not after.
+    # The verdict of every status the gate can see. `is_ok` accepts SKIPPED, so
+    # a no-repro validation run is correctly treated as not-failed; ERROR is
+    # neither FAIL nor OK, and reading it before the inversion is what makes an
+    # environment-setup failure collect its logs at all.
+    assert _gate(None) is False
+    assert (
+        _gate(
+            Result.create_from(
+                name="Tests", results=[Result(name="t", status=Result.Status.OK)]
+            )
+        )
+        is False
+    )
+    assert _gate(Result(name="Tests", status=Result.Status.SKIPPED)) is False
+    assert _gate(Result(name="Tests", status=Result.Status.ERROR)) is True
+
+    # And the module must read the verdict before the inversion, not after, with
+    # exactly the expression the truth table above exercises.
     source, tree = _job_source("functional_tests.py")
     main = _function(tree, "main")
     captures = _assignments_to(main, "test_run_failed")
     assert len(captures) == 1, ast.dump(main)[:200]
+    assert (
+        ast.get_source_segment(source, captures[0].value) == GATE_EXPR
+    ), ast.get_source_segment(source, captures[0])
     inversions = _calls_to(main, "invert_bugfix_validation_status")
     assert len(inversions) == 1
     assert captures[0].lineno < inversions[0].lineno, (

@@ -73,11 +73,12 @@ class ClickHouseProc:
         self.run_path2 = f"{temp_dir}/run_r2"
         # Directory the job runs `clickhouse-test` from, if it wants cores of
         # crashed client processes collected. A client started by a `.sh` test
-        # inherits this directory, and a relative `kernel.core_pattern` (the one
-        # CI runners use) writes the core into the dumping process's cwd, so this
-        # is where a client core lands. Jobs differ - `functional_tests.py` runs
-        # from the repository root while `fast_test.py` prefixes `cd {temp_dir}` -
-        # so the job declares it instead of it being guessed here.
+        # inherits this directory unless the test changes directory itself, and a
+        # relative `kernel.core_pattern` (the one CI runners use) writes the core
+        # into the dumping process's cwd, so this is where a client core lands.
+        # Jobs differ - `functional_tests.py` runs from the repository root while
+        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
+        # of it being guessed here.
         self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
@@ -841,7 +842,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def _collect_core_dumps(self) -> List[str]:
         # Server cores land in `run_r*` because each server is started with
-        # `cwd=run_path` (see `_start_server`) and is not a daemon, so
+        # `cwd=run_path` (see `start`) and is not a daemon, so
         # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
         # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
         # glob would stop finding them.
