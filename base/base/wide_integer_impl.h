@@ -1221,6 +1221,54 @@ public:
             using Wide = integer<Bits2, unsigned>;
             constexpr unsigned items = Wide::_impl::item_count;
 
+            /// Both algorithms below work on the significant limbs only, which is also what makes
+            /// them fast: the cost follows the magnitude of the operands, not the width of the type.
+            unsigned n = items;
+            while (n > 0 && denominator.items[Wide::_impl::little(n - 1)] == 0)
+                --n;
+            unsigned m = items;
+            while (m > 0 && numerator.items[Wide::_impl::little(m - 1)] == 0)
+                --m;
+
+            /// Wide types routinely hold values far smaller than their width, so the narrow cases go
+            /// to the compiler instead: merely laying out the limb arrays the algorithms below need
+            /// already costs more than these divisions do.
+            if (m <= 1)
+            {
+                /// A numerator of at most one limb is either divided by a divisor of one limb, or is
+                /// smaller than the divisor, in which case the quotient is zero and the remainder is
+                /// the numerator, which `numerator` already holds.
+                integer<Bits2, unsigned> quotient{};
+                if (n <= 1)
+                {
+                    uint64_t a = numerator.items[Wide::_impl::little(0)];
+                    uint64_t b = denominator.items[Wide::_impl::little(0)];
+                    quotient.items[Wide::_impl::little(0)] = a / b;
+                    numerator.items[Wide::_impl::little(0)] = a % b;
+                }
+                return quotient;
+            }
+
+            if (m <= 2 && n <= 2)
+            {
+                using CompilerUInt128 = unsigned __int128;
+
+                CompilerUInt128 a = CompilerUInt128(numerator.items[Wide::_impl::little(1)]) << 64;
+                a += numerator.items[Wide::_impl::little(0)];
+                CompilerUInt128 b = CompilerUInt128(denominator.items[Wide::_impl::little(1)]) << 64;
+                b += denominator.items[Wide::_impl::little(0)];
+
+                CompilerUInt128 c = a / b;
+                CompilerUInt128 remainder = a - b * c;
+
+                integer<Bits2, unsigned> quotient{};
+                quotient.items[Wide::_impl::little(0)] = static_cast<uint64_t>(c);
+                quotient.items[Wide::_impl::little(1)] = static_cast<uint64_t>(c >> 64);
+                numerator.items[Wide::_impl::little(0)] = static_cast<uint64_t>(remainder);
+                numerator.items[Wide::_impl::little(1)] = static_cast<uint64_t>(remainder >> 64);
+                return quotient;
+            }
+
             uint64_t u[items];
             uint64_t v[items];
             for (unsigned i = 0; i < items; ++i)
@@ -1228,15 +1276,6 @@ public:
                 u[i] = numerator.items[Wide::_impl::little(i)];
                 v[i] = denominator.items[Wide::_impl::little(i)];
             }
-
-            /// Both algorithms below work on the significant limbs only, which is also what makes
-            /// them fast: the cost follows the magnitude of the operands, not the width of the type.
-            unsigned n = items;
-            while (n > 0 && v[n - 1] == 0)
-                --n;
-            unsigned m = items;
-            while (m > 0 && u[m - 1] == 0)
-                --m;
 
             uint64_t q[items] = {};
             uint64_t r[items] = {};
