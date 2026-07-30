@@ -62,8 +62,6 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
-    void addTable(const std::string & table_name, StoragePtr table_storage) const;
-
     bool checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const;
 
     std::string getFullUrl(const std::string & name) const;
@@ -71,7 +69,6 @@ protected:
 private:
     const Configuration config;
 
-    mutable Tables loaded_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 };
 
