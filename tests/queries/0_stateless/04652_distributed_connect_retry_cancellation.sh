@@ -16,36 +16,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # runner, so both values are pinned and run as separate cases. Settings go on the client command
 # line, which survives a randomized `compatibility` setting.
 
-# Precondition: connecting to the reserved range must BLOCK. On a host that refuses instead, all
-# tries finish inside the deadline, the query reports the exhausted-retries error before any
-# cancellation exists, and every case below would fail with a misleading "wrong error". Detect that
-# here and say so; the missing reference lines then make the test fail loudly and legibly.
-#
-# The threshold is derived from the `<= 2` attempt ceiling below, not picked. Attempts are
-# sequential, starting at t = 0, D, 2D, ... for the per-attempt duration D this probe measures, and
-# cancellation for run_case's 3 s deadline lands no later than 3000 + CANCELLATION_GRID_MS - 1 =
-# 3099 ms, because the deadline is rounded UP to the next 100 ms grid boundary and never down
-# (CancellationChecker.cpp:15,102). At most 2 attempts start iff 2 * D >= 3099, i.e. D >= 1550 ms;
-# below that a correct implementation may legitimately begin a third one and redden the ceiling.
-# 1550 still separates the fixture's two behaviours widely in both directions: a refusal takes
-# 64-96 ms here (16x below) and a genuine block 2073-2120 ms against the 2000 ms timeout (1.34x
-# above).
-#
-# Measured in milliseconds, not with $SECONDS. $SECONDS counts tick boundaries crossed rather than
-# time elapsed, so a sub-second refusal that straddles a tick reads as 1 and would be accepted as
-# blocking -- silently, in the one direction that matters.
-probe_start_ns=$(date +%s%N)
-$CLICKHOUSE_CLIENT --connections_with_failover_max_tries 1 \
-                   --connect_timeout_with_failover_ms 2000 \
-                   --query "SELECT count() FROM remote('198.51.100.1', system.one) FORMAT Null" >/dev/null 2>&1
-probe_ms=$(( ($(date +%s%N) - probe_start_ns) / 1000000 ))
-if [ "$probe_ms" -lt 1550 ]; then
-    echo "fixture unusable: 198.51.100.1 does not block, it is refused"
-    exit 0
-fi
-
-# Reads ProfileEvents off the query_log row for one query. The query fails during analysis, so the
-# row is an ExceptionBeforeStart one; performance counters are still finalized and attached to it.
+# Both helpers read one field off the query_log row for one query. These queries fail during
+# analysis, so the row is an ExceptionBeforeStart one; its duration and performance counters are
+# still finalized and attached to it.
 attempts_of()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
@@ -56,6 +29,63 @@ attempts_of()
         ORDER BY event_time_microseconds DESC
         LIMIT 1"
 }
+
+duration_of()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT --query "
+        SELECT query_duration_ms
+        FROM system.query_log
+        WHERE query_id = '$1' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1"
+}
+
+# Precondition: connecting to the reserved range must BLOCK. On a host that refuses instead, all
+# tries finish inside the deadline, the query reports the exhausted-retries error before any
+# cancellation exists, and every case below would fail with a misleading "wrong error". Detect that
+# here and say so; the missing reference lines then make the test fail loudly and legibly.
+#
+# WHAT IS MEASURED, because the ceiling below needs the per-attempt duration D and not something
+# larger: the SERVER-side `query_duration_ms` of the probe query, read back from its query_log row.
+# That figure comes from a stopwatch started inside executeQueryImpl (executeQuery.cpp:1195,
+# reported at :2099, stored at :929), so client startup, connection to the local server, exception
+# propagation and output handling are all OUTSIDE it. Timing the `clickhouse-client` invocation
+# instead would fold in ~80-105 ms of such overhead (measured here), and overhead can only make the
+# figure LARGER, which is the one direction that matters: it would accept a D that far below the
+# threshold. With one address and one try, this figure is one connect plus analysis.
+#
+# The threshold is then derived, not picked:
+#   * Attempts are sequential, starting at t = 0, D, 2D, ..., and cancellation for run_case's 3 s
+#     deadline lands no later than 3000 + CANCELLATION_GRID_MS - 1 = 3099 ms, because the deadline is
+#     rounded UP to the next 100 ms grid boundary and never down (CancellationChecker.cpp:15,102).
+#     At most 2 attempts start iff 2 * D >= 3099, i.e. D >= 1549.5 ms; below that a correct
+#     implementation may legitimately begin a third one and redden the ceiling.
+#   * The figure still exceeds D by the analysis remainder eps, so accepting on `figure >= threshold`
+#     accepts D >= threshold - eps, and the threshold must therefore be at least 1549.5 + eps. eps
+#     was measured against a refusing endpoint, where D is ~0 and the figure is eps alone: at most
+#     1 ms over 40 trials (20 idle, 20 at load average 110), consistent with 2001 ms against the
+#     2000 ms configured timeout on 12 of 12 blocking trials. Hence 1549.5 + 1, rounded up to 1551.
+# The fixture's two behaviours are separated by three orders of magnitude either side: a refusal
+# measures 1 ms (1551x below the threshold), a genuine block 2000-2036 ms (1.29x above).
+probe_qid="${CLICKHOUSE_DATABASE}_probe_$RANDOM"
+$CLICKHOUSE_CLIENT --connections_with_failover_max_tries 1 \
+                   --connect_timeout_with_failover_ms 2000 \
+                   --log_queries 1 \
+                   --log_profile_events 1 \
+                   --query_id "$probe_qid" \
+                   --query "SELECT count() FROM remote('198.51.100.1', system.one) FORMAT Null" >/dev/null 2>&1
+probe_ms=$(duration_of "$probe_qid")
+if [ -z "$probe_ms" ]; then
+    # Not a fixture verdict: the probe's own duration could not be read, so the precondition is
+    # simply unknown and every case below would be unsafe to trust either way.
+    echo "fixture undecidable: no query_log duration for the precondition probe"
+    exit 0
+fi
+if [ "$probe_ms" -lt 1551 ]; then
+    echo "fixture unusable: 198.51.100.1 does not block, it is refused"
+    exit 0
+fi
 
 run_case()
 {
@@ -155,36 +185,57 @@ done
 if [ "$appeared" = "0" ]; then
     echo "kill case unusable: query never appeared in system.processes"
 else
-    # How many attempts had already happened when the kill was sent. A fixed ceiling cannot be
-    # derived here the way it can for the deadline cases: the kill goes out only once the query is
-    # visible in system.processes, so the poll latency decides how many 2 s connects are already
-    # behind us. Measuring the count first turns the assertion below into a delta, which is what the
-    # fix is actually about -- how many more replicas get dialed AFTER cancellation.
-    kill_attempts_before=$($CLICKHOUSE_CLIENT --query "
-        SELECT ProfileEvents['DistributedConnectionTries']
-        FROM system.processes WHERE query_id = '$kill_qid' LIMIT 1")
-
     kill_start=$SECONDS
-    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$kill_qid' SYNC" >/dev/null 2>&1
+    # ASYNC, not SYNC. The delta below must span only the attempts that start AFTER cancellation, so
+    # the "before" sample has to be taken at a point where cancellation is already visible rather
+    # than just before it is requested. ASYNC still guarantees that: its branch calls
+    # sendCancelToQuery inline before returning (InterpreterKillQueryQuery.cpp:231-243), so is_killed
+    # is set by the time this statement completes, and returning immediately lets the poll below
+    # observe the flag instead of blocking until the query is gone.
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$kill_qid' ASYNC" >/dev/null 2>&1
+
+    # Sample the attempt count from a row that already shows is_cancelled, so anything counted after
+    # this point is an attempt begun on a query that was known to be cancelled. is_cancelled and
+    # ProfileEvents come from one getInfo(true, true, true) snapshot per row
+    # (StorageSystemProcesses.cpp:96, populated together at ProcessList.cpp:871 and :892), so reading
+    # them in a single SELECT gives a consistent pair rather than two racing samples.
+    kill_attempts_before=""
+    for _ in {1..100}; do
+        kill_attempts_before=$($CLICKHOUSE_CLIENT --query "
+            SELECT ProfileEvents['DistributedConnectionTries']
+            FROM system.processes WHERE query_id = '$kill_qid' AND is_cancelled LIMIT 1")
+        [ -n "$kill_attempts_before" ] && break
+        sleep 0.1
+    done
+
     wait "$kill_client_pid" 2>/dev/null
     kill_elapsed=$((SECONDS - kill_start))
 
-    [ "$kill_elapsed" -lt 15 ] && echo "kill stopped early" || echo "kill still dialing after ${kill_elapsed}s"
-    # QUERY_WAS_CANCELLED, not TIMEOUT_EXCEEDED: this case sets no deadline, so a TIMEOUT_EXCEEDED
-    # here would mean the assertion is measuring the wrong mechanism.
-    grep -qF 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err" && echo "kill reported as cancelled" \
-        || echo "kill wrong error: $(cat "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err")"
-
-    # The 15 s bound above still tolerates ~6 further dials, so give the kill path the same attempt
-    # oracle the deadline cases have. At most one more attempt may complete: the one already in
-    # flight when the kill lands. Anything beyond that is the loop dialing on past a cancelled query,
-    # which is 120 attempts without the fix.
-    kill_attempts_after=$(attempts_of "$kill_qid")
-    if [ -n "$kill_attempts_before" ] && [ -n "$kill_attempts_after" ] \
-       && [ "$((kill_attempts_after - kill_attempts_before))" -le 1 ]; then
-        echo "kill stopped within 1 further attempt"
+    if [ -z "$kill_attempts_before" ]; then
+        # Fixture failure, not a pass: without a cancellation-visible sample the delta below would be
+        # measured against nothing, so say so rather than let it look like a clean run.
+        echo "kill case unusable: is_cancelled was never observed in system.processes"
     else
-        echo "kill went from $kill_attempts_before to $kill_attempts_after attempts"
+        [ "$kill_elapsed" -lt 15 ] && echo "kill stopped early" || echo "kill still dialing after ${kill_elapsed}s"
+        # QUERY_WAS_CANCELLED, not TIMEOUT_EXCEEDED: this case sets no deadline, so a TIMEOUT_EXCEEDED
+        # here would mean the assertion is measuring the wrong mechanism.
+        grep -qF 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err" && echo "kill reported as cancelled" \
+            || echo "kill wrong error: $(cat "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err")"
+
+        # The 15 s bound above still tolerates ~6 further dials, so give the kill path the same
+        # attempt oracle the deadline cases have -- and require the delta to be zero, not one.
+        # DistributedConnectionTries is incremented as the FIRST statement of try_establish
+        # (ConnectionEstablisher.cpp:72), before the connect, so it counts attempts that START. The
+        # attempt already in flight when the kill landed is therefore already inside
+        # kill_attempts_before and its completion adds nothing; any increase at all is a brand-new
+        # attempt begun on a cancelled query, which is what the fix exists to prevent. Without the
+        # fix this grows by ~120.
+        kill_attempts_after=$(attempts_of "$kill_qid")
+        if [ -n "$kill_attempts_after" ] && [ "$((kill_attempts_after - kill_attempts_before))" -eq 0 ]; then
+            echo "kill started no further attempts"
+        else
+            echo "kill went from $kill_attempts_before to $kill_attempts_after attempts"
+        fi
     fi
 fi
 rm -f "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err"

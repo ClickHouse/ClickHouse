@@ -7,4 +7,4 @@ hedged stopped within 2 attempts
 terminal reported as timeout
 kill stopped early
 kill reported as cancelled
-kill stopped within 1 further attempt
+kill started no further attempts
