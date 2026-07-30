@@ -112,6 +112,7 @@ namespace
     /// leave the renamed object readable without its row filter -- i.e. reintroduce the very
     /// escape this fix closes. So we reject the rename up front when a policy cannot be moved:
     ///   - it lives in a read-only storage (e.g. loaded from users.xml),
+    ///   - another policy in the same plan would end up on the same destination name,
     ///   - its destination name is already taken by a different policy that is not itself moving
     ///     out of the way (a real collision; an EXCHANGE that swaps two same-short-name policies
     ///     is not a collision because both are in `rekeys`), or
@@ -176,6 +177,39 @@ namespace
             return;
         }
 
+        /// (3) Two re-keys of this plan whose destinations are the same full name. Each one alone is
+        /// applicable -- at preflight time nothing occupies the destination yet, and their parking
+        /// names differ because `tempRekeyTableName` embeds the UUID and the index -- but they cannot
+        /// both hold that name afterwards, so phase 2 of the apply would throw after the commit and
+        /// leave the loser parked under a name no table has. The vector is two writable access
+        /// directories whose on-disk contents both define the same policy name: no insertion path can
+        /// produce it (`MultipleAccessStorage::insertImpl` writes to one storage and
+        /// `InterpreterCreateRowPolicyQuery` rejects a name held elsewhere), but `addStorage` does no
+        /// cross-storage name validation, and `findAllImpl` then returns both UUIDs.
+        std::unordered_map<String, RowPolicyPtr> destinations;
+        destinations.reserve(rekeys.size());
+        for (const auto & rekey : rekeys)
+        {
+            auto policy = access_control.tryRead<RowPolicy>(rekey.id);
+            if (!policy)
+                continue;
+
+            RowPolicyName dst_name;
+            dst_name.short_name = policy->getShortName();
+            dst_name.database = rekey.new_database;
+            dst_name.table_name = rekey.new_table;
+
+            auto [it, inserted] = destinations.emplace(dst_name.toString(), policy);
+            if (!inserted)
+                throw Exception(
+                    ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS,
+                    "Cannot rename because {} and {} would both have to occupy the name {} "
+                    "after the rename",
+                    it->second->formatTypeWithName(),
+                    policy->formatTypeWithName(),
+                    backQuoteIfNeed(dst_name.toString()));
+        }
+
         /// IDs that are moving (so their current name is about to be vacated and must not be
         /// treated as a collision with another moving policy's destination).
         std::unordered_set<UUID> moving_ids;
@@ -213,14 +247,14 @@ namespace
             if (!policy)
                 continue;
 
-            /// (3) Transient parking name (phase 1 of the apply) is taken by a non-moving policy.
+            /// (4) Transient parking name (phase 1 of the apply) is taken by a non-moving policy.
             RowPolicyName parking_name;
             parking_name.short_name = policy->getShortName();
             parking_name.database = policy->getDatabase();
             parking_name.table_name = tempRekeyTableName(rekey.id, i);
             reject_if_taken(parking_name, rekey.id, policy, /*allow_moving_occupant*/ false, "transient name used while renaming");
 
-            /// (4) Final destination name is taken by a policy that is NOT itself moving.
+            /// (5) Final destination name is taken by a policy that is NOT itself moving.
             RowPolicyName dst_name;
             dst_name.short_name = policy->getShortName();
             dst_name.database = rekey.new_database;

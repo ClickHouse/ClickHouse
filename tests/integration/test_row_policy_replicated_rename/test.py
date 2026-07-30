@@ -73,6 +73,21 @@ convert_node = cluster.add_instance(
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
+# Two writable local access directories. No insertion path can put one policy name in both
+# (`MultipleAccessStorage::insertImpl` writes to a single storage and
+# `InterpreterCreateRowPolicyQuery` rejects a name held elsewhere), but each `DiskAccessStorage`
+# loads whatever its directory already holds and `MultipleAccessStorage::addStorage` does no
+# cross-storage name validation, so a name present in both directories is visible twice.
+dup_node = cluster.add_instance(
+    "dup_node",
+    main_configs=["configs/config.xml", "configs/two_local_directories.xml"],
+    user_configs=["configs/settings.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+    macros={"shard": 1, "replica": 5},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+)
+
 nodes = [node1, node2]
 shared_nodes = [shared1, shared2, shared3]
 # Data is always 3 rows and the policy keeps `dept = 'eng'`, which matches exactly 1 of them.
@@ -80,6 +95,9 @@ shared_nodes = [shared1, shared2, shared3]
 FILTERED = "1\n"
 UNFILTERED = "3\n"
 SKIP_WARNING = "Not moving"
+# The two paths given to `dup_node` in configs/two_local_directories.xml.
+ACCESS_DIR_A = "/var/lib/clickhouse/access"
+ACCESS_DIR_B = "/var/lib/clickhouse/access_b"
 
 
 @pytest.fixture(scope="module")
@@ -781,3 +799,113 @@ def test_startup_conversion_succeeds_with_a_shared_storage_policy(started_cluste
         convert_node.query("DROP USER IF EXISTS rp_user")
         convert_node.query(f"DROP ROW POLICY IF EXISTS rp_a ON {db}.t")
         convert_node.query(f"DROP ROW POLICY IF EXISTS rp_inner ON {db}.`{inner}`")
+
+
+def _duplicate_policy_across_two_directories(db, table, short_name):
+    """Puts the SAME row-policy full name in both of `dup_node`'s writable access directories.
+
+    Deliberately avoids every insertion path: the policy is created normally (so it lands in the
+    first writable directory), the server is stopped, and that directory's `.sql` file is copied
+    into the second one under a fresh UUID filename. The file body carries no UUID -- the UUID is
+    the filename -- so the copy is a second entity with the same full name. The
+    `need_rebuild_lists.mark` file makes the second `DiskAccessStorage` scan its directory instead
+    of trusting its `.list` files, which is how it discovers the copied entity on the next start.
+
+    Returns nothing; the caller asserts the resulting state."""
+    dup_node.query(
+        f"CREATE ROW POLICY {short_name} ON {db}.{table} FOR SELECT USING dept = 'eng' TO rp_user"
+    )
+    dup_node.stop_clickhouse()
+    dup_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            # The one `.sql` file in directory A that defines this policy. `grep -l` keeps this
+            # independent of which UUID the server picked.
+            f"set -e; "
+            f"src=$(grep -l 'ATTACH ROW POLICY {short_name} ON' {ACCESS_DIR_A}/*.sql | head -1); "
+            f"mkdir -p {ACCESS_DIR_B}; "
+            f"cp \"$src\" {ACCESS_DIR_B}/$(cat /proc/sys/kernel/random/uuid).sql; "
+            f"touch {ACCESS_DIR_B}/need_rebuild_lists.mark",
+        ]
+    )
+    dup_node.start_clickhouse()
+
+
+def test_rename_is_rejected_when_two_policies_would_share_one_destination(started_cluster):
+    """Two writable access directories can hold two distinct policy UUIDs under the same full name.
+    Both are then collected for the same destination, and each one alone passes the preflight: at
+    preflight time nothing occupies the destination, and their parking names differ because
+    `tempRekeyTableName` embeds the UUID and the index. Only a check on the plan itself catches it.
+
+    Without that check the rename COMMITS and then phase 2 of the apply throws, and the rollback --
+    which restores in order -- puts the first policy back and then fails to restore the second, so
+    it is left parked under `.tmp_rename_row_policy_<uuid>_<i>`, bound to a table that does not
+    exist and filtering nothing. Hence the parked-name count is asserted, not just the error."""
+    db = "rp_dup"
+    table = "ta"
+    dup_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    dup_node.query("DROP USER IF EXISTS rp_user")
+    dup_node.query(f"CREATE DATABASE {db} ENGINE = Atomic")
+    dup_node.query(
+        f"CREATE TABLE {db}.{table} (id UInt64, dept String) ENGINE = MergeTree ORDER BY id"
+    )
+    dup_node.query(f"INSERT INTO {db}.{table} VALUES (1, 'eng'), (2, 'fin'), (3, 'fin')")
+    dup_node.query("CREATE USER rp_user")
+    dup_node.query(f"GRANT SELECT ON {db}.* TO rp_user")
+
+    try:
+        _duplicate_policy_across_two_directories(db, table, "rp_a")
+        # The state the whole arm rests on: one name, two entities, two different storages.
+        assert (
+            dup_node.query(
+                "SELECT count(), count(DISTINCT storage), count(DISTINCT id) "
+                "FROM system.row_policies WHERE short_name = 'rp_a'"
+            )
+            == "2\t2\t2\n"
+        )
+        assert (
+            dup_node.query(
+                "SELECT DISTINCT database, table FROM system.row_policies "
+                "WHERE short_name = 'rp_a'"
+            )
+            == f"{db}\t{table}\n"
+        )
+
+        error = dup_node.query_and_get_error(f"RENAME TABLE {db}.{table} TO {db}.ta_new")
+        assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
+        # Rejected BEFORE the commit: the table still has its old name.
+        assert (
+            dup_node.query(f"SELECT name FROM system.tables WHERE database = '{db}'")
+            == f"{table}\n"
+        )
+        # Nothing was parked. Non-zero here is the damaging pre-fix end state.
+        assert (
+            dup_node.query(
+                "SELECT count() FROM system.row_policies "
+                "WHERE table LIKE '.tmp_rename_row_policy_%'"
+            )
+            == "0\n"
+        )
+        # Both policies untouched, so the table is still filtered under the name it kept.
+        assert (
+            dup_node.query(
+                "SELECT count(), count(DISTINCT storage) FROM system.row_policies "
+                f"WHERE short_name = 'rp_a' AND database = '{db}' AND table = '{table}'"
+            )
+            == "2\t2\n"
+        )
+        assert dup_node.query(f"SELECT count() FROM {db}.{table}", user="rp_user") == FILTERED
+    finally:
+        dup_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        dup_node.query("DROP USER IF EXISTS rp_user")
+        # Two entities share the name, so the DROP has to run until none is left; and the loser of a
+        # pre-fix run is bound to a parked name, which DROP by name cannot reach.
+        for _ in range(4):
+            dup_node.query(f"DROP ROW POLICY IF EXISTS rp_a ON {db}.{table}")
+            dup_node.query(f"DROP ROW POLICY IF EXISTS rp_a ON {db}.ta_new")
+        dup_node.stop_clickhouse()
+        dup_node.exec_in_container(
+            ["bash", "-c", f"rm -rf {ACCESS_DIR_B}/*.sql {ACCESS_DIR_B}/*.list"]
+        )
+        dup_node.start_clickhouse()

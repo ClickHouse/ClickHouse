@@ -1,0 +1,20 @@
+<clickhouse>
+    <user_directories replace="replace">
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <!-- Two writable local directories. Nothing forbids this configuration, and no insertion
+             path can put the same entity name in both (MultipleAccessStorage::insertImpl writes to
+             one storage), but each DiskAccessStorage loads whatever its directory already contains
+             and addStorage does no cross-storage name validation, so a name present in both
+             directories yields two visible policies with the same full name. -->
+        <local_directory>
+            <name>local_a</name>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+        <local_directory>
+            <name>local_b</name>
+            <path>/var/lib/clickhouse/access_b/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>
