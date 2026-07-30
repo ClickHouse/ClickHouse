@@ -5051,38 +5051,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    /// A text index with `support_phrase_search` can only be written in the 'v2_with_positions' format,
-    /// so `text_index_serialization_version` must not be pinned below it while such an index exists.
-    /// Revalidate the text indexes of the post-apply metadata against the prospective setting value.
-    {
-        std::optional<Field> new_text_index_serialization_version;
-        for (const auto & command : commands)
-        {
-            if (command.type == AlterCommand::MODIFY_SETTING)
-            {
-                Field value;
-                if (command.settings_changes.tryGet("text_index_serialization_version", value))
-                    new_text_index_serialization_version = value;
-            }
-            else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("text_index_serialization_version"))
-            {
-                new_text_index_serialization_version = getDefaultSettings()->get("text_index_serialization_version");
-            }
-        }
-
-        if (new_text_index_serialization_version)
-        {
-            MergeTreeSettings prospective_settings = *getSettings();
-            prospective_settings.set("text_index_serialization_version", *new_text_index_serialization_version);
-
-            for (const auto & index : new_metadata.secondary_indices)
-            {
-                if (index.type == TEXT_INDEX_NAME)
-                    MergeTreeIndexFactory::instance().validate(index, /*attach=*/false, prospective_settings);
-            }
-        }
-    }
-
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 

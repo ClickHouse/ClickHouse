@@ -544,9 +544,6 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    /// Throws if the index has features (like positions) that cannot be represented in the current serialization version.
-    void checkSerializationVersionForWrite() const;
-
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 

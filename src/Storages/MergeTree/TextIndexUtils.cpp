@@ -279,7 +279,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     output_tokens = ColumnString::create();
 
     const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
-    text_index.checkSerializationVersionForWrite();
     params = text_index.getParams();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();

@@ -707,9 +707,18 @@ Allow creating text indexes with the experimental `support_phrase_search` argume
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
-The newest on-disk serialization format version allowed when writing text indexes.
-An index that does not use the features of the newest allowed format is written in the
-oldest format that can represent it, so that older servers can still read it.
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference, not a hard constraint: every index is written in the format
+closest to the preferred one that can represent it. An index with `support_phrase_search`
+is always written in `v2_with_positions` (older formats cannot represent positions), an
+index with a posting list codec is written at least in `v1_with_codec` (older formats do
+not persist the codec type), and an index without positions is written at most in
+`v1_with_codec` (it gains nothing from a newer format).
+
+Explicit contradictions are rejected at creation time: an index with `support_phrase_search`
+cannot be created while this setting is below `v2_with_positions`, and an index with a
+`posting_list_codec` argument other than `none` cannot be created while it is `v0_initial`.
 
 During a rolling upgrade, set this to an older version so that newer servers keep writing
 text index parts in the on-disk format that older servers can still read. After all
@@ -722,8 +731,8 @@ Possible values:
 - `v0_initial` — The original format. Does not persist the posting list codec type and is
   therefore only compatible with `text_index_posting_list_codec = none`.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
-- `v2_with_positions` — Allows persisting token positions for indexes with the
-  `support_phrase_search` argument enabled (such indexes require this version).
+- `v2_with_positions` — Persists token positions for indexes with the
+  `support_phrase_search` argument enabled (such indexes are always written in this format).
 )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no

@@ -105,7 +105,21 @@ ENGINE = MergeTree() ORDER BY id
 SETTINGS index_granularity = 1, text_index_posting_list_codec = 'bitpacking';
 ALTER TABLE tab_alter MODIFY SETTING text_index_serialization_version = 'v0_initial'; -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- phrase search index requires the v2_with_positions version';
+SELECT '-- a posting list codec index argument requires at least the v1_with_codec version';
+-- The table-level codec setting is pinned to 'none', so the conflict comes from the index argument alone.
+DROP TABLE IF EXISTS tab_codec_arg;
+CREATE TABLE tab_codec_arg
+(
+    id UInt32,
+    str String,
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking')
+)
+ENGINE = MergeTree() ORDER BY id
+SETTINGS text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none'; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- phrase search index requires the v2_with_positions version on CREATE';
+-- The explicit contradiction is rejected up front: positions cannot be represented
+-- in the pinned format, so the combination is likely a user error.
 DROP TABLE IF EXISTS tab_positions_pinned;
 CREATE TABLE tab_positions_pinned
 (
@@ -127,16 +141,13 @@ ENGINE = MergeTree() ORDER BY id
 SETTINGS text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
 ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1); -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- pinning the version on an existing phrase search table is rejected';
--- The existing text indexes are revalidated against the prospective setting value on MODIFY SETTING,
--- so the version of an index with phrase search support cannot be pinned below 'v2_with_positions'.
-ALTER TABLE tab_v2_with_positions MODIFY SETTING text_index_serialization_version = 'v1_with_codec'; -- { serverError BAD_ARGUMENTS }
+SELECT '-- pinning the version on an existing phrase search table keeps the index writable';
+-- On an existing table the setting is only a preference: the index keeps being written
+-- in the 'v2_with_positions' format it requires, so inserts and merges never fail.
+ALTER TABLE tab_v2_with_positions MODIFY SETTING text_index_serialization_version = 'v1_with_codec';
 INSERT INTO tab_v2_with_positions SELECT number, 'foo bar qux' FROM numbers(512);
+OPTIMIZE TABLE tab_v2_with_positions FINAL;
 SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'bar qux');
-
-SELECT '-- dropping the phrase search index and pinning the version in one ALTER is allowed';
--- The revalidation runs on the post-ALTER metadata, so the pin is checked against the surviving indexes.
-ALTER TABLE tab_v2_with_positions DROP INDEX text_idx, MODIFY SETTING text_index_serialization_version = 'v1_with_codec';
 
 DROP TABLE tab_v0_initial;
 DROP TABLE tab_v1_with_codec;
