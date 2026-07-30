@@ -300,6 +300,26 @@ class Runner:
             return False
         return all(sig in log_tail for sig in cls._DOCKER_DAEMON_DEATH_LOG_SIGNATURES)
 
+    @classmethod
+    def _label_infra_on_docker_daemon_death(
+        cls, result, exit_code, log_tail, timeout_exceeded
+    ):
+        """Label a truncated daemon-death run infra. Returns True if labeled."""
+        if timeout_exceeded or not cls._is_docker_daemon_death(exit_code, log_tail):
+            return False
+        print(
+            "NOTE: job truncated by a docker daemon failure - "
+            "labeling as infrastructure error for auto-retry"
+        )
+        # Append the bare label string, not the dict set_label() would store:
+        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
+        # sees a plain string. The other readers (_label_name, json.html
+        # normalizeLabels, gh.py) already accept the string form.
+        labels = result.ext.setdefault("labels", [])
+        if Result.Label.INFRA not in labels:
+            labels.append(Result.Label.INFRA)
+        return True
+
     def _run(
         self,
         workflow,
@@ -538,22 +558,9 @@ class Runner:
                         result.set_status(Result.Status.ERROR)
                         latest_log = process.get_latest_log(max_lines=20)
                         result.set_info(latest_log)
-                        if (
-                            not process.timeout_exceeded
-                            and self._is_docker_daemon_death(exit_code, latest_log)
-                        ):
-                            print(
-                                "NOTE: job truncated by a docker daemon failure - "
-                                "labeling as infrastructure error for auto-retry"
-                            )
-                            # Append the bare label string, not the dict set_label()
-                            # would store: retry_infra_failures.yml matches with
-                            # `any(. == "infra")`, which only sees a plain string.
-                            # All other readers (_label_name, json.html
-                            # normalizeLabels, gh.py) already accept the string form.
-                            labels = result.ext.setdefault("labels", [])
-                            if Result.Label.INFRA not in labels:
-                                labels.append(Result.Label.INFRA)
+                        self._label_infra_on_docker_daemon_death(
+                            result, exit_code, latest_log, process.timeout_exceeded
+                        )
                 result.dump()
         finally:
             # Idempotent: a no-op if stop() already ran above; guarantees the

@@ -11,6 +11,7 @@ in both directions.
 
 import os
 import sys
+import textwrap
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -86,18 +87,70 @@ def test_empty_log_is_not_infra():
 def test_infra_label_stored_as_bare_string_for_retry_jq():
     # retry_infra_failures.yml matches infra with `any(. == "infra")`, which
     # only ever sees a plain string. set_label() stores a dict, which that jq
-    # would never match, so runner.py must append the bare string. This pins
-    # that the stored element IS the string, keeping the auto-retry working
-    # end-to-end.
+    # would never match, so the runner must append the bare string. Drive the
+    # production method, not a copy of it, so the assertion fails if the
+    # runner stops labeling or switches back to the dict form.
     result = Result(name="job", status=Result.Status.ERROR)
-    labels = result.ext.setdefault("labels", [])
-    if Result.Label.INFRA not in labels:
-        labels.append(Result.Label.INFRA)
+    assert Runner._label_infra_on_docker_daemon_death(
+        result, 125, _DAEMON_DEATH_LOG, False
+    )
     stored = result.ext["labels"]
     assert stored == ["infra"]
     # This is exactly what the workflow jq evaluates.
     assert any(item == "infra" for item in stored)
-    # Idempotent: labeling twice must not duplicate.
-    if Result.Label.INFRA not in stored:
-        stored.append(Result.Label.INFRA)
-    assert stored == ["infra"]
+
+
+def test_infra_label_is_idempotent():
+    # Two labeling passes must not duplicate the entry.
+    result = Result(name="job", status=Result.Status.ERROR)
+    for _ in range(2):
+        assert Runner._label_infra_on_docker_daemon_death(
+            result, 125, _DAEMON_DEATH_LOG, False
+        )
+    assert result.ext["labels"] == ["infra"]
+
+
+def test_infra_label_preserves_existing_labels():
+    # Labeling must append, never clobber labels an earlier step recorded
+    # (including the dict form other code paths still write).
+    result = Result(name="job", status=Result.Status.ERROR)
+    result.ext["labels"] = [{"name": "flaky"}]
+    assert Runner._label_infra_on_docker_daemon_death(
+        result, 125, _DAEMON_DEATH_LOG, False
+    )
+    assert result.ext["labels"] == [{"name": "flaky"}, "infra"]
+
+
+def test_no_infra_label_for_timeout_or_non_daemon_death():
+    # A timed-out run keeps its own timeout handling, and a plain docker.sock
+    # connect failure is a real regression: neither may be labeled infra.
+    timed_out = Result(name="job", status=Result.Status.ERROR)
+    assert not Runner._label_infra_on_docker_daemon_death(
+        timed_out, 125, _DAEMON_DEATH_LOG, True
+    )
+    assert "labels" not in timed_out.ext
+
+    connect_failure = Result(name="job", status=Result.Status.ERROR)
+    assert not Runner._label_infra_on_docker_daemon_death(
+        connect_failure,
+        125,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock\n",
+        False,
+    )
+    assert "labels" not in connect_failure.ext
+
+
+def test_run_still_labels_via_the_production_helper():
+    # The helper above is only worth testing if _run actually calls it. Pin the
+    # wiring so removing the call from _run fails here instead of silently
+    # disabling the auto-retry.
+    import ast
+    import inspect
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(Runner._run)))
+    called = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "_label_infra_on_docker_daemon_death" in called
