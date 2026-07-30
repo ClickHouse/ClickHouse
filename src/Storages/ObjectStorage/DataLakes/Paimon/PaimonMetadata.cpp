@@ -800,7 +800,13 @@ String snapshotFilePath(const String & table_location, Int64 snapshot_id)
 
 bool PaimonMetadata::isSnapshotLoadFailureSkippable(const ObjectStoragePtr & object_storage, const String & snapshot_path)
 {
-    return !object_storage->exists(StoredObject(snapshot_path));
+    /// `tryGetObjectMetadata` answers three states, `exists` only two: it returns an empty
+    /// optional only for a definite absence and throws when the backend could not tell.
+    /// `exists` collapses "could not tell" into `false` on HDFS, where any libhdfs error
+    /// (NameNode down, auth, network) makes `hdfsExists` non-zero, which would skip a live
+    /// snapshot and advance the watermark past it. Letting the throw propagate keeps the
+    /// caller fail-closed.
+    return !object_storage->tryGetObjectMetadata(snapshot_path, /*with_tags=*/false).has_value();
 }
 
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const

@@ -32,6 +32,11 @@ namespace ProfileEvents
     extern const Event RemoteFSBuffers;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+}
+
 namespace fs = std::filesystem;
 using namespace DB;
 
@@ -68,6 +73,31 @@ ObjectStoragePtr makeLocalObjectStorage(const std::string & key_prefix)
     return std::make_shared<LocalObjectStorage>(
         LocalObjectStorageSettings(/*disk_name_=*/"test_paimon_local", /*key_prefix_=*/key_prefix, /*read_only_=*/false));
 }
+
+/// Stands in for a backend that cannot answer an existence probe (HDFS with the NameNode
+/// unreachable, S3/Azure on a 5xx or an auth failure). Real storages signal that by throwing
+/// out of `tryGetObjectMetadata`; `LocalObjectStorage` alone never reaches that state under a
+/// temp directory, hence this injection point.
+struct ProbeFailingObjectStorage : public LocalObjectStorage
+{
+    std::atomic<bool> fail_probe{false};
+
+    explicit ProbeFailingObjectStorage(const std::string & key_prefix)
+        : LocalObjectStorage(
+              LocalObjectStorageSettings(/*disk_name_=*/"test_paimon_probe_failing", /*key_prefix_=*/key_prefix, /*read_only_=*/false))
+    {
+    }
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override
+    {
+        /// Not `LOGICAL_ERROR`: that aborts the process in debug and sanitizer builds
+        /// (`Exception::handleErrorCode`), so the test could never observe a throw. A real
+        /// unreachable backend reports a transport-level code, which is what this mimics.
+        if (fail_probe)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Injected backend failure while probing {}", path);
+        return LocalObjectStorage::tryGetObjectMetadata(path, with_tags);
+    }
+};
 
 /// Lay out a minimal Paimon table at `<root>/test.db/test_table` with the given
 /// snapshot ids present and a LATEST hint pointing at `latest_hint`.
@@ -269,6 +299,37 @@ TEST(PaimonIncrementalRead, SkipsOnlyGenuinelyMissingSnapshots)
 
     /// Removing the file flips the verdict for the same snapshot id.
     fs::remove(snapshot1);
+    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+}
+
+/// A backend that cannot answer the probe must not be read as "the snapshot is gone".
+/// `LocalObjectStorage` cannot express that state (its own `exists`/stat throw on a real
+/// backend error), so the unknown case needs an injecting storage: only a definite absence
+/// is an empty optional, and everything else propagates and keeps the caller fail-closed.
+TEST(PaimonIncrementalRead, TreatsUnknownExistenceAsNotSkippable)
+{
+    ScopedTempDir tmp("paimon_snapshot_probe_error_test");
+    auto table = makePaimonTable(tmp.path, /*snapshot_ids=*/{1}, /*latest_hint=*/"1");
+    const auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
+
+    auto storage = std::make_shared<ProbeFailingObjectStorage>(tmp.path.string());
+
+    /// Baseline: the delegate answers, so the verdict is the ordinary one.
+    EXPECT_FALSE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+
+    /// The backend fails the probe: the failure must propagate, not become "skippable".
+    storage->fail_probe = true;
+    EXPECT_THROW(
+        PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
+
+    /// The same holds when the object is genuinely absent: an unanswerable probe never
+    /// licenses advancing the watermark, so absence must not be inferred from an error.
+    fs::remove(snapshot1);
+    EXPECT_THROW(
+        PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()), DB::Exception);
+
+    /// Once the backend answers again, a genuine absence is still skippable.
+    storage->fail_probe = false;
     EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
 }
 
