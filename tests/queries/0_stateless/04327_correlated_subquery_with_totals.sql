@@ -63,6 +63,18 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distri
 
 SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id;
 
+-- Without an oracle the row above would still match its reference if make_distributed_plan silently
+-- declined this shape, so it would stop guarding the route. Exchange steps exist only in a
+-- distributed plan, and a step name is printed by every EXPLAIN mode regardless of
+-- explain_query_plan_default, so their presence discriminates: some with the setting, none without.
+SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
+    EXPLAIN SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_force_shuffle_aggregation = 1,
+             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0);
+
+SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
+    EXPLAIN SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id);
+
 -- A warm query result cache replaces the subquery plan with a step that carries the cached totals and
 -- contains no TotalsHavingStep, so a check that recognized step types could be defeated by it.
 -- Dropping the carrier input's streams at the join cannot be, because it never inspects steps.
@@ -73,7 +85,9 @@ SELECT count() > 0 FROM system.query_cache WHERE is_subquery = 1 AND query LIKE 
 
 -- Deleting the rows the entry was built from makes the hit observable without reading
 -- system.query_log: the cached values can only survive if the subquery is served from the cache.
-DELETE FROM t_04327 WHERE 1;
+-- The delete must be visible before the next read, so do not rely on the default of
+-- lightweight_deletes_sync.
+DELETE FROM t_04327 WHERE 1 SETTINGS lightweight_deletes_sync = 2;
 
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0;
@@ -85,7 +99,19 @@ SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_q
 INSERT INTO t_04327 SELECT number, number * 7 FROM numbers(3);
 
 SELECT id FROM t_04327 WHERE id >= (SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) AS s WHERE t_04327.val >= 0) ORDER BY id FORMAT JSONCompact
-SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0;
+SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0,
+         log_comment = '04327_cache_correlated';
+
+-- The rows were restored above, so the statement returns the same main rows whether or not the
+-- subquery came from the cache, and a miss would build a real TotalsHaving step that the carrier-side
+-- drop handles anyway. Assert the hit directly, otherwise that row asserts nothing about cached
+-- totals. log_comment is ignored in cache lookups, so identifying the statement with it is free.
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryCacheHits'] > 0
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '04327_cache_correlated'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE u_04327;
 DROP TABLE t_04327;

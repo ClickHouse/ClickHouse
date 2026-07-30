@@ -1561,9 +1561,10 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// A correlated subquery decorrelation join records which of its two inputs carries the subquery,
     /// so that the physical join can drop that input's totals (see JoinStepLogical::decorrelated_subquery_side).
     /// That side is only meaningful while the join still has exactly two inputs, so clamp it like the
-    /// swap-only joins below. The join is created ANY, for which isSwapOnlyJoinStrictness is already true,
-    /// so the clamp only has to keep applying after tryConvertAnyOuterJoinToInnerJoin rewrites the
-    /// strictness to ALL.
+    /// swap-only joins below. The join is created ANY, which isSwapOnlyJoinStrictness already clamps, but
+    /// tryConvertOuterJoinToInnerJoin runs in the first-pass optimization array while this runs in the
+    /// second pass, so such a join can arrive here already rewritten to ALL/INNER; the disjunct is what
+    /// keeps the clamp applying to it.
     auto decorrelated_subquery_side = join_step->getDecorrelatedSubquerySide();
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);

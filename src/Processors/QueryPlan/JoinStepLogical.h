@@ -217,8 +217,10 @@ protected:
     /// Set only on the join that correlated subquery decorrelation creates to produce its result
     /// stream, and records which of the two inputs carries the subquery. That input's totals and
     /// extremes are not part of the subquery's value, so the physical join drops them instead of
-    /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized: a plan
-    /// retaining a TotalsHaving step is never distributed.
+    /// propagating them as the outer query's (see JoinStep::updatePipeline). Not serialized, and it
+    /// does not need to be: a totals-carrying subquery never reaches a serialized plan, because
+    /// make_distributed_plan refuses such a plan up front (planHasUnsupportedDistributedStep, see
+    /// optimizeTree.cpp) and findQueryForParallelReplicas declines a decorrelated join tree.
     std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Dummy stats retrieved from hints, used for debugging
