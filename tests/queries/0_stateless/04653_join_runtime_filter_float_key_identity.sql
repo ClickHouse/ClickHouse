@@ -11,10 +11,18 @@ SET enable_join_runtime_filters = 1;
 -- Log reports no row estimate, so the probe-size cutoff cannot suppress the filter today. Pinned
 -- anyway so the test keeps its filter if Log ever gains an estimate or the default changes.
 SET join_runtime_filter_min_probe_rows = 0;
+-- LEFT ANTI is a swap-only strictness (isSwapOnlyJoinStrictness), so query_plan_join_swap_table=true
+-- reverses it to RIGHT ANTI. The negated filter is built only for LEFT ANTI
+-- (check_left_does_not_contain), so a swapped plan would exercise ExactContains instead of
+-- ExactNotContains: the results, the plan rows and the ran-filter rows would all still pass while the
+-- notEquals path this test covers never ran. stress.py randomizes this setting to 'true'.
+SET query_plan_join_swap_table = 0;
 SET allow_suspicious_low_cardinality_types = 1;
 
--- Log, not MergeTree: the plan inserts no runtime filter for a MergeTree source at this size, which
--- would make every assertion below vacuous. Row `has-filter` guards that.
+-- Log, not MergeTree: with join_runtime_filter_min_probe_rows pinned to 0 above, either engine keeps
+-- the filter, but at the default 1000 a MergeTree source of this size reports an estimate of 1 row and
+-- the cutoff would suppress it, whereas Log reports no estimate at all. Log therefore keeps the test
+-- meaningful even if that pin is ever dropped. Row `has-filter` guards the property directly.
 -- Every build side holds exactly ONE distinct value; with two or more the filter takes the Set path,
 -- which was already correct.
 
