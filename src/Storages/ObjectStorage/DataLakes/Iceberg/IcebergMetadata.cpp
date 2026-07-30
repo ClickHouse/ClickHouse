@@ -1360,7 +1360,13 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+            /// update_row_numbers_info = true: every transform that can precede this one (the
+            /// position-delete transform, an earlier equality-delete filter) maintains
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            return std::make_shared<FilterTransform>(
+                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
+                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                /*update_row_numbers_info=*/true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }
