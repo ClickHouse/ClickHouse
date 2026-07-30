@@ -2,6 +2,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -2202,7 +2203,8 @@ private:
         /// deadlock is impossible.
         ctx->compression_codec = ctx->data->getCompressionCodecForPart(
             ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
-        const bool is_explicit_recompression = ctx->data->isExplicitRecompression(ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        const bool is_explicit_recompression = isExplicitRecompression(
+            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
@@ -2729,8 +2731,10 @@ private:
                 new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
+        /// Column-only mutations keep the source part's codec; only the explicitness of a due `RECOMPRESS` is consulted.
         ctx->compression_codec = ctx->source_part->default_codec;
-        const bool is_explicit_recompression = ctx->data->isExplicitRecompression(ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        const bool is_explicit_recompression = isExplicitRecompression(
+            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
 
         if (ctx->mutating_pipeline_builder.initialized())
         {

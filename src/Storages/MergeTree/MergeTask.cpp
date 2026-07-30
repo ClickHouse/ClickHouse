@@ -77,6 +77,7 @@
 #endif
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 
 
 namespace ProfileEvents
@@ -910,8 +911,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         global_ctx->new_data_part->ttl_infos,
         global_ctx->time_of_merge);
-    global_ctx->is_explicit_recompression
-        = global_ctx->data->isExplicitRecompression(global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
+    global_ctx->is_explicit_recompression = isExplicitRecompression(
+        global_ctx->metadata_snapshot->getRecompressionTTLs(),
+        global_ctx->new_data_part->ttl_infos.recompression_ttl,
+        global_ctx->time_of_merge);
 
     switch (global_ctx->chosen_merge_algorithm)
     {

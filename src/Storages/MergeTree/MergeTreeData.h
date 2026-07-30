@@ -1371,10 +1371,6 @@ public:
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t current_time) const;
 
-    /// True if a `RECOMPRESS` TTL applies to a part with these `ttl_infos` at `current_time` and its codec is not `Default`.
-    /// Such a codec is an explicit per-part directive, so adaptive codec selection must not override it.
-    bool isExplicitRecompression(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
-
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
     /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
