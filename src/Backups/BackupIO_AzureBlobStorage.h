@@ -30,8 +30,7 @@ public:
 
     void copyFileToDisk(
         const String & path_in_backup,
-        size_t offset,
-        size_t size,
+        size_t file_size,
         bool encrypted_in_backup,
         DiskPtr destination_disk,
         const String & destination_path,
@@ -85,7 +84,6 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
-    void removeFilesBatch(const Strings & file_names);
 
     const DataSourceDescription data_source_description;
     std::shared_ptr<const AzureBlobStorage::ContainerClient> client;

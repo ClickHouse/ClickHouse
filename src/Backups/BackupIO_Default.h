@@ -26,12 +26,14 @@ public:
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
     /// Parameters:
     /// `encrypted_in_backup` specify if this file is encrypted in the backup, so it shouldn't be encrypted again while restoring to an encrypted disk.
-    void copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
+    void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
 
-    /// Default: plain readFile. S3/Azure never produce mmap/direct-io buffers, so the view can wrap them as is;
-    /// local Disk/File readers override this. See IBackupReader::readFileForView.
-    std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) override;
+    /// Buffered ranged copy, inherited by every reader that has no native ranged copy. `file_size` is unused:
+    /// reading through buffers has no size precondition.
+    void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                             bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                             WriteMode write_mode) override;
 
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }

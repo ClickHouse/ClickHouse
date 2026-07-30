@@ -120,16 +120,13 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(c
         settings->max_single_download_retries);
 }
 
-void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
+void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
     LOG_TRACE(log, "Source description {}, destination description {}", data_source_description.description, destination_data_source_description.description);
-    /// The Azure native copy path copies the whole blob, so a ranged copy (offset != 0, a packed member) must
-    /// go through buffers. Ranged native copy on Azure is not implemented (backup object packing targets S3).
     if (destination_data_source_description.object_storage_type == ObjectStorageType::Azure
-        && destination_data_source_description.is_encrypted == encrypted_in_backup
-        && (offset == 0))
+        && destination_data_source_description.is_encrypted == encrypted_in_backup)
     {
         LOG_TRACE(log, "Copying {} from AzureBlobStorage to disk {}", path_in_backup, destination_disk->getName());
         auto write_blob_function = [&](const Strings & dst_blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
@@ -146,7 +143,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 connection_params.getContainer(),
                 fs::path(blob_path) / path_in_backup,
                 0,
-                size,
+                file_size,
                 /* dest_container */ dst_blob_path[1],
                 /* dest_path */ dst_blob_path[0],
                 settings,
@@ -154,7 +151,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 std::optional<ObjectAttributes>(),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_READER));
 
-            return size;
+            return file_size;
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
@@ -162,7 +159,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
     }
 
     /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, offset, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 
@@ -328,15 +325,6 @@ void BackupWriterAzureBlobStorage::removeFiles(const Strings & file_names)
 
     object_storage->removeObjectsIfExist(objects);
 
-}
-
-void BackupWriterAzureBlobStorage::removeFilesBatch(const Strings & file_names)
-{
-    StoredObjects objects;
-    for (const auto & file_name : file_names)
-        objects.emplace_back(fs::path(blob_path) / file_name);
-
-    object_storage->removeObjectsIfExist(objects);
 }
 
 }

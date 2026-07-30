@@ -136,6 +136,8 @@ public:
     using PackMembers = std::vector<std::pair<BackupFileInfo, BackupEntryPtr>>;
     virtual void writeFilePack(size_t pack_id, const PackMembers & members) = 0;
 
+    virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;
+
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;
 

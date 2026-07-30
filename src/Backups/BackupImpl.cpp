@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
@@ -54,6 +55,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char backup_fail_before_writing_metadata[];
+}
+
 namespace ErrorCodes
 {
     extern const int BACKUP_NOT_FOUND;
@@ -69,6 +75,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
     extern const int INSECURE_PATH;
+    extern const int FAULT_INJECTED;
 }
 
 namespace fs = std::filesystem;
@@ -1098,12 +1105,16 @@ void BackupImpl::loadPackIndexes()
                 backup_name_for_logging,
                 quoteString(pack_object));
 
+        const UInt64 pack_object_size = reader->getFileSize(pack_object);
+
         auto in = reader->readFile(pack_object);
         const auto index = PackedFilesReader::readIndex(*in);
 
         for (const auto & [member_name, file_offset] : index)
         {
-            if (!packed_members.emplace(member_name, MemberLocation{pack_object, file_offset.offset, file_offset.size}).second)
+            if (!packed_members
+                     .emplace(member_name, MemberLocation{pack_object, file_offset.offset, file_offset.size, pack_object_size})
+                     .second)
                 throw Exception(
                     ErrorCodes::BACKUP_DAMAGED,
                     "Backup {}: Member {} appears in more than one pack",
@@ -1115,14 +1126,9 @@ void BackupImpl::loadPackIndexes()
 
 std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const MemberLocation & member) const
 {
-    /// A pack is read through IBackupReader (no ReadSettings arg), so PackedFilesReader::readFile (DiskPtr-based)
-    /// can't be reused; only viewMember is shared. readFileForView strips mmap/direct-io on local readers, which
-    /// ReadBufferFromFileView can't wrap.
-    ///
-    /// TODO(backup-packing): opens the pack once per member (a ranged GET per member on S3). A batch-restore API
-    /// could read each pack once and slice all its members; deferred -- the S3->S3 native-copy path can't be
-    /// range-batched, and coalescing needs pack-grouping plumbed into the restore driver.
-    return PackedFilesReader::viewMember(reader->readFileForView(member.pack_object), member.pack_object, member.offset, member.size);
+    /// TODO(backup-packing): opens the pack per member (a ranged GET each on S3); a batch-restore API could
+    /// open each pack once and slice all its members.
+    return PackedFilesReader::viewMember(reader->readFile(member.pack_object), member.pack_object, member.offset, member.size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1305,17 +1311,18 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (info.size && !info.base_size && !isArchive() && !packed_location)
     {
         /// Data comes completely from this backup as its own whole object.
-        reader->copyFileToDisk(info.data_file_name, 0, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
+        reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
     else if (info.size && !info.base_size && !isArchive() && packed_location)
     {
-        /// A packed member with no base is a byte range inside a pack object; copy only that range. On S3 the
-        /// reader forces a ranged UploadPartCopy (never a whole-object CopyObject, which would copy the entire
-        /// pack); Disk/File readers do a buffered ranged read. Packed members that also have a base take the
-        /// generic path below, which concatenates the base backup's data with the member's range.
-        reader->copyFileToDisk(packed_location->pack_object, packed_location->offset, packed_location->size,
-                               info.encrypted_by_disk, destination_disk, destination_path, write_mode);
+        /// A packed member with no base is a byte range inside a pack object; copy only that range, never a
+        /// whole-object copy, which would copy the entire pack. The pack object's size decides the route the
+        /// storage allows for that source. Packed members that also have a base take the generic path below,
+        /// which concatenates the base backup's data with the member's range.
+        reader->copyFileRangeToDisk(packed_location->pack_object, packed_location->offset, packed_location->size,
+                                    packed_location->pack_object_size, info.encrypted_by_disk, destination_disk,
+                                    destination_path, write_mode);
         file_copied = true;
     }
     else if (info.size && (info.size == info.base_size))
@@ -1355,15 +1362,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     /// we don't write anything for reference files
     if (entry->isReference())
         return;
-
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
 
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
@@ -1533,6 +1531,10 @@ void BackupImpl::finalizeWriting()
     if (!params.is_internal_backup)
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
+        fiu_do_on(FailPoints::backup_fail_before_writing_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
+        });
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
@@ -1550,6 +1552,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 
@@ -1618,7 +1630,9 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
                 /// A member's data_file_name is a key inside a pack, not an object; remove pack objects once.
                 if (file_info.pack_id >= 0)
                     pack_ids.insert(static_cast<size_t>(file_info.pack_id));
-                else
+                /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
+                /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
+                else if (!file_info.data_file_name.empty())
                     files_to_remove.push_back(file_info.data_file_name);
             });
             for (size_t pack_id : pack_ids)

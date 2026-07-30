@@ -628,9 +628,10 @@ def _count_backup_objects(cluster, backup_name):
 
 def test_backup_to_s3_object_packing(cluster):
     # Object packing coalesces many small backup data files into a few pack objects, cutting the number
-    # of objects (and PUT/copy requests) written. On restore a packed member is a byte range inside a
-    # pack object and is copied server-side via the ranged multipart UploadPartCopy path -- never the
-    # whole-object CopyObject, which carries no range and would copy the entire pack.
+    # of objects (and PUT/copy requests) written. This backup's single pack stays below S3's 5 MiB
+    # byte-range copy-source minimum, so restore reads every member through buffers -- the server-side
+    # ranged-copy route is not covered by any integration test (reaching it needs a >5 MiB pack, which
+    # costs far too much MinIO traffic for CI).
     storage_policy = "policy_s3"
 
     backup_name_off = new_backup_name()
@@ -640,8 +641,7 @@ def test_backup_to_s3_object_packing(cluster):
 
     backup_name_on = new_backup_name()
     dest_on = f"S3('http://minio1:9001/root/data/backups/{backup_name_on}', 'minio', '{minio_secret_key}')"
-    # check_backup_and_restore asserts the restored data is byte-identical (its internal throwIf).
-    (_, restore_events) = check_backup_and_restore(
+    check_backup_and_restore(
         cluster,
         storage_policy,
         dest_on,
@@ -649,15 +649,12 @@ def test_backup_to_s3_object_packing(cluster):
     )
     objects_on = _count_backup_objects(cluster, backup_name_on)
 
-    # Request-cost discrimination (test 9): far fewer objects are written with packing on. Counting via
-    # the MinIO listing (destination objects) is the ground truth and is immune to the fact that
-    # native-copy CopyObject / UploadPartCopy events are not recorded in system.blob_storage_log.
+    # Request-cost discrimination: far fewer objects are written with packing on. Counting via the MinIO
+    # listing (destination objects) is the ground truth and is immune to the fact that native-copy
+    # CopyObject / UploadPartCopy events are not recorded in system.blob_storage_log.
     assert (
         objects_on < objects_off
     ), f"packing did not reduce backup object count: on={objects_on} off={objects_off}"
-
-    # Restore of the packed members exercised the ranged server-side copy (multipart UploadPartCopy).
-    assert restore_events.get("S3UploadPartCopy", 0) > 0, restore_events
 
 
 def test_backup_to_s3_object_packing_incremental(cluster):
@@ -1078,17 +1075,13 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
-def test_backup_to_zip(cluster):
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
-
-
 def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
     node = cluster.instances["node"]
     backup_name = new_backup_name()
-    archive_key = f"data/backups/{backup_name}.zip"
+    # Use a tar archive here: zip backups on S3 are now rejected up front (see
+    # test_backup_to_s3_zip_not_supported), and this test only needs some archive whose
+    # exact object key must not be confused with a similarly-prefixed sibling object.
+    archive_key = f"data/backups/{backup_name}.tar"
     data = b"not a backup archive"
     cluster.minio_client.put_object(
         "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
@@ -1510,3 +1503,53 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
+
+
+def test_backup_to_s3_zip_not_supported(cluster):
+    # Zip backups require seeking, which makes each read a separate HTTP request
+    # on object storage. They must be rejected early with a clear error (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for S3 backups" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")
+
+
+def test_restore_from_s3_zip_not_supported(cluster):
+    # RESTORE from a zip archive on S3 is the slow path reported in issue #53483: reading the
+    # central directory requires seeking, and every seek is a separate HTTP request. The rejection
+    # must fire up front, by file extension, before the archive is opened - so a non-existent
+    # `.zip` object is enough to prove the seek-heavy read path is never reached.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_source = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_source}"
+    )
+    assert "Zip archive format is not supported for S3 backups" in error, error
+
+
+def test_backup_to_object_storage_disk_zip_not_supported(cluster):
+    # A `Disk` destination backed by object storage (here the `s3`-typed `disk_s3`) has the same
+    # seek-heavy zip read path as a direct `S3(...)` destination, so it must be rejected too (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"Disk('disk_s3', '{backup_name}.zip')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for backups on disk" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")

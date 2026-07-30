@@ -26,7 +26,7 @@ Ce schéma, sans être nécessairement le plus optimal, exploite plusieurs fonct
 
 Nous migrerons chacun de ces concepts vers leurs équivalents dans ClickHouse.
 
-Pour les utilisateurs qui souhaitent charger ce jeu de données dans une instance PostgreSQL afin de tester les étapes de migration, nous fournissons les données au format `pg_dump` en téléchargement avec le DDL, et les commandes de chargement correspondantes sont indiquées ci-dessous :
+Pour les utilisateurs qui souhaitent peupler ce jeu de données dans une instance PostgreSQL afin de tester les étapes de migration, nous fournissons les données au format `pg_dump` en téléchargement avec le DDL, et les commandes de chargement correspondantes sont indiquées ci-dessous :
 
 ```bash
 # users
@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse appliquera au serveur PostgreSQL les clauses `WHERE` simples telles que `=`, `!=`, `>`,`>=`, `<`, `<=` et IN. Les chargements incrémentiels peuvent ainsi être plus efficaces si un index existe sur les colonnes utilisées pour identifier le jeu de modifications.
+> ClickHouse transmet au serveur PostgreSQL les clauses `WHERE` simples, telles que `=`, `!=`, `>`,`>=`, `<`, `<=` et IN. Les chargements incrémentiels peuvent ainsi être plus efficaces s&#39;il existe un index sur les colonnes utilisées pour identifier l&#39;ensemble des modifications.
 
-> Une méthode possible pour détecter les opérations UPDATE lors de l&#39;utilisation de la réplication des requêtes consiste à utiliser la [colonne système `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (identifiants de transaction) comme watermark - une modification de cette colonne indique qu&#39;un changement a eu lieu et peut donc être répercutée sur la table de destination. Les utilisateurs qui adoptent cette approche doivent savoir que les valeurs `XMIN` peuvent reboucler et que les comparaisons nécessitent un parcours complet de la table, ce qui complique le suivi des modifications.
+> Une méthode possible pour détecter les opérations `UPDATE` lors de l&#39;utilisation de la réplication de requêtes consiste à utiliser la [colonne système `XMIN`](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (identifiants de transaction) comme repère : toute modification de cette colonne indique un changement et peut donc être appliquée à la table de destination. Les utilisateurs qui adoptent cette approche doivent savoir que les valeurs `XMIN` peuvent revenir à zéro et que les comparaisons nécessitent un parcours complet de la table, ce qui complique le suivi des modifications.
 
 [Cliquez ici pour la partie 2](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part2)

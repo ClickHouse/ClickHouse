@@ -795,7 +795,7 @@ void BackupsWorker::writeBackupEntries(
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "", /* sync = */ true);
 
-    auto file_infos = backup_coordination->getFileInfos();
+    const auto & file_infos = backup_coordination->getFileInfos();
     if (file_infos.size() != backup_entries.size())
     {
         throw Exception(
@@ -836,6 +836,13 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Packed entries are handled by the serial pack pass below; skip them here (and don't move their
@@ -1393,7 +1400,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     infos[id] = std::move(extended_info);
 
@@ -1438,7 +1445,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

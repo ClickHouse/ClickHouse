@@ -29,21 +29,20 @@ public:
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
-    /// Opens `file_name` for reading through ReadBufferFromFileView (packed backups wrap the pack object in a
-    /// view over one member's byte range). BackupReaderDefault forwards to plain readFile -- correct for
-    /// S3/Azure readers, which never produce mmap/direct-io buffers. Local readers (Disk/File) override it to
-    /// strip mmap/direct-io, which the view cannot wrap. Not for whole-file restores: they keep mmap/direct-io.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) = 0;
-
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
     /// Parameters:
-    /// `offset` and `size` specify the byte range `[offset, offset + size)` of `path_in_backup` to copy; `offset == 0`
-    /// with `size` equal to the whole object copies the entire file (the common case). A non-zero `offset` selects a
-    /// packed member's range inside a pack object -- see BackupImpl's packed read path.
     /// `encrypted_in_backup` specify if this file is encrypted in the backup, so it shouldn't be encrypted again while restoring to an encrypted disk.
-    virtual void copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
+    virtual void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                 DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) = 0;
+
+    /// Copies exactly `[offset, offset + size)` of `path_in_backup`, whose full size is `file_size`.
+    /// Separate from copyFileToDisk() because the whole-object fast paths (a server-side copy, fs::copy) carry
+    /// no byte range and would copy the entire file. `file_size` lets an implementation choose a route the
+    /// storage allows for that source (see copyS3FileRange) without an extra metadata request.
+    virtual void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                     bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                     WriteMode write_mode) = 0;
 
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;

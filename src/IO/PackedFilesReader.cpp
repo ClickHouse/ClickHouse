@@ -80,6 +80,14 @@ std::optional<UInt64> PackedFilesReader::getFileUncompressedSize(const String & 
     return it->second.uncompressed_size;
 }
 
+PackedFilesIO::FileOffset PackedFilesReader::getFileOffsetAndSize(const String & file_name) const
+{
+    if (auto it = index.find(file_name); it != index.end())
+        return it->second;
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
+}
+
 Names PackedFilesReader::getFileNames() const
 {
     Names res;
@@ -88,7 +96,7 @@ Names PackedFilesReader::getFileNames() const
     return res;
 }
 
-ReadSettings PackedFilesReader::patchSettings(ReadSettings settings)
+static ReadSettings patchSettings(ReadSettings settings)
 {
     settings.local_fs_settings.direct_io_threshold = 0;
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)

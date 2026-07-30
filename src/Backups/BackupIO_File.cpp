@@ -2,7 +2,6 @@
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <IO/PackedFilesReader.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/logger_useful.h>
 
@@ -40,19 +39,12 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String 
     return createReadBufferFromFileBase(root_path / file_name, read_settings);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFileForView(const String & file_name)
-{
-    /// The pack object gets wrapped in a ReadBufferFromFileView, which can't wrap mmap/direct-io buffers.
-    return createReadBufferFromFileBase(root_path / file_name, PackedFilesReader::patchSettings(read_settings));
-}
-
-void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
+void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or appending.
-    /// It also copies the whole file, so a ranged copy (offset != 0, a packed member) must go through buffers.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);
-    if (!has_throttling && (write_mode == WriteMode::Rewrite) && (offset == 0))
+    if (!has_throttling && (write_mode == WriteMode::Rewrite))
     {
         auto destination_data_source_description = destination_disk->getDataSourceDescription();
         if (destination_data_source_description.sameKind(data_source_description)
@@ -61,7 +53,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t offs
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} to disk {} locally", path_in_backup, destination_disk->getName());
 
-            auto write_blob_function = [abs_source_path = root_path / path_in_backup, size](
+            auto write_blob_function = [abs_source_path = root_path / path_in_backup, file_size](
                                            const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
             {
                 /// For local disks the size of a blob path is expected to be 1.
@@ -70,7 +62,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t offs
                                     "Blob writing function called with unexpected blob_path.size={} or mode={}",
                                     blob_path.size(), mode);
                 fs::copy(abs_source_path, blob_path.at(0), fs::copy_options::overwrite_existing);
-                return size;
+                return file_size;
             };
 
             destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
@@ -79,7 +71,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t offs
     }
 
     /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, offset, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 

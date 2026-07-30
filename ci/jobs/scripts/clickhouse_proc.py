@@ -950,6 +950,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 return None
             return max(candidates, key=lambda p: p.stat().st_mtime)
 
+        def pick_file_with(pattern: str, needle: str) -> Path | None:
+            # Select the specific log that contains the hit, not merely the most
+            # recently modified one. On multi-server runs (e.g. DatabaseReplicated)
+            # the crashed server stops logging first and so has the OLDEST mtime,
+            # while surviving replicas keep writing - picking by mtime would hand
+            # the parser a log without the crash and yield a bogus "Unknown error".
+            out = Shell.get_output(
+                f"cd {self.log_dir} && grep -la '{needle}' {pattern} 2>/dev/null | head -n 1 || true"
+            ).strip()
+            return Path(self.log_dir) / out if out else None
+
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
@@ -962,9 +973,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = pick_latest_file(
-                "clickhouse-server*.err.log"
-            ) or pick_latest_file("clickhouse-server*.log")
+            server_log = (
+                pick_file_with("clickhouse-server*.err.log", "<Fatal>")
+                or pick_file_with("clickhouse-server*.log", "<Fatal>")
+                or pick_latest_file("clickhouse-server*.err.log")
+                or pick_latest_file("clickhouse-server*.log")
+            )
             stderr_log = pick_latest_file("stderr*.log")
             if not (server_log or stderr_log):
                 results.append(
@@ -977,9 +991,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 )
             else:
                 try:
+                    # Either log may be absent (e.g. a sanitizer report goes
+                    # only to stderr when the server dies before opening its
+                    # log). `str(None)` would become the literal path "None",
+                    # which `FuzzerLogParser.get_stack_trace` then fails to
+                    # open; fall back to whichever log exists instead.
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log),
-                        stderr_log=str(stderr_log),
+                        server_log=str(server_log or stderr_log),
+                        stderr_log=str(stderr_log or server_log),
                         fuzzer_log="",
                     )
                     name, description, files = log_parser.parse_failure()
@@ -1006,16 +1025,44 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
                     )
 
-        results.append(
-            Result.from_commands_run(
-                name="Lost s3 keys",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+        # Both "No such key" checks below run the same scan, so the ignore list is
+        # built once - keep it in sync with check_logs_for_critical_errors() in
+        # tests/docker_scripts/stress_tests.lib. Ignored:
+        #  - "a.myext" is used by 02724_database_s3.sh and does not exist
+        #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" happen
+        #    inside the distributed cache server
+        #  - "ReadBuffer is canceled by the exception" is a normal cancellation, the
+        #    message is kept for debugging purposes
+        #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer",
+        #    "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage" are printed
+        #    internally by a buffer, the exception is rethrown and handled correctly
+        #  - "Error during background download" is printed by the filesystem cache
+        #    background download worker (CacheMetadata): the prefetched object can be
+        #    concurrently removed (DROP, mutation, part removal), the download is just
+        #    marked as failed and the data is re-read from the source later
+        no_such_key_ignores = " ".join(
+            f"-e '{ignore}'"
+            for ignore in (
+                "a.myext",
+                "ReadBuffer is canceled by the exception",
+                "DistributedCacheTCPHandler",
+                "ReadBufferFromDistributedCache",
+                "ReadBufferFromS3",
+                "ReadBufferFromAzureBlobStorage",
+                "AsynchronousBoundedReadBuffer",
+                "Error during background download",
+                "caller id: None:DistribCache",
             )
+        )
+        no_such_key_command = (
+            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
+            "| head -n100 | tee /dev/stderr | grep -q ."
         )
         results.append(
             Result.from_commands_run(
-                name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                name="Lost s3 keys",
+                command=no_such_key_command,
             )
         )
         results.append(
@@ -1027,7 +1074,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=no_such_key_command,
             )
         )
         oom_check = self.check_ch_is_oom_killed()

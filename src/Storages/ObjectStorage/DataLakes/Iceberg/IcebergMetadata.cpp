@@ -120,6 +120,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -172,6 +173,7 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
+
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -656,6 +658,11 @@ void IcebergMetadata::mutate(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
+    /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
+    /// retry loop, bound to the metadata version actually being mutated. That closes
+    /// the TOCTOU gap a pre-check here would leave for concurrent writers committing
+    /// non-Parquet data files between the check and the write.
+
     DB::Iceberg::mutate(
         commands,
         context,
@@ -678,6 +685,8 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
+
+    Iceberg::validateMutationWriteFormat(write_format);
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
@@ -827,8 +836,10 @@ void IcebergMetadata::createInitial(
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().find("PreconditionFailed") != String::npos)
+        const bool precondition_failed
+            = (e.code() == ErrorCodes::S3_ERROR && e.message().find("PreconditionFailed") != String::npos)
+            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+        if (if_not_exists && precondition_failed)
             return;
         throw;
     }

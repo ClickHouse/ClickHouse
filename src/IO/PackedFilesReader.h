@@ -35,6 +35,7 @@ public:
     size_t getFileSize(const String & file_name) const;
     /// Recorded uncompressed size, or nullopt if not recorded (v0). Throws if file is absent.
     std::optional<UInt64> getFileUncompressedSize(const String & file_name) const;
+    PackedFilesIO::FileOffset getFileOffsetAndSize(const String & file_name) const;
     Names getFileNames() const;
 
     /// Returns read buffer to read requested file as a part of the archive file. The archive's
@@ -53,15 +54,11 @@ public:
 
     /// Wraps an already-opened archive buffer as a view over one member's [offset, offset + size) range.
     /// Shared with callers that open the archive buffer themselves (e.g. a backup reader that goes through
-    /// IBackupReader rather than a DiskPtr). The view seeks into the archive, so `archive_buffer` must not
-    /// come from an mmap/direct-io read method.
+    /// IBackupReader rather than a DiskPtr). The view seeks into the archive, so `archive_buffer` should come
+    /// from a plain pread-style read method: an explicit seek() on a direct-io buffer returns the offset floored
+    /// to the O_DIRECT alignment, which leaves the view tracking the wrong position.
     static std::unique_ptr<ReadBufferFromFileBase> viewMember(
         std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
-
-    /// ReadBufferFromFileView (used by viewMember) requires plain pread-style buffers: mmap/direct-io buffers
-    /// carry alignment constraints the view cannot satisfy. A caller that will wrap a local buffer in a view
-    /// must open it with these patched settings (mmap -> pread, direct-io disabled).
-    static ReadSettings patchSettings(ReadSettings settings);
 
 private:
     /// Index of archive: immutable and path-independent.

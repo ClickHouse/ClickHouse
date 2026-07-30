@@ -1005,18 +1005,22 @@ TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
 }
 
 /// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take
-/// CopyObject, which carries no byte range and copies the ENTIRE source; a partial-range copy (e.g. one
-/// packed-backup member) must therefore force UploadPartCopy, which sets a CopySourceRange per part.
+/// CopyObject, which carries no byte range and copies the ENTIRE source; a partial-range copy must therefore
+/// force UploadPartCopy, which sets a CopySourceRange per part -- but only when S3 would accept the source as
+/// a byte-range copy source (it must be greater than 5 MB), otherwise the range is read through buffers.
 class CopyS3FileRoutingTest : public WBS3Test
 {
 protected:
-    /// A 100-byte source object with position-dependent bytes, so a wrong (whole-object) copy is
-    /// detectable both by size and by content.
-    String putSource(const String & key)
+    /// S3 rejects a byte-range copy source of 5 MB or less, so tests need sources on both sides of it.
+    static constexpr size_t min_source_size_for_range_copy = 5 * 1024 * 1024;
+
+    /// A source object with position-dependent bytes, so a wrong (whole-object) copy is detectable both by
+    /// size and by content.
+    String putSource(const String & key, size_t size)
     {
         String data;
-        data.reserve(100);
-        for (size_t i = 0; i < 100; ++i)
+        data.reserve(size);
+        for (size_t i = 0; i < size; ++i)
             data += static_cast<char>('0' + (i % 10));
         client->store->GetBucketStore(bucket).PutObject(key, data);
         return data;
@@ -1030,57 +1034,85 @@ protected:
         return request_settings;
     }
 
-    void runCopy(const String & src_key, size_t offset, size_t size, const String & dst_key, bool copy_range)
+    CreateReadBuffer wholeSourceReader(const String & src_key)
     {
-        auto request_settings = makeRequestSettings();
-        client->resetCounters();
-        auto whole_source_reader = [this, src_key]() -> std::unique_ptr<SeekableReadBuffer>
+        return [this, src_key]() -> std::unique_ptr<SeekableReadBuffer>
         {
             return std::make_unique<ReadBufferFromOwnString>(client->store->GetBucketStore(bucket).objects[src_key]);
         };
+    }
+
+    void runWholeCopy(const String & src_key, size_t size, const String & dst_key)
+    {
+        auto request_settings = makeRequestSettings();
+        client->resetCounters();
         copyS3File(
-            client, bucket, src_key, offset, size,
+            client, bucket, src_key, size,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
-            whole_source_reader, /* object_metadata= */ std::nullopt, copy_range);
+            wholeSourceReader(src_key));
+    }
+
+    void runRangeCopy(const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key)
+    {
+        auto request_settings = makeRequestSettings();
+        client->resetCounters();
+        copyS3FileRange(
+            client, bucket, src_key, offset, size, src_object_size,
+            /* dest_s3_client= */ client, bucket, dst_key,
+            request_settings, ReadSettings{},
+            /* blob_storage_log= */ nullptr, /* schedule= */ {},
+            wholeSourceReader(src_key));
     }
 };
 
 TEST_F(CopyS3FileRoutingTest, WholeObjectUsesCopyObject)
 {
-    const String source = putSource("src");
-    runCopy("src", /* offset= */ 0, /* size= */ source.size(), "dst", /* copy_range= */ false);
+    const String source = putSource("src", /* size= */ 100);
+    runWholeCopy("src", /* size= */ source.size(), "dst");
 
     EXPECT_EQ(client->counters.copyObject, 1u);
     EXPECT_EQ(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
 }
 
-/// An explicit ranged copy forces UploadPartCopy. The size here is small enough that a whole-object
-/// CopyObject would otherwise be chosen; the sub-range content check discriminates -- a wrong CopyObject
-/// would copy all 100 bytes instead of the 20 requested.
-TEST_F(CopyS3FileRoutingTest, RangedCopyForcesUploadPartCopy)
+/// A source above the 5 MB threshold can be range-copied server-side, so UploadPartCopy is used. The
+/// sub-range content check discriminates: a wrong whole-object copy would copy the entire source.
+TEST_F(CopyS3FileRoutingTest, RangedCopyOfLargeSourceUsesUploadPartCopy)
 {
-    const String source = putSource("src");
-    runCopy("src", /* offset= */ 10, /* size= */ 20, "dst", /* copy_range= */ true);
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    const String source = putSource("src", source_size);
+    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst");
 
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_GT(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
 }
 
-/// A prefix range [0, n) with n < full size is still a ranged copy: offset 0 must NOT be treated as a
-/// whole-object copy. Regression for the old offset-based inference, which would have taken CopyObject and
-/// copied all 100 bytes instead of the first 20.
-TEST_F(CopyS3FileRoutingTest, PrefixRangeForcesUploadPartCopy)
+/// A prefix range [0, n) with n < full size is still a range: starting at offset 0 must NOT make it a
+/// whole-object copy, which would copy the entire source instead of the first 20 bytes.
+TEST_F(CopyS3FileRoutingTest, PrefixRangeOfLargeSourceUsesUploadPartCopy)
 {
-    const String source = putSource("src");
-    runCopy("src", /* offset= */ 0, /* size= */ 20, "dst", /* copy_range= */ true);
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    const String source = putSource("src", source_size);
+    runRangeCopy("src", /* offset= */ 0, /* size= */ 20, source_size, "dst");
 
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_GT(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(0, 20));
+}
+
+/// S3 rejects a byte-range copy source of 5 MB or less (InvalidRequest), so such a range must be read through
+/// buffers up front -- no server-side copy of either kind may be issued.
+TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
+{
+    const String source = putSource("src", /* size= */ 100);
+    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source.size(), "dst");
+
+    EXPECT_EQ(client->counters.uploadPartCopy, 0u);
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {

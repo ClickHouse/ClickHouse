@@ -94,6 +94,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
     void open();
@@ -139,6 +140,10 @@ private:
         String pack_object;
         UInt64 offset = 0;
         UInt64 size = 0;
+        /// Size of the whole pack object. A ranged copy needs it to pick a route the storage allows for that
+        /// source -- S3 accepts a byte-range copy source only above 5 MB, and a pack can be smaller than that
+        /// (backup_pack_size is a maximum). See IBackupReader::copyFileRangeToDisk.
+        UInt64 pack_object_size = 0;
     };
 
     /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}) and fills `packed_members`.
