@@ -73,6 +73,12 @@ QBIT_SEARCH_BITS = "qbit_search_bits"
 # preserving, so cosine ranking is invariant, while the rotation spreads energy evenly
 # across dimensions and markedly improves the recall of the low-bit codes.
 QBIT_HADAMARD_SEED = "qbit_hadamard_seed"
+# vector_similarity index type: 'hnsw' (default when unset) or 'scann'. A 'scann' index is
+# built as vector_similarity('scann', '<metric>', <dim>, '<quantization>',
+# SCANN_NUM_CLUSTERS) GRANULARITY VECTOR_INDEX_GRANULARITY.
+INDEX_TYPE = "index_type"
+SCANN_NUM_CLUSTERS = "scann_num_clusters"  # 5th vector_similarity argument for 'scann'
+VECTOR_INDEX_GRANULARITY = "vector_index_granularity"  # index GRANULARITY clause
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
 HNSW_EF_SEARCH = "hnsw_ef_search"
@@ -427,6 +433,60 @@ test_params_cohere_wiki_20m_pq_half_bit = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
+# ScaNN vector_similarity index variants:
+#   ALTER TABLE ... ADD INDEX vec_idx vector
+#       TYPE vector_similarity('scann', '<metric>', <dim>, 'bf16', <num_clusters>)
+#       GRANULARITY 100000000
+# Built and searched through the same path as the HNSW runs (build_index + use_skip_indexes).
+test_params_hackernews_10m_scann = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: "bf16",
+    INDEX_TYPE: "scann",
+    SCANN_NUM_CLUSTERS: 6000,
+    VECTOR_INDEX_GRANULARITY: 100000000,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
+test_params_cohere_wiki_20m_scann = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: "bf16",
+    INDEX_TYPE: "scann",
+    SCANN_NUM_CLUSTERS: 9000,
+    VECTOR_INDEX_GRANULARITY: 100000000,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 25000,  # full truth set for cohere
+    RECALL_K: 10,
+    # Let's have more than 1 part for this dataset (7 - 9 parts)
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
+}
+
 # QBit(Int8) 1-bit search variant: no HNSW index and no CODEC. The vector column is
 # stored as QBit(Int8, <dimension>) holding quantizeBFloat16ToInt8 codes, and every
 # search ranks candidates with cosineDistanceTransposedQuantized(vec, query, 1) - i.e.
@@ -713,10 +773,21 @@ class RunTest:
             logger(f"{row[0]}\t\t{row[1]} bytes")
 
         quantization = self._test_params[QUANTIZATION]
-        hnsw_M = self._test_params[HNSW_M]
-        hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
+        index_type = self._test_params.get(INDEX_TYPE, "hnsw")
 
-        add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('hnsw','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
+        if index_type == "scann":
+            num_clusters = self._test_params[SCANN_NUM_CLUSTERS]
+            granularity = self._test_params[VECTOR_INDEX_GRANULARITY]
+            add_index = (
+                f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} "
+                f"TYPE vector_similarity('scann', '{self._distance_metric}', {self._dimension}, "
+                f"'{quantization}', {num_clusters}) GRANULARITY {granularity}"
+            )
+        else:
+            hnsw_M = self._test_params[HNSW_M]
+            hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
+            add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('hnsw','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
+
         self._chclient.query(add_index)
 
         logger("Materialzing the index")
@@ -1195,9 +1266,9 @@ def install_clickhouse():
     results = []
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/111180/d3223ef6a2a075c2b895bc981fe20ac534db6ecc/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105780/2a6dd35139557dc4d5f1a9b2a75a9d6daf0b5b6f/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/111180/d3223ef6a2a075c2b895bc981fe20ac534db6ecc/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105780/2a6dd35139557dc4d5f1a9b2a75a9d6daf0b5b6f/build_amd_release/clickhouse"
     else:
         assert False, "Unknown processor architecture"
 
@@ -1259,15 +1330,25 @@ TESTS_TO_RUN = [
     #     dataset_cohere_wiki_20m,
     #     test_params_cohere_wiki_20m_turboquant,
     # ),
+    # (
+    #     "Test using the hackernews dataset with product quantization (1/2 bit/dim)",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m_pq_half_bit,
+    # ),
+    # (
+    #     "Test using the cohere wiki dataset with product quantization (1/2 bit/dim)",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m_pq_half_bit,
+    # ),
     (
-        "Test using the hackernews dataset with product quantization (1/2 bit/dim)",
+        "Test using the hackernews dataset with scann index",
         dataset_hackernews_openai,
-        test_params_hackernews_10m_pq_half_bit,
+        test_params_hackernews_10m_scann,
     ),
     (
-        "Test using the cohere wiki dataset with product quantization (1/2 bit/dim)",
+        "Test using the cohere wiki dataset with scann index",
         dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_pq_half_bit,
+        test_params_cohere_wiki_20m_scann,
     ),
 ]
 
