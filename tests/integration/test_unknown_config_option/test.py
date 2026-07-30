@@ -180,6 +180,21 @@ node_users_include_from_zk = cluster_users_include_from_zk.add_instance(
     stay_alive=True,
 )
 
+# Compatibility case: `<user_directories>` adds further active users config files (the stock
+# `programs/server/config.xml` uses exactly this mechanism), each loaded by its own `ConfigProcessor`
+# invocation that honors that file's own `<include_from>`. When such a source file lives under
+# `config.d`, it is also merged into the server config, so its top-level tags are legitimate top-level
+# keys and must be exempted - the validator has to scan the `<user_directories>` users files too, not
+# only the top-level `<users_config>`.
+cluster_user_directories_include_from = ClickHouseCluster(
+    __file__, name="user_directories_include_from"
+)
+node_user_directories_include_from = cluster_user_directories_include_from.add_instance(
+    "node_user_directories_include_from",
+    main_configs=["configs/config.d/user_directories_include_from_initial.xml"],
+    stay_alive=True,
+)
+
 # Regression case: a non-regular *users* config must not disable the unknown-option check for the
 # whole server config. `ConfigProcessor::parseConfig` accepts a non-regular config path (e.g. a pipe
 # such as `/dev/fd/N`), and the scan cannot re-read such a file — but the users config is a separate
@@ -453,7 +468,14 @@ node_dead_handler_group = cluster_dead_handler_group.add_instance(
 caught_dead_handler_group_exception = ""
 
 
-@pytest.fixture(scope="module")
+# The fixtures below are deliberately function-scoped (not module-scoped): almost every cluster here
+# is used by a single test, and a module-scoped fixture keeps its server container alive until the very
+# end of the module. With several dozen clusters in this module that means several dozen servers running
+# at once, which exhausts the memory of the test runner - especially in the flaky check, which runs the
+# whole module several times in parallel on one machine. Function scope shuts every cluster down right
+# after its test without changing the number of server startups. The two fixtures that are shared by
+# more than one test stay module-scoped.
+@pytest.fixture
 def start_bad_cluster():
     global caught_exception
     try:
@@ -470,7 +492,7 @@ def start_bad_cluster():
     cluster_bad.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_multi_bad_cluster():
     global caught_multi_exception
     try:
@@ -485,7 +507,7 @@ def start_multi_bad_cluster():
     cluster_multi_bad.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_users_typo_cluster():
     global caught_users_typo_exception
     try:
@@ -500,49 +522,49 @@ def start_users_typo_cluster():
     cluster_users_typo.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_ok_cluster():
     cluster_ok.start()
     yield
     cluster_ok.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_indexed_ref_cluster():
     cluster_indexed_ref.start()
     yield
     cluster_indexed_ref.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_dotted_key_ref_cluster():
     cluster_dotted_key_ref.start()
     yield
     cluster_dotted_key_ref.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_protocols_cluster():
     cluster_protocols.start()
     yield
     cluster_protocols.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_include_from_in_configd_cluster():
     cluster_include_from_in_configd.start()
     yield
     cluster_include_from_in_configd.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_existing_keys_cluster():
     cluster_existing_keys.start()
     yield
     cluster_existing_keys.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_reload_cluster():
     cluster_reload.start()
     yield
@@ -556,7 +578,7 @@ def start_cli_skip_cluster():
     cluster_cli_skip.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_cluster():
     cluster_graphite.start()
     yield
@@ -570,35 +592,35 @@ def start_include_from_external_cluster():
     cluster_include_from_external.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_include_from_env_cluster():
     cluster_include_from_env.start()
     yield
     cluster_include_from_env.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_include_from_zk_cluster():
     cluster_include_from_zk.start()
     yield
     cluster_include_from_zk.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_users_include_from_zk_cluster():
     cluster_users_include_from_zk.start()
     yield
     cluster_users_include_from_zk.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_non_regular_users_config_cluster():
     cluster_non_regular_users_config.start()
     yield
     cluster_non_regular_users_config.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_non_static_ref_cluster():
     global caught_non_static_ref_exception
     try:
@@ -613,7 +635,7 @@ def start_non_static_ref_cluster():
     cluster_non_static_ref.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_static_wrong_field_cluster():
     global caught_static_wrong_field_exception
     try:
@@ -630,35 +652,35 @@ def start_static_wrong_field_cluster():
     cluster_static_wrong_field.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_protocols_nested_cluster():
     cluster_protocols_nested.start()
     yield
     cluster_protocols_nested.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_columns_cluster():
     cluster_graphite_columns.start()
     yield
     cluster_graphite_columns.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_empty_cluster():
     cluster_graphite_empty.start()
     yield
     cluster_graphite_empty.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_tag_list_accepted_cluster():
     cluster_graphite_tag_list_accepted.start()
     yield
     cluster_graphite_tag_list_accepted.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_foreign_cluster():
     global caught_graphite_foreign_exception
     try:
@@ -675,7 +697,7 @@ def start_graphite_foreign_cluster():
     cluster_graphite_foreign.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_payload_handler_shape_cluster():
     global caught_payload_handler_shape_exception
     try:
@@ -692,21 +714,21 @@ def start_payload_handler_shape_cluster():
     cluster_payload_handler_shape.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_reload_invariant_cluster():
     cluster_reload_invariant.start()
     yield
     cluster_reload_invariant.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_reload_skip_state_cluster():
     cluster_reload_skip_state.start()
     yield
     cluster_reload_skip_state.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_response_content_expansion_cluster():
     global caught_response_content_expansion_exception
     try:
@@ -723,7 +745,7 @@ def start_response_content_expansion_cluster():
     cluster_response_content_expansion.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_nested_foreign_cluster():
     global caught_graphite_nested_foreign_exception
     try:
@@ -740,7 +762,7 @@ def start_graphite_nested_foreign_cluster():
     cluster_graphite_nested_foreign.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_no_aggregation_cluster():
     global caught_graphite_no_aggregation_exception
     try:
@@ -757,7 +779,7 @@ def start_graphite_no_aggregation_cluster():
     cluster_graphite_no_aggregation.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_default_rule_type_cluster():
     global caught_graphite_default_rule_type_exception
     try:
@@ -774,7 +796,7 @@ def start_graphite_default_rule_type_cluster():
     cluster_graphite_default_rule_type.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_invalid_rule_type_cluster():
     global caught_graphite_invalid_rule_type_exception
     try:
@@ -791,7 +813,7 @@ def start_graphite_invalid_rule_type_cluster():
     cluster_graphite_invalid_rule_type.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_tag_list_without_regexp_cluster():
     global caught_graphite_tag_list_without_regexp_exception
     try:
@@ -808,7 +830,7 @@ def start_graphite_tag_list_without_regexp_cluster():
     cluster_graphite_tag_list_without_regexp.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_retention_missing_age_cluster():
     global caught_graphite_retention_missing_age_exception
     try:
@@ -825,7 +847,7 @@ def start_graphite_retention_missing_age_cluster():
     cluster_graphite_retention_missing_age.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_graphite_retention_bad_ordering_cluster():
     global caught_graphite_retention_bad_ordering_exception
     try:
@@ -842,7 +864,7 @@ def start_graphite_retention_bad_ordering_cluster():
     cluster_graphite_retention_bad_ordering.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_protocols_missing_cluster():
     global caught_protocols_missing_exception
     try:
@@ -859,7 +881,7 @@ def start_protocols_missing_cluster():
     cluster_protocols_missing.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def start_static_missing_path_cluster():
     global caught_static_missing_path_exception
     try:
@@ -876,7 +898,14 @@ def start_static_missing_path_cluster():
     cluster_static_missing_path.shutdown()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
+def start_user_directories_include_from_cluster():
+    cluster_user_directories_include_from.start()
+    yield
+    cluster_user_directories_include_from.shutdown()
+
+
+@pytest.fixture
 def start_dead_handler_group_cluster():
     global caught_dead_handler_group_exception
     try:
@@ -1927,5 +1956,49 @@ def test_non_regular_users_config_still_checks_server_config(
                 "/etc/clickhouse-server/users_pipe.d "
                 f"/etc/clickhouse-server/users_pipe_source.xml {writer_pid_path}",
             ]
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_user_directories_users_config_include_from_accepted(
+    start_user_directories_include_from_cluster,
+):
+    # `AccessControl::addStoragesFromMainConfig` does not stop at the top-level `<users_config>`: when
+    # `<user_directories>` is present it also loads every `users_xml` / `users.xml` / `users_config`
+    # entry from it, each with its own `ConfigProcessor` invocation that honors that file's own
+    # `<include_from>`. Here the extra users config declares an `<include_from>` source that lives under
+    # `config.d/`, so `ConfigProcessor` merges the source into the *server* config as well and its
+    # `<my_user_dir_substitution_root>` tag really is a top-level key of the merged config. The validator
+    # must therefore scan the `<user_directories>` users configs too, otherwise it rejects this
+    # previously valid config with `UNKNOWN_ELEMENT_IN_CONFIG`, so the reload must succeed.
+    node = node_user_directories_include_from
+    source_path = "/etc/clickhouse-server/config.d/user_dir_include_source.xml"
+    extra_users_path = "/etc/clickhouse-server/extra_users_for_user_directories.xml"
+    entry_path = "/etc/clickhouse-server/config.d/user_dir_entry.xml"
+    try:
+        node.replace_config(
+            source_path,
+            "<clickhouse>"
+            "<my_user_dir_substitution_root>"
+            "<users_dir_networks>::1</users_dir_networks>"
+            "</my_user_dir_substitution_root>"
+            "</clickhouse>",
+        )
+        node.replace_config(
+            extra_users_path,
+            f"<clickhouse><include_from>{source_path}</include_from></clickhouse>",
+        )
+        node.replace_config(
+            entry_path,
+            "<clickhouse><user_directories><users_xml>"
+            "<name>extra_users_xml</name>"
+            f"<path>{extra_users_path}</path>"
+            "</users_xml></user_directories></clickhouse>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT 1").strip() == "1"
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {entry_path} {extra_users_path} {source_path}"]
         )
         node.query("SYSTEM RELOAD CONFIG")
