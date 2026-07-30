@@ -1557,24 +1557,32 @@ protected:
 
 void DistributedQueryCancellation::recordCurrentException()
 {
-    {
-        std::lock_guard lock(mutex);
-        if (!first_exception)
-            first_exception = std::current_exception();
-    }
+    /// Publish the failure and the flag in one critical section. Setting the flag outside it would
+    /// let a waiter that already read no failure still see the flag and report `Query was cancelled`.
+    std::lock_guard lock(mutex);
+    if (!first_exception)
+        first_exception = std::current_exception();
     cancelled = true;
+}
+
+void DistributedQueryCancellation::rethrowIfFailedLocked() const
+{
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 void DistributedQueryCancellation::rethrowIfFailed() const
 {
     std::lock_guard lock(mutex);
-    if (first_exception)
-        std::rethrow_exception(first_exception);
+    rethrowIfFailedLocked();
 }
 
 void DistributedQueryCancellation::throwIfCancelled() const
 {
-    rethrowIfFailed();
+    /// One critical section for both, so a failure recorded by `recordCurrentException` is always
+    /// seen together with the flag it set.
+    std::lock_guard lock(mutex);
+    rethrowIfFailedLocked();
 
     if (cancelled)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");

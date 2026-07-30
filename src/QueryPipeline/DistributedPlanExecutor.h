@@ -68,7 +68,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class DistributedQueryCancellation
 {
 public:
-    /// The pipeline cancelled the source: stop, with no failure to report.
+    /// The pipeline cancelled the source: stop, with no failure to report. Deliberately lock-free,
+    /// so a cancelling thread never waits on a waiter that holds `mutex`.
     void cancel() { cancelled = true; }
 
     /// Store the in-flight exception as the query's first failure and cancel.
@@ -83,6 +84,8 @@ public:
     void throwIfCancelled() const;
 
 private:
+    void rethrowIfFailedLocked() const TSA_REQUIRES(mutex);
+
     std::atomic<bool> cancelled = false;
     mutable std::mutex mutex;
     std::exception_ptr first_exception TSA_GUARDED_BY(mutex);
