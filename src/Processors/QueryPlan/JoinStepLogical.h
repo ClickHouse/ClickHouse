@@ -217,26 +217,27 @@ protected:
     /// Set only on the join that correlated subquery decorrelation creates to produce its result
     /// stream, and records which of the two inputs carries the subquery. That input's totals and
     /// extremes are not part of the subquery's value, so the physical join drops them instead of
-    /// propagating them as the outer query's (see `JoinStep::updatePipeline`). Not serialized, so a
-    /// round trip drops it.
+    /// propagating them as the outer query's (see `JoinStep::updatePipeline`).
     ///
-    /// Runtime-only: `JoinStepLogical::serialize` does not write it. On the routes exercised so far that
-    /// has not mattered, because a totals-carrying decorrelated plan is refused before it reaches a
-    /// serialization boundary, each route for its own reason. That is an observation about those routes,
-    /// not a proof that no such path exists. If a step ever carries the subquery's totals across a
-    /// serialization boundary, this member has to be serialized too.
-    ///
-    /// Examples, not an exhaustive list:
-    ///  - `make_distributed_plan`: `planHasUnsupportedDistributedStep` refuses a
-    ///    `TotalsHavingStep`-carrying plan (optimizeTree.cpp, makeDistributed.cpp). A cached totals
-    ///    stream carries no such step and escapes that scan; what refuses that shape is not established
-    ///    here.
-    ///  - parallel replicas: `findQueryForParallelReplicas` declines a decorrelated join tree.
-    ///  - a set-subquery plan serialized recursively (Serialization.cpp, SetsSerialization.cpp),
-    ///    permitted under `parallel_replicas_allow_in_with_subquery`: `addCreatingSetsTransform`
-    ///    drops totals and extremes itself (QueryPipelineBuilder.cpp).
-    ///  - `serialize_query_plan`: a correlated subquery cannot coexist with a remote table at all,
-    ///    refused during analysis by `validateCorrelatedSubqueries` (ValidationUtils.cpp).
+    /// Runtime-only: `JoinStepLogical::serialize` does not write it, so a round trip drops it. Losing
+    /// it can only lose a drop, never move one to the wrong input, so the failure mode is the
+    /// pre-existing one this fix addresses. The routes that reach a serialization boundary avoid it
+    /// for two different reasons, and neither is a general proof:
+    ///  - the boundary is never reached. `make_distributed_plan` refuses a `TotalsHavingStep`-carrying
+    ///    plan (`planHasUnsupportedDistributedStep`, makeDistributed.cpp, thrown from
+    ///    optimizeTree.cpp). A warm query result cache serves the subquery from a step that carries
+    ///    the cached totals without a `TotalsHavingStep`, so it escapes that scan, but
+    ///    `ReadFromQueryResultCacheStep` is not serializable (`ReadFromPreparedSource` inherits the
+    ///    `IQueryPlanStep::isSerializable` default), so `assertFragmentSerializable` rejects the
+    ///    fragment first (QueryPlan.cpp). With `serialize_query_plan` a correlated subquery cannot
+    ///    coexist with a remote table at all, refused during analysis by
+    ///    `validateCorrelatedSubqueries` (ValidationUtils.cpp).
+    ///  - the boundary is crossed but the marker is not needed. A set-subquery plan is serialized
+    ///    recursively (SetsSerialization.cpp), and the consumer discards the streams itself:
+    ///    `addCreatingSetsTransform` drops totals and extremes before building the set
+    ///    (QueryPipelineBuilder.cpp).
+    /// If a step ever carries the subquery's totals across a serialization boundary with neither
+    /// property holding, this member has to be serialized too.
     std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Dummy stats retrieved from hints, used for debugging
