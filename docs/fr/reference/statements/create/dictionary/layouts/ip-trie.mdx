@@ -1,0 +1,122 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ip-trie
+title: 'layout de dictionnaire ip_trie'
+sidebarTitle: 'ip_trie'
+description: 'Stocke un dictionnaire sous forme de trie pour des recherches rapides par préfixe d’adresse IP.'
+doc_type: 'reference'
+---
+
+Le dictionnaire `ip_trie` est conçu pour les recherches d’adresses IP par préfixe réseau.
+Il stocke les plages d’IP en notation CIDR et permet de déterminer rapidement à quel préfixe (par ex. un sous-réseau ou une plage ASN) appartient une IP donnée, ce qui le rend idéal pour les recherches basées sur les IP, comme la géolocalisation ou la classification réseau.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="Recherche basée sur les IP avec le dictionnaire ip_trie" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+**Exemple**
+
+Supposons que nous ayons dans ClickHouse une table contenant nos préfixes IP et leurs correspondances :
+
+```sql
+CREATE TABLE my_ip_addresses (
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
+```
+
+```sql
+INSERT INTO my_ip_addresses VALUES
+    ('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
+
+Définissons un dictionnaire `ip_trie` pour cette table. Le layout `ip_trie` nécessite une clé composite :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY my_ip_trie_dictionary (
+        prefix String,
+        asn UInt32,
+        cca2 String DEFAULT '??'
+    )
+    PRIMARY KEY prefix
+    SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+    LAYOUT(IP_TRIE)
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>prefix</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        <attribute>
+                <name>asn</name>
+                <type>UInt32</type>
+                <null_value />
+        </attribute>
+        <attribute>
+                <name>cca2</name>
+                <type>String</type>
+                <null_value>??</null_value>
+        </attribute>
+        ...
+    </structure>
+    <layout>
+        <ip_trie>
+            <!-- L'attribut de clé `prefix` peut être récupéré à l'aide de dictGetString. -->
+            <!-- Cette option augmente l'utilisation de la mémoire. -->
+            <access_to_key_from_attributes>true</access_to_key_from_attributes>
+        </ip_trie>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+La clé ne doit comporter qu&#39;un seul attribut de type `String`, contenant un préfixe IP autorisé. Les autres types ne sont pas encore pris en charge.
+
+La syntaxe est :
+
+```sql
+dictGetT('dict_name', 'attr_name', ip)
+```
+
+La fonction accepte soit `UInt32` pour l’IPv4, soit `FixedString(16)` pour l’IPv6. Par exemple :
+
+```sql
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
+```
+
+Les autres types ne sont pas encore pris en charge. La fonction renvoie l’attribut associé au préfixe correspondant à cette adresse IP. En cas de chevauchement de préfixes, le plus spécifique est renvoyé.
+
+Les données doivent tenir entièrement en RAM.

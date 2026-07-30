@@ -2,7 +2,9 @@
 
 #include <atomic>
 #include <vector>
+#include <base/defines.h>
 #include <Common/BitHelpers.h>
+#include <Common/CacheLine.h>
 
 /// Vyukov queue.
 /// https://web.archive.org/web/20170205113402/http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
@@ -79,7 +81,16 @@ public:
     }
 
     /// `value` is moved-out iff the return value is true.
-    bool tryPush(T && value)
+    ///
+    /// TSAN very rarely reports a data race between the `slot.value` write in `tryPush` and the
+    /// `slot.value` read in `tryPop`, even though the acquire/release operations on `slot.pos`
+    /// make such a race impossible (the code is isomorphic to Vyukov's original implementation).
+    /// This appears to be a TSAN false positive, so we suppress it by excluding `tryPush` and
+    /// `tryPop` from instrumentation of plain memory accesses. Note that TSAN still instruments
+    /// atomic operations in such functions, so the happens-before edges through `slot.pos`
+    /// remain visible to it, and accesses to the contents of `T` in callers are still checked
+    /// correctly.
+    NO_SANITIZE_THREAD bool tryPush(T & value)
     {
         chassert(mask);
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);
@@ -110,7 +121,8 @@ public:
         }
     }
 
-    bool tryPop(T & out_value)
+    /// See the comment on `tryPush` about TSAN.
+    NO_SANITIZE_THREAD bool tryPop(T & out_value)
     {
         chassert(mask);
         size_t pos = dequeue_pos.load(std::memory_order_relaxed);
@@ -148,6 +160,12 @@ public:
         size_t x = enqueue_pos.load(std::memory_order_relaxed);
         return x - std::min(x, y); // max(0, x - y)
     }
+
+    /// Number of pushes ever started. Acquire-ordered: a consumer observing this value also observes
+    /// every slot published before it, so it is an exact boundary for a full drain (unlike `size`).
+    size_t enqueuePosition() const { return enqueue_pos.load(std::memory_order_acquire); }
+    /// Number of pops ever completed. Only meaningful to the (single) consumer, which owns dequeue_pos.
+    size_t dequeuePosition() const { return dequeue_pos.load(std::memory_order_relaxed); }
 
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) Slot

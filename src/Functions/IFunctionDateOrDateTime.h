@@ -112,35 +112,6 @@ public:
     {
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
-            const IDataType * type_ptr = &type;
-
-            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-                type_ptr = lc_type->getDictionaryType().get();
-
-            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-                type_ptr = nullable_type->getNestedType().get();
-
-            /// Date32 values outside the valid LUT range get clamped to sentinel values,
-            /// which breaks monotonicity. Only claim monotonic if the range is within bounds.
-            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
-            {
-                /// Valid Date32 range: -DAYNUM_OFFSET_EPOCH .. DATE_LUT_MAX_EXTEND_DAY_NUM
-                static constexpr Int32 MIN_DATE32_DAY_NUM = -static_cast<Int32>(DAYNUM_OFFSET_EPOCH);
-                static constexpr Int32 MAX_DATE32_DAY_NUM = static_cast<Int32>(DATE_LUT_MAX_EXTEND_DAY_NUM);
-
-                if (left.isNull() || right.isNull())
-                    return { .is_monotonic = false };
-
-                Int64 left_val = left.safeGet<Int64>();
-                Int64 right_val = right.safeGet<Int64>();
-
-                if (left_val >= MIN_DATE32_DAY_NUM && left_val <= MAX_DATE32_DAY_NUM
-                    && right_val >= MIN_DATE32_DAY_NUM && right_val <= MAX_DATE32_DAY_NUM)
-                    return { .is_monotonic = true, .is_always_monotonic = true };
-
-                return { .is_monotonic = false };
-            }
-
             return { .is_monotonic = true, .is_always_monotonic = true };
         }
         else
@@ -173,8 +144,8 @@ public:
             }
             if (checkAndGetDataType<DataTypeDate32>(type_ptr))
             {
-                return Transform::FactorTransform::execute(Int32(left.safeGet<UInt64>()), *date_lut)
-                        == Transform::FactorTransform::execute(Int32(right.safeGet<UInt64>()), *date_lut)
+                return extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(left.safeGet<UInt64>()), *date_lut)
+                        == extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(right.safeGet<UInt64>()), *date_lut)
                     ? is_monotonic
                     : is_not_monotonic;
             }
@@ -215,10 +186,18 @@ public:
             const auto & right_date_time = right.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
 
-            return transformer_left.execute(left_date_time.getValue(), *date_lut)
-                    == transformer_right.execute(right_date_time.getValue(), *date_lut)
-                ? is_monotonic
-                : is_not_monotonic;
+            /// Use the unclamped extended result so pre-epoch values keep distinct, order-preserving
+            /// factors (see extendedFactorForMonotonicity).
+            if constexpr (requires { Transform::FactorTransform::executeExtendedResult(Int64{}, *date_lut); })
+                return transformer_left.executeExtendedResult(left_date_time.getValue(), *date_lut)
+                        == transformer_right.executeExtendedResult(right_date_time.getValue(), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            else
+                return transformer_left.execute(left_date_time.getValue(), *date_lut)
+                        == transformer_right.execute(right_date_time.getValue(), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
         }
     }
 };

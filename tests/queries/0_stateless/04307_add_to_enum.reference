@@ -1,0 +1,92 @@
+======= NULLABLE   ===============
+======= Enum ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'ThousandOne\' = 101)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum8 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'ThousandOne\' = 101)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum16 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum16(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'Thousand\' = 1000, \'ThousandOne\' = 1001)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= NULLABLE Nullable( ) ===============
+======= Enum ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'ThousandOne\' = 101))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum8 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'ThousandOne\' = 101))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum16 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum16(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Seven\' = 7, \'Hundred\' = 100, \'Thousand\' = 1000, \'ThousandOne\' = 1001))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+CREATE TABLE default.enum_relative\n(\n    `x` Enum8(\'Two\' = 2, \'three\' = 3, \'hundred\' = 100)\n)\nENGINE = Memory
+CREATE TABLE default.enum_relative_mixed\n(\n    `x` Enum8(\'c\' = 1, \'base\' = 10, \'a\' = 11, \'b\' = 20)\n)\nENGINE = Memory
+c
+a
+b
+CREATE TABLE default.enum_relative_adjacent\n(\n    `x` Enum8(\'c\' = 1, \'base\' = 10, \'a\' = 11)\n)\nENGINE = Memory
+c
+a
+======= SHORTHAND AUTO ASSIGN ===============
+CREATE TABLE default.enum_shorthand\n(\n    `x` Enum8(\'One\' = 1, \'Two\' = 2, \'Three\' = 3)\n)\nENGINE = Memory
+======= ENUM8 SHORTHAND OVERFLOW ===============
+======= OUT OF RANGE VALUE ===============
+======= CHAINED ADD ENUM VALUES IN ONE STATEMENT ===============
+CREATE TABLE default.enum_chained\n(\n    `x` Enum8(\'base\' = 1, \'a\' = 2, \'b\' = 3)\n)\nENGINE = Memory
+base
+a
+b
+======= MODIFY TYPE THEN ADD ENUM VALUES IN ONE STATEMENT ===============
+======= MODIFY TYPE THEN ADD ENUM VALUES TO OTHER COLUMN IN ONE STATEMENT ===============
+CREATE TABLE default.enum_modify_then_add_different\n(\n    `x` Enum8(\'a\' = 1, \'b\' = 2),\n    `y` Enum8(\'aa\' = 10, \'cc\' = 20)\n)\nENGINE = Memory
+"a","aa"
+"b","cc"
+======= ALTER AST VALIDATION ===============
+======= ADD ENUM VALUES SYNTAX ERRORS ===============

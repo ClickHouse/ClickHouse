@@ -339,6 +339,11 @@
             text-decoration: underline;
         }
 
+        .status-column a {
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
         th, td {
             padding: 8px;
             border: 1px solid var(--table-border-color);
@@ -512,10 +517,10 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass' || status_ === 'slower')
             && status_ !== 'xfail';
         const isWarning =
-            status_.includes('pending') || status_.includes('running');
+            status_.includes('pending') || status_.includes('running') || status_ === 'unstable';
 
         if (filter === 'failures') {
             return isFailure;
@@ -663,14 +668,21 @@
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
         if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
-        if (statusLower === 'xpass') return 2;
-        if (statusLower.includes('running')) return 3;
-        if (statusLower.includes('dropped')) return 4;
-        if (statusLower.includes('pending')) return 5;
-        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
-        if (statusLower === 'xfail') return 7;
-        if (statusLower.includes('skipped')) return 8;
-        return 9;
+        // Perf-comparison per-query statuses (compare.sh emits slower/unstable/success).
+        if (statusLower === 'slower') return 1;
+        if (statusLower === 'unstable') return 2;
+        // Keep UNKNOWN right under the errors/failures: these are tests whose real
+        // result was lost (e.g. demoted when the run aborted), so they are the rows
+        // worth looking at first, not buried below all the OK rows.
+        if (statusLower.includes('unknown')) return 2;
+        if (statusLower === 'xpass') return 3;
+        if (statusLower.includes('running')) return 4;
+        if (statusLower.includes('dropped')) return 5;
+        if (statusLower.includes('pending')) return 6;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 7;
+        if (statusLower === 'xfail') return 8;
+        if (statusLower.includes('skipped')) return 9;
+        return 10;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -691,16 +703,20 @@
     }
 
     function formatDuration(durationInSeconds, detailed = false) {
-        // Check if the duration is empty, null, or not a number
-        if (!durationInSeconds || isNaN(durationInSeconds)) {
+        // Treat null/undefined/non-numeric as "unknown"; a literal 0 is a
+        // real measurement and flows through the precision ladder below
+        // (otherwise sub-millisecond perf-comparison rows showed up as the
+        // misleading placeholder "00s").
+        if (durationInSeconds === null || durationInSeconds === undefined) {
+            return '00s';
+        }
+        const duration = parseFloat(durationInSeconds);
+        if (isNaN(duration)) {
             return '00s';
         }
 
-        // Ensure duration is a floating-point number
-        const duration = parseFloat(durationInSeconds);
-
-        if (detailed) {
-            // Format in the detailed format with hours, minutes, and seconds
+        if (detailed && duration >= 1) {
+            // H/M/S format for job-level totals (e.g. "1h 23m 45s").
             const hours = Math.floor(duration / 3600);
             const minutes = Math.floor((duration % 3600) / 60);
             const seconds = Math.floor(duration % 60);
@@ -710,20 +726,31 @@
             const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
 
             return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
-        } else {
-            if (duration < 1) {
-                // Sub-second durations: show milliseconds
-                return `${Math.floor(duration * 1000)}ms`;
-            }
-            // Format in the default format with seconds and milliseconds
-            const seconds = Math.floor(duration);
-            const milliseconds = Math.floor((duration % 1) * 1000);
-
-            const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
-
-            return `${formattedSeconds}.${formattedMilliseconds}`;
         }
+
+        // Sub-second precision ladder: drop to a smaller unit when the
+        // next-coarser one would round to zero. Covers true zero too.
+        if (duration < 0.00001) {
+            // < 0.01ms — integer nanoseconds.
+            return `${Math.round(duration * 1e9)}ns`;
+        }
+        if (duration < 0.001) {
+            // < 1ms but >= 0.01ms — two decimals in ms.
+            return `${(duration * 1000).toFixed(2)}ms`;
+        }
+        if (duration < 1) {
+            // Sub-second: integer milliseconds.
+            return `${Math.floor(duration * 1000)}ms`;
+        }
+
+        // >= 1s and not detailed: seconds with two-digit milliseconds.
+        const seconds = Math.floor(duration);
+        const milliseconds = Math.floor((duration % 1) * 1000);
+
+        const formattedSeconds = String(seconds);
+        const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
+
+        return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
     // Function to determine status class based on value
@@ -1083,6 +1110,183 @@
 
             return parts.join(' ');
         }
+    }
+
+    // Renders the whole-VM CPU/RAM timeline collected by praktika's
+    // HostMetricsCollector and stored in a job Result's ext.metrics.
+    // Shape: { interval, duration, mem_total_gb, n_raw,
+    //          series: { cpu: [[t,pct],...], mem: [[t,pct],...] } }
+    function addHostMetricsChart(metrics) {
+        if (!metrics || !metrics.series) return;
+        const cpu = metrics.series.cpu || [];
+        const mem = metrics.series.mem || [];
+        if (cpu.length < 2 && mem.length < 2) return;
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+        wrapper.style.position = "relative";
+
+        const CPU_COLOR = "#4e79a7";
+        const MEM_COLOR = "#e15759";
+
+        const peak = (s) => s.reduce((m, p) => Math.max(m, p[1]), 0);
+        const cpuPeak = peak(cpu), memPeak = peak(mem);
+        const duration = Math.max(
+            metrics.duration || 0,
+            cpu.length ? cpu[cpu.length - 1][0] : 0,
+            mem.length ? mem[mem.length - 1][0] : 0,
+            1
+        );
+
+        const fmtT = (sec) => {
+            sec = Math.round(sec);
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
+            if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
+            return `${s}s`;
+        };
+
+        // Header: title + legend with peak values.
+        const header = document.createElement("div");
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "baseline";
+        header.style.fontSize = "0.8em";
+        header.style.marginBottom = "4px";
+        const title = document.createElement("div");
+        title.textContent = "host usage";
+        const legend = document.createElement("div");
+        legend.style.fontSize = "0.85em";
+        legend.innerHTML =
+            `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak &nbsp;` +
+            `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
+            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : "");
+        header.appendChild(title);
+        header.appendChild(legend);
+        wrapper.appendChild(header);
+
+        // Responsive SVG (scales to the widget width via viewBox).
+        const W = 320, H = 130, ML = 26, MR = 6, TP = 6, BP = 16;
+        const plotW = W - ML - MR, plotH = H - TP - BP;
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+        svg.style.width = "100%";
+        svg.style.height = `${H}px`;
+        svg.style.display = "block";
+        svg.style.cursor = "crosshair";
+
+        const gridColor =
+            getComputedStyle(document.body).getPropertyValue("--table-border-color").trim() || "#ccc";
+        const textColor =
+            getComputedStyle(document.body).getPropertyValue("--text-color").trim() || "#555";
+
+        const xScale = (t) => ML + (t / duration) * plotW;
+        const yScale = (v) => TP + (1 - Math.max(0, Math.min(100, v)) / 100) * plotH;
+
+        const mkLine = (x1, y1, x2, y2, color, opacity) => {
+            const l = document.createElementNS(svgNS, "line");
+            l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+            l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+            l.setAttribute("stroke", color);
+            if (opacity != null) l.setAttribute("stroke-opacity", opacity);
+            svg.appendChild(l);
+            return l;
+        };
+        const mkText = (x, y, str, anchor) => {
+            const t = document.createElementNS(svgNS, "text");
+            t.setAttribute("x", x); t.setAttribute("y", y);
+            t.setAttribute("font-size", "8");
+            t.setAttribute("fill", textColor);
+            t.setAttribute("text-anchor", anchor || "start");
+            t.textContent = str;
+            svg.appendChild(t);
+        };
+
+        // Horizontal gridlines + y labels at 0/50/100%.
+        [0, 50, 100].forEach((v) => {
+            const y = yScale(v);
+            mkLine(ML, y, W - MR, y, gridColor, 0.5);
+            mkText(ML - 3, y + 3, `${v}`, "end");
+        });
+        // X axis time labels.
+        mkText(ML, H - 4, "0s", "start");
+        mkText(W - MR, H - 4, fmtT(duration), "end");
+
+        const mkPath = (series, color) => {
+            if (series.length < 2) return;
+            const d = series
+                .map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p[0]).toFixed(1)} ${yScale(p[1]).toFixed(1)}`)
+                .join(" ");
+            const path = document.createElementNS(svgNS, "path");
+            path.setAttribute("d", d);
+            path.setAttribute("fill", "none");
+            path.setAttribute("stroke", color);
+            path.setAttribute("stroke-width", "1.2");
+            path.setAttribute("vector-effect", "non-scaling-stroke");
+            svg.appendChild(path);
+        };
+        mkPath(mem, MEM_COLOR);
+        mkPath(cpu, CPU_COLOR);
+
+        // Hover cursor + tooltip.
+        const cursor = mkLine(ML, TP, ML, TP + plotH, textColor, 0);
+        const tip = document.createElement("div");
+        tip.style.position = "absolute";
+        tip.style.pointerEvents = "none";
+        tip.style.padding = "2px 5px";
+        tip.style.font = "11px monospace";
+        tip.style.background = "var(--info-background, rgba(0,0,0,0.8))";
+        tip.style.color = "var(--text-color, #fff)";
+        tip.style.border = `1px solid ${gridColor}`;
+        tip.style.borderRadius = "3px";
+        tip.style.whiteSpace = "nowrap";
+        tip.style.display = "none";
+        tip.style.zIndex = "10";
+        wrapper.appendChild(tip);
+
+        const nearest = (series, t) => {
+            if (!series.length) return null;
+            let best = series[0];
+            for (const p of series) {
+                if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+            }
+            return best;
+        };
+
+        activeListeners.add(svg, "mousemove", (e) => {
+            const rect = svg.getBoundingClientRect();
+            // Map pixel x back to viewBox coordinates (svg is width-scaled).
+            const vx = ((e.clientX - rect.left) / rect.width) * W;
+            const t = ((vx - ML) / plotW) * duration;
+            if (t < 0 || t > duration) { cursor.setAttribute("stroke-opacity", 0); tip.style.display = "none"; return; }
+            const cx = xScale(t);
+            cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
+            cursor.setAttribute("stroke-opacity", 0.4);
+            const c = nearest(cpu, t), m = nearest(mem, t);
+            tip.innerHTML =
+                `${fmtT(t)}<br>` +
+                (c ? `<span style="color:${CPU_COLOR}">cpu</span> ${c[1].toFixed(0)}%<br>` : "") +
+                (m ? `<span style="color:${MEM_COLOR}">ram</span> ${m[1].toFixed(0)}%` : "");
+            tip.style.display = "block";
+            const left = Math.min(
+                (e.clientX - rect.left) + 8,
+                wrapper.clientWidth - tip.offsetWidth - 4
+            );
+            tip.style.left = `${Math.max(0, left)}px`;
+            tip.style.top = "20px";
+        });
+        activeListeners.add(svg, "mouseleave", () => {
+            cursor.setAttribute("stroke-opacity", 0);
+            tip.style.display = "none";
+        });
+
+        wrapper.appendChild(svg);
+        statusContainer.appendChild(wrapper);
     }
 
     function addStorageUsageChartToStatus(usage_data) {
@@ -1590,16 +1794,20 @@
 
                 if (column === 'status') {
                     const value_ = value ? value.toLowerCase() : "";
-                    const span = document.createElement('span');
-                    span.className = getStatusClass(value_);
-                    span.textContent = value_;
+                    const clickable = (result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0);
+                    const statusEl = clickable ? document.createElement('a') : document.createElement('span');
+                    statusEl.className = getStatusClass(value_);
+                    statusEl.textContent = value_;
                     td.classList.add('status-column');
                     row.dataset.status = value_;
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
-                        span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
+                    if (clickable) {
+                        statusEl.href = '#';
+                        statusEl.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            toggleInfoRow(row, result.info, result.results, result.links);
+                        });
                     }
-                    td.appendChild(span);
+                    td.appendChild(statusEl);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
@@ -2048,6 +2256,7 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+        addHostMetricsChart(result.ext?.metrics)
     }
 
     const persistentStorage = {

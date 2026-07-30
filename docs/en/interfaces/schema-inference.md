@@ -1880,6 +1880,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `List`                               | [Array](../sql-reference/data-types/array.md)           |
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
+| `Union`                              | [Variant](../sql-reference/data-types/variant.md)       |
 
 Other ORC types are not supported.
 
@@ -2145,7 +2146,7 @@ We can inspect and query this file without specifying format or structure:
 :) desc file(data);
 ```
 
-```repsonse
+```response
 ┌─name─┬─type─────────────┐
 │ a    │ Nullable(Int64)  │
 │ b    │ Nullable(String) │
