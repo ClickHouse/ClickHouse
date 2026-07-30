@@ -100,9 +100,9 @@ private:
 };
 
 /// `CacheWriter` over one cache-aligned miss range. Owns its OWN
-/// `FileSegmentsHolder` (one `getOrSet`, built by `openWriter`), appends
-/// across windows and is finalized at destruction - the holder's destructor
-/// shrinks a partial segment to its downloaded size.
+/// `FileSegmentsHolder` (the `getOrSet` transaction in `resolve` builds it),
+/// appends across windows and is finalized at destruction - the holder's
+/// destructor shrinks a partial segment to its downloaded size.
 class DiskCacheWriter : public CacheWriter
 {
 public:
@@ -172,25 +172,10 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// One `cache->get` (no segment creation): each resident sub-range becomes
-    /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
-    /// concurrently-DOWNLOADING segment credits its committed prefix as a hit
-    /// and misses only the tail. Miss runs are TILED demand-shaped (interior
-    /// cells of `maxFillCell` on the absolute grid, tapering to the boundary
-    /// grid at the demand edge); a cut never falls inside an EXISTING segment,
-    /// so each emitted range maps to whole cells and the writer upgrade never
-    /// hands two writers the same segment.
-    std::unique_ptr<IProbeCursor> probe() override;
-
-private:
-    /// Defined in the .cpp; nested for private-member access.
-    class ProbeCursor;
-
-public:
-
-    /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
-    CacheWriterPtr openWriter(
-        const StoredObject & object, size_t object_file_offset, ByteRange cell) override;
+    /// Resolve `range` into hits (readers) and misses (writers when
+    /// populating); see the definition for the get/getOrSet split.
+    std::vector<Resolution> resolve(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:
 

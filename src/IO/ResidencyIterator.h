@@ -11,9 +11,8 @@ namespace DB
 
 /// One resident range + its held read buffer.
 struct HitEntry { ByteRange range; CacheReaderPtr reader; };
-/// One miss CELL. The writer carries the entry's lifecycle: null as probed
-/// (the probe observes only), opened via `openWriter` for the misses that
-/// survive the plan's prune (null on a read-only/bypass tier).
+/// One miss CELL. `resolve` attaches the writer when the provider populates
+/// (null on a read-only/bypass tier), ready for the plan to fill.
 struct MissEntry { ByteRange range; CacheWriterPtr writer; };
 
 /// One tier's held plan buffers, assembled by `observeSpan` from a tier's

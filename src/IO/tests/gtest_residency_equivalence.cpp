@@ -287,14 +287,16 @@ public:
     /// explicit cell and commit only a prefix under a claim.
     void fabricatePartialCell(ICacheProvider & provider, ByteRange cell, size_t prefix)
     {
-        auto view = std::make_unique<CacheView>();
-        view->miss_entries.push_back(MissEntry{cell, nullptr});
-        for (auto & e : view->miss_entries)
-            e.writer = provider.openWriter(objects.front(), /*object_file_offset=*/0, e.range);
-        ASSERT_EQ(view->misses().size(), 1u);
-        auto & writer = *view->misses().front().writer;
-        auto claim = writer.claim(writer.range());
-        ASSERT_EQ(writer.write(patternChain(content, cell.offset, prefix)), prefix);
+        CacheWriterPtr writer_ptr;
+        for (auto & r : provider.resolve(objects.front(), /*object_file_offset=*/0, cell))
+            if (r.kind == ICacheProvider::Resolution::Kind::Miss && r.writer)
+            {
+                writer_ptr = std::move(r.writer);
+                break;
+            }
+        ASSERT_NE(writer_ptr, nullptr);
+        auto claim = writer_ptr->claim(writer_ptr->range());
+        ASSERT_EQ(writer_ptr->write(patternChain(content, cell.offset, prefix)), prefix);
     }
 
     ByteRange expectedSpan(size_t start) const

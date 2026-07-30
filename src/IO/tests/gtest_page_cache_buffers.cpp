@@ -15,16 +15,17 @@ using namespace DB;
 namespace
 {
 
-/// Test twin of the plan's prune+open step: build a probe-shaped view over
-/// explicit miss cells and let the provider upgrade it in place.
+/// Test twin of the plan's open step: resolve each cell and collect its miss
+/// resolutions - the provider attaches a writer to each (one per cache block
+/// the cell spans). Any resident prefix comes back as a hit, not a miss.
 CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
                          size_t object_file_offset, std::vector<ByteRange> cells)
 {
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
-        view->miss_entries.push_back(MissEntry{c, nullptr});
-    for (auto & e : view->miss_entries)
-        e.writer = provider.openWriter(object, object_file_offset, e.range);
+        for (auto & r : provider.resolve(object, object_file_offset, c))
+            if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+                view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
     return view;
 }
 
@@ -251,19 +252,18 @@ TEST(PageCacheBuffers, FirstWriterWins)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    /// First writer populates the block with 'F'.
-    {
-        auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
-        ASSERT_EQ(first.size(), 1u);
-        size_t wrote = first[0].writer->write(makeChain(0, block_size, 'F'));
-        EXPECT_EQ(wrote, block_size);
-    }
-
-    /// Second writer tries to write 'S' over the same block.
+    /// Open TWO writers over the still-uncached block: page `resolve` uses
+    /// `cache->get`, so it creates no cell - both see a miss until a write lands.
+    auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    ASSERT_EQ(first.size(), 1u);
     auto view_second = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
-    auto & writer = *second[0].writer;
 
+    /// First writer populates the block with 'F'.
+    EXPECT_EQ(first[0].writer->write(makeChain(0, block_size, 'F')), block_size);
+
+    /// Second writer tries 'S' over the same block: it loses the race.
+    auto & writer = *second[0].writer;
     size_t wrote = writer.write(makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by the first writer), so committed must advance";
@@ -290,26 +290,20 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
         /*bypass_if_missing=*/false, file_size);
 
     auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, span}}); const auto & misses = view_misses->misses();
-    ASSERT_FALSE(misses.empty());
-    auto & writer = *misses[0].writer;
-    /// The single writer carries the correct multi-block aligned range.
-    EXPECT_EQ(writer.range().offset, 0u);
-    EXPECT_EQ(writer.range().size, span);
+    ASSERT_EQ(misses.size(), 2u);
+    auto & w0 = *misses[0].writer;
+    auto & w1 = *misses[1].writer;
+    /// One writer per block (the page grid is one block per cell).
+    EXPECT_EQ(w0.range().offset, 0u);
+    EXPECT_EQ(w0.range().size, block_size);
+    EXPECT_EQ(w1.range().offset, block_size);
+    EXPECT_EQ(w1.range().size, block_size);
 
-    /// Two-node chain: block 0 filled '0', block 1 filled '1'.
-    ChainedBuffers data;
-    {
-        auto b0 = std::make_shared<OwnedChainedBuffer>(block_size);
-        std::memset(b0->data(), '0', block_size);
-        data.append(ChainedBufferNode{b0, 0, block_size, 0});
-        auto b1 = std::make_shared<OwnedChainedBuffer>(block_size);
-        std::memset(b1->data(), '1', block_size);
-        data.append(ChainedBufferNode{b1, 0, block_size, block_size});
-    }
-
-    size_t wrote = writer.write(std::move(data));
-    EXPECT_EQ(wrote, span) << "both whole blocks newly landed";
-    EXPECT_TRUE(writer.complete());
+    /// Fill block 0 with '0', block 1 with '1'; each whole block lands.
+    EXPECT_EQ(w0.write(makeChain(0, block_size, '0')), block_size);
+    EXPECT_TRUE(w0.complete());
+    EXPECT_EQ(w1.write(makeChain(block_size, block_size, '1')), block_size);
+    EXPECT_TRUE(w1.complete());
 
     /// probeView coalesces the two adjacent hit blocks into one HitEntry.
     auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, span});
@@ -407,23 +401,23 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    /// First provider populates the block with 'F'.
-    {
-        auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
-        ASSERT_EQ(first.size(), 1u);
-        size_t wrote = first[0].writer->write(makeChain(0, block_size, 'F'));
-        EXPECT_EQ(wrote, block_size);
-    }
-
     /// A SECOND provider over the SAME cache and file produces the SAME cache key.
     PageCacheProvider provider2(
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
+    /// Open a writer through EACH provider over the still-uncached block (page
+    /// `resolve` creates no cell, so both see a miss until a write lands).
+    auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    ASSERT_EQ(first.size(), 1u);
     auto view_second = openWriters(provider2, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
-    auto & writer = *second[0].writer;
 
+    /// provider1 populates the block with 'F'.
+    EXPECT_EQ(first[0].writer->write(makeChain(0, block_size, 'F')), block_size);
+
+    /// provider2's writer tries 'S' over the same cache key: it loses the race.
+    auto & writer = *second[0].writer;
     size_t wrote = writer.write(makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the cross-provider first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by provider1), so committed must advance";

@@ -128,18 +128,12 @@ public:
     /// completion); the probe reports one miss range per block.
     bool fillsWholeCell() const override { return true; }
 
-    std::unique_ptr<IProbeCursor> probe() override;
-
-    /// Cells are created lazily on the first `write` of each block.
-    CacheWriterPtr openWriter(
-        const StoredObject & object, size_t object_file_offset, ByteRange cell) override;
+    /// Resolve `range` into per-block hits (readers) and misses (whole-block
+    /// writers when populating); see the definition.
+    std::vector<Resolution> resolve(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:
-    /// Defined in the .cpp; nested for private-member access.
-    class ProbeCursor;
-    /// The step probe body (the cursor delegates; stateless per step).
-    Resolution resolve(const StoredObject & object, size_t object_file_offset, size_t pos_in_file);
-
     PageCachePtr cache;
     PageCacheFile file;
     size_t block_size;

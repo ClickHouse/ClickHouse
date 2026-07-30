@@ -688,38 +688,18 @@ size_t DiskCacheProvider::maxFillCell() const
     return max_segment / boundary * boundary;
 }
 
-/// The disk tier's residency walk (see `ICacheProvider::IProbeCursor`). One
-/// `resolve` call is one cache transaction and the cursor holds no state beyond
-/// its provider, so a shared provider stays concurrency-safe under the
-/// `readBigAt` fan-out (each fan-out gets its own cursor).
-class DiskCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
-{
-public:
-    explicit ProbeCursor(DiskCacheProvider & provider_) : provider(provider_) {}
-
-    /// Resolve `range` in one call, mirroring the legacy reader's get/getOrSet
-    /// split (`CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`).
-    /// POPULATING (write-through) cache: one `getOrSet` transaction - the
-    /// cache's own `splitRange` shapes the virgin segments (cells = segments),
-    /// hits carry readers, misses carry OPEN writers sharing the one holder.
-    /// READ-ONLY / bypass cache (`read_if_exists_otherwise_bypass`):
-    /// `cache->get` only - existing segments come back, hits carry readers,
-    /// gaps and uncommitted tails are boundary-aligned writer-less misses,
-    /// nothing is created or reserved. The provider decides; the caller passes
-    /// no flag.
-    std::vector<ICacheProvider::Resolution> resolve(
-        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
-
-private:
-    DiskCacheProvider & provider;
-};
-
-std::unique_ptr<ICacheProvider::IProbeCursor> DiskCacheProvider::probe()
-{
-    return std::make_unique<ProbeCursor>(*this);
-}
-
-std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
+/// The disk tier's residency walk. One `resolve` call is one cache transaction
+/// and the method holds no per-call state, so a shared provider is safe to
+/// resolve from many threads (the `readBigAt` fan-out). Mirrors the legacy
+/// reader's get/getOrSet split
+/// (`CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`). POPULATING
+/// (write-through) cache: one `getOrSet` transaction - the cache's own
+/// `splitRange` shapes the virgin segments (cells = segments), hits carry
+/// readers, misses carry OPEN writers sharing the one holder. READ-ONLY /
+/// bypass cache (`read_if_exists_otherwise_bypass`): `cache->get` only -
+/// existing segments come back, hits carry readers, gaps and uncommitted tails
+/// are boundary-aligned writer-less misses, nothing is created or reserved.
+std::vector<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
     std::vector<ICacheProvider::Resolution> out;
@@ -731,8 +711,8 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
 
     const size_t ask_hi_obj = std::min(range.end() - object_file_offset, object_size);
 
-    auto resolved_key = provider.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
-    auto resolved_origin = provider.custom_origin.value_or(provider.cache->getCommonOriginWithSegmentKeyType(object.local_path));
+    auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+    auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
     /// READ-ONLY / bypass cache (mirrors the legacy reader's `cache->get` branch
     /// in `CachedOnDiskReadBufferFromFile`): return existing segments only -
@@ -740,15 +720,15 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
     /// boundary-aligned writer-less misses. Nothing is created, reserved, or
     /// evicted, so a bypass read (a merge) never perturbs the cache.
     /// `observeSpan` drops a bypass tier's misses; only `probeView` reads them.
-    if (!provider.populatesOnMiss())
+    if (!populatesOnMiss())
     {
-        const size_t boundary = provider.cache_settings.boundary_alignment.value_or(provider.cache->getBoundaryAlignment());
+        const size_t boundary = cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment());
         const size_t ask_start = FileCacheUtils::roundDownToMultiple(ask_lo_obj, boundary);
         const size_t ask_end = std::min(FileCacheUtils::roundUpToMultiple(ask_hi_obj, boundary), object_size);
 
         auto holder = std::make_shared<FileSegmentsHolder>();
         if (ask_end > ask_start)
-            if (auto got = provider.cache->get(
+            if (auto got = cache->get(
                     resolved_key, ask_start, ask_end - ask_start,
                     /*file_segments_limit=*/0, resolved_origin.user_id))
                 holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
@@ -784,7 +764,7 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
                 hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
                 hit.reader = std::make_unique<DiskCacheReader>(
                     holder, hit.range, object_file_offset,
-                    provider.local_throttler, &provider.reader_anchors, &provider.streaming_slot, book);
+                    local_throttler, &reader_anchors, &streaming_slot, book);
                 out.push_back(std::move(hit));
             }
             if (committed_end < seg_end)
@@ -800,7 +780,7 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
     /// back whole, virgin territory comes back as demand-shaped segments cut by
     /// the cache's `splitRange` on its own grid - the edge overhang is the
     /// grid rounding `getOrSet` itself applies.
-    auto shared_holder = std::shared_ptr<FileSegmentsHolder>(provider.cache->getOrSet(
+    auto shared_holder = std::shared_ptr<FileSegmentsHolder>(cache->getOrSet(
         resolved_key,
         ask_lo_obj,
         ask_hi_obj - ask_lo_obj,
@@ -808,7 +788,7 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
         CreateFileSegmentSettings{},
         /*file_segments_limit=*/0,
         resolved_origin,
-        provider.cache_settings.boundary_alignment));
+        cache_settings.boundary_alignment));
     auto book = std::make_shared<DiskCacheTouchBook>(shared_holder, object_file_offset);
 
     for (const auto & segment_ptr : *shared_holder)
@@ -826,7 +806,7 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
             hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
             hit.reader = std::make_unique<DiskCacheReader>(
                 shared_holder, hit.range, object_file_offset,
-                provider.local_throttler, &provider.reader_anchors, &provider.streaming_slot, book);
+                local_throttler, &reader_anchors, &streaming_slot, book);
             out.push_back(std::move(hit));
         }
         if (committed_end < seg_end)
@@ -837,42 +817,12 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::resolve(
             /// committed frontier; the prefix hit above serves the committed part).
             miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
             miss.writer = std::make_unique<DiskCacheWriter>(
-                provider.cache, object_file_offset, provider.cache_settings,
+                cache, object_file_offset, cache_settings,
                 shared_holder, miss.range);
             out.push_back(std::move(miss));
         }
     }
     return out;
-}
-
-CacheWriterPtr DiskCacheProvider::openWriter(
-    const StoredObject & object,
-    size_t object_file_offset,
-    ByteRange cell)
-{
-    if (!populatesOnMiss())
-        return nullptr;
-
-    auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
-    auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
-
-    chassert(cell.offset >= object_file_offset);
-    std::shared_ptr<FileSegmentsHolder> holder = cache->getOrSet(
-        resolved_key,
-        cell.offset - object_file_offset,
-        cell.size,
-        object.bytes_size,
-        CreateFileSegmentSettings{},
-        /*file_segments_limit=*/0,
-        resolved_origin,
-        cache_settings.boundary_alignment);
-
-    return std::make_unique<DiskCacheWriter>(
-        cache,
-        object_file_offset,
-        cache_settings,
-        std::move(holder),
-        cell);
 }
 
 }

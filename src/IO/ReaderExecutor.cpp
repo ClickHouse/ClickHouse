@@ -643,12 +643,6 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & [cache, view] : populate_views)
         {
-            /// A populating cache's `resolve` already opened the miss writers
-            /// (they arrived through the view); only a tier that returned them
-            /// writer-less needs the explicit open.
-            for (auto & m : view->miss_entries)
-                if (!m.writer)
-                    m.writer = cache->openWriter(pieces.front().object, /*object_file_offset=*/0, m.range);
             for (const auto & m : view->misses())
             {
                 if (!m.writer)
@@ -1200,7 +1194,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
             openLongConnectionIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
-        /// `getOrSet` segment-aligned the miss at plan build, in `openWriter`).
+        /// `getOrSet` segment-aligned the miss at plan build, in `resolve`).
         auto blocks = allocateBlocks(pr.size, window_block_size);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
@@ -2633,7 +2627,6 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
             entry.whole_cell = traits[ci].whole_cell;
             auto view = std::make_unique<CacheView>();
 
-            auto probe = caches_[ci]->probe();
             /// This tier's already-collected extents. A WIDE existing segment is
             /// returned WHOLE by every ask that intersects it, so when a faster
             /// tier's hit splits this tier's span into several asks straddling
@@ -2648,7 +2641,7 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
             {
                 for (const auto & sub : subtracted.subtract(ask))
                 {
-                    for (auto & res : probe->resolve(piece.object, piece.object_file_offset, sub))
+                    for (auto & res : caches_[ci]->resolve(piece.object, piece.object_file_offset, sub))
                     {
                         if (res.kind == ICacheProvider::Resolution::Kind::End)
                             continue;
@@ -2704,12 +2697,10 @@ void ReaderExecutor::emitObservation(
     CoverageMap & geom,
     VectorWithMemoryTracking<PlanTier> & tiers)
 {
-    /// The ranged builder produced entries and views 1:1 - pruned territory
-    /// was never asked (subtraction), so there is nothing to drop. Providers
-    /// with a native ranged `lookAt` attached their writers at the call; a
-    /// provider still on the stepping adapter returns writer-less misses, so
-    /// backfill exactly those. Publish both-or-neither, cache-major
-    /// fastest-first.
+    /// The ranged builder produced entries and views 1:1 - pruned territory was
+    /// never asked (subtraction), so there is nothing to drop, and `resolve`
+    /// already attached the miss writers for a populating tier. Publish
+    /// both-or-neither, cache-major fastest-first.
     for (size_t ci = 0; ci < caches_.size(); ++ci)
     {
         for (auto & piece : pieces)
@@ -2719,10 +2710,6 @@ void ReaderExecutor::emitObservation(
                 continue;
 
             CacheViewPtr view = std::move(piece.views[ci]);
-            if (caches_[ci]->populatesOnMiss())
-                for (auto & m : view->miss_entries)
-                    if (!m.writer)
-                        m.writer = caches_[ci]->openWriter(piece.object, piece.object_file_offset, m.range);
 
             PlanTier plan_tier;
             plan_tier.provider = caches_[ci].get();
@@ -2853,7 +2840,7 @@ void ReaderExecutor::extendPlan(size_t position_phys)
 
     /// A cell straddling the old `plan_end` is already owned by an old entry's
     /// view (its writer was opened there); the extension derives the same
-    /// absolute-grid cell and must not own it twice - a second `openWriter`
+    /// absolute-grid cell and must not own it twice - a second writer
     /// would alias the segment in two buffers. Overlap implies identity: cells
     /// tile on the absolute grid and an existing segment reports its true extent.
     /// A HIT run straddling `old_end` needs no such dedup: the extension

@@ -1,6 +1,5 @@
-/// Unit grid for the NEW per-range cache-buffer API on `DiskCacheProvider`
-/// (`lookAt` / `openWriter` + `DiskCacheReader` /
-/// `DiskCacheWriter` / `CacheView`). Backed by a REAL `FileCache` over a
+/// Unit grid for the per-range cache-buffer API on `DiskCacheProvider`
+/// (`resolve` + `DiskCacheReader` / `DiskCacheWriter` / `CacheView`). Backed by a REAL `FileCache` over a
 /// temp dir, mirroring `RealDiskCacheSequentialEvictionKeepsConnection` in
 /// `gtest_reader_executor.cpp` (same `ThreadStatus` + `QueryScope` machinery so
 /// `FileSegment::reserve` finds a query budget).
@@ -167,16 +166,17 @@ struct DiskCacheBuffers : public ::testing::Test
 };
 
 
-/// Test twin of the plan's prune+open step: build a probe-shaped view over
-/// explicit miss cells and let the provider upgrade it in place.
+/// Test twin of the plan's open step: resolve each cell and collect its miss
+/// resolutions - the provider attaches a writer to each (one per cache segment
+/// the cell spans). Any resident prefix comes back as a hit, not a miss.
 CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
                          size_t object_file_offset, std::vector<ByteRange> cells)
 {
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
-        view->miss_entries.push_back(MissEntry{c, nullptr});
-    for (auto & e : view->miss_entries)
-        e.writer = provider.openWriter(object, object_file_offset, e.range);
+        for (auto & r : provider.resolve(object, object_file_offset, c))
+            if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+                view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
     return view;
 }
 
@@ -410,16 +410,11 @@ TEST_F(DiskCacheBuffers, PinFrontier)
     pin_start.reset();
     pin_mid.reset();
 
-    // Finalize the buffer → segment becomes DOWNLOADED; pin then returns nullptr.
+    // Finalize the buffer → the segment becomes DOWNLOADED and now probes as a
+    // hit (no miss, no writer - a resident range is served by a reader).
     view_misses->miss_entries.clear();
     auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
-    ASSERT_TRUE(view->allHit());
-
-    // Re-open a writer over the now-resident range: there is nothing to download,
-    // so a pin returns nullptr (segment fully downloaded, not PARTIAL).
-    auto view_misses2 = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses2 = view_misses2->misses();
-    ASSERT_EQ(misses2.size(), 1u);
-    EXPECT_EQ(misses2[0].writer->pin(0), nullptr);
+    EXPECT_TRUE(view->allHit());
 }
 
 
@@ -547,27 +542,28 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     const size_t object_size = 2 * kSegmentSize;     // two segments
     auto object = makeObject("obj_h", object_size);
 
-    // One aligned miss range covering both segments → one held holder, one writer.
+    // The cache grid is one segment per cell, so resolving the two-segment range
+    // yields one writer per segment (the production shape - `resolve` decomposes
+    // a miss onto the cache's own segments).
     auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, 2 * kSegmentSize}}); const auto & misses = view_misses->misses();
-    ASSERT_EQ(misses.size(), 1u);
+    ASSERT_EQ(misses.size(), 2u);
     ASSERT_NE(misses[0].writer, nullptr);
-    auto & writer = *misses[0].writer;
-    EXPECT_EQ(writer.range().offset, 0u);
-    EXPECT_EQ(writer.range().size, 2 * kSegmentSize);
-    EXPECT_FALSE(writer.complete());
+    ASSERT_NE(misses[1].writer, nullptr);
+    auto & w0 = *misses[0].writer;
+    auto & w1 = *misses[1].writer;
+    EXPECT_EQ(w0.range().offset, 0u);
+    EXPECT_EQ(w0.range().size, kSegmentSize);
+    EXPECT_EQ(w1.range().offset, kSegmentSize);
+    EXPECT_EQ(w1.range().size, kSegmentSize);
 
-    // First segment only: complete() stays false; committed() spans just segment 0.
-    size_t n1 = claimedWrite(writer, makeChain(0, kSegmentSize, 'A'));
-    EXPECT_EQ(n1, kSegmentSize);
-    EXPECT_FALSE(writer.complete());
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
-    EXPECT_FALSE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
-
-    // Second segment: crosses the boundary, completes the buffer.
-    size_t n2 = claimedWrite(writer, makeChain(kSegmentSize, kSegmentSize, 'B'));
-    EXPECT_EQ(n2, kSegmentSize);
-    EXPECT_TRUE(writer.complete());
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
+    // Fill each segment's writer; each completes independently at its boundary.
+    EXPECT_EQ(claimedWrite(w0, makeChain(0, kSegmentSize, 'A')), kSegmentSize);
+    EXPECT_TRUE(w0.complete());
+    EXPECT_FALSE(w1.complete());
+    EXPECT_EQ(claimedWrite(w1, makeChain(kSegmentSize, kSegmentSize, 'B')), kSegmentSize);
+    EXPECT_TRUE(w1.complete());
+    EXPECT_TRUE(w0.committed().subtract(ByteRange{0, kSegmentSize}).empty());
+    EXPECT_TRUE(w1.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
 
     // Finalize → both segments DOWNLOADED.
     view_misses->miss_entries.clear();
@@ -826,10 +822,10 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
         EXPECT_EQ(view->misses()[i].range.size, kSegmentSize);
     }
 
-    /// Upgrade in place: one writer per tile; each writer's range is its own cell.
-    for (auto & e : view->miss_entries)
-        e.writer = provider->openWriter(object, /*object_file_offset=*/0, e.range);
-    ASSERT_EQ(view->misses().size(), 3u);
+    /// resolve attaches one writer per tile inline; each writer's range is its cell.
     for (size_t i = 0; i < 3; ++i)
+    {
+        ASSERT_NE(view->misses()[i].writer, nullptr);
         EXPECT_EQ(view->misses()[i].writer->range().offset, i * kSegmentSize);
+    }
 }

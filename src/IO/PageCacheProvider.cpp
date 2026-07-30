@@ -233,116 +233,76 @@ PageCacheProvider::PageCacheProvider(
 {
 }
 
-CacheWriterPtr PageCacheProvider::openWriter(
-    const StoredObject & /*object*/,
-    size_t /*object_file_offset*/,
-    ByteRange cell)
+/// The page tier's residency walk. One `resolve` is a ranged block walk holding
+/// no per-call state, so a shared provider is safe to resolve from many threads
+/// (the `readBigAt` fan-out). Blocks are probed read-only (`cache->get` never
+/// creates a cell), contiguous cached blocks coalesce into one hit run - capped
+/// so a warm file does not pin unboundedly through a single reader - and an
+/// uncached block is one miss cell carrying its whole-block writer when the
+/// provider populates (bypass leaves it writer-less). The plan fills the misses
+/// through those writers.
+std::vector<ICacheProvider::Resolution> PageCacheProvider::resolve(
+    const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
-    if (!populatesOnMiss())
-        return nullptr;
-
-    /// PageCache is file-level - `object` / `object_file_offset` are ignored.
-    /// Cells are created lazily on the first `write` of each block.
-    return std::make_unique<PageCacheWriter>(
-        cache,
-        file,
-        block_size,
-        file_size_in_bytes,
-        inject_eviction,
-        bypass_if_missing,
-        cell);
-}
-
-/// The page tier's residency walk: stateless per step (block probes are cheap
-/// map lookups), so the cursor only carries the provider reference.
-class PageCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
-{
-public:
-    explicit ProbeCursor(PageCacheProvider & provider_) : provider(provider_) {}
-
-    /// Read-only ranged residency (the page cache is populated separately, by
-    /// the plan's whole-block writers): loop the per-block resolve across the
-    /// range, collecting each block hit/miss once.
-    std::vector<ICacheProvider::Resolution> resolve(
-        const StoredObject & object, size_t object_file_offset, ByteRange range) override
-    {
-        std::vector<ICacheProvider::Resolution> out;
-        size_t collected_until = range.offset;
-        size_t pos = range.offset;
-        while (pos < range.end())
-        {
-            auto r = provider.resolve(object, object_file_offset, pos);
-            if (r.kind == ICacheProvider::Resolution::Kind::End)
-                break;
-            const size_t end = r.range.end();
-            if (end > collected_until)
-            {
-                out.push_back(std::move(r));
-                collected_until = end;
-            }
-            pos = std::max(pos + 1, end);
-        }
+    std::vector<ICacheProvider::Resolution> out;
+    const size_t blk = block_size;
+    const size_t file_size = file_size_in_bytes;
+    if (range.offset >= file_size)
         return out;
-    }
-
-private:
-    PageCacheProvider & provider;
-};
-
-std::unique_ptr<ICacheProvider::IProbeCursor> PageCacheProvider::probe()
-{
-    return std::make_unique<ProbeCursor>(*this);
-}
-
-ICacheProvider::Resolution PageCacheProvider::resolve(
-    const StoredObject & /*object*/, size_t /*object_file_offset*/, size_t pos_in_file)
-{
-    /// PageCache is file-level - the object arguments are ignored. Blocks are
-    /// probed read-only (`cache->get` never creates a cell); a hit run walks
-    /// the contiguous mapped blocks from the asked one - capped so a fully
-    /// warm file does not pin unboundedly through a single reader - and one
-    /// reader holds the run's cells. A miss is ONE block cell.
-    if (pos_in_file >= file_size_in_bytes)
-        return {};
 
     static constexpr size_t HIT_RUN_CAP = 8 * 1024 * 1024;
-
     SipHash base_hash = file.baseHash();
     auto probe = [&](size_t off) -> PageCache::MappedPtr
     {
-        const size_t sz = std::min(block_size, file_size_in_bytes - off);
+        const size_t sz = std::min(blk, file_size - off);
         PageCacheByteRange byte_range{off, sz};
         return cache->get(byte_range.hash(base_hash), inject_eviction);
     };
 
-    const size_t block_start = pos_in_file / block_size * block_size;
-    Resolution res;
-    auto first = probe(block_start);
-    if (!first)
+    const size_t end_in_file = std::min(range.end(), file_size);
+    size_t pos = range.offset / blk * blk;
+    while (pos < end_in_file)
     {
-        res.kind = Resolution::Kind::Miss;
-        res.range = ByteRange{block_start, std::min(block_size, file_size_in_bytes - block_start)};
-        return res;
-    }
-
-    VectorWithMemoryTracking<PageCacheReader::HeldCell> cells;
-    size_t end = block_start;
-    PageCache::MappedPtr cell = std::move(first);
-    while (true)
-    {
-        const size_t sz = std::min(block_size, file_size_in_bytes - end);
-        cells.push_back(PageCacheReader::HeldCell{PageCacheByteRange{end, sz}, std::move(cell)});
-        end += sz;
-        if (end >= file_size_in_bytes || end - block_start >= HIT_RUN_CAP)
-            break;
-        cell = probe(end);
+        auto cell = probe(pos);
         if (!cell)
-            break;
+        {
+            Resolution miss;
+            miss.kind = Resolution::Kind::Miss;
+            miss.range = ByteRange{pos, std::min(blk, file_size - pos)};
+            if (populatesOnMiss())
+                miss.writer = std::make_unique<PageCacheWriter>(
+                    cache, file, blk, file_size,
+                    inject_eviction, bypass_if_missing, miss.range);
+            pos = miss.range.end();
+            out.push_back(std::move(miss));
+            continue;
+        }
+
+        /// Coalesce contiguous cached blocks into one bounded hit run; one
+        /// reader holds the run's cells.
+        VectorWithMemoryTracking<PageCacheReader::HeldCell> cells;
+        const size_t run_start = pos;
+        size_t run_end = pos;
+        PageCache::MappedPtr held = std::move(cell);
+        while (true)
+        {
+            const size_t sz = std::min(blk, file_size - run_end);
+            cells.push_back(PageCacheReader::HeldCell{PageCacheByteRange{run_end, sz}, std::move(held)});
+            run_end += sz;
+            if (run_end >= file_size || run_end - run_start >= HIT_RUN_CAP)
+                break;
+            held = probe(run_end);
+            if (!held)
+                break;
+        }
+        Resolution hit;
+        hit.kind = Resolution::Kind::Hit;
+        hit.range = ByteRange{run_start, run_end - run_start};
+        hit.reader = std::make_unique<PageCacheReader>(hit.range, std::move(cells));
+        pos = run_end;
+        out.push_back(std::move(hit));
     }
-    res.kind = Resolution::Kind::Hit;
-    res.range = ByteRange{block_start, end - block_start};
-    res.reader = std::make_unique<PageCacheReader>(res.range, std::move(cells));
-    return res;
+    return out;
 }
 
 }
