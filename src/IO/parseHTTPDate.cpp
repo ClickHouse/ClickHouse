@@ -105,16 +105,19 @@ std::optional<time_t> makeTimestampFromTwoDigitYear(
     UInt32 two_digit_year, UInt8 month, UInt32 day, TimeOfDay time, time_t reference_time)
 {
     const DateLUTImpl & date_lut = DateLUT::instance("UTC");
-    const UInt32 year = date_lut.toYear(static_cast<Int64>(reference_time)) / 100 * 100 + two_digit_year;
 
-    std::optional<time_t> res = makeTimestamp(year, month, day, time);
-    if (!res)
-        return res;
+    const UInt32 base_year = date_lut.toYear(static_cast<Int64>(reference_time)) / 100 * 100 + two_digit_year;
+    const time_t window_begin = date_lut.addYears(static_cast<Int64>(reference_time), -50);
+    const time_t window_end = date_lut.addYears(static_cast<Int64>(reference_time), 50);
 
-    if (*res > date_lut.addYears(static_cast<Int64>(reference_time), 50))
-        return makeTimestamp(year - 100, month, day, time);
+    for (UInt32 year : {base_year - 100, base_year, base_year + 100})
+    {
+        std::optional<time_t> res = makeTimestamp(year, month, day, time);
+        if (res && *res > window_begin && *res <= window_end)
+            return res;
+    }
 
-    return res;
+    return std::nullopt;
 }
 
 std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference_time)

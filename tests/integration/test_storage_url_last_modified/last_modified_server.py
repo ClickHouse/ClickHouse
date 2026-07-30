@@ -5,7 +5,7 @@ BODY = b"1\n"
 
 # RFC 9110, 5.6.7 defines three forms of an `HTTP-date`, and a recipient must accept all of them.
 # All three below denote 1994-11-06 08:49:37 UTC, except that the two-digit year of the RFC 850 form
-# is resolved against the current year, so 06 means 2006 for the whole 21st century.
+# is resolved to within 50 years of the current time, so 06 means 2006 until 2056-11-06.
 LAST_MODIFIED = {
     "/imf-fixdate": "Sun, 06 Nov 1994 08:49:37 GMT",
     "/rfc850": "Monday, 06-Nov-06 08:49:37 GMT",

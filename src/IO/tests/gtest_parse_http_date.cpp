@@ -93,6 +93,28 @@ TEST(ParseHTTPDate, RFC850TwoDigitYearCutoff)
     EXPECT_EQ(tryParseHTTPDate("Friday, 02-Jan-76 00:00:00 GMT", start_of_2026), 189388800);
 }
 
+TEST(ParseHTTPDate, RFC850CenturyRollover)
+{
+    /// Near the end of a century a small two-digit year denotes the next century: seen from
+    /// 1999-12-31, 01-Jan-00 is one day ahead and denotes 2000, not 1900.
+    constexpr time_t last_day_of_1999 = 946598400;
+    EXPECT_EQ(tryParseHTTPDate("Saturday, 01-Jan-00 00:00:00 GMT", last_day_of_1999), 946684800);
+
+    /// And right after the rollover a large two-digit year still denotes the previous century.
+    constexpr time_t start_of_2000 = 946684800;
+    EXPECT_EQ(tryParseHTTPDate("Friday, 31-Dec-99 00:00:00 GMT", start_of_2000), 946598400);
+
+    /// A timestamp more than 50 years in the past denotes the next year with the same last two
+    /// digits, which may be in the next century: seen from 2060, 06 means 2106, not 2006.
+    constexpr time_t start_of_2060 = 2840140800;
+    EXPECT_EQ(tryParseHTTPDate("Saturday, 06-Nov-06 08:49:37 GMT", start_of_2060), 4318476577);
+
+    /// The year is chosen before the day of month is validated: seen from 1950, 29-Feb-00 denotes
+    /// 2000-02-29 even though 1900 had no 29 February.
+    constexpr time_t mid_1950 = -616896000;
+    EXPECT_EQ(tryParseHTTPDate("Tuesday, 29-Feb-00 00:00:00 GMT", mid_1950), 951782400);
+}
+
 TEST(ParseHTTPDate, AsctimeDate)
 {
     /// The example from RFC 9110, 5.6.7, which denotes the same instant as the `IMF-fixdate` example.
