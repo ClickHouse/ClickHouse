@@ -2,6 +2,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -48,6 +49,15 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
+<<<<<<< HEAD
+=======
+#include <Poco/DateTime.h>
+#include <Poco/DateTimeFormat.h>
+#include <Poco/DateTimeParser.h>
+#include <Poco/StringTokenizer.h>
+#include <Poco/Timestamp.h>
+#include <fmt/ranges.h>
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 
 
 namespace DB::ErrorCodes
@@ -68,6 +78,25 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
 }
 
+<<<<<<< HEAD
+=======
+namespace ProfileEvents
+{
+    extern const Event DataLakeRestCatalogCredentialsVended;
+    extern const Event DataLakeRestCatalogCredentialsCacheHits;
+}
+
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsString onelake_tenant_id;
+    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsString onelake_client_id;
+    extern const DatabaseDataLakeSettingsString onelake_client_secret;
+}
+
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 namespace DataLake
 {
 
@@ -76,6 +105,13 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 
 namespace
 {
+
+String parseTableUuid(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (metadata_object && metadata_object->has("table-uuid"))
+        return metadata_object->get("table-uuid").extract<String>();
+    return {};
+}
 
 std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
@@ -312,7 +348,229 @@ OneLakeCatalog::OneLakeCatalog(
     config = loadConfig();
 }
 
+<<<<<<< HEAD
 AccessToken RestCatalog::retrieveAccessToken() const
+=======
+void RestCatalog::validateSettingsChangesImpl(
+    const DB::SettingsChanges & changes,
+    const std::unordered_set<std::string> & alterable_settings,
+    const std::string & auth_mode_description)
+{
+    for (const auto & change : changes)
+    {
+        if (alterable_settings.empty())
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Setting `{}` cannot be altered for a {}: the database was created without authentication settings",
+                change.name,
+                auth_mode_description);
+
+        if (!alterable_settings.contains(change.name))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Setting `{}` cannot be altered for a {} "
+                "(the authentication mode is fixed when the database is created; "
+                "alterable settings are: {})",
+                change.name,
+                auth_mode_description,
+                fmt::join(alterable_settings, ", "));
+
+        if (change.value.getType() != DB::Field::Types::String)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Setting `{}` must be a string", change.name);
+
+        if (change.value.safeGet<String>().empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Setting `{}` cannot be set to an empty value", change.name);
+    }
+}
+
+void RestCatalog::validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode)
+{
+    static const std::unordered_set<std::string> credential_mode_settings = {
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::catalog_credential)};
+    static const std::unordered_set<std::string> header_mode_settings = {
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::auth_header)};
+    static const std::unordered_set<std::string> no_auth_settings = {};
+
+    if (credential_mode)
+        validateSettingsChangesImpl(changes, credential_mode_settings, "REST catalog with catalog credential authentication");
+    else if (header_mode)
+        validateSettingsChangesImpl(changes, header_mode_settings, "REST catalog with auth header authentication");
+    else
+        validateSettingsChangesImpl(changes, no_auth_settings, "REST catalog");
+}
+
+struct RestCatalog::PreparedAuthChanges : ICatalog::PreparedSettingsChanges
+{
+    std::unique_ptr<const CatalogState> new_state;
+    /// Set only when the OAuth credentials changed.
+    std::unique_ptr<AccessToken> new_access_token;
+};
+
+ICatalog::PreparedSettingsChangesPtr RestCatalog::prepareSettingsChanges(const DB::SettingsChanges & changes)
+{
+    const auto old_state = state.get();
+    CatalogState new_state = *old_state;
+
+    auto prepared = std::make_unique<PreparedAuthChanges>();
+    std::optional<DB::HTTPHeaderEntries> new_auth_headers;
+    applySettingsChangesToState(changes, *old_state, new_state, new_auth_headers, prepared->new_access_token);
+
+    /// The config was loaded with the old credentials; the new ones may resolve the
+    /// warehouse to a different prefix or base location, so reload it before publishing.
+    new_state.config = loadConfig(new_state, new_auth_headers);
+    prepared->new_state = std::make_unique<const CatalogState>(std::move(new_state));
+    return prepared;
+}
+
+void RestCatalog::commitSettingsChanges(ICatalog::PreparedSettingsChangesPtr prepared)
+{
+    auto * prepared_auth = dynamic_cast<PreparedAuthChanges *>(prepared.get());
+    if (!prepared_auth || !prepared_auth->new_state)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes to commit were not prepared by this catalog");
+
+    state.set(std::move(prepared_auth->new_state));
+    if (prepared_auth->new_access_token)
+        access_token.set(std::move(prepared_auth->new_access_token));
+
+    /// Cached storage credentials were vended under the old auth identity; do not reuse them.
+    {
+        std::lock_guard lock(credentials_cache_mutex);
+        credentials_cache.clear();
+    }
+}
+
+void RestCatalog::applySettingsChangesToState(
+    const DB::SettingsChanges & changes,
+    const CatalogState & old_state,
+    CatalogState & new_state,
+    std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+    std::unique_ptr<AccessToken> & new_access_token)
+{
+    const bool credential_mode = !old_state.client_id.empty();
+    const bool header_mode = old_state.auth_header.has_value();
+
+    validateSettingsChanges(changes, credential_mode, header_mode);
+
+    for (const auto & change : changes)
+    {
+        if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::catalog_credential))
+        {
+            std::tie(new_state.client_id, new_state.client_secret) = parseCatalogCredential(change.value.safeGet<String>());
+        }
+        else if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::auth_header))
+        {
+            new_state.auth_header = parseAuthHeader(change.value.safeGet<String>());
+            validateAuthHeaders(new_state.auth_header.value());
+        }
+        else
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
+    }
+
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
+    {
+        /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
+        /// fail the ALTER right here, and the config reload authenticates with that token
+        /// instead of the cached one.
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+    }
+}
+
+DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
+{
+    auto headers = RestCatalog::getAuthHeaders(catalog_state, update_token);
+    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return headers;
+}
+
+void OneLakeCatalog::validateSettingsChanges(const DB::SettingsChanges & changes, bool bearer_mode)
+{
+    static const std::unordered_set<std::string> bearer_mode_settings = {
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_tenant_id),
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_bearer_token)};
+    static const std::unordered_set<std::string> client_mode_settings = {
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_tenant_id),
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_client_id),
+        DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_client_secret)};
+
+    RestCatalog::validateSettingsChangesImpl(
+        changes,
+        bearer_mode ? bearer_mode_settings : client_mode_settings,
+        bearer_mode ? "OneLake catalog with bearer token authentication" : "OneLake catalog with client credentials authentication");
+}
+
+void OneLakeCatalog::applySettingsChangesToState(
+    const DB::SettingsChanges & changes,
+    const CatalogState & old_state,
+    CatalogState & new_state,
+    std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
+    std::unique_ptr<AccessToken> & new_access_token)
+{
+    const bool bearer_mode = !old_state.bearer_token.empty();
+
+    validateSettingsChanges(changes, bearer_mode);
+
+    for (const auto & change : changes)
+    {
+        if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_tenant_id))
+            new_state.tenant_id = change.value.safeGet<String>();
+        else if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_bearer_token))
+            new_state.bearer_token = change.value.safeGet<String>();
+        else if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_client_id))
+            new_state.client_id = change.value.safeGet<String>();
+        else if (change.name == DB::DatabaseDataLakeSettings::getSettingName(DB::DatabaseDataLakeSetting::onelake_client_secret))
+            new_state.client_secret = change.value.safeGet<String>();
+        else
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
+    }
+
+    if (bearer_mode)
+    {
+        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + new_state.bearer_token);
+        validateAuthHeaders(new_state.auth_header.value());
+    }
+    else if (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret)
+    {
+        /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
+        /// fail the ALTER right here, and the config reload authenticates with that token
+        /// instead of the cached one.
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+    }
+}
+
+namespace
+{
+
+[[maybe_unused]] const bool rest_settings_alter_validator_registered = []
+{
+    CatalogSettingsAlterValidatorFactory::instance().registerValidator(
+        DB::DatabaseDataLakeCatalogType::ICEBERG_REST,
+        [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
+        {
+            const bool credential_mode = !current_settings[DB::DatabaseDataLakeSetting::catalog_credential].value.empty();
+            const bool header_mode = !current_settings[DB::DatabaseDataLakeSetting::auth_header].value.empty();
+            RestCatalog::validateSettingsChanges(changes, credential_mode, header_mode);
+        });
+    return true;
+}();
+
+[[maybe_unused]] const bool onelake_settings_alter_validator_registered = []
+{
+    CatalogSettingsAlterValidatorFactory::instance().registerValidator(
+        DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE,
+        [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
+        {
+            const bool bearer_mode = !current_settings[DB::DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+            OneLakeCatalog::validateSettingsChanges(changes, bearer_mode);
+        });
+    return true;
+}();
+
+}
+
+AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
@@ -1024,23 +1282,118 @@ void RestCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
+namespace
+{
+
+/// Effective vended-credentials config of a LoadTableResult: "config" overlaid with the
+/// "storage-credentials" entry whose prefix is the longest match of the location.
+/// Returns nullptr when the response contains neither.
+Poco::JSON::Object::Ptr effectiveVendedConfig(const Poco::JSON::Object::Ptr & load_table_result, const std::string & location)
+{
+    static constexpr auto storage_credentials_str = "storage-credentials";
+
+    Poco::JSON::Object::Ptr config_object;
+    if (load_table_result->has("config"))
+    {
+        config_object = load_table_result->getObject("config");
+        if (!config_object)
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot parse config result");
+    }
+
+    const auto entries
+        = load_table_result->isArray(storage_credentials_str) ? load_table_result->getArray(storage_credentials_str) : nullptr;
+
+    Poco::JSON::Object::Ptr best_config;
+    size_t best_prefix_size = 0;
+    for (size_t i = 0; entries && i < entries->size(); ++i)
+    {
+        const auto entry = entries->getObject(static_cast<unsigned>(i));
+        if (!entry)
+            continue;
+        const auto prefix_var = entry->get("prefix");
+        if (!prefix_var.isString())
+            continue;
+        const auto & prefix = prefix_var.extract<String>();
+        if (!location.starts_with(prefix))
+            continue;
+        const auto entry_config = entry->getObject("config");
+        if (!entry_config)
+            continue;
+        if (!best_config || prefix.size() > best_prefix_size)
+        {
+            best_config = entry_config;
+            best_prefix_size = prefix.size();
+        }
+    }
+
+    if (!best_config)
+        return config_object;
+    if (!config_object)
+        config_object = new Poco::JSON::Object();
+
+    Poco::JSON::Object::Ptr merged = new Poco::JSON::Object(*config_object);
+    std::vector<std::string> names;
+    best_config->getNames(names);
+
+    /// An entry that supplies any key of a credential group replaces that whole group.
+    static const std::vector<std::vector<std::string>> credential_groups = {
+        {"s3.access-key-id", "s3.secret-access-key", "s3.session-token", "s3.session-token-expires-at-ms"},
+        {"gcs.oauth2.token", "gcs.oauth2.token-expires-at"},
+    };
+    for (const auto & group : credential_groups)
+        if (std::any_of(group.begin(), group.end(), [&](const auto & key) { return best_config->has(key); }))
+            for (const auto & key : group)
+                merged->remove(key);
+
+    /// Azure SAS tokens form one group keyed by account name (adls.sas-token.<account>...).
+    static constexpr auto sas_prefix = "adls.sas-token.";
+    if (std::any_of(names.begin(), names.end(), [](const auto & name) { return name.starts_with(sas_prefix); }))
+    {
+        std::vector<std::string> base_names;
+        merged->getNames(base_names);
+        for (const auto & name : base_names)
+            if (name.starts_with(sas_prefix))
+                merged->remove(name);
+    }
+
+    for (const auto & name : names)
+        merged->set(name, best_config->get(name));
+
+    return merged;
+}
+
+}
+
 bool RestCatalog::getTableMetadataImpl(
     const std::string & namespace_name,
     const std::string & table_name,
-    TableMetadata & result) const
+    TableMetadata & result,
+    bool allow_credentials_cache) const
 {
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     DB::HTTPHeaderEntries headers;
-    if (result.requiresCredentials())
+
+    const bool want_credentials = result.requiresCredentials();
+
+    /// Reuse previously vended credentials is possible
+    std::optional<VendedStorageCredentials> cached_credentials;
+    if (want_credentials)
     {
+        if (allow_credentials_cache)
+            cached_credentials = tryGetCachedCredentials(namespace_name, table_name);
+
         /// Header `X-Iceberg-Access-Delegation` tells catalog to include storage credentials in LoadTableResponse.
         /// Value can be one of the two:
         /// 1. `vended-credentials`
         /// 2. `remote-signing`
         /// Currently we support only the first.
         /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L1832
-        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+        if (!cached_credentials)
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsVended);
+            headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+        }
     }
 
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
@@ -1069,6 +1422,8 @@ bool RestCatalog::getTableMetadataImpl(
     if (!metadata_object)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
+    const std::string table_uuid = parseTableUuid(metadata_object);
+
     std::string location;
     if (result.requiresLocation())
     {
@@ -1094,16 +1449,36 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(*schema);
     }
 
-    if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
+    if (want_credentials && result.isDefaultReadableTable())
     {
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
-        if (!config_object)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse config result");
-        auto [parsed_credentials, parsed_endpoint] = getCredentialsAndEndpoint(config_object, location);
-        if (parsed_credentials)
-            result.setStorageCredentials(parsed_credentials);
-        if (!parsed_endpoint.empty())
-            result.setEndpoint(parsed_endpoint);
+        if (cached_credentials)
+        {
+            /// Reuse the cached credentials only for the very same table with the very same UUID.
+            if (table_uuid.empty() || cached_credentials->table_uuid != table_uuid)
+            {
+                {
+                    std::lock_guard lock(credentials_cache_mutex);
+                    credentials_cache.erase({namespace_name, table_name});
+                }
+                return getTableMetadataImpl(namespace_name, table_name, result, /* allow_credentials_cache */ false);
+            }
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCredentialsCacheHits);
+            result.setStorageCredentials(cached_credentials->credentials);
+            if (!cached_credentials->endpoint.empty())
+                result.setEndpoint(cached_credentials->endpoint);
+        }
+        else if (const auto config_object = effectiveVendedConfig(object, location))
+        {
+            auto parsed = getCredentialsAndEndpoint(config_object, location);
+            parsed.table_uuid = table_uuid;
+            if (parsed.credentials)
+            {
+                result.setStorageCredentials(parsed.credentials);
+                cacheCredentials(namespace_name, table_name, parsed, state_snapshot);
+            }
+            if (!parsed.endpoint.empty())
+                result.setEndpoint(parsed.endpoint);
+        }
     }
 
     if (result.requiresDataLakeSpecificProperties())
@@ -1115,8 +1490,8 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+    if (!table_uuid.empty())
+        result.setTableUUID(table_uuid);
 
     return true;
 }
@@ -1374,7 +1749,69 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
 }
 
-std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
+namespace
+{
+/// Parse a "...-expires-at-ms" value (ms since epoch); nullopt if absent, epoch (= don't cache)
+/// if invalid; values beyond the representable range are clamped to the maximum time point.
+std::optional<std::chrono::system_clock::time_point>
+parseExpiresAtMs(const Poco::JSON::Object::Ptr & object, const std::string & key)
+{
+    if (!object->has(key))
+        return std::nullopt;
+    try
+    {
+        static constexpr Int64 max_representable_sec
+            = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
+        const Int64 expires_at_ms = object->get(key).convert<Int64>();
+        if (expires_at_ms <= 0)
+            return std::chrono::system_clock::time_point{};
+        if (expires_at_ms / 1000 < max_representable_sec)
+            return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
+        return std::chrono::system_clock::time_point::max();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: fail close below
+    {
+    }
+    return std::chrono::system_clock::time_point{};
+}
+
+std::chrono::system_clock::time_point parseSasTokenExpiry(const std::string & sas_token)
+{
+    std::string token = sas_token;
+    if (!token.empty() && token.front() == '?')
+        token.erase(0, 1);
+
+    Poco::StringTokenizer params(token, "&", Poco::StringTokenizer::TOK_IGNORE_EMPTY | Poco::StringTokenizer::TOK_TRIM);
+    for (const auto & param : params)
+    {
+        if (!param.starts_with("se="))
+            continue;
+
+        try
+        {
+            std::string decoded;
+            Poco::URI::decode(param.substr(3), decoded);
+
+            int time_zone_differential = 0;
+            Poco::DateTime date_time;
+            if (Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::ISO8601_FORMAT, decoded, date_time, time_zone_differential))
+            {
+                date_time.makeUTC(time_zone_differential);
+                return std::chrono::system_clock::from_time_t(date_time.timestamp().epochTime());
+            }
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: handled by the fail-close return below
+        {
+        }
+
+        break;
+    }
+    /// Absent or unparseable 'se': do not cache.
+    return std::chrono::system_clock::time_point{};
+}
+}
+
+VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const
 {
     auto storage_type = parseStorageTypeFromLocation(location);
     switch (storage_type)
@@ -1382,22 +1819,29 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
         case StorageType::S3:
         {
             static constexpr auto gcs_token_str = "gcs.oauth2.token";
+            static constexpr auto gcs_token_expires_at_str = "gcs.oauth2.token-expires-at";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
+            static constexpr auto session_token_expires_at_ms_str = "s3.session-token-expires-at-ms";
 
-            if (object->has(gcs_token_str))
+            /// gs:// also maps to StorageType::S3, and the merged config may carry a warehouse-level
+            /// GCS token alongside per-table S3 keys, so select GCS by scheme, not by key presence.
+            if (location.starts_with("gs://") && object->has(gcs_token_str))
             {
                 auto gcs_token = object->get(gcs_token_str).extract<String>();
                 LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+                /// Do not cache if expiry was not parsed.
+                auto expires_at = parseExpiresAtMs(object, gcs_token_expires_at_str).value_or(std::chrono::system_clock::time_point{});
+                return {std::make_shared<GCSCredentials>(gcs_token), "", expires_at};
             }
 
             std::string access_key_id;
             std::string secret_access_key;
             std::string session_token;
             std::string storage_endpoint;
+            std::optional<std::chrono::system_clock::time_point> expires_at;
             if (object->has(access_key_id_str))
                 access_key_id = object->get(access_key_id_str).extract<String>();
             if (object->has(secret_access_key_str))
@@ -1406,9 +1850,13 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
                 session_token = object->get(session_token_str).extract<String>();
             if (object->has(storage_endpoint_str))
                 storage_endpoint = object->get(storage_endpoint_str).extract<String>();
+            expires_at = parseExpiresAtMs(object, session_token_expires_at_ms_str);
+            /// Temporary credentials (session token) with unreported expiry must not be cached (fail close).
+            if (!expires_at.has_value() && !session_token.empty())
+                expires_at = std::chrono::system_clock::time_point{};
 
             LOG_DEBUG(log, "get tokens for location {}", location);
-            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint};
+            return {std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token), storage_endpoint, expires_at};
         }
         case StorageType::Azure:
         {
@@ -1430,15 +1878,70 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
             }
 
             if (!sas_token.empty())
-            {
-                return {std::make_shared<AzureCredentials>(sas_token), ""};
-            }
+                return {std::make_shared<AzureCredentials>(sas_token), "", parseSasTokenExpiry(sas_token)};
             break;
         }
         default:
             break;
     }
-    return {nullptr, ""};
+    return {nullptr, "", std::nullopt};
+}
+
+std::optional<VendedStorageCredentials> RestCatalog::tryGetCachedCredentials(
+    const std::string & namespace_name, const std::string & table_name) const
+{
+    if (vended_credentials_cache_ttl.load(std::memory_order_relaxed) <= std::chrono::seconds::zero())
+        return std::nullopt;
+
+    std::lock_guard lock(credentials_cache_mutex);
+    auto it = credentials_cache.find({namespace_name, table_name});
+    if (it == credentials_cache.end())
+        return std::nullopt;
+    if (std::chrono::system_clock::now() >= it->second.expires_at.value())
+    {
+        credentials_cache.erase(it); /// Drop the stale entry.
+        return std::nullopt;
+    }
+
+    return it->second;
+}
+
+void RestCatalog::cacheCredentials(
+    const std::string & namespace_name,
+    const std::string & table_name,
+    const VendedStorageCredentials & parsed,
+    const CatalogStateVersion & state_snapshot) const
+{
+    const auto ttl = vended_credentials_cache_ttl.load(std::memory_order_relaxed);
+    if (ttl <= std::chrono::seconds::zero())
+        return;
+
+    if (!parsed.credentials || parsed.credentials->isEmpty())
+        return;
+
+    const auto now = std::chrono::system_clock::now();
+
+    /// Cap at the configured TTL so an entry never outlives the documented maximum lifetime.
+    auto refresh_after = now + ttl;
+    if (parsed.expires_at)
+    {
+        const auto safe_expiry = parsed.expires_at.value() - credentials_expiry_safety_window;
+        if (safe_expiry < refresh_after)
+            refresh_after = safe_expiry;
+    }
+    if (refresh_after <= now)
+        return;
+
+    std::lock_guard lock(credentials_cache_mutex);
+
+    /// Do not cache credentials vended under an outdated auth state.
+    if (state.get() != state_snapshot)
+        return;
+
+    if (credentials_cache.size() >= credentials_cache_cleanup_threshold)
+        std::erase_if(credentials_cache, [&now](const auto & entry) { return now >= entry.second.expires_at.value(); });
+    credentials_cache[{namespace_name, table_name}]
+        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid};
 }
 
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
@@ -1468,32 +1971,33 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         Poco::Dynamic::Var json = parser.parse(json_str);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        if (!object->has("config"))
-        {
-            LOG_DEBUG(log, "No 'config' in response for table {} – catalog does not support credential vending", table_name);
-            return nullptr;
-        }
+        Poco::JSON::Object::Ptr metadata_object;
+        if (object->has("metadata"))
+            metadata_object = object->get("metadata").extract<Poco::JSON::Object::Ptr>();
 
-        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+        /// Prefix matching uses the table location; metadata may live outside it with a custom `write.metadata.path`.
+        std::string location;
+        if (metadata_object && metadata_object->has("location"))
+            location = metadata_object->get("location").extract<String>();
+        else if (object->has("metadata-location"))
+            location = object->get("metadata-location").extract<String>();
+        else
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table {}, because no location in response", table_name);
+        LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
+
+        const auto config_object = effectiveVendedConfig(object, location);
         if (!config_object)
         {
-            LOG_DEBUG(log, "Empty 'config' in response for table {}", table_name);
+            LOG_DEBUG(log, "No credentials in response for table {} – catalog does not support credential vending", table_name);
             return nullptr;
         }
 
-        std::string location;
-        if (object->has("metadata-location"))
-        {
-            location = object->get("metadata-location").extract<String>();
-            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
-        }
-        else
-        {
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot read table {}, because no 'metadata-location' in response", table_name);
-        }
-
-        auto [new_credentials, _] = getCredentialsAndEndpoint(config_object, location);
-        return new_credentials;
+        auto parsed = getCredentialsAndEndpoint(config_object, location);
+        if (metadata_object)
+            parsed.table_uuid = parseTableUuid(metadata_object);
+        /// Refresh the per-table cache so subsequent queries reuse these freshly vended credentials.
+        cacheCredentials(namespace_name, table_name, parsed, state_snapshot);
+        return parsed.credentials;
     };
 }
 

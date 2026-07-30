@@ -8,7 +8,17 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+<<<<<<< HEAD
+=======
+#include <map>
+#include <mutex>
+#include <optional>
+#include <unordered_set>
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 #include <Poco/JSON/Object.h>
 
 namespace DB
@@ -30,6 +40,14 @@ struct AccessToken
             return false;
         return std::chrono::system_clock::now() >= expires_at.value();
     }
+};
+
+struct VendedStorageCredentials
+{
+    std::shared_ptr<IStorageCredentials> credentials;
+    std::string endpoint;
+    std::optional<std::chrono::system_clock::time_point> expires_at;
+    std::string table_uuid = {};
 };
 
 class RestCatalog : public ICatalog, public DB::WithContext
@@ -87,8 +105,54 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
+<<<<<<< HEAD
     String getClientId() const { return client_id; }
     String getClientSecret() const { return client_secret; }
+=======
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override { vended_credentials_cache_ttl.store(ttl, std::memory_order_relaxed); }
+
+    struct Config
+    {
+        /// Prefix is a path of the catalog endpoint,
+        /// e.g. /v1/{prefix}/namespaces/{namespace}/tables/{table}
+        std::filesystem::path prefix;
+        /// Base location is location of data in storage
+        /// (in filesystem or object storage).
+        std::string default_base_location;
+
+        std::string toString() const;
+    };
+
+    /// Credentials together with the catalog configuration they resolve to
+    /// (the /v1/config response depends on the credentials), published as one
+    /// atomic snapshot so readers never see a torn combination of them.
+    struct CatalogState
+    {
+        std::optional<DB::HTTPHeaderEntry> auth_header;
+        std::string client_id;
+        std::string client_secret;
+        std::string tenant_id;
+        std::string bearer_token;
+        Config config;
+    };
+    using CatalogStateVersion = MultiVersion<CatalogState>::Version;
+
+    CatalogStateVersion getStateSnapshot() const { return state.get(); }
+
+    ICatalog::PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes) override;
+
+    void commitSettingsChanges(ICatalog::PreparedSettingsChangesPtr prepared) override;
+
+    /// Check that we actually support these settings alter
+    static void validateSettingsChangesImpl(
+        const DB::SettingsChanges & changes,
+        const std::unordered_set<std::string> & alterable_settings,
+        const std::string & auth_mode_description);
+
+    /// `credential_mode` means the catalog authenticates with `catalog_credential`,
+    /// `header_mode` with `auth_header`. The mode is fixed when the database is created.
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 
 protected:
     RestCatalog(
@@ -131,6 +195,18 @@ protected:
     bool oauth_server_use_request_body;
     mutable MultiVersion<AccessToken> access_token;
 
+    /// TTL for caching vended credentials per table (0 means no caching).
+    std::atomic<std::chrono::seconds> vended_credentials_cache_ttl{std::chrono::seconds::zero()};
+
+    /// Sweep trigger threshold, not capacity!
+    static constexpr size_t credentials_cache_cleanup_threshold = 1000;
+
+    static constexpr std::chrono::seconds credentials_expiry_safety_window{60};
+    mutable std::mutex credentials_cache_mutex;
+
+    mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
+        TSA_GUARDED_BY(credentials_cache_mutex);
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
@@ -160,7 +236,8 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
-        TableMetadata & result) const;
+        TableMetadata & result,
+        bool allow_credentials_cache = true) const;
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
@@ -172,7 +249,18 @@ protected:
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
         bool ignore_result = false) const;
 
-    std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+    VendedStorageCredentials getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+
+    std::optional<VendedStorageCredentials> tryGetCachedCredentials(
+        const std::string & namespace_name, const std::string & table_name) const;
+
+    /// `state_snapshot` is the state the credentials were vended under: if the auth settings
+    /// changed since, the entry is not inserted.
+    void cacheCredentials(
+        const std::string & namespace_name,
+        const std::string & table_name,
+        const VendedStorageCredentials & parsed,
+        const CatalogStateVersion & state_snapshot) const;
 
     AccessToken retrieveAccessToken() const;
 };

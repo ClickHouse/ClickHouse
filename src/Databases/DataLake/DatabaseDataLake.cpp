@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
@@ -63,6 +64,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
+    extern const DatabaseDataLakeSettingsUInt64 vended_credentials_cache_ttl;
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
@@ -318,6 +320,31 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     std::lock_guard lock(catalog_mutex);
     /// Lazily build the catalog on first access for databases attached at startup (see ctor).
     if (!catalog_impl)
+<<<<<<< HEAD
+=======
+    {
+        initializeOrLeaveUnavailable();
+        if (!catalog_impl)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
+                "restricted for user queries and could not be resolved when the database was loaded from metadata. "
+                "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
+                catalog_unavailable_reason);
+    }
+
+    const auto settings_version = database_settings.get();
+    catalog_impl->setVendedCredentialsCacheTTL(
+        std::chrono::seconds((*settings_version)[DatabaseDataLakeSetting::vended_credentials_cache_ttl].value));
+
+    return catalog_impl;
+}
+
+void DatabaseDataLake::initializeOrLeaveUnavailable() const
+{
+    try
+    {
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
         initialize();
     return catalog_impl;
 }
@@ -1208,6 +1235,7 @@ The following settings are supported:
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
 | `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
+| `vended_credentials_cache_ttl` | Maximum cache entry lifetime (in seconds) for vended credentials (REST catalogs only). Default `300`; `0` disables caching. |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |

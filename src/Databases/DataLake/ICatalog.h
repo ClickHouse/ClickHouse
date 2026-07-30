@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -212,6 +213,33 @@ public:
         return std::nullopt;
     }
 
+<<<<<<< HEAD
+=======
+    virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
+
+    /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
+    /// ready to be published by `commitSettingsChanges`.
+    struct PreparedSettingsChanges
+    {
+        virtual ~PreparedSettingsChanges() = default;
+    };
+    using PreparedSettingsChangesPtr = std::unique_ptr<PreparedSettingsChanges>;
+
+    /// Validate `ALTER DATABASE ... MODIFY SETTING` changes and build the new catalog
+    /// state without publishing anything (may throw, may do network I/O). The state
+    /// becomes visible only after `commitSettingsChanges`, so the caller can persist
+    /// the changes in between and abandon the prepared state on failure.
+    virtual PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes);
+
+    /// Publish the state built by `prepareSettingsChanges`. Must not fail.
+    virtual void commitSettingsChanges(PreparedSettingsChangesPtr prepared);
+
+    void applySettingsChanges(const DB::SettingsChanges & changes)
+    {
+        commitSettingsChanges(prepareSettingsChanges(changes));
+    }
+
+>>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 protected:
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
