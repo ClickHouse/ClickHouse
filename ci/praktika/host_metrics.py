@@ -111,6 +111,9 @@ class HostMetricsCollector:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=self._report_interval * 2 + 5)
+        # Fallback in case the thread was killed / timed out before recording it.
+        if self._psi_end is None:
+            self._psi_end = self._read_psi()
         if not self._samples:
             return None
         return self._compact(self._samples)
@@ -143,10 +146,14 @@ class HostMetricsCollector:
             win_mem.clear()
             win_disk.clear()
 
-        while not self._stop_event.is_set():
-            # Sleep first so the first emitted sample already has a valid CPU
-            # delta over one fine interval.
-            self._stop_event.wait(self._fine_interval)
+        # Sample-then-check so at least one fine sample is always taken, even if
+        # stop() fires before the first wait completes - otherwise a very short
+        # job (or a start()/stop() race) would collect nothing and discard the
+        # peaks/PSI entirely.
+        while True:
+            # Sleep first so the emitted sample has a valid CPU delta over one
+            # fine interval; returns immediately once stop() is requested.
+            stopped = self._stop_event.wait(self._fine_interval)
             try:
                 cur_cpu = self._read_cpu_times()
                 cpu_pct = self._cpu_percent(prev_cpu, cur_cpu)
@@ -157,6 +164,8 @@ class HostMetricsCollector:
                 # A transient /proc read failure must not kill the collector.
                 print(f"WARNING: Host metrics sample failed: {e}")
                 traceback.print_exc()
+                if stopped:
+                    break
                 continue
             win_cpu.append(cpu_pct)
             win_mem.append(mem_pct)
@@ -170,6 +179,8 @@ class HostMetricsCollector:
             if now - window_start >= self._report_interval:
                 flush_window(now)
                 window_start = now
+            if stopped:
+                break
 
         # Emit the trailing partial window and capture PSI as close to the real
         # end of the job as possible.
