@@ -258,6 +258,30 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] = 0.5;
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
+
+    /// A standalone `grace_hash` compresses its in-memory bucket, but it never runs the
+    /// `max_memory_usage` trigger: its bucket inserts pass `check_limits = false` and the compression
+    /// pass is a forced `shrinkStoredBlocksToFit`, which skips the thresholds. A step-local
+    /// `max_memory_usage` therefore must not raise the version - a version-3 receiver executes such a
+    /// fragment identically.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::join_algorithm] = std::vector<JoinAlgorithm>{JoinAlgorithm::GRACE_HASH};
+        settings.max_memory_usage_is_step_local = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        /// ... while the compression setting is consumed there and does raise it.
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        /// A hash algorithm listed after `grace_hash` is reached for a join kind `GraceHashJoin` does
+        /// not support, and it does consume a step-local `max_memory_usage`, so the union of the two
+        /// requires version 4.
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::GRACE_HASH, JoinAlgorithm::HASH};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
 }
 
 /// `max_memory_usage` is consumed by `HashJoin::shrinkStoredBlocksToFit` even with compression off,

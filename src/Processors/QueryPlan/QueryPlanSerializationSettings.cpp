@@ -189,15 +189,25 @@ struct JoinSettingsConsumption
 /// consumes (see tryCreateJoin and chooseJoinAlgorithm in Planner/PlannerJoins.cpp). The algorithms are
 /// tried in order and the first one that supports the step's shape wins, so the scan stops at the first
 /// algorithm that always builds something: a later hash fallback in the list is never reached and must
-/// not raise the fragment's version.
+/// not raise the fragment's version. An algorithm that can fall through (its implementation supports
+/// only some shapes) contributes what it consumes and the scan continues, so the result is the union
+/// over the implementations the step can end up with.
 static JoinSettingsConsumption getJoinSettingsConsumption(
     const std::vector<JoinAlgorithm> & algorithms, bool shape_supports_merge_join, bool spilling_to_disk_allowed)
 {
-    /// A hash-family implementation (`HashJoin`, `ConcurrentHashJoin`, `SpillingHashJoin`,
-    /// `GraceHashJoin`) consumes both settings: `enable_join_in_memory_compression` directly, and
-    /// `max_memory_usage` as the `shrinkStoredBlocksToFit` trigger.
+    /// A hash-family implementation (`HashJoin`, `ConcurrentHashJoin`, `SpillingHashJoin`) consumes both
+    /// settings: `enable_join_in_memory_compression` directly, and `max_memory_usage` as the
+    /// `shrinkStoredBlocksToFit` trigger.
     static constexpr JoinSettingsConsumption hash_family
         = {.in_memory_compression = true, .step_local_max_memory_usage = true};
+
+    JoinSettingsConsumption result;
+    const auto merged = [&result](JoinSettingsConsumption other)
+    {
+        return JoinSettingsConsumption{
+            .in_memory_compression = result.in_memory_compression || other.in_memory_compression,
+            .step_local_max_memory_usage = result.step_local_max_memory_usage || other.step_local_max_memory_usage};
+    };
 
     for (const auto algorithm : algorithms)
     {
@@ -207,21 +217,29 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
             case JoinAlgorithm::HASH:
             case JoinAlgorithm::PARALLEL_HASH:
                 /// Always build a hash-family join, so nothing after them in the list is reached.
-                return hash_family;
+                return merged(hash_family);
             case JoinAlgorithm::GRACE_HASH:
-                /// Builds `GraceHashJoin` for the kinds it supports and falls through otherwise, but
-                /// both flags are already set, so there is nothing left to learn from the rest.
-                return hash_family;
+                /// A standalone `GraceHashJoin` compresses its in-memory bucket when
+                /// `enable_join_in_memory_compression` is on, but it never runs the `max_memory_usage`
+                /// trigger: its bucket inserts pass `check_limits = false` (so the inner `HashJoin` does
+                /// not evaluate the trigger at all) and the compression pass is a forced
+                /// `shrinkStoredBlocksToFit(..., true)`, which skips the threshold branch entirely. Its
+                /// only memory bounds are `max_rows_in_join` / `max_bytes_in_join`
+                /// (`GraceHashJoin::hasMemoryOverflow`), neither of which is a version-4 setting.
+                /// `GraceHashJoin` is built only for the kinds it supports, so keep scanning: an
+                /// unsupported shape falls through to the next algorithm in the list.
+                result.in_memory_compression = true;
+                break;
             case JoinAlgorithm::PREFER_PARTIAL_MERGE:
                 /// Builds `MergeJoin` whenever the shape allows, and that consumes neither setting.
                 /// Only an unsupported shape falls back to a hash join.
                 if (shape_supports_merge_join)
-                    return {};
-                return hash_family;
+                    return result;
+                return merged(hash_family);
             case JoinAlgorithm::PARTIAL_MERGE:
                 /// `MergeJoin` or nothing: an unsupported shape falls through to the next algorithm.
                 if (shape_supports_merge_join)
-                    return {};
+                    return result;
                 break;
             case JoinAlgorithm::AUTO:
                 /// Builds `SpillingHashJoin` when spilling is allowed, a `JoinSwitcher` for a shape
@@ -231,8 +249,8 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 /// one `enable_join_in_memory_compression` forces before switching to the disk-based
                 /// join, and that one ignores the memory thresholds.
                 if (!spilling_to_disk_allowed && shape_supports_merge_join)
-                    return {.in_memory_compression = true, .step_local_max_memory_usage = false};
-                return hash_family;
+                    return merged({.in_memory_compression = true, .step_local_max_memory_usage = false});
+                return merged(hash_family);
             case JoinAlgorithm::DIRECT:
                 /// `DirectKeyValueJoin` or nothing, and it consumes neither setting (see
                 /// getMinRequiredVersion on why such a step is never serialized anyway).
@@ -242,7 +260,7 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 break;
         }
     }
-    return {};
+    return result;
 }
 
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
@@ -266,6 +284,9 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// that reads neither setting - `full_sorting_merge` or `partial_merge`, a `MergeJoin` built for a
     /// shape `prefer_partial_merge` supports, or the `JoinSwitcher` that `auto` builds for such a shape
     /// (which consumes only the compression setting) - keeps its fragment readable by older receivers.
+    /// A standalone `grace_hash` is in the same "compression only" group: it compresses its in-memory
+    /// bucket but ignores `max_memory_usage` (see getJoinSettingsConsumption), which is the contract
+    /// documented for `enable_join_in_memory_compression`.
     /// A `ConstantJoin` step is the exception: it is chosen regardless of `join_algorithm`
     /// (join_executes_as_constant_join) and consumes `max_memory_usage` as its plain shrink trigger.
     /// The compression case is additionally keyed on the step's join kind
