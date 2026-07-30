@@ -1542,6 +1542,8 @@ protected:
 
     void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
 
+    void invalidateColumnAndSecondaryIndexSizesUnlocked() const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();
