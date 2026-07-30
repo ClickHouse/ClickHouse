@@ -3,7 +3,6 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
@@ -3580,7 +3579,6 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
     SharedHeader header = getOutputHeader();
-    MergeTreeCursor starting_positions = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -3597,8 +3595,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
             all_column_names,
             num_streams,
             block_size.max_block_size_rows,
-            std::move(subscription),
-            starting_positions));
+            std::move(subscription)));
     }
 
     data.triggerStreamingSubscriptionEnrichment();
