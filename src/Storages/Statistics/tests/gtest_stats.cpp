@@ -922,3 +922,58 @@ TEST(Statistics, PreV5FloatStatisticsConservativeRead)
         EXPECT_FALSE(get_minmax(cs).hasNaN()) << "legacy V1 integer MinMax cannot be NaN";
     }
 }
+
+/// Pins the V5 writer, which no other test covers: the pre-V5 conservative fallback forces
+/// has_nan = true for any float stat it reads, so a writer that never records the flag still looks
+/// correct to a reader. Building real statistics and round-tripping them through serialize keeps the
+/// flag observable on the V5 path, and the no-NaN cases pin that the flag is not set unconditionally
+/// (which would disable float pruning everywhere).
+TEST(Statistics, V5NaNFlagRoundTrip)
+{
+    auto float_type = std::make_shared<DataTypeFloat64>();
+
+    auto build_stats = [&](StatisticsType type, bool with_nan)
+    {
+        MutableColumnPtr col = float_type->createColumn();
+        col->insert(Field(Float64(1.0)));
+        if (with_nan)
+            col->insert(Field(std::numeric_limits<Float64>::quiet_NaN()));
+        col->insert(Field(Float64(3.0)));
+        auto stats = createTestStats({type}, float_type);
+        stats->build(std::move(col));
+        return stats;
+    };
+    auto round_trip = [&](const ColumnStatisticsPtr & stats)
+    {
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb);
+        ReadBufferFromString rb(wb.str());
+        return ColumnStatistics::deserialize(rb, float_type);
+    };
+    auto nan_flag_of = [](const ColumnStatisticsPtr & cs, StatisticsType type)
+    {
+        const auto & stats = cs->getStats();
+        auto it = stats.find(type);
+        if (type == StatisticsType::MinMax)
+            return dynamic_cast<const StatisticsMinMax &>(*it->second).hasNaN();
+        return dynamic_cast<const StatisticsBasic &>(*it->second).hasNaN();
+    };
+
+    for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
+    {
+        /// A NaN seen by build must survive serialize -> deserialize on the V5 path.
+        auto with_nan = build_stats(type, /*with_nan=*/true);
+        ASSERT_TRUE(nan_flag_of(with_nan, type)) << "build must record a NaN before it can be persisted";
+        auto restored_with_nan = round_trip(with_nan);
+        ASSERT_TRUE(restored_with_nan != nullptr);
+        EXPECT_TRUE(nan_flag_of(restored_with_nan, type)) << "V5 must persist has_nan = true";
+
+        /// A float column without a NaN must round-trip as has_nan = false, so float pruning keeps
+        /// working for the common case.
+        auto without_nan = build_stats(type, /*with_nan=*/false);
+        ASSERT_FALSE(nan_flag_of(without_nan, type));
+        auto restored_without_nan = round_trip(without_nan);
+        ASSERT_TRUE(restored_without_nan != nullptr);
+        EXPECT_FALSE(nan_flag_of(restored_without_nan, type)) << "V5 must persist has_nan = false";
+    }
+}
