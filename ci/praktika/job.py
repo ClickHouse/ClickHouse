@@ -1,9 +1,8 @@
 import copy
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, List, Optional
 
 from . import Artifact
@@ -255,6 +254,11 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
+        def set_digest_config(self, digest_config):
+            res = copy.deepcopy(self)
+            res.digest_config = digest_config
+            return res
+
         def set_timeout(self, timeout):
             res = copy.deepcopy(self)
             res.timeout = timeout
@@ -312,15 +316,3 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
-
-        def __post_init__(self):
-            if self.timeout_shell_cleanup:
-                return
-            if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

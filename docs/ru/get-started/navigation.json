@@ -1,0 +1,208 @@
+{
+  "icon": "/images/icons/icon-get-started.svg",
+  "item": "Начало работы",
+  "pages": [
+    {
+      "group": "Начало работы",
+      "icon": "/images/menu-icon-lightning.svg",
+      "pages": [
+        "ru/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": true,
+          "group": "Введение",
+          "pages": [
+            "ru/get-started/about/intro",
+            "ru/get-started/about/why-clickhouse-is-so-fast",
+            "ru/get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "Сценарии использования",
+          "pages": [
+            "ru/get-started/use-cases/real-time-analytics",
+            "ru/get-started/use-cases/observability",
+            "ru/get-started/use-cases/data-warehousing",
+            "ru/get-started/use-cases/agentic-analytics"
+          ],
+          "root": "ru/get-started/use-cases/overview"
+        },
+        "ru/get-started/about/deployment-modes"
+      ],
+      "root": "ru/get-started/index"
+    },
+    {
+      "expanded": true,
+      "group": "Настройка",
+      "icon": "/images/menu-icon-gear.svg",
+      "pages": [
+        "ru/get-started/setup/cloud",
+        {
+          "expanded": true,
+          "group": "Самоуправляемая версия",
+          "pages": [
+            {
+              "group": "Локальная разработка",
+              "pages": [
+                "ru/get-started/setup/self-managed/quick-install",
+                "ru/get-started/setup/self-managed/clickhousectl",
+                "ru/get-started/setup/self-managed/docker",
+                "ru/get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "Продакшн-сервер",
+              "pages": [
+                "ru/get-started/setup/self-managed/debian-ubuntu",
+                "ru/get-started/setup/self-managed/redhat",
+                "ru/get-started/setup/self-managed/nixos",
+                "ru/get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ],
+          "root": "ru/get-started/setup/self-managed/overview"
+        }
+      ],
+      "root": "ru/get-started/setup/install"
+    },
+    {
+      "expanded": true,
+      "group": "Примеры датасетов",
+      "icon": "/images/menu-icon-database.svg",
+      "pages": [
+        "ru/get-started/sample-datasets/playground",
+        {
+          "group": "Бенчмарки",
+          "pages": [
+            "ru/get-started/sample-datasets/amplab-benchmark",
+            "ru/get-started/sample-datasets/brown-benchmark",
+            "ru/get-started/sample-datasets/criteo",
+            "ru/get-started/sample-datasets/job",
+            "ru/get-started/sample-datasets/star-schema",
+            "ru/get-started/sample-datasets/tpcds",
+            "ru/get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "Векторный поиск и эмбеддинги",
+          "pages": [
+            "ru/get-started/sample-datasets/dbpedia",
+            "ru/get-started/sample-datasets/hacker-news-vector-search",
+            "ru/get-started/sample-datasets/laion",
+            "ru/get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "Веб- и социальная аналитика",
+          "pages": [
+            "ru/get-started/sample-datasets/amazon-reviews",
+            "ru/get-started/sample-datasets/anon-web-analytics-metrica",
+            "ru/get-started/sample-datasets/github",
+            "ru/get-started/sample-datasets/github-events",
+            "ru/get-started/sample-datasets/hacker-news",
+            "ru/get-started/sample-datasets/stackoverflow",
+            "ru/get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "Геоданные и местоположение",
+          "pages": [
+            "ru/get-started/sample-datasets/cell-towers",
+            "ru/get-started/sample-datasets/foursquare-os-places",
+            "ru/get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "Временные ряды и датчики",
+          "pages": [
+            "ru/get-started/sample-datasets/environmental-sensors",
+            "ru/get-started/sample-datasets/noaa",
+            "ru/get-started/sample-datasets/tw-weather",
+            "ru/get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "Госреестры и открытые данные",
+          "pages": [
+            "ru/get-started/sample-datasets/covid19",
+            "ru/get-started/sample-datasets/menus",
+            "ru/get-started/sample-datasets/nypd-complaint-data",
+            "ru/get-started/sample-datasets/ontime",
+            "ru/get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ],
+      "root": "ru/get-started/sample-datasets/index"
+    },
+    {
+      "expanded": true,
+      "group": "Миграция",
+      "icon": "/images/caret-double-right.svg",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "pages": [
+            "ru/get-started/migrate/postgres/overview",
+            {
+              "group": "Руководство по миграции",
+              "pages": [
+                "ru/get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "ru/get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "ru/get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "ru/get-started/migrate/postgres/appendix"
+          ],
+          "root": "ru/get-started/migrate/postgres/index"
+        },
+        {
+          "group": "BigQuery",
+          "pages": [
+            "ru/get-started/migrate/bigquery/overview",
+            "ru/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "ru/get-started/migrate/bigquery/loading-data"
+          ],
+          "root": "ru/get-started/migrate/bigquery/index"
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "ru/get-started/migrate/snowflake/overview",
+            "ru/get-started/migrate/snowflake/migration-guide",
+            "ru/get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "ru/get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "ru/get-started/migrate/redshift/overview",
+            "ru/get-started/migrate/redshift/migration-guide",
+            "ru/get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "OSS в Cloud",
+          "pages": [
+            "ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "Другие способы",
+          "pages": [
+            "ru/get-started/migrate/other-methods/clickhouse-local-etl",
+            "ru/get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "ru/get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ],
+      "root": "ru/get-started/migrate/overview"
+    }
+  ]
+}

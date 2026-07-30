@@ -7,6 +7,8 @@
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -19,6 +21,16 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char limit_by_sorted_stream_transform_pause[];
+extern const char limit_by_transform_pause[];
+extern const char limit_by_sorted_stream_transform_after_loop_pause[];
+extern const char limit_by_transform_after_loop_pause[];
+extern const char limit_by_sorted_stream_transform_mid_loop_pause[];
+extern const char limit_by_transform_mid_loop_pause[];
 }
 
 namespace
@@ -227,8 +239,21 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     UInt64 current_run_start_row = 0;
     size_t current_run_group_idx = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
+
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
+            stopReading();
+            return;
+        }
+
+        if (row_idx == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
         size_t row_group_idx = 0;
         if (key_emplace_result.isInserted()) /// New grouping key
@@ -273,6 +298,12 @@ void LimitByTransform::transform(Chunk & chunk)
 
     auto chunk_columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     /// `filterNonConstKeys` removed all grouping keys, so every row in this chunk
     /// belongs to one logical group and can be processed as one run.
     if (data.type == AggregatedDataVariants::Type::without_key)
@@ -307,6 +338,15 @@ void LimitByTransform::transform(Chunk & chunk)
             case AggregatedDataVariants::Type::without_key:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AggregatedDataVariants type in LimitByTransform::transform");
         }
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_after_loop_pause);
+
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("LimitByTransform"), "Cancelled after processing chunk");
+        stopReading();
+        return;
     }
 
     /// No row from this chunk survived `LIMIT BY`.
@@ -384,6 +424,12 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
     auto chunk_columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     Columns normalized_grouping_key_columns;
     normalized_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)
@@ -401,8 +447,22 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
     UInt64 current_run_start_row = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
+
+    size_t run_count = 0;
     while (current_run_start_row < row_count)
     {
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
+            stopReading();
+            return;
+        }
+
+        if (run_count == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_mid_loop_pause);
+
         const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
         processRun(current_run_start_row, run_end - current_run_start_row);
 
@@ -410,12 +470,22 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         if (run_end != row_count)
             current_group_rows_seen = 0;
         current_run_start_row = run_end;
+        ++run_count;
     }
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping
     /// keys this is a no-op (nothing to remember).
     rememberLastGroupingKey(normalized_grouping_key_columns, row_count - 1);
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_after_loop_pause);
+
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled after processing runs");
+        stopReading();
+        return;
+    }
 
     /// No row from this chunk survived.
     if (output_slices.empty())

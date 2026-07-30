@@ -102,10 +102,12 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
 
-    /// Mirror the real engine: validate before instantiating, since creators assume
-    /// already-validated arguments (e.g. `set` dereferences its first argument).
+    /// validate() must run before get(): index creators assume their arguments were already
+    /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
+    /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
+    /// Well-formed but unimplemented types are rejected here (validate accepts them).
     auto index_helper = MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
     if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
