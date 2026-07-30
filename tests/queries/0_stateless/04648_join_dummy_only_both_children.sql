@@ -1,10 +1,5 @@
--- Two sibling joins that produce no real output columns (e.g. under `count()`) each emit the
--- constant marker column `__join_result_dummy`. When both become children of one enclosing join,
--- both child headers carry that identical name, and `buildPhysicalJoinImpl` used to resolve both
--- to the SAME `ActionsDAG` input node, leaving the right side of the enclosing join with an empty
--- sample block and aborting on a LOGICAL_ERROR in `ConstantJoin::addBlockToJoin`.
--- The reordering-disabled regimes (`query_plan_optimize_join_order_limit` 0 and 1) are what keep
--- both children dummy-only; the setting is randomized in CI, so it is pinned per statement here.
+-- `query_plan_optimize_join_order_limit` is randomized in CI, and only 0 and 1 keep both children
+-- of the enclosing join dummy-only, so it is pinned per statement.
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -29,8 +24,8 @@ INSERT INTO t5 VALUES (9, 10), (11, 12), (13, 14);
 
 SELECT 'both children dummy-only';
 
--- Aborted before the fix. The expected value is the one the default (reordered) plan already
--- returns, so these assert correctness, not merely the absence of an abort.
+-- Aborted before the fix. Expected values match the default reordered plan below, so these assert
+-- correctness and not just the absence of an abort.
 SELECT count() FROM t1, t2, t3, t4 WHERE (t1.b = t2.b) AND (t3.a = t4.a)
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
@@ -62,19 +57,14 @@ SELECT count() FROM t1, t2, t3, t4, t5 WHERE (t1.b = t2.b) AND (t3.a = t4.a);
 SELECT 'shapes that keep real output columns';
 
 -- Negative controls: the enclosing join's two child headers share no column name, so each name's
--- queue holds exactly one input node and the mapping resolves identically before and after the fix.
--- Minting is not conditioned on join kind: measured with `EXPLAIN input_headers = 1,
--- keep_logical_steps = 1`, the next two shapes still mint `__join_result_dummy`, but only into the
--- left child header (beside the real column `__table3.a`), while the right child carries
--- `__table4.a`. The third shape mints no marker at all (`__table1.c` / `__table4.c`).
+-- queue holds one input node and resolves identically with and without the fix.
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.b = t2.b, t3 LEFT JOIN t4 ON t3.a = t4.a
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
 SELECT count() FROM t1 JOIN t2 ON t1.b = t2.b CROSS JOIN t3 JOIN t4 ON t3.a = t4.a
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
--- A derived table projects a real column, so the enclosing join's children are named after their
--- own table expressions (measured: `__table1.c` and `__table4.c`) instead of the shared marker.
+-- A derived table projects a real column, so neither child is dummy-only.
 SELECT count() FROM (SELECT count() AS c FROM t1, t2 WHERE t1.b = t2.b) AS x,
                     (SELECT count() AS c FROM t3, t4 WHERE t3.a = t4.a) AS y
 SETTINGS query_plan_optimize_join_order_limit = 0;
