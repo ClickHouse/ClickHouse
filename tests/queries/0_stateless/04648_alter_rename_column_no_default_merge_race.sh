@@ -17,19 +17,37 @@ set -e
 # CompactionStatistics::getMaxSourcePartBytesForMutation, and `SYSTEM STOP MERGES` cannot substitute
 # for it because it aborts the explicit OPTIMIZE too ("Cancelled merging parts").
 #
-# The failpoint is server-global, but no assertion waits for the mutation, so a concurrent test
-# toggling it cannot make this test fail: `system.parts_columns` records whether the merge kept a
-# physical column for the rename target, which is decided by the merge itself and is stable from the
-# moment OPTIMIZE returns. If the failpoint is cleared mid-window the rename materializes early and
-# the merge no longer sees the race, which costs coverage for that run but cannot turn a correct
-# server red. Same trade-off as 03830_vertical_merge_inject_column_after_drop, which is untagged.
+# The failpoint is server-global, so a concurrent copy of this test can clear it mid-window. That
+# only ever costs coverage here, never a red: every assertion reads `system.parts_columns`, which
+# records what the merge itself decided and is stable from the moment OPTIMIZE returns. An early
+# release has exactly two observable effects, and both are handled explicitly - the rename may
+# materialize before the merge (so the assertions must accept the materialized shape too), and it may
+# materialize on only some source parts (so OPTIMIZE legitimately refuses a mixed mutation version,
+# which `optimize_or_skip` below turns into a skip). Same trade-off as
+# 03830_vertical_merge_inject_column_after_drop, which is untagged.
 #
-# Every assertion here is about what a merge decided, so each OPTIMIZE runs with
+# Every assertion is about what a merge decided, so OPTIMIZE always runs with
 # `optimize_throw_if_noop = 1`: a silently skipped merge would otherwise read as a lost column.
 disable_failpoint() {
     ${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null || true
 }
 trap disable_failpoint EXIT
+
+# A concurrent copy of this test clearing the server-global failpoint lets the pending rename
+# materialize on only some of the source parts, and OPTIMIZE then legitimately refuses to merge parts
+# with different mutation versions. Return non-zero for that one reason so the phase can skip, and
+# keep failing on every other refusal - that is what `optimize_throw_if_noop = 1` is for.
+optimize_or_skip() {
+    local table="$1" err
+    if err=$(${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE ${table} FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1); then
+        return 0
+    fi
+    case "$err" in
+        *"have different mutation version"*) return 1 ;;
+    esac
+    echo "FAIL (${table}): OPTIMIZE did not run: ${err}"
+    exit 1
+}
 
 # For a column with no default, dropping it from the merged part is the data loss - there is nothing
 # left to refill it from. Require both that the merged part still carries the column and that it
@@ -62,9 +80,10 @@ ${CLICKHOUSE_CLIENT} --query="
     INSERT INTO t_rename_no_default SELECT number, 'payload_value_' || toString(number) FROM numbers(500, 500);
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
-    OPTIMIZE TABLE t_rename_no_default FINAL SETTINGS optimize_throw_if_noop = 1;
 "
-assert_kept t_rename_no_default d1 5000 "String, no default"
+if optimize_or_skip t_rename_no_default; then
+    assert_kept t_rename_no_default d1 5000 "String, no default"
+fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default"
 
@@ -83,9 +102,10 @@ ${CLICKHOUSE_CLIENT} --query="
     INSERT INTO t_rename_no_default_dynamic SELECT number, number, NULL FROM numbers(9, 3);
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 0;
-    OPTIMIZE TABLE t_rename_no_default_dynamic FINAL SETTINGS optimize_throw_if_noop = 1;
 "
-assert_kept t_rename_no_default_dynamic d1 1 "Dynamic, no default"
+if optimize_or_skip t_rename_no_default_dynamic; then
+    assert_kept t_rename_no_default_dynamic d1 1 "Dynamic, no default"
+fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_dynamic"
 
@@ -106,27 +126,37 @@ ${CLICKHOUSE_CLIENT} --query="
     ALTER TABLE t_rename_no_default_reuse RENAME COLUMN a TO b SETTINGS alter_sync = 0;
     ALTER TABLE t_rename_no_default_reuse ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0;
     SYSTEM START MERGES t_rename_no_default_reuse;
-    OPTIMIZE TABLE t_rename_no_default_reuse FINAL SETTINGS optimize_throw_if_noop = 1;
 "
+optimize_or_skip t_rename_no_default_reuse || true
 # The two ALTERs have to take effect as one step. A merge that runs between them sees no live a, so it
-# correctly materializes a physical b that the later re-add cannot remove, and the assertion below
-# would then read ['a','b'] on a correct server. STOP MERGES closes that window, as in phases 4 and 5.
+# correctly materializes a physical b that the later re-add cannot remove. STOP MERGES closes that
+# window, as in phases 4 and 5.
 #
-# This is the only negative assertion, so it holds only while the rename is genuinely still pending:
-# once it materializes, a physical b is correct. Skip it in that case rather than fail, so a
-# concurrent test clearing the failpoint costs coverage instead of turning a correct server red.
-pending=$(${CLICKHOUSE_CLIENT} --query="
-    SELECT min(is_done) = 0 FROM system.mutations
-    WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse'")
-if [ "$pending" = "1" ]; then
-    cols=$(${CLICKHOUSE_CLIENT} --query="
-        SELECT arraySort(groupArray(DISTINCT column)) FROM system.parts_columns
+# Assert the values rather than the physical column set. Which columns a part stores is not stable
+# here: while the rename is pending only a exists, and once it materializes a part legitimately holds
+# both b and the re-added a, so no predicate over `system.parts_columns` can tell the correct shapes
+# apart from the defect. A mutation-progress probe cannot fix that either - it aggregates over every
+# mutation on the table, so an unrelated pending one makes it claim this rename is unfinished after it
+# has materialized.
+#
+# What the defect costs is b's data: over-applying the keep-alive lets the re-added a claim the
+# physical column, so the merge rewrites it from a's default and the pre-rename values are gone. That
+# holds whether or not the rename has materialized, so assert exactly it.
+#
+# Deliberately not asserted: while the rename is still pending, reading logical a also returns b's
+# data instead of a's default. That is a read-path defect that reproduces on master with no merge at
+# all, so it is out of scope here and is tracked separately.
+wrong=$(${CLICKHOUSE_CLIENT} --query="
+    SELECT countIf(b NOT IN ('AAA', 'BBB', 'CCC', 'DDD'))
+    FROM t_rename_no_default_reuse")
+if [ "$wrong" != "0" ]; then
+    echo "FAIL (rename target reused): the merge lost b's data to the re-added a"
+    ${CLICKHOUSE_CLIENT} --query="SELECT id, b, a FROM t_rename_no_default_reuse ORDER BY id"
+    ${CLICKHOUSE_CLIENT} --query="
+        SELECT name, column, column_data_uncompressed_bytes FROM system.parts_columns
         WHERE database = currentDatabase() AND table = 't_rename_no_default_reuse' AND active
-          AND column IN ('a', 'b')")
-    if [ "$cols" != "['a']" ]; then
-        echo "FAIL (rename target reused): while the rename is pending the merged part should physically hold only a, got $cols"
-        exit 1
-    fi
+        ORDER BY name, column"
+    exit 1
 fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_reuse"
@@ -180,9 +210,10 @@ ${CLICKHOUSE_CLIENT} --query="
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     ALTER TABLE t_rename_no_default_patch_rename RENAME COLUMN a TO b SETTINGS alter_sync = 0;
     SYSTEM START MERGES t_rename_no_default_patch_rename;
-    OPTIMIZE TABLE t_rename_no_default_patch_rename FINAL SETTINGS optimize_throw_if_noop = 1;
 "
-assert_kept t_rename_no_default_patch_rename b 1 "patch-only column, rename target"
+if optimize_or_skip t_rename_no_default_patch_rename; then
+    assert_kept t_rename_no_default_patch_rename b 1 "patch-only column, rename target"
+fi
 disable_failpoint
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE t_rename_no_default_patch_rename"
 
