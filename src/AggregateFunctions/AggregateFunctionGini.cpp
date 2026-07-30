@@ -21,6 +21,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
@@ -44,8 +45,13 @@ struct AggregateFunctionGiniData
     void add(Float64 x)
     {
         /// Skip NaNs as they are not compatible with comparison sorting.
-        if (!isNaN(x))
-            array.push_back(x);
+        if (isNaN(x))
+            return;
+
+        if (x < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support negative values");
+
+        array.push_back(x);
     }
 
     void merge(const AggregateFunctionGiniData & rhs)
@@ -157,7 +163,7 @@ void registerAggregateFunctionGini(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGini(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) of a numeric column, a measure of inequality in a distribution.
+Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) of a column of non-negative numeric values, a measure of inequality in a distribution.
 
 The result ranges from `0` (perfect equality: all values are the same) to a maximum approaching `1` as `n` grows (perfect inequality: one value holds everything and the rest are zero). For a finite sample of `n` values the maximum is `(n - 1) / n`.
 
@@ -165,7 +171,7 @@ To get the exact value, all the passed values are collected and then sorted. The
     )";
     FunctionDocumentation::Syntax syntax = "gini(expr)";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression resulting in a numeric data type.", {"(U)Int*", "Float*", "Decimal"}}
+        {"expr", "Expression resulting in non-negative numeric values.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"The Gini coefficient, or `NaN` if there are fewer than 2 values or the sum of the values is 0.", {"Float64"}};
@@ -196,7 +202,8 @@ SELECT gini(x) FROM (SELECT number AS x FROM numbers(10));
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("gini", {createAggregateFunctionGini, documentation});
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    factory.registerFunction("gini", {createAggregateFunctionGini, documentation, properties});
 }
 
 }

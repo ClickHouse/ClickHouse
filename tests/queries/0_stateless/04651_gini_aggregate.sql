@@ -23,14 +23,17 @@ SELECT gini(x) FROM (SELECT 1 AS x) WHERE 0;
 -- Sum of values is 0 -> NaN.
 SELECT gini(x) FROM (SELECT number - 5 AS x FROM numbers(11));
 
--- Negative values are allowed (as long as the sum is non-zero).
-SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x;
+-- Negative values are rejected.
+SELECT gini(x) FROM (SELECT [10, 20, -5] :: Array(Int32) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 
 -- NaN inputs are skipped.
 SELECT gini(x) FROM (SELECT [1, 2, nan, 4] :: Array(Float64) AS arr) ARRAY JOIN arr AS x;
 
 -- Nullable input.
 SELECT gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+
+-- An all-NULL nullable input is treated as no values.
+SELECT gini(x) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (
