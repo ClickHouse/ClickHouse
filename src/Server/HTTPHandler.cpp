@@ -530,7 +530,11 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in;
-    if (has_external_data)
+    /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
+    /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
+    /// body is delimited only by the connection close, while `executeQuery` reads the query text ahead up to
+    /// `max_query_size`, so it would wait for a client that is itself waiting for the response.
+    if (has_external_data || !feeds_request_body_to_query)
     {
         in = std::move(in_param);
         in_post_maybe_compressed.reset();

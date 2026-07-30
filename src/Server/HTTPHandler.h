@@ -67,12 +67,25 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
-    /// Set by SQL-defined handlers whose query can consume the request body (see `SQLDefinedHandler`).
-    void setConsumesRequestBody(bool value) { consumes_request_body = value; }
+    /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
+    /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
+    /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+    void setConsumesRequestBody(bool value)
+    {
+        consumes_request_body = value;
+        feeds_request_body_to_query = value;
+    }
 
 private:
     String introspection_handler_name;
+
+    /// Whether a body-carrying method must come with a length up front. Defaults to `false`: for the handlers that
+    /// do not set it, only `POST` requires the length, as it did before SQL-defined handlers existed.
     bool consumes_request_body = false;
+
+    /// Whether the request body is appended to the query text. Defaults to `true` - the historical behavior, where
+    /// the body is the continuation of the `query` parameter or the data of an `INSERT`.
+    bool feeds_request_body_to_query = true;
 
     struct Output
     {
