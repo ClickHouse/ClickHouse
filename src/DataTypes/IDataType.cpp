@@ -276,7 +276,7 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto info = getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto info = getSerializationInfo(*column);
     auto data = SubstreamData(getSerialization(*info)).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->column : nullptr;
@@ -284,7 +284,7 @@ ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const Colu
 
 ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto info = getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto info = getSerializationInfo(*column);
     auto data = SubstreamData(getSerialization(*info)).withType(getPtr()).withColumn(column);
     return getSubcolumnData(subcolumn_name, data, {}, true)->column;
 }
@@ -330,6 +330,11 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);
+}
+
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
+{
+    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
