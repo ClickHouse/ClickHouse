@@ -2204,6 +2204,10 @@
     "source": "/cloud/security/scim-setup"
   },
   {
+    "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+    "source": "/cloud/security/scim-setup-entra"
+  },
+  {
     "destination": "/products/cloud/guides/data-sources/accessing-s3-data-securely",
     "source": "/cloud/security/secure-s3"
   },
