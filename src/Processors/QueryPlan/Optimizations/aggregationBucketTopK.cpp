@@ -1,6 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
@@ -34,14 +35,24 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
 
 size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
 {
-    /// The shape: Sorting (with a pushed-down limit, by one plain column) over zero or more
-    /// pass-through expressions over a final aggregation, and the sort column is the
-    /// aggregation's lone-`count()` output. `LIMIT WITH TIES` and `exact_rows_before_limit`
-    /// leave the sorting's limit unset and never match; `HAVING`, `WITH TOTALS`, `LIMIT BY`
-    /// and windows sit between the aggregation and the sorting as their own steps and break
-    /// the adjacency.
-    const auto * sorting = typeid_cast<SortingStep *>(parent_node->step.get());
-    if (!sorting || parent_node->children.size() != 1)
+    /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
+    /// or more pass-through expressions over a final aggregation, and the sort column is the
+    /// aggregation's lone-`count()` output. `HAVING`, `WITH TOTALS`, `LIMIT BY` and windows sit
+    /// between the aggregation and the sorting as their own steps and break the adjacency.
+    const auto * limit = typeid_cast<LimitStep *>(parent_node->step.get());
+    if (!limit || parent_node->children.size() != 1)
+        return 0;
+
+    /// The per-bucket selection permanently drops the other groups, so it cannot serve
+    /// `LIMIT WITH TIES` (the output size is not known in advance) or an exact
+    /// `rows_before_limit_at_least` (`alwaysReadTillEnd`): the counter runs downstream of the
+    /// conversion and would report the kept rows instead of the full group count.
+    if (limit->withTies() || limit->alwaysReadTillEnd())
+        return 0;
+
+    QueryPlan::Node * sorting_node = parent_node->children.front();
+    const auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting || sorting_node->children.size() != 1)
         return 0;
 
     const size_t n = sorting->getLimit();
@@ -55,7 +66,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     String column = description.front().column_name;
     const bool ascending = description.front().direction > 0;
 
-    QueryPlan::Node * node = parent_node->children.front();
+    QueryPlan::Node * node = sorting_node->children.front();
     while (const auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
     {
         const String * traced = traceThroughExpression(*expression, column);
