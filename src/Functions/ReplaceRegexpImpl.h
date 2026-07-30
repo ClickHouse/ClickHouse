@@ -207,8 +207,8 @@ struct ReplaceRegexpImpl
                     res_data.resize(res_data.size() + replacement.size());
                     memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
-                    units_since_charge += 1 + replacement.size() / budget.bytes_per_unit;
-                    if (units_since_charge >= budget.units_per_instruction_charge)
+                    units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
+                    if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
                     {
                         budget.chargeUnits(units_since_charge);
                         units_since_charge = 0;
@@ -216,7 +216,7 @@ struct ReplaceRegexpImpl
                 }
 
                 /// This iteration, whatever the loop has not flushed, plus the prefix bytes copied.
-                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / budget.bytes_per_unit);
+                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / ReplaceCancellationBudget::bytes_per_unit);
 
                 if constexpr (replace == ReplaceRegexpTraits::First)
                     can_finish_current_string = true;
@@ -312,8 +312,8 @@ struct ReplaceRegexpImpl
                     if (!replacement.empty())
                         memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
-                    units_since_charge += 1 + replacement.size() / budget.bytes_per_unit;
-                    if (units_since_charge >= budget.units_per_instruction_charge)
+                    units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
+                    if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
                     {
                         budget.chargeUnits(units_since_charge);
                         units_since_charge = 0;
@@ -321,7 +321,7 @@ struct ReplaceRegexpImpl
                 }
 
                 /// See `processString`.
-                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / budget.bytes_per_unit);
+                budget.chargeUnits(1 + units_since_charge + bytes_to_copy / ReplaceCancellationBudget::bytes_per_unit);
 
                 if constexpr (replace == ReplaceRegexpTraits::First)
                     can_finish_current_string = true;
