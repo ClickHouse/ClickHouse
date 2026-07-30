@@ -10,8 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # CLICKHOUSE_URL_PARAMS from the same draw as CLICKHOUSE_CLIENT_OPT - so the pins and the hostile
 # arms below behave identically either way.
 #
-# Every fixture row is inserted with `VALUES`, not `SELECT <constants>`. Both write one level-0 part
-# per statement, but `INSERT ... SELECT` builds a query pipeline sized by `max_threads`
+# Every fixture row is inserted with `VALUES`, not `SELECT <constants>`. Both write one part per
+# statement, but `INSERT ... SELECT` builds a query pipeline sized by `max_threads`
 # (InterpreterInsertQuery.cpp:135-139), so a single-row insert fans out to one thread per core:
 # measured 150 threads and 69 s of server CPU per test run, against 2 threads and 0.06 s for `VALUES`.
 #
