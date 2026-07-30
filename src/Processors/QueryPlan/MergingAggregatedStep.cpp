@@ -90,8 +90,28 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
     group_by_sort_description = std::move(input_sort_description);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    /// Update values from settings if plan was deserialized.
+    /// An optimizer rewrite can build this step from the params of a deserialized `AggregatingStep`,
+    /// which carries the "resolve locally later" sentinel 0 for both thread counts.
+    if (max_threads == 0)
+        max_threads = settings.max_threads;
+    if (params.max_threads == 0)
+        params.max_threads = settings.max_threads;
+
+    /// The `memory_efficient_merge_threads` sentinel is defensive: no route reaches it today.
+    /// `applyParallelReplicas` hardcodes `memory_efficient_aggregation = false`, and
+    /// `makeDistributed` - the only rewrite that forwards
+    /// `distributed_aggregation_memory_efficient` - is mutually exclusive with parallel replicas
+    /// by an explicit `SUPPORT_IS_DISABLED` throw. Kept for symmetry with
+    /// `AggregatingStep::updateThreadsValues`, so a future rewrite that does forward the setting
+    /// does not leave the sentinel unresolved.
+    if (memory_efficient_merge_threads == 0)
+        memory_efficient_merge_threads = settings.aggregation_memory_efficient_merge_threads;
+    if (memory_efficient_merge_threads == 0)
+        memory_efficient_merge_threads = max_threads;
+
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
