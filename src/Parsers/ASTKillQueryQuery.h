@@ -3,6 +3,8 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -36,6 +38,8 @@ public:
     }
 
     String getID(char) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     /// `getID` folds only `where_expression` (which is also part of `children`) and `sync`; `type`
     /// (`QUERY` / `MUTATION` / `PART_MOVE_TO_SHARD` / `TRANSACTION`), `test`, and the `ON CLUSTER`

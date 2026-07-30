@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 #include <Common/SipHash.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -117,6 +118,9 @@ public:
             hash_state.update(elem.to.table != nullptr);
         }
     }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {
