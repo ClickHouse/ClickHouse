@@ -1,0 +1,16 @@
+<!-- Dedicated baseline for the async insert queue route of INSERT ... SELECT (see
+     InterpreterInsertQuery::addInsertToSelectPipeline and AsyncInsertQueueTransform), so a
+     regression in that specific route is not masked by every other insert test, which does not
+     set async_insert explicitly and mostly exercises the bulk, pass-through shape instead. -->
+<test>
+    <settings>
+        <async_insert>1</async_insert>
+        <wait_for_async_insert>1</wait_for_async_insert>
+    </settings>
+
+    <create_query>CREATE TABLE insert_select_async_insert_queue (n UInt64) ENGINE = MergeTree ORDER BY n</create_query>
+
+    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100)</query>
+
+    <drop_query>DROP TABLE IF EXISTS insert_select_async_insert_queue</drop_query>
+</test>

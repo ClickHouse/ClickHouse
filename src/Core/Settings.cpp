@@ -5564,6 +5564,11 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
+
+With async_insert, pair this with an explicit max_insert_threads setting: the optimization caps
+the SELECT to max_insert_threads reading threads, and once capped to one thread the SELECT
+normally produces a single block, which stops being eligible for the async insert queue as soon
+as a second block appears.
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
 Allow to execute alters which affects not only tables metadata, but also data on disk

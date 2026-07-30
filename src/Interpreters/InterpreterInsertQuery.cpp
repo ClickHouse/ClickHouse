@@ -23,7 +23,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/AsyncInsertSelectSource.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -39,6 +38,7 @@
 #include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/AsyncInsertQueueTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -104,6 +104,8 @@ namespace Setting
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 async_insert_max_data_size;
+    extern const SettingsSeconds wait_for_async_insert_timeout;
 }
 
 namespace MergeTreeSetting
@@ -443,7 +445,24 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
     return query_sample_block;
 }
 
-QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
+/// Follows `StorageAlias` and a directly-inserted-into `StorageMaterializedView` to the engine
+/// that actually writes, since neither builds its own sink (`StorageMaterializedView`'s
+/// direct-insert sink is unreachable; `StorageAlias::isMergeTree` already delegates on its own).
+/// Bounded depth guards against a malformed alias/view cycle.
+static bool destinationIsMergeTreeFamily(StoragePtr table)
+{
+    for (size_t depth = 0; depth < 8 && table; ++depth)
+    {
+        if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+            table = mv->getTargetTable();
+        else
+            break;
+    }
+    return table && table->isMergeTree();
+}
+
+QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
+    ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline, bool add_async_insert_queue_transform)
 {
     auto context = getContext();
 
@@ -458,6 +477,23 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     }
 
     auto query_sample_block = convertSelectToInsertSchema(pipeline, query, table, context, no_destination, allow_materialized);
+    /// Captured before `query_sample_block` is moved into `insert_dependencies` below, so a block
+    /// diverted to the async queue can freeze the column list it was resolved against (see the
+    /// comment on `AsyncInsertQueueTransform`'s insertion point).
+    Names insert_column_names = query_sample_block.getNames();
+    /// `convertSelectToInsertSchema` widens columns to `Nullable` under `insert_null_as_default`;
+    /// the queue flush has no defaults step to undo that widening, so such a query keeps using the
+    /// sink chain below instead of the queue. Computed only when the queue route is even a
+    /// candidate, so the synchronous path never pays for this comparison.
+    bool needs_null_default_sync = false;
+    if (add_async_insert_queue_transform)
+    {
+        /// Named handle: converting a temporary `StorageMetadataHandle` to `StorageMetadataPtr` is deleted.
+        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        needs_null_default_sync = !blocksHaveEqualStructure(
+            query_sample_block,
+            getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
+    }
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
@@ -476,7 +512,14 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         select_query_sorted, context->getSettingsRef(),
         context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
 
-    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
+    /// Pin the decision whenever the queue route is possible, so it deduplicates the same as the sync
+    /// route: the queue flush otherwise resolves it through `async_insert_deduplicate` instead.
+    const bool deduplication_differs_from_sync_default
+        = deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef());
+    const bool deduplication_differs_from_async_default = add_async_insert_queue_transform
+        && deduplicate_insert_select != isDeduplicationEnabledForInsert(true, context->getSettingsRef());
+
+    if (deduplication_differs_from_sync_default || deduplication_differs_from_async_default)
     {
         auto tmp_context = Context::createCopy(context);
         overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
@@ -489,6 +532,23 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         context);
 
     const auto & settings = context->getSettingsRef();
+
+    /// Divert a single small block to the async insert queue instead of the sink chain below.
+    /// `createChainWithDependenciesForAllStreams` runs unconditionally right below, before the
+    /// transform's runtime decision, so a diverted block leaves that chain built but unfed; the
+    /// caller already restricts `add_async_insert_queue_transform` to side-effect-free destinations.
+    /// Views are excluded wholesale here rather than resolved per view target, for the same reason.
+    if (add_async_insert_queue_transform && !needs_null_default_sync && !insert_dependencies->isViewsInvolved())
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<AsyncInsertQueueTransform>(
+                in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
+                settings[Setting::async_insert_max_data_size],
+                settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+        });
+    }
+
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
     if (!squash_with_strict_limits)
@@ -639,7 +699,7 @@ bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
     return false;
 }
 
-QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
+QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
@@ -669,7 +729,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     /// resizes to 1 stream regardless.
     select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
-    return addInsertToSelectPipeline(query, table, pipeline);
+    return addInsertToSelectPipeline(query, table, pipeline, add_async_insert_queue_transform);
 }
 
 
@@ -921,16 +981,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     const size_t insert_threads
         = (async_insert || dedup_single_stream || serial_hidden_views || sequential_quorum_insert) ? 1 : max_insert_threads;
-    auto insert_dependencies = forced_insert_dependencies
-        ? forced_insert_dependencies
-        : InsertDependenciesBuilder::create(
-            table,
-            query_ptr,
-            query_sample_block,
-            async_insert,
-            /*skip_destination_table*/ no_destination,
-            insert_threads,
-            context);
+    auto insert_dependencies = InsertDependenciesBuilder::create(
+        table,
+        query_ptr,
+        query_sample_block,
+        async_insert,
+        /*skip_destination_table*/ no_destination,
+        insert_threads,
+        context);
 
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
@@ -1322,19 +1380,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (!res.pipeline.initialized())
         {
             /// All distributed and parallel-replica routes were rejected above, so this is a plain
-            /// local INSERT ... SELECT. Route it through the async insert queue when async inserts
-            /// are enabled, otherwise build the normal synchronous pipeline.
+            /// local INSERT ... SELECT. The async insert queue cannot serve a transaction, a
+            /// non-parallel quorum, the `CREATE TABLE ... AS SELECT` populate
+            /// (`skip_target_insert_access_check`), a remote destination, or a table function
+            /// (`getTable` re-resolves it on the flush thread, in a different context).
             auto * async_insert_queue = context->tryGetAsynchronousInsertQueue();
-            // Transactions and non-parallel quorum cannot be served by the async queue: queue flushes
-            // are not transactional, and non-parallel quorum requires synchronous coordination. The
-            // async queue also cannot honor skip_target_insert_access_check (the CREATE TABLE ... AS
-            // SELECT populate into a temporary _tmp_replace_* table), so it would re-check INSERT on
-            // the temporary name and fail with ACCESS_DENIED. A remote destination (isRemote(), e.g.
-            // Distributed) needs its own write handling rather than a single local sink, so it is
-            // excluded too. A table function destination is excluded as well: `getTable` re-analyzes
-            // `query.select` for a structure hint on the flush thread, whose context has a different
-            // current database, so it fails or resolves wrongly. Fall back to the synchronous
-            // pipeline silently.
             const bool in_transaction =
                 context->getCurrentTransaction() != nullptr
                 || settings[Setting::implicit_transaction];
@@ -1342,17 +1392,15 @@ BlockIO InterpreterInsertQuery::execute()
                 settings[Setting::insert_quorum].valueOr(0) > 1
                 || settings[Setting::insert_quorum].is_auto;
             const bool non_parallel_quorum = quorum_is_enabled && !settings[Setting::insert_quorum_parallel];
-            const bool async_insert_select = async_insert_queue
+            const bool add_async_insert_queue_transform = async_insert_queue
                 && (settings[Setting::async_insert] || table->areAsynchronousInsertsEnabled())
+                && destinationIsMergeTreeFamily(table)
                 && !in_transaction
                 && !non_parallel_quorum
                 && !skip_target_insert_access_check
                 && !table->isRemote()
                 && !query.table_function;
-            if (async_insert_select)
-                buildAsyncInsertSelectPipeline(res, query, query_ptr, table, async_insert_queue, context, settings, logger);
-            else
-                res.pipeline = buildInsertSelectPipeline(query, table);
+            res.pipeline = buildInsertSelectPipeline(query, table, add_async_insert_queue_transform);
         }
     }
     else
