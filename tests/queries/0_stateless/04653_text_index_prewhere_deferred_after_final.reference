@@ -1,0 +1,5 @@
+= deferred prewhere is not rewritten to a direct index read =
+0
+1
+= the filter sees post-FINAL rows only =
+2
