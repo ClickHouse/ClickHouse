@@ -89,7 +89,7 @@ Translates the given text into the specified target language using an LLM provid
 
 Additional style or dialect instructions may be passed as a fourth argument (e.g. `'keep technical terms untranslated'`).
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
         .syntax = "aiTranslate(collection, text, target_language[, instructions[, temperature]])",
         .arguments = {

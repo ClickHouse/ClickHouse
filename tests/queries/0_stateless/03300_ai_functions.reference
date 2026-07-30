@@ -6,7 +6,10 @@ aiGenerate
 -- Named collection missing provider
 -- Named collection missing endpoint
 -- Named collection missing model
--- Named collection missing api_key
+-- Named collection without api_key resolves
+0
+-- Named collection without api_key reaches HTTP path
+0
 -- Nonexistent named collection
 -- aiGenerate return type
 result	String

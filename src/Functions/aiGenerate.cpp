@@ -85,7 +85,7 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
         .syntax = "aiGenerate(collection, prompt[, system_prompt[, temperature]])",
         .arguments
