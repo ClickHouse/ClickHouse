@@ -47,15 +47,20 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE log_comment = '04653_cell_a' AND type != 'QueryStart'
-        AND initial_query_id IN (
+        AND initial_query_id = (
             SELECT query_id FROM system.query_log
-            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a' AND is_initial_query));
+            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a'
+              AND is_initial_query AND type != 'QueryStart'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1));
 
 -- The seed must be the DERIVED value, not merely one value: a constant seed would also be unique within a
 -- query and across replicas.
--- `system.query_log` is server-global and append-only, so every expected-seed lookup below is ordered and takes
--- the NEWEST matching row: a stress thread runs with a fixed `--database`, so the same test can appear there
--- repeatedly and an unordered single-row pick could hash a previous run's query id.
+-- `system.query_log` is server-global and append-only, and the runner re-runs a failed test in the supplied
+-- database without cleaning it (a transient failure such as the global memory tracker firing is retried), so one
+-- database can hold several attempts of this test. Both the expected side and the observed side below are
+-- therefore scoped to the NEWEST initiator: an unscoped observed side would see one derived seed per attempt, and
+-- an unordered single-row pick on the expected side could hash a previous attempt's query id.
 SELECT 'cell A seed equals hash of initial query id', (
     SELECT groupUniqArray(extract(message, 'seed (\\d+)'))
     FROM system.text_log
@@ -64,9 +69,12 @@ SELECT 'cell A seed equals hash of initial query id', (
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04653_cell_a' AND type != 'QueryStart'
-            AND initial_query_id IN (
+            AND initial_query_id = (
                 SELECT query_id FROM system.query_log
-                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a' AND is_initial_query))
+                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a'
+                  AND is_initial_query AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1))
 ) = (
     SELECT [toString(greatest(sipHash64(query_id), 2))]
     FROM system.query_log
@@ -83,9 +91,12 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE log_comment = '04653_cell_a' AND type != 'QueryStart'
-        AND initial_query_id IN (
+        AND initial_query_id = (
             SELECT query_id FROM system.query_log
-            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a' AND is_initial_query));
+            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a'
+              AND is_initial_query AND type != 'QueryStart'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1));
 
 -- Cell B (must-not-change control): an explicit seed above 1 is still used verbatim, and different explicit
 -- seeds still produce different join orders, so the randomization keeps its coverage.
@@ -162,9 +173,12 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE log_comment = '04653_cell_c' AND type != 'QueryStart'
-        AND initial_query_id IN (
+        AND initial_query_id = (
             SELECT query_id FROM system.query_log
-            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
+            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+              AND is_initial_query AND type != 'QueryStart'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1));
 
 -- The replicas must have agreed on the DERIVED value, not merely on some value. Each replica has its own
 -- `query_id`, so hashing the initial one is what makes them agree.
@@ -176,9 +190,12 @@ SELECT 'cell C seed equals hash of initial query id', (
       AND query_id IN (
           SELECT query_id FROM system.query_log
           WHERE log_comment = '04653_cell_c' AND type != 'QueryStart'
-            AND initial_query_id IN (
+            AND initial_query_id = (
                 SELECT query_id FROM system.query_log
-                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query))
+                WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+                  AND is_initial_query AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1))
 ) = (
     SELECT [toString(greatest(sipHash64(query_id), 2))]
     FROM system.query_log
@@ -195,9 +212,12 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE log_comment = '04653_cell_c' AND type != 'QueryStart'
-        AND initial_query_id IN (
+        AND initial_query_id = (
             SELECT query_id FROM system.query_log
-            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
+            WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+              AND is_initial_query AND type != 'QueryStart'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1));
 
 -- Cell C non-vacuity, part 1: more than one plan construction carried this query's derived seed.
 -- The scope is the seed value itself, computed from the initiator's own `query_log` row, which is
