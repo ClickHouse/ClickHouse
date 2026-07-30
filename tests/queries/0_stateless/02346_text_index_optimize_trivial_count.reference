@@ -7,6 +7,8 @@ Inject trivial count optimization from the text index into the query plan
 750
 750
 750
+750
+0
 0
 -- disabled by query_plan_optimize_count_from_text_index = 0
 0
@@ -45,6 +47,7 @@ AggregatingProjection
 1500
 500
 500
+0
 0
 -- the optimization reads fewer rows: only the unindexed part
 1

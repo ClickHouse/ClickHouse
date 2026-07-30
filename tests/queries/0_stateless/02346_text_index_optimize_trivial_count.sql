@@ -29,7 +29,9 @@ SELECT '-- result matches the normal path';
 SELECT count() FROM tab WHERE hasToken(text, 'alpha');
 SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_optimize_count_from_text_index = 0;
 SELECT count() FROM tab WHERE hasToken(text, 'zeta');
+SELECT count() FROM tab WHERE hasToken(text, 'zeta') SETTINGS query_plan_optimize_count_from_text_index = 0;
 SELECT count() FROM tab WHERE hasToken(text, 'missing');
+SELECT count() FROM tab WHERE hasToken(text, 'missing') SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SELECT '-- disabled by query_plan_optimize_count_from_text_index = 0';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_optimize_count_from_text_index = 0) WHERE explain LIKE '%Trivial count from text index%';
@@ -97,6 +99,7 @@ SELECT count() FROM tab_partial WHERE hasAnyTokens(text, ['alpha', 'zeta']) SETT
 SELECT count() FROM tab_partial WHERE hasAllTokens(text, ['alpha', 'beta']);
 SELECT count() FROM tab_partial WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 SELECT count() FROM tab_partial WHERE hasToken(text, 'missing');
+SELECT count() FROM tab_partial WHERE hasToken(text, 'missing') SETTINGS query_plan_optimize_count_from_text_index = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT '-- the optimization reads fewer rows: only the unindexed part';
