@@ -108,9 +108,40 @@ SELECT (
 -- (a) Cap reached while a sibling port has an empty queue and downstream demand:
 --     the bypass keeps pulling input instead of back-pressuring, which is what the
 --     deadlock fix requires. A single key sends every row to one shard.
+--
+-- Reaching the cap needs 16 shards fed faster than one consumer drains them, so both cap
+-- cases pin what the fan-out depends on: `index_granularity` and `min_bytes_for_wide_part`
+-- on the table, plus the four `merge_tree_*_for_concurrent_read` settings per query. The
+-- randomized values shrink either the read-stream count or the shard queue depth below the
+-- cap. Over the randomized grid the pins keep both branches firing in every cell; dropping
+-- them silently stops at least one branch in 11 of 18 cells, so the preconditions below
+-- assert presence only and cannot replace the pins.
 DROP TABLE IF EXISTS test_106237_cap;
-CREATE TABLE test_106237_cap (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE test_106237_cap (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO test_106237_cap SELECT 7 AS a, number AS b FROM numbers(1000000);
+
+-- Precondition: the bypass case needs both halves of the topology, exactly like the two
+-- deadlock queries above - the sharded transform and the sequential `ConcatProcessor`.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0 AND countIf(explain LIKE '%Concat%') > 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT a, max(s)
+    FROM (
+        SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
+        UNION ALL
+        SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
+    )
+    GROUP BY a
+    ORDER BY a
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
+             max_streams_for_union_step = 1, max_block_size = 1000,
+             max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+             merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1,
+             merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+             merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1
+);
 
 SELECT a, max(s)
 FROM (
@@ -125,7 +156,11 @@ SETTINGS enable_sharding_aggregator = 1,
          max_streams_for_union_step = 1,
          max_block_size = 1000,
          max_rows_to_group_by = 0,
-         enable_parallel_replicas = 0;
+         enable_parallel_replicas = 0,
+         merge_tree_min_rows_for_concurrent_read = 1,
+         merge_tree_min_bytes_for_concurrent_read = 1,
+         merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+         merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1;
 
 -- (b) Cap reached while NO port has an empty queue, which is the only state that reaches
 --     the back-pressure return. Distinct keys spread rows over every shard, so no shard
@@ -134,8 +169,24 @@ SETTINGS enable_sharding_aggregator = 1,
 --     memory bound with no query-visible effect (removing it only changes peak queue
 --     depth, which no SQL oracle exposes).
 DROP TABLE IF EXISTS test_106237_spread;
-CREATE TABLE test_106237_spread (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE test_106237_spread (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO test_106237_spread SELECT number AS a, number AS b FROM numbers(1000000);
+
+-- Precondition: only the transform, because this shape has no `UNION ALL` to narrow and
+-- therefore no `ConcatProcessor` - the back-pressure branch does not need one.
+SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT count(), sum(s)
+    FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 16, max_block_size = 1000,
+             max_rows_to_group_by = 0, enable_parallel_replicas = 0,
+             merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1,
+             merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+             merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1
+);
 
 SELECT count(), sum(s)
 FROM (SELECT a, sum(b) AS s FROM test_106237_spread GROUP BY a)
@@ -143,7 +194,11 @@ SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_block_size = 1000,
          max_rows_to_group_by = 0,
-         enable_parallel_replicas = 0;
+         enable_parallel_replicas = 0,
+         merge_tree_min_rows_for_concurrent_read = 1,
+         merge_tree_min_bytes_for_concurrent_read = 1,
+         merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+         merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1;
 
 DROP TABLE test_106237_spread;
 DROP TABLE test_106237_cap;
