@@ -36,21 +36,21 @@ Pour importer un modèle, vous devez définir une source de données pour chaque
 </div>
 
 <div id="otel-runtime-metrics">
-  ### Métriques runtime OTel
+  ### Métriques d’exécution OTel
 </div>
 
-Les modèles intégrés OTel Runtime Metrics sont conçus pour les applications instrumentées avec les [métriques runtime OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+Les modèles intégrés de métriques d’exécution OTel sont conçus pour les applications instrumentées avec les [métriques d’exécution OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
 
-| Modèle                      | Description                                                                                                                  |
+| Template                    | Description                                                                                                                  |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **.NET Runtime Metrics**    | Collections du GC, taille du tas, utilisation du pool de threads et nombre d’assemblys pour les applications .NET            |
+| **.NET Runtime Metrics**    | Collectes du GC, taille du tas, utilisation du pool de threads et nombre d’assemblys pour les applications .NET              |
 | **Go Runtime Metrics**      | Nombre de goroutines, temps de pause du GC, utilisation du tas et statistiques mémoire pour les applications Go              |
 | **JVM Runtime Metrics**     | Mémoire du tas et hors tas, durée du GC, nombre de threads et chargement des classes pour les applications basées sur la JVM |
-| **Node.js Runtime Metrics** | Latence de la boucle d’événements, utilisation du tas, utilisation du CPU et mémoire V8 pour les applications Node.js        |
+| **Node.js Runtime Metrics** | Délai de la boucle d’événements, utilisation du tas, utilisation du CPU et mémoire V8 pour les applications Node.js          |
 
 Remarques :
 
 * Chaque modèle est configuré avec un [filtre personnalisé](/fr/clickstack/features/dashboards/overview#custom-filters) pour les services dont l’attribut de ressource [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) correspond au runtime du tableau de bord.
-  * Les environnements avec des schémas de tables de métriques ClickHouse personnalisés peuvent devoir ajuster ce filtre pour interroger les bonnes colonnes Service Name et Resource Attributes.
+  * Les environnements avec des schémas de table de métriques ClickHouse personnalisés peuvent devoir ajuster ce filtre pour interroger les colonnes `Service Name` et `Resource Attributes` appropriées.
   * Pour les environnements à fort volume, les temps de chargement des filtres peuvent être réduits en [matérialisant](/fr/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) la colonne `ResourceAttributes['telemetry.sdk.language']`.
-* Les modèles référencent les conventions sémantiques OTel les plus récentes au moment de leur publication et sont mis à jour périodiquement à mesure que la spécification OTel évolue. Pour les services instrumentés avec d’anciens SDK OTel, les visualisations peuvent devoir être [modifiées](/fr/clickstack/features/dashboards/overview#dashboards-editing-visualizations) pour pointer vers d’anciens noms de métriques.
+* Les modèles s’appuient sur les conventions sémantiques OTel les plus récentes au moment de leur publication et sont mis à jour périodiquement à mesure que la spécification OTel évolue. Pour les services instrumentés avec d’anciens SDK OTel, les visualisations peuvent devoir être [modifiées](/fr/clickstack/features/dashboards/overview#dashboards-editing-visualizations) pour faire référence à d’anciens noms de métriques.
