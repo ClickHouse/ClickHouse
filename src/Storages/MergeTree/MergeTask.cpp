@@ -2195,6 +2195,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
+        part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 

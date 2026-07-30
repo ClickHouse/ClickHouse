@@ -1624,6 +1624,14 @@ struct MutationContext
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
+    /// The statistics objects the mutation must compute from the blocks it writes. This is a
+    /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
+    /// source part only to be carried over unchanged, and they belong to columns this mutation
+    /// does not rewrite, so their state is already correct for the new part. Building them
+    /// against a block that happens to contain the column at a different type is what produced
+    /// the "Type mismatch when building statistics" logical error. `MergeTask` makes the same
+    /// distinction through `statistics_to_build_by_part`.
+    ColumnsStatistics statistics_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -1846,8 +1854,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
-        if (!ctx->all_gathered_data.statistics.empty())
-            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
+        if (!ctx->statistics_to_build.empty())
+            ctx->statistics_to_build.buildIfExists(cur_block);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -2331,6 +2339,9 @@ private:
                 /// The zero-copy keep-list uses the logical projection dir name regardless of the on-disk projection layout.
                 hardlinked_files.insert(fs::path(projection_dir) / p_it->name());
             }
+
+            ctx->new_data_part->getDataPartStorage().commitTransaction();
+            ctx->new_data_part->getDataPartStorage().beginTransaction();
         }
 
         /// Tracking of hardlinked files required for zero-copy replication.
@@ -2426,6 +2437,10 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot);
+
+        /// This task rewrites every column, so all statistics objects were created empty from the
+        /// current metadata above and all of them have to be computed.
+        ctx->statistics_to_build = ctx->all_gathered_data.statistics;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2560,6 +2575,17 @@ private:
             *ctx->source_part,
             ctx->metadata_snapshot);
 
+        /// This task rewrites only some of the columns and carries the rest over from the source
+        /// part. Only the statistics `processStatisticsChanges` has just replaced with empty
+        /// objects built from the current metadata may be computed here; every other entry is a
+        /// source-part statistics object to preserve as it is.
+        for (const auto & [stat_name, _] : ctx->stats_to_recalc)
+        {
+            auto it = ctx->all_gathered_data.statistics.find(stat_name);
+            if (it != ctx->all_gathered_data.statistics.end())
+                ctx->statistics_to_build.emplace(stat_name, it->second);
+        }
+
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
@@ -2662,6 +2688,9 @@ private:
                     hardlinked_files.insert(fs::path(projection_dir) / p_it->name());
                 }
             }
+
+            ctx->new_data_part->getDataPartStorage().commitTransaction();
+            ctx->new_data_part->getDataPartStorage().beginTransaction();
         }
 
         /// Tracking of hardlinked files required for zero-copy replication.
