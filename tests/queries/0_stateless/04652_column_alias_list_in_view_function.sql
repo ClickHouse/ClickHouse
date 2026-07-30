@@ -35,7 +35,7 @@ SELECT 1 FROM view(SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t)
 
 -- A regenerated body is always a union nested in a union, so a UNION-bodied CTE reaches the
 -- nested-union dispatch, which used to drop the list its own caller passed. The nested-union row
--- is the one that pins that the list applies to every arm rather than only the first.
+-- pins that the list survives the nested-union dispatch, which is where it used to be dropped.
 SELECT 1 FROM view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT t.x FROM t) ty;
 SELECT 1 FROM view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT x FROM t) ty;
 SELECT 1 FROM view(WITH t(p, q) AS (SELECT 1, 2 UNION ALL SELECT 3, 4) SELECT t.p FROM t) ty;
@@ -58,12 +58,12 @@ SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SE
 -- shrinks those without shrinking the alias list, so re-emitting the list for a resolved subquery
 -- would ship a list longer than the projection. These rows send such a subquery to a shard, where
 -- the regenerated query is parsed again and the count is rechecked.
-DROP TABLE IF EXISTS local_alias_list;
-CREATE TABLE local_alias_list (a UInt8) ENGINE = Memory;
+DROP TABLE IF EXISTS local_alias_list SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE local_alias_list (a UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO local_alias_list VALUES (1);
 SELECT t.p FROM remote('127.0.0.1', currentDatabase(), local_alias_list) d, (SELECT 1, 2) t(p, q) LIMIT 1;
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), local_alias_list) d WHERE d.a IN (SELECT t.p FROM (SELECT 1, 2) t(p, q));
-DROP TABLE local_alias_list;
+DROP TABLE local_alias_list SETTINGS ignore_drop_queries_probability = 0;
 
 -- Controls: these already worked and must not regress.
 SELECT x FROM (SELECT 1) x(x);
