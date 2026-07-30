@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: the vector similarity index is not compiled into the Fast test build.
 -- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
 -- read layer uses a different pool, so the concurrency this test pins would not exist.
@@ -129,12 +129,18 @@ SYSTEM FLUSH LOGS query_log;
 -- EXPLAIN PIPELINE above shows how wide the plan is, not how many threads ran. This reads the three
 -- executed queries instead: each used several threads and a real index search rather than a brute
 -- force scan. Counting to 3 also catches a query whose row is missing altogether.
+-- What keeps the count at exactly 3 is the conjunction of the currentDatabase() scope, the escaped
+-- log_comment prefix and type = 'QueryFinish'. is_internal = 0 is the established idiom for the same
+-- intent (01702_system_query_log.sql, 03148_query_log_used_dictionaries.sql): the AST fuzzer runs in
+-- stress jobs and re-executes mutated clones of these SELECTs under QueryFlags{.internal = true}
+-- while keeping our log_comment, so it is the one other producer that can reach this window.
 SELECT 'threads_and_index',
        countIf(length(thread_ids) > 1) = 3,
        countIf(ProfileEvents['USearchSearchCount'] > 0) = 3
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase() AND type = 'QueryFinish'
+  AND is_internal = 0
   AND log_comment LIKE '02354_vector_search_concurrent_readers\_%';
 
 SELECT 'concurrent_readers_rescoring', sumIf(
