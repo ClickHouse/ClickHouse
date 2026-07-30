@@ -753,7 +753,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
             "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
             "google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
-            ". See https://clickhouse.com/docs/products/cloud/guides/data-sources/accessing-s3-data-securely");
+            ".");
 #else
             ", or enable the setting `s3_allow_server_credentials_in_user_queries`.");
 #endif

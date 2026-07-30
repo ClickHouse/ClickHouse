@@ -393,9 +393,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
                 "restricted for user queries and could not be resolved when the database was loaded from metadata. "
 #if CLICKHOUSE_CLOUD
-                "Recreate the database with an IAM role (aws_role_arn = '...') or explicit catalog credentials. "
-                "See https://clickhouse.com/docs/products/cloud/guides/data-sources/accessing-s3-data-securely. "
-                "Reason: {}",
+                "Recreate the database with explicit catalog credentials (for a Glue catalog, an IAM role via "
+                "aws_role_arn = '...'; for a BigLake catalog, a Google ADC triple). Reason: {}",
 #else
                 "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
 #endif
