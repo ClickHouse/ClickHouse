@@ -62,6 +62,18 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
+    ######################################
+    #      Host metrics (CPU/RAM)        #
+    ######################################
+    # Sample whole-VM CPU and RAM usage in the background while a job runs and
+    # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
+    HOST_METRICS_ENABLED: bool = True
+    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 1.0
+    # Upper bound on points kept per series after min/max decimation, so the
+    # payload injected into the Result stays small regardless of job duration.
+    HOST_METRICS_MAX_POINTS: int = 400
+    HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
+
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
