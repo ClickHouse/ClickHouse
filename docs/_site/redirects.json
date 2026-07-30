@@ -1,5 +1,41 @@
 [
   {
+    "source": "/docs/products/bring-your-own-cloud",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/managed-postgres/migrations/clickhouse-cloud",
+    "destination": "/products/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "source": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
+  },
+  {
+    "source": "/concepts/features/operations/update/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-the-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/products/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
+    "source": "/cloud/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
     "source": "/products/bring-your-own-cloud/onboarding/aws",
     "destination": "/products/bring-your-own-cloud/onboarding/standard"
   },
