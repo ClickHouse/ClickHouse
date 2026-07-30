@@ -199,6 +199,13 @@ def test_one_aes_key_for_the_whole_job(monkeypatch, tmp_path):
     if not shutil.which("openssl") or not shutil.which("zstd"):
         pytest.skip("openssl and zstd are needed to decrypt a collected core")
 
+    # The client directory must differ from `temp_dir`: the shared key is
+    # `{temp_dir}/aes.key` and `collect_cores` defaults to
+    # `{directory}/aes.key`, so if the two are the same directory the paths
+    # alias and dropping the shared key from the client call is undetectable.
+    # They differ in the stateless job too, where `client_core_path` is the
+    # repository root and `temp_dir` is `<repo>/ci/tmp`.
+    client_dir = tmp_path / "workdir"
     payloads = {
         "run_r0.core.MergeMutate.654-5182.zst.enc": _write_core(
             tmp_path / "run_r0", "core.MergeMutate.654-5182"
@@ -207,11 +214,11 @@ def test_one_aes_key_for_the_whole_job(monkeypatch, tmp_path):
             tmp_path / "run_r1", "core.MergeMutate.654-5182"
         ),
         "client.core.clickhouse-clie.138694.zst.enc": _write_core(
-            tmp_path, "core.clickhouse-clie.138694"
+            client_dir, "core.clickhouse-clie.138694"
         ),
     }
     collected = _collector(
-        monkeypatch, tmp_path, client_core_path=tmp_path
+        monkeypatch, tmp_path, client_core_path=client_dir
     )._collect_core_dumps()
 
     keys = {str(Path(f).resolve()) for f in collected if f.endswith("aes.key.rsa")}
