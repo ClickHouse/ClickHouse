@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TTLDescription.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
@@ -65,6 +66,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
+    extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
 }
 
 namespace Setting
@@ -1303,13 +1305,31 @@ UInt64 estimateNeededMemoryForMerge(
     /// pricing, which can only over-reserve. For a certainly-vertical merge, price the streams that are
     /// actually alive at once: the merging columns (fully concurrent in the horizontal stage), the single
     /// widest gathering column, and the delayed remnants.
+    ///
+    /// A TTL merge is not horizontal by itself: chooseMergeAlgorithm forces Horizontal for
+    /// need_remove_expired_values only when MergeTask::canVerticalTTLDelete is false, so an Ordinary
+    /// rows-TTL (or rows-WHERE-TTL) merge under vertical_merge_optimize_ttl_delete still gathers its
+    /// columns one at a time and must not be priced at the full horizontal footprint - that is the same
+    /// starvation pattern as above, and a rows-TTL merge of a big wide table on object storage is exactly
+    /// where it hurts. Mirror canVerticalTTLDelete conservatively: everything it rejects (a GROUP BY TTL,
+    /// a column TTL, a lightweight delete, a non-Ordinary mode) keeps the horizontal pricing. The
+    /// lightweight-delete term is the broader source_and_patch_parts one, which can only reject more
+    /// merges from the vertical pricing than the merge itself does - again the over-reserving direction.
+    const bool can_vertical_ttl_delete = !future_part.parts.empty()
+        && future_part.parts.front()->storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary
+        && settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete]
+        && !metadata_snapshot->hasAnyGroupByTTL()
+        && !metadata_snapshot->hasAnyColumnTTL()
+        && !has_lightweight_delete
+        && (metadata_snapshot->hasRowsTTL() || metadata_snapshot->hasAnyRowsWhereTTL());
+
     if (!future_part.parts.empty()
         && future_part.part_format.part_type == MergeTreeDataPartType::Wide
         && future_part.part_format.storage_type == MergeTreeDataPartStorageType::Full
         && settings[MergeTreeSetting::enable_vertical_merge_algorithm] != 0
         && !deduplicate
         && !cleanup
-        && !need_remove_expired_values
+        && (!need_remove_expired_values || can_vertical_ttl_delete)
         && future_part.parts.size() <= RowSourcePart::MAX_PARTS)
     {
         const auto & merging_params = future_part.parts.front()->storage.merging_params;
@@ -1365,6 +1385,24 @@ UInt64 estimateNeededMemoryForMerge(
             if (merge_may_reduce_rows)
                 for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
                     insert_storage_name(name);
+            /// A vertical TTL-delete merge evaluates the TTL filter in the horizontal stage, so
+            /// extractMergingAndGatheringColumns pulls every column the TTL expressions read into the
+            /// merging set (MergeTask.cpp, the canVerticalTTLDelete branch). Mirror it, or those columns
+            /// would be priced as gathered one at a time while the merge keeps them all alive.
+            if (need_remove_expired_values && can_vertical_ttl_delete)
+            {
+                const auto insert_ttl_expression_columns = [&](const TTLDescription & ttl_description)
+                {
+                    for (const auto & column : ttl_description.expression_columns)
+                        insert_storage_name(column.name);
+                    for (const auto & column : ttl_description.where_expression_columns)
+                        insert_storage_name(column.name);
+                };
+                if (metadata_snapshot->hasRowsTTL())
+                    insert_ttl_expression_columns(metadata_snapshot->getRowsTTL());
+                for (const auto & rows_where_ttl : metadata_snapshot->getRowsWhereTTLs())
+                    insert_ttl_expression_columns(rows_where_ttl);
+            }
             if (merging_names.empty() && !output_columns.empty())
                 merging_names.insert(output_columns.front().name);
             /// The persisted block columns can be merged in the horizontal stage (need_block_number_in_merge);
