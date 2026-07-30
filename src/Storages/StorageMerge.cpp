@@ -1378,21 +1378,38 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+
+    /// The filter column is dropped from the stream after filtering, so it must be a dedicated
+    /// column that does not coincide with a data column. Wrap the policy predicate in a
+    /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
+    /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
+    /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
+    const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
+
+    /// The alias name must be unique against the current DAG outputs and against the child table's
+    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
+    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
+    NameSet reserved_names;
+    for (const auto & column : needed_columns)
+        reserved_names.insert(column.name);
+
+    filter_column_name = "__row_policy_filter";
+    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
+        filter_column_name = "__row_policy_filter_" + std::to_string(i);
+
+    const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
+
+    /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
+    /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
+    /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type == ActionsDAG::ActionType::INPUT)
+            new_outputs.push_back(output);
+    new_outputs.push_back(&alias_node);
+    actions_dag.getOutputs() = std::move(new_outputs);
+
     filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
-    const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
-    const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
-
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
-    sample_block_columns.getDifference(required_columns, added, deleted);
-    if (!deleted.empty() || added.size() != 1)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot determine row level filter; {} columns deleted, {} columns added",
-            deleted.size(), added.size());
-    }
-
-    filter_column_name = added.getNames().front();
 }
 
 void ReadFromMerge::RowPolicyData::extendNames(Names & names) const

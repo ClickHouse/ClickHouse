@@ -708,7 +708,14 @@ void addAggregationStep(QueryPlan & query_plan,
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
-    if (settings[Setting::force_aggregation_in_order])
+    /// With GROUPING SETS, `AggregatingStep::transformPipeline` returns from the grouping-sets branch
+    /// before any `AggregatingInOrderTransform` is built, so in-order state here only misleads later
+    /// steps: with `enable_memory_bound_merging_of_aggregation_results` a distributed query would take
+    /// `MergingAggregatedStep::applyOrder` and then fail in `MergingAggregatedStep::transformPipeline`.
+    const bool force_aggregation_in_order
+        = settings[Setting::force_aggregation_in_order] && aggregation_analysis_result.grouping_sets_parameters_list.empty();
+
+    if (force_aggregation_in_order)
     {
         group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
         sort_description_for_merging = group_by_sort_description;
@@ -749,7 +756,7 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order],
+        force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
@@ -2640,7 +2647,9 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
-        if (query_node.hasOrderBy())
+        /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
+        /// not per shard (which would duplicate fill rows and break the INTERPOLATE column on merge).
+        if (query_node.hasOrderBy() && query_processing_info.isFinalizingStage())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
