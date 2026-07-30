@@ -1,0 +1,214 @@
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- no-fasttest: the vector similarity index is not compiled into the Fast test build.
+-- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
+-- read layer uses a different pool, so the concurrency this test pins would not exist.
+
+DROP TABLE IF EXISTS vs_concurrent;
+
+CREATE TABLE vs_concurrent
+(
+    id UInt32,
+    grp UInt8,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 8) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+-- Explicit, so that setting randomization cannot change the mark count: many marks in one part, so
+-- that the read pool can split the part across threads.
+SETTINGS index_granularity = 128;
+
+-- Distance from the origin grows strictly with id, so the top-k is unique and no tie-break sort key
+-- is needed. A second ORDER BY key would disable the vector search optimization.
+INSERT INTO vs_concurrent
+SELECT number, number % 4,
+       arrayMap(j -> if(j = 0, toFloat32(number) / 1000.0, toFloat32(0)), range(8))
+FROM numbers(20000);
+
+OPTIMIZE TABLE vs_concurrent FINAL;
+
+-- Several readers must share ONE part, otherwise the concurrency below could come from several parts.
+SELECT 'one_part', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
+
+-- Settings used by every measured query below, and why each is needed:
+--   merge_tree_min_rows_for_concurrent_read = 1  one part must be split across read tasks, so that
+--   merge_tree_min_bytes_for_concurrent_read = 1  several readers are created for it. The bytes
+--                                                threshold is divided by index_granularity_bytes,
+--                                                which setting randomization lowers, so without this
+--                                                the minimum task size can exceed the whole part
+--   max_threads = 4                              the number of concurrent readers
+--   use_concurrency_control = 0                  the executor downscales worker threads when CPU
+--                                                slots are scarce, which would leave the read
+--                                                single-threaded while the plan still looks wide
+--   max_threads_min_free_memory_per_thread = 0   max_threads is lowered under memory pressure
+--   enable_parallel_replicas = 0                 the test runner can inject parallel replicas, which
+--                                                disables the vector search optimization
+--   allow_prefetched_read_pool_for_*_filesystem = 0
+--                                                the assertions below match the default read pool by
+--                                                name; the prefetched pool has a different name
+--   force_data_skipping_indices = 'idx'          the query must fail rather than silently degrade to
+--                                                a brute force scan
+
+-- vector_search_with_rescoring = 0: the vector column is replaced by _distance, which is the first
+-- clause of the gate that stores per-part read hints.
+
+SELECT 'concurrent_readers', sumIf(
+    toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
+    explain LIKE '%MergeTreeSelect(pool: ReadPool,%') >= 2
+FROM (
+    EXPLAIN PIPELINE
+    SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+    SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+             use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+             enable_parallel_replicas = 0,
+             allow_prefetched_read_pool_for_remote_filesystem = 0,
+             allow_prefetched_read_pool_for_local_filesystem = 0,
+             force_data_skipping_indices = 'idx', vector_search_with_rescoring = 0
+);
+
+SELECT 'index_used_distance', countIf(explain LIKE '%_distance%') > 0
+FROM (
+    EXPLAIN actions = 1
+    SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+    SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+             use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+             enable_parallel_replicas = 0,
+             allow_prefetched_read_pool_for_remote_filesystem = 0,
+             allow_prefetched_read_pool_for_local_filesystem = 0,
+             force_data_skipping_indices = 'idx', vector_search_with_rescoring = 0
+);
+
+-- The three queries below are the ones that actually execute, so their log_comment is read back from
+-- system.query_log further down. The settings must sit on the top level statement: a log_comment
+-- inside a subquery's SETTINGS does not reach system.query_log.
+-- The ids are compared as a sorted set: groupArray over a subquery does not preserve the subquery's
+-- ORDER BY, so asserting the order would depend on unrelated settings.
+
+SELECT 'exact_topk', arraySort(groupArray(id)) = [0, 1, 2, 3, 4]
+FROM (SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5)
+SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+         merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+         use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+         enable_parallel_replicas = 0,
+         allow_prefetched_read_pool_for_remote_filesystem = 0,
+         allow_prefetched_read_pool_for_local_filesystem = 0,
+         force_data_skipping_indices = 'idx', vector_search_with_rescoring = 0,
+         log_comment = '02354_vector_search_concurrent_readers_r0';
+
+-- vector_search_with_rescoring = 1 (not the default): the vector column is kept and rows are filtered
+-- instead, which reaches the gate's second clause, use_vector_search_result_filter. So this is a
+-- second carrier of the same state, not a variant of the first.
+SELECT 'topk_rescoring', arraySort(groupArray(id)) = [0, 1, 2, 3, 4]
+FROM (SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5)
+SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+         merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+         use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+         enable_parallel_replicas = 0,
+         allow_prefetched_read_pool_for_remote_filesystem = 0,
+         allow_prefetched_read_pool_for_local_filesystem = 0,
+         force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1,
+         log_comment = '02354_vector_search_concurrent_readers_r1';
+
+-- Row filtering, which drives the rescoring row filter consumers under concurrent readers.
+SELECT 'topk_filtered', length(groupArray(id)) = 5
+FROM (SELECT id FROM vs_concurrent WHERE grp = 1
+      ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5)
+SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+         merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+         use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+         enable_parallel_replicas = 0,
+         allow_prefetched_read_pool_for_remote_filesystem = 0,
+         allow_prefetched_read_pool_for_local_filesystem = 0,
+         force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1,
+         log_comment = '02354_vector_search_concurrent_readers_filtered';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- EXPLAIN PIPELINE above shows how wide the plan is, not how many threads ran. This reads the three
+-- executed queries instead: each used several threads and a real index search rather than a brute
+-- force scan. Counting to 3 also catches a query whose row is missing altogether.
+SELECT 'threads_and_index',
+       countIf(length(thread_ids) > 1) = 3,
+       countIf(ProfileEvents['USearchSearchCount'] > 0) = 3
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase() AND type = 'QueryFinish'
+  AND log_comment LIKE '02354_vector_search_concurrent_readers\_%';
+
+SELECT 'concurrent_readers_rescoring', sumIf(
+    toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
+    explain LIKE '%MergeTreeSelect(pool: ReadPool,%') >= 2
+FROM (
+    EXPLAIN PIPELINE
+    SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+    SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+             use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+             enable_parallel_replicas = 0,
+             allow_prefetched_read_pool_for_remote_filesystem = 0,
+             allow_prefetched_read_pool_for_local_filesystem = 0,
+             force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+);
+
+SELECT 'concurrent_readers_filtered', sumIf(
+    toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
+    explain LIKE '%MergeTreeSelect(pool: ReadPool,%') >= 2
+FROM (
+    EXPLAIN PIPELINE
+    SELECT id FROM vs_concurrent WHERE grp = 1
+    ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+    SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+             merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+             use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+             enable_parallel_replicas = 0,
+             allow_prefetched_read_pool_for_remote_filesystem = 0,
+             allow_prefetched_read_pool_for_local_filesystem = 0,
+             force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+);
+
+-- Concurrency must not change the answer. Not compared against a brute force scan: approximate
+-- nearest neighbour search may legitimately differ from it, especially with a row filter.
+
+SELECT 'diff_rescoring', (
+    SELECT arraySort(groupArray(id)) FROM (
+        SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+        SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+                 merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+                 use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+                 enable_parallel_replicas = 0,
+                 allow_prefetched_read_pool_for_remote_filesystem = 0,
+                 allow_prefetched_read_pool_for_local_filesystem = 0,
+                 force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+    )
+) = (
+    SELECT arraySort(groupArray(id)) FROM (
+        SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+        SETTINGS max_threads = 1, enable_parallel_replicas = 0,
+                 force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+    )
+);
+
+SELECT 'diff_filtered', (
+    SELECT arraySort(groupArray(id)) FROM (
+        SELECT id FROM vs_concurrent WHERE grp = 1
+        ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+        SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
+                 merge_tree_min_bytes_for_concurrent_read = 1, max_threads = 4,
+                 use_concurrency_control = 0, max_threads_min_free_memory_per_thread = 0,
+                 enable_parallel_replicas = 0,
+                 allow_prefetched_read_pool_for_remote_filesystem = 0,
+                 allow_prefetched_read_pool_for_local_filesystem = 0,
+                 force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+    )
+) = (
+    SELECT arraySort(groupArray(id)) FROM (
+        SELECT id FROM vs_concurrent WHERE grp = 1
+        ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5
+        SETTINGS max_threads = 1, enable_parallel_replicas = 0,
+                 force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1
+    )
+);
+
+DROP TABLE vs_concurrent;
