@@ -21,17 +21,25 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # cancellation exists, and every case below would fail with a misleading "wrong error". Detect that
 # here and say so; the missing reference lines then make the test fail loudly and legibly.
 #
+# The threshold is derived from the `<= 2` attempt ceiling below, not picked. Attempts are
+# sequential, starting at t = 0, D, 2D, ... for the per-attempt duration D this probe measures, and
+# cancellation for run_case's 3 s deadline lands no later than 3000 + CANCELLATION_GRID_MS - 1 =
+# 3099 ms, because the deadline is rounded UP to the next 100 ms grid boundary and never down
+# (CancellationChecker.cpp:15,102). At most 2 attempts start iff 2 * D >= 3099, i.e. D >= 1550 ms;
+# below that a correct implementation may legitimately begin a third one and redden the ceiling.
+# 1550 still separates the fixture's two behaviours widely in both directions: a refusal takes
+# 64-96 ms here (16x below) and a genuine block 2073-2120 ms against the 2000 ms timeout (1.34x
+# above).
+#
 # Measured in milliseconds, not with $SECONDS. $SECONDS counts tick boundaries crossed rather than
 # time elapsed, so a sub-second refusal that straddles a tick reads as 1 and would be accepted as
-# blocking -- silently, in the one direction that matters. A refusal takes ~0.1 s here and a genuine
-# block ~2.1 s against the 2000 ms timeout, so 1000 ms sits an order of magnitude above the former
-# and half of the latter.
+# blocking -- silently, in the one direction that matters.
 probe_start_ns=$(date +%s%N)
 $CLICKHOUSE_CLIENT --connections_with_failover_max_tries 1 \
                    --connect_timeout_with_failover_ms 2000 \
                    --query "SELECT count() FROM remote('198.51.100.1', system.one) FORMAT Null" >/dev/null 2>&1
 probe_ms=$(( ($(date +%s%N) - probe_start_ns) / 1000000 ))
-if [ "$probe_ms" -lt 1000 ]; then
+if [ "$probe_ms" -lt 1550 ]; then
     echo "fixture unusable: 198.51.100.1 does not block, it is refused"
     exit 0
 fi
