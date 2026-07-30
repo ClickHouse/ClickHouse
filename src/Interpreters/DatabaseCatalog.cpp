@@ -364,7 +364,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMapping(db_uuid);
     }
-    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    chassert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
         /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
