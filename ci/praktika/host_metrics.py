@@ -48,6 +48,13 @@ class HostMetricsCollector:
     _PSI_MEM = "/proc/pressure/memory"
     _PSI_IO = "/proc/pressure/io"
 
+    # Utilization label thresholds (see classify). Percentages unless noted.
+    _UNDER_MEM_PCT = 50.0  # peak RAM below this -> RAM over-provisioned
+    _UNDER_CPU_PCT = 20.0  # average CPU below this -> CPU over-provisioned
+    _RAM_PRESSURE_PCT = 95.0  # peak RAM at/above this -> RAM under-provisioned
+    _CPU_STALL_RATIO = 0.5  # cpu stall seconds / duration above this -> CPU-bound
+    _DISK_WARN_PCT = 85.0  # peak disk at/above this -> almost full
+
     def __init__(
         self,
         out_file: str = Settings.HOST_METRICS_FILE,
@@ -77,6 +84,12 @@ class HostMetricsCollector:
         self._cpu_peak = 0.0
         self._mem_peak = 0.0
         self._disk_peak = 0.0
+        # Time-weighted running sums for whole-run averages (area = value * dt).
+        self._cpu_area = 0.0
+        self._mem_area = 0.0
+        self._disk_area = 0.0
+        self._dt_total = 0.0
+        self._disk_dt_total = 0.0
         self._n_fine = 0
         self._psi_start: Optional[Dict[str, int]] = None
         self._psi_end: Optional[Dict[str, int]] = None
@@ -200,6 +213,10 @@ class HostMetricsCollector:
             # Exact global peaks, immune to windowing/decimation.
             self._cpu_peak = max(self._cpu_peak, cpu_pct)
             self._mem_peak = max(self._mem_peak, mem_pct)
+            # Time-weighted running totals for the whole-run averages.
+            self._cpu_area += cpu_pct * dt
+            self._mem_area += mem_pct * dt
+            self._dt_total += dt
             # Disk is sampled independently: a failure here disables only the
             # disk series and leaves CPU/RAM/PSI intact.
             if self._disk_available:
@@ -211,6 +228,8 @@ class HostMetricsCollector:
                 else:
                     win_disk.append((disk_pct, dt))
                     self._disk_peak = max(self._disk_peak, disk_pct)
+                    self._disk_area += disk_pct * dt
+                    self._disk_dt_total += dt
             if now - window_start >= self._report_interval:
                 flush_window(now)
                 window_start = now
@@ -338,6 +357,12 @@ class HostMetricsCollector:
             "mem": round(self._mem_peak, 1),
             "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
         }
+        averages = {
+            "cpu": round(self._cpu_area / self._dt_total, 1) if self._dt_total else 0.0,
+            "mem": round(self._mem_area / self._dt_total, 1) if self._dt_total else 0.0,
+        }
+        if self._disk_dt_total:
+            averages["disk"] = round(self._disk_area / self._disk_dt_total, 1)
         series = {
             "cpu": self._decimate([(s["t"], s["cpu"], s["cpu_peak"]) for s in samples], self._max_points),
             "mem": self._decimate([(s["t"], s["mem"], s["mem_peak"]) for s in samples], self._max_points),
@@ -350,6 +375,7 @@ class HostMetricsCollector:
             "n_raw": self._n_fine,
             "n_windows": len(samples),
             "peaks": peaks,
+            "averages": averages,
             "series": series,
         }
         # Disk is optional: present only when the disk path was sampled.
@@ -403,3 +429,76 @@ class HostMetricsCollector:
             result.extend(sorted(reps, key=lambda p: p[0]))
         result.append(last)
         return [[t, a, p] for t, a, p in result]
+
+    @classmethod
+    def classify(cls, metrics: Optional[Dict]) -> List[Tuple[str, str]]:
+        """Derive over/under-utilization labels from a compacted metrics dict.
+
+        Returns a list of ``(label, hint)`` pairs for ``Result.set_label``.
+        Only jobs that ran at least ``HOST_METRICS_MIN_LABEL_DURATION_SEC`` are
+        labelled - shorter runs are noisy and not worth right-sizing. RAM uses
+        the peak (you provision for the worst case); CPU uses the whole-run
+        average (brief bursts do not justify more cores); a large CPU stall or a
+        near-full disk are surfaced as their own warnings.
+        """
+        labels: List[Tuple[str, str]] = []
+        if not metrics:
+            return labels
+        duration = metrics.get("duration") or 0
+        if duration < Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC:
+            return labels
+
+        peaks = metrics.get("peaks", {})
+        averages = metrics.get("averages", {})
+        psi = metrics.get("psi", {})
+        mem_peak = peaks.get("mem")
+        cpu_avg = averages.get("cpu")
+        disk_peak = peaks.get("disk")
+        mem_gb = metrics.get("mem_total_gb")
+        disk_gb = metrics.get("disk_total_gb")
+        mem_full_s = psi.get("mem_full_s", 0)
+        cpu_s = psi.get("cpu_s", 0)
+
+        # RAM: pressure (under-provisioned) takes precedence over idle headroom.
+        if (mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT) or mem_full_s:
+            labels.append(
+                (
+                    "ram-pressure",
+                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s - consider more RAM",
+                )
+            )
+        elif mem_peak is not None and mem_peak < cls._UNDER_MEM_PCT:
+            labels.append(
+                (
+                    "under-utilized RAM",
+                    f"Peak RAM only {mem_peak}% of {mem_gb}GB - consider a smaller runner",
+                )
+            )
+
+        # CPU: sustained contention (CPU-bound) vs mostly-idle cores.
+        stall_ratio = cpu_s / duration if duration else 0
+        if stall_ratio > cls._CPU_STALL_RATIO:
+            labels.append(
+                (
+                    "cpu-bound",
+                    f"CPU stalled {cpu_s}s ({round(100 * stall_ratio)}% of runtime) - consider more CPU",
+                )
+            )
+        elif cpu_avg is not None and cpu_avg < cls._UNDER_CPU_PCT:
+            labels.append(
+                (
+                    "under-utilized CPU",
+                    f"Average CPU only {cpu_avg}% - consider a smaller runner",
+                )
+            )
+
+        # Disk: nearly full.
+        if disk_peak is not None and disk_peak >= cls._DISK_WARN_PCT:
+            labels.append(
+                (
+                    "disk-almost-full",
+                    f"Peak disk {disk_peak}% of {disk_gb}GB",
+                )
+            )
+
+        return labels

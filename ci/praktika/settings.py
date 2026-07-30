@@ -82,6 +82,9 @@ class _Settings:
     # Filesystem whose used% is tracked as the "disk" series. Defaults to the
     # working directory, i.e. the disk the job actually writes to.
     HOST_METRICS_DISK_PATH: str = "."
+    # Only jobs that ran at least this long are labelled over/under-utilized -
+    # shorter jobs are too noisy and not worth right-sizing. 30 minutes.
+    HOST_METRICS_MIN_LABEL_DURATION_SEC: float = 1800.0
 
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
@@ -216,6 +219,7 @@ _USER_DEFINED_SETTINGS = [
     "HOST_METRICS_MAX_POINTS",
     "HOST_METRICS_FILE",
     "HOST_METRICS_DISK_PATH",
+    "HOST_METRICS_MIN_LABEL_DURATION_SEC",
 ]
 
 
@@ -231,9 +235,7 @@ def _get_settings() -> _Settings:
 
     for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(
-            module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
-        )
+        spec = importlib.util.spec_from_file_location(module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}")
         assert spec
         foo = importlib.util.module_from_spec(spec)
         assert spec.loader
