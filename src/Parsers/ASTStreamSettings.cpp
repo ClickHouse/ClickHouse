@@ -64,6 +64,7 @@ ASTPtr ASTStreamSettings::clone() const
 
     if (cursor)
         cloned_stream_settings->cursor = cursor->clone();
+
     if (watermark)
         cloned_stream_settings->watermark = watermark->clone();
 
