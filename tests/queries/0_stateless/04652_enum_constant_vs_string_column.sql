@@ -215,6 +215,16 @@ SELECT 'bloom_filter_still_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v = '7'));
 
+-- The same non vacuity argument as pk_prunes_something, once per remaining surface: comparing the enum
+-- arm's granule total against the String literal arm's is also satisfied when the index DECLINES for both
+-- operands, because two full scans are equal. Each companion below pins that granules really are skipped.
+-- These six are GUARDS, not detectors: they print 1 on unfixed master too, because there the constant
+-- still narrows the read, just to the wrong granule. A permanently green cell here is expected, not
+-- vacuous; partition_key_condition_uses_name below is the cell that detects the substitution itself.
+SELECT 'bloom_filter_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)')));
+
 -- One pruning oracle per distinct conversion branch, because the cells above cover only the plain String
 -- primary key and the plain String bloom filter. Without these, a regression that restored correctness by
 -- making the branch decline the index would still return the right rows and every result cell would pass.
@@ -244,6 +254,16 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
           SETTINGS optimize_use_implicit_projections = 0));
 
+-- This surface gets a condition text oracle rather than a selected < total companion: a declined index
+-- still lets the Min-Max section prune parts here, so a granule count companion would not cleanly fail.
+-- Reading the condition is also strictly stronger, because it names which value the key analysis used and
+-- so detects the name versus number substitution directly. Both the Min-Max and the Partition section
+-- print the condition, hence > 0 rather than = 1 for the name half.
+SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\', \'7\']%') > 0
+    AND countIf(explain LIKE '%[\'3\', \'3\']%') = 0
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS optimize_use_implicit_projections = 0));
+
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
@@ -259,11 +279,19 @@ SELECT 'bloom_filter_in_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gr
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v IN ('7')));
 
+SELECT 'bloom_filter_in_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_str WHERE v IN (CAST('7', 'Enum8(\'7\' = 3)'))));
+
 -- The array element with hint branch.
 SELECT 'bloom_filter_has_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, CAST('7', 'Enum8(\'7\' = 3)'))))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, '7')));
+
+SELECT 'bloom_filter_has_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, CAST('7', 'Enum8(\'7\' = 3)'))));
 
 -- The hint unwrap branch, reached because the key type carries a LowCardinality or Nullable wrapper.
 SELECT 'pk_low_cardinality_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
@@ -273,11 +301,21 @@ SELECT 'pk_low_cardinality_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_lc WHERE v = '7'
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
 
+SELECT 'pk_low_cardinality_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_lc WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
 SELECT 'pk_nullable_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_nullable WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_nullable WHERE v = '7'
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+SELECT 'pk_nullable_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_nullable WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
 
 -- The tuple set branch does carry a distinct pruning signal, measured as 2/3 granules against 1/3 before
@@ -287,6 +325,11 @@ SELECT 'tuple_in_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules:
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_pair WHERE (a, b) IN (('7', 'x'))
+          SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
+
+SELECT 'tuple_in_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0));
 
 -- Conversions that must not change.
