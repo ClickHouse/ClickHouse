@@ -3052,6 +3052,21 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// to invalidate them.
         want = offset_map.hasUnknownSize() ? window_size : ceiling;
     }
+    /// CA3 - the request-map JOIN: confine the plan to the contiguous DEMAND run
+    /// from the start (narrow holes bridged, stops at the first WIDE hole), so a
+    /// wide hole's bytes are never observed, `getOrSet`, or scheduled - the plan
+    /// ends at the hole and a seek to the next covered range re-plans there
+    /// (holes jumped). Only clamp when demand runs AHEAD: a start that is itself
+    /// in a hole (a service read the map did not predict) has no reach there, so
+    /// it keeps the full ceiling and plans/serves normally - the map bounds
+    /// speculation, never service. Transients are exempt (the request IS the
+    /// demand). No map: `demandReachPhys` returns max(), no clamp.
+    if (!is_transient)
+    {
+        const size_t reach = demandReachPhys(physical_start);
+        if (reach > physical_start)
+            want = std::min(want, reach - physical_start);
+    }
     /// `want` is a COVER TARGET, not a cap: the walk iterates `lookAt` until it
     /// is covered, and the last resolution's true extent may overshoot it
     /// (`plan_end` is the covered end). The file end is the only natural bound.

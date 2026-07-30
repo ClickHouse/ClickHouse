@@ -431,6 +431,79 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
 /// head cell would never populate (silently: the bank serves the reads). At most one grid
 /// quantum of hole bytes completes the intersecting cell - the accepted edge cost. A
 /// second executor over the same cache proves the head cell is genuinely resident.
+TEST_F(ReaderExecutorCacheChain, RequestMapWideHoleIsNotObservedOrPopulated)
+{
+    /// CA3 join: a WIDE request-map hole is never observed - the plan ends at
+    /// the hole, so no `getOrSet` runs there and no cache segment is created
+    /// for hole bytes. A seek to the next covered range re-plans and populates
+    /// only that range. (RM3 already proved the hole is not FETCHED; CA3 adds
+    /// that it is not even ALLOCATED.)
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 16 * segment_size;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto fc = makeFileCache("fc_hole", segment_size, /*max_size=*/1ull << 20);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    /// Demand: [0, 4*seg) and [12*seg, 16*seg); the 8-segment hole in the
+    /// middle dwarfs min_bytes_for_seek.
+    const size_t r2_start = 12 * segment_size;
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = segment_size;
+        executor_options.min_bytes_for_seek = segment_size;
+        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, executor_options);
+        executor.setRequestMap({{0, 4 * segment_size}, {r2_start, 4 * segment_size}});
+        executor.setReadBound(file_size);
+
+        /// Read the first covered range only.
+        String got;
+        while (got.size() < 4 * segment_size)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+        EXPECT_EQ(got, content.substr(0, 4 * segment_size));
+
+        /// Seek over the hole to the second covered range.
+        executor.seek(r2_start);
+        String tail;
+        while (tail.size() < 4 * segment_size)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                tail.append(node.data(), node.size);
+        }
+        EXPECT_EQ(tail, content.substr(r2_start, 4 * segment_size));
+    }
+
+    /// Only the two covered ranges were populated; the wide hole [4*seg,12*seg)
+    /// has no cache segment. A fresh warm probe over the hole is all-miss.
+    {
+        auto view = probeView(*makeDiskProvider(fc), objects.front(),
+            /*object_file_offset=*/0, ByteRange{4 * segment_size, 8 * segment_size});
+        EXPECT_TRUE(view->allMiss()) << "the wide hole was never observed or populated";
+    }
+    /// The covered ranges DID populate.
+    {
+        auto view = probeView(*makeDiskProvider(fc), objects.front(),
+            /*object_file_offset=*/0, ByteRange{0, 4 * segment_size});
+        EXPECT_FALSE(view->hits().empty()) << "the first covered range populated";
+    }
+}
+
 TEST_F(ReaderExecutorCacheChain, RequestMapUnalignedStartPopulatesHeadCell)
 {
     constexpr size_t segment_size = 64;
