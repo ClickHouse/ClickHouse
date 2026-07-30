@@ -42,6 +42,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -68,6 +69,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
 #include <Planner/Utils.h>
@@ -154,6 +156,13 @@ namespace
             /// view still resolves to its own `TableNode` so the view object's `SELECT` grant is
             /// enforced, exactly as real execution does (see the access-check call site).
             bool expanded_parameterized_view = false;
+
+            /// Set to true once the query has been found to reference a parameterized view at all,
+            /// whether or not the call was expanded above. Expansion is deliberately skipped for
+            /// `FINAL` / `SAMPLE` and for `SQL SECURITY DEFINER` / `NONE` views, but the legacy
+            /// rewriting visitor used by `EXPLAIN AST optimize = 1` still inlines the view body, so
+            /// the `SELECT` grant on the view object has to be enforced for those calls as well.
+            bool referenced_parameterized_view = false;
         };
 
         static bool needChildVisit(ASTPtr &, ASTPtr &)
@@ -196,13 +205,6 @@ namespace
             if (!func)
                 return;
 
-            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
-            /// rewriting the view call into a subquery here would attach them to the
-            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
-            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
-            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
-                return;
-
             auto query_context = data.getContext()->getQueryContext();
 
             /// A registered table function (e.g. `numbers`) takes precedence over a view with
@@ -230,6 +232,15 @@ namespace
 
             const auto * storage_view = storage->as<StorageView>();
             if (!storage_view || !storage_view->isParameterizedView())
+                return;
+
+            data.referenced_parameterized_view = true;
+
+            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
+            /// rewriting the view call into a subquery here would attach them to the
+            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
+            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
+            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -406,43 +417,69 @@ namespace
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
 
-    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    /// Recursively hide every constant inside a secret argument, preserving the expression structure
+    /// (e.g. an `encrypt` key built as `leftPad('...', 16, '*')`). Constants already masked by
+    /// `resolveFunction` are left untouched so their mask ids survive; the rest are hidden here for the
+    /// dump-only path where the analysis passes did not run (`run_passes = 0`).
+    void maskConstantsInSubtree(QueryTreeNodePtr & node)
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            if (!constant->isMasked())
+                constant->setMaskId();
+            return;
+        }
+        for (auto & child : node->getChildren())
+            if (child)
+                maskConstantsInSubtree(child);
+    }
+
+    class SecretArgumentsDumpVisitor : public InDepthQueryTreeVisitor<SecretArgumentsDumpVisitor>
     {
         friend class InDepthQueryTreeVisitor;
-        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
         {
-            QueryTreeNodeType type = parent->getNodeType();
-            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+            /// A secret-bearing function can hide under any carrier (a `UNION`, a scalar subquery, an
+            /// expression list), so descend everywhere; `visitImpl` selects the ones to mask.
+            return true;
         }
 
         void visitImpl(VisitQueryTreeNodeType & query_tree_node)
         {
-            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
-            if (!table_function_node_ptr)
-                return;
-
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    ConstantNode * constant_node = nullptr;
-                    if (secret_arguments.are_named)
+                /// A table-function secret value that is not a constant (an identifier or a constant
+                /// expression, e.g. a computed url) is hidden whole: the whole argument is the
+                /// credential carrier, and a tree dump cannot represent partial masking. Fail closed.
+                forEachSecretArgumentNode(
+                    table_function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node)
                     {
-                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
-                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
-                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
-                    }
+                        if (auto * constant = node->as<ConstantNode>())
+                            constant->setMaskId();
+                        else
+                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                    });
+            }
+            else if (auto * function_node = query_tree_node->as<FunctionNode>())
+            {
+                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                    if (!constant_node)
-                    {
-                        constant_node = argument_nodes[n]->as<ConstantNode>();
-                    }
-
-                    if (constant_node)
-                        constant_node->setMaskId();
-                }
+                /// An ordinary secret function (`encrypt`/`decrypt`/`HMAC`, ...) is not masked by
+                /// `resolveFunction` when the dump runs with the analysis passes disabled. Its secret
+                /// is carried in constants (a literal key or one built by an expression), so hide every
+                /// constant inside the secret argument, keeping the structure visible.
+                forEachSecretArgumentNode(
+                    function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node) { maskConstantsInSubtree(node); });
             }
         }
     };
@@ -1001,12 +1038,6 @@ bool explainQueryTree(
     auto query_tree = buildQueryTree(explained_query, query_context);
     bool need_newline = false;
 
-    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-    {
-        TableFunctionSecretsVisitor visitor;
-        visitor.visit(query_tree);
-    }
-
     auto query_tree_pass_manager = QueryTreePassManager(query_context);
     addQueryTreePasses(query_tree_pass_manager);
 
@@ -1043,6 +1074,15 @@ bool explainQueryTree(
             /// copy to reproduce the planner's `SELECT` access check on the referenced tables.
             resolveThenCheckAccessRights(query_tree->clone(), query_tree_pass_manager, query_context);
         }
+    }
+
+    /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
+    /// redaction (which may replace a non-constant secret value with a hidden constant) can never
+    /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
+    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    {
+        SecretArgumentsDumpVisitor visitor;
+        visitor.visit(query_tree);
     }
 
     if (settings.dump_tree)
@@ -1183,9 +1223,10 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+class RejectStreamingVisitor : public ConstInDepthQueryTreeVisitor<RejectStreamingVisitor>
 {
-    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         std::optional<TableExpressionModifiers> modifiers;
         if (const auto * table_node = node->as<TableNode>())
@@ -1196,6 +1237,45 @@ static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree
         if (modifiers && modifiers->hasStream())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+    }
+};
+
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    /// Walk the whole query tree, not just join-tree table expressions: a streaming read can be nested in a
+    /// WHERE/PREWHERE subquery or a CTE, which extractTableExpressions does not descend into.
+    RejectStreamingVisitor visitor;
+    visitor.visit(query_tree);
+}
+
+/// A streaming read behind a view has no table expression modifier in the outer query tree, so only the plan
+/// exposes it. Walk it exactly like StepWallClockRegistry::populateFromPlan: a read absent from the plan cannot
+/// be timed, so it must not be rejected.
+static void rejectStreamingForExplainAnalyze(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return;
+
+    std::vector<const QueryPlan::Node *> stack;
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!node || !node->step)
+            continue;
+
+        const auto * source_step = dynamic_cast<const SourceStepWithFilter *>(node->step.get());
+        if (source_step && source_step->getQueryInfo().isStream())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+        for (const auto * child_plan : node->step->getChildPlans())
+            stack.push_back(child_plan->getRootNode());
     }
 }
 
@@ -1283,6 +1363,8 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     if (query_tree)
         rejectStreamingForExplainAnalyze(query_tree);
 
+    rejectStreamingForExplainAnalyze(result->plan);
+
     result->planning_ns = watch.elapsed();
 
     analyzed_inner_query = std::move(result);
@@ -1340,10 +1422,20 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     /// Whether the explained query, run for real, would use the analyzer. For `EXPLAIN AST` that is
     /// not the mode this interpreter works in (see above), but forcing the legacy interpreter is an
     /// implementation detail of the rewriting visitor: which privileges a query requires must follow
-    /// what really running it would require, not how `EXPLAIN` happens to process it.
-    const bool analyzer_enabled_for_explained_query
-        = query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-        || explain_query_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    /// what really running it would require, not how `EXPLAIN` happens to process it. The forced
+    /// override cannot simply be ignored either, because the explained statement may set the setting
+    /// itself (`... SETTINGS allow_experimental_analyzer = 0` under an analyzer-enabled session runs
+    /// for real in legacy mode), so the effective value is taken from a copy of the session context
+    /// that the override never touched, with the statement's own settings applied to it.
+    bool analyzer_enabled_for_explained_query
+        = explain_query_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    if (ast.getKind() == ASTExplainQuery::ParsedAST && !analyzer_enabled_for_explained_query)
+    {
+        auto real_execution_context = Context::createCopy(query_context);
+        InterpreterSetQuery::applySettingsFromQuery(query, real_execution_context);
+        analyzer_enabled_for_explained_query
+            = real_execution_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    }
 
     query_context = std::move(explain_query_context);
 
@@ -1366,6 +1458,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
                 const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
+                const bool referenced_parameterized_view = expand_views_data.referenced_parameterized_view;
 
                 /// The visitor below only enforces the base-table grants (through the recursive analysis of
                 /// the expanded subquery). With the analyzer, a real `SELECT ... FROM pv(...)` additionally
@@ -1378,8 +1471,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// As there, the check is analyzer-only: the old interpreter resolves `pv(...)` without
                 /// requiring any grant on the view object, so running it in the legacy path would deny a
                 /// query whose real execution succeeds.
+                ///
+                /// The check must not be tied to the expansion above having happened: expansion is skipped
+                /// for `FINAL` / `SAMPLE` and for `SQL SECURITY DEFINER` / `NONE` parameterized views, and
+                /// for those the visitor below still inlines the view body itself
+                /// (`StorageView::replaceWithSubquery` on `query_info.view_query`). Every referenced
+                /// parameterized view therefore needs the view-object check.
                 bool access_check_performed = true;
-                if (expanded_parameterized_view && analyzer_enabled_for_explained_query)
+                if (referenced_parameterized_view && analyzer_enabled_for_explained_query)
                     access_check_performed = checkAccessForExplainedQuery(
                         explained_query_before_expansion, query_context, /*run_passes=*/ false, /*passes=*/ -1);
 

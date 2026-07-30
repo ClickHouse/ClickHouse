@@ -932,6 +932,28 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     assert int(events["rows_skipped"]) == 1
 
 
+def test_function_name_header(started_cluster):
+    """The OpenAI provider tags every request with an `X-ClickHouse-AI-Function` header carrying the
+    SQL name of the calling function, so the upstream endpoint can tell which function made the call.
+    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path (aiEmbed)."""
+    cases = [
+        ("aiGenerate", "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))"),
+        (
+            "aiClassify",
+            "SELECT aiClassify('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
+        ),
+        ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
+        ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
+        (
+            "aiEmbed",
+            "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+    ]
+    for name, query in cases:
+        instance.query(query, settings=AI_SETTINGS)
+        assert last_request()["headers"].get("x-clickhouse-ai-function") == name
+
+
 def test_embed_retry_respects_api_call_quota(started_cluster):
     """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
     retried past `ai_function_max_api_calls_per_query`."""
