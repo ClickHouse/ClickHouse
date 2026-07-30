@@ -29,4 +29,18 @@ SYSTEM DROP FILESYSTEM CACHE '$disk_name';
 SELECT count() FROM system.filesystem_cache WHERE cache_name = '$disk_name';
 """
 
+# Concurrent drops share the cache's bounded drop_cache_pool: the request whose
+# workers do not fit into the queue blocks in scheduling until the other request's
+# workers finish. Both must complete without hanging or throwing.
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM test WHERE NOT ignore(*) FORMAT Null
+SETTINGS enable_filesystem_cache = 1, optimize_trivial_count_query = 0, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$disk_name'" &
+first_drop=$!
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$disk_name'" &
+second_drop=$!
+wait $first_drop && wait $second_drop && echo "concurrent drops OK"
+
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$disk_name'"
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE test"
