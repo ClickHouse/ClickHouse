@@ -96,13 +96,14 @@ Connect to your AlloyDB instance as an admin user and execute the following comm
 
 ## Configure network access {#configure-network-access}
 
-<Note>
-ClickPipes doesn't support Private Service Connect (PSC) connections. If you don't allow public access to your AlloyDB instance, you can [use an SSH tunnel](#configure-network-access) to connect securely. PSC will be supported in the future.
-</Note>
-
-Next, you must allow connections to your AlloyDB instance from ClickPipes.
+Next, choose how ClickPipes will connect to your AlloyDB instance.
 
 <Tabs>
+<Tab title="Use Private Service Connect">
+
+For private connectivity from a ClickHouse Cloud service hosted on GCP, follow the [GCP Private Service Connect guide](/integrations/clickpipes/networking/gcp-psc) to configure a reverse private endpoint for your AlloyDB instance.
+
+</Tab>
 <Tab title="Allow ClickPipes IPs">
 
 1. In the Google Cloud Console, navigate to the AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) page. Select your primary instance to open the **Overview** page.
