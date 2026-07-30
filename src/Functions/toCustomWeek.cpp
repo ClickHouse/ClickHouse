@@ -45,7 +45,7 @@ For mode values with a meaning of "contains January 1", the week contains Januar
 It does not matter how many days in the new year the week contained, even if it contained only one day.
 I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
 
-The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
+The first argument can also be specified as [`String`](../data-types/string.md) in a format supported by [`parseDateTime64BestEffort()`](type-conversion-functions.md#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
     FunctionDocumentation::Syntax syntax_toWeek = R"(
 toWeek(datetime[, mode[, time_zone]])
@@ -79,7 +79,7 @@ The mode argument works like the mode argument of [`toWeek()`](/sql-reference/fu
 
 Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
 
-The first argument can also be specified as [`String`](/reference/data-types/string) in a format supported by [`parseDateTime64BestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
+The first argument can also be specified as [`String`](../data-types/string.md) in a format supported by [`parseDateTime64BestEffort()`](type-conversion-functions.md#parseDateTime64BestEffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
     )";
     FunctionDocumentation::Syntax syntax_toYearWeek = R"(
 toYearWeek(datetime[, mode[, timezone]])
@@ -110,7 +110,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_start_of_week = R"(
@@ -122,7 +122,7 @@ toStartOfWeek(datetime[, mode[, timezone]])
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_start_of_week = {"Returns the date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_start_of_week = {
         {"Round down to the nearest Sunday or Monday", R"(
     SELECT
@@ -149,7 +149,7 @@ toStartOfWeek(datetime[, mode[, timezone]])
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_last_day_of_week = R"(
@@ -160,7 +160,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
         {"mode", "Determines the first day of the week as described in the `toWeek()` function. Default `0`.", {"UInt8"}},
         {"timezone", "Optional. The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_to_last_day_of_week = {"Returns the date of the nearest Saturday or Sunday, on or after the given date, depending on the mode", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_to_last_day_of_week = {
         {"Round up to the nearest Saturday or Sunday", R"(
 SELECT

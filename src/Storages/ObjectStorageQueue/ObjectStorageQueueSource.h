@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
@@ -8,7 +9,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -17,10 +17,9 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class IStreamingStorage;
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource final : public ISource, WithContext
+class ObjectStorageQueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -75,11 +74,6 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
-        /// Refresh bucket locks which were not refreshed for more than a quarter of
-        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
-        /// meant to remove locks of dead servers).
-        void refreshExpiringBucketLocks();
-
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
     private:
@@ -131,10 +125,6 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
-        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
-        /// next() stops returning keys, isFinished returns true.
-        std::atomic_bool iterator_invalidated = false;
-
         bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
@@ -148,7 +138,6 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
-
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,
@@ -195,18 +184,15 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_,
         bool commit_once_processed_,
-        bool is_direct_select_,
-        bool add_deduplication_info_,
-        bool is_deduplication_v2_,
-        IStreamingStorage & streaming_storage_);
+        bool add_deduplication_info_);
 
-    static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     String getName() const override;
 
     Chunk generate() override;
 
-    void onFinish() override;
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -222,12 +208,6 @@ public:
     static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
         const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
-
-    /// Mark all processed files' metadata so that their destructors check ownership
-    /// before removing the processing node (rather than asserting).
-    /// Called when a commit may have succeeded in ZK but the connection was lost before
-    /// we received the response ("failed after operation").
-    void setUncertainCommit();
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
@@ -249,7 +229,7 @@ private:
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool insert_succeeded, const std::string & exception_message = {}, int error_code = 0);
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
 
     const String name;
     const size_t processor_id;
@@ -271,12 +251,8 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
-    const bool is_direct_select;
-    IStreamingStorage & streaming_storage;
-    const UInt64 cancel_epoch;
     const bool add_deduplication_info;
-    /// Effective dedup: gates whether shutdown can abort mid-file.
-    const bool is_deduplication_v2;
+    const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
     LoggerPtr log;

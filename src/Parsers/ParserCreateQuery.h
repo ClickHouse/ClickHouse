@@ -155,7 +155,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
-    ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_type{Keyword::TYPE};
@@ -184,12 +183,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
-    /// REMOVE, MODIFY SETTING, RESET SETTING or ADD ENUM VALUES
-    /// can be parsed as data type
+    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type
-        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected) || s_add_enum_values.checkWithoutMoving(pos, expected)))
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;
@@ -305,10 +303,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Not `formatForLogging`: that hides secrets, which a data type does not have, and
-            /// runs the server's `query_masking_rules` over the result, which it must not - this
-            /// string is the type, and `defaultValueOfTypeName` has to parse it back.
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatWithSecretsOneLine()));
+            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
             default_expression = default_function;
         }
 
@@ -580,7 +576,6 @@ protected:
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
   * ) ENGINE = engine
-  *   [DEFINER = {user_name | CURRENT_USER}] [SQL SECURITY {DEFINER | INVOKER | NONE}]
   *
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]

@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD | ATAN2) grouping?
+    : (MULT | DIV | MOD) grouping?
     ;
 
 addOp
@@ -227,7 +227,6 @@ keyword
     : AND
     | OR
     | UNLESS
-    | ATAN2
     | BY
     | WITHOUT
     | ON

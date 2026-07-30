@@ -1,8 +1,6 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
-#include <mutex>
-#include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
 #include <functional>
@@ -11,13 +9,10 @@
 #include <Core/Settings.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationQuantizedVector.h>
-#include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -49,7 +44,6 @@
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -113,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     return *this;
 }
 
-ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
 {
     if (this == &other)
         return *this;
@@ -149,7 +143,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
+String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
@@ -261,46 +255,6 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
-{
-    if (this != &other)
-    {
-        columns = other.columns;
-        subcolumns = other.subcolumns;
-        invalidateGetCache();
-    }
-    return *this;
-}
-
-ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) noexcept
-{
-    if (this != &other)
-    {
-        columns = std::move(other.columns);
-        subcolumns = std::move(other.subcolumns);
-        /// Steal the cache from `other`: it is consistent with the columns we just moved.
-        /// Lock `*this` only; `other` is moved-from and has no concurrent users by contract.
-        std::lock_guard lock(get_cache_mutex);
-        get_cache = std::move(other.get_cache);
-    }
-    return *this;
-}
-
-ColumnsDescription::GetCacheKey ColumnsDescription::makeGetCacheKey(const GetColumnsOptions & options)
-{
-    return GetCacheKey{
-        static_cast<UInt8>(options.kind),
-        static_cast<UInt8>(options.virtuals_kind),
-        static_cast<UInt8>(options.virtuals_place),
-        static_cast<UInt8>((options.with_subcolumns ? 1 : 0) | (options.with_dynamic_subcolumns ? 2 : 0))};
-}
-
-void ColumnsDescription::invalidateGetCache() const
-{
-    std::lock_guard lock(get_cache_mutex);
-    get_cache.clear();
-}
-
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
     for (auto && elem : ordinary)
@@ -376,43 +330,11 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-namespace
-{
-
-/// If the column carries a `Quantized(...)` codec, attach the serialization that writes the quantized companion stream
-/// and exposes the `<column>.quantized` subcolumn. The customization is attached to this column's own (freshly parsed,
-/// non-shared) type instance, so it does not affect any other column of the same type.
-void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
-{
-    auto params = tryExtractQuantizedCodecParams(column.codec);
-    if (!params)
-        return;
-
-    /// Idempotent: do not wrap twice if the column is re-added (e.g. when copying a ColumnsDescription).
-    const auto * existing = column.type->getCustomSerialization();
-    if (existing && typeid(*existing) == typeid(SerializationQuantizedVector))
-        return;
-
-    const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-    WhichDataType nested = array_type ? WhichDataType(array_type->getNestedType()) : WhichDataType(column.type);
-    if (!array_type || !(nested.isFloat32() || nested.isFloat64() || nested.isBFloat16()))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Column {} has a Quantized codec, which is only supported for Array(Float32), Array(Float64) or "
-            "Array(BFloat16) columns, but its type is {}", column.name, column.type->getName());
-
-    auto custom_serialization = std::make_shared<SerializationQuantizedVector>(column.type->getDefaultSerialization(), *params);
-    column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
-}
-
-}
-
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot add column {}: column with this name already exists", column.name);
-
-    attachQuantizeSerializationIfNeeded(column);
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)
@@ -438,7 +360,6 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
-    invalidateGetCache();
 }
 
 void ColumnsDescription::remove(const String & column_name)
@@ -454,7 +375,6 @@ void ColumnsDescription::remove(const String & column_name)
         removeSubcolumns(list_it->name);
         list_it = columns.get<0>().erase(list_it);
     }
-    invalidateGetCache();
 }
 
 void ColumnsDescription::rename(const String & column_from, const String & column_to)
@@ -470,7 +390,6 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     {
         old_name = column_to;
     });
-    invalidateGetCache();
 }
 
 void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
@@ -495,7 +414,6 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     if (first)
     {
         reorder_column([&]() { return columns.cbegin(); });
-        invalidateGetCache();
     }
     else if (!after_column.empty() && column_name != after_column)
     {
@@ -505,7 +423,6 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         reorder_column([&]() { return getNameRange(columns, after_column).second; });
-        invalidateGetCache();
     }
 }
 
@@ -558,7 +475,6 @@ void ColumnsDescription::flattenNested()
             columns.get<0>().insert(it, std::move(nested_column));
         }
     }
-    invalidateGetCache();
 }
 
 
@@ -651,22 +567,6 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
 
 NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
 {
-    /// `get(const GetColumnsOptions &)` is hot: analyzer + planner together call it 2-3 times per query
-    /// with the same options, and rebuilding the list iterates the columns multi-index
-    /// and runs `addSubcolumnsToList` (linear hash lookups per row). Memoize on
-    /// `ColumnsDescription` so the result is shared across queries on the same metadata
-    /// version. The cache is invalidated by every method that touches `columns` or
-    /// `subcolumns`.
-    auto key = makeGetCacheKey(options);
-    {
-        std::shared_lock lock(get_cache_mutex);
-        for (const auto & entry : get_cache)
-        {
-            if (entry.first == key)
-                return *entry.second;
-        }
-    }
-
     NamesAndTypesList res;
     switch (options.kind)
     {
@@ -723,18 +623,7 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     if (options.with_subcolumns)
         addSubcolumnsToList(res);
 
-    auto cached = std::make_shared<const NamesAndTypesList>(std::move(res));
-    {
-        std::lock_guard lock(get_cache_mutex);
-        /// Re-check under the lock: another thread may have populated the same key.
-        for (const auto & entry : get_cache)
-        {
-            if (entry.first == key)
-                return *entry.second;
-        }
-        get_cache.emplace_back(key, cached);
-    }
-    return *cached;
+    return res;
 }
 
 bool ColumnsDescription::has(const String & column_name) const
@@ -1065,22 +954,18 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
         /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
-    invalidateGetCache();
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
 {
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
-    {
         subcolumns.get<1>().erase(range.first, range.second);
-        invalidateGetCache();
-    }
 }
 
-VectorWithMemoryTracking<String> ColumnsDescription::getAllRegisteredNames() const
+std::vector<String> ColumnsDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> names;
+    std::vector<String> names;
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
@@ -1112,11 +997,6 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
     if (!col_default_expression)
         return;
 
-    /// Track DEFAULT/MATERIALIZED columns (value computed and stored); ALIAS/EPHEMERAL are excluded.
-    if (col_decl.default_specifier == ColumnDefaultSpecifier::Default
-        || col_decl.default_specifier == ColumnDefaultSpecifier::Materialized)
-        info.insert_time_default_columns.insert(col_decl.name);
-
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
     * 2. conversion of expression (1) to explicitly-specified type alias as column name
@@ -1141,22 +1021,6 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 
 namespace
 {
-
-/// Recursively check if an AST tree contains any subquery nodes at any depth.
-/// Used during DDL validation to reject subqueries nested inside function arguments
-/// in DEFAULT/ALIAS/MATERIALIZED expressions (e.g. `ALIAS toString((SELECT ...))`)
-/// that the previous shallow check on direct children would miss.
-bool hasSubqueryInTree(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>())
-        return true;
-    for (const auto & child : ast->children)
-        if (hasSubqueryInTree(child))
-            return true;
-    return false;
-}
 
 void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
 {
@@ -1305,61 +1169,7 @@ void detectRecursiveDefaultCycles(
     }
 }
 
-/// Reject a DEFAULT/MATERIALIZED column whose resolved expression reads a virtual column of the dummy
-/// table (directly or transitively). Only columns in insert_time_default_columns are checked; ALIAS
-/// and EPHEMERAL may reference virtuals. A declared column that shadows a virtual name is not flagged.
-void assertInsertTimeDefaultsDoNotReferenceVirtuals(
-    const QueryTreeNodePtr & projection_list,
-    const NamesAndTypes & projection_columns,
-    const QueryTreeNodePtr & fake_table_expression,
-    const VirtualColumnsDescription & virtual_columns,
-    const NameSet & declared_columns,
-    const NameSet & insert_time_default_columns)
-{
-    if (insert_time_default_columns.empty() || virtual_columns.empty())
-        return;
-
-    const auto & children = projection_list->as<ListNode &>().getNodes();
-    for (size_t i = 0; i < children.size() && i < projection_columns.size(); ++i)
-    {
-        if (!insert_time_default_columns.contains(projection_columns[i].name))
-            continue;
-
-        std::vector<const IQueryTreeNode *> stack{children[i].get()};
-        std::unordered_set<const IQueryTreeNode *> visited;
-        while (!stack.empty())
-        {
-            const auto * node = stack.back();
-            stack.pop_back();
-            if (!node || !visited.insert(node).second)
-                continue;
-
-            if (const auto * column_node = node->as<ColumnNode>())
-            {
-                /// A virtual-column reference: resolved against the dummy table, a virtual name, and not
-                /// shadowed by a declared column (a real column of that name is allowed).
-                const auto & column_name = column_node->getColumnName();
-                if (column_node->getColumnSourceOrNull() == fake_table_expression
-                    && virtual_columns.has(column_name)
-                    && !declared_columns.contains(column_name))
-                {
-                    throw Exception(
-                        ErrorCodes::UNKNOWN_IDENTIFIER,
-                        "Missing columns: '{}' while processing '{}': a DEFAULT or MATERIALIZED expression "
-                        "cannot reference the virtual column '{}'",
-                        column_name,
-                        projection_columns[i].name,
-                        column_name);
-                }
-            }
-
-            for (const auto & child : node->getChildren())
-                stack.push_back(child.get());
-        }
-    }
-}
-
-std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block, const NameSet & insert_time_default_columns)
+std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1392,10 +1202,9 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);
@@ -1416,15 +1225,6 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     expression_list = query_node->getProjectionNode();
 
     assertNoAggregateFunctionNodes(expression_list, "in column DEFAULT expression");
-
-    const auto dummy_metadata = storage->getInMemoryMetadataPtr(execution_context, false);
-    assertInsertTimeDefaultsDoNotReferenceVirtuals(
-        expression_list,
-        query_node->getProjectionColumns(),
-        fake_table_expression,
-        dummy_metadata->virtuals,
-        table_column_names,
-        insert_time_default_columns);
 
     if (!get_sample_block)
         return {};
@@ -1462,7 +1262,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     return result_block;
 }
 
-std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block, const NameSet & insert_time_default_columns)
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1472,13 +1272,13 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
     }
 
     for (const auto & child : default_expr_list->children)
-        if (hasSubqueryInTree(child))
+        if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block, insert_time_default_columns);
+            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block);
         else
         {
             auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
@@ -1501,15 +1301,15 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 }
 }
 
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns)
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
 {
     /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
-    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false, insert_time_default_columns);
+    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false);
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns)
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
 {
-    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true, insert_time_default_columns);
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true);
     chassert(result.has_value());
     return std::move(*result);
 }
