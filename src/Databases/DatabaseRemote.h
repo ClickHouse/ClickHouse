@@ -61,7 +61,9 @@ public:
 
     /// The `system.tables` path: unlike the plain iterator, it keeps a table whose structure could not
     /// be fetched, with a null storage object (`StorageSystemTables` null-guards every column that
-    /// needs it), so the row does not silently vanish from `system.tables`.
+    /// needs it), so the row does not silently vanish from `system.tables`. It is also the path of the
+    /// explicit `SHOW TABLES`, so a remote failure is propagated instead of being reported as an empty
+    /// list of tables.
     DatabaseTablesIteratorPtr getTablesIteratorWithHint(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
@@ -71,8 +73,9 @@ public:
     /// Drives `SHOW TABLES` directly from `fetchTablesList`. The default implementation goes through
     /// `getTablesIterator`, which drops every table whose structure could not be fetched (e.g. a remote
     /// user with `SHOW TABLES` but no `SHOW COLUMNS` on one table, or a transient `DESC TABLE` failure),
-    /// even though the remote `system.tables` query has already returned the name. Best-effort: on a
-    /// remote error, returns an empty list instead of throwing.
+    /// even though the remote `system.tables` query has already returned the name. A remote failure is
+    /// propagated: `SHOW TABLES` is a user-facing listing, and answering it with an empty result would
+    /// contradict `EXISTS TABLE` / `SELECT` on the same database, which report the real error.
     std::vector<LightWeightTableDetails>
     getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
@@ -130,9 +133,10 @@ private:
 
     /// Shared implementation of `getTablesIterator` / `getTablesIteratorWithHint`;
     /// `keep_unresolved_tables` controls whether a table whose structure could not be fetched is kept
-    /// with a null storage object or dropped.
+    /// with a null storage object or dropped, and `throw_on_error` whether a failure of the remote
+    /// listing is propagated or turned into an empty result.
     DatabaseTablesIteratorPtr getTablesIteratorImpl(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables) const;
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables, bool throw_on_error) const;
 
     /// Resolve `remote_database` as a database of this server when the cluster has a local shard,
     /// rejecting a database that refers to itself.

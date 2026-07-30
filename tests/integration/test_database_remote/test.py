@@ -6,6 +6,8 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1")
 node2 = cluster.add_instance("node2")
 node3 = cluster.add_instance("node3")
+# A node with a configured host filter, to check which addresses the engine accepts.
+node4 = cluster.add_instance("node4", main_configs=["configs/remote_hosts.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -202,3 +204,26 @@ def test_show_create_table_serializes_fallback_addresses(started_cluster):
     node1.query("DROP TABLE default.sc_replayed")
     node1.query("DROP DATABASE sc_proxy")
     node2.query("DROP DATABASE sc_src")
+
+
+def test_host_filter_understands_ipv6_addresses(started_cluster):
+    # `remote_url_allow_hosts` is configured on node4, so every address of the engine is checked
+    # against it. A bracketed IPv6 literal has to be split at the closing bracket: splitting it at
+    # the first `:` would check the host `[` and make a perfectly allowed address unusable.
+    # No connection is attempted by `CREATE DATABASE`, so the address does not have to be reachable.
+    node4.query(
+        "CREATE DATABASE ipv6_allowed ENGINE = Remote('[2001:db8::1]:9000', 'default')"
+    )
+    node4.query("DROP DATABASE ipv6_allowed")
+
+    # A host that is not in the list is still rejected.
+    assert "UNACCEPTABLE_URL" in node4.query_and_get_error(
+        "CREATE DATABASE ipv6_denied ENGINE = Remote('[2001:db8::2]:9000', 'default')"
+    )
+    assert "UNACCEPTABLE_URL" in node4.query_and_get_error(
+        "CREATE DATABASE denied ENGINE = Remote('node3', 'default')"
+    )
+
+    # A plain host name keeps working.
+    node4.query("CREATE DATABASE allowed ENGINE = Remote('node2', 'default')")
+    node4.query("DROP DATABASE allowed")

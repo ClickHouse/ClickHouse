@@ -24,6 +24,7 @@
 #include <Common/NetException.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
+#include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -434,7 +435,13 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
 {
     /// The consumers of the plain iterator dereference the storage object unconditionally, so a table
     /// whose structure could not be fetched is dropped here.
-    return getTablesIteratorImpl(local_context, filter_by_table_name, /* keep_unresolved_tables = */ false);
+    ///
+    /// This iterator is not a user-facing listing: it is what the server itself walks over every
+    /// database (asynchronous metrics, `SYSTEM` commands, `DROP DATABASE`, ...), so a single
+    /// unreachable remote database must not make those operations fail; it stays best-effort. The
+    /// user-facing listings (`SHOW TABLES`, `system.tables`) propagate the error instead.
+    return getTablesIteratorImpl(
+        local_context, filter_by_table_name, /* keep_unresolved_tables = */ false, /* throw_on_error = */ false);
 }
 
 
@@ -446,17 +453,16 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorWithHint(
     /// it: the name has already been established by `fetchTablesList`, and a row with an empty engine
     /// is a far better answer than a table that silently disappears from `system.tables` because the
     /// caller lacks `SHOW COLUMNS` on it or a single `DESC TABLE` failed.
-    return getTablesIteratorImpl(local_context, filter_by_table_name, /* keep_unresolved_tables = */ true);
+    return getTablesIteratorImpl(
+        local_context, filter_by_table_name, /* keep_unresolved_tables = */ true, /* throw_on_error = */ true);
 }
 
 
 DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorImpl(
-    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables) const
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables, bool throw_on_error) const
 {
     Tables tables;
 
-    /// Do not allow to throw here, because this might be, for example, a query to `system.tables`.
-    /// It must not fail because of a remote error.
     try
     {
         for (const auto & table_name : fetchTablesList(local_context))
@@ -471,8 +477,11 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorImpl(
     }
     catch (...)
     {
+        if (throw_on_error)
+            throw;
+
         /// Log only at debug level: an error-level log entry would be reported as an error of the
-        /// query (e.g. of a `SHOW TABLES` covering this database) even though the query succeeds.
+        /// query even though the query succeeds.
         LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
@@ -486,23 +495,21 @@ std::vector<LightWeightTableDetails> DatabaseRemote::getLightweightTablesIterato
     /// `SHOW TABLES` only needs the names, so drive it straight from `fetchTablesList` instead of the
     /// structure-resolving `getTablesIterator`: the latter drops any table whose `DESC TABLE` fails,
     /// which would make `SHOW TABLES` hide a table that the remote `system.tables` query just returned.
+    ///
+    /// A failure of the remote listing is propagated: this is the explicit `SHOW TABLES` path (and the
+    /// names-only path of `system.tables`), so an unreachable server has to be reported as such. An
+    /// empty successful answer would contradict `EXISTS TABLE` and `SELECT` on the same database, which
+    /// do report the real network or authentication error, and it would hide the outage behind "there
+    /// are no tables". The helper paths (name hints, the plain `getTablesIterator` that the server
+    /// itself walks) stay best-effort.
     std::vector<LightWeightTableDetails> result;
 
-    /// Do not allow to throw here for the same reason as in `getTablesIterator`.
-    try
+    for (const auto & table_name : fetchTablesList(local_context))
     {
-        for (const auto & table_name : fetchTablesList(local_context))
-        {
-            if (filter_by_table_name && !filter_by_table_name(table_name))
-                continue;
+        if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
 
-            result.emplace_back(LightWeightTableDetails{table_name});
-        }
-    }
-    catch (...)
-    {
-        /// Log only at debug level for the same reason as in `getTablesIterator`.
-        LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        result.emplace_back(LightWeightTableDetails{table_name});
     }
 
     return result;
@@ -752,16 +759,18 @@ static DatabaseRemoteClusters buildClusters(const String & cluster_description, 
     const UInt16 default_port
         = secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort();
 
-    /// Check host and port against the allowed hosts filter.
+    /// Check host and port against the allowed hosts filter. The address is split with `parseAddress`,
+    /// the same helper that `Cluster` uses, because a naive split at the first `:` would tear a
+    /// bracketed IPv6 literal such as `[2001:db8::1]:9440` apart and check the nonsensical host `[`.
+    /// The brackets are stripped, so the filter sees the bare address, as it does for a URL.
     for (const auto & hosts : names)
     {
         for (const auto & host : hosts)
         {
-            size_t colon = host.find(':');
-            if (colon == String::npos)
-                context->getRemoteHostFilter().checkHostAndPort(host, toString(default_port));
-            else
-                context->getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+            auto [host_name, port] = parseAddress(host, default_port);
+            if (host_name.size() >= 2 && host_name.front() == '[' && host_name.back() == ']')
+                host_name = host_name.substr(1, host_name.size() - 2);
+            context->getRemoteHostFilter().checkHostAndPort(host_name, toString(port));
         }
     }
 
