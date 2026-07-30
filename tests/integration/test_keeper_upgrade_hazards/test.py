@@ -5,9 +5,13 @@ Upgrade hazards for a 3-node Keeper cluster going from a released version that
 supports snapshot format `V7` at most to a build that supports `V9` and can be
 told to write `V8`.
 
-This is a rehearsal of a production upgrade, not a feature test: each scenario
-below drives the cluster into a situation a real rollout can reach, and records
-what happens. Read the verdict on every test:
+This is a rehearsal of a production upgrade, not a feature test. The rollout
+being rehearsed upgrades followers first and the leader last, which matters a
+great deal: only the leader ever ships a snapshot to a peer
+(`create_sync_snapshot_req` in `contrib/NuRaft/src/handle_snapshot_sync.cxx`
+takes a peer), so keeping the leader on the old binary until the end means every
+snapshot handed out during the mixed-version window is one the old nodes can
+read. Read the verdict on every test:
 
     SAFE   — the procedure works, and the test fails if that ever regresses.
     UNSAFE — the procedure breaks the cluster. The test pins the exact failure
@@ -16,31 +20,33 @@ what happens. Read the verdict on every test:
 Summary of what works and what does not:
 
   test_documented_order_upgrade_is_safe                       SAFE
-      Upgrade every binary first while all nodes keep writing `V6`, and only
-      raise `write_snapshot_version` to `8` once no old binary is left. Snapshot
-      installs during the mixed-version window are fine, because the upgraded
-      nodes still write the old format that the old nodes can read.
-
-  test_snapshot_install_to_old_node_fails_after_early_v8_bump  UNSAFE
-      Raising `write_snapshot_version` to `8` while old binaries are still in the
-      cluster looks completely healthy at first: writes are accepted and
-      replicated. It only breaks later, the first time an old node has fallen far
-      enough behind to need a snapshot installed instead of log replay. The old
-      node then cannot load the `V8` snapshot and is stuck out of the quorum.
-      This latency is what makes the procedure dangerous - a green rollout is not
-      a safe rollout.
+      Upgrade every binary first, followers before the leader, while all nodes
+      keep writing `V6`, and raise `write_snapshot_version` to `8` only once no
+      old binary is left. A still-old follower that falls far enough behind to
+      need a snapshot installed is caught up correctly, because the leader
+      shipping that snapshot is still writing the old format.
 
   test_rollback_after_v8_snapshot_is_impossible                UNSAFE
       Once a node has written a `V8` snapshot, putting the old binary back on it
       fails: the old code refuses to load its own data directory. Bumping
       `write_snapshot_version` is therefore a one-way door, and the rollback plan
       for a Keeper upgrade cannot simply be "reinstall the previous version".
+      Upgrade order does not help with this one - the first follower to be
+      upgraded loses the ability to go back, before anything has been learned
+      about whether the upgrade is healthy.
 
-  test_new_feature_flag_during_mixed_window_breaks_old_nodes   UNSAFE
-      `CREATE_TTL` is gated on `write_snapshot_version >= 8`, so it becomes
-      enable-able exactly during the window when old nodes are still present. It
-      writes a request type (`CreateTTL`) that the old version does not know at
-      all, so the old nodes cannot apply those log entries.
+Deliberately not covered here:
+
+  - Upgrading the leader first, or raising `write_snapshot_version` on a node
+    while old binaries are still present. Both make an upgraded node hand a `V8`
+    snapshot to an old one, which fails in `readMetadata`, but neither is part of
+    the rollout being rehearsed.
+  - Involuntary loss of the old leader during the window (crash, OOM, host
+    failure), which moves leadership onto an already-upgraded node and can
+    reintroduce the hazard above. This is a real residual risk of the
+    followers-first order and is not yet tested.
+  - Enabling a new feature flag such as `CREATE_TTL`, which is gated on
+    `write_snapshot_version >= 8`, part-way through the window.
 
 Not a hazard (checked, no test needed): the snapshot file naming changed from
 `snapshot_<idx>.bin.zstd` to `snapshot_<idx>_<random>.bin.zstd`, but the old
@@ -48,17 +54,11 @@ version splits on both `_` and `.` and reads the index from the second field, so
 it parses the new names correctly.
 """
 
-import os
 import time
 import uuid
 
-from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
-from kazoo.handlers.threading import KazooTimeoutError
-
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Supports snapshot format V7 at most, and defaults to writing V6.
 OLD_VERSION = "26.4"
@@ -70,10 +70,6 @@ SNAPSHOT_DIR = "/var/lib/clickhouse/coordination/snapshots"
 CONFIG_DIR = "/etc/clickhouse-server/config.d"
 
 UNSUPPORTED_VERSION_ERROR = "Unsupported snapshot version 8"
-
-# `CreateTTL` is OpNum 21, which does not exist in the old version's request
-# factory, so deserializing such a log entry raises this.
-UNKNOWN_OPNUM_ERROR = "Unknown operation type 21"
 
 
 def make_cluster(config_prefix):
@@ -243,24 +239,6 @@ def assert_batch_visible(cluster, nodes, prefix, count, timeout=60.0):
             stop_zk(zk)
 
 
-def serves_path(cluster, node, path):
-    """Whether `node` answers a read for `path`.
-
-    A node that refuses connections outright is reported as not serving, because
-    that is an equally valid way for it to be stuck out of the quorum. Only
-    connection-level failures are treated that way - nothing here swallows an
-    `AssertionError`, so callers keep their teeth.
-    """
-    zk = None
-    try:
-        zk = keeper_utils.get_fake_zk(cluster, node.name, timeout=10.0, retries=1)
-        return zk.exists(path) is not None
-    except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
-        return False
-    finally:
-        stop_zk(zk)
-
-
 def wait_for_log(node, substring, timeout=60.0):
     deadline = time.monotonic() + timeout
     while not node.contains_in_log(substring):
@@ -293,16 +271,17 @@ def test_documented_order_upgrade_is_safe():
         write_batch_on(cluster, node1, "/before", 50)
         assert_batch_visible(cluster, nodes, "/before", 50)
 
-        # Phase 1: upgrade the leader's binary but leave it writing V6, exactly as
-        # in test_snapshot_install_to_old_node_fails_after_early_v8_bump. The only
-        # difference between the two tests is write_snapshot_version, so any
-        # difference in outcome is attributable to that setting alone.
-        upgrade(node1, prefix)
-        keeper_utils.wait_until_connected(cluster, node1)
-        force_leader(cluster, node1)
-        assert create_snapshot(cluster, node1) == V6
+        # Phase 1: followers first, leader last, every node still writing V6.
+        # Because only the leader ever ships a snapshot to a peer, keeping the
+        # leader on the old binary until the end means the snapshots being handed
+        # out during the mixed-version window are always V6.
+        assert keeper_utils.is_leader(cluster, node1)
 
-        # Drive an old node into a snapshot install from the upgraded leader.
+        upgrade(node3, prefix)
+        keeper_utils.wait_until_connected(cluster, node3)
+
+        # Drive a still-old follower into a snapshot install from the old leader
+        # while an upgraded follower is already in the cluster.
         node2.stop_clickhouse()
         write_batch_on(cluster, node1, "/while_node2_down", 200)
         assert create_snapshot(cluster, node1) == V6
@@ -315,11 +294,11 @@ def test_documented_order_upgrade_is_safe():
         ), "expected node2 to be caught up by a snapshot install, not by log replay"
         assert not node2.contains_in_log(UNSUPPORTED_VERSION_ERROR)
 
-        # The old node accepted the upgraded leader's V6 snapshot and is serving.
+        # The old node accepted the leader's V6 snapshot and is serving.
         assert_batch_visible(cluster, [node2], "/while_node2_down", 200)
 
-        # Finish the rolling upgrade of the remaining old binaries.
-        for node in (node2, node3):
+        # Finish the rolling upgrade: remaining follower, then the leader.
+        for node in (node2, node1):
             upgrade(node, prefix)
             keeper_utils.wait_until_connected(cluster, node)
         assert_batch_visible(cluster, nodes, "/before", 50)
@@ -345,66 +324,8 @@ def test_documented_order_upgrade_is_safe():
 
 
 # ---------------------------------------------------------------------------
-# UNSAFE: bumping the version while old binaries are still present.
+# UNSAFE: raising the version at all, regardless of upgrade order.
 # ---------------------------------------------------------------------------
-
-
-def test_snapshot_install_to_old_node_fails_after_early_v8_bump():
-    """Bumping to `V8` mid-window looks fine, then breaks on the first snapshot install.
-
-    The point of this test is the two-phase shape: the cluster is provably healthy
-    right after the bump, so a rollout would be declared successful. The failure
-    only surfaces when an old node has to be caught up by snapshot instead of by
-    log, which in production may be days later.
-    """
-    prefix = "small_snap_keeper"
-    cluster, nodes = make_cluster(prefix)
-    node1, node2, node3 = nodes
-    try:
-        cluster.start()
-        keeper_utils.wait_nodes(cluster, nodes)
-
-        write_batch_on(cluster, node1, "/before", 50)
-        assert_batch_visible(cluster, nodes, "/before", 50)
-
-        # Upgrade the leader first and bump it straight to V8, while node2 and
-        # node3 are still on the old version.
-        upgrade(node1, prefix, write_snapshot_version=V8)
-        keeper_utils.wait_until_connected(cluster, node1)
-        force_leader(cluster, node1)
-        assert create_snapshot(cluster, node1) == V8
-
-        # Phase 1 - everything looks healthy. This is the trap.
-        write_batch_on(cluster, node1, "/looks_fine", 20)
-        assert_batch_visible(cluster, nodes, "/looks_fine", 20)
-        for node in (node2, node3):
-            assert not node.contains_in_log(UNSUPPORTED_VERSION_ERROR)
-
-        # Phase 2 - take an old node out long enough that the log it needs has
-        # been compacted away, so rejoining requires a snapshot install.
-        node2.stop_clickhouse()
-        write_batch_on(cluster, node1, "/while_node2_down", 200)
-        assert create_snapshot(cluster, node1) == V8
-
-        node2.start_clickhouse()
-
-        # The old node is handed a V8 snapshot it cannot parse.
-        assert wait_for_log(
-            node2, UNSUPPORTED_VERSION_ERROR, timeout=120
-        ), f"expected {UNSUPPORTED_VERSION_ERROR!r} in node2 log after install"
-
-        # ...and it cannot serve the data it missed, i.e. it is out of the quorum.
-        # If it can, the hazard did not materialise and this test's premise is
-        # wrong, so fail rather than pass quietly.
-        assert not serves_path(
-            cluster, node2, "/while_node2_down_199"
-        ), "node2 served data it could only have obtained from a V8 snapshot"
-
-        # The two upgraded/remaining-quorum members are unaffected, which is why
-        # this is easy to miss from the outside.
-        assert_batch_visible(cluster, [node1], "/while_node2_down", 200)
-    finally:
-        cluster.shutdown()
 
 
 def test_rollback_after_v8_snapshot_is_impossible():
@@ -456,75 +377,5 @@ def test_rollback_after_v8_snapshot_is_impossible():
         # The remaining quorum is still fine, so the cluster survives losing the
         # node - but that node cannot be recovered by downgrading it.
         assert_batch_visible(cluster, [node1, node2], "/after", 50)
-    finally:
-        cluster.shutdown()
-
-
-def test_new_feature_flag_during_mixed_window_breaks_old_nodes():
-    """`CREATE_TTL` needs `V8`, so it can be turned on while old nodes still exist.
-
-    The old version has no `CreateTTL` request type at all, so once an upgraded
-    node accepts a TTL create, the resulting log entries cannot be applied by the
-    nodes that have not been upgraded yet.
-    """
-    prefix = "keeper"
-    cluster, nodes = make_cluster(prefix)
-    node1, node2, node3 = nodes
-    try:
-        cluster.start()
-        keeper_utils.wait_nodes(cluster, nodes)
-
-        write_batch_on(cluster, node1, "/before", 20)
-        assert_batch_visible(cluster, nodes, "/before", 20)
-
-        # Upgrade only node1, and give it a config that both raises the snapshot
-        # version and enables the new feature flag. node2/node3 stay on the old
-        # version, which does not even know this flag exists.
-        node1.stop_clickhouse()
-        node1.exec_in_container(
-            ["bash", "-c", f"rm -f {config_path(node1, prefix)}"], user="root"
-        )
-        node1.copy_file_to_container(
-            os.path.join(SCRIPT_DIR, "configs/upgraded_keeper1_ttl.xml"),
-            f"{CONFIG_DIR}/upgraded_keeper1_ttl.xml",
-        )
-        node1.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "cp /usr/bin/clickhouse /usr/share/clickhouse_original "
-                "&& cp /usr/share/clickhouse_fresh /usr/bin/clickhouse "
-                "&& chmod 777 /usr/bin/clickhouse",
-            ],
-            user="root",
-        )
-        node1.start_clickhouse(start_wait_sec=120)
-        keeper_utils.wait_until_connected(cluster, node1)
-        assert not node1.query("SELECT version()").strip().startswith(
-            f"{OLD_VERSION}."
-        )
-        force_leader(cluster, node1)
-
-        # A TTL node can now be created, because node1 permits it.
-        node1_zk = None
-        try:
-            node1_zk = keeper_utils.get_fake_zk(cluster, node1.name)
-            node1_zk.create("/ttl_node", b"data", ttl=60000)
-            assert node1_zk.exists("/ttl_node") is not None
-        finally:
-            stop_zk(node1_zk)
-
-        # The old nodes receive a request type they do not know, so they cannot
-        # apply the entry and never become consistent with the leader. Assert the
-        # positive evidence for that - the deserialization error - rather than
-        # only the absence of the node, so a merely slow follower cannot make this
-        # pass by accident.
-        for node in (node2, node3):
-            assert wait_for_log(
-                node, UNKNOWN_OPNUM_ERROR, timeout=60
-            ), f"expected {UNKNOWN_OPNUM_ERROR!r} in {node.name}'s log"
-            assert not serves_path(
-                cluster, node, "/ttl_node"
-            ), f"{node.name} ({OLD_VERSION}) applied a CreateTTL entry"
     finally:
         cluster.shutdown()
