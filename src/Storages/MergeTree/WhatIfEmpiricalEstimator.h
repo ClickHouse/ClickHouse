@@ -9,7 +9,9 @@
 namespace DB
 {
 
-/// Build the candidate index in memory over the baseline marks and check each granule
+/// Build the candidate index in memory over the baseline marks and check each granule.
+/// With `apply_final_pk_expand`, the surviving marks are additionally widened by the engine's
+/// `findPKRangesForFinalAfterSkipIndex` pass, which a real `FINAL` read runs in exact mode.
 bool tryEstimateEmpirical(
     WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
@@ -18,6 +20,7 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     std::vector<UInt8> * surviving_marks,
+    bool apply_final_pk_expand,
     ContextPtr context);
 
 }

@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -13,7 +14,9 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -60,6 +63,26 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
     return windows;
 }
 
+/// The cases where `findPKRangesForFinalAfterSkipIndex` gives up and returns whole parts,
+/// which is not bounded by the baseline and so cannot be expressed as pruning
+bool primaryKeyExpandWouldExpandWholeParts(
+    const KeyDescription & primary_key, const KeyDescription & sorting_key, const RangesInDataParts & baseline_parts)
+{
+    if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
+        return true;
+
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        const auto & index_granularity = part_with_ranges.data_part->index_granularity;
+        if (!index_granularity->hasFinalMark())
+            return true;
+        for (const auto & range : part_with_ranges.ranges)
+            if (range.end >= index_granularity->getMarksCount())
+                return true;
+    }
+    return false;
+}
+
 }
 
 bool tryEstimateEmpirical(
@@ -70,11 +93,13 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     std::vector<UInt8> * surviving_marks,
+    bool apply_final_pk_expand,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
     const auto & storage_snapshot = read_step->getStorageSnapshot();
     const auto & mutations_snapshot = read_step->getMutationsSnapshot();
+    const auto & metadata = storage_snapshot->metadata;
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
@@ -84,6 +109,15 @@ bool tryEstimateEmpirical(
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
         || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
         return false;
+
+    /// Bail out before the scan instead of reporting a number the real read would not deliver
+    if (apply_final_pk_expand
+        && primaryKeyExpandWouldExpandWholeParts(metadata->getPrimaryKey(), metadata->getSortingKey(), saved_parts))
+        return false;
+
+    /// Marks the candidate keeps, per part, for the PrimaryKeyExpand pass below
+    RangesInDataParts surviving_parts;
+    UInt64 baseline_marks = 0;
 
     UInt64 total_data_granules = 0;
     UInt64 skipped_data_granules = 0;
@@ -109,9 +143,31 @@ bool tryEstimateEmpirical(
     {
         auto part = part_with_ranges.data_part;
         const auto & mark_ranges = part_with_ranges.ranges;
+        baseline_marks += part_with_ranges.getMarksCount();
 
         if (mark_ranges.empty())
             continue;
+
+        /// Marks of this part the candidate keeps, part-local, ascending
+        std::vector<size_t> kept_marks;
+
+        /// A part can be re-included even when the candidate prunes all of it, so the expansion
+        /// still needs to see it - push the entry on every path out of this iteration
+        SCOPE_EXIT({
+            if (!apply_final_pk_expand)
+                return;
+            MarkRanges kept_ranges;
+            for (size_t mark : kept_marks)
+            {
+                if (!kept_ranges.empty() && kept_ranges.back().end == mark)
+                    kept_ranges.back().end = mark + 1;
+                else
+                    kept_ranges.emplace_back(mark, mark + 1);
+            }
+            auto & entry = surviving_parts.emplace_back(part_with_ranges);
+            entry.ranges = std::move(kept_ranges);
+            entry.ranges_snapshot_after_pk_analysis = mark_ranges;
+        });
 
         const auto & part_index_granularity = part->index_granularity;
         const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
@@ -187,6 +243,7 @@ bool tryEstimateEmpirical(
             size_t data_granules_in_window = 0;
             size_t baseline_marks_in_window = 0;
             std::vector<size_t> window_baseline_marks;
+            std::vector<size_t> window_part_marks;
 
             auto flush_window = [&]
             {
@@ -195,10 +252,14 @@ bool tryEstimateEmpirical(
                 auto granule = aggregator->getGranuleAndReset();
                 total_data_granules += baseline_marks_in_window;
                 if (!condition->mayBeTrueOnGranule(granule, {}))
+                {
                     skipped_data_granules += baseline_marks_in_window;
-                else if (surviving_marks)
+                    return;
+                }
+                if (surviving_marks)
                     for (size_t pos : window_baseline_marks)
                         (*surviving_marks)[pos] = 1;
+                kept_marks.insert(kept_marks.end(), window_part_marks.begin(), window_part_marks.end());
             };
 
             auto on_mark_finished = [&]
@@ -209,6 +270,8 @@ bool tryEstimateEmpirical(
                     ++baseline_marks_in_window;
                     if (surviving_marks)
                         window_baseline_marks.push_back(baseline_mark_pos++);
+                    if (apply_final_pk_expand)
+                        window_part_marks.push_back(current_mark);
                 }
 
                 if (data_granules_in_window >= skip_index_granularity)
@@ -218,6 +281,7 @@ bool tryEstimateEmpirical(
                     data_granules_in_window = 0;
                     baseline_marks_in_window = 0;
                     window_baseline_marks.clear();
+                    window_part_marks.clear();
                 }
 
                 ++current_mark;
@@ -274,8 +338,34 @@ bool tryEstimateEmpirical(
     if (total_data_granules == 0)
         return false;
 
-    result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
-    result.estimated_marks = total_data_granules - skipped_data_granules;
+    if (apply_final_pk_expand)
+    {
+        if (baseline_marks == 0)
+            return false;
+
+        /// A real FINAL read widens the skip-index selection so the merge stays correct - reuse the
+        /// engine's own pass rather than reimplementing it
+        RangesInDataParts expanded = findPKRangesForFinalAfterSkipIndex(
+            metadata->getPrimaryKey(), metadata->getSortingKey(), surviving_parts, getLogger("WhatIfIndexEstimator"));
+
+        UInt64 expanded_marks = 0;
+        for (const auto & expanded_part : expanded)
+            expanded_marks += expanded_part.getMarksCount();
+
+        /// The pass only re-adds marks from the snapshot we gave it, so anything above the baseline
+        /// means it bailed out to whole parts and the estimate would be meaningless
+        if (expanded_marks > baseline_marks)
+            return false;
+
+        result.skip_ratio = static_cast<double>(baseline_marks - expanded_marks) / static_cast<double>(baseline_marks);
+        result.estimated_marks = expanded_marks;
+    }
+    else
+    {
+        result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
+        result.estimated_marks = total_data_granules - skipped_data_granules;
+    }
+
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
     result.sampled_parts = analysis.selected_parts;

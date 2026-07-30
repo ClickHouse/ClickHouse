@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
@@ -128,6 +129,26 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
         stripWhatIfControlledSettings(child.get(), removed_force);
 }
 
+/// What a real read would do about FINAL, so the candidate can be judged the same way
+struct FinalExactMode
+{
+    bool query_with_final = false;
+    /// `use_skip_indexes_if_final_exact_mode`, as the inner SELECT sees it
+    bool exact_mode_enabled = false;
+    /// the baseline read already ran the PrimaryKeyExpand pass, so a real index is outside the PK
+    bool baseline_pk_expanded = false;
+};
+
+/// Same check as `areAllSkipIndexColumnsInPrimaryKey` in ReadFromMergeTree
+bool allIndexColumnsInPrimaryKey(const Names & primary_key_columns, const Names & index_columns)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+    for (const auto & column : index_columns)
+        if (!primary_key_columns_set.contains(column))
+            return false;
+    return true;
+}
+
 /// Check applicability, then try empirical → statistical → applicability_only
 WhatIfIndexEstimator::IndexResult evaluateIndex(
     const IndexDescription & index_desc,
@@ -136,6 +157,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     const RangesInDataParts & saved_parts,
     const WhatIfSettings & settings,
     std::vector<UInt8> * surviving_marks,
+    const FinalExactMode & final_mode,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -264,15 +286,33 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
 
+    /// A real read only runs the PrimaryKeyExpand recovery pass when some useful skip index has a
+    /// column outside the primary key. The baseline covers the real indexes, so check the candidate
+    const bool apply_final_pk_expand = final_mode.exact_mode_enabled
+        && (final_mode.baseline_pk_expanded
+            || !allIndexColumnsInPrimaryKey(
+                read_step->getStorageMetadata()->getPrimaryKey().column_names, fresh_index_desc.column_names));
+
     if (settings.empirical)
     {
-        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, surviving_marks, context))
+        if (tryEstimateEmpirical(
+                result, index_helper, condition, read_step, analysis, saved_parts, surviving_marks, apply_final_pk_expand, context))
             return result;
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     }
     else
     {
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Disabled;
+    }
+
+    /// The statistical path knows nothing about the FINAL merge, so it would report a number the
+    /// query could never reach
+    if (final_mode.query_with_final)
+    {
+        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.not_applicable_reason = "EXPLAIN WHATIF needs empirical estimation under FINAL, and it is "
+                                       "unavailable for this index or query";
+        return result;
     }
 
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
@@ -350,8 +390,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// TODO(yariks5s): FINAL prevents skip indexes from pruning granules (the merge needs every
-    /// granule), so a hypothetical index can't help. Report not_applicable
     const bool query_with_final = read_step->isQueryWithFinal();
 
     /// Mirror a real read's skip-index state, use_skip_indexes, off under FINAL unless use_skip_indexes_if_final
@@ -382,6 +420,13 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             "EXPLAIN WHATIF is not supported when the query is served from a projection");
 
     const RangesInDataParts & baseline_parts = analysis.parts_with_ranges;
+
+    FinalExactMode final_mode;
+    final_mode.query_with_final = query_with_final;
+    final_mode.exact_mode_enabled = query_with_final && effective_settings[Setting::use_skip_indexes_if_final_exact_mode];
+    for (const auto & stat : analysis.index_stats)
+        if (stat.type == ReadFromMergeTree::IndexType::PrimaryKeyExpand)
+            final_mode.baseline_pk_expanded = true;
 
     Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -446,14 +491,14 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     for (const auto & index_desc : hypo_indexes)
     {
-        if (query_with_final)
+        if (query_with_final && !effective_settings[Setting::use_skip_indexes_if_final])
         {
+            /// A real read ignores skip indexes here, so a hypothetical one cannot help either
             IndexResult r;
             r.index_name = index_desc.name;
             r.index_type = index_desc.type;
             r.status = IndexResult::NotApplicable;
-            r.not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
-                                      "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+            r.not_applicable_reason = "Skip indexes are not used under FINAL (`use_skip_indexes_if_final = 0`)";
             result.index_results.push_back(std::move(r));
             continue;
         }
@@ -462,7 +507,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         if (want_combined)
             surviving_marks.assign(result.baseline_marks, 0);
         auto index_result = evaluateIndex(
-            index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
+            index_desc, read_step, analysis, baseline_parts, settings,
+            want_combined ? &surviving_marks : nullptr, final_mode, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
         if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")

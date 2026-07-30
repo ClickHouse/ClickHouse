@@ -105,14 +105,14 @@ $CLICKHOUSE_CLIENT --allow_suspicious_indices 0 -n -q "
     CREATE HYPOTHETICAL INDEX idx_dup ON t_hypo_susp (a, a) TYPE minmax GRANULARITY 1;
 " 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
 
-echo "--- EXPLAIN WHATIF with FINAL reports not_applicable ---"
+echo "--- EXPLAIN WHATIF with FINAL reports not_applicable when skip indexes are off there ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_final;
     CREATE TABLE t_hypo_final (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a
     SETTINGS index_granularity = 100;
     INSERT INTO t_hypo_final SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_final (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42 SETTINGS use_skip_indexes_if_final = 0;
 " | grep -E '^With |^\s+status:|^\s+reason:'
 
 echo "--- CREATE rejects text index (explicit unsupported-type path) ---"
