@@ -54292,6 +54292,14 @@
     "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-26"
   },
   {
+    "destination": "/clickstack/demo-days/2026/2026-07-02",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-02"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-07-10",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-10"
+  },
+  {
     "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-native",
     "source": "/integrations/estuary/native"
   },
