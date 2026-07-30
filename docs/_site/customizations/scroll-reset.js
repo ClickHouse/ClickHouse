@@ -65,9 +65,26 @@
     }
   }
 
+  // Let the browser handle exact anchors on initial load and same-page hash
+  // changes. Only intervene when a legacy casing variant needs compatibility.
+  function scrollToLegacyAnchor(hash, framesLeft) {
+    var id;
+    try { id = decodeURIComponent(hash.slice(1)); } catch (e) { id = hash.slice(1); }
+    if (document.getElementById(id)) return;
+
+    var el = findAnchor(id);
+    if (el) {
+      el.scrollIntoView();
+      return;
+    }
+    if (framesLeft > 0 && window.location.hash === hash) {
+      window.requestAnimationFrame(function () { scrollToLegacyAnchor(hash, framesLeft - 1); });
+    }
+  }
+
   window.addEventListener('hashchange', function () {
     if (window.location.hash) {
-      scrollToAnchor(window.location.hash, 180);
+      scrollToLegacyAnchor(window.location.hash, 180);
     }
   });
 
@@ -87,7 +104,7 @@
   }
 
   if (window.location.hash) {
-    scrollToAnchor(window.location.hash, 180);
+    scrollToLegacyAnchor(window.location.hash, 180);
   }
   window.requestAnimationFrame(watch);
 })();
