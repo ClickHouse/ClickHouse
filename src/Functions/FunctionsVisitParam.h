@@ -83,6 +83,7 @@ struct ExtractParamImpl
 
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
+    static constexpr bool can_throw = false;
     static constexpr auto name = Name::name;
 
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}

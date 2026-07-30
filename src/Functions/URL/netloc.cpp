@@ -12,6 +12,8 @@ namespace DB
 /// NOTE: Implementation is not RFC3986 compatible
 struct ExtractNetloc
 {
+    static constexpr bool can_throw = false;
+
     /// We use the same as domain function
     static size_t getReserveLengthForElement() { return 15; }
 

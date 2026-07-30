@@ -119,6 +119,8 @@ enum URLCodeStrategy
 template <URLCodeStrategy code_strategy, bool space_as_plus>
 struct CodeURLComponentImpl
 {
+    static constexpr bool can_throw = false;
+
     static void vector(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,

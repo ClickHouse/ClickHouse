@@ -38,6 +38,7 @@ struct BaseXXEncode
     /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
     /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
+    static constexpr bool can_throw = false;
 
     template <bool /* with_size_optimization */>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
@@ -139,6 +140,7 @@ struct BaseXXDecode
     /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
     /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
+    static constexpr bool can_throw = (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException);
 
     template <bool with_size_optimization>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
@@ -316,6 +318,8 @@ public:
     bool isVariadic() const override { return has_size_optimization; }
     size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    /// With an input-size limit configured the length of each processed row is checked and can throw TOO_LARGE_STRING_SIZE.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return Func::can_throw || max_input_size != 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

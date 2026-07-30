@@ -21,6 +21,7 @@ namespace
 struct HighlightQueryImpl
 {
     static constexpr auto name = "highlightQuery";
+    static constexpr bool can_throw = true;
 
     static DataTypePtr makeEnumType()
     {

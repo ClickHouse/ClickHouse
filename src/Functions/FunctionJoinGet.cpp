@@ -84,6 +84,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 

@@ -344,6 +344,13 @@ function check_logs_for_critical_errors()
         && echo -e "Lost forever for SharedMergeTree$FAIL" >> /test_output/test_results.tsv \
         || echo -e "No SharedMergeTree lost forever in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
+    rg -Fa "canThrow contract violation" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/canthrow_violations.txt \
+        && echo -e "canThrow contract violations$FAIL$(trim_server_logs canthrow_violations.txt)" >> /test_output/test_results.tsv \
+        || echo -e "No canThrow contract violations$OK" >> /test_output/test_results.tsv
+
+    # Remove file canthrow_violations.txt if it's empty
+    [ -s /test_output/canthrow_violations.txt ] || rm -f /test_output/canthrow_violations.txt
+
     # Remove file no_such_key_errors.txt if it's empty
     [ -s /test_output/no_such_key_errors.txt ] || rm -f /test_output/no_such_key_errors.txt
 

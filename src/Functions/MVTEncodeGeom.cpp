@@ -289,6 +289,7 @@ public:
     /// handled explicitly in executeImpl (any null argument yields a NULL geometry for that row).
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

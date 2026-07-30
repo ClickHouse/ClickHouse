@@ -93,6 +93,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
@@ -186,6 +189,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Uses negate which doesn't throw.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -259,6 +265,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -340,6 +349,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -463,6 +475,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -560,6 +575,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -725,6 +743,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -825,6 +846,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -978,6 +1002,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    /// Uses abs and max2 which don't throw.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -1080,6 +1107,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -1216,6 +1246,9 @@ public:
     size_t getNumberOfArguments() const override { return FuncLabel::name[0] == 'p' ? 3 : 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
 
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionTupleMinus tuple_minus(context);
@@ -1273,6 +1306,9 @@ public:
 
     String getName() const override { return name; }
 
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
@@ -1329,6 +1365,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// TODO: refine by delegating to used functions.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1441,6 +1480,21 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// Transposed traits have no tuple function.
+        if constexpr (IsTransposedTrait<Traits>::value)
+            return array_function->canThrow(arguments);
+
+        if (arguments.empty())
+            return true;
+
+        bool is_array_or_qbit = checkDataTypes<DataTypeArray>(arguments[0].type.get())
+            || checkDataTypes<DataTypeQBit>(arguments[0].type.get())
+            || checkDataTypes<DataTypeFixedString>(arguments[0].type.get());
+        return (is_array_or_qbit ? array_function : tuple_function)->canThrow(arguments);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

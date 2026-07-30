@@ -74,6 +74,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// The left argument is converted to the set key types at execution, which can throw depending
+    /// on the processed rows. The key types cannot be inspected here: they live in the ColumnSet,
+    /// not in the argument type. With ignore_set the function just returns a constant zero column.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return !ignore_set; }
+
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);

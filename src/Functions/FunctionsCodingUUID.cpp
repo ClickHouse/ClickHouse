@@ -157,6 +157,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -233,6 +234,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -341,6 +343,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -416,6 +419,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

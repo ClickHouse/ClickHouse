@@ -942,6 +942,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// A non-constant time zone argument is validated per row during execution; a constant one is
+    /// resolved before the row loop. The format string must be constant and is parsed before the loop.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() > 2 && !arguments[2].is_const;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool isVariadic() const override { return true; }

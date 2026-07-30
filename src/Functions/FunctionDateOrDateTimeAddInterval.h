@@ -62,6 +62,7 @@ inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 struct AddNanosecondsImpl
 {
     static constexpr auto name = "addNanoseconds";
+    static constexpr bool can_throw_on_overflow = true;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
@@ -106,6 +107,7 @@ struct AddNanosecondsImpl
 struct AddMicrosecondsImpl
 {
     static constexpr auto name = "addMicroseconds";
+    static constexpr bool can_throw_on_overflow = true;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
@@ -154,6 +156,7 @@ struct AddMicrosecondsImpl
 struct AddMillisecondsImpl
 {
     static constexpr auto name = "addMilliseconds";
+    static constexpr bool can_throw_on_overflow = true;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
@@ -202,6 +205,7 @@ struct AddMillisecondsImpl
 struct AddSecondsImpl
 {
     static constexpr auto name = "addSeconds";
+    static constexpr bool can_throw_on_overflow = true;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
@@ -251,6 +255,7 @@ struct AddSecondsImpl
 struct AddMinutesImpl
 {
     static constexpr auto name = "addMinutes";
+    static constexpr bool can_throw_on_overflow = false;
 
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
     /// signed multiply would be UB (see AddSecondsImpl).
@@ -300,6 +305,7 @@ struct AddMinutesImpl
 struct AddHoursImpl
 {
     static constexpr auto name = "addHours";
+    static constexpr bool can_throw_on_overflow = false;
 
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
     /// signed multiply would be UB (see AddSecondsImpl).
@@ -349,6 +355,7 @@ struct AddHoursImpl
 struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
+    static constexpr bool can_throw_on_overflow = false;
 
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
@@ -438,6 +445,7 @@ struct AddDaysImpl
 struct AddWeeksImpl
 {
     static constexpr auto name = "addWeeks";
+    static constexpr bool can_throw_on_overflow = false;
 
     /// Wraps like the plain multiplication the calendar path used to do, but reports the overflow so
     /// that the fast path can decline it instead of deciding on a wrapped shift.
@@ -546,6 +554,7 @@ struct AddWeeksImpl
 struct AddMonthsImpl
 {
     static constexpr auto name = "addMonths";
+    static constexpr bool can_throw_on_overflow = false;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
@@ -591,6 +600,7 @@ struct AddMonthsImpl
 struct AddQuartersImpl
 {
     static constexpr auto name = "addQuarters";
+    static constexpr bool can_throw_on_overflow = false;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
@@ -636,6 +646,7 @@ struct AddQuartersImpl
 struct AddYearsImpl
 {
     static constexpr auto name = "addYears";
+    static constexpr bool can_throw_on_overflow = false;
 
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
@@ -994,6 +1005,27 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        if (isString(arguments[0].type))
+            return true;
+
+        if (arguments.size() > 1 && !arguments[1].is_const)
+        {
+            WhichDataType which_delta(arguments[1].type);
+            if (which_delta.isUInt64() || which_delta.isFloat32() || which_delta.isFloat64())
+                return true;
+        }
+
+        if constexpr (Transform::can_throw_on_overflow)
+        {
+            WhichDataType which_source(arguments[0].type);
+            if (which_source.isDateTime64() || which_source.isTime64() || which_source.isDateTime())
+                return true;
+        }
+
+        return false;
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

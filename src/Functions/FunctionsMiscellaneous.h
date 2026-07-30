@@ -132,6 +132,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
 
@@ -241,6 +243,9 @@ public:
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// A lambda is suitable for constant folding only if every node in its inner DAG is.
     /// Without this, a higher-order function like arrayMap with a constant array and a lambda

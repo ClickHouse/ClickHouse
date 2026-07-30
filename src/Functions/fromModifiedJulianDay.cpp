@@ -119,6 +119,8 @@ namespace DB
             return true;
         }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return !nullOnErrors; }
+
         bool hasInformationAboutMonotonicity() const override
         {
             return true;

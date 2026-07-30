@@ -2163,6 +2163,102 @@ public:
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
+    static bool builtFunctionCanThrow(const FunctionOverloadResolverPtr & builder, const DataTypesWithConstInfo & arguments)
+    {
+        ColumnsWithTypeAndName args_for_build;
+        args_for_build.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            args_for_build.push_back({nullptr, argument.type, ""});
+        return builder->build(args_for_build)->canThrow(arguments);
+    }
+
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (Op<UInt8, UInt8>::can_throw)
+            return true;
+
+        const DataTypePtr & type0 = arguments[0].type;
+        const DataTypePtr & type1 = arguments[1].type;
+
+        auto locked_context = context.lock();
+
+        /// executeDateAndTimeAddition throws when date_time_overflow_behavior is 'throw'.
+        if (isDateAndTimeAddition(type0, type1))
+            return getDateTimeOverflowBehavior(locked_context) == FormatSettings::DateTimeOverflowBehavior::Throw;
+
+        /// The following cases are executed by a separately built function; delegate to its canThrow.
+        if (auto function_builder = getFunctionForIntervalArithmetic(type0, type1, locked_context))
+        {
+            DataTypesWithConstInfo new_arguments = arguments;
+            if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
+                std::swap(new_arguments[0], new_arguments[1]);
+            if (WhichDataType(new_arguments[1].type).isInterval())
+                new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+            return builtFunctionCanThrow(function_builder, new_arguments);
+        }
+
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, locked_context))
+        {
+            DataTypesWithConstInfo new_arguments = arguments;
+            if (isTuple(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
+            return builtFunctionCanThrow(function_builder, new_arguments);
+        }
+
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(type0, type1, locked_context))
+            return builtFunctionCanThrow(function_builder, arguments);
+
+        if (auto function_builder = getFunctionForTupleArithmetic(type0, type1, locked_context))
+            return builtFunctionCanThrow(function_builder, arguments);
+
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(type0, type1, locked_context))
+        {
+            DataTypesWithConstInfo new_arguments = arguments;
+            if (isNumber(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
+            return builtFunctionCanThrow(function_builder, new_arguments);
+        }
+
+        /// The rest mirrors the dispatch of executeImpl2.
+
+        auto execution_type = [](const DataTypePtr & type)
+        {
+            WhichDataType which(removeNullable(type));
+            if (which.isIPv4())
+                return WhichDataType(TypeIndex::UInt32);
+            if (which.isIPv6())
+                return WhichDataType(TypeIndex::UInt128);
+            return which;
+        };
+        WhichDataType which0 = execution_type(type0);
+        WhichDataType which1 = execution_type(type1);
+
+        /// Corresponds to executeFixedString / executeString / executeStringInteger.
+        if (which0.isStringOrFixedString() || which1.isStringOrFixedString())
+            return false;
+
+        /// executeNumericWithDecimal.
+        auto is_decimal_based = [](const WhichDataType & which)
+        {
+            return which.isDecimal() || which.isDateTime64() || which.isTime64();
+        };
+        if (is_decimal_based(which0) || is_decimal_based(which1))
+            return IsOperation<Op>::div_floating
+                || ((is_plus || is_minus || is_multiply) && check_decimal_overflow);
+
+        /// Corresponds to plain numeric path in executeNumeric.
+        auto is_native_like = [](const WhichDataType & which)
+        {
+            return which.isNativeNumber() || which.isDateOrDate32() || which.isDateTime() || which.isTime()
+                || which.isInterval();
+        };
+        if (is_native_like(which0) && is_native_like(which1))
+            return false;
+
+        /// Not recognized type combinations fail safe.
+        return true;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from

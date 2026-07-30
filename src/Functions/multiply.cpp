@@ -12,6 +12,7 @@ struct MultiplyImpl
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
@@ -74,6 +75,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        ColumnWithTypeAndName argument;
+        argument.type = arguments.front().type;
+        return buildMultiply(argument)->canThrow(DataTypesWithConstInfo{arguments.front(), arguments.front()});
+    }
 
     bool isNameInsensitive() const override { return true; }
 

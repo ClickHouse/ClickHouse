@@ -29,6 +29,7 @@ namespace ErrorCodes
 
 struct SoundexImpl
 {
+    static constexpr bool can_throw = false;
     static constexpr auto length = 4z;
     static constexpr auto soundex_map = "01230120022455012623010202";
 

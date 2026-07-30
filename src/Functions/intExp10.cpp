@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
 template <typename A>
 struct IntExp10Impl
@@ -45,6 +43,9 @@ struct IntExp10Impl
     static constexpr bool compilable = false; /// library function
 #endif
 };
+
+namespace
+{
 
 struct NameIntExp10 { static constexpr auto name = "intExp10"; };
 using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, false>;

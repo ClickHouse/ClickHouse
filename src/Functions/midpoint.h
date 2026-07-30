@@ -51,6 +51,7 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
@@ -380,6 +381,7 @@ struct MidpointImpl
     using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = false;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)

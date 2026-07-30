@@ -25,6 +25,7 @@ struct PlusImpl
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = false;
     static const constexpr bool is_commutative = true;
 
     template <typename Result = ResultType>

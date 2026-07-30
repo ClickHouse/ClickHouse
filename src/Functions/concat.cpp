@@ -46,6 +46,20 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// Non-string arguments are converted to strings during execution. Serializing the types below cannot throw.
+        bool serialization_cannot_throw = true;
+        for (const auto & argument : arguments)
+        {
+            WhichDataType which(argument.type);
+            serialization_cannot_throw &= which.isStringOrFixedString() || which.isNumber()
+                || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+                || which.isTime() || which.isTime64() || which.isUUID() || which.isIPv4() || which.isIPv6();
+        }
+        return !serialization_cannot_throw;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

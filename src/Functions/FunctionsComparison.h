@@ -1329,6 +1329,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -3051,6 +3051,33 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// A non-constant extra argument (a time zone) is validated per row during execution.
+        for (size_t i = 1; i < arguments.size(); ++i)
+            if (!arguments[i].is_const)
+                return true;
+
+        DataTypePtr from = removeNullable(removeLowCardinality(arguments[0].type));
+
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+        {
+            /// Serializing these types to text cannot throw. Everything else is conservatively assumed throwing.
+            WhichDataType which(from);
+            return !(which.isStringOrFixedString() || which.isNumber()
+                || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+                || which.isTime() || which.isTime64() || which.isUUID() || which.isIPv4() || which.isIPv6());
+        }
+
+        /// Converting a number to Date/Date32/DateTime only clamps the range, so it throws only
+        /// when date_time_overflow_behavior is 'throw'.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>
+            || std::is_same_v<ToDataType, DataTypeDateTime>)
+            return !isNumber(*from) || settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+
+        return true;
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
@@ -3647,6 +3674,7 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return exception_mode == ConvertFromStringExceptionMode::Throw; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -4807,6 +4835,7 @@ public:
     String getName() const override { return cast_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return cast_type != CastType::accurateOrNull; }
 
     bool hasInformationAboutMonotonicity() const override
     {

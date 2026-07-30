@@ -38,6 +38,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)

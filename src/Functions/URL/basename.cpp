@@ -12,6 +12,8 @@ namespace DB
   */
 struct ExtractBasename
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 16; } /// Just a guess.
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)

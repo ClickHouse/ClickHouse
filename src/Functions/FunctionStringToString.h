@@ -48,6 +48,8 @@ public:
         return true;
     }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return Impl::can_throw; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]))

@@ -10,6 +10,8 @@ namespace DB
 template <bool with_query_string>
 struct ExtractPath
 {
+    static constexpr bool can_throw = false;
+
     static size_t getReserveLengthForElement() { return 25; }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)

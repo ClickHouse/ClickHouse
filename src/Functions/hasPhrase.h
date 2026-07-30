@@ -53,6 +53,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return result_type; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 

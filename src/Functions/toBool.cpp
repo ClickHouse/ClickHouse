@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -37,6 +38,13 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         bool useDefaultImplementationForNulls() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+        bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+        {
+            /// This function handles Nullable itself: the CAST compares the nested numbers against
+            /// zero under the null map, which cannot throw.
+            return !isNumber(removeNullable(arguments[0].type));
+        }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {

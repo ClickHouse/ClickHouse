@@ -27,6 +27,12 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Builds and executes notEquals over each pair of tuple elements, which can throw for mixed-type
+    /// or Dynamic/Variant elements.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

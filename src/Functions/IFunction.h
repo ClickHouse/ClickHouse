@@ -54,6 +54,11 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// The only entry point for the canThrow contract: normalizes the argument types the way
+    /// execution will (strips LowCardinality and Nullable when the corresponding default
+    /// implementations are enabled) and delegates to canThrowImpl.
+    bool canThrow(const ColumnsWithTypeAndName & arguments) const;
+
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
@@ -130,11 +135,28 @@ protected:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
-    /** True if function might throw an exception during execution.
+    /** True if the function might throw an exception that depends on the processed rows during
+      * execution.
       */
-    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+    virtual bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
 private:
+
+    ColumnPtr executeInternal(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    /// Called when an exception escapes execution: if this function declares canThrow = false and
+    /// the same call over zero rows does not throw (i.e. the exception depends on the processed
+    /// rows), logs a contract violation which is detected by a dedicated log check in CI.
+    /// Defined (and called) only in debug and sanitizer builds; the declaration is unconditional
+    /// so that enabling the check in other builds only requires flipping the guards in the cpp.
+    void validateCanThrowOnException(
+            int code,
+            const std::string & message,
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run) const;
 
     ColumnPtr defaultImplementationForConstantArguments(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -330,6 +352,13 @@ public:
       * Suitability may depend on function arguments.
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /** Returns true if the function may throw during execution depending on the processed rows.
+      * Only accounts for exceptions that depend on the data (e.g. invalid data parsing, division
+      * by zero), not exceptions at preparation time (e.g. type resolution) and not exceptions
+      * that fire for any input including zero rows.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /// True if the result depends only on argument values, not column names. formatRowNoNewline
     /// and toTypeName are counter examples. Default is conservative
@@ -617,6 +646,8 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const;
+
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }
 
@@ -665,6 +696,8 @@ public:
 #endif
 
 protected:
+
+    virtual bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 

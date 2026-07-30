@@ -42,6 +42,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

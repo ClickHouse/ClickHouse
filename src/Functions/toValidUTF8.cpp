@@ -33,6 +33,8 @@ namespace
 
 struct ToValidUTF8Impl
 {
+    static constexpr bool can_throw = false;
+
     static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
     {
         static constexpr std::string_view replacement = "\xEF\xBF\xBD";

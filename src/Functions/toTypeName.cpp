@@ -46,6 +46,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override

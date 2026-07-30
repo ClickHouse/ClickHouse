@@ -13,6 +13,7 @@ struct ModuloOrZeroImpl
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static const constexpr bool can_throw = false;
     /// See the comment in ModuloImpl.
     static constexpr bool no_vectorize = !is_floating_point<ResultType>;
 

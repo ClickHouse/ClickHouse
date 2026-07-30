@@ -140,6 +140,18 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
+        /// A non-string haystack (an Enum) is converted to strings during execution, which can throw.
+        if (!isStringOrFixedString(haystack_type.type))
+            return true;
+        /// The OrNull variants return NULL instead of throwing on execution errors.
+        if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+            return false;
+        return Impl::can_throw;
+    }
+
     size_t getNumberOfArguments() const override
     {
         if (Impl::supports_start_pos || ImplIsLike<Impl>::value)

@@ -23,6 +23,7 @@ template <typename Name, ReplaceStringTraits::Replace replace>
 struct ReplaceStringImpl
 {
     static constexpr auto name = Name::name;
+    static constexpr bool can_throw = false;
 
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,

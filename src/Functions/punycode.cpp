@@ -33,6 +33,8 @@ enum class ErrorHandling : uint8_t
 
 struct PunycodeEncode
 {
+    static constexpr bool can_throw = false;
+
     /// Encoding-as-punycode can only fail if the input isn't valid UTF8. In that case, return undefined output, i.e. garbage-in, garbage-out.
     static void vector(
         const ColumnString::Chars & data,
@@ -82,6 +84,8 @@ struct PunycodeEncode
 template <ErrorHandling error_handling>
 struct PunycodeDecode
 {
+    static constexpr bool can_throw = error_handling == ErrorHandling::Throw;
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,

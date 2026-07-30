@@ -47,6 +47,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -150,6 +151,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -238,6 +240,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

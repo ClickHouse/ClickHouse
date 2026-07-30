@@ -205,6 +205,11 @@ public:
         return false;
     }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return IsUnaryOperation<Op>::int_exp2 || IsUnaryOperation<Op>::int_exp10 || IsUnaryOperation<Op>::factorial;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

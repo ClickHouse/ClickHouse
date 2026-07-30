@@ -1077,6 +1077,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=no_such_key_command,
             )
         )
+        results.append(
+            Result.from_commands_run(
+                name="canThrow contract violations",
+                command=f"cd {self.log_dir} && ! grep -a 'canThrow contract violation' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+            )
+        )
         oom_check = self.check_ch_is_oom_killed()
         if oom_check is None:
             print("WARNING: dmesg not enabled")

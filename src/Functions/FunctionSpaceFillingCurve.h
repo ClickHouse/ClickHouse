@@ -33,6 +33,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Range-mask `Tuple` accessor for the expanded mode of `mortonEncode` / `hilbertEncode`.
@@ -126,6 +128,9 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// The range mask is read and validated during execution.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 

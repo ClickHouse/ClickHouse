@@ -203,6 +203,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

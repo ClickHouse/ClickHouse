@@ -19,6 +19,7 @@ struct BitShiftLeftImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = true;
+    static const constexpr bool can_throw = true;
 
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

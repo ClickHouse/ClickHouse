@@ -62,6 +62,8 @@ using Pos = const char *;
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
+    static constexpr bool can_throw = Extractor::can_throw;
+
     static void vector(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
@@ -110,6 +112,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
+    static constexpr bool can_throw = Extractor::can_throw;
+
     static void vector(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,

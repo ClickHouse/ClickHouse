@@ -35,6 +35,7 @@ public:
 
     String getName() const override { return function_name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }

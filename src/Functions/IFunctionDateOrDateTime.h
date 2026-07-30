@@ -33,6 +33,9 @@ class FunctionDateOrDateTimeBase : public IFunction
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// TODO: refine per transform and argument type.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }

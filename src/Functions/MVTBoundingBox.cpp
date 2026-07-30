@@ -68,6 +68,7 @@ public:
     /// default value and return a bounding box for the wrong tile.
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

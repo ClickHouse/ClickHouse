@@ -40,6 +40,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// nullIf(a, b) executes equals(a, b), which can throw for mixed-type comparisons.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

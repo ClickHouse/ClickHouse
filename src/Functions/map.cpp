@@ -80,6 +80,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     /// map(..., Nothing) -> Map(..., Nothing)
     bool useDefaultImplementationForNothing() const override { return false; }
@@ -163,6 +165,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -273,6 +276,8 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

@@ -146,6 +146,12 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
+bool FunctionBaseAI::canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const
+{
+    const auto & settings = getContext()->getSettingsRef();
+    return settings[Setting::ai_function_throw_on_error] || settings[Setting::ai_function_throw_on_quota_exceeded];
+}
+
 bool FunctionBaseAI::isStringToStringMap(const IDataType & type)
 {
     const auto * map_type = typeid_cast<const DataTypeMap *>(&type);

@@ -33,6 +33,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, initial_query_id);

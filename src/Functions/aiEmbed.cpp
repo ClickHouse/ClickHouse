@@ -91,6 +91,12 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        const auto & settings = getContext()->getSettingsRef();
+        return settings[Setting::ai_function_throw_on_error] || settings[Setting::ai_function_throw_on_quota_exceeded];
+    }
+
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }

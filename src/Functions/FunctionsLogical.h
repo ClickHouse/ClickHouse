@@ -205,6 +205,8 @@ public:
     }
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// and/or can throw during short ciruited execution.
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return name == NameAnd::name || name == NameOr::name; }
     bool isNameInsensitive() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -293,6 +295,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isNameInsensitive() const override { return true; }
 

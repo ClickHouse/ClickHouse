@@ -80,6 +80,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
 private:
     Int32 time_value;
     DataTypePtr return_type;

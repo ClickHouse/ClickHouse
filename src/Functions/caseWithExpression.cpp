@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
@@ -44,6 +45,21 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// caseWhenEquals executes equals(expr, when_i), which can throw for mixed-type comparisons.
+    /// The constant-WHEN/THEN fast path delegates to transform, which can throw.
+    /// The remaining multiIf path executes equals over resolved supertypes and combines materialized columns, which does not throw.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        for (size_t i = 1; i + 1 < arguments.size(); i += 2)
+            if (comparisonCanThrow(arguments[0].type, arguments[i].type))
+                return true;
+
+        for (size_t i = 1; i + 1 < arguments.size(); i += 2)
+            if (!arguments[i].is_const || !arguments[i + 1].is_const)
+                return false;
+
+        return true;
+    }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
 

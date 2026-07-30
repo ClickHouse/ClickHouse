@@ -65,6 +65,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// A zero index throws depending on the row values of a non-constant index column.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
     size_t getNumberOfArguments() const override { return 2; }
 
     /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the

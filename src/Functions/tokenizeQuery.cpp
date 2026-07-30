@@ -12,6 +12,7 @@ namespace
 struct TokenizeQueryImpl
 {
     static constexpr auto name = "tokenizeQuery";
+    static constexpr bool can_throw = false;
 
     static DataTypePtr makeEnumType()
     {

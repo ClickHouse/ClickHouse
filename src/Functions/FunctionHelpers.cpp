@@ -537,4 +537,42 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 current_size);
     }
 }
+
+/// Returns true if the type is or contains Dynamic or Variant anywhere inside
+/// (e.g. Tuple(Dynamic), Array(Variant(...)), Map(String, Dynamic)).
+/// Comparing such values resolves the common type of the stored values per row, so comparison
+/// functions can throw depending on the processed rows.
+static bool containsDynamicOrVariant(const IDataType & type)
+{
+    if (isDynamic(type) || isVariant(type))
+        return true;
+
+    bool contains = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        contains = contains || isDynamic(child) || isVariant(child);
+    });
+    return contains;
+}
+
+bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    if (containsDynamicOrVariant(*left_type) || containsDynamicOrVariant(*right_type))
+        return true;
+
+    DataTypePtr left = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right = removeNullable(removeLowCardinality(right_type));
+
+    if (left->equals(*right))
+        return false;
+
+    if (isStringOrFixedString(left) && isStringOrFixedString(right))
+        return false;
+
+    /// Can not use isNumber which also accepts Decimal and can overflow.
+    if ((isInteger(left) || isFloat(left)) && (isInteger(right) || isFloat(right)))
+        return false;
+
+    return true;
+}
 }

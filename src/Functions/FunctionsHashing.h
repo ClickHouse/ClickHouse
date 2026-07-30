@@ -873,6 +873,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
@@ -1545,6 +1547,21 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// All keyed hashes require the key to be a Tuple(UInt64, UInt64) (see parseSipHashKeyColumns).
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (Keyed)
+        {
+            if (arguments.empty())
+                return true;
+            const auto * key_type = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+            return !key_type || key_type->getElements().size() != 2
+                || !WhichDataType(key_type->getElements()[0]).isUInt64()
+                || !WhichDataType(key_type->getElements()[1]).isUInt64();
+        }
+        return false;
+    }
+
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
@@ -1770,6 +1787,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.

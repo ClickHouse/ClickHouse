@@ -143,6 +143,10 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !(arguments[0].is_const && arguments[1].is_const);
+    }
 };
 
 

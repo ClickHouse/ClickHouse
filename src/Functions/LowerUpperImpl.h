@@ -8,6 +8,8 @@ namespace DB
 template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
+    static constexpr bool can_throw = false;
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
