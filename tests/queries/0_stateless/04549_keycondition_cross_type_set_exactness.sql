@@ -662,7 +662,7 @@ SELECT 'CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)',
 SELECT 'N6-in scalar Decimal(20,4)/Decimal(10,2)',
     (SELECT count() FROM c_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)'))) = (SELECT count() FROM o_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)')));
 
-SELECT '--- composite cross-type: a width-only pair keeps pruning, a signedness one declines (the 03733 shapes) ---';
+SELECT '--- composite cross-type: pruning is withdrawn for a PACKED composite key (the 03733 shapes) ---';
 
 DROP TABLE IF EXISTS t33; DROP TABLE IF EXISTS t33o;
 CREATE TABLE t33 (kt Tuple(UInt32, UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
@@ -672,12 +672,15 @@ INSERT INTO t33 VALUES ((50000, 0));
 INSERT INTO t33 VALUES ((7, 7));
 INSERT INTO t33o VALUES ((10, 0)), ((50000, 0)), ((7, 7));
 -- The literal's element type is `Tuple(UInt16, UInt8)` against a `Tuple(UInt32, UInt32)` key, so the
--- two differ only in the width of native integers. A `Field` collapses every native unsigned width
--- into one variant, so the runtime `has` compares the two composites identically and the atom stays an
--- exact image of the predicate: it must KEEP pruning.
+-- two differ only in the width of native integers and the runtime `has` compares them identically.
+-- Pruning is nevertheless withdrawn, and by the OTHER rule: with a PACKED composite key column the
+-- unpack loop in `tryPrepareSetColumnsForIndex` does not run, so the per-column check receives the
+-- whole `Tuple`/`Array` pair, and it is exact only for an `equals`-equal or plain-integer pair - a
+-- composite runtime cast can throw where the preparation cast merely returns NULL. The result cell
+-- above is what keeps this honest: the answer still matches the oracle, only the optimization is lost.
 SELECT 'T33 packed tuple has result',
     (SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE has([(10, 0), (50000, 0)], kt));
-SELECT 'T33 packed tuple has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed tuple has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
 SELECT 'T33 packed tuple IN result',
     (SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) = (SELECT count() FROM t33o WHERE kt IN (SELECT (toUInt16(10), toUInt8(0))));
 
@@ -688,11 +691,11 @@ INSERT INTO a33 VALUES ([10, 11]);
 INSERT INTO a33 VALUES ([50000, 50001]);
 INSERT INTO a33 VALUES ([7, 7]);
 INSERT INTO a33o VALUES ([10, 11]), ([50000, 50001]), ([7, 7]);
--- Same width-only shape one container deeper: `Array(Array(UInt16))` literal against an `Array(UInt32)`
--- key. It must KEEP pruning for the same reason.
+-- Same width-only shape one container deeper (`Array(Array(UInt16))` literal against an `Array(UInt32)`
+-- key), and the same packed-key rule applies, so pruning is withdrawn here too.
 SELECT 'A33 array key has result',
     (SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE has([[10, 11], [50000, 50001]], ak));
-SELECT 'A33 array key has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+SELECT 'A33 array key has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
 
 -- Native widths collapse in a Field, signedness does not, and the 128/256-bit tags do not either:
 -- this is exactly the boundary the composite identity rule has to draw.
