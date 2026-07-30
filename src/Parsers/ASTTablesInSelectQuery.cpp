@@ -194,7 +194,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             break;
     }
 
-    if (kind != JoinKind::Cross && kind != JoinKind::Comma)
+    /// The parser rejects a strictness modifier on CROSS/PASTE joins, so printing one
+    /// would emit text that cannot be parsed back.
+    if (kind != JoinKind::Cross && kind != JoinKind::Comma && kind != JoinKind::Paste)
     {
         switch (strictness)
         {
