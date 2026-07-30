@@ -57,9 +57,12 @@ SELECT 'bare PREWHERE key col', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d
 SELECT 'bare PREWHERE key col mid', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE b) AS r ON l.a = r.a))
                                   = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE b) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
--- Control for the cells above: the flag must be cleared only for a column the sorting key needs, so
--- a bare filter on a non-key column keeps being removed and must not start leaking into the header.
--- `ok2` has no non-key numeric column and a `String` cannot be a bare filter at all
+-- Control for the cells above: a bare filter on a non-key column must keep working through the
+-- sharded read-in-order path. It cannot observe the stronger property that such a column keeps
+-- being removed: the restore is passed the sorting-key columns only, so a non-key column never
+-- reaches the flag-clearing branch, and even an over-broad clear is invisible here because the
+-- pipe-to-step header conversion drops a surplus kept filter column just as it drops the restored
+-- ones. `ok2` has no non-key numeric column and a `String` cannot be a bare filter at all
 -- (`canBeUsedInBooleanContext`), so this control needs its own table. `e` is `% 200 + 1`, always
 -- truthy, so the control filters nothing and compares a full result.
 DROP TABLE IF EXISTS nk04652;
