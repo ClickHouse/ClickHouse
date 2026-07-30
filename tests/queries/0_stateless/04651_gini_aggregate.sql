@@ -40,6 +40,11 @@ SELECT gini(x) FROM (SELECT [inf, inf] :: Array(Float64) AS arr) ARRAY JOIN arr 
 -- NaN inputs are skipped.
 SELECT gini(x) FROM (SELECT [1, 2, nan, 4] :: Array(Float64) AS arr) ARRAY JOIN arr AS x;
 
+-- BFloat16 NaNs are skipped, infinities are rejected, and differences are widened before subtraction.
+SELECT gini(x) FROM (SELECT [1, nan, 3] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x;
+SELECT gini(x) FROM (SELECT [inf, inf] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
+SELECT gini(x) FROM (SELECT [1, 1.0078125] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x;
+
 -- Nullable input.
 SELECT gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 

@@ -13,6 +13,7 @@
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 
+#include <type_traits>
 #include <pdqsort.h>
 
 
@@ -44,10 +45,28 @@ struct AggregateFunctionGiniData
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
     Array array;
 
+    static bool isNaNValue(const Value & value)
+    {
+        if constexpr (std::is_same_v<Value, BFloat16>)
+            return value.isNaN();
+        else
+            return isNaN(value);
+    }
+
+    static bool isFiniteValue(const Value & value)
+    {
+        if constexpr (std::is_same_v<Value, BFloat16>)
+            return value.isFinite();
+        else
+            return isFinite(value);
+    }
+
     static long double toLongDouble(const Value & value)
     {
         if constexpr (is_decimal<Value>)
             return static_cast<long double>(value.value);
+        else if constexpr (std::is_same_v<Value, BFloat16>)
+            return static_cast<long double>(static_cast<Float32>(value));
         else
             return static_cast<long double>(value);
     }
@@ -55,10 +74,10 @@ struct AggregateFunctionGiniData
     void add(const Value & x)
     {
         /// Skip NaNs as they are not compatible with comparison sorting.
-        if (isNaN(x))
+        if (isNaNValue(x))
             return;
 
-        if (!isFinite(x))
+        if (!isFiniteValue(x))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support infinite values");
 
         if (x < Value{})
@@ -108,7 +127,7 @@ struct AggregateFunctionGiniData
         pdqsort(array.begin(), array.end());
 
         const Value & maximum = array.back();
-        if (maximum == Value{} || !isFinite(maximum))
+        if (maximum == Value{} || !isFiniteValue(maximum))
             return std::numeric_limits<Float64>::quiet_NaN();
 
         const long double maximum_float = toLongDouble(maximum);
@@ -120,7 +139,7 @@ struct AggregateFunctionGiniData
         for (size_t i = 0; i + 1 < n; ++i)
         {
             long double difference = 0;
-            if constexpr (is_floating_point<Value>)
+            if constexpr (is_floating_point<Value> || std::is_same_v<Value, BFloat16>)
                 difference = toLongDouble(array[i + 1]) - toLongDouble(array[i]);
             else
                 difference = toLongDouble(array[i + 1] - array[i]);
