@@ -1,5 +1,6 @@
 #include <Common/parseGlobs.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 #include <gtest/gtest.h>
 
 #include <map>
@@ -212,7 +213,18 @@ INSTANTIATE_TEST_SUITE_P(
 
         // Complex patterns
         "*_{{a,b,c,d}}/?.csv",
-        "{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"
+        "{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*",
+
+        // Globstars and non-globstar star runs
+        "**/file.txt",
+        "data/**/file.txt",
+        "data/**/sub/**/file.txt",
+        "data/**",
+        "**",
+        "a**/b",
+        "?**/file.txt",
+        "***/file.txt",
+        "**/"
     )
 );
 
@@ -474,6 +486,29 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("**", "a/b{c", false),     // brace at/after the first '/' is not matched
         std::make_tuple("**", "a/b}c", false),     // brace at/after the first '/' is not matched
 
+        // --- Globstar: a whole-segment "**/" matches zero or more directory components ---
+        std::make_tuple("data/**/part1.tsv", "data/part1.tsv", true),       // zero directory levels
+        std::make_tuple("data/**/part1.tsv", "data/sub1/part1.tsv", true),  // one directory level
+        std::make_tuple("data/**/part1.tsv", "data/a/b/part1.tsv", true),   // two directory levels
+        std::make_tuple("data/**/part1.tsv", "data/a/b/c/part1.tsv", true), // three directory levels
+        std::make_tuple("data/**/part1.tsv", "data/{a}/part1.tsv", true),   // directory name with braces
+        std::make_tuple("data/**/part1.tsv", "data/part2.tsv", false),      // wrong filename
+        std::make_tuple("data/**/part1.tsv", "other/part1.tsv", false),     // wrong prefix
+        std::make_tuple("**/part1.tsv", "part1.tsv", true),                 // globstar at the start, zero levels
+        std::make_tuple("**/part1.tsv", "a/b/part1.tsv", true),             // globstar at the start, two levels
+        std::make_tuple("data/**/sub/**/f", "data/sub/f", true),            // two globstars, both zero levels
+        std::make_tuple("data/**/sub/**/f", "data/a/sub/b/f", true),        // two globstars, one level each
+        std::make_tuple("**/", "", true),                                   // trailing globstar: empty prefix
+        std::make_tuple("**/", "a/", true),                                 // trailing globstar: one component
+        std::make_tuple("**/", "a", false),                                 // trailing globstar: must end with '/'
+        // A "**" that does not form a whole segment is not a globstar: the leading '?'
+        // requires at least one character in the directory component.
+        std::make_tuple("data/?**/part1.tsv", "data/part1.tsv", false),
+        std::make_tuple("data/?**/part1.tsv", "data/sub1/part1.tsv", true),
+        // Trailing "**" (not followed by '/') keeps the legacy DOUBLE_ASTERISK meaning.
+        std::make_tuple("data/**", "data/a/b", true),
+        std::make_tuple("data/**", "data/a/b{c", false),                    // brace after the first '/' in the tail
+
         // --- Ranges ---
         std::make_tuple("f{1..9}", "f1", true),
         std::make_tuple("f{1..9}", "f5", true),
@@ -720,10 +755,12 @@ TEST(Common, GlobASTRangeOverflow)
 ///   * Brace body of a legacy-escaped char (e.g. "{-}"): legacy escapes '-' -> "\-" before
 ///     enum detection, inflating the body to two chars, so it matches '-' instead of the
 ///     literal "{-}". Excluded by dropping '-' from the pattern alphabet.
-///   * Wildcard runs ("**", "***", "*?*"): legacy's makeRegexpPatternFromGlobs mis-tracks
-///     its 'previous' char after a '?' and turns a '*' following a '*' into "[^{}]", so its
-///     wildcard runs wrongly cross '/' or stop at braces. Excluded by skipping patterns
-///     with two adjacent wildcard characters (which also drops the recursive "**").
+///   * Wildcard runs mixing '*' and '?' ("*?*", "*??*") and runs of 3+ stars ("***"):
+///     legacy's makeRegexpPatternFromGlobs does not update its 'previous' char after a '?',
+///     so a '*' preceded by "*?...?" is treated as the second star of a "**" and becomes
+///     "[^{}]"; star runs of 3+ get an extra "[^{}]" per star with no AST analogue. Exact
+///     "**" runs are NOT excluded: both whole-segment globstars ("data/**/x") and legacy
+///     double-stars ("a**", "data/**") are part of the fuzzed domain.
 TEST(Common, GlobASTLegacyMatchFuzz)
 {
     /// Pattern alphabet of glob metacharacters plus a literal the legacy escaper treats
@@ -751,15 +788,22 @@ TEST(Common, GlobASTLegacyMatchFuzz)
         return s;
     };
 
-    /// Two adjacent wildcard characters trigger the legacy wildcard-run bug (including the
-    /// recursive "**"), where legacy diverges from POSIX and the AST. Skip such patterns.
-    auto has_adjacent_wildcards = [](const std::string & s)
+    /// Legacy wildcard-run bugs (see the comment above): a '*' separated from a previous
+    /// '*' only by '?'s, or a run of 3+ stars. Exact "**" runs are kept in the domain so
+    /// the fuzzer exercises both globstar ("**/" as a whole segment) and legacy
+    /// double-star semantics against the oracle.
+    auto has_legacy_buggy_wildcard_run = [](const std::string & s)
     {
-        for (size_t i = 0; i + 1 < s.size(); ++i)
+        if (s.find("***") != std::string::npos)
+            return true;
+        for (size_t i = 0; i < s.size(); ++i)
         {
-            const bool a = s[i] == '*' || s[i] == '?';
-            const bool b = s[i + 1] == '*' || s[i + 1] == '?';
-            if (a && b)
+            if (s[i] != '*')
+                continue;
+            size_t j = i + 1;
+            while (j < s.size() && s[j] == '?')
+                ++j;
+            if (j > i + 1 && j < s.size() && s[j] == '*')
                 return true;
         }
         return false;
@@ -775,7 +819,7 @@ TEST(Common, GlobASTLegacyMatchFuzz)
         std::string pattern = random_string(PATTERN_ALPHABET, max_pattern_len - 1);
         pattern += PATTERN_ALPHABET[rng() % PATTERN_ALPHABET.size()];
 
-        if (has_adjacent_wildcards(pattern))
+        if (has_legacy_buggy_wildcard_run(pattern))
         {
             ++skipped;
             continue;

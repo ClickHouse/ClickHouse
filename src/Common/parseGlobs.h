@@ -34,7 +34,9 @@ namespace DB
   *
   *   element      = wildcard | range | enum | literal-char ;
   *
-  *   wildcard     = "**" | "*" | "?" ;
+  *   wildcard     = globstar | "**" | "*" | "?" ;
+  *   globstar     = "**" "/" ;   (* only when the "**" forms a whole path segment: it is
+  *                                  preceded by '/' or the start of the glob *)
   *
   *   range        = "{" integer ".." integer "}" ;
   *   integer      = digit { digit } ;
@@ -52,7 +54,9 @@ namespace DB
   * interior commas produce empty interior alternatives ("{a,,b}" -> "a", "", "b").
   *
   * Disambiguation (resolution order at '{'):
-  *   1. "**" is recognized before "*".
+  *   1. A whole-segment "**" followed by '/' is recognized as a globstar before "**";
+  *      "**" is recognized before "*". A "**" adjacent to other characters in its
+  *      segment (a preceding "a" or "?", or a run of 3+ stars) is not a globstar.
   *   2. At a '{':
   *      a. "{{" - the first '{' is a literal-char; scanning resumes at the second.
   *      b. otherwise consume the brace body up to the first '}':
@@ -67,6 +71,11 @@ namespace DB
   *   literal-char c - matches exactly c.
   *   ?              - matches exactly one char, not '/'.
   *   *              - matches zero+ chars, none '/'.
+  *   globstar       - a whole-segment "**" followed by '/': matches zero or more whole
+  *                    directory components, each a run of non-'/' chars followed by '/',
+  *                    so the consumed prefix is empty or ends with '/'. Mirrors
+  *                    makeRegexpPatternFromGlobs and Bash `globstar`, where "**" is
+  *                    special only as a complete path segment.
   *   **             - matches the legacy regex `[^/]*[^{}]*`: a run of non-'/' chars
   *                    followed by a run of non-'{','}' chars. It crosses '/', and a brace
   *                    is allowed only before the first '/'. For example a leading slash
@@ -81,7 +90,9 @@ namespace DB
   * gtest_makeRegexpPatternFromGlobs.cpp guards parity with the legacy oracle over the
   * input domain where legacy is correct; it excludes by construct the classes where
   * legacy is buggy relative to POSIX and this grammar is the cleaner behavior (brace
-  * bodies of a legacy-escaped char such as "{-}", and wildcard runs such as "**"/"*?*").
+  * bodies of a legacy-escaped char such as "{-}", and wildcard runs mixing '?' with '*'
+  * or containing 3+ consecutive stars). Exact "**" runs — including whole-segment
+  * globstars — are inside the fuzzed domain.
   */
 namespace GlobAST
 {
@@ -106,6 +117,8 @@ enum class WildcardType
     QUESTION,
     SINGLE_ASTERISK,
     DOUBLE_ASTERISK,
+    /// A whole-segment "**/": matches zero or more directory components.
+    GLOBSTAR,
 };
 
 enum class ExpressionType

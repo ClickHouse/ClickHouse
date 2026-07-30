@@ -110,6 +110,8 @@ std::string Expression::dumpWildcard() const
             return "*";
         case WildcardType::DOUBLE_ASTERISK:
             return "**";
+        case WildcardType::GLOBSTAR:
+            return "**/";
     }
 
     UNREACHABLE();
@@ -541,6 +543,21 @@ bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr
                         }
                         return memoize(false);
                     }
+
+                    case WildcardType::GLOBSTAR:
+                    {
+                        /// A whole-segment "**/" matches zero or more directory components
+                        /// (the legacy regex `([^/]*/)*`): the consumed prefix must be
+                        /// empty or end with '/'.
+                        ++expr_idx;
+                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
+                        {
+                            if (len == 0 || candidate[pos + len - 1] == '/')
+                                if (matchesImpl(candidate, pos + len, expr_idx, memo))
+                                    return memoize(true);
+                        }
+                        return memoize(false);
+                    }
                 }
                 break;
             }
@@ -693,6 +710,21 @@ void GlobString::parse()
 
             if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
             {
+                /// A "**" that forms a whole path segment — bounded by '/' (or the start
+                /// of the glob) on the left and by '/' on the right — is a globstar: it
+                /// matches zero or more directory components, consuming the trailing '/'.
+                /// A "**" adjacent to other characters in its segment (e.g. "a**/", or a
+                /// run of 3+ stars like "***/") keeps the legacy DOUBLE_ASTERISK meaning.
+                /// Mirrors the same rule in makeRegexpPatternFromGlobs.
+                if (position + 2 < input.length() && input[position + 2] == '/'
+                    && (position == 0 || input[position - 1] == '/'))
+                {
+                    expressions.emplace_back(WildcardType::GLOBSTAR);
+                    position += 3;
+
+                    continue;
+                }
+
                 expressions.emplace_back(WildcardType::DOUBLE_ASTERISK);
                 position += 2;
 
