@@ -252,6 +252,32 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
       ORDER BY event_time_microseconds DESC
       LIMIT 1);
 
+-- Cell C2: the serialized-plan replica path. With a local plan the initiator ships a serialized
+-- plan to the replicas (`ClusterProxy/executeQuery.cpp:893-897`), and the receiver re-optimizes it
+-- (`executeQuery.cpp:1980`) because `JoinStepLogical::serialize` does not encode the `optimized`
+-- flag, so the join-order rewrite runs again there and must derive the same seed.
+SELECT count() FROM (
+    SELECT t1_04653.x, t1_04653.z, t2_04653.x, t2_04653.y, t3_04653.y, t3_04653.z
+    FROM t1_04653 LEFT JOIN t2_04653 ON t1_04653.x = t2_04653.x
+    JOIN t3_04653 ON t2_04653.y = t3_04653.y AND t1_04653.z = t3_04653.z
+    ORDER BY ALL)
+SETTINGS query_plan_optimize_join_order_randomize = 1, query_plan_optimize_join_order_limit = 3,
+    parallel_replicas_local_plan = 1, serialize_query_plan = 1, log_comment = '04653_cell_c2';
+
+SYSTEM FLUSH LOGS query_log, text_log;
+
+SELECT 'cell C2 serialized plan derives the same seed', uniqExact(query_id) >= 2
+FROM system.text_log
+WHERE logger_name = 'QueryPlanOptimizationSettings'
+  AND message LIKE '%random seed%'
+  AND extract(message, 'seed (\\d+)') = (
+      SELECT toString(greatest(sipHash64(query_id), 2))
+      FROM system.query_log
+      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
+        AND is_initial_query AND type != 'QueryStart'
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1);
+
 DROP TABLE t1_04653;
 DROP TABLE t2_04653;
 DROP TABLE t3_04653;
