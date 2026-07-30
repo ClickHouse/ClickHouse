@@ -2600,39 +2600,89 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
         piece.object = pr.object;
         piece.object_file_offset = piece_file_start - pr.object_offset;
         const ByteRange piece_span{piece_file_start, pr.size};
-        ResidencyIterator iterator(caches_, piece.object, piece.object_file_offset, piece_span);
-
-        const size_t piece_object_end = piece.object_file_offset + pr.object.bytes_size;
-        /// CA1: the WINDOW is the demand unit - one demand end for the whole
-        /// piece (the user's "fixed window bounded by file end"), not a
-        /// per-position request-map computation. The demand end is the object
-        /// end, capped by the read bound; request-map COVERAGE bounds the
-        /// window at the CA3 join, not per-position tiling here. A single
-        /// window demand is what lets CA2 open writers by one `getOrSet` over
-        /// the window. Speculation clamps (`prefetchAllowance`/`boundedReach`)
-        /// read the map directly and are unaffected. No-map behavior is
-        /// unchanged (per-position demand was the object end there already).
-        size_t window_demand_end = piece_object_end;
-        if (demand_ceiling_phys)
-            window_demand_end = std::min(window_demand_end, *demand_ceiling_phys);
+        /// The whole span is the demand for now: the plan is KNOWLEDGE and
+        /// must survive read-bound advances (the bound gates fetching, never
+        /// observation - and the old writer upgrade opened cells for the whole
+        /// span regardless of the bound too). The request map's hole semantics
+        /// (asking only covered intervals) land with the plan-over-union stage.
         (void)request_map_;
+        (void)demand_ceiling_phys;
 
-        ResolutionFold fold(traits, piece_span);
-        size_t pos = piece_span.offset;
-        while (pos < piece_span.end())
-        {
-            /// The fixed window demand, kept positive at every position (a tail
-            /// past the demand shapes no tiling; `> pos` only keeps the probe
-            /// well-formed - the same guard the per-position walk had).
-            const size_t demand_end = std::max(window_demand_end, pos + 1);
-            const auto res = iterator.lookAt(pos, demand_end);
-            fold.add(res);
-            pos = res.range.end();
-        }
-        piece.covered_end = pos;
-        piece.folded = fold.finish();
+        /// The RANGED builder: one writer-carrying `lookAt` per (tier, ask) -
+        /// resolution and allocation in one cache transaction. Each lower tier
+        /// is asked only for territory the FASTER tiers miss (prune by
+        /// subtraction - a pruned cell never opens a writer), and the caller's
+        /// exclusions (a plan extension's owned straddler cells) subtract the
+        /// same way. Hits keep their true tail extent (overshoot is knowledge)
+        /// with heads clamped to the span; miss cells may overhang the span by
+        /// the provider's grid rounding.
+        IntervalSet subtracted;
+        IntervalSet coverage;
         for (size_t ci = 0; ci < caches_.size(); ++ci)
-            piece.views.push_back(iterator.takeView(ci));
+        {
+            GeometryEntry entry;
+            entry.tier = traits[ci].tier;
+            entry.whole_cell = traits[ci].whole_cell;
+            auto view = std::make_unique<CacheView>();
+
+            auto probe = caches_[ci]->probe();
+            /// This tier's already-collected extents. A WIDE existing segment is
+            /// returned WHOLE by every ask that intersects it, so when a faster
+            /// tier's hit splits this tier's span into several asks straddling
+            /// one segment, `getOrSet`/`get` hands the same segment back per ask.
+            /// Hits also shade slower tiers (they enter `subtracted`); misses do
+            /// NOT shade slower tiers but must still not be re-emitted for THIS
+            /// tier - so gate every resolution on `tier_emitted` (its raw extent),
+            /// keeping `aligned_miss`/`resident` sorted, disjoint, exactly-once.
+            IntervalSet tier_emitted;
+            const auto asks = subtracted.subtract(piece_span);
+            for (const auto & ask : asks)
+            {
+                for (const auto & sub : subtracted.subtract(ask))
+                {
+                    for (auto & res : probe->lookAt(piece.object, piece.object_file_offset, sub))
+                    {
+                        if (res.kind == ICacheProvider::Resolution::Kind::End)
+                            continue;
+                        /// Already collected by an earlier ask of this tier (a
+                        /// wide segment spanning the split): skip whole.
+                        if (tier_emitted.subtract(res.range).empty())
+                            continue;
+                        tier_emitted.add(res.range);
+
+                        if (res.kind == ICacheProvider::Resolution::Kind::Hit)
+                        {
+                            const size_t lo = std::max(res.range.offset, sub.offset);
+                            if (lo >= res.range.end())
+                                continue;
+                            const ByteRange clamped{lo, res.range.end() - lo};
+                            entry.resident.push_back(clamped);
+                            view->hit_entries.push_back(HitEntry{clamped, std::move(res.reader)});
+                            /// Shades this tier's later asks AND every slower tier.
+                            subtracted.add(clamped);
+                            coverage.add(clamped);
+                        }
+                        else if (res.kind == ICacheProvider::Resolution::Kind::Miss)
+                        {
+                            if (!traits[ci].populates)
+                                continue;
+                            entry.aligned_miss.push_back(res.range);
+                            view->miss_entries.push_back(MissEntry{res.range, std::move(res.writer)});
+                            coverage.add(res.range);
+                        }
+                    }
+                }
+            }
+
+            piece.folded.push_back(std::move(entry));
+            piece.views.push_back(std::move(view));
+        }
+        /// The plan keeps the entries' tail overshoot as coverage (a hit's true
+        /// extent, a cell's grid rounding reach past the span) - contiguously
+        /// from the span end.
+        piece.covered_end = piece_span.size
+            ? std::max(piece_span.end(), coverage.contiguousEnd(piece_span.end() - 1, 1))
+            : piece_span.end();
 
         pieces.push_back(std::move(piece));
         piece_file_start += pr.size;
@@ -2646,6 +2696,12 @@ void ReaderExecutor::emitObservation(
     CoverageMap & geom,
     VectorWithMemoryTracking<PlanTier> & tiers)
 {
+    /// The ranged builder produced entries and views 1:1 - pruned territory
+    /// was never asked (subtraction), so there is nothing to drop. Providers
+    /// with a native ranged `lookAt` attached their writers at the call; a
+    /// provider still on the stepping adapter returns writer-less misses, so
+    /// backfill exactly those. Publish both-or-neither, cache-major
+    /// fastest-first.
     for (size_t ci = 0; ci < caches_.size(); ++ci)
     {
         for (auto & piece : pieces)
@@ -2656,25 +2712,9 @@ void ReaderExecutor::emitObservation(
 
             CacheViewPtr view = std::move(piece.views[ci]);
             if (caches_[ci]->populatesOnMiss())
-            {
-                const auto & kept = folded.aligned_miss;
-                size_t k = 0;
-                for (size_t i = 0; i < view->misses().size();)
-                {
-                    const ByteRange cell = view->misses()[i].range;
-                    const bool keep = k < kept.size() && kept[k].offset == cell.offset && kept[k].size == cell.size;
-                    if (keep)
-                    {
-                        ++i;
-                        ++k;
-                    }
-                    else
-                        view->dropMiss(i);
-                }
-                chassert(k == kept.size());
                 for (auto & m : view->miss_entries)
-                    m.writer = caches_[ci]->openWriter(piece.object, piece.object_file_offset, m.range);
-            }
+                    if (!m.writer)
+                        m.writer = caches_[ci]->openWriter(piece.object, piece.object_file_offset, m.range);
 
             PlanTier plan_tier;
             plan_tier.provider = caches_[ci].get();
@@ -2823,6 +2863,33 @@ void ReaderExecutor::extendPlan(size_t position_phys)
             for (size_t ci = 0; ci < caches.size(); ++ci)
             {
                 auto & cells = piece.folded[ci].aligned_miss;
+                auto & view_misses = piece.views[ci]->miss_entries;
+                /// The extension's cell for a segment the old plan already owns
+                /// carries a LIVE writer (opened at the `lookAt` getOrSet) over
+                /// the SAME segment - keeping it would alias the old owner's
+                /// segment in a second holder. Every edit to the folded cell
+                /// must mirror onto its held view miss entry (found by the
+                /// cell's current offset/size), so the geometry and the view -
+                /// which `collectFillTargets` exact-matches against - stay 1:1.
+                auto erase_view_miss = [&](ByteRange cell)
+                {
+                    for (size_t v = view_misses.size(); v > 0; --v)
+                        if (view_misses[v - 1].range.offset == cell.offset
+                            && view_misses[v - 1].range.size == cell.size)
+                        {
+                            view_misses.erase(view_misses.begin() + (v - 1));
+                            return;
+                        }
+                };
+                auto trim_view_miss = [&](ByteRange cell, ByteRange trimmed)
+                {
+                    for (auto & me : view_misses)
+                        if (me.range.offset == cell.offset && me.range.size == cell.size)
+                        {
+                            me.range = trimmed;
+                            return;
+                        }
+                };
                 for (size_t i = cells.size(); i > 0; --i)
                 {
                     for (const auto & [tier, owned] : straddlers)
@@ -2836,23 +2903,23 @@ void ReaderExecutor::extendPlan(size_t position_phys)
                             /// map) between the old plan and this extension can derive a
                             /// DIFFERENT cell: TRIM it to the owned cell's remainder (the
                             /// old writer keeps its cell; only uncovered territory stays
-                            /// planned) - in the folded geometry AND the held view, whose
-                            /// miss entries the writer upgrade exact-matches against.
+                            /// planned). The drop / trim mirrors onto the held view too.
                             if (cells[i - 1].offset == owned.offset && cells[i - 1].size == owned.size)
+                            {
+                                erase_view_miss(cells[i - 1]);
                                 cells.erase(cells.begin() + (i - 1));
+                            }
                             else if (cells[i - 1].end() > owned.end())
                             {
                                 const ByteRange trimmed{owned.end(), cells[i - 1].end() - owned.end()};
-                                for (auto & me : piece.views[ci]->miss_entries)
-                                    if (me.range.offset == cells[i - 1].offset && me.range.size == cells[i - 1].size)
-                                    {
-                                        me.range = trimmed;
-                                        break;
-                                    }
+                                trim_view_miss(cells[i - 1], trimmed);
                                 cells[i - 1] = trimmed;
                             }
                             else
+                            {
+                                erase_view_miss(cells[i - 1]);
                                 cells.erase(cells.begin() + (i - 1));
+                            }
                             break;
                         }
                     }

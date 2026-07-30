@@ -303,67 +303,18 @@ public:
         return ByteRange{start, end - start};
     }
 
-    static VectorWithMemoryTracking<ResolutionFold::TierTraits>
-    traitsOf(const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain)
-    {
-        VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
-        for (const auto & p : chain)
-            traits.push_back(ResolutionFold::TierTraits{p->tier(), p->fillsWholeCell(), p->populatesOnMiss()});
-        return traits;
-    }
-
-    struct FoldResult
-    {
-        VectorWithMemoryTracking<GeometryEntry> entries;
-        size_t covered_end = 0;
-    };
-
-    /// Walk `span` with the iterator, checking the stride tiling invariants,
-    /// and fold the resolutions into geometry entries. Strides tile the span
-    /// gaplessly; only the LAST stride may overshoot the span end (a tier's
-    /// true extent), and the walk's covered end is that overshoot.
-    FoldResult foldOverSpan(
-        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain, ByteRange span)
-    {
-        ResidencyIterator it(chain, objects.front(), /*object_file_offset=*/0, span);
-        ResolutionFold fold(traitsOf(chain), span);
-        size_t pos = span.offset;
-        while (pos < span.end())
-        {
-            /// Mirror the executor's demand rule (no map, bound = FILE_SIZE):
-            /// the demand runs to the file end, not the span end - edge cells
-            /// complete their grid cell and overhang the span.
-            const auto res = it.lookAt(pos, FILE_SIZE);
-            EXPECT_EQ(res.range.offset, pos) << "stride must start at the looked-at position";
-            EXPECT_GT(res.range.size, 0u) << "stride must advance, pos=" << pos;
-            EXPECT_EQ(res.tiers.size(), chain.size());
-            fold.add(res);
-            pos = res.range.end();
-        }
-        EXPECT_GE(pos, span.end()) << "strides must cover the span";
-
-        auto slots = fold.finish();
-        FoldResult result;
-        result.covered_end = pos;
-        for (auto & e : slots)
-            if (!e.resident.empty() || !e.aligned_miss.empty())
-                result.entries.push_back(std::move(e));
-        return result;
-    }
-
-    /// The equivalence gate: iterated fold vs the live executor's plan geometry
-    /// over the identical cache state. The iterator goes FIRST - its probe is
-    /// read-only, while the executor's plan opens write buffers (creating
-    /// segments) and its serve fills them.
-    void expectFoldMatchesExecutor(
-        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & iterator_chain,
+    /// The ranged builder's geometry INVARIANTS over a randomized cache state
+    /// (the fold-comparison predecessor died with the stepping walk - one
+    /// construction path remains): per tier, resident runs and miss cells are
+    /// each sorted and disjoint, and DEMAND SUBTRACTION holds - no byte of a
+    /// slower tier's cell or run is covered by a FASTER tier's resident run
+    /// (pruned territory is never asked, so it can never allocate).
+    void expectGeometryInvariants(
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches,
         size_t start,
         const String & label)
     {
         const ByteRange span = expectedSpan(start);
-        const auto fold_result = foldOverSpan(iterator_chain, span);
-        const auto & folded = fold_result.entries;
 
         auto src = std::make_shared<MemBoundedSource>(data);
         ReaderExecutor executor(src, objects, std::move(executor_caches), makeOptions());
@@ -376,31 +327,35 @@ public:
         auto snap = inspect(executor).planGeometry();
         ASSERT_TRUE(snap) << label;
         ASSERT_EQ(snap->plan_start, span.offset) << label;
-        /// The covered end, not the requested end: both walks must keep the
-        /// same last-stride overshoot.
-        ASSERT_EQ(snap->plan_end, fold_result.covered_end) << label;
+        ASSERT_GE(snap->plan_end, span.end()) << label << ": coverage reaches the span end";
 
-        ASSERT_EQ(folded.size(), snap->entries.size()) << label << ": entry count";
-        for (size_t i = 0; i < folded.size(); ++i)
+        IntervalSet faster_hits;
+        for (size_t i = 0; i < snap->entries.size(); ++i)
         {
-            const auto & f = folded[i];
             const auto & e = snap->entries[i];
-            EXPECT_EQ(f.tier, e.tier) << label << ": entry " << i;
-            EXPECT_EQ(f.whole_cell, e.whole_cell) << label << ": entry " << i;
-
-            ASSERT_EQ(f.resident.size(), e.resident.size()) << label << ": entry " << i << " resident count";
-            for (size_t k = 0; k < f.resident.size(); ++k)
+            auto expect_sorted_disjoint = [&](const auto & runs, const char * what)
             {
-                EXPECT_EQ(f.resident[k].offset, e.resident[k].offset) << label << ": entry " << i << " resident " << k;
-                EXPECT_EQ(f.resident[k].size, e.resident[k].size) << label << ": entry " << i << " resident " << k;
+                for (size_t k = 1; k < runs.size(); ++k)
+                    EXPECT_GE(runs[k].offset, runs[k - 1].end())
+                        << label << ": entry " << i << " " << what << " " << k << " overlaps/unsorted";
+            };
+            expect_sorted_disjoint(e.resident, "resident");
+            expect_sorted_disjoint(e.aligned_miss, "cell");
+
+            for (const auto & run : e.resident)
+                EXPECT_EQ(faster_hits.subtract(run).size(), 1u)
+                    << label << ": entry " << i << " resident run shaded by a faster tier";
+            for (const auto & cell : e.aligned_miss)
+            {
+                const auto uncovered = faster_hits.subtract(cell);
+                EXPECT_FALSE(uncovered.empty())
+                    << label << ": entry " << i << " cell fully shaded by a faster tier - should never be asked";
             }
 
-            ASSERT_EQ(f.aligned_miss.size(), e.aligned_miss.size()) << label << ": entry " << i << " cell count";
-            for (size_t k = 0; k < f.aligned_miss.size(); ++k)
-            {
-                EXPECT_EQ(f.aligned_miss[k].offset, e.aligned_miss[k].offset) << label << ": entry " << i << " cell " << k;
-                EXPECT_EQ(f.aligned_miss[k].size, e.aligned_miss[k].size) << label << ": entry " << i << " cell " << k;
-            }
+            /// Entries are cache-major fastest-first per piece: this tier's
+            /// hits shade the SLOWER tiers that follow.
+            for (const auto & run : e.resident)
+                faster_hits.add(run);
         }
     }
 
@@ -451,70 +406,6 @@ TEST_F(ResidencyEquivalence, StridesTileTheSpanAndRewind)
     }
 }
 
-TEST_F(ResidencyEquivalence, DiskTierFoldMatchesExecutorGeometry)
-{
-    auto fc = makeFileCache("disk_tier");
-    warmReads({makeDiskProvider(fc)}, {{0, SEGMENT}, {3 * SEGMENT + ALIGNMENT, SEGMENT}});
-    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{6 * SEGMENT, SEGMENT}, SEGMENT / 2);
-
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
-    iterator_chain.push_back(makeDiskProvider(fc));
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
-    executor_caches.push_back(makeDiskProvider(fc));
-
-    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/ALIGNMENT / 2, "disk");
-}
-
-TEST_F(ResidencyEquivalence, PageTierFoldMatchesExecutorGeometry)
-{
-    auto pc = makePageCache();
-    /// The edge blocks are warmed so both span edges land INSIDE resident
-    /// blocks: page hits are block-ceiled and overhang the span, which is the
-    /// one case where the fold's hit clamp differs from the raw view.
-    warmReads({makePageProvider(pc)}, {{0, 2 * BLOCK}, {2 * BLOCK, 6 * BLOCK}, {32 * BLOCK, 2 * BLOCK}});
-
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
-    iterator_chain.push_back(makePageProvider(pc));
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
-    executor_caches.push_back(makePageProvider(pc));
-
-    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/BLOCK / 2, "page");
-}
-
-TEST_F(ResidencyEquivalence, TwoTierFoldMatchesExecutorGeometry)
-{
-    auto fc = makeFileCache("two_tier");
-    auto pc = makePageCache();
-
-    /// Both tiers over one region (page hits prune nothing of fs - fs holds it
-    /// too), fs-only over another (page cells become promote targets over the
-    /// fs hit), plus a partial fs cell.
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> both;
-        both.push_back(makePageProvider(pc));
-        both.push_back(makeDiskProvider(fc));
-        warmReads(std::move(both), {{0, 2 * SEGMENT}});
-    }
-    warmReads({makeDiskProvider(fc)}, {{4 * SEGMENT, SEGMENT}});
-    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{7 * SEGMENT, SEGMENT}, SEGMENT / 4);
-
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
-    iterator_chain.push_back(makePageProvider(pc));
-    iterator_chain.push_back(makeDiskProvider(fc));
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
-    executor_caches.push_back(makePageProvider(pc));
-    executor_caches.push_back(makeDiskProvider(fc));
-
-    expectFoldMatchesExecutor(iterator_chain, std::move(executor_caches), /*start=*/SEGMENT / 2, "two-tier");
-}
-
-/// The EXTEND+SLIDE gate: a sequential stream crossing `plan_end` grows the
-/// plan in place instead of rebuilding it - ONE observation for the whole
-/// stream - while every extension slides the passed territory out, so the
-/// retained span (entries and held buffers) is bounded by the reuse reach
-/// plus the plan window, not by the stream length. The unaligned start makes
-/// the cold miss cells straddle the (unaligned) plan end, so every extension
-/// also exercises the straddle-cell dedup against the old entries' writers.
 TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
 {
     auto fc = makeFileCache("extend_gate");
@@ -727,15 +618,12 @@ TEST_F(ResidencyEquivalence, RandomizedTwoTierMatrix)
                 *makeDiskProvider(fc), ByteRange{cell_idx * SEGMENT, SEGMENT}, std::min(prefix, SEGMENT - 1));
         }
 
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> iterator_chain;
-        iterator_chain.push_back(makePageProvider(pc));
-        iterator_chain.push_back(makeDiskProvider(fc));
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
         executor_caches.push_back(makePageProvider(pc));
         executor_caches.push_back(makeDiskProvider(fc));
 
-        expectFoldMatchesExecutor(
-            iterator_chain, std::move(executor_caches), start,
+        expectGeometryInvariants(
+            std::move(executor_caches), start,
             "round " + std::to_string(round) + " start " + std::to_string(start));
     }
 }
