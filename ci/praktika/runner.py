@@ -320,6 +320,40 @@ class Runner:
             labels.append(Result.Label.INFRA)
         return True
 
+    @classmethod
+    def _finalize_job_result(cls, job, process, exit_code, host_metrics):
+        """Read the job result, classify a failed run, and persist it."""
+        result = Result.from_fs(job.name)
+        if host_metrics:
+            result.add_ext_key_value("metrics", host_metrics)
+        if exit_code != 0:
+            if not result.is_completed():
+                if process.timeout_exceeded:
+                    print(
+                        f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                    )
+                    result.add_error(ResultInfo.TIMEOUT)
+                elif result.is_running():
+                    info = f"Job killed, exit code [{exit_code}]"
+                    print(f"ERROR: {info}")
+                    result.add_error(info)
+                else:
+                    info = (
+                        f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                    )
+                    print(f"ERROR: {info}")
+                    result.add_error(info)
+                result.set_status(Result.Status.ERROR)
+                latest_log = process.get_latest_log(max_lines=20)
+                result.set_info(latest_log)
+                # Must run before the dump below, or the label never reaches the
+                # result JSON that retry_infra_failures.yml reads.
+                cls._label_infra_on_docker_daemon_death(
+                    result, exit_code, latest_log, process.timeout_exceeded
+                )
+        result.dump()
+        return result
+
     def _run(
         self,
         workflow,
@@ -537,31 +571,7 @@ class Runner:
                     chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
                     Shell.run(chown_cmd)
 
-                result = Result.from_fs(job.name)
-                if host_metrics:
-                    result.add_ext_key_value("metrics", host_metrics)
-                if exit_code != 0:
-                    if not result.is_completed():
-                        if process.timeout_exceeded:
-                            print(
-                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                            )
-                            result.add_error(ResultInfo.TIMEOUT)
-                        elif result.is_running():
-                            info = f"Job killed, exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        else:
-                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                            print(f"ERROR: {info}")
-                            result.add_error(info)
-                        result.set_status(Result.Status.ERROR)
-                        latest_log = process.get_latest_log(max_lines=20)
-                        result.set_info(latest_log)
-                        self._label_infra_on_docker_daemon_death(
-                            result, exit_code, latest_log, process.timeout_exceeded
-                        )
-                result.dump()
+                self._finalize_job_result(job, process, exit_code, host_metrics)
         finally:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.

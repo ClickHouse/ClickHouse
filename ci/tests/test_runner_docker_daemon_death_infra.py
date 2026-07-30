@@ -9,14 +9,15 @@ instead of reddening the merge check. This test pins the signature detection
 in both directions.
 """
 
+import json
 import os
 import sys
-import textwrap
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.praktika.runner import Runner
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 
 # A representative teardown tail from a real signature-A truncation: the last
 # test passed, then the docker daemon connection was canceled and the main
@@ -140,17 +141,70 @@ def test_no_infra_label_for_timeout_or_non_daemon_death():
     assert "labels" not in connect_failure.ext
 
 
-def test_run_still_labels_via_the_production_helper():
-    # The helper above is only worth testing if _run actually calls it. Pin the
-    # wiring so removing the call from _run fails here instead of silently
-    # disabling the auto-retry.
-    import ast
-    import inspect
+class _FakeProcess:
+    """Stands in for TeePopen: only the two members the branch reads."""
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(Runner._run)))
-    called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    }
-    assert "_label_infra_on_docker_daemon_death" in called
+    def __init__(self, log_tail, timeout_exceeded=False):
+        self._log_tail = log_tail
+        self.timeout_exceeded = timeout_exceeded
+
+    def get_latest_log(self, max_lines=20):
+        return self._log_tail
+
+
+class _FakeJob:
+    name = "fake job"
+    timeout = 9000
+
+
+def _finalize(tmp_path, monkeypatch, log_tail, timeout_exceeded=False, exit_code=125):
+    """Drive the real Runner finalization branch and return the persisted JSON.
+
+    The result file is what retry_infra_failures.yml reads, so asserting on the
+    file (not on the in-memory object) covers the ordering too: a label applied
+    after the dump would not appear here.
+    """
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    job = _FakeJob()
+    # A truncated run: the runner wrote RUNNING and never reached completion.
+    Result(name=job.name, status=Result.Status.RUNNING).dump()
+    Runner._finalize_job_result(
+        job, _FakeProcess(log_tail, timeout_exceeded), exit_code, None
+    )
+    with open(Result.file_name_static(job.name)) as f:
+        return json.load(f)
+
+
+def test_run_persists_bare_infra_label_on_daemon_death(tmp_path, monkeypatch):
+    # End-to-end through the production branch: the persisted result must carry
+    # the bare string, which is what the retry workflow jq matches.
+    persisted = _finalize(tmp_path, monkeypatch, _DAEMON_DEATH_LOG)
+    assert persisted["ext"]["labels"] == ["infra"]
+    assert persisted["status"] == Result.Status.ERROR
+
+
+def test_run_does_not_label_timeout_or_connect_failure(tmp_path, monkeypatch):
+    # A timed-out run keeps its own handling, and a plain docker.sock connect
+    # failure is a real regression: neither may be auto-retried.
+    timed_out = _finalize(
+        tmp_path, monkeypatch, _DAEMON_DEATH_LOG, timeout_exceeded=True
+    )
+    assert "infra" not in timed_out["ext"].get("labels", [])
+
+    connect_failure = _finalize(
+        tmp_path,
+        monkeypatch,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock\n",
+    )
+    assert "infra" not in connect_failure["ext"].get("labels", [])
+
+
+def test_run_does_not_label_a_completed_or_successful_run(tmp_path, monkeypatch):
+    # The label belongs only to a truncated failure. A zero exit code must not
+    # be labeled even when the daemon-death text is in the log tail.
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    job = _FakeJob()
+    Result(name=job.name, status=Result.Status.RUNNING).dump()
+    Runner._finalize_job_result(job, _FakeProcess(_DAEMON_DEATH_LOG), 0, None)
+    with open(Result.file_name_static(job.name)) as f:
+        assert "infra" not in json.load(f)["ext"].get("labels", [])
