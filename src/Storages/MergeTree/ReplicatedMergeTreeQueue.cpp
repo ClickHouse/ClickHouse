@@ -1915,15 +1915,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    /// A part carries its own metadata version on disk and keeps it when it is fetched from another
-    /// replica, while this replica's table metadata version only advances when it executes its own
-    /// ALTER_METADATA entry. So a fetched part can be ahead of the table, and mutating it against a
-    /// snapshot that does not know its columns yet is not a state the mutation code can represent.
-    /// Wait until the pending ALTER_METADATA is applied, which is what resolves the mismatch.
-    /// This mirrors MergeFromLogEntryTask::prepare, which already refuses to merge in this state.
+    /// A fetched part keeps its own metadata version, so it can be ahead of this replica's table until
+    /// this replica applies its own ALTER_METADATA. MergeFromLogEntryTask::prepare has the same rule.
     if (entry.type == LogEntry::MUTATE_PART && !entry.source_parts.empty())
     {
-        if (auto part = data.getPartIfExists(entry.source_parts[0], {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated}))
+        if (auto part = data.getPartIfExists(entry.source_parts[0],
+            {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated}))
         {
             const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
             int32_t part_metadata_version = part->getMetadataVersion();
