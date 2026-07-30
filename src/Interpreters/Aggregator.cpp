@@ -57,6 +57,7 @@ namespace ProfileEvents
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event AggregationTopKRowsSkipped;
     extern const Event AggregationTopKKeysEvicted;
+    extern const Event AggregationTopKKeysPruned;
     extern const Event AggregationTopKHeapsFrozen;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
@@ -1185,6 +1186,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
             keyHolderDiscardKey(key_holder);
         });
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, evicted_count);
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysPruned, evicted_count);
     }
 }
 
