@@ -49,6 +49,22 @@ SELECT 'FixedString constant vs wide FixedString key';
 SELECT count() FROM t_multi_atom_wide_fixed_string WHERE s = toFixedString('abc', 8);
 SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_multi_atom_wide_fixed_string WHERE s = toFixedString('abc', 8)) WHERE explain LIKE '%Granules: %/%';
 
+-- The rows here differ only in the trailing '\0' bytes that the constant is padded with, so every
+-- one of them matches `toFixedString('abc', 8)` and none may be pruned. The key reaches `s` both
+-- bare and through `lower`, and pushing the constant through a key expression converts it into the
+-- expression input type, which drops the padding for a `String` input: the resulting atom would
+-- stand for `'abc'` alone and prune the other two rows.
+DROP TABLE IF EXISTS t_multi_atom_padded_family;
+CREATE TABLE t_multi_atom_padded_family (s String) ENGINE = MergeTree ORDER BY (lower(s), s) SETTINGS index_granularity = 1;
+INSERT INTO t_multi_atom_padded_family VALUES ('abc'), ('abc\0'), ('abc\0\0'), ('abd'), ('abc\0x');
+
+SELECT 'padded FixedString constant matches a family of String keys';
+SELECT count() FROM t_multi_atom_padded_family WHERE s = toFixedString('abc', 8);
+SELECT count() FROM t_multi_atom_padded_family WHERE toFixedString('abc', 8) = s;
+SELECT count() FROM t_multi_atom_padded_family WHERE s IS NOT DISTINCT FROM toFixedString('abc', 8);
+SELECT count() FROM t_multi_atom_padded_family WHERE s != toFixedString('abc', 8);
+
 DROP TABLE t_multi_atom_null;
 DROP TABLE t_multi_atom_fixed_string;
 DROP TABLE t_multi_atom_wide_fixed_string;
+DROP TABLE t_multi_atom_padded_family;

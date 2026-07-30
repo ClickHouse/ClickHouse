@@ -2245,6 +2245,35 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
+/// A `FixedString(N)` constant is stored as a `String` Field of exactly N bytes, right-padded with
+/// '\0', and is compared zero-padded, so when its padding is not empty it matches a whole family of
+/// values rather than a single one: `toFixedString('abc', 257) = p` is true for a `String` `p` equal
+/// to `'abc'`, `'abc\0'`, `'abc\0\0'`, ...
+///
+/// Pushing such a constant through a key expression first converts it into the expression input
+/// type, and a `String` (or narrower `FixedString`) input drops the padding: the transformed
+/// constant then stands for one member of the family only, so the resulting atom prunes granules
+/// holding the other members. That is a different match set rather than a superset, so the `relaxed`
+/// flag cannot repair it and the candidate has to be dropped. An input `FixedString` at least as
+/// wide as the constant keeps the padded bytes, so the transform stays sound there.
+static bool zeroPaddedFixedStringConstantLosesPadding(
+    const Field & value, const DataTypePtr & constant_type, const DataTypePtr & key_expression_input_type)
+{
+    if (value.getType() != Field::Types::String)
+        return false;
+
+    if (!WhichDataType(removeLowCardinalityAndNullable(constant_type)).isFixedString())
+        return false;
+
+    const auto & constant_bytes = value.safeGet<String>();
+    if (constant_bytes.empty() || constant_bytes.back() != '\0')
+        return false;
+
+    const auto input_type = removeLowCardinalityAndNullable(key_expression_input_type);
+    const auto * fixed_string_input_type = typeid_cast<const DataTypeFixedString *>(input_type.get());
+    return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
+}
+
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByMonotonicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2274,6 +2303,12 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 
     for (const auto & chain : chains)
     {
+        /// The chain casts the constant to the argument type of its first function.
+        if (!chain.functions_chain.empty() && !chain.functions_chain.front()->getArgumentTypes().empty()
+            && zeroPaddedFixedStringConstantLosesPadding(
+                value, type, getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front())))
+            continue;
+
         ColumnPtr const_column = type->createColumnConst(1, value);
 
         ColumnPtr transformed_const_column;
@@ -2732,6 +2767,10 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 
     for (auto & candidate : dags)
     {
+        /// The DAG casts the constant to its input type.
+        if (zeroPaddedFixedStringConstantLosesPadding(value, type, candidate.dag.input_type))
+            continue;
+
         bool is_injective = isDeterministicTransformInjective(
             candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
 
