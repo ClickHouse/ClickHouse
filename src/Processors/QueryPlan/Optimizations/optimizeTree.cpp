@@ -314,15 +314,23 @@ void optimizeTreeSecondPass(
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
+    /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
+    /// after `applyParallelReplicas` - it runs there instead, see below.
+    const auto optimize_join_lazy_indexing = [&]
     {
+        if (optimization_settings.min_columns_for_join_lazy_indexing == 0)
+            return;
+
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
                 optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
             });
-    }
+    };
+
+    if (!optimization_settings.enable_parallel_replicas)
+        optimize_join_lazy_indexing();
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
@@ -374,9 +382,16 @@ void optimizeTreeSecondPass(
     /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
     /// when nothing was distributed), which the traversal above skipped.
     if (optimization_settings.enable_parallel_replicas)
+    {
         traverseQueryPlan(stack, root,
             [&](auto &) {},
             [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+
+        /// The joins are physical only now, so this is the first point where lazy column indexing can be
+        /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
+        /// fragment's own re-optimization on the replica.
+        optimize_join_lazy_indexing();
+    }
 
     stack.push_back({.node = &root});
     while (!stack.empty())
