@@ -3127,6 +3127,12 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// that does not, which is the very policy the scalar helper above rejects. Custom names must agree in
 /// either case: `Bool` is `equals`-equal to `UInt8` and matches at runtime, but its cast wrapper clamps
 /// every nonzero value to 1, so the preparation direction is not injective.
+///
+/// A transforming key expression is declined outright, in both shapes below: `data_types` always holds
+/// the type of the KEY column, which is the left expression's own type only when the key expression
+/// does not transform it (`analyzeKeyExpressionForSetIndex` records the type of the transformed key in
+/// either case), so with a DAG present neither reconstruction yields the left type and the comparison
+/// would decide identity on the wrong pair.
 static bool compositeHasArgumentsHaveSameType(
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
@@ -3141,13 +3147,18 @@ static bool compositeHasArgumentsHaveSameType(
     if (!element_which.isTuple() && !element_which.isArray() && !element_which.isMap())
         return true;
 
+    /// Any transforming key expression puts a transformed type in `data_types`, so the left type is
+    /// not reconstructible from it in either shape below. Fail closed.
+    for (const auto & dag : set_transforming_dags)
+        if (dag.has_value())
+            return false;
+
     DataTypePtr left_type;
     if (key_args_count == 1)
     {
-        /// A single composite argument (a packed tuple/array column). `data_types` holds the type of
-        /// the KEY column, which is the left expression's own type only when the key expression does
-        /// not transform it; with a transforming DAG present the two differ, so fail closed.
-        if (set_transforming_dags.size() != 1 || set_transforming_dags.front().has_value())
+        /// A single composite argument (a packed tuple/array column): `data_types` holds that one key
+        /// column's type directly.
+        if (set_transforming_dags.size() != 1)
             return false;
         left_type = normalize(data_types.front());
     }

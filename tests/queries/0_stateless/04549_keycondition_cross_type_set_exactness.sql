@@ -743,6 +743,36 @@ SELECT 'S2C signedness has',
     (SELECT count() FROM s2c WHERE has([tuple(toUInt16(1), toUInt16(1)), tuple(toUInt16(2), toUInt16(2))], (a, b))) = (SELECT count() FROM p2c WHERE has([tuple(toUInt16(1), toUInt16(1)), tuple(toUInt16(2), toUInt16(2))], (a, b)));
 DROP TABLE s2c; DROP TABLE p2c;
 
+SELECT '--- composite has() over a TRANSFORMING key expression: the left type is not reconstructible ---';
+
+-- `data_types` always carries the type of the KEY column, so under a transforming key expression it is
+-- the type of the transformed key, not of the runtime left tuple. Deciding composite identity from it
+-- compares the wrong pair, and because `negate` is injective the atom stays EXACT, so `NOT has` prunes
+-- a partition that still holds a match. The pair below is `(UInt32, UInt32)` against
+-- `Tuple(Int64, Int64)`: the runtime `Field` compare is 0 (different signedness), so `NOT has` is true
+-- for every row, yet master's reconstruction saw the negated key's type and admitted the pair.
+DROP TABLE IF EXISTS ctn; DROP TABLE IF EXISTS ctno;
+CREATE TABLE ctn (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (negate(a), negate(b)) PARTITION BY (negate(a), negate(b)) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE ctno (a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO ctn VALUES (1, 1); INSERT INTO ctn VALUES (2, 2);
+INSERT INTO ctno VALUES (1, 1), (2, 2);
+SELECT 'CTN transforming key NOT has',
+    (SELECT count() FROM ctn WHERE NOT has([tuple(toInt64(1), toInt64(1))], (a, b))) = (SELECT count() FROM ctno WHERE NOT has([tuple(toInt64(1), toInt64(1))], (a, b)));
+SELECT 'CTN transforming key NOT has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctn WHERE NOT has([tuple(toInt64(1), toInt64(1))], (a, b))) WHERE explain ILIKE '%element set%';
+DROP TABLE ctn; DROP TABLE ctno;
+
+-- The must-not-regress partner: a same-type literal over a NON-transforming key, otherwise identical.
+-- Declining every composite `has` would pass the two cells above and fail this one.
+DROP TABLE IF EXISTS ctp; DROP TABLE IF EXISTS ctpo;
+CREATE TABLE ctp (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE ctpo (a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO ctp VALUES (1, 1); INSERT INTO ctp VALUES (2, 2);
+INSERT INTO ctpo VALUES (1, 1), (2, 2);
+SELECT 'CTP plain key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctp WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'CTP plain key NOT has',
+    (SELECT count() FROM ctp WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) = (SELECT count() FROM ctpo WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b)));
+DROP TABLE ctp; DROP TABLE ctpo;
+
 SELECT '--- composite has(): the attribute axis, pinned per direction ---';
 
 -- Every other attribute-axis control in this file is a scalar `IN`. Without these three the composite

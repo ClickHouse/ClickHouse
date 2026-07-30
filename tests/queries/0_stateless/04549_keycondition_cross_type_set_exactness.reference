@@ -151,6 +151,11 @@ W2C 128-bit has declines	0
 W2C 128-bit has	1
 S2C signedness has declines	0
 S2C signedness has	1
+--- composite has() over a TRANSFORMING key expression: the left type is not reconstructible ---
+CTN transforming key NOT has	1
+CTN transforming key NOT has declines	0
+CTP plain key NOT has keeps pruning	1
+CTP plain key NOT has	1
 --- composite has(): the attribute axis, pinned per direction ---
 attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning	1
 attr Tuple(DateTime(UTC))/Tuple(DateTime) has	1
