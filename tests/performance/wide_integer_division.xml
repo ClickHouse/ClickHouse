@@ -53,5 +53,19 @@
     <query>SELECT sum(length(toString(d40))) FROM (SELECT d40 FROM div256 LIMIT 200000)</query>
     <query>SELECT sum(length(toDecimalString(d40, 40))) FROM (SELECT d40 FROM div256 LIMIT 200000)</query>
 
+    <!-- Rounding and rescaling a Decimal256 both divide by the scale multiplier once per row. -->
+    <query>SELECT sum(round(d40, 5)) FROM div256</query>
+    <query>SELECT sum(toDecimal256(d40, 5)) FROM div256</query>
+
+    <!-- Printing a 256-bit integer strips 18-digit blocks off with a division by 10^18 each. -->
+    <query>SELECT sum(length(toString(u))) FROM div256</query>
+    <query>SELECT sum(length(toString(i))) FROM div256</query>
+
+    <!-- `divideDecimal` and `multiplyDecimal` convert their operands to decimal digits one at a
+         time, which is a division by 10 per digit, so they are as expensive per row as formatting
+         and read a small part of the table for the same reason. -->
+    <query>SELECT sum(divideDecimal(d40, toDecimal256(7, 1), 40)) FROM (SELECT d40 FROM div256 LIMIT 50000)</query>
+    <query>SELECT sum(multiplyDecimal(d40, toDecimal256(7, 1), 40)) FROM (SELECT d40 FROM div256 LIMIT 50000)</query>
+
     <drop_query>DROP TABLE IF EXISTS div256</drop_query>
 </test>

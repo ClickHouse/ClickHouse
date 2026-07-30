@@ -414,47 +414,32 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
         return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
 
-    /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
-    /// and produces better code
-    using T =
-#if defined(__x86_64__)
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wbit-int-extension"
-        unsigned _BitInt(256)
-#    pragma clang diagnostic pop
-#else
-        UInt256
-#endif
-        ;
-
-#if defined(__x86_64__)
-    T x = (T(_x.items[UInt256::_impl::little(3)]) << 192) + (T(_x.items[UInt256::_impl::little(2)]) << 128)
-        + (T(_x.items[UInt256::_impl::little(1)]) << 64) + T(_x.items[UInt256::_impl::little(0)]);
-#else
-    T x = _x;
-#endif
-
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
-    /// and switch to that function
+    /// and switch to that function.
+    ///
+    /// The blocks are stripped off with UInt256 division rather than with _BitInt(256): the divisor spans
+    /// a single 64-bit limb, which `UInt256::_impl::divide` handles with one 128 / 64 division per limb,
+    /// while for _BitInt(256) the compiler emits a generic bignum sequence that is more than twenty times
+    /// slower. It also produces the quotient and the remainder at once, so a block costs one division
+    /// instead of two.
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
 
-    constexpr T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    constexpr T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
+    const UInt256 large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
 
-    while (x > largest_uint128)
+    UInt256 x = _x;
+    /// The loop condition is `x > std::numeric_limits<UInt128>::max()`, spelled out on the limbs
+    /// to avoid a full 256-bit comparison.
+    while (x.items[UInt256::_impl::little(3)] != 0 || x.items[UInt256::_impl::little(2)] != 0)
     {
-        uint64_t u64_remainder = uint64_t(x % large_divisor);
-        x /= large_divisor;
-        extractDigitPairs(u64_remainder, two_values + current_pos);
+        /// Returns the quotient and leaves the remainder in its first argument.
+        const UInt256 quotient = UInt256::_impl::divide(x, large_divisor);
+        extractDigitPairs(x.items[UInt256::_impl::little(0)], two_values + current_pos);
+        x = quotient;
         current_pos += max_multiple_of_hundred_blocks;
     }
 
-#if defined(__x86_64__)
-    UInt128 pending{uint64_t(x), uint64_t(x >> 64)};
-#else
     UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
-#endif
 
     char * out = writeUIntText(pending, p);
     return writeDigitPairs(out, two_values, current_pos);
