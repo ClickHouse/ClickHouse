@@ -106,7 +106,7 @@ TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
     /// to put between them, and a newline, which `[^:]` matches but `.` does not.
     static constexpr std::string_view ALPHABET = "ab:@/.\n";
 
-    std::mt19937 random(0);
+    std::mt19937 random(0); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     std::uniform_int_distribution<size_t> length(0, 24);
     std::uniform_int_distribution<size_t> character(0, ALPHABET.length() - 1);
 
@@ -148,7 +148,7 @@ TEST(MaskConnectionStringKey, MasksAtLeastAsMuchAsTheRegularExpression)
     static constexpr std::string_view ALPHABET = "ab;=\n";
     static constexpr std::string_view KEY = "AccountKey=";
 
-    std::mt19937 random(0);
+    std::mt19937 random(0); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     std::uniform_int_distribution<size_t> length(0, 16);
     std::uniform_int_distribution<size_t> character(0, ALPHABET.length() - 1);
 

@@ -76,7 +76,7 @@ TEST(LiteralTokenMap, GrowsBeyondInlineCapacity)
 
 TEST(LiteralTokenMap, AgreesWithUnorderedMap)
 {
-    std::mt19937_64 rng(12345);
+    std::mt19937_64 rng(12345); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
 
     for (int round = 0; round < 500; ++round)
     {
@@ -87,7 +87,7 @@ TEST(LiteralTokenMap, AgreesWithUnorderedMap)
         size_t inserts = rng() % 400;
         for (size_t i = 0; i < inserts; ++i)
         {
-            const ASTLiteral * key;
+            const ASTLiteral * key = nullptr;
             if (!keys.empty() && rng() % 4 == 0)
                 key = keys[rng() % keys.size()];    /// exercise overwriting
             else
