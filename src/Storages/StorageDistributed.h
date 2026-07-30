@@ -140,6 +140,9 @@ public:
 
     size_t getShardCount() const;
 
+    bool hasShardingKey() const { return has_sharding_key; }
+    bool isShardingKeyDeterministic() const { return sharding_key_is_deterministic; }
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:

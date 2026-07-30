@@ -58,6 +58,8 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool optimize_skip_unused_shards;
+    extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
 }
 
 namespace ErrorCodes
@@ -119,17 +121,35 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
     auto cluster = distributed->getCluster();
 
     bool has_shard_with_several_nodes = false;
+    bool has_single_node_shard = false;
     for (const auto & shard : cluster->getShardsInfo())
     {
         if (shard.getAllNodeCount() > 1)
-        {
             has_shard_with_several_nodes = true;
-            break;
-        }
+        else
+            has_single_node_shard = true;
     }
 
     /// Every algorithm needs at least one shard with more than one node to split the read.
     if (!has_shard_with_several_nodes)
+        return false;
+
+    /// This is the table's full configured cluster, but the read path may shrink it before
+    /// deciding on parallel replicas: `StorageDistributed::getQueryProcessingStage` applies
+    /// `optimize_skip_unused_shards` (`getOptimizedCluster`) first, and
+    /// `updateSettingsAndClientInfoForCluster` then judges the pruned cluster. When the full
+    /// cluster mixes single-node and multi-node shards, pruning can leave single-node shards
+    /// only, and the read silently runs without parallel replicas. Whether it does depends on
+    /// the query's WHERE clause, which is not known before planning, so a storage whose read
+    /// might be pruned that way must not count as eligible — otherwise the forcing mode would
+    /// reject a query the plain read path would have run without parallel replicas anyway.
+    /// Pruning is attempted only when the settings and the table allow it (the sharding key
+    /// must exist and be usable), and never on the custom-key path, which works with the full
+    /// cluster — mirror those conditions here.
+    const auto & settings = context->getSettingsRef();
+    if (has_single_node_shard && settings[Setting::optimize_skip_unused_shards] && distributed->hasShardingKey()
+        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || distributed->isShardingKeyDeterministic())
+        && !context->canUseParallelReplicasCustomKeyForCluster(*cluster))
         return false;
 
     /// A `remote()` table function without a named cluster cannot use the task-based mode,

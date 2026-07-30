@@ -861,6 +861,46 @@ SELECT sum(n) FROM cluster_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A `Distributed` table over a cluster that mixes single-node and multi-node shards may be
+-- shrunk by shard pruning before the read path decides on parallel replicas:
+-- `StorageDistributed::getQueryProcessingStage` applies `optimize_skip_unused_shards` first,
+-- and when the pruned cluster keeps single-node shards only, the read silently runs without
+-- parallel replicas. Which shards survive depends on the query's WHERE clause and is unknown
+-- before planning, so the forcing mode must not reject such a query up front. Both shards
+-- point back at this very server, so the plain read sees two copies of every edge —
+-- `sum(DISTINCT n)` keeps the expected result independent of that.
+DROP TABLE IF EXISTS edges_dist;
+CREATE TABLE edges_dist AS edges
+    ENGINE = Distributed('test_cluster_mixed_replica_count_localhost', currentDatabase(), edges, from_id);
+
+WITH RECURSIVE pruned_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM pruned_pr AS t INNER JOIN edges_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(DISTINCT n) FROM pruned_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    optimize_skip_unused_shards = 1;
+
+-- Without shard pruning the read goes to the full mixed cluster, whose multi-node shard
+-- really can engage parallel replicas, so there the forcing mode must still be rejected.
+WITH RECURSIVE pruned_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM pruned_pr_throw AS t INNER JOIN edges_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(DISTINCT n) FROM pruned_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    optimize_skip_unused_shards = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_dist;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
