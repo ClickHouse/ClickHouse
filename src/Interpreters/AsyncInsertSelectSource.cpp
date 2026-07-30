@@ -96,7 +96,8 @@ Chunk AsyncInsertSelectSource::generate()
             sync_interpreter.setForcedInsertDependencies(forced_insert_dependencies);
         sync_io.emplace(sync_interpreter.execute());
         sync_io->pipeline.setProcessListElement(context->getProcessListElement());
-        sync_exec = std::make_unique<PushingPipelineExecutor>(sync_io->pipeline);
+        /// `report_read_progress=false`: the SELECT pipeline already counted these rows.
+        sync_exec = std::make_unique<PushingPipelineExecutor>(sync_io->pipeline, /* report_read_progress */ false);
         sync_exec->start();
     };
 
