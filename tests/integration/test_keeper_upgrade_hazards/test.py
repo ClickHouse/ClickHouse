@@ -52,6 +52,9 @@ import os
 import time
 import uuid
 
+from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
+from kazoo.handlers.threading import KazooTimeoutError
+
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
@@ -67,6 +70,10 @@ SNAPSHOT_DIR = "/var/lib/clickhouse/coordination/snapshots"
 CONFIG_DIR = "/etc/clickhouse-server/config.d"
 
 UNSUPPORTED_VERSION_ERROR = "Unsupported snapshot version 8"
+
+# `CreateTTL` is OpNum 21, which does not exist in the old version's request
+# factory, so deserializing such a log entry raises this.
+UNKNOWN_OPNUM_ERROR = "Unknown operation type 21"
 
 
 def make_cluster(config_prefix):
@@ -236,6 +243,24 @@ def assert_batch_visible(cluster, nodes, prefix, count, timeout=60.0):
             stop_zk(zk)
 
 
+def serves_path(cluster, node, path):
+    """Whether `node` answers a read for `path`.
+
+    A node that refuses connections outright is reported as not serving, because
+    that is an equally valid way for it to be stuck out of the quorum. Only
+    connection-level failures are treated that way - nothing here swallows an
+    `AssertionError`, so callers keep their teeth.
+    """
+    zk = None
+    try:
+        zk = keeper_utils.get_fake_zk(cluster, node.name, timeout=10.0, retries=1)
+        return zk.exists(path) is not None
+    except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
+        return False
+    finally:
+        stop_zk(zk)
+
+
 def wait_for_log(node, substring, timeout=60.0):
     deadline = time.monotonic() + timeout
     while not node.contains_in_log(substring):
@@ -369,15 +394,11 @@ def test_snapshot_install_to_old_node_fails_after_early_v8_bump():
         ), f"expected {UNSUPPORTED_VERSION_ERROR!r} in node2 log after install"
 
         # ...and it cannot serve the data it missed, i.e. it is out of the quorum.
-        node2_zk = None
-        try:
-            node2_zk = keeper_utils.get_fake_zk(cluster, node2.name, timeout=10.0)
-            assert node2_zk.exists("/while_node2_down_199") is None
-        except Exception:
-            # Not serving requests at all is an equally valid manifestation.
-            pass
-        finally:
-            stop_zk(node2_zk)
+        # If it can, the hazard did not materialise and this test's premise is
+        # wrong, so fail rather than pass quietly.
+        assert not serves_path(
+            cluster, node2, "/while_node2_down_199"
+        ), "node2 served data it could only have obtained from a V8 snapshot"
 
         # The two upgraded/remaining-quorum members are unaffected, which is why
         # this is easy to miss from the outside.
@@ -493,24 +514,17 @@ def test_new_feature_flag_during_mixed_window_breaks_old_nodes():
         finally:
             stop_zk(node1_zk)
 
-        # The old nodes receive a request type they do not know. They cannot apply
-        # it, so the node never becomes consistent with the leader.
+        # The old nodes receive a request type they do not know, so they cannot
+        # apply the entry and never become consistent with the leader. Assert the
+        # positive evidence for that - the deserialization error - rather than
+        # only the absence of the node, so a merely slow follower cannot make this
+        # pass by accident.
         for node in (node2, node3):
-            zk = None
-            try:
-                zk = keeper_utils.get_fake_zk(cluster, node.name, timeout=10.0)
-                deadline = time.monotonic() + 30
-                while zk.exists("/ttl_node") is None:
-                    if time.monotonic() >= deadline:
-                        break
-                    time.sleep(0.5)
-                assert (
-                    zk.exists("/ttl_node") is None
-                ), f"{node.name} ({OLD_VERSION}) applied a CreateTTL entry"
-            except Exception:
-                # Refusing to serve at all is an equally valid manifestation.
-                pass
-            finally:
-                stop_zk(zk)
+            assert wait_for_log(
+                node, UNKNOWN_OPNUM_ERROR, timeout=60
+            ), f"expected {UNKNOWN_OPNUM_ERROR!r} in {node.name}'s log"
+            assert not serves_path(
+                cluster, node, "/ttl_node"
+            ), f"{node.name} ({OLD_VERSION}) applied a CreateTTL entry"
     finally:
         cluster.shutdown()
