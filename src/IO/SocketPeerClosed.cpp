@@ -8,10 +8,10 @@
 
 #if USE_SSL
 #include <base/scope_guard.h>
+#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <fcntl.h>
 #endif
 
 #if USE_SILK && USE_SSL
@@ -83,28 +83,38 @@ namespace
 {
 
 /// Force the socket into non-blocking mode for the duration of a call, restoring the original
-/// flags afterwards, so that `SSL_peek` on an idle pooled connection can never block.
+/// mode afterwards, so that `SSL_peek` on an idle pooled connection can never block.
 class ScopedNonBlocking
 {
 public:
-    explicit ScopedNonBlocking(int fd_) : fd(fd_), flags(::fcntl(fd_, F_GETFL, 0))
+    explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_impl_)
+        : socket_impl(socket_impl_), was_blocking(socket_impl_.getBlocking())
     {
-        if (flags >= 0 && !(flags & O_NONBLOCK))
-            ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        if (was_blocking)
+            socket_impl.setBlocking(false);
     }
 
     ~ScopedNonBlocking()
     {
-        if (flags >= 0 && !(flags & O_NONBLOCK))
-            ::fcntl(fd, F_SETFL, flags);
+        if (!was_blocking)
+            return;
+
+        try
+        {
+            socket_impl.setBlocking(true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     ScopedNonBlocking(const ScopedNonBlocking &) = delete;
     ScopedNonBlocking & operator=(const ScopedNonBlocking &) = delete;
 
 private:
-    int fd;
-    int flags;
+    Poco::Net::SocketImpl & socket_impl;
+    bool was_blocking;
 };
 
 }
@@ -128,7 +138,7 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
                 return getSslSocketState(ssl);
             }
 #endif
-            ScopedNonBlocking non_blocking(secure->sockfd());
+            ScopedNonBlocking non_blocking(*secure);
             return getSslSocketState(ssl);
         }
     }
