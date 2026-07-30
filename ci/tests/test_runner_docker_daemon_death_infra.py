@@ -11,6 +11,7 @@ in both directions.
 
 import json
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -18,6 +19,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from ci.praktika.runner import Runner
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
+from ci.praktika.job import Job
+from ci.praktika._environment import _Environment
 
 # A representative teardown tail from a real signature-A truncation: the last
 # test passed, then the docker daemon connection was canceled and the main
@@ -141,6 +144,16 @@ def test_no_infra_label_for_timeout_or_non_daemon_death():
     assert "labels" not in connect_failure.ext
 
 
+class _FakeEnv:
+    """_run only reads/writes these three members of the environment."""
+
+    JOB_NAME = ""
+    WORKFLOW_CONFIG = None
+
+    def dump(self):
+        pass
+
+
 class _FakeProcess:
     """Stands in for TeePopen: only the two members the branch reads."""
 
@@ -197,6 +210,46 @@ def test_run_does_not_label_timeout_or_connect_failure(tmp_path, monkeypatch):
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock\n",
     )
     assert "infra" not in connect_failure["ext"].get("labels", [])
+
+
+def _run_no_docker_job(tmp_path, monkeypatch, script, timeout=60):
+    """Drive Runner._run end to end without Docker and return the result JSON.
+
+    `run_in_docker` is empty, so `_run` executes `job.command` directly through
+    TeePopen. The script writes the RUNNING result the real job would leave
+    behind, emits the teardown tail on stdout, and exits 125, which is exactly
+    the truncated daemon-death shape.
+    """
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr(Runner, "LOCAL_ENV_FILE", str(tmp_path / "no-such-env"))
+    monkeypatch.setattr(_Environment, "get", classmethod(lambda cls: _FakeEnv()))
+    job = Job.Config(name="fake job", runs_on=[], command=script, timeout=timeout)
+    Runner()._run(workflow=None, job=job, no_docker=True)
+    with open(Result.file_name_static(job.name)) as f:
+        return json.load(f)
+
+
+def test_run_end_to_end_persists_bare_infra_label(tmp_path, monkeypatch):
+    """The sole production call site must apply the label.
+
+    The helper-level tests above cover the decision in detail; this one pins
+    that `_run` still routes a truncated daemon-death run through it, so
+    removing or misguarding that call cannot pass silently.
+    """
+    # The job leaves a RUNNING result behind, prints the teardown tail and
+    # exits 125: the truncated daemon-death shape.
+    seed = tmp_path / "seed.json"
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    Result(name="fake job", status=Result.Status.RUNNING).dump()
+    os.replace(Result.file_name_static("fake job"), seed)
+    script = (
+        f"cp {shlex.quote(str(seed))} "
+        f"{shlex.quote(Result.file_name_static('fake job'))}; "
+        f"printf '%s' {shlex.quote(_DAEMON_DEATH_LOG)}; exit 125"
+    )
+    persisted = _run_no_docker_job(tmp_path, monkeypatch, script)
+    assert persisted["ext"]["labels"] == ["infra"]
+    assert persisted["status"] == Result.Status.ERROR
 
 
 def test_run_does_not_label_a_completed_or_successful_run(tmp_path, monkeypatch):
