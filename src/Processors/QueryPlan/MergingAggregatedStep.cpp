@@ -100,13 +100,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     if (params.max_threads == 0)
         params.max_threads = settings.max_threads;
 
-    /// The `memory_efficient_merge_threads` sentinel is defensive: no route reaches it today.
-    /// `applyParallelReplicas` hardcodes `memory_efficient_aggregation = false`, and
-    /// `makeDistributed` - the only rewrite that forwards
-    /// `distributed_aggregation_memory_efficient` - is mutually exclusive with parallel replicas
-    /// by an explicit `SUPPORT_IS_DISABLED` throw. Kept for symmetry with
-    /// `AggregatingStep::updateThreadsValues`, so a future rewrite that does forward the setting
-    /// does not leave the sentinel unresolved.
+    /// Read only under `memory_efficient_aggregation`, which `applyParallelReplicas` hardcodes off
+    /// and `makeDistributed` forwards from the setting.
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = settings.aggregation_memory_efficient_merge_threads;
     if (memory_efficient_merge_threads == 0)
