@@ -1,5 +1,5 @@
 /// Equivalence harness for the residency iterator: an independent
-/// `ResidencyIterator` walk folded by `ResolutionFold` must reproduce EXACTLY
+/// The executor's ranged residency builder must satisfy its geometry invariants
 /// the geometry `observeAndSchedule` publishes - same resident runs, same
 /// surviving miss cells, same prune - over real providers (FileCache tiling,
 /// partial segments, page blocks) and randomized layouts. The harness walks
@@ -368,43 +368,6 @@ public:
     std::unordered_map<String, String> data;
     StoredObjects objects;
 };
-
-/// The iterator's own invariants: strides tile, a backward lookAt rewinds and
-/// re-resolves the identical column.
-TEST_F(ResidencyEquivalence, StridesTileTheSpanAndRewind)
-{
-    auto fc = makeFileCache("strides");
-    warmReads({makeDiskProvider(fc)}, {{SEGMENT, SEGMENT}, {4 * SEGMENT, 2 * SEGMENT}});
-    fabricatePartialCell(*makeDiskProvider(fc), ByteRange{8 * SEGMENT, SEGMENT}, SEGMENT / 4);
-
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> chain;
-    chain.push_back(makeDiskProvider(fc));
-    const ByteRange span{0, 10 * SEGMENT};
-
-    ResidencyIterator it(chain, objects.front(), 0, span);
-    std::vector<ChainResolution> forward;
-    size_t pos = span.offset;
-    while (pos < span.end())
-    {
-        forward.push_back(it.lookAt(pos, span.end()));
-        pos = forward.back().range.end();
-    }
-    EXPECT_GT(forward.size(), 3u);
-
-    for (auto walked = forward.rbegin(); walked != forward.rend(); ++walked)
-    {
-        const auto again = it.lookAt(walked->range.offset, span.end());
-        EXPECT_EQ(again.range.offset, walked->range.offset);
-        EXPECT_EQ(again.range.size, walked->range.size);
-        ASSERT_EQ(again.tiers.size(), walked->tiers.size());
-        for (size_t i = 0; i < again.tiers.size(); ++i)
-        {
-            EXPECT_EQ(again.tiers[i].state, walked->tiers[i].state);
-            EXPECT_EQ(again.tiers[i].extent.offset, walked->tiers[i].extent.offset);
-            EXPECT_EQ(again.tiers[i].extent.size, walked->tiers[i].extent.size);
-        }
-    }
-}
 
 TEST_F(ResidencyEquivalence, SequentialStreamExtendsInsteadOfRebuilding)
 {

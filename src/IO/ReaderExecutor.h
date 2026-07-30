@@ -56,7 +56,7 @@ class EncryptionHeaderCache;
 /// The buffer is POSITIONAL (offset-indexed, not FIFO) and SHARED (sibling
 /// executors read and write the same cells) - which is why seeks, contention,
 /// and warm reads are ordinary cases. Planning is a ROLLING window: residency
-/// is observed step-wise (`ResidencyIterator::lookAt` over the providers), the
+/// is observed per tier by one ranged `lookAt` over the providers, the
 /// job list derives from the geometry (`PlanSchedule`), and the plan then
 /// EXTENDS forward and SLIDES the passed territory out as the cursor advances;
 /// a near seek REUSES it, and only a far jump RESTARTS from scratch.

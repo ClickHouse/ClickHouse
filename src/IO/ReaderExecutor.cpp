@@ -2588,9 +2588,13 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
     const IntervalSet * request_map_,
     std::optional<size_t> demand_ceiling_phys)
 {
-    VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
+    /// Per-tier classification the builder needs: the tier id (geometry entry),
+    /// whether it accepts only whole-cell puts, and whether it populates on a
+    /// miss (a read-only/bypass tier contributes no fill cells).
+    struct TierTraits { CacheTier tier; bool whole_cell; bool populates; };
+    VectorWithMemoryTracking<TierTraits> traits;
     for (const auto & cache : caches_)
-        traits.push_back(ResolutionFold::TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
+        traits.push_back(TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
 
     VectorWithMemoryTracking<PieceObservation> pieces;
     size_t piece_file_start = span.offset;
