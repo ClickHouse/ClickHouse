@@ -4,6 +4,7 @@
 #include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
@@ -18,6 +19,7 @@ namespace DB
 {
 
 class IDataPartStorage;
+class IMergeTreeDataPart;
 
 namespace Internal
 {
@@ -269,10 +271,7 @@ struct IMergeTreeIndex
     /// Returns substreams and version for deserialization. @storage is consulted so that packed
     /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
     /// the skp_idx.packed overlay. Passing null disables the archive check.
-    virtual MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & relative_path_prefix,
-        const IDataPartStorage * storage) const;
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -307,6 +306,7 @@ struct IMergeTreeIndex
     virtual bool isInert() const { return false; }
 
     Names getColumnsRequiredForIndexCalc() const;
+    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
