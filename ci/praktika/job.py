@@ -254,6 +254,11 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
+        def set_digest_config(self, digest_config):
+            res = copy.deepcopy(self)
+            res.digest_config = digest_config
+            return res
+
         def set_timeout(self, timeout):
             res = copy.deepcopy(self)
             res.timeout = timeout

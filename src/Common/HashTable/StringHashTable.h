@@ -267,6 +267,19 @@ public:
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
 
+    /// Visits the size-class sub-tables of two tables of the same type as pairs, in matching order.
+    template <typename Func>
+    static void forEachSubMapPair(Self & lhs, Self & rhs, Func && func)
+    {
+        func(lhs.m1, rhs.m1);
+        func(lhs.m2, rhs.m2);
+        func(lhs.m3, rhs.m3);
+        func(lhs.ms, rhs.ms);
+    }
+
+    /// The dedicated slot of the empty-string key, which the sub-table dispatch hashes to 0.
+    T0 & emptyStringSlot() { return m0; }
+
     StringHashTable() = default;
 
     explicit StringHashTable(size_t reserve_for_num_elements)
