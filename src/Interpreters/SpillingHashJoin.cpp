@@ -181,18 +181,23 @@ void SpillingHashJoin::tryCompressStoredBlocksBeforeSwitch()
 {
     chassert(concurrent_join);
 
-    if (!table_join->enableJoinInMemoryCompression() || compression_attempted.load(std::memory_order_acquire))
+    if (!table_join->enableJoinInMemoryCompression())
         return;
 
     /// Exclusive lock: waits for all in-flight `addBlockToJoin` calls, so no slot is being inserted
     /// into while its stored blocks are replaced by compressed ones.
+    /// It is taken even when the pass has already been made, instead of returning early on
+    /// `compression_attempted`: the caller re-checks the stored size right after this call, and a
+    /// thread that skipped the lock while another one is still compressing would observe the
+    /// pre-compression size and spill although the build side is about to shrink far below the
+    /// threshold. Waiting here orders the re-check after the pass.
     std::unique_lock lock(switch_mutex);
 
     /// Another thread may have run the pass or switched while we waited for the lock.
-    if (compression_attempted.load(std::memory_order_relaxed) || state.load(std::memory_order_relaxed) != State::COLLECTING)
+    if (compression_attempted || state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
-    compression_attempted.store(true, std::memory_order_relaxed);
+    compression_attempted = true;
 
     /// One pass is enough: if the blocks compress, they stay compressed and the blocks added later are
     /// compacted on insertion; if they do not compress below the threshold, repeating the pass on every

@@ -137,8 +137,9 @@ private:
     std::atomic<State> state{State::COLLECTING};
 
     /// Whether the one forced compression pass over the collected blocks was already run in the
-    /// concurrent mode (see tryCompressStoredBlocksBeforeSwitch).
-    std::atomic<bool> compression_attempted{false};
+    /// concurrent mode (see tryCompressStoredBlocksBeforeSwitch). Guarded by `switch_mutex`, which
+    /// is held exclusively for the whole pass.
+    bool compression_attempted = false;
 
     /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
     std::shared_ptr<HashJoin> hash_join;
