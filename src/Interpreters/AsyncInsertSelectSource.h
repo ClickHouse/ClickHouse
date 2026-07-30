@@ -17,22 +17,18 @@ struct BlockIO;
 class ASTInsertQuery;
 struct Settings;
 
-/// Deferred async INSERT ... SELECT. Runs when the caller executes the outer pipeline, keeping
-/// the operation under the normal query lifecycle so failures surface as EXCEPTION events rather
-/// than errors reported before the query starts.
+/// Deferred async INSERT ... SELECT: runs inside the outer pipeline so failures surface as
+/// EXCEPTION events instead of errors before the query starts.
 ///
-/// Pulls the SELECT pipeline (columns renamed to insert-schema names by position; types are left
-/// as-is so that schema conversion happens exactly once inside the insert pipeline). The async
-/// queue path is taken only when the whole result is a single block within
-/// `async_insert_max_data_size`; that block is pushed to the queue (wait is unconditionally
-/// forced so errors are not silenced). Any other shape (more than one block, an oversized block,
-/// or an empty result) falls back to a synchronous insert that reuses the already pulled blocks,
-/// so the SELECT is never run again.
+/// The SELECT pipeline is already converted to the insert schema by
+/// `InterpreterInsertQuery::convertSelectToInsertSchema`. A result that fits in one block within
+/// `async_insert_max_data_size` goes to the async queue; any other shape (several blocks, an
+/// oversized block, zero rows) falls back to a synchronous insert that reuses the pulled blocks,
+/// so the SELECT never runs twice.
 ///
-/// When `insert_null_as_default` is on and a Nullable SELECT column feeds a non-nullable target,
-/// the queue flush cannot substitute the default. `buildAsyncInsertSelectPipeline` detects this
-/// and applies the full type-conversion + NULL-to-default substitution on the SELECT pipeline,
-/// then forces the synchronous fallback (`needs_null_default_sync`).
+/// `convertSelectToInsertSchema` widens columns to `Nullable` under `insert_null_as_default`. The
+/// queue flush has no defaults step to undo that, so such a widening (`needs_null_default_sync`)
+/// forces the synchronous fallback, whose insert pipeline performs the substitution.
 class AsyncInsertSelectSource final : public ISource
 {
 public:
