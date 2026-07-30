@@ -52,6 +52,7 @@ class HostMetricsCollector:
     _UNDER_MEM_PCT = 50.0  # peak RAM below this -> RAM over-provisioned
     _UNDER_CPU_PCT = 20.0  # average CPU below this -> CPU over-provisioned
     _RAM_PRESSURE_PCT = 95.0  # peak RAM at/above this -> RAM under-provisioned
+    _MEM_STALL_RATIO = 0.02  # mem full-stall / duration above this -> RAM pressure
     _CPU_STALL_RATIO = 0.5  # cpu stall seconds / duration above this -> CPU-bound
     _IO_STALL_RATIO = 0.4  # io stall seconds / duration above this -> IO-bound
     _DISK_WARN_PCT = 85.0  # peak disk at/above this -> almost full
@@ -464,11 +465,18 @@ class HostMetricsCollector:
         io_s = psi.get("io_some_s", 0)
 
         # RAM: pressure (under-provisioned) takes precedence over idle headroom.
-        if (mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT) or mem_full_s:
+        # Only a sustained memory full-stall counts - a brief blip (e.g. 0.01s
+        # over a long build) is noise, not pressure, so require a fraction of
+        # the runtime rather than any non-zero value.
+        mem_full_ratio = mem_full_s / duration if duration else 0
+        if (
+            mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT
+        ) or mem_full_ratio > cls._MEM_STALL_RATIO:
             labels.append(
                 (
                     "ram-pressure",
-                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s - consider more RAM",
+                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s "
+                    f"({round(100 * mem_full_ratio)}% of runtime) - consider more RAM",
                 )
             )
         elif mem_peak is not None and mem_peak < cls._UNDER_MEM_PCT:
