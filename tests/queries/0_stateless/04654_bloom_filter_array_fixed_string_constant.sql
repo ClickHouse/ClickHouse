@@ -20,6 +20,8 @@ DROP TABLE IF EXISTS p_num;
 DROP TABLE IF EXISTS q_str;
 DROP TABLE IF EXISTS o_sc;
 DROP TABLE IF EXISTS k_sc;
+DROP TABLE IF EXISTS o_fs3m;
+DROP TABLE IF EXISTS k_fs3m;
 
 CREATE TABLE o_str (id UInt64, v Array(String)) ENGINE = Log;
 CREATE TABLE k_str (id UInt64, v Array(String), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -196,6 +198,18 @@ SELECT 'const-array has Str', (SELECT count() FROM o_sc WHERE has(['V0'], s)) = 
 SELECT 'const-array has FS3 id', (SELECT groupArray(id) FROM (SELECT id FROM k_sc WHERE has([toFixedString('V0',3)], s) ORDER BY id)) = [1];
 SELECT 'prune const-array has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_sc WHERE has([toFixedString('V0',3)], s)) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 
+-- Multi-element constant arrays: the coercion is batched over the whole array, so a non-first
+-- element must survive both hops in its own position. Rows carry two elements so hasAll genuinely
+-- needs both. Every constant shares one width: a mixed-width literal array types as Array(String),
+-- which would reach the helper with a different element type and probe another path.
+CREATE TABLE o_fs3m (id UInt64, v Array(FixedString(3))) ENGINE = Log;
+CREATE TABLE k_fs3m (id UInt64, v Array(FixedString(3)), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO o_fs3m VALUES (0,['V0','V0A']),(1,['V0']),(2,['XYZ','ZZZ']);
+INSERT INTO k_fs3m VALUES (0,['V0','V0A']),(1,['V0']),(2,['XYZ','ZZZ']);
+SELECT 'fs3m hasAny nonfirst FS5', (SELECT count() FROM o_fs3m WHERE hasAny(v,[toFixedString('QQQ',5),toFixedString('V0A',5)])) = (SELECT count() FROM k_fs3m WHERE hasAny(v,[toFixedString('QQQ',5),toFixedString('V0A',5)]));
+SELECT 'fs3m hasAll both FS5', (SELECT count() FROM o_fs3m WHERE hasAll(v,[toFixedString('V0',5),toFixedString('V0A',5)])) = (SELECT count() FROM k_fs3m WHERE hasAll(v,[toFixedString('V0',5),toFixedString('V0A',5)]));
+SELECT 'fs3m hasAny later unrepresentable', (SELECT count() FROM o_fs3m WHERE hasAny(v,[toFixedString('V0',5),toFixedString('WXYZ',5)])) = (SELECT count() FROM k_fs3m WHERE hasAny(v,[toFixedString('V0',5),toFixedString('WXYZ',5)]));
+
 DROP TABLE o_str;
 DROP TABLE k_str;
 DROP TABLE o_fs3;
@@ -212,3 +226,5 @@ DROP TABLE p_num;
 DROP TABLE q_str;
 DROP TABLE o_sc;
 DROP TABLE k_sc;
+DROP TABLE o_fs3m;
+DROP TABLE k_fs3m;

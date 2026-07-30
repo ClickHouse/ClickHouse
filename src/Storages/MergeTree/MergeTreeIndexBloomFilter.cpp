@@ -695,20 +695,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 /// How the executing function coerces the constant before comparing it.
 enum class ConstantCoercion : uint8_t
 {
-    /// hasAny/hasAll and has/indexOf over a FixedString element: the function casts both sides to
-    /// getLeastSupertype (hasAllAny.h, arrayIndex.h executeGeneric).
+    /// `hasAny`/`hasAll` and `has`/`indexOf` over a `FixedString` element: the function casts both
+    /// sides to `getLeastSupertype` (hasAllAny.h, arrayIndex.h `executeGeneric`).
     Supertype,
-    /// has/indexOf over a LowCardinality element: the function casts the constant straight to the
-    /// dictionary value type (LowCardinalityExecutionHelpers.h dictionaryIndexForConstant).
+    /// `has`/`indexOf` over a `LowCardinality` element: the function casts the constant straight to
+    /// the dictionary value type (LowCardinalityExecutionHelpers.h `dictionaryIndexForConstant`).
     Direct,
 };
 
 /// The index must hash the value the executing function actually compares.
 ///
-/// convertFieldToType is a Field-level conversion: it pads a String shorter than FixedString(N) and
-/// passes an oversized one through unchanged. The array-search functions instead coerce with
-/// castColumn, and a FixedString -> String cast strips trailing zero bytes. So for a FixedString
-/// constant the index hashed a padded value the function never compares, and the granule was dropped.
+/// `convertFieldToType` is a `Field`-level conversion: it pads a `String` shorter than
+/// `FixedString(N)` and passes an oversized one through unchanged. The array-search functions instead
+/// coerce with `castColumn`, and a `FixedString` -> `String` cast strips trailing zero bytes. So for a
+/// `FixedString` constant the index hashed a padded value the function never compares, and the granule
+/// was dropped.
 ///
 /// Returns false when the constant has no representation in the index domain, which means the caller
 /// must decline the index rather than hash a value that can never match.
@@ -722,9 +723,9 @@ static bool castConstantToIndexDomain(
     if (!value_type)
         return false;
 
-    /// A NULL constant has no representation in the index domain, and the wrapper strip below would
-    /// otherwise insert it into a non-nullable column, which throws BAD_GET. Declining matches what
-    /// convertFieldToType did here before.
+    /// A `NULL` constant has no representation in the index domain, and the wrapper strip below would
+    /// otherwise insert it into a non-nullable column, which throws `BAD_GET`. Declining matches what
+    /// `convertFieldToType` did here before.
     if (value_field.isNull())
         return false;
 
@@ -763,8 +764,8 @@ static bool castConstantToIndexDomain(
     }
 }
 
-/// True for the element/constant types whose coercion castConstantToIndexDomain reproduces. Numeric
-/// elements take executeIntegral, which runs before executeGeneric and does not coerce this way.
+/// True for the element/constant types whose coercion `castConstantToIndexDomain` reproduces. Numeric
+/// elements take `executeIntegral`, which runs before `executeGeneric` and does not coerce this way.
 static bool constantCastAppliesToIndexDomain(const DataTypePtr & value_type, const DataTypePtr & actual_type)
 {
     return value_type
@@ -796,11 +797,11 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
 }
 
 
-/// Like createColumnFromConstantArray, but hashes what hasAny/hasAll compare. Kept separate because
-/// createColumnFromConstantArray is shared with the has(<const array>, <indexed scalar>) arm, whose
-/// runtime is a Field-level accurateEquals and therefore needs the padded form.
+/// Like `createColumnFromConstantArray`, but hashes what `hasAny`/`hasAll` compare. Kept separate
+/// because `createColumnFromConstantArray` is shared with the `has(<const array>, <indexed scalar>)`
+/// arm, whose runtime is a `Field`-level `accurateEquals` and therefore needs the padded form.
 ///
-/// Performs the same two hops as castConstantToIndexDomain, batched over the whole array: the common
+/// Performs the same two hops as `castConstantToIndexDomain`, batched over the whole array: the common
 /// type and both cast functions are loop-invariant, and hasAllAny.h likewise casts whole argument
 /// columns rather than one element at a time.
 static ColumnPtr createColumnFromConstantArrayCastAware(
@@ -837,8 +838,8 @@ static ColumnPtr createColumnFromConstantArrayCastAware(
             if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
                 return nullptr;
 
-            /// from_type has the wrappers stripped, so a NULL has no representation in it. Declining
-            /// matches the scalar path, which refuses a NULL constant for the same reason.
+            /// `from_type` has the wrappers stripped, so a `NULL` has no representation in it.
+            /// Declining matches the scalar path, which refuses a `NULL` constant for the same reason.
             if (f.isNull())
                 return nullptr;
 
@@ -987,11 +988,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(raw_nested_type);
 
                     Field converted_field;
-                    /// A bare String element takes executeString, which compares the raw padded bytes
-                    /// without coercing, so there the unconverted field is already the right value. The
-                    /// test must read the raw type: getPrimitiveType strips LowCardinality, and a
-                    /// LowCardinality element does coerce (executeArrayLowCardinality runs before the
-                    /// wrapper is removed).
+                    /// A bare `String` element takes `executeString`, which compares the raw padded
+                    /// bytes without coercing, so there the unconverted field is already the right
+                    /// value. The test must read the raw type: `getPrimitiveType` strips
+                    /// `LowCardinality`, and a `LowCardinality` element does coerce
+                    /// (`executeArrayLowCardinality` runs before the wrapper is removed).
                     if (WhichDataType(raw_nested_type).isString()
                         || !constantCastAppliesToIndexDomain(value_type, actual_type))
                     {
