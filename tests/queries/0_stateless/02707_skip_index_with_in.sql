@@ -8,14 +8,14 @@ CREATE TABLE t_skip_index_in
 (
     a String,
     b String,
-    c String,
+    c UInt64,
     INDEX idx_c c TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY (a, b)
 SETTINGS auto_statistics_types = 'basic';
 
-INSERT INTO t_skip_index_in VALUES ('a', 'b', 'c');
+INSERT INTO t_skip_index_in VALUES ('a', 'b', 1);
 
 set ignore_format_null_for_explain = 0;
 
