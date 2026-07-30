@@ -2,6 +2,10 @@
 
 DROP TABLE IF EXISTS test_match_token;
 
+-- `Nullable` arguments can bypass ordinary type validation. Invalid arity must still raise an exception.
+SELECT matchToken(NULL); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT matchToken(NULL, NULL, NULL, NULL); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 CREATE TABLE test_match_token
 (
     id UInt32,

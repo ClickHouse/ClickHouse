@@ -27,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -178,8 +179,7 @@ public:
             forEachToken(*tokenizer, input.data(), input.size(),
                 [&](const char * token_data, size_t token_len) -> bool
                 {
-                    std::string token(token_data, token_len);
-                    if (re->match(token))
+                    if (re->match(token_data, token_len))
                     {
                         found = true;
                         return true; /// stop iteration
@@ -277,6 +277,14 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
+        /// `Nullable` arguments can bypass `getReturnTypeImpl`, so validate the arity again before indexing arguments.
+        if (arguments.size() < 2 || arguments.size() > 3)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function '{}' expects 2 mandatory arguments and 1 optional argument, got {} arguments",
+                name,
+                arguments.size());
+
         /// Resolve the tokenizer: explicit tokenizer argument > default splitByNonAlpha.
         std::shared_ptr<const ITokenizer> tokenizer;
         if (arguments.size() > arg_tokenizer && arguments[arg_tokenizer].column)
@@ -314,6 +322,11 @@ The tokenizer used to split the haystack is controlled by the optional third arg
 The pattern is a re2-compatible regular expression. Matching is UNANCHORED (substring match within each token),
 consistent with the ClickHouse `match` function. To match the full token use explicit `^` and `$` anchors.
 When used via the Elasticsearch DSL (regexp query), the query planner automatically adds `^` and `$` anchors.
+
+When the two-argument form uses a text index, `matchToken` adopts the tokenizer, preprocessor, and postprocessor
+configured for that index. Without a text index, it uses `splitByNonAlpha`. As a result, disabling text indexes can
+change the result when the index pipeline differs from the default. An explicitly supplied tokenizer is never
+overridden by the index.
     )";
     FunctionDocumentation::Syntax syntax = "matchToken(haystack, pattern[, tokenizer])";
     FunctionDocumentation::Arguments arguments = {
@@ -333,8 +346,9 @@ When used via the Elasticsearch DSL (regexp query), the query planner automatica
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, VersionNumber{}, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMatchTokenOverloadResolver>(documentation);
 }

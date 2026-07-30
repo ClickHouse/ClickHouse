@@ -33,12 +33,18 @@ INSERT INTO test_match_token VALUES
     (11, 'cafe resume naive');
 
 SELECT '-- EXPLAIN: regexp err.*';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'err.*'))
+SELECT trimLeft(explain) AS explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'err.*'))
 WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 SELECT '-- EXPLAIN: regexp xyz.* (no match)';
-SELECT explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'xyz.*'))
+SELECT trimLeft(explain) AS explain FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'xyz.*'))
 WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+
+SELECT '-- setting off: text index is not used';
+SET use_text_index_match_token_evaluation_by_dictionary_scan = 0;
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT * FROM test_match_token WHERE matchToken(message, 'err.*'))
+WHERE explain LIKE '%Name: idx_msg%';
+SET use_text_index_match_token_evaluation_by_dictionary_scan = 1;
 
 DROP TABLE test_match_token;
 
@@ -60,10 +66,11 @@ SETTINGS index_granularity = 1;
 INSERT INTO test_match_token_array VALUES
     (1, ['hello world', 'error handler']),
     (2, ['alpha beta', 'gamma delta']),
-    (3, ['errno state', 'misc value']);
+    (3, ['errno state', 'misc value']),
+    (4, ['ERROR handler']);
 
 SELECT '-- text index on Array(String): uses text index';
-SELECT explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT * FROM test_match_token_array WHERE matchToken(tags, 'err.*')
 )
@@ -71,10 +78,87 @@ WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Descript
 
 SELECT id, tags FROM test_match_token_array WHERE matchToken(tags, 'err.*') ORDER BY id;
 
+SELECT '-- preprocessor fallback: direct read off';
+SET query_plan_direct_read_from_text_index = 0;
+SELECT id, tags FROM test_match_token_array WHERE matchToken(tags, '^error$') ORDER BY id;
+SET query_plan_direct_read_from_text_index = 1;
+
+SELECT '-- explicit tokenizer with preprocessor: preserve standalone semantics and bypass index';
+SELECT count() FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM test_match_token_array WHERE matchToken(tags, '^ERROR$', 'asciiCJK')
+)
+WHERE explain LIKE '%Name: idx_tags%';
+SELECT id FROM test_match_token_array WHERE matchToken(tags, '^ERROR$', 'asciiCJK') ORDER BY id;
+
 DROP TABLE test_match_token_array;
 
 -- ============================================================
--- §3 Prefix range-scan correctness (index on == index off)
+-- §3 Postprocessor fallback and explicit tokenizer guards
+-- ============================================================
+DROP TABLE IF EXISTS test_match_token_pipeline;
+
+CREATE TABLE test_match_token_pipeline
+(
+    id UInt32,
+    message String
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+-- Keep one part without the materialized index and one part with it. Both must use the index pipeline semantics.
+INSERT INTO test_match_token_pipeline VALUES (1, 'ERROR handler');
+ALTER TABLE test_match_token_pipeline ADD INDEX idx_pipeline(message)
+    TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(message));
+INSERT INTO test_match_token_pipeline VALUES (2, 'ERROR state'), (3, 'other value');
+
+SELECT '-- postprocessor: index path';
+SELECT id FROM test_match_token_pipeline WHERE matchToken(message, '^error$') ORDER BY id;
+
+SELECT '-- postprocessor fallback: direct read off';
+SET query_plan_direct_read_from_text_index = 0;
+SELECT id FROM test_match_token_pipeline WHERE matchToken(message, '^error$') ORDER BY id;
+SET query_plan_direct_read_from_text_index = 1;
+
+DROP TABLE test_match_token_pipeline;
+
+DROP TABLE IF EXISTS test_match_token_explicit;
+
+CREATE TABLE test_match_token_explicit
+(
+    id UInt32,
+    message String,
+    INDEX idx_explicit(message) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_match_token_explicit VALUES
+    (1, 'error'),
+    (2, 'error code');
+
+SELECT '-- explicit matching tokenizer: uses text index';
+SELECT count() FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM test_match_token_explicit WHERE matchToken(message, '^error$', 'array')
+)
+WHERE explain LIKE '%Name: idx_explicit%';
+SELECT id FROM test_match_token_explicit WHERE matchToken(message, '^error$', 'array') ORDER BY id;
+
+SELECT '-- explicit mismatched tokenizer: bypasses text index';
+SELECT count() FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM test_match_token_explicit WHERE matchToken(message, '^error$', 'splitByNonAlpha')
+)
+WHERE explain LIKE '%Name: idx_explicit%';
+SELECT id FROM test_match_token_explicit WHERE matchToken(message, '^error$', 'splitByNonAlpha') ORDER BY id;
+
+DROP TABLE test_match_token_explicit;
+
+-- ============================================================
+-- §4 Prefix range-scan correctness (index on == index off)
 --
 -- Dictionary block size forced small (dictionary_block_size = 4) so a handful of
 -- distinct tokens spans multiple blocks. Correctness is asserted by result

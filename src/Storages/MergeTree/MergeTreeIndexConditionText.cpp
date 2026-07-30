@@ -18,6 +18,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -275,17 +276,10 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     if (function_name == "hasPhrase")
         return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
-    /// matchToken resolves via the analyzer's queries_by_pattern dictionary scan (same path as `like`).
-    /// Exact direct read is opt-in: when disabled, the predicate is kept and only mayBeTrueOnGranule
-    /// uses the index. Patterns are compiled unconditionally (independent of direct_read_mode) so that
-    /// the None path still benefits from text-index granule pruning.
+    /// `matchToken` resolves via the analyzer's queries_by_pattern dictionary scan. Eligibility is
+    /// checked in `traverseFunctionNode`, so every accepted query is exact.
     if (function_name == "matchToken")
-    {
-        const auto & settings = getContext()->getSettingsRef();
-        return settings[Setting::use_text_index_match_token_evaluation_by_dictionary_scan]
-            ? TextIndexDirectReadMode::Exact
-            : TextIndexDirectReadMode::None;
-    }
+        return TextIndexDirectReadMode::Exact;
 
     /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
     const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
@@ -663,7 +657,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
-        if (function_arguments_size != 2)
+        const bool is_match_token_with_explicit_tokenizer = function_name == "matchToken" && function_arguments_size == 3;
+        if (function_arguments_size != 2 && !is_match_token_with_explicit_tokenizer)
             return false;
 
         auto lhs_argument = function.getArgumentAt(0);
@@ -1347,6 +1342,29 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "matchToken")
     {
+        if (!settings[Setting::use_text_index_match_token_evaluation_by_dictionary_scan])
+            return false;
+
+        /// The two-argument form adopts the index pipeline. The direct-read DAG rewrite injects
+        /// the index tokenizer and applies its preprocessor and postprocessor to fallback reads.
+        /// An explicit tokenizer defines standalone function semantics, so it is eligible only
+        /// when the index has no additional processing and uses the identical tokenizer.
+        if (function_node.getArgumentsSize() == 3)
+        {
+            if (has_preprocessor || has_postprocessor)
+                return false;
+
+            Field tokenizer_field;
+            DataTypePtr tokenizer_type;
+            if (!function_node.getArgumentAt(2).tryGetConstant(tokenizer_field, tokenizer_type)
+                || tokenizer_field.getType() != Field::Types::String)
+                return false;
+
+            auto function_tokenizer = TokenizerFactory::instance().get(tokenizer_field.safeGet<String>());
+            if (function_tokenizer->getDescription() != tokenizer->getDescription())
+                return false;
+        }
+
         /// matchToken(haystack, pattern) applies an unanchored re2 regexp to each token independently.
         /// The text index stores per-token posting lists, so the dictionary scan (queries_by_pattern)
         /// is semantically exact: addTokenToPatterns runs pattern->match(token) for each dictionary token.
@@ -1355,9 +1373,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// matching the function body -- no RE_DOT_NL, no RE_NO_CAPTURE, no RE_CASELESS.
         /// TextSearchQuery::tokens is empty; the matcher lives entirely in .patterns.
         ///
-        /// Patterns are compiled unconditionally (not gated on direct_read_mode): in None mode the
-        /// predicate is kept, but mayBeTrueOnGranule still calls hasAnyPatternsInRange, which would
-        /// return false on empty patterns and drop rows.
         const auto & pattern = value_field.safeGet<String>();
         if (pattern.empty())
         {

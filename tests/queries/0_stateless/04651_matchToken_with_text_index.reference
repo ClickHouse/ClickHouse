@@ -1,32 +1,54 @@
 -- EXPLAIN: regexp err.*
-   Parts: 1 | Granules: 5
-       Condition: true
-       Granules: 11/11
-     Skip
-       Name: idx_msg
-       Description: text GRANULARITY 100000000
-       Condition: (mode: Any; tokens: [])
-       Granules: 5/11
+Parts: 1 | Granules: 5
+Condition: true
+Granules: 11/11
+Skip
+Name: idx_msg
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: [])
+Granules: 5/11
 -- EXPLAIN: regexp xyz.* (no match)
-   Parts: 0 | Granules: 0
-       Condition: true
-       Granules: 11/11
-     Skip
-       Name: idx_msg
-       Description: text GRANULARITY 100000000
-       Condition: (mode: Any; tokens: [])
-       Granules: 0/11
+Parts: 0 | Granules: 0
+Condition: true
+Granules: 11/11
+Skip
+Name: idx_msg
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: [])
+Granules: 0/11
+-- setting off: text index is not used
+0
 -- text index on Array(String): uses text index
-   Parts: 1 | Granules: 2
-       Condition: true
-       Granules: 3/3
-     Skip
-       Name: idx_tags
-       Description: text GRANULARITY 100000000
-       Condition: (mode: Any; tokens: [])
-       Granules: 2/3
+Parts: 1 | Granules: 3
+Condition: true
+Granules: 4/4
+Skip
+Name: idx_tags
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: [])
+Granules: 3/4
 1	['hello world','error handler']
 3	['errno state','misc value']
+4	['ERROR handler']
+-- preprocessor fallback: direct read off
+1	['hello world','error handler']
+4	['ERROR handler']
+-- explicit tokenizer with preprocessor: preserve standalone semantics and bypass index
+0
+4
+-- postprocessor: index path
+1
+2
+-- postprocessor fallback: direct read off
+1
+2
+-- explicit matching tokenizer: uses text index
+1
+1
+-- explicit mismatched tokenizer: bypasses text index
+0
+1
+2
 -- rs hit: ^t1.* (index on)
 [1,10,11,12,13,14,15,16,17,18,19]
 -- rs hit: ^t1.* (index off)

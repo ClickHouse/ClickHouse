@@ -423,7 +423,8 @@ private:
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens"
+            || function_name == "hasPhrase" || function_name == "matchToken";
     }
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
@@ -431,7 +432,8 @@ private:
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens"
+            || function_name == "hasPhrase" || function_name == "matchToken";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
@@ -439,7 +441,7 @@ private:
     {
         return function_name == "hasToken"
             || function_name == "hasAllTokens" || function_name == "hasAnyTokens"
-            || function_name == "hasPhrase";
+            || function_name == "hasPhrase" || function_name == "matchToken";
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
@@ -575,8 +577,9 @@ private:
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
 
-                /// Needles in array are not processed and passed as is.
-                if (needles_field.getType() == Field::Types::String)
+                /// Needles in array are not processed and passed as is. A `matchToken` regexp
+                /// describes final tokens and must not be transformed as ordinary text.
+                if (function_name != "matchToken" && needles_field.getType() == Field::Types::String)
                 {
                     needles_field = preprocessor->processConstant(needles_field.safeGet<String>());
                     needles_type = std::make_shared<DataTypeString>();
@@ -626,11 +629,11 @@ private:
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
-            /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
-            /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
+            /// new_children[0] is now an Array(String) of final postprocessed tokens. Token functions
+            /// would otherwise re-tokenize each array element with the tokenizer argument,
             /// re-splitting tokens the index stores whole (e.g. a postprocessor that emits separators like
             /// concat(val, ' x')). Match the elements verbatim by switching the tokenizer argument to 'array'.
-            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "matchToken")
             {
                 chassert(new_children.size() == 3);
                 DataTypePtr arg_type = std::make_shared<DataTypeString>();
@@ -642,7 +645,8 @@ private:
             /// hasToken and hasPhrase take a String haystack, so rejoin the postprocessed tokens with a
             /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
             /// elements that become adjacent separators and produce no token on re-split, reproducing the
-            /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
+            /// index's dense position sequence. `hasAnyTokens`, `hasAllTokens`, and `matchToken` accept
+            /// the Array(String) directly.
             if (function_name == "hasToken" || function_name == "hasPhrase")
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
@@ -673,7 +677,7 @@ private:
                 }
                 needles_field = joined;
             }
-            else if (needles_field.getType() == Field::Types::String)
+            else if (function_name != "matchToken" && needles_field.getType() == Field::Types::String)
             {
                 /// hasToken case: single token string. If the postprocessor drops the needle (stop-word
                 /// filter, etc.), the empty needle is fine — hasToken returns 0 on it, matching the
