@@ -2,12 +2,12 @@
 slug: /cloud/managed-postgres/local-development
 sidebarTitle: 'Local development'
 title: 'Local development environments'
-description: 'Run PostgreSQL locally with Docker for fast development against Managed Postgres'
+description: 'Run PostgreSQL locally with Docker for fast development against ClickHouse Managed Postgres'
 keywords: ['managed postgres', 'local development', 'docker', 'postgresql', 'seed data', 'migrations']
 doc_type: 'guide'
 ---
 
-Managed Postgres is built on standard PostgreSQL and works with the existing PostgreSQL ecosystem. For most development tasks, you can develop and test against a local PostgreSQL instance running in Docker rather than a cloud deployment.
+ClickHouse Managed Postgres is built on standard PostgreSQL and works with the existing PostgreSQL ecosystem. For most development tasks, you can develop and test against a local PostgreSQL instance running in Docker rather than a cloud deployment.
 
 This approach provides a fast feedback loop, simplifies onboarding, reduces dependencies on shared infrastructure, and lets you experiment safely without impacting production systems.
 
@@ -18,7 +18,7 @@ The goal isn't to replicate production exactly. Instead, create a reproducible l
 - Contains representative development data.
 - Supports normal application development and testing workflows.
 
-Because Managed Postgres is standard PostgreSQL, existing migration frameworks, schema management tools, and data seeding approaches work without modification.
+Because ClickHouse Managed Postgres is standard PostgreSQL, existing migration frameworks, schema management tools, and data seeding approaches work without modification.
 
 ## Example development flow {#example-development-flow}
 
@@ -34,13 +34,13 @@ graph LR
     A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
 ```
 
-Managed Postgres fits into existing PostgreSQL development workflows. By developing against a local PostgreSQL instance, teams can iterate quickly, maintain reproducible environments, and gain confidence that applications behave consistently when deployed to Managed Postgres.
+ClickHouse Managed Postgres fits into existing PostgreSQL development workflows. By developing against a local PostgreSQL instance, teams can iterate quickly, maintain reproducible environments, and gain confidence that applications behave consistently when deployed to ClickHouse Managed Postgres.
 
 ## Run PostgreSQL locally with Docker {#run-postgresql-locally-with-docker}
 
 The simplest way to create a local development environment is to run PostgreSQL in Docker.
 
-Choose a PostgreSQL version that matches your Managed Postgres deployment:
+Choose a PostgreSQL version that matches your ClickHouse Managed Postgres deployment:
 
 ```yaml title="docker-compose.yml"
 services:
