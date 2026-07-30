@@ -41,9 +41,10 @@ namespace ErrorCodes
   * Arrays are preserved as atomic replacement values, including mixed arrays such as `[42, "x", {"k": 1}]`.
   *
   * Deep merging applies only to paths that `ColumnObject` stores as separate dynamic paths (i.e.
-  * paths that `ColumnObject` has already flattened). Typed paths with structured types such as
-  * `Map(K, V)` or `JSON` are treated as atomic leaves: the whole value is replaced by the newer
-  * patch. There is no deep merge inside typed Map or JSON typed paths.
+  * paths that `ColumnObject` has already flattened at parse time). Every typed path — regardless
+  * of its declared type, including `Map(K,V)`, `JSON`, `Dynamic`, `Tuple(…)`, `Variant(…)`,
+  * `Array(…)` — is stored as a single serialized blob and is treated as an atomic leaf: the whole
+  * value is replaced by the newer patch. There is no deep merge inside any typed path.
   *
   * Five `ColumnObject` limitations affect RFC 7396 conformance:
   *
@@ -65,10 +66,12 @@ namespace ErrorCodes
   *    (e.g., `JSON(a Nullable(UInt32))`): a `NULL` value in a nullable typed-path column
   *    unambiguously represents absence and is skipped by the aggregate.
   *
-  * 4. Typed Map/JSON paths are atomic: a `JSON` column with a typed path declared as
-  *    `Map(K,V)` or `JSON` stores the whole sub-object as a single column value. The
-  *    aggregate cannot flatten it into individual key paths, so the entire typed value is
-  *    replaced atomically rather than deep-merged key-by-key as RFC 7396 would require.
+  * 4. All typed paths are atomic: every typed path — `Map(K,V)`, `JSON`, `Dynamic`,
+  *    `Tuple(…)`, `Variant(…)`, `Array(…)`, or any other declared type — is stored as a
+  *    single serialized value per row. The aggregate replaces the entire value atomically
+  *    rather than deep-merging its contents key-by-key as RFC 7396 would require.
+  *    Only paths that `ColumnObject` stores as dynamic paths (i.e. scalar leaves inferred
+  *    at parse time) are subject to deep-merge path-by-path semantics.
   *
   * 5. Dot-in-key ambiguity: `ColumnObject` represents `{"a":{"b":1}}` and `{"a.b":1}` with
   *    the same internal path `a.b`. A single row can therefore expose both `a` and `a.b` as
@@ -134,15 +137,22 @@ struct AggregateFunctionMergedJSONPatchData
 
         bool operator<(const SortKeyData & other) const
         {
-            /// Both sides must have been created from the same column type, so kinds match.
-            switch (kind)
+            /// Fast path: same kind on both sides (the common case for non-nullable, non-Variant keys).
+            if (kind == other.kind)
             {
-                case Kind::Int64:  return i64   < other.i64;
-                case Kind::UInt64: return u64   < other.u64;
-                case Kind::String: return str   < other.str;
-                case Kind::Field:  return field < other.field;
+                switch (kind)
+                {
+                    case Kind::Int64:  return i64   < other.i64;
+                    case Kind::UInt64: return u64   < other.u64;
+                    case Kind::String: return str   < other.str;
+                    case Kind::Field:  return field < other.field;
+                }
+                UNREACHABLE();
             }
-            UNREACHABLE();
+            /// Kinds differ — this happens with Nullable(T) (null rows emit Field::Null, non-null
+            /// rows emit the inner type) and Variant(...).  Fall back to Field comparison, which
+            /// handles all type combinations correctly.
+            return toField() < other.toField();
         }
 
         bool operator<=(const SortKeyData & other) const { return !(other < *this); }
@@ -786,7 +796,13 @@ behavior of RFC 7396 JSON Merge Patch at the path level.
 
 The aggregate function stores state as triplets (key, value, sorting_key) where each key (JSON path)
 only keeps the latest effective record according to the sorting_key. Object writes are flattened into
-descendant paths, and ancestor non-object writes shadow conflicting descendants.
+descendant paths for paths that the `JSON` type stores as dynamic scalar leaves. Ancestor non-object
+writes shadow conflicting descendants.
+
+Every explicitly typed path (declared with `JSON(a Map(...))`, `JSON(a Tuple(...))`,
+`JSON(a Variant(...))`, `JSON(a Dynamic)`, etc.) is treated as an atomic value: the whole path value
+is replaced by the newer patch rather than deep-merged. Only untyped (dynamic) scalar paths follow
+RFC 7396 deep-merge semantics.
 
 The sort_key determines which value wins for each JSON path. The row with the largest sort_key is
 retained. If two conflicting patches have equal sort keys, the result is order-dependent: the patch
@@ -810,7 +826,12 @@ LIMITATIONS (inherited from `ColumnObject`):
     (e.g., `JSON(a Nullable(UInt32))`). A null in a nullable typed path is treated as
     "path absent" and is correctly skipped.
 
-4. Dot-in-key ambiguity: the `JSON` type represents `{"a":{"b":1}}` and `{"a.b":1}` with
+4. All typed paths are atomic: every typed path (`Map(K,V)`, `JSON`, `Dynamic`, `Tuple(…)`,
+    `Variant(…)`, `Array(…)`, or any other declared type) is stored as a single value. The
+    aggregate replaces the entire value atomically rather than deep-merging its contents.
+    Only dynamic (untyped, scalar) paths are deep-merged path-by-path.
+
+5. Dot-in-key ambiguity: the `JSON` type represents `{"a":{"b":1}}` and `{"a.b":1}` with
     the same internal path `a.b`. A single row can therefore expose both `a` and `a.b` as
     independent peers. When a newer patch writes only `a`, the ancestor/descendant conflict
     rule erases `a.b`; when it writes only `a.b`, the same rule erases `a`. To avoid this,

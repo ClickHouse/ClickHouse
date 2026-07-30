@@ -412,3 +412,21 @@ FROM (
     UNION ALL
     SELECT CAST('{"ts":"2021-06-15 08:30:00"}', 'JSON(ts DateTime)'), 2
 );
+
+-- Nullable sort key: null < any non-null value in ClickHouse Field ordering.
+-- The non-null row (version=2) must win; the null-keyed row must lose.
+SELECT toJSONString(mergedJSONPatch(patch, toNullable(version)))
+FROM (
+    SELECT '{"a":1}'::JSON AS patch, toInt32(NULL) AS version
+    UNION ALL
+    SELECT '{"a":2}'::JSON, 2
+);
+
+-- Nullable sort key with multiple paths: a null-keyed patch must not erase entries
+-- that came from a non-null key, even when the null-keyed patch names the same path.
+SELECT toJSONString(mergedJSONPatch(patch, toNullable(version)))
+FROM (
+    SELECT '{"a":1,"b":1}'::JSON AS patch, toInt32(2) AS version
+    UNION ALL
+    SELECT '{"a":99}'::JSON, toInt32(NULL)
+);
