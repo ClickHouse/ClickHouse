@@ -13,9 +13,12 @@ CREATE TABLE vs_concurrent
     INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 8) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
--- Explicit, so that setting randomization cannot change the mark count: many marks in one part, so
--- that the read pool can split the part across threads.
-SETTINGS index_granularity = 128;
+-- Both are explicit, so that setting randomization cannot change the mark count: many marks in one
+-- part, so that the read pool can split the part across threads. index_granularity alone does not
+-- pin it, because the adaptive granule size is min(index_granularity, index_granularity_bytes /
+-- bytes_per_row) and randomization lowers the byte divisor. The default byte value is kept, so the
+-- part stays in the ordinary adaptive regime rather than switching to non-adaptive marks.
+SETTINGS index_granularity = 128, index_granularity_bytes = 10485760;
 
 -- Distance from the origin grows strictly with id, so the top-k is unique and no tie-break sort key
 -- is needed. A second ORDER BY key would disable the vector search optimization.
@@ -32,10 +35,11 @@ WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
 
 -- Settings used by every measured query below, and why each is needed:
 --   merge_tree_min_rows_for_concurrent_read = 1  one part must be split across read tasks, so that
---   merge_tree_min_bytes_for_concurrent_read = 1  several readers are created for it. The bytes
---                                                threshold is divided by index_granularity_bytes,
---                                                which setting randomization lowers, so without this
---                                                the minimum task size can exceed the whole part
+--   merge_tree_min_bytes_for_concurrent_read = 1  several readers are created for it. The minimum
+--                                                task size is the larger of the two thresholds
+--                                                divided by the respective granularity, so both
+--                                                must be lowered: at the defaults the bytes arm
+--                                                alone asks for more marks than the part has
 --   max_threads = 4                              the number of concurrent readers
 --   use_concurrency_control = 0                  the executor downscales worker threads when CPU
 --                                                slots are scarce, which would leave the read
@@ -85,6 +89,11 @@ FROM (
 -- inside a subquery's SETTINGS does not reach system.query_log.
 -- The ids are compared as a sorted set: groupArray over a subquery does not preserve the subquery's
 -- ORDER BY, so asserting the order would depend on unrelated settings.
+-- The id set is also what makes the first query below an oracle for the read hints being consumed:
+-- with vector_search_with_rescoring = 0 the sort key is the _distance virtual column, filled only
+-- from the per-part hints, so a reader that does not consume them sorts by a constant and returns
+-- other ids. _distance itself cannot be selected to assert directly, it is rejected with
+-- ILLEGAL_COLUMN (see 02354_vector_search_incident1654.sql).
 
 SELECT 'exact_topk', arraySort(groupArray(id)) = [0, 1, 2, 3, 4]
 FROM (SELECT id FROM vs_concurrent ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5)
@@ -111,7 +120,9 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
          force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1,
          log_comment = '02354_vector_search_concurrent_readers_r1';
 
--- Row filtering, which drives the rescoring row filter consumers under concurrent readers.
+-- Row filtering, which drives the rescoring row filter consumers under concurrent readers. Only the
+-- count is asserted: with a row filter the approximate search picks candidates per granule, and which
+-- ones it picks is not stable across index builds, so the exact id set cannot be pinned here.
 SELECT 'topk_filtered', length(groupArray(id)) = 5
 FROM (SELECT id FROM vs_concurrent WHERE grp = 1
       ORDER BY L2Distance(vec, [0., 0., 0., 0., 0., 0., 0., 0.]) LIMIT 5)
@@ -129,19 +140,25 @@ SYSTEM FLUSH LOGS query_log;
 -- EXPLAIN PIPELINE above shows how wide the plan is, not how many threads ran. This reads the three
 -- executed queries instead: each used several threads and a real index search rather than a brute
 -- force scan. Counting to 3 also catches a query whose row is missing altogether.
--- What keeps the count at exactly 3 is the conjunction of the currentDatabase() scope, the escaped
--- log_comment prefix and type = 'QueryFinish'. is_internal = 0 is the established idiom for the same
--- intent (01702_system_query_log.sql, 03148_query_log_used_dictionaries.sql): the AST fuzzer runs in
--- stress jobs and re-executes mutated clones of these SELECTs under QueryFlags{.internal = true}
--- while keeping our log_comment, so it is the one other producer that can reach this window.
+-- The window is the newest three matching rows rather than the whole 600 second span, because the
+-- test runner re-runs a whole test on retry without recreating a fixed --database, so an earlier
+-- attempt's three rows would otherwise be counted too (02346_text_index_direct_read.sql uses the same
+-- ORDER BY event_time_microseconds DESC LIMIT n idiom). is_internal = 0 is the established idiom for
+-- excluding server-issued queries (01702_system_query_log.sql,
+-- 03148_query_log_used_dictionaries.sql).
 SELECT 'threads_and_index',
        countIf(length(thread_ids) > 1) = 3,
        countIf(ProfileEvents['USearchSearchCount'] > 0) = 3
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND current_database = currentDatabase() AND type = 'QueryFinish'
-  AND is_internal = 0
-  AND log_comment LIKE '02354_vector_search_concurrent_readers\_%';
+FROM (
+    SELECT thread_ids, ProfileEvents
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase() AND type = 'QueryFinish'
+      AND is_internal = 0
+      AND log_comment LIKE '02354_vector_search_concurrent_readers\_%'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 3
+);
 
 SELECT 'concurrent_readers_rescoring', sumIf(
     toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
