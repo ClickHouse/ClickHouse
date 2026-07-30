@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-msan, no-parallel, no-coverage
+# Tags: long, no-fasttest, no-msan, no-parallel, no-coverage, no-flaky-check
 # no-msan: that build has no embedded compiler, so case 22 would assert nothing.
 # no-parallel: case 21 samples the process-wide `CurrentMetrics::QueryNonInternal`.
 # no-coverage: per-test coverage instrumentation makes the fixed side of cases 8 and 16 unstable.
+# no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,18 +26,38 @@ BOUND=$((SCALE * 2000))
 # Regexp compilation is pinned off for every case but the one that is about the compiled matcher: the
 # compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times,
 # so an earlier run's pattern would already be compiled and the query would finish inside the deadline.
+#
+# Two messages report the same enforced deadline and only one carries a number: `CancellationChecker`
+# can win the race against this function's own check, and its error has no elapsed part. Both are
+# correct stops, so without a number the wall clock is bounded instead, as cases 19 and 20 do.
 run() {
     local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}"
-    # A verdict rather than the number itself keeps the reference stable across machine speeds.
+    local output start_ms elapsed_ms wall_ms
+    start_ms=$(date +%s%N)
     # shellcheck disable=SC2086
-    timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --timeout_overflow_mode "$mode" \
+    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --timeout_overflow_mode "$mode" \
         --compile_regular_expressions 0 \
         ${query_id:+--query_id "$query_id"} \
-        --query "$query" 2>&1 \
-        | grep -oP 'elapsed \K[0-9]+(?=\.)' \
-        | head -1 \
-        | awk -v l="$label" -v b="$BOUND" '{ print l ": " ($1 < b ? "stopped within bound" : "OVERSHOT " $1 " ms") }' \
-        | grep . || echo "$label: no timeout"
+        --query "$query" 2>&1)
+    wall_ms=$(( ($(date +%s%N) - start_ms) / 1000000 ))
+    elapsed_ms=$(printf '%s' "$output" | grep -oP 'elapsed \K[0-9]+(?=\.)' | head -1)
+    # A verdict rather than the number itself keeps the reference stable across machine speeds.
+    if [ -n "$elapsed_ms" ]; then
+        if [ "$elapsed_ms" -lt "$BOUND" ]; then
+            echo "$label: stopped within bound"
+        else
+            echo "$label: OVERSHOT ${elapsed_ms} ms"
+        fi
+    elif printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
+        # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
+        if [ "$wall_ms" -lt "$((BOUND * 2))" ]; then
+            echo "$label: stopped within bound"
+        else
+            echo "$label: OVERSHOT ${wall_ms} ms"
+        fi
+    else
+        echo "$label: no timeout"
+    fi
 }
 
 # 1. Constant folding: no pipeline exists while this runs, which is what the original hung-check reports
