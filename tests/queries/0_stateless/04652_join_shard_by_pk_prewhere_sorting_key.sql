@@ -57,7 +57,11 @@ SELECT 'RIGHT JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 A
 SELECT 'FULL JOIN', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a))
                   = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM (SELECT * FROM ok2 PREWHERE c = 94) AS l FULL JOIN ok2 AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
--- The restored columns must not reach the declared output header.
+-- Declared-output-header guard only. `DESCRIBE` resolves the analysis-time sample block and never
+-- builds a pipeline, so this cannot observe the pipeline-time conversion that drops the restored
+-- columns; it pins the step's advertised contract, which is what a caller sees. The pipeline-time
+-- property is covered by the executing cells above: a leaked column trips the always-on arity check
+-- in `Port.h` (`Code: 49`), not a debug-only assertion.
 SELECT 'output header';
 DESCRIBE (SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
@@ -93,6 +97,19 @@ SELECT 'control no filter', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FRO
 -- than from the PREWHERE DAG, so both DAGs must be restored.
 DROP ROW POLICY IF EXISTS pol_04652 ON ok2;
 CREATE ROW POLICY pol_04652 ON ok2 USING b < 1000 TO ALL;
+
+-- The cell below is a result comparison, so it cannot see the row policy, the PREWHERE move, the
+-- sharding or the in-order read silently declining on this path; and `b < 1000` excludes no row of
+-- this fixture, so the policy's own effect is invisible to it. Pin the plan while the policy is
+-- active, which is the only state in which both DAGs exist and the restore covers both. Exact
+-- counts, not `> 0`: two read steps carry the policy, each printing a name and a column line.
+SELECT 'row policy plan shape',
+       countIf(explain LIKE '%Row level filter%') = 4
+   AND countIf(explain LIKE '%Prewhere filter%') = 2
+   AND countIf(explain LIKE '%Sharding%') = 1
+   AND countIf(explain LIKE '%ReadType: InOrder%') = 2
+FROM (EXPLAIN actions = 1, pretty = 0
+      SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
 SELECT 'row policy', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
                    = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);

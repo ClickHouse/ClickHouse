@@ -13,6 +13,7 @@ control non-key col	1
 control join key	1
 control col in output	1
 control no filter	1
+row policy plan shape	1
 row policy	1
 LowCardinality key	1
 expression sorting key	1
