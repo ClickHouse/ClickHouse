@@ -381,10 +381,6 @@ void IcebergIterator::decodeDeleteManifests()
     /// first processed row matters. Note that `ManifestFileIterator::processRow` locks `files_mutex`
     /// per entry to fill vectors only `getFilesWithoutDeletedHandle` consumers need, so that append
     /// has to become optional first or row range tasks will serialize on it.
-
-    /// Every delete manifest must be decoded before any data file is served, because `defineDeletesSpan`
-    /// binary-searches the completed sorted vectors below. The decoding is independent per manifest, so fan
-    /// it out and collect in manifest list order.
     std::vector<ManifestFileCacheKey> delete_manifests;
     if (data_snapshot)
     {
