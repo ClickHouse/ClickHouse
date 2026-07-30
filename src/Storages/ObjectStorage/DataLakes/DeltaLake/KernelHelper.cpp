@@ -10,6 +10,8 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <cstdlib>
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
@@ -323,8 +325,25 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// The object_store builder does not read the workload identity environment variables on its own.
+            auto set_option_from_env = [&](const std::string & option, const char * env_var)
+            {
+                if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
+                    set_option(option, value);
+            };
+            set_option_from_env("azure_tenant_id", "AZURE_TENANT_ID");
+            set_option_from_env("azure_client_id", "AZURE_CLIENT_ID");
+            set_option_from_env("azure_federated_token_file", "AZURE_FEDERATED_TOKEN_FILE");
+            set_option_from_env("azure_authority_host", "AZURE_AUTHORITY_HOST");
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
