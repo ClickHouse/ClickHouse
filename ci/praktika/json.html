@@ -1159,49 +1159,62 @@
             return `${s}s`;
         };
 
-        // Header: title + legend with peak values.
-        const header = document.createElement("div");
-        header.style.display = "flex";
-        header.style.justifyContent = "space-between";
-        header.style.alignItems = "baseline";
-        header.style.fontSize = "0.8em";
-        header.style.marginBottom = "4px";
+        // Header: a title, then two columns - the colour-keyed peak legend on
+        // the left and the PSI stall totals on the right. Each entry is its own
+        // nowrap line so nothing wraps in the narrow status panel.
         const title = document.createElement("div");
         title.textContent = "host usage";
-        const legend = document.createElement("div");
-        legend.style.fontSize = "0.85em";
-        legend.style.textAlign = "right";
-        legend.innerHTML =
-            `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak &nbsp;` +
-            `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
-            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : "") +
-            (disk.length
-                ? ` &nbsp;<span style="color:${DISK_COLOR}">■</span> disk ${diskPeak.toFixed(0)}%` +
-                  (metrics.disk_total_gb ? ` of ${metrics.disk_total_gb}GB` : "")
-                : "");
-        header.appendChild(title);
-        header.appendChild(legend);
-        wrapper.appendChild(header);
+        title.style.fontSize = "0.8em";
+        title.style.marginBottom = "2px";
+        wrapper.appendChild(title);
 
-        // PSI sub-line: kernel-accumulated stall time over the run (captured
-        // continuously, so it reflects contention even between samples).
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        cols.style.marginBottom = "4px";
+
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        // Left column: peak legend, one metric per line.
+        const legendCol = mkCol("left");
+        addRow(legendCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak`);
+        addRow(legendCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
+            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : ""));
+        if (disk.length) {
+            addRow(legendCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskPeak.toFixed(0)}%` +
+                (metrics.disk_total_gb ? ` of ${metrics.disk_total_gb}GB` : ""));
+        }
+        cols.appendChild(legendCol);
+
+        // Right column: PSI stall totals (kernel-accumulated over the run, so
+        // they reflect contention even between samples), one per line.
         if (metrics.psi) {
             const psi = metrics.psi;
-            const parts = [];
-            if (psi.cpu_s != null) parts.push(`cpu stalled ${psi.cpu_s}s`);
-            if (psi.mem_some_s != null) parts.push(`mem stalled ${psi.mem_some_s}s`);
-            if (psi.mem_full_s) parts.push(`mem stalled(all) ${psi.mem_full_s}s`);
-            if (psi.io_some_s != null) parts.push(`io stalled ${psi.io_some_s}s`);
-            if (psi.io_full_s) parts.push(`io stalled(all) ${psi.io_full_s}s`);
-            if (parts.length) {
-                const psiLine = document.createElement("div");
-                psiLine.style.fontSize = "0.75em";
-                psiLine.style.opacity = "0.7";
-                psiLine.style.marginBottom = "4px";
-                psiLine.textContent = parts.join(" · ");
-                wrapper.appendChild(psiLine);
-            }
+            const psiCol = mkCol("right");
+            psiCol.style.opacity = "0.7";
+            if (psi.cpu_s != null) addRow(psiCol, `cpu stalled ${psi.cpu_s}s`);
+            if (psi.mem_some_s != null) addRow(psiCol, `mem stalled ${psi.mem_some_s}s`);
+            if (psi.mem_full_s) addRow(psiCol, `mem stalled(all) ${psi.mem_full_s}s`);
+            if (psi.io_some_s != null) addRow(psiCol, `io stalled ${psi.io_some_s}s`);
+            if (psi.io_full_s) addRow(psiCol, `io stalled(all) ${psi.io_full_s}s`);
+            if (psiCol.children.length) cols.appendChild(psiCol);
         }
+
+        wrapper.appendChild(cols);
 
         // Responsive SVG (scales to the widget width via viewBox).
         const W = 320, H = 130, ML = 26, MR = 6, TP = 6, BP = 16;
