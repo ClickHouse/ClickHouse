@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+Pour vérifier l’état de santé d’une base de données entière plutôt que l’intégrité de tables individuelles, utilisez la requête [`CHECK DATABASE`](/fr/reference/statements/check-database). Elle est principalement destinée aux bases de données utilisant le moteur [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), pour lesquelles elle vérifie que le catalogue externe est accessible.
+
 <div id="if-the-data-is-corrupted">
   ## Si les données sont corrompues
 </div>

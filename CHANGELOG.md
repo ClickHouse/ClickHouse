@@ -1,7 +1,7 @@
 ### Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ### Table of Contents
-**[ClickHouse release v26.7, FIXME](#267)**<br/>
+**[ClickHouse release v26.7, 2026-07-22](#267)**<br/>
 **[ClickHouse release v26.6, 2026-06-25](#266)**<br/>
 **[ClickHouse release v26.5, 2026-05-21](#265)**<br/>
 **[ClickHouse release v26.4, 2026-04-30](#264)**<br/>
@@ -20,7 +20,7 @@
 
 # 2026 Changelog
 
-### <a id="267"></a> ClickHouse release 26.7, FIXME (in progress)
+### <a id="267"></a> ClickHouse release 26.7, 2026-07-22. [Presentation](https://presentations.clickhouse.com/2026-release-26.7/), [Video](https://www.youtube.com/watch?v=mKBNLaFOVDA)
 
 #### Backward Incompatible Change
 * S3 access originating from user SQL no longer resolves the server's own cloud credentials (environment, IMDS/IRSA, instance profile, AWS config files, `role_arn`-based STS, GCP OAuth metadata) by default; such a request must use explicit credentials or `NOSIGN`. Named collections now default `use_environment_credentials` to `0`. The previous behaviour can be restored per request with `use_environment_credentials = 1` (or globally via the `<s3>` config) together with the new setting `s3_allow_server_credentials_in_user_queries` (disabled by default). Explicitly supplied and operator-provisioned config credentials are unaffected. On server startup or `RESTORE`, a persistent `S3`/`S3Queue` table, dynamic S3 disk, or `DataLakeCatalog` whose definition resolves such credentials is loaded anonymously (inaccessible until re-credentialed) instead of aborting startup, controlled by the new server setting `s3_load_table_anonymously_if_credentials_restricted` (enabled by default). [#106855](https://github.com/ClickHouse/ClickHouse/pull/106855) ([Raúl Marín](https://github.com/Algunenano)).
