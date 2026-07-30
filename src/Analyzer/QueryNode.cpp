@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -493,6 +494,20 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
+
+            /// A CTE spells the column alias list as `WITH name(col1, ...) AS (subquery)`, which the
+            /// builder stores in the same place as the subquery spelling, so restore it the same way.
+            const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
+            if (!cte_column_aliases.empty())
+            {
+                auto cte_column_aliases_ast = make_intrusive<ASTExpressionList>();
+                cte_column_aliases_ast->children.reserve(cte_column_aliases.size());
+                for (const auto & cte_column_alias : cte_column_aliases)
+                    cte_column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(cte_column_alias));
+
+                with_element_ast->aliases = std::move(cte_column_aliases_ast);
+                with_element_ast->children.push_back(with_element_ast->aliases);
+            }
 
             expression_list_ast->children.back() = std::move(with_element_ast);
         }

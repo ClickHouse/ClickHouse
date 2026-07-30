@@ -412,11 +412,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-/// Returns the column alias list of `AS alias(col1, col2, ...)` for a subquery table expression, or
-/// an empty list. A resolved subquery already carries the list as projection aliases, and column
-/// pruning shrinks those without shrinking the list, so only an unresolved subquery needs it back.
-/// For a UNION the list lives on the first inner query node, matching where QueryTreeBuilder put it.
-static const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & table_expression_node)
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & table_expression_node)
 {
     static const Names no_aliases;
 

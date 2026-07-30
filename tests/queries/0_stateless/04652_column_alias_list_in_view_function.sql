@@ -20,11 +20,33 @@ SELECT 1 FROM remote('127.0.0.1', view(SELECT t.p FROM (SELECT 1, 2) t(p, q))) t
 SELECT 1 FROM view(SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x)) tz) ty;
 SELECT 1 FROM view(SELECT u.y FROM (SELECT t.x FROM (SELECT 1) t(x)) u(y)) ty;
 
--- An IN or EXISTS subquery makes the analyzer put an internal `__subquery_column_<uuid>` name into
--- the same storage the alias list uses. That name must never be re-emitted as a column alias list.
-SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty;
-SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE EXISTS(SELECT 1)) ty;
-SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SELECT 1, 2)) ty;
+-- A CTE spells the same list as `WITH name(col1, ...) AS (subquery)` and the builder stores it in
+-- the same place, so a conversion back to AST has to restore it there too.
+SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t) ty;
+SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT x FROM t) ty;
+SELECT 1 FROM view(WITH t(p, q) AS (SELECT 1, 2) SELECT t.p FROM t) ty;
+SELECT 1 FROM view(WITH t(p, q) AS (SELECT 1, 2) SELECT t.p, t.q FROM t) ty;
+SELECT 1 FROM view(WITH t(y) AS (SELECT 1 AS x) SELECT t.y FROM t) ty;
+SELECT 1 FROM remote('127.0.0.1', view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t)) ty;
+SELECT 1 FROM view(SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t) tz) ty;
+
+-- An IN subquery makes the analyzer put an internal `__subquery_column_<uuid>` name into the same
+-- storage the alias list uses, and that name must never be re-emitted as a column alias list. The
+-- rewrite that writes such a name is off by default, so activate it and read the AST of the `view`
+-- argument, which is the one place an unresolved list is printed: the list of the subquery under
+-- test has to be there, and no internal name may appear as a list. Both counts move if the guard is
+-- dropped or the re-emission stops, so the pair pins the emission and its guard together.
+SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty
+    SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%) AS t(x)%';
+SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SELECT 1, 2)) ty
+    SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%) AS t(p, q)%';
+SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty
+    SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%(`__subquery_column_%';
+SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty SETTINGS rewrite_in_to_join = 1;
+SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SELECT 1, 2)) ty SETTINGS rewrite_in_to_join = 1;
 
 -- A resolved subquery already carries the alias list as projection aliases, and column pruning
 -- shrinks those without shrinking the alias list, so re-emitting the list for a resolved subquery
@@ -46,11 +68,22 @@ SELECT t.p FROM (SELECT 1, 2) t(p, q);
 SELECT 1 FROM view(SELECT t.x FROM (SELECT 1 AS x) t) ty;
 SELECT 1 FROM view(SELECT t.x FROM (SELECT 1 AS x) t(x)) ty;
 SELECT t.y FROM (SELECT 1 AS x) t(y);
+WITH t(x) AS (SELECT 1) SELECT t.x FROM t;
+WITH t(p, q) AS (SELECT 1, 2) SELECT t.p FROM t;
+WITH t AS (SELECT 1 AS x) SELECT t.x FROM t;
 
 -- A count mismatch stays an error, inside and outside `view`.
 SELECT t.x FROM (SELECT 1) t(x, y); -- { serverError BAD_ARGUMENTS }
 SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x, y)) ty; -- { serverError BAD_ARGUMENTS }
 SELECT 1 FROM view(SELECT t.x FROM (SELECT 1, 2) t(x, x)) ty; -- { serverError BAD_ARGUMENTS }
+
+-- The positional projection name that a dropped alias list used to leave behind is not a supported
+-- way to reference the column. Restoring the list replaces it, so `view` now agrees with a plain
+-- subquery, where that name has never resolved.
+SELECT 1 FROM view(SELECT t.`1` FROM (SELECT 1) t(x)) ty; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t.`1` FROM (SELECT 1) t(x); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT t.`1` FROM t) ty; -- { serverError UNKNOWN_IDENTIFIER }
+WITH t(x) AS (SELECT 1) SELECT t.`1` FROM t; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- The parser and formatter were never at fault, and a resolved subquery already carries the alias
 -- list as a projection alias. Both pin that the fix does not apply the list twice.
