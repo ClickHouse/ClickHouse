@@ -18,6 +18,8 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Common/assert_cast.h>
 
+#include <bit>
+
 namespace DB
 {
 
@@ -95,6 +97,11 @@ char * extendAndGetWriteDstByType(TypeIndex element_type_id, IColumn & nested, s
 
 bool MergeTreePointReadSource::isEligible(const RangesInDataPart & part, const NameAndTypePair & column, size_t dimensions)
 {
+    /// The point read memcpy's the stored bytes straight into the column, bypassing `SerializationNumber`, which
+    /// converts numeric substreams from their little-endian on-disk form on big-endian targets. Read by granule there.
+    if constexpr (std::endian::native == std::endian::big)
+        return false;
+
     auto info = resolveElementStream(part, column, dimensions);
     if (!info)
         return false;
