@@ -48,18 +48,22 @@ The initial BYOC setup can be performed using a [CloudFormation template (AWS)](
 Storage buckets, VPC/VNet, Kubernetes cluster, and compute resources required for running ClickHouse aren't included in this initial setup. They will be provisioned in the next step.
 </Note>
 
-#### Alternative Terraform Module for AWS {#terraform-module-aws}
+#### Terraform Module for AWS {#terraform-module-aws}
 
-If you prefer to use Terraform instead of CloudFormation for AWS deployments, we also provide a [Terraform module for AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
-
-Usage:
+If you prefer to use Terraform instead of CloudFormation for AWS deployments, use the [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module:
 
 ```hcl
 module "clickhouse_onboarding" {
-  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-  byoc_env = "production"
+  source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+  external_id = "<external-id-provided-by-clickhouse>"
 }
 ```
+
+Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
+
+<Note>
+The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
+</Note>
 </Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
 
