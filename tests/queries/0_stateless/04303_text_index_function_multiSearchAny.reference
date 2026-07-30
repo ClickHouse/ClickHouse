@@ -45,3 +45,6 @@ Granules: 6/6
 -- an empty needle array is always false
 0
 0
+-- more than 255 needles is accepted (Aho-Corasick path) and returns the same rows with and without the index
+1	Well, Hello ClickHouse !
+1	Well, Hello ClickHouse !

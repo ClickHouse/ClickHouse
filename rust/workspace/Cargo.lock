@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_aho_corasick"
+version = "0.1.0"
+dependencies = [
+ "daachorse",
+]
+
+[[package]]
 name = "_ch_rust_polyglot"
 version = "0.1.0"
 dependencies = [
@@ -657,6 +664,12 @@ dependencies = [
  "quote",
  "syn 3.0.3",
 ]
+
+[[package]]
+name = "daachorse"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99251f238b74cd219a86fe6ea9328308ebb223fcbb5b8eb5aa400b847a41dded"
 
 [[package]]
 name = "darling"

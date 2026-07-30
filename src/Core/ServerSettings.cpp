@@ -727,6 +727,7 @@ The cache can also be cleared manually, without changing this limit, with the [`
 This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
+    DECLARE(UInt64, multi_search_automaton_cache_size, DEFAULT_MULTI_SEARCH_AUTOMATON_CACHE_MAX_SIZE, R"(Sets the maximum bytes retained by the cache of compiled Aho-Corasick automata used by `multiSearchAny*` functions with large constant pattern sets. Automata larger than the remaining cache capacity are not cached. `0` disables the cache. The limit applies to retained automata only. The memory of a build is charged to the query that triggers it, and the query memory limit is enforced once the build completes. This setting can be changed at runtime.)", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
 Maximum size of the query condition cache.
