@@ -27,8 +27,7 @@ In this mode, data ingestion is left entirely to the user. You can ingest data i
 <br/>
 
 <Steps>
-<Step>
-### Deploy with Docker {#deploy-hyperdx-with-docker}
+<Step title="Deploy with Docker" id="deploy-hyperdx-with-docker">
 
 Run the following command, modifying `YOUR_MONGODB_URI` as required. 
 
@@ -36,8 +35,7 @@ Run the following command, modifying `YOUR_MONGODB_URI` as required.
 docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
 ```
 </Step>
-<Step>
-### Navigate to the HyperDX UI {#navigate-to-hyperdx-ui}
+<Step title="Navigate to the HyperDX UI" id="navigate-to-hyperdx-ui">
 
 Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
 
@@ -47,8 +45,7 @@ On clicking `Create` you'll be prompted for connection details.
 
 <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg"/>
 </Step>
-<Step>
-### Complete connection details {#complete-connection-details}
+<Step title="Complete connection details" id="complete-connection-details">
 
 Connect to your own external ClickHouse cluster e.g. ClickHouse Cloud.
 

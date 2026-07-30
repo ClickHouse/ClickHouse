@@ -1,103 +1,83 @@
 ---
-title: Создать ClickPipe
+title: Создание ClickPipe
 ---
 
-import S3DataSource from '/snippets/es/clickpipes/object-storage/amazon-s3/_1-data-source.mdx';
-import GCSSDataSource from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+<Step title="Выберите формат данных" id="3-select-data-format">
+  В интерфейсе отобразится список файлов в указанном бакете.
+  Выберите формат данных (в настоящее время мы поддерживаем только часть форматов ClickHouse) и укажите, нужно ли включить непрерывную ингестию.
+  Подробнее см. в разделе &quot;continuous ingest&quot; на странице обзора.
 
-import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-connection.mdx';
-import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Выберите формат данных и topic" />
+  </Frame>
+</Step>
 
-<Steps>
-  <Step>
-    ## Выберите источник данных
+<Step title="Настройте таблицу, схему и параметры" id="5-configure-table-schema-settings">
+  На следующем шаге вы можете выбрать, выполнять ли приём данных в новую таблицу ClickHouse или использовать существующую.
+  Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и параметры.
+  В верхней части страницы доступен предварительный просмотр изменений в реальном времени в примере таблицы.
 
-    **1.** В ClickHouse Cloud выберите **Data sources** в главном навигационном меню и нажмите **Create ClickPipe**.
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Задайте таблицу, схему и параметры" />
+  </Frame>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импорта" size="lg" border />
+  Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
 
-    {props.provider === 's3' && <S3DataSource />}
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Задайте дополнительные параметры" />
+  </Frame>
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
-  </Step>
+  Либо вы можете выбрать приём данных в существующую таблицу ClickHouse.
+  В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
-  <Step>
-    ## Настройте подключение ClickPipe
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Использовать существующую таблицу" />
+  </Frame>
 
-    **1.** Чтобы настроить новый ClickPipe, необходимо указать параметры подключения и аутентификации для вашего сервиса Объектного хранилища.
+  <Info>
+    Вы также можете сопоставлять [виртуальные столбцы](/ru/reference/functions/table-functions/s3#virtual-columns), такие как `_path` или `_size`, с полями.
+  </Info>
+</Step>
 
-    {props.provider === 's3' && <S3Connection />}
+<Step title="Настройте разрешения" id="6-configure-permissions">
+  Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
-    {props.provider === 'gcs' && <GCSConnection />}
+  **Разрешения:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Вы можете назначить этому внутреннему пользователю пользовательскую роль или одну из предопределённых ролей:
 
-    **2.** Нажмите **Incoming data**. ClickPipes получит метаданные из вашего бакета для следующего шага.
-  </Step>
+  * `Full access`: полный доступ к кластеру. Требуется, если вы используете materialized view или словарь с целевой таблицей.
+  * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
-  <Step>
-    ## Выберите формат данных
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" />
+  </Frame>
+</Step>
 
-    В интерфейсе отобразится список файлов в указанном бакете.
-    Выберите формат данных (сейчас поддерживается только часть форматов ClickHouse), а также укажите, нужно ли включить непрерывный приём.
-    Подробнее см. в разделе &quot;continuous ingest&quot; на странице обзора.
+<Step title="Завершите настройку" id="7-complete-setup">
+  После нажатия &quot;Complete Setup&quot; система зарегистрирует ваш ClickPipe, и вы увидите его в сводной таблице.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Задать формат данных и topic" size="lg" border />
-  </Step>
+  <div className="ch-image-sm">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Уведомление об успешном выполнении" />
+    </Frame>
+  </div>
 
-  <Step>
-    ## Настройте таблицу, схему и параметры
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Уведомление об удалении" />
+  </Frame>
 
-    На следующем шаге вы можете выбрать, выполнять ли приём данных в новую таблицу ClickHouse или использовать существующую.
-    Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и параметры.
-    Предварительный просмотр изменений в реальном времени отображается в sample-таблице в верхней части экрана.
+  В сводной таблице доступны элементы управления для отображения примеров данных из источника или из целевой таблицы ClickHouse
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Задать таблицу, схему и параметры" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Просмотр целевой таблицы" />
+  </Frame>
 
-    Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
+  А также элементы управления для удаления ClickPipe и отображения сводки по заданию приёма.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Задать расширенные элементы управления" size="lg" border />
+  <Frame>
+    <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Просмотр обзора" />
+  </Frame>
 
-    Кроме того, вы можете выбрать приём данных в существующую таблицу ClickHouse.
-    В этом случае интерфейс позволит сопоставить поля из источника с полями ClickHouse в выбранной целевой таблице.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Использовать существующую таблицу" size="lg" border />
-
-    <Info>
-      Вы также можете сопоставлять [virtual columns](/ru/reference/functions/table-functions/s3#virtual-columns), такие как `_path` или `_size`, с полями.
-    </Info>
-  </Step>
-
-  <Step>
-    ## Настройте разрешения
-
-    Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
-
-    **Разрешения:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Для этого внутреннего пользователя можно выбрать пользовательскую роль или одну из предопределённых ролей:
-
-    * `Full access`: полный доступ к кластеру. Требуется, если вы используете materialized view или словарь с целевой таблицей.
-    * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" size="lg" border />
-  </Step>
-
-  <Step>
-    ## Завершите настройку
-
-    Нажав &quot;Complete Setup&quot;, вы зарегистрируете ClickPipe, и он появится в сводной таблице.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Уведомление об успешном завершении" size="sm" border />
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Уведомление об удалении" size="lg" border />
-
-    В сводной таблице доступны элементы управления для просмотра sample-данных из исходной или целевой таблицы в ClickHouse
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Просмотр пункта назначения" size="lg" border />
-
-    А также элементы управления для удаления ClickPipe и просмотра сводки по задаче приёма.
-
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Просмотр обзора" size="lg" border />
-
-    **Поздравляем!** Вы успешно настроили свой первый ClickPipe.
-    Если этот ClickPipe настроен для непрерывного приёма, он будет работать постоянно и выполнять приём данных в реальном времени из удалённого источника данных.
-    В противном случае он обработает батч и завершит работу.
-  </Step>
-</Steps>
+  **Поздравляем!** Вы успешно настроили свой первый ClickPipe.
+  Если этот ClickPipe настроен для непрерывной ингестии, он будет непрерывно работать, выполняя приём данных в реальном времени из удалённого источника данных.
+  В противном случае он примет батч и завершит работу.
+</Step>
