@@ -37,3 +37,13 @@ ReadFromMergeTree (default.test_col_stats_agg)
 3	25	inf
 ReadFromMergeTree (default.test_col_stats_agg)
 25	1225
+ReadFromPreparedSource (_column_statistics_aggregation)
+25	25
+ReadFromPreparedSource (_column_statistics_aggregation)
+25	25
+ReadFromPreparedSource (_column_statistics_aggregation)
+2	2	40
+ReadFromPreparedSource (_column_statistics_aggregation)
+1	50	50
+2	150	150
+3	25	25

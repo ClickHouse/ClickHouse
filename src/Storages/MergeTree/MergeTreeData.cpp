@@ -10250,6 +10250,11 @@ struct AggResultColumnInfo
 };
 
 /// Build the result Block in the order of required_columns, consuming aggregate and key columns.
+/// When the same aggregate column name appears multiple times in required_columns
+/// (e.g. SELECT min(v), min(v)), each occurrence consumes a distinct AggResultColumnInfo
+/// entry.  A simple name→pointer map would lose the duplicate entries because
+/// aggregate_descriptions and required_columns are built in lockstep from the same
+/// AggregateDescriptions list, so entries with the same column_name are consecutive.
 static Block buildAggResultBlock(
     const Names & required_columns,
     const MergeTreeData::GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
@@ -10260,9 +10265,12 @@ static Block buildAggResultBlock(
 {
     const bool has_group_by = !group_by_key_to_partition_idx.empty();
 
-    std::unordered_map<String, AggResultColumnInfo *> agg_col_map;
-    for (auto & agg_col : agg_columns)
-        agg_col_map[agg_col.col_name] = &agg_col;
+    /// Track the next unconsumed agg_columns index per column name.
+    /// When an aggregate name appears multiple times, each lookup advances
+    /// to the next entry so duplicate outputs consume distinct columns.
+    std::unordered_map<String, size_t> agg_next_idx;
+    for (size_t i = 0; i < agg_columns.size(); ++i)
+        agg_next_idx.emplace(agg_columns[i].col_name, i);
 
     std::unordered_map<String, size_t> key_to_partition_idx;
     for (const auto & [key_name, partition_idx] : group_by_key_to_partition_idx)
@@ -10272,12 +10280,25 @@ static Block buildAggResultBlock(
     for (const auto & col_name : required_columns)
     {
         /// Try aggregate columns first
-        auto agg_it = agg_col_map.find(col_name);
-        if (agg_it != agg_col_map.end())
+        auto agg_it = agg_next_idx.find(col_name);
+        if (agg_it != agg_next_idx.end())
         {
-            auto & agg_col = *agg_it->second;
+            size_t idx = agg_it->second;
+            auto & agg_col = agg_columns[idx];
             auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, agg_col.func->getParameters());
             result.insert({std::move(agg_col.column), agg_type, col_name});
+
+            /// Advance to next unconsumed entry with the same name.
+            /// Entries with the same name are consecutive because they are
+            /// built in the same order as required_columns.
+            ++idx;
+            while (idx < agg_columns.size() && agg_columns[idx].col_name != col_name)
+                ++idx;
+            if (idx < agg_columns.size())
+                agg_it->second = idx;
+            else
+                agg_next_idx.erase(agg_it);
+
             continue;
         }
 

@@ -108,4 +108,24 @@ SELECT p, min(value_with_inf), max(value_with_inf) FROM test_col_stats_agg GROUP
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), sum(value) FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromMergeTree%';
 SELECT min(value), sum(value) FROM test_col_stats_agg;
 
+-- ==================================================
+-- Duplicate aggregate outputs
+-- ==================================================
+
+-- Same aggregate without alias - both outputs must produce the same value
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value), min(value) FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(value), min(value) FROM test_col_stats_agg;
+
+-- Same aggregate with different aliases - both outputs must produce the same value
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(value) AS x, min(value) AS y FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(value) AS x, min(value) AS y FROM test_col_stats_agg;
+
+-- Mix of duplicate and unique aggregates
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(a), min(a), max(a) FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(a), min(a), max(a) FROM test_col_stats_agg;
+
+-- Duplicate aggregates with GROUP BY partition key
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, min(value), min(value) FROM test_col_stats_agg GROUP BY p ORDER BY p) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT p, min(value), min(value) FROM test_col_stats_agg GROUP BY p ORDER BY p;
+
 DROP TABLE test_col_stats_agg;
