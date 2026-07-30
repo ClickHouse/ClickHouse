@@ -255,21 +255,21 @@ DROP TABLE het_m;
 DROP TABLE het_leaf2;
 DROP TABLE het_leaf1;
 
--- A refused row-level filter runs as a filter step right above the read, so the read must stop at
--- FetchColumns: a wrapper over Distributed would otherwise process past the policy and skip it
--- entirely (found by review).
+-- A refused row-level filter runs as a filter step right above the read, which only exists while
+-- the storage stops at FetchColumns. A wrapper over Distributed processes past it and would skip
+-- the policy silently (found by review), so it must fail closed instead.
 CREATE TABLE rls_dist_leaf (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO rls_dist_leaf SELECT number, number FROM numbers(10);
 CREATE TABLE rls_dist (x UInt64, y UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), rls_dist_leaf);
 CREATE MATERIALIZED VIEW rls_mv_dist TO rls_dist (x UInt64, y UInt32) AS SELECT x, y FROM rls_dist_leaf;
 
-SELECT '-- a refused policy over a storage that processes past FetchColumns still filters --';
+SELECT '-- a refused policy over a storage that processes past FetchColumns fails closed --';
 SELECT count() FROM rls_mv_dist;
 SELECT count() FROM rls_mv_dist PREWHERE y < 5; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM rls_mv_dist PREWHERE y < 5 SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 CREATE ROW POLICY rp_04652_dist ON rls_mv_dist FOR SELECT USING y < 5 TO CURRENT_USER;
-SELECT count() FROM rls_mv_dist;
-SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0;
+SELECT count() FROM rls_mv_dist; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM rls_mv_dist SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY rp_04652_dist ON rls_mv_dist;
 
 DROP VIEW rls_mv_dist;

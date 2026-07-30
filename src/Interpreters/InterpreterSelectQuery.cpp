@@ -1285,10 +1285,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
 
         /// A row-level filter the PREWHERE contract refuses is applied as a FilterStep right above
-        /// the read, which only the first processing stage adds. Do not let a storage that could
-        /// process further (e.g. a wrapper over Distributed) skip the policy entirely.
+        /// the read, which only the first processing stage adds. A storage processing further
+        /// (e.g. a wrapper over Distributed) would silently skip the policy, so fail closed instead.
         if (row_policy_info && from_stage > QueryProcessingStage::FetchColumns && !shouldPushRowLevelFilterToStorage())
-            from_stage = QueryProcessingStage::FetchColumns;
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Row policy filter for {} uses columns not supported for PREWHERE, and the storage processes "
+                "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables",
+                storage->getStorageID().getNameForLogs());
     }
 
     /// Do I need to perform the first part of the pipeline?

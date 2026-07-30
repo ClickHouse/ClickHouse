@@ -168,6 +168,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
@@ -1784,12 +1785,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
                     /// A row-level filter the PREWHERE contract refuses runs as a filter step right
-                    /// above the read, against the table's own columns. Do not let a storage that
-                    /// could process further (e.g. a wrapper over Distributed) run past them.
-                    /// The parallel-replicas paths below may raise the stage again, but they replace
-                    /// the plan with a remote re-planning that re-derives the policy on each replica.
+                    /// above the read, but that step is only appended while the storage stops at
+                    /// FetchColumns. A storage processing further (e.g. a wrapper over Distributed)
+                    /// would silently skip the policy, so fail closed instead.
                     if (row_policy_filter_not_pushed && till_stage > QueryProcessingStage::FetchColumns)
-                        till_stage = QueryProcessingStage::FetchColumns;
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                            "Row policy filter for {} uses columns not supported for PREWHERE, and the storage processes "
+                            "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables",
+                            storage->getStorageID().getNameForLogs());
                 }
 
                 if (select_query_options.build_logical_plan)
