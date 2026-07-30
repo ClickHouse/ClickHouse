@@ -132,15 +132,34 @@ CV-has packed Tuple(Int64,UInt8)	1
 CG-has (UInt64,UInt8)/(Decimal64(1),UInt8)	1
 CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)	1
 N6-in scalar Decimal(20,4)/Decimal(10,2)	1
---- composite cross-type: has() declines, IN keeps pruning (the 03733 shapes) ---
+--- composite cross-type: a width-only pair keeps pruning, a signedness one declines (the 03733 shapes) ---
 T33 packed tuple has result	1
-T33 packed tuple has declines	0
+T33 packed tuple has keeps pruning	0
 T33 packed tuple IN result	1
 A33 array key has result	1
-A33 array key has declines	0
+A33 array key has keeps pruning	0
 Field width u8 vs u64	1
 Field width i8 vs i64	1
 Field signedness i32 vs u32	0
+Field width u64 vs u128	0
+Field width u128 vs u256	0
+Field scalar u64 vs u128	1
+--- composite has() over TWO key columns: the one shape where the composite rule decides ---
+W2C width-only has keeps pruning	1
+W2C width-only has	1
+W2C 128-bit has declines	0
+W2C 128-bit has	1
+S2C signedness has declines	0
+S2C signedness has	1
+--- composite has(): the attribute axis, pinned per direction ---
+attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) has	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps pruning	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has	1
+attr Tuple(Bool)/Tuple(UInt8) has declines	0
+attr Tuple(Bool)/Tuple(UInt8) has	1
+width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has declines	0
+width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has	1
 --- named tuples: the cast maps fields by name, so the pair must decline ---
 named tuple result	1
 named tuple declines	0
@@ -444,25 +463,13 @@ attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)	1
 --- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---
 null-elem NOT IN stays exact	1
 null-elem NOT IN	1
-null-elem NOT IN transform_null_in declines	0
-null-elem NOT IN transform_null_in	1
-null-elem NOT has declines	0
-null-elem NOT has	1
-null-elem LC NOT IN transform_null_in declines	0
-null-elem LC NOT IN transform_null_in	1
-null-elem LC NOT has declines	0
-null-elem LC NOT has	1
 null-elem identity keeps pruning	1
 null-elem identity	1	1
 --- the lossy conversion path, not the element type, is what forfeits exactness ---
-lossy same-width NOT IN declines	0
-lossy same-width NOT IN	1
-lossy same-width NOT has declines	0
-lossy same-width NOT has	1
 lossy mixed array NOT has declines	0
-lossy mixed array NOT has	1	1
+lossy mixed array NOT has	0	1
 lossy cross-type array NOT has declines	0
-lossy cross-type array NOT has	1	1
+lossy cross-type array NOT has	0	1
 safe identity actual NULL keeps pruning	1
 safe identity actual NULL IN keeps pruning	1
 safe identity actual NULL	1	1

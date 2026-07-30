@@ -662,7 +662,7 @@ SELECT 'CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)',
 SELECT 'N6-in scalar Decimal(20,4)/Decimal(10,2)',
     (SELECT count() FROM c_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)'))) = (SELECT count() FROM o_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)')));
 
-SELECT '--- composite cross-type: has() declines, IN keeps pruning (the 03733 shapes) ---';
+SELECT '--- composite cross-type: a width-only pair keeps pruning, a signedness one declines (the 03733 shapes) ---';
 
 DROP TABLE IF EXISTS t33; DROP TABLE IF EXISTS t33o;
 CREATE TABLE t33 (kt Tuple(UInt32, UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
@@ -671,9 +671,13 @@ INSERT INTO t33 VALUES ((10, 0));
 INSERT INTO t33 VALUES ((50000, 0));
 INSERT INTO t33 VALUES ((7, 7));
 INSERT INTO t33o VALUES ((10, 0)), ((50000, 0)), ((7, 7));
+-- The literal's element type is `Tuple(UInt16, UInt8)` against a `Tuple(UInt32, UInt32)` key, so the
+-- two differ only in the width of native integers. A `Field` collapses every native unsigned width
+-- into one variant, so the runtime `has` compares the two composites identically and the atom stays an
+-- exact image of the predicate: it must KEEP pruning.
 SELECT 'T33 packed tuple has result',
     (SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE has([(10, 0), (50000, 0)], kt));
-SELECT 'T33 packed tuple has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed tuple has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
 SELECT 'T33 packed tuple IN result',
     (SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) = (SELECT count() FROM t33o WHERE kt IN (SELECT (toUInt16(10), toUInt8(0))));
 
@@ -684,14 +688,107 @@ INSERT INTO a33 VALUES ([10, 11]);
 INSERT INTO a33 VALUES ([50000, 50001]);
 INSERT INTO a33 VALUES ([7, 7]);
 INSERT INTO a33o VALUES ([10, 11]), ([50000, 50001]), ([7, 7]);
+-- Same width-only shape one container deeper: `Array(Array(UInt16))` literal against an `Array(UInt32)`
+-- key. It must KEEP pruning for the same reason.
 SELECT 'A33 array key has result',
     (SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE has([[10, 11], [50000, 50001]], ak));
-SELECT 'A33 array key has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+SELECT 'A33 array key has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
 
--- widths collapse in a Field, signedness does not: this is what makes the rule non-obvious
+-- Native widths collapse in a Field, signedness does not, and the 128/256-bit tags do not either:
+-- this is exactly the boundary the composite identity rule has to draw.
 SELECT 'Field width u8 vs u64', has([tuple(toUInt8(1))], tuple(toUInt64(1)));
 SELECT 'Field width i8 vs i64', has([tuple(toInt8(1))], tuple(toInt64(1)));
 SELECT 'Field signedness i32 vs u32', has([tuple(toInt32(1))], tuple(toUInt32(1)));
+SELECT 'Field width u64 vs u128', has([tuple(toUInt64(1))], tuple(toUInt128(1)));
+SELECT 'Field width u128 vs u256', has([tuple(toUInt128(1))], tuple(toUInt256(1)));
+-- A scalar element takes the other rule (the preparation cast, which nulls instead of truncating), so
+-- native-vs-128-bit DOES match there. The two rows below are the asymmetry that forbids unifying them.
+SELECT 'Field scalar u64 vs u128', has([toUInt64(1)], toUInt128(1));
+
+SELECT '--- composite has() over TWO key columns: the one shape where the composite rule decides ---';
+
+-- With a two-column key the per-column checks see the UNPACKED scalars and admit any integer pair, so
+-- the composite rule is the deciding gate here and these cells are what pin it. (With a PACKED tuple or
+-- array key the per-column check sees the whole composite instead and rejects a width-only pair before
+-- this rule is consulted - see the residual noted in the PR description.)
+DROP TABLE IF EXISTS w2c; DROP TABLE IF EXISTS o2c;
+CREATE TABLE w2c (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE o2c (a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO w2c VALUES (10, 0); INSERT INTO w2c VALUES (50000, 0); INSERT INTO w2c VALUES (7, 7);
+INSERT INTO o2c VALUES (10, 0), (50000, 0), (7, 7);
+
+-- Width-only: the literal is `Array(Tuple(UInt16, UInt8))` against a `(UInt32, UInt32)` key, which the
+-- runtime compares identically, so the atom must KEEP pruning.
+SELECT 'W2C width-only has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w2c WHERE has([(10, 0), (50000, 0)], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'W2C width-only has',
+    (SELECT count() FROM w2c WHERE has([(10, 0), (50000, 0)], (a, b))) = (SELECT count() FROM o2c WHERE has([(10, 0), (50000, 0)], (a, b)));
+
+-- 128-bit: a distinct `Field` variant, so the runtime never matches the pair and the atom must decline.
+SELECT 'W2C 128-bit has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w2c WHERE has([tuple(toUInt128(10), toUInt128(0)), tuple(toUInt128(50000), toUInt128(0))], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'W2C 128-bit has',
+    (SELECT count() FROM w2c WHERE has([tuple(toUInt128(10), toUInt128(0)), tuple(toUInt128(50000), toUInt128(0))], (a, b))) = (SELECT count() FROM o2c WHERE has([tuple(toUInt128(10), toUInt128(0)), tuple(toUInt128(50000), toUInt128(0))], (a, b)));
+DROP TABLE w2c; DROP TABLE o2c;
+
+-- Signedness, the other direction of the same rule: an `Int32` key against an unsigned literal.
+DROP TABLE IF EXISTS s2c; DROP TABLE IF EXISTS p2c;
+CREATE TABLE s2c (a Int32, b Int32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE p2c (a Int32, b Int32) ENGINE = Memory;
+INSERT INTO s2c VALUES (1, 1); INSERT INTO s2c VALUES (2, 2); INSERT INTO s2c VALUES (3, 3);
+INSERT INTO p2c VALUES (1, 1), (2, 2), (3, 3);
+SELECT 'S2C signedness has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM s2c WHERE has([tuple(toUInt16(1), toUInt16(1)), tuple(toUInt16(2), toUInt16(2))], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'S2C signedness has',
+    (SELECT count() FROM s2c WHERE has([tuple(toUInt16(1), toUInt16(1)), tuple(toUInt16(2), toUInt16(2))], (a, b))) = (SELECT count() FROM p2c WHERE has([tuple(toUInt16(1), toUInt16(1)), tuple(toUInt16(2), toUInt16(2))], (a, b)));
+DROP TABLE s2c; DROP TABLE p2c;
+
+SELECT '--- composite has(): the attribute axis, pinned per direction ---';
+
+-- Every other attribute-axis control in this file is a scalar `IN`. Without these three the composite
+-- identity rule could be reverted to comparing canonical names and the whole file would still pass,
+-- silently losing composite pruning again - which is the regression the first cell below catches.
+
+-- A time zone is an attribute `equals` treats as interchangeable and a `Field` does not represent at
+-- all, so it cannot change the runtime verdict: this pair must KEEP pruning in both directions.
+DROP TABLE IF EXISTS ca_tz; DROP TABLE IF EXISTS oa_tz;
+CREATE TABLE ca_tz (kt Tuple(DateTime('UTC'))) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE oa_tz (kt Tuple(DateTime('UTC'))) ENGINE = Memory;
+-- `INSERT ... VALUES ((toDateTime(100)))` is rejected with `Code: 53` for a 1-tuple column, so build
+-- the rows with `SELECT tuple(...)`.
+INSERT INTO ca_tz SELECT tuple(toDateTime(100 + number * 100)) FROM numbers(3);
+INSERT INTO oa_tz SELECT tuple(toDateTime(100 + number * 100)) FROM numbers(3);
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) has',
+    (SELECT count() FROM ca_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt)) = (SELECT count() FROM oa_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt));
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has',
+    (SELECT count() FROM ca_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt)) = (SELECT count() FROM oa_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt));
+DROP TABLE ca_tz; DROP TABLE oa_tz;
+
+-- The other direction of the same axis: a custom name IS load-bearing, because `Bool`'s cast wrapper
+-- clamps every nonzero value to 1, so the preparation direction is not injective even though the
+-- runtime matches the pair. Master admits it; the atom must now be absent.
+DROP TABLE IF EXISTS ca_bl; DROP TABLE IF EXISTS oa_bl;
+CREATE TABLE ca_bl (kt Tuple(Bool)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE oa_bl (kt Tuple(Bool)) ENGINE = Memory;
+INSERT INTO ca_bl SELECT tuple(number % 2 = 1) FROM numbers(3);
+INSERT INTO oa_bl SELECT tuple(number % 2 = 1) FROM numbers(3);
+SELECT 'attr Tuple(Bool)/Tuple(UInt8) has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_bl WHERE has([tuple(toUInt8(1))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'attr Tuple(Bool)/Tuple(UInt8) has',
+    (SELECT count() FROM ca_bl WHERE has([tuple(toUInt8(1))], kt)) = (SELECT count() FROM oa_bl WHERE has([tuple(toUInt8(1))], kt));
+DROP TABLE ca_bl; DROP TABLE oa_bl;
+
+-- A native integer against a 128-bit one keeps its own `Field` variant, so the runtime never matches
+-- the pair (`has([tuple(toUInt128(1), toUInt128(0))], tuple(toUInt64(1), toUInt64(0)))` is 0) even
+-- though the preparation cast would be lossless. Master admits it; the atom must now be absent, and
+-- declining agrees with the oracle.
+DROP TABLE IF EXISTS ca_w; DROP TABLE IF EXISTS oa_w;
+CREATE TABLE ca_w (kt Tuple(UInt64, UInt64)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE oa_w (kt Tuple(UInt64, UInt64)) ENGINE = Memory;
+INSERT INTO ca_w SELECT tuple(toUInt64(number), toUInt64(0)) FROM numbers(3);
+INSERT INTO oa_w SELECT tuple(toUInt64(number), toUInt64(0)) FROM numbers(3);
+SELECT 'width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_w WHERE has([tuple(toUInt128(1), toUInt128(0))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has',
+    (SELECT count() FROM ca_w WHERE has([tuple(toUInt128(1), toUInt128(0))], kt)) = (SELECT count() FROM oa_w WHERE has([tuple(toUInt128(1), toUInt128(0))], kt));
+DROP TABLE ca_w; DROP TABLE oa_w;
 
 SELECT '--- named tuples: the cast maps fields by name, so the pair must decline ---';
 
@@ -1828,11 +1925,11 @@ DROP TABLE at_tu; DROP TABLE ao_tu;
 
 SELECT '--- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---';
 
--- The three `Nullable` controls above all pass a NON-NULL value through a `Nullable` wrapper, so none
--- of them exercises this: `castColumnAccurateOrNull` maps a source NULL to the nested default without
--- setting its own null map, so the prepared set holds `0` where the predicate's set holds NULL. `IN` is
--- only weakened by that, but `NOT IN`/`NOT has` are STRENGTHENED, and an atom claimed to be exact then
--- prunes a partition that still matches. Only the identity case may be exact for a nullable element.
+-- A source NULL surviving into the prepared set as the nested default is a SECOND root cause, living in
+-- the `Nullable`-source branch that this change does not touch, and it is fixed separately by
+-- https://github.com/ClickHouse/ClickHouse/pull/111418. The `transform_null_in = 1` shapes are
+-- therefore deliberately NOT asserted here - they belong to that PR's test. What stays is the pair of
+-- controls proving this change leaves that branch alone.
 DROP TABLE IF EXISTS nn_t; DROP TABLE IF EXISTS nn_o;
 CREATE TABLE nn_t (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 CREATE TABLE nn_o (k UInt64) ENGINE = Memory;
@@ -1845,24 +1942,6 @@ INSERT INTO nn_o VALUES (0), (1), (2);
 SELECT 'null-elem NOT IN stays exact', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'))) WHERE explain ILIKE '%0-element set%';
 SELECT 'null-elem NOT IN',
     (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'))) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')));
-
-SELECT 'null-elem NOT IN transform_null_in declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
-SELECT 'null-elem NOT IN transform_null_in',
-    (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
-
-SELECT 'null-elem NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) WHERE explain ILIKE '%element set%';
-SELECT 'null-elem NOT has',
-    (SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) = (SELECT count() FROM nn_o WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k));
-
--- `LowCardinality(Nullable(T))` takes the same null-stripping branch, so it is a carrier too even
--- though `IDataType::isNullable` is false for it.
-SELECT 'null-elem LC NOT IN transform_null_in declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1) WHERE explain ILIKE '%element set%';
-SELECT 'null-elem LC NOT IN transform_null_in',
-    (SELECT count() FROM nn_t WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1) = (SELECT count() FROM nn_o WHERE k NOT IN (SELECT CAST(NULL, 'LowCardinality(Nullable(UInt8))')) SETTINGS transform_null_in = 1, allow_suspicious_low_cardinality_types = 1);
-
-SELECT 'null-elem LC NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1) WHERE explain ILIKE '%element set%';
-SELECT 'null-elem LC NOT has',
-    (SELECT count() FROM nn_t WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1) = (SELECT count() FROM nn_o WHERE NOT has([CAST(NULL, 'LowCardinality(Nullable(UInt8))')], k) SETTINGS allow_suspicious_low_cardinality_types = 1);
 DROP TABLE nn_t; DROP TABLE nn_o;
 
 -- Keep-pruning control: the identity arm must be untouched, so a `Nullable(UInt8)` key against a
@@ -1880,29 +1959,18 @@ DROP TABLE nk_t; DROP TABLE nk_o;
 
 SELECT '--- the lossy conversion path, not the element type, is what forfeits exactness ---';
 
--- A nullable element is only unsound where the element is converted with `castColumnAccurateOrNull`
--- and the null maps are merged, because that merge consults only the null map the cast produced: an
--- element that was ALREADY NULL in the source survives as the nested default. Where the element can
--- instead be cast with plain `castColumn` (`canBeSafelyCast`, which requires the target to accept
--- NULL), the source NULL stays NULL and the prepared set is a faithful image, so those shapes must
--- KEEP pruning. The two groups below pin both directions of that boundary.
+-- What forfeits exactness is the CONVERSION, not the element type: a `Nullable` element that can be
+-- cast with plain `castColumn` (`canBeSafelyCast`) keeps the prepared set a faithful image and must
+-- KEEP pruning, while a cross-type conversion that does not preserve equality must not be claimed
+-- exact whatever the element type is. The shapes whose only fault is a source NULL surviving the
+-- accurate cast belong to the separate `Nullable`-source root cause fixed by
+-- https://github.com/ClickHouse/ClickHouse/pull/111418 and are asserted there, not here.
 
 DROP TABLE IF EXISTS lp_t; DROP TABLE IF EXISTS lp_o;
 CREATE TABLE lp_t (k UInt8) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 CREATE TABLE lp_o (k UInt8) ENGINE = Memory;
 INSERT INTO lp_t VALUES (0), (1), (2);
 INSERT INTO lp_o VALUES (0), (1), (2);
-
--- Same-width identity pair: `removeNullable` makes `Nullable(UInt8)` and `UInt8` compare equal, so a
--- gate keyed on the element type alone blesses this as the identity case. It is NOT: `canBeSafelyCast`
--- is false because the target is not nullable, so the lossy path runs anyway.
-SELECT 'lossy same-width NOT IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lp_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
-SELECT 'lossy same-width NOT IN',
-    (SELECT count() FROM lp_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM lp_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
-
-SELECT 'lossy same-width NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lp_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) WHERE explain ILIKE '%element set%';
-SELECT 'lossy same-width NOT has',
-    (SELECT count() FROM lp_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) = (SELECT count() FROM lp_o WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k));
 
 -- A literal array holding both a value and a NULL has element type `Array(Nullable(UInt8))`, which is
 -- the minimal form of the family `03733`'s `has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2))`

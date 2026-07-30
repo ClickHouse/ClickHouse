@@ -30,8 +30,10 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2670,11 +2672,13 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// Recurses because container `equals` recurses into elements, while `Tuple(Bool)` and
 /// `Tuple(UInt8)` differ only in a nested custom name.
 ///
-/// Only ever called after `equals` returned true, which guarantees the two type trees have an
-/// identical shape and element order, so the two single-type walks visit structurally corresponding
-/// nodes and the flat signatures are directly comparable. `Object` is excluded by the caller
-/// because its `equals` matches `typed_paths` by lookup while its `forEachChild` iterates an
-/// unordered map, so for that one type the walk order is not guaranteed to correspond.
+/// Only ever called once the two type trees are already known to have an identical shape and element
+/// order - either because `equals` returned true, or because
+/// `setIndexTypesHaveSameFieldRepresentation` did, which enforces the same shape by construction. That
+/// is what makes the two single-type walks visit structurally corresponding nodes and the flat
+/// signatures directly comparable. `Object` is excluded by the caller because its `equals` matches
+/// `typed_paths` by lookup while its `forEachChild` iterates an unordered map, so for that one type
+/// the walk order is not guaranteed to correspond.
 static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
 {
     auto custom_name_signature = [](const IDataType & type)
@@ -2708,6 +2712,90 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
             stable = false;
     });
     return stable;
+}
+
+/// Whether two types are compared identically by a `Field`-level equality, which is the notion a
+/// composite `has` actually uses: `FieldVisitorAccurateEquals` has no `Tuple`/`Array`/`Map` arm, so a
+/// composite element is compared as ONE `Field` through `Field::operator==`, which first rejects a
+/// differing `Field::Types::Which` (`Field.cpp`) and otherwise recurses with the same operator.
+/// `Field::TypeToEnum` (`Field.h`) maps every NATIVE integer width to a single variant per signedness
+/// (`UInt8/16/32/64` -> `Types::UInt64`, `Int8/16/32/64` -> `Types::Int64`) while `UInt128`/`UInt256`/
+/// `Int128`/`Int256` each keep their own. So two composites are indistinguishable to the runtime when
+/// they agree everywhere except in the width of a native integer.
+///
+/// ⛔ This tolerance is deliberately NARROWER than the cross-type case of
+/// `setIndexConversionPreservesEquality` above, and the two must not be unified. A scalar element is
+/// governed by the PREPARATION cast, whose `accurate::convertNumeric` path nulls instead of truncating
+/// for any integer pair, so native-vs-128-bit is exact there. A composite element is governed by
+/// `Field` identity instead, which keeps the 128/256-bit tags distinct - so the runtime does NOT match
+/// a native against a wide integer even though the cast would be lossless:
+///     has([toUInt64(5)],        toUInt128(5))         = 1   scalar,    native vs 128-bit
+///     has([tuple(toUInt64(5))], tuple(toUInt128(5)))  = 0   composite, native vs 128-bit
+///     has([toUInt8(5)],         toUInt64(5))          = 1   scalar,    native width-only
+///     has([tuple(toUInt8(5))],  tuple(toUInt64(5)))   = 1   composite, native width-only
+/// Admitting native-vs-wide here would claim exactness for a pair the runtime never matches.
+///
+/// Signedness is likewise not collapsed (`has([(toInt16(5),toUInt8(0))], (toInt32(5),toInt32(0)))` is
+/// 0, while the same-signedness pair is 1), and `Decimal`/`DateTime64`/`Time64` are excluded even
+/// though they all share the `Types::Decimal64` tag and DO match at runtime
+/// (`has([tuple(CAST('…00.123' AS DateTime64(3)))], tuple(CAST('…00.123' AS DateTime64(6))))` is 1):
+/// there the preparation cast silently TRUNCATES rather than nulling
+/// (`accurateCastOrNull(DateTime64(6) '…00.123456', 'DateTime64(3)')` = `…00.123`), which is this
+/// PR's own bug class. They keep going through the `equals` branch, which already answers them
+/// correctly - it compares a decimal's scale, so `Decimal(10, 2)` vs `Decimal(18, 2)` is admitted
+/// (runtime 1) and `Decimal(10, 2)` vs `Decimal(20, 2)` declines (runtime 0).
+static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, const IDataType & right)
+{
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// Containers: same kind, same arity, recursively the same representation. Tuple field NAMES must
+    /// still agree even though the runtime ignores them (`has([CAST((1,1),'Tuple(a UInt8,b UInt8)')],
+    /// CAST((1,1),'Tuple(c UInt8,d UInt8)'))` is 1), because the PREPARATION cast maps tuple fields BY
+    /// NAME: casting `Tuple(a, b)` to `Tuple(b, a)` REORDERS the values (`(1,2)` -> `(2,1)`) and
+    /// casting to an unrelated `Tuple(c, d)` ZEROES them (`(1,2)` -> `(0,0)`). A name-differing pair is
+    /// therefore not equality-preserving in the preparation direction.
+    if (left_which.isTuple() && right_which.isTuple())
+    {
+        const auto & left_tuple = assert_cast<const DataTypeTuple &>(left);
+        const auto & right_tuple = assert_cast<const DataTypeTuple &>(right);
+
+        if (left_tuple.getElementNames() != right_tuple.getElementNames())
+            return false;
+
+        const auto & left_elements = left_tuple.getElements();
+        const auto & right_elements = right_tuple.getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (!setIndexTypesHaveSameFieldRepresentation(*left_elements[i], *right_elements[i]))
+                return false;
+        return true;
+    }
+
+    if (left_which.isArray() && right_which.isArray())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeArray &>(left).getNestedType(),
+            *assert_cast<const DataTypeArray &>(right).getNestedType());
+
+    /// A `Map` is a `Array(Tuple(key, value))` underneath, so recursing into that one nested type
+    /// covers both halves without needing the container's own accessors.
+    if (left_which.isMap() && right_which.isMap())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeMap &>(left).getNestedType(),
+            *assert_cast<const DataTypeMap &>(right).getNestedType());
+
+    /// Native integer widths collapse into one `Field` variant per signedness, so they are
+    /// interchangeable. Everything wider keeps its own variant and is left to `equals`.
+    if (left_which.isNativeUInt() && right_which.isNativeUInt())
+        return true;
+    if (left_which.isNativeInt() && right_which.isNativeInt())
+        return true;
+
+    /// Any other leaf pair (including a `Decimal`/`DateTime64`/`Time64` one) is only interchangeable
+    /// when the type system itself says so.
+    return left.equals(right);
 }
 
 /// Index preparation casts the set values INTO the key type, while runtime membership casts the key
@@ -2750,17 +2838,13 @@ static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, co
     return both_integers && !key->hasCustomName() && !set->hasCustomName();
 }
 
-/// `set_lost_a_source_null` reports that an element which was already NULL in the source survived
-/// into the prepared set as the nested default, so the prepared set is not an exact image of the
-/// predicate's set and the atom must be marked relaxed. See the write site below for why.
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count,
-    bool & set_lost_a_source_null)
+    size_t args_count)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2893,13 +2977,6 @@ static bool tryPrepareSetColumnsForIndex(
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
-                /// A source NULL is not filtered out here (only cast-produced NULLs are), so it
-                /// survives into the prepared set as the nested default - a value the predicate's set
-                /// does not contain. That only weakens `IN`, but it strengthens `NOT IN`/`NOT has`,
-                /// so the atom is no longer an exact image of the predicate.
-                if (i < set_column_null_map->size() && (*set_column_null_map)[i])
-                    set_lost_a_source_null = true;
-
                 if (nullable_set_column_null_map_size < set_column_null_map->size())
                     filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
@@ -2998,14 +3075,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
-    bool set_lost_a_source_null = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count,
-            set_lost_a_source_null))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
         return false;
-
-    if (set_lost_a_source_null)
-        out.relaxed = true;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -3044,12 +3116,17 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// left to those per-column checks. Returns false (decline) when the types differ or when the left
 /// expression's type cannot be reconstructed.
 ///
-/// Identity here defers to the same notion as `setIndexConversionPreservesEquality`: `equals` plus
-/// agreement on custom names and on a stable child order. `equals` is the right granularity because
-/// the attributes it ignores - a time zone, a decimal's precision - are not represented in a `Field`
-/// at all, so they cannot change the `accurateEquals` verdict; shape and custom names are represented
-/// and so must still match. Comparing canonical names instead would reject a key that declares a time
-/// zone against an element that does not, which is the very policy the scalar helper above rejects.
+/// "Same type" here means indistinguishable to that `Field` comparison, which is what
+/// `setIndexTypesHaveSameFieldRepresentation` decides: identical shape and tuple field names, with
+/// native integer widths interchangeable but signedness, the 128/256-bit tags and
+/// `Decimal`/`DateTime64`/`Time64` scales all still required (see that helper for the measurements and
+/// for why the tolerance is narrower than the scalar path's). `equals` is accepted as well, so the
+/// attributes it treats as interchangeable - a time zone, a decimal's precision - keep pruning: they
+/// are not represented in a `Field` at all, so they cannot change the `accurateEquals` verdict.
+/// Comparing canonical names instead would reject a key that declares a time zone against an element
+/// that does not, which is the very policy the scalar helper above rejects. Custom names must agree in
+/// either case: `Bool` is `equals`-equal to `UInt8` and matches at runtime, but its cast wrapper clamps
+/// every nonzero value to 1, so the preparation direction is not injective.
 static bool compositeHasArgumentsHaveSameType(
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
@@ -3092,7 +3169,8 @@ static bool compositeHasArgumentsHaveSameType(
         left_type = std::make_shared<DataTypeTuple>(elements);
     }
 
-    return left_type->equals(*element_type)
+    return (left_type->equals(*element_type)
+            || setIndexTypesHaveSameFieldRepresentation(*left_type, *element_type))
         && setIndexTypeTreeHasStableChildOrder(*left_type)
         && setIndexTypesAgreeOnCustomNames(*left_type, *element_type);
 }
@@ -3153,14 +3231,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
             indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type))
         return false;
 
-    bool set_lost_a_source_null = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count,
-            set_lost_a_source_null))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
         return false;
-
-    if (set_lost_a_source_null)
-        out.relaxed = true;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
