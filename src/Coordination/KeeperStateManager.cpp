@@ -396,16 +396,9 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
-/// Makes an already-written file durable, contents and directory entry both, without changing a
-/// byte of it. `IDisk` has no `fsync` entry point for an existing file, but `WriteMode::Append`
-/// does not truncate (`DiskLocal` maps it to `O_APPEND | O_CREAT | O_WRONLY`) and `sync` on a
-/// buffer with nothing buffered reaches only `fdatasync`, so opening for append and syncing is
-/// exactly that.
-///
-/// Object storage is excluded rather than relied upon: an empty append there writes no object but
-/// still records its key in the metadata, which would leave the state file referencing a blob that
-/// does not exist. Plain (`s3_plain`) metadata additionally rejects `WriteMode::Append` outright.
-/// On a disk without this capability the file is left as it is, which is no worse than not syncing.
+/// Makes an existing file durable, contents and directory entry, writing nothing to it:
+/// `WriteMode::Append` does not truncate and there is nothing buffered to flush. Not usable on
+/// object storage, where an empty append records a key for an object it never creates.
 void syncExistingFile(const DiskPtr & disk, const String & path)
 {
     if (disk->isRemote() || !supportWritingWithAppend(disk))
@@ -417,9 +410,7 @@ void syncExistingFile(const DiskPtr & disk, const String & path)
         buf->finalize();
     }
 
-    /// Durable contents are not enough: the directory entry may still be missing after a power
-    /// loss, which would lose the file altogether. `save_state` syncs the two separately for the
-    /// same reason.
+    /// The directory entry can be lost on its own, taking the file with it.
     SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
 }
 
@@ -500,9 +491,8 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     if (disk->existsFile(server_state_file_name)
         && readAndVerifyStateFile(disk, server_state_file_name, logger) != nullptr)
     {
-        /// The live bytes are complete, but on a retry after a failed sync they may still not be
-        /// durable while the `state-OLD` about to be replaced is. Make them durable first, so the
-        /// refresh below cannot leave this term with no durable copy at all.
+        /// These bytes are complete but, on a retry after a failed sync, maybe not yet durable,
+        /// while the `state-OLD` about to be overwritten is.
         syncExistingFile(disk, server_state_file_name);
 
         /// Back up the current state so it survives the rewrite below. The backup is kept
@@ -578,10 +568,8 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
         if (state)
         {
-            /// Parsing proves the bytes are complete, not that they reached the disk, so make the
-            /// live file durable before acting on the term it holds. Otherwise the term could still
-            /// evaporate on the next power loss and the restart after that would fall back to the
-            /// older `state-OLD`, i.e. the node would forget a term it had already voted in.
+            /// Parsing shows the bytes are complete, not that they reached the disk, and the term
+            /// is about to be acted on.
             syncExistingFile(disk, server_state_file_name);
 
             /// The backup is kept regardless: `save_state` drops it once it has synced a replacement.

@@ -1121,8 +1121,7 @@ public:
     std::unique_ptr<DB::WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
-        /// Only `Rewrite` truncates, so the two modes are recorded apart: `open:` marks the
-        /// destructive open a durability assertion has to order against.
+        /// Only `Rewrite` truncates, so `open:` marks the destructive open.
         events->push_back((mode == DB::WriteMode::Append ? "append:" : "open:") + path);
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
         return std::make_unique<RecordingWriteBuffer>(std::move(inner), path, events);
@@ -1286,18 +1285,14 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ASSERT_NE(live_opened, std::string::npos);
     ASSERT_LT(backup_synced, live_opened);
 
-    /// The directory entry of the freshly created backup must be synced too, and the sync must
-    /// have completed before the live file is truncated. `save_state` also syncs the live file
-    /// and its directory before taking the backup, so this one is the sync that follows the
-    /// backup rather than simply the first one recorded.
+    /// The freshly created backup needs its directory entry synced too, before the truncation.
+    /// Anchored past the backup: an earlier sync of the live file also records one.
     const auto backup_dirsync = indexOf(*events, "dirsync", backup_synced + 1);
     ASSERT_NE(backup_dirsync, std::string::npos);
     ASSERT_LT(backup_dirsync, live_opened);
 
-    /// The backup is only dropped after the replacement state file is durable in full: both its
-    /// contents and, since it may have just been created, its directory entry. Both must be
-    /// looked for after the truncating open, or the pre-backup sync of the old contents would
-    /// pass for the sync of the replacement.
+    /// The backup is dropped only once the replacement is durable in full, contents and
+    /// directory entry. Anchored past the truncating open, or the sync of the old contents counts.
     ASSERT_NE(backup_removed, std::string::npos);
     const auto live_synced = indexOf(*events, "sync:state", live_opened + 1);
     ASSERT_NE(live_synced, std::string::npos);
