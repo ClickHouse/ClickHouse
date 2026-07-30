@@ -2,3 +2,18 @@
 17:30:00
 17:30:00
 2023-08-25 17:30:00
+A non-constant time zone from if/multiIf is LowCardinality(String)
+LowCardinality(String)
+LowCardinality(String)
+formatDateTime with a non-constant LowCardinality(String) time zone
+08:30:00
+17:30:00
+08:30:00
+17:30:00
+15:30:00
+2023-08-25 08:30:00
+2023-08-25 17:30:00
+The same results with the optimization disabled (plain String time zone)
+String
+08:30:00
+17:30:00
