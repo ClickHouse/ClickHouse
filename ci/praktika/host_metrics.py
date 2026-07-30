@@ -70,6 +70,9 @@ class HostMetricsCollector:
         self._samples: List[Dict[str, float]] = []
         self._mem_total_kb = 0
         self._disk_total_kb = 0
+        # Set in start() by probing disk_path; a bad path disables only the disk
+        # series, never CPU/RAM/PSI.
+        self._disk_available = False
         # Exact global peaks over every fine sample (never decimated away).
         self._cpu_peak = 0.0
         self._mem_peak = 0.0
@@ -97,10 +100,21 @@ class HostMetricsCollector:
             print(f"WARNING: Failed to init host metrics file [{self._out_file}]: {e}")
             self._available = False
             return self
+        # Probe the disk path once up front. If it is missing/inaccessible the
+        # disk series is simply disabled - it must never blank the CPU/RAM/PSI
+        # collection, which shares the sampling loop.
+        try:
+            self._read_disk_percent()
+            self._disk_available = True
+        except OSError as e:
+            print(f"WARNING: disk path [{self._disk_path}] is not accessible ({e}) - disk series disabled")
+            self._disk_available = False
         self._psi_start = self._read_psi()
         self._thread = threading.Thread(target=self._run, name="host-metrics", daemon=True)
         self._thread.start()
-        print(f"NOTE: Host metrics collection started (fine {self._fine_interval}s, window {self._report_interval}s, psi {'on' if self._psi_available else 'off'}, file [{self._out_file}])")
+        print(
+            f"NOTE: Host metrics collection started (fine {self._fine_interval}s, window {self._report_interval}s, disk {'on' if self._disk_available else 'off'}, psi {'on' if self._psi_available else 'off'}, file [{self._out_file}])"
+        )
         return self
 
     def stop(self) -> Optional[Dict]:
@@ -124,22 +138,33 @@ class HostMetricsCollector:
         prev_cpu = self._read_cpu_times()
         start = time.monotonic()
         window_start = start
-        win_cpu: List[float] = []
-        win_mem: List[float] = []
-        win_disk: List[float] = []
+        last_time = start
+        # Each entry is (value, dt) so the window average can be time-weighted:
+        # the forced tail sample after stop() may cover only a few ms and must
+        # not carry the same weight as a full fine interval.
+        win_cpu: List[Tuple[float, float]] = []
+        win_mem: List[Tuple[float, float]] = []
+        win_disk: List[Tuple[float, float]] = []
+
+        def wmean(pairs: List[Tuple[float, float]]) -> float:
+            total_dt = sum(dt for _, dt in pairs)
+            if total_dt <= 0:
+                return round(sum(v for v, _ in pairs) / len(pairs), 1)
+            return round(sum(v * dt for v, dt in pairs) / total_dt, 1)
 
         def flush_window(now: float):
             if not win_cpu:
                 return
             sample = {
                 "t": round(now - start, 1),
-                "cpu": round(sum(win_cpu) / len(win_cpu), 1),
-                "mem": round(sum(win_mem) / len(win_mem), 1),
-                "disk": round(sum(win_disk) / len(win_disk), 1),
-                "cpu_peak": round(max(win_cpu), 1),
-                "mem_peak": round(max(win_mem), 1),
-                "disk_peak": round(max(win_disk), 1),
+                "cpu": wmean(win_cpu),
+                "mem": wmean(win_mem),
+                "cpu_peak": round(max(v for v, _ in win_cpu), 1),
+                "mem_peak": round(max(v for v, _ in win_mem), 1),
             }
+            if win_disk:
+                sample["disk"] = wmean(win_disk)
+                sample["disk_peak"] = round(max(v for v, _ in win_disk), 1)
             self._samples.append(sample)
             self._append_to_fs(sample)
             win_cpu.clear()
@@ -159,7 +184,6 @@ class HostMetricsCollector:
                 cpu_pct = self._cpu_percent(prev_cpu, cur_cpu)
                 prev_cpu = cur_cpu
                 mem_pct = self._mem_percent()
-                disk_pct = self._read_disk_percent()
             except Exception as e:
                 # A transient /proc read failure must not kill the collector.
                 print(f"WARNING: Host metrics sample failed: {e}")
@@ -167,15 +191,26 @@ class HostMetricsCollector:
                 if stopped:
                     break
                 continue
-            win_cpu.append(cpu_pct)
-            win_mem.append(mem_pct)
-            win_disk.append(disk_pct)
+            now = time.monotonic()
+            dt = now - last_time
+            last_time = now
+            win_cpu.append((cpu_pct, dt))
+            win_mem.append((mem_pct, dt))
             self._n_fine += 1
             # Exact global peaks, immune to windowing/decimation.
             self._cpu_peak = max(self._cpu_peak, cpu_pct)
             self._mem_peak = max(self._mem_peak, mem_pct)
-            self._disk_peak = max(self._disk_peak, disk_pct)
-            now = time.monotonic()
+            # Disk is sampled independently: a failure here disables only the
+            # disk series and leaves CPU/RAM/PSI intact.
+            if self._disk_available:
+                try:
+                    disk_pct = self._read_disk_percent()
+                except OSError as e:
+                    print(f"WARNING: disk read failed ({e}) - disabling disk series")
+                    self._disk_available = False
+                else:
+                    win_disk.append((disk_pct, dt))
+                    self._disk_peak = max(self._disk_peak, disk_pct)
             if now - window_start >= self._report_interval:
                 flush_window(now)
                 window_start = now
@@ -297,32 +332,34 @@ class HostMetricsCollector:
         }
 
     def _compact(self, samples: List[Dict[str, float]]) -> Dict:
-        cpu_points = [(s["t"], s["cpu"], s["cpu_peak"]) for s in samples]
-        mem_points = [(s["t"], s["mem"], s["mem_peak"]) for s in samples]
-        disk_points = [(s["t"], s["disk"], s["disk_peak"]) for s in samples]
         mem_total_gb = round(self._mem_total_kb / 1024.0 / 1024.0, 2)
-        disk_total_gb = round(self._disk_total_kb / 1024.0 / 1024.0, 2)
+        peaks = {
+            "cpu": round(self._cpu_peak, 1),
+            "mem": round(self._mem_peak, 1),
+            "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
+        }
+        series = {
+            "cpu": self._decimate([(s["t"], s["cpu"], s["cpu_peak"]) for s in samples], self._max_points),
+            "mem": self._decimate([(s["t"], s["mem"], s["mem_peak"]) for s in samples], self._max_points),
+        }
         result = {
             "interval": self._report_interval,
             "fine_interval": self._fine_interval,
             "duration": samples[-1]["t"] if samples else 0,
             "mem_total_gb": mem_total_gb,
-            "disk_total_gb": disk_total_gb,
             "n_raw": self._n_fine,
             "n_windows": len(samples),
-            "peaks": {
-                "cpu": round(self._cpu_peak, 1),
-                "mem": round(self._mem_peak, 1),
-                "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
-                "disk": round(self._disk_peak, 1),
-                "disk_gb": round(disk_total_gb * self._disk_peak / 100.0, 2),
-            },
-            "series": {
-                "cpu": self._decimate(cpu_points, self._max_points),
-                "mem": self._decimate(mem_points, self._max_points),
-                "disk": self._decimate(disk_points, self._max_points),
-            },
+            "peaks": peaks,
+            "series": series,
         }
+        # Disk is optional: present only when the disk path was sampled.
+        disk_points = [(s["t"], s["disk"], s["disk_peak"]) for s in samples if "disk" in s]
+        if disk_points:
+            disk_total_gb = round(self._disk_total_kb / 1024.0 / 1024.0, 2)
+            series["disk"] = self._decimate(disk_points, self._max_points)
+            result["disk_total_gb"] = disk_total_gb
+            peaks["disk"] = round(self._disk_peak, 1)
+            peaks["disk_gb"] = round(disk_total_gb * self._disk_peak / 100.0, 2)
         psi = self._psi_delta()
         if psi:
             result["psi"] = psi
