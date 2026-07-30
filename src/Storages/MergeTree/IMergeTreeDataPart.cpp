@@ -1240,17 +1240,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
-        try
+        fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
         {
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            if (column_stat)
-                result.emplace(column_desc->name, std::move(column_stat));
-        }
-        catch (...)
-        {
-            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
-                column_desc->name, filename, getCurrentExceptionMessage(false));
-        }
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+        });
+
+        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+        if (column_stat)
+            result.emplace(column_desc->name, std::move(column_stat));
     }
 
     return result;
@@ -1272,17 +1269,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
-        try
+        fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
         {
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            if (column_stat)
-                result.emplace(column_desc->name, std::move(column_stat));
-        }
-        catch (...)
-        {
-            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
-                column_desc->name, filename, getCurrentExceptionMessage(false));
-        }
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+        });
+
+        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+        if (column_stat)
+            result.emplace(column_desc->name, std::move(column_stat));
     }
 
     return result;
@@ -1290,12 +1284,6 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
-    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Injected failure in loadStatistics");
-    });
-
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
     if (auto * reader = getStatisticsPackedReader())
