@@ -668,6 +668,8 @@ When you explicitly specify ClickHouse column types in the table definition, the
 
 See [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support) for the default type mapping.
 
+A SQLite `NULL` read into an explicitly non-`Nullable` ClickHouse column raises the `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception. Declare the column [Nullable](/reference/data-types/nullable) to read `NULL` values; inferred schemas map SQLite columns to `Nullable` types.
+
 ## Usage example {#usage-example}
 
 Shows a query creating the SQLite table:
