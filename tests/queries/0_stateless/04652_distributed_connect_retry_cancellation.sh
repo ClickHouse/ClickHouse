@@ -20,11 +20,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # tries finish inside the deadline, the query reports the exhausted-retries error before any
 # cancellation exists, and every case below would fail with a misleading "wrong error". Detect that
 # here and say so; the missing reference lines then make the test fail loudly and legibly.
-probe_start=$SECONDS
+#
+# Measured in milliseconds, not with $SECONDS. $SECONDS counts tick boundaries crossed rather than
+# time elapsed, so a sub-second refusal that straddles a tick reads as 1 and would be accepted as
+# blocking -- silently, in the one direction that matters. A refusal takes ~0.1 s here and a genuine
+# block ~2.1 s against the 2000 ms timeout, so 1000 ms sits an order of magnitude above the former
+# and half of the latter.
+probe_start_ns=$(date +%s%N)
 $CLICKHOUSE_CLIENT --connections_with_failover_max_tries 1 \
                    --connect_timeout_with_failover_ms 2000 \
                    --query "SELECT count() FROM remote('198.51.100.1', system.one) FORMAT Null" >/dev/null 2>&1
-if [ $((SECONDS - probe_start)) -lt 1 ]; then
+probe_ms=$(( ($(date +%s%N) - probe_start_ns) / 1000000 ))
+if [ "$probe_ms" -lt 1000 ]; then
     echo "fixture unusable: 198.51.100.1 does not block, it is refused"
     exit 0
 fi
@@ -71,12 +78,14 @@ run_case()
     echo "$error" | grep -qF 'TIMEOUT_EXCEEDED' && echo "$label reported as timeout" || echo "$label wrong error: $error"
 
     # The elapsed bound alone cannot distinguish "stops at the next attempt" from "stops every Nth
-    # attempt": it admits 6 extra dials. Count the attempts instead. An upper bound rather than an
-    # exact value, because the deadline can land either between attempts or during one. The pre-fix
-    # loop performs 120 attempts, so 4 separates the two behaviours by 30x.
+    # attempt": it admits 6 extra dials. Count the attempts instead. The ceiling is what the fixture
+    # permits, not a round number: each connect takes the full 2 s timeout, so against the 3 s
+    # deadline only the attempts starting at t~0 and t~2 can begin before cancellation -- at most 2.
+    # An upper bound rather than an equality, because the deadline can land either between attempts
+    # or during one. The pre-fix loop performs 120 attempts, so 2 separates the two behaviours by 60x.
     local attempts
     attempts=$(attempts_of "$qid")
-    [ -n "$attempts" ] && [ "$attempts" -le 4 ] && echo "$label stopped within 4 attempts" \
+    [ -n "$attempts" ] && [ "$attempts" -le 2 ] && echo "$label stopped within 2 attempts" \
         || echo "$label used $attempts attempts"
 }
 
@@ -89,9 +98,15 @@ run_case hedged 1
 # checkpoint on the establisher's terminal-failure path the caller reports
 # ALL_CONNECTION_TRIES_FAILED, which getStructureOfRemoteTable then converts into a next-shard retry.
 #
-# Synchronous path only: the asynchronous (hedged) establisher finishes such an attempt outside the
-# fiber, in ConnectionEstablisherAsync::checkTimeout, which is documented as unable to throw, so it
-# does not pass through the establisher's catch and is not covered here.
+# The 1 s deadline against a 5 s connect is what makes "during the attempt" reliable rather than
+# lucky: cancellation is aligned to a 100 ms grid and rounded up, never down
+# (CancellationChecker.cpp:15,102), so the ~4 s of slack absorbs the grid many times over.
+#
+# Synchronous path only. On the asynchronous (hedged) path the terminal attempt finishes outside the
+# fiber, in ConnectionEstablisherAsync::checkTimeout, whose no-more-addresses branch returns false;
+# AsyncTaskExecutor::resume then returns early (AsyncTaskExecutor.cpp:22-23) without resuming the
+# fiber, so the establisher's catch is structurally unreachable there -- not merely prevented from
+# throwing. That is why this case pins use_hedged_requests to 0.
 terminal_qid="${CLICKHOUSE_DATABASE}_terminal_$RANDOM"
 terminal_error=$($CLICKHOUSE_CLIENT --use_hedged_requests 0 \
                                     --connections_with_failover_max_tries 1 \
@@ -113,6 +128,8 @@ kill_qid="${CLICKHOUSE_DATABASE}_kill_$RANDOM"
 $CLICKHOUSE_CLIENT --use_hedged_requests 0 \
                    --connections_with_failover_max_tries 3 \
                    --connect_timeout_with_failover_ms 2000 \
+                   --log_queries 1 \
+                   --log_profile_events 1 \
                    --query_id "$kill_qid" \
                    --query "SELECT count() FROM remote('198.51.100.{1..40}', system.one) FORMAT Null" \
                    >/dev/null 2>"${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err" &
@@ -130,6 +147,15 @@ done
 if [ "$appeared" = "0" ]; then
     echo "kill case unusable: query never appeared in system.processes"
 else
+    # How many attempts had already happened when the kill was sent. A fixed ceiling cannot be
+    # derived here the way it can for the deadline cases: the kill goes out only once the query is
+    # visible in system.processes, so the poll latency decides how many 2 s connects are already
+    # behind us. Measuring the count first turns the assertion below into a delta, which is what the
+    # fix is actually about -- how many more replicas get dialed AFTER cancellation.
+    kill_attempts_before=$($CLICKHOUSE_CLIENT --query "
+        SELECT ProfileEvents['DistributedConnectionTries']
+        FROM system.processes WHERE query_id = '$kill_qid' LIMIT 1")
+
     kill_start=$SECONDS
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$kill_qid' SYNC" >/dev/null 2>&1
     wait "$kill_client_pid" 2>/dev/null
@@ -140,5 +166,17 @@ else
     # here would mean the assertion is measuring the wrong mechanism.
     grep -qF 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err" && echo "kill reported as cancelled" \
         || echo "kill wrong error: $(cat "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err")"
+
+    # The 15 s bound above still tolerates ~6 further dials, so give the kill path the same attempt
+    # oracle the deadline cases have. At most one more attempt may complete: the one already in
+    # flight when the kill lands. Anything beyond that is the loop dialing on past a cancelled query,
+    # which is 120 attempts without the fix.
+    kill_attempts_after=$(attempts_of "$kill_qid")
+    if [ -n "$kill_attempts_before" ] && [ -n "$kill_attempts_after" ] \
+       && [ "$((kill_attempts_after - kill_attempts_before))" -le 1 ]; then
+        echo "kill stopped within 1 further attempt"
+    else
+        echo "kill went from $kill_attempts_before to $kill_attempts_after attempts"
+    fi
 fi
 rm -f "${CLICKHOUSE_TMP}/04652_kill_${kill_qid}.err"
