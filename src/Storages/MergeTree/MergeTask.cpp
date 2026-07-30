@@ -2354,6 +2354,10 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
 
+                /// An empty part contributes nothing to the merged index and its files are empty.
+                if (part->rows_count == 0)
+                    continue;
+
                 if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
                 {
                     /// If text index exists in the source part, take it as is.
