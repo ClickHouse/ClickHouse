@@ -155,7 +155,27 @@ StorageRabbitMQ::StorageRabbitMQ(
     String username;
     String password;
 
-    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
+    /// `RabbitMQConnection::connectImpl` connects to `rabbitmq_address` (the URI form) whenever it is
+    /// set, in preference to `rabbitmq_host_port`. Validate against `remote_host_filter` by keying off
+    /// the same condition, so the check cannot be bypassed by pairing an allowed `rabbitmq_host_port`
+    /// with a disallowed `rabbitmq_address` (both settings can be given at once).
+    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+
+    if (!address_string.empty())
+    {
+        std::optional<AMQP::Address> address;
+        try
+        {
+            address.emplace(address_string);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
+        }
+
+        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+    }
+    else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
         password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
@@ -172,25 +192,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
     }
-    else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)
-    {
-        /// `rabbitmq_address` names the same server as `rabbitmq_host_port`, only in the URI form,
-        /// so it has to pass the same `remote_host_filter` check. Without it the filter could be
-        /// bypassed simply by choosing the other way of spelling the address.
-        const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
-
-        std::optional<AMQP::Address> address;
-        try
-        {
-            address.emplace(address_string);
-        }
-        catch (const std::exception & e)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
-        }
-
-        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
-    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
 
@@ -202,7 +203,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
         .secure = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value,
-        .connection_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address])
+        .connection_string = address_string
     };
 
     if (configuration.secure)

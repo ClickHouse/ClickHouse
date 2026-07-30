@@ -101,3 +101,26 @@ def test_remote_host_filter_applies_to_rabbitmq_address(started_cluster):
     )
     assert "UNACCEPTABLE_URL" in error, error
     assert "not-allowed-host:5672" in error, error
+
+
+def test_remote_host_filter_not_bypassed_by_host_port(started_cluster):
+    """An allowed `rabbitmq_host_port` must not smuggle a disallowed `rabbitmq_address` past the filter.
+
+    Both settings can be given together, and `RabbitMQConnection::connectImpl` connects to
+    `rabbitmq_address` (the URI) in preference to `rabbitmq_host_port`. So validating only the
+    host-port form let an allowed `rabbitmq_host_port` (`localhost:19672` is in the allowlist) pair
+    with a disallowed `rabbitmq_address` and still reach the unvalidated host. The address must be
+    checked whenever it is set.
+    """
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE both_settings (key UInt64, value UInt64)
+        ENGINE = RabbitMQ
+        SETTINGS rabbitmq_host_port = 'localhost:19672',
+                 rabbitmq_address = 'amqp://guest:guest@not-allowed-host:5672/',
+                 rabbitmq_exchange_name = 'ex',
+                 rabbitmq_format = 'JSONEachRow'
+        """
+    )
+    assert "UNACCEPTABLE_URL" in error, error
+    assert "not-allowed-host:5672" in error, error
