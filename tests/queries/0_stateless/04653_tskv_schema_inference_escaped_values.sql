@@ -128,3 +128,49 @@ DESC format(TSKV, unhex('783D315C780A'));
 SELECT * FROM format(TSKV, unhex('783D315C780A')); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 -- x=1\ is rejected at inference time here and on master alike
 DESC format(TSKV, unhex('783D315C0A')); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+-- 8. Merging a negative integer with a value that only fits UInt64 must not widen the negative one:
+-- UInt64 is inferred only on Int64 overflow, so the pair has no common integer type and the format's
+-- String default wins. The provenance of a negative literal is recorded during inference and read back
+-- during the merge, which is why the nested shapes below are covered by the same mechanism as the scalar.
+SELECT 'group 8: a negative integer is not widened to UInt64';
+-- x=-1 / x=18446744073709551615
+DESC format(TSKV, unhex('783D2D310A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D31383434363734343037333730393535313631350A'));
+-- c=[-1] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B2D315D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B2D315D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- c=[[-1]] / c=[[18446744073709551615]]
+DESC format(TSKV, unhex('633D5B5B2D315D5D0A633D5B5B31383434363734343037333730393535313631355D5D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B5B2D315D5D0A633D5B5B31383434363734343037333730393535313631355D5D0A'));
+-- c=(-1,1) / c=(18446744073709551615,1)
+DESC format(TSKV, unhex('633D282D312C31290A633D2831383434363734343037333730393535313631352C31290A'));
+SELECT * FROM format(TSKV, unhex('633D282D312C31290A633D2831383434363734343037333730393535313631352C31290A'));
+-- x=-1 / x=5 / x=18446744073709551615 - the non-negative row in the middle is still widened
+DESC format(TSKV, unhex('783D2D310A783D350A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D350A783D31383434363734343037333730393535313631350A'));
+
+-- 9. The widening that IS correct must survive: a non-negative Int64 still becomes UInt64, integers still
+-- become floats, and without a UInt64 in the picture nothing widens at all.
+SELECT 'group 9: correct widening is preserved';
+-- c=[1] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B315D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B315D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- x=-1 / x=1.5
+DESC format(TSKV, unhex('783D2D310A783D312E350A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D312E350A'));
+-- x=-1 / x=-2
+DESC format(TSKV, unhex('783D2D310A783D2D320A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D2D320A'));
+
+-- 10. PRE-EXISTING, unchanged by this PR and asserted only so a later change cannot move it unnoticed:
+-- a negative and a UInt64-range value inside the SAME container in ONE row still infer an unsigned
+-- element type, because the element merge inside a container does not carry the provenance. Both rows
+-- below behave identically on master.
+SELECT 'group 10: intra-container merge is unchanged (pre-existing)';
+-- c=[-1,18446744073709551615]
+DESC format(TSKV, unhex('633D5B2D312C31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B2D312C31383434363734343037333730393535313631355D0A')); -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+-- c=(-1,18446744073709551615)
+DESC format(TSKV, unhex('633D282D312C3138343436373434303733373039353531363135290A'));
+SELECT * FROM format(TSKV, unhex('633D282D312C3138343436373434303733373039353531363135290A'));

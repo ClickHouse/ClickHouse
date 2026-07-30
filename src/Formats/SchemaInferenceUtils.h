@@ -52,6 +52,10 @@ bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatS
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings);
 DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings);
 
+/// The same as above, but records inference provenance in json_info (currently: which Int64 was
+/// inferred from a negative literal), so that types transformation can tell Int64 and UInt64 apart.
+DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
+
 /// The same as tryInferDataTypeForSingleField, but for JSON values.
 DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info);
 DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
@@ -85,6 +89,10 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 ///     For example, if we have Tuple(UInt64, Nullable(Nothing)) and Tuple(Nullable(Nothing), String) we will convert both
 ///     types to common type Tuple(Nullable(UInt64), Nullable(String))
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
+
+/// The same as above, but uses the inference provenance recorded in json_info (currently: which Int64
+/// was inferred from a negative literal, so that a negative Int64 is not widened to UInt64).
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// The same as transformInferredTypesIfNeeded but uses some specific transformations for JSON.
 /// Example 1:

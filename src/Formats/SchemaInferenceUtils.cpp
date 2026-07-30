@@ -1427,12 +1427,17 @@ bool checkIfTypesAreEqual(const DataTypes & types)
     return true;
 }
 
-void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
     DataTypes types = {first, second};
-    transformInferredTypesIfNeededImpl<false>(types, settings, nullptr);
+    transformInferredTypesIfNeededImpl<false>(types, settings, json_info);
     first = std::move(types[0]);
     second = std::move(types[1]);
+}
+
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+{
+    transformInferredTypesIfNeeded(first, second, settings, nullptr);
 }
 
 void transformInferredJSONTypesIfNeeded(
@@ -1649,14 +1654,19 @@ DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSetting
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
 }
 
-DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings)
+DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
     ReadBufferFromString buf(field);
-    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
+    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info);
     /// Check if there is no unread data in buffer.
     if (!buf.eof())
         return nullptr;
     return type;
+}
+
+DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings)
+{
+    return tryInferDataTypeForSingleField(field, settings, nullptr);
 }
 
 DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)

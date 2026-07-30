@@ -5,7 +5,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -273,7 +272,9 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         {
             /// Read without decoding escape sequences, because the value path parses the original bytes.
             readTSVField(value, in);
-            names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
+            names_and_types.emplace_back(
+                std::move(name),
+                tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped, &inference_info));
         }
         else
         {
@@ -292,7 +293,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 
 void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
+    transformInferredTypesByEscapingRuleIfNeeded(
+        type, new_type, format_settings, FormatSettings::EscapingRule::Escaped, &inference_info);
 }
 
 void registerInputFormatTSKV(FormatFactory & factory);

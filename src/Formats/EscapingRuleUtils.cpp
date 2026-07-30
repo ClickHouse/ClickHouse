@@ -338,7 +338,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
+            auto type = tryInferDataTypeForSingleField(field, format_settings, json_info);
 
             /// A number starting with 0 must stay a String when the value parser cannot read the inferred type
             /// back: an integer, because readIntTextUnsafe (see ReadHelpers.h) reads the leading '0' as the
@@ -379,7 +379,7 @@ void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypeP
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
         case FormatSettings::EscapingRule::Quoted: [[fallthrough]];
         case FormatSettings::EscapingRule::CSV:
-            transformInferredTypesIfNeeded(first, second, settings);
+            transformInferredTypesIfNeeded(first, second, settings, json_info);
             break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
