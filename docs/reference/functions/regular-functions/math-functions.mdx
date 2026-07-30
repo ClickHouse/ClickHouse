@@ -653,7 +653,7 @@ SELECT hypot(1, 1)
 1.4142135623730951
 ```
 
-## intExp10 {#intExp10}
+## intExp10 {#intexp10}
 
 Introduced in: v1.1.0
 
@@ -685,7 +685,7 @@ SELECT intExp10(2);
 100
 ```
 
-## intExp2 {#intExp2}
+## intExp2 {#intexp2}
 
 Introduced in: v1.1.0
 
@@ -717,7 +717,7 @@ SELECT intExp2(3);
 8
 ```
 
-## isPrime {#isPrime}
+## isPrime {#isprime}
 
 Introduced in: v26.5.0
 
@@ -726,7 +726,7 @@ Returns `1` if the argument is a prime number, otherwise `0`.
 Uses an exact lookup bitmap for small values and a deterministic [Miller-Rabin test](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test)
 for larger values. The result is exact for every supported input type.
 
-For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/reference/functions/regular-functions/math-functions#isProbablePrime) instead.
+For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/reference/functions/regular-functions/math-functions#isprobableprime) instead.
     
 
 **Syntax**
@@ -785,14 +785,14 @@ SELECT isPrime(18446744073709551615)
 0
 ```
 
-## isProbablePrime {#isProbablePrime}
+## isProbablePrime {#isprobableprime}
 
 Introduced in: v26.5.0
 
 Returns `1` if the argument is probably prime, `0` if it is definitely composite.
 
 For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
-[`isPrime`](/reference/functions/regular-functions/math-functions#isPrime). The `rounds` argument is ignored.
+[`isPrime`](/reference/functions/regular-functions/math-functions#isprime). The `rounds` argument is ignored.
 
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:
@@ -1113,7 +1113,7 @@ SELECT pow(2, 3);
 8
 ```
 
-## proportionsZTest {#proportionsZTest}
+## proportionsZTest {#proportionsztest}
 
 Introduced in: v22.3.0
 
@@ -1465,7 +1465,7 @@ SELECT tgamma(5);
 24
 ```
 
-## widthBucket {#widthBucket}
+## widthBucket {#widthbucket}
 
 Introduced in: v23.3.0
 

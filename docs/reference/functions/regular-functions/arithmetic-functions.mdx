@@ -161,7 +161,7 @@ SELECT avg2(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toTypeN
 └──────────┴───────────┘
 ```
 
-## byteSwap {#byteSwap}
+## byteSwap {#byteswap}
 
 Introduced in: v23.10.0
 
@@ -295,7 +295,7 @@ SELECT divide(25,0)
 inf
 ```
 
-## divideDecimal {#divideDecimal}
+## divideDecimal {#dividedecimal}
 
 Introduced in: v22.12.0
 
@@ -352,7 +352,7 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-## divideOrNull {#divideOrNull}
+## divideOrNull {#divideornull}
 
 Introduced in: v25.5.0
 
@@ -421,7 +421,7 @@ SELECT gcd(12, 18)
 6
 ```
 
-## ifNotFinite {#ifNotFinite}
+## ifNotFinite {#ifnotfinite}
 
 Introduced in: v20.3.0
 
@@ -458,7 +458,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 inf  42
 ```
 
-## intDiv {#intDiv}
+## intDiv {#intdiv}
 
 Introduced in: v1.1.0
 
@@ -515,7 +515,7 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
 (ILLEGAL_DIVISION)
 ```
 
-## intDivOrNull {#intDivOrNull}
+## intDivOrNull {#intdivornull}
 
 Introduced in: v25.5.0
 
@@ -560,7 +560,7 @@ SELECT intDivOrNull(-9223372036854775808, -1)
 \N
 ```
 
-## intDivOrZero {#intDivOrZero}
+## intDivOrZero {#intdivorzero}
 
 Introduced in: v1.1.0
 
@@ -605,7 +605,7 @@ SELECT intDivOrZero(0.05, -1)
 0
 ```
 
-## isFinite {#isFinite}
+## isFinite {#isfinite}
 
 Introduced in: v1.1.0
 
@@ -639,7 +639,7 @@ SELECT isFinite(inf)
 0
 ```
 
-## isInfinite {#isInfinite}
+## isInfinite {#isinfinite}
 
 Introduced in: v1.1.0
 
@@ -673,7 +673,7 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
 1 0 0
 ```
 
-## isNaN {#isNaN}
+## isNaN {#isnan}
 
 Introduced in: v1.1.0
 
@@ -983,7 +983,7 @@ SELECT modulo(5, 2)
 1
 ```
 
-## moduloLegacy {#moduloLegacy}
+## moduloLegacy {#modulolegacy}
 
 Introduced in: v1.1.0
 
@@ -1017,7 +1017,7 @@ SELECT moduloLegacy(10, 3)
 1
 ```
 
-## moduloOrNull {#moduloOrNull}
+## moduloOrNull {#moduloornull}
 
 Introduced in: v25.5.0
 
@@ -1066,7 +1066,7 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 \N
 ```
 
-## moduloOrZero {#moduloOrZero}
+## moduloOrZero {#moduloorzero}
 
 Introduced in: v20.3.0
 
@@ -1134,7 +1134,7 @@ SELECT multiply(5,5)
 25
 ```
 
-## multiplyDecimal {#multiplyDecimal}
+## multiplyDecimal {#multiplydecimal}
 
 Introduced in: v22.12.0
 
@@ -1304,7 +1304,7 @@ SELECT toDate('2025-01-01') + CAST('14:30:25', 'Time')
 2025-01-01 14:30:25
 ```
 
-## positiveModulo {#positiveModulo}
+## positiveModulo {#positivemodulo}
 
 Introduced in: v22.11.0
 
@@ -1342,7 +1342,7 @@ SELECT positiveModulo(-1, 10)
 9
 ```
 
-## positiveModuloOrNull {#positiveModuloOrNull}
+## positiveModuloOrNull {#positivemoduloornull}
 
 Introduced in: v25.5.0
 

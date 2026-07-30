@@ -180,7 +180,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 └─────┴──────────┘
 ```
 
-## roundAge {#roundAge}
+## roundAge {#roundage}
 
 Introduced in: v1.1.0
 
@@ -228,7 +228,7 @@ SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54,
 └────────┴──────────────────┘
 ```
 
-## roundBankers {#roundBankers}
+## roundBankers {#roundbankers}
 
 Introduced in: v20.1.0
 
@@ -298,7 +298,7 @@ SELECT number / 2 AS x, roundBankers(x, 0) AS b FROM system.numbers LIMIT 10
 └─────┴───┘
 ```
 
-## roundDown {#roundDown}
+## roundDown {#rounddown}
 
 Introduced in: v20.1.0
 
@@ -339,7 +339,7 @@ SELECT *, roundDown(*, [3, 4, 5]) FROM system.numbers WHERE number IN (0, 1, 2, 
 └────────┴──────────────────────────────┘
 ```
 
-## roundDuration {#roundDuration}
+## roundDuration {#roundduration}
 
 Introduced in: v1.1.0
 
@@ -389,7 +389,7 @@ SELECT *, roundDuration(*) FROM system.numbers WHERE number IN (0, 9, 19, 47, 10
 └────────┴───────────────────────┘
 ```
 
-## roundToExp2 {#roundToExp2}
+## roundToExp2 {#roundtoexp2}
 
 Introduced in: v1.1.0
 
