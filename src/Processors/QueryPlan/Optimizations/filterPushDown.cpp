@@ -60,10 +60,9 @@ static bool typeIsTotallyComparable(const DataTypePtr & type)
         || which.isIPv4() || which.isIPv6() || which.isNothing();
 }
 
-/// True if comparing these argument types cannot throw. Mixed types are converted first, and only
-/// integers and floats convert between each other without throwing. DateTime64 is admitted for
-/// identical types only: its `equals` compares the scale, and comparison of two equally-scaled
-/// operands needs no scale multiplication, which is the only overflow-checked step.
+/// True if comparing these argument types cannot throw. A mixed pair is converted first, which is
+/// safe only between integers and floats. DateTime64 therefore requires identical types, since
+/// `equals` compares the scale and equal scales need no overflow-checked multiplication.
 static bool comparisonIsTotal(const DataTypes & argument_types)
 {
     for (const auto & type : argument_types)
@@ -86,9 +85,8 @@ static bool comparisonIsTotal(const DataTypes & argument_types)
     return true;
 }
 
-/// True if these argument types are accepted by the logical functions, which take native numbers
-/// only. A Variant/Dynamic argument passes analysis and is resolved per row instead, so it throws
-/// only for some values.
+/// True if the logical functions accept these argument types. They take native numbers only, and a
+/// Variant/Dynamic argument is resolved per row, so it throws only for some values.
 static bool nativeNumberArguments(const DataTypes & argument_types)
 {
     for (const auto & type : argument_types)
