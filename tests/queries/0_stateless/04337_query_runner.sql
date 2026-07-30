@@ -19,6 +19,12 @@ CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_sh
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'nope'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS shard = 'all'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query LowCardinality(String)) ENGINE = QueryRunner; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'non-existent-value'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'fibers'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', threads = 2; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', max_queue_size = 10; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_concurrent_remote_queries = 8; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_concurrent_remote_queries_per_replica = 0; -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM runner; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE runner ADD COLUMN extra String; -- { serverError NOT_IMPLEMENTED }
@@ -35,3 +41,8 @@ SYSTEM WAIT QUERY RUNNER runner;
 SYSTEM WAIT QUERY RUNNER runner2;
 SYSTEM WAIT QUERY RUNNER runner_random;
 SYSTEM WAIT QUERY RUNNER runner_all;
+
+CREATE TABLE target (x UInt64) ENGINE = Memory;
+CREATE TABLE runner_sync (query String, database String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', mode = 'synchronous', scheduler = 'threads';
+INSERT INTO runner_sync (query, database) SELECT 'INSERT INTO target VALUES (42)', currentDatabase();
+SELECT * FROM target;

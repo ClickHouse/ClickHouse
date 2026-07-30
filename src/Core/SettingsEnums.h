@@ -424,6 +424,14 @@ enum class QueryRunnerMode : uint8_t
 
 DECLARE_SETTING_ENUM(QueryRunnerMode)
 
+enum class QueryRunnerScheduler : uint8_t
+{
+    FIBERS,
+    THREADS,
+};
+
+DECLARE_SETTING_ENUM(QueryRunnerScheduler)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
