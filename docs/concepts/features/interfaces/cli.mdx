@@ -728,8 +728,9 @@ The CLI also checks for updates in the background (at most once per 24 hours) an
 Each event contains only:
 
 - The command that was run (e.g. `local start`) and the names of the flags that were used — never flag values, positional arguments, or any other user-supplied input, so queries, table names, credentials, and file paths are never collected
-- Whether the command succeeded
-- The `clickhousectl` version, OS, architecture, and whether the CLI was invoked by an AI agent or in CI
+- The exit code (e.g. `0`, `1`, `2`, `4`) and the outcome (e.g. `ok`, `error`, `cancelled`)
+- For mistyped commands, the "did you mean" suggestion the CLI showed — recorded only when it exactly matches a real command or flag name, so it can never contain what you typed
+- The `clickhousectl` version, OS, architecture, and whether the CLI was invoked by an AI agent (and which agent) or in CI
 
 Telemetry is fully anonymous: no personal data is collected, and there are no device or installation identifiers.
 
