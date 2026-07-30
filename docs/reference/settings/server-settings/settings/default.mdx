@@ -26,6 +26,8 @@ Accepted values are:
 - `double_sha1_password`
 - `bcrypt_password`
 
+- **Default:** `sha256_password`
+
 ```xml
 <default_password_type>sha256_password</default_password_type>
 ```
@@ -33,6 +35,8 @@ Accepted values are:
 ## default_profile {#default_profile}
 
 Default settings profile. Settings profiles are located in the file specified in the setting `user_config`.
+
+- **Default:** `default`
 
 **Example**
 
@@ -43,6 +47,8 @@ Default settings profile. Settings profiles are located in the file specified in
 ## default_session_timeout {#default_session_timeout}
 
 Default session timeout, in seconds.
+
+- **Default:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
