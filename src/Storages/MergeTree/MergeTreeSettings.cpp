@@ -1714,17 +1714,18 @@ To provide a safeguard against accidentally creating tables with very low
 `index_granularity_bytes`.
 )", 1024) \
     DECLARE(Bool, use_const_adaptive_granularity, false, R"(
-Adaptive granularity (the default, `index_granularity_bytes` is not `0`) keeps
+Non-const adaptive granularity (the default, `index_granularity_bytes` is not `0`) keeps
 granules at a constant size in bytes, so their row count varies: for every
 written block, rows per granule is `index_granularity_bytes` divided by the
 average size of a row in that block, capped at `index_granularity`. Because it differs
 from granule to granule, the row count of every granule in the part has to be kept in
 memory, 8 bytes each, which on large tables adds up to tens of gigabytes.
 
-This setting keeps granules at a constant number of rows instead, so their
-size in bytes varies. The number is computed once from the average size of a
+Enabling constant adaptive granularity (this setting) keeps granules at a constant number of rows instead,
+so their size in bytes varies. The number is computed once from the average size of a
 row in the part being written, and a part stores that single value
-instead of one value per granule.
+instead of one value per granule. Because all granules contain the same number of rows,
+no additional row count per granule needs to be stored.
 
 The amount of memory currently spent on these values is reported by the
 `TotalIndexGranularityBytesInMemory` metric in `system.asynchronous_metrics`,
