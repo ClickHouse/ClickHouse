@@ -497,6 +497,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
             /// A CTE spells the column alias list as `WITH name(col1, ...) AS (subquery)`, which the
             /// builder stores in the same place as the subquery spelling, so restore it the same way.
+            /// ASTWithElement keeps this member out of `children`, both in the parser and in `clone`,
+            /// so do not push it there either.
             const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
             if (!cte_column_aliases.empty())
             {
@@ -506,7 +508,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                     cte_column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(cte_column_alias));
 
                 with_element_ast->aliases = std::move(cte_column_aliases_ast);
-                with_element_ast->children.push_back(with_element_ast->aliases);
             }
 
             expression_list_ast->children.back() = std::move(with_element_ast);

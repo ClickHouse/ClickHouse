@@ -103,7 +103,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 
 /** Return the column alias list `alias(col1, col2, ...)` that a conversion back to AST has to
   * re-emit for a subquery or a CTE, or an empty list when there is nothing to restore.
-  * Reading it only from an unresolved node is load-bearing, see the definition.
+  * Only an unresolved node has a list to restore.
   */
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
 

@@ -172,7 +172,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(
     QueryTreeNodePtr query_node;
 
     if (select_or_union_query->as<ASTSelectWithUnionQuery>())
-        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery, cte_data, nullptr /*aliases*/, context);
+        /// A regenerated CTE or subquery body arrives as a union nested in a union, because every
+        /// conversion back to AST wraps its select in a fresh ASTSelectWithUnionQuery, so the nested
+        /// case has to keep the column alias list its caller passed instead of dropping it.
+        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery, cte_data, aliases, context);
     else if (select_or_union_query->as<ASTSelectIntersectExceptQuery>())
         query_node = buildSelectIntersectExceptQuery(select_or_union_query, is_subquery, cte_data, context);
     else if (select_or_union_query->as<ASTSelectQuery>())

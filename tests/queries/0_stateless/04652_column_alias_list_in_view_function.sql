@@ -2,6 +2,9 @@
 -- so every statement below needs the new analyzer. A session SET also survives the
 -- `compatibility` setting randomization, which a no-old-analyzer tag would not.
 SET enable_analyzer = 1;
+-- `rewrite_in_to_join` below requires this setting, which the 25.8 block of
+-- SettingsChangesHistory.cpp turns on, so a randomized older `compatibility` reverts it.
+SET allow_experimental_correlated_subqueries = 1;
 
 -- The `view` table function argument is deliberately excluded from analysis, so the query tree
 -- is converted back to AST with no resolved projection column names. The column alias list has
@@ -30,21 +33,24 @@ SELECT 1 FROM view(WITH t(y) AS (SELECT 1 AS x) SELECT t.y FROM t) ty;
 SELECT 1 FROM remote('127.0.0.1', view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t)) ty;
 SELECT 1 FROM view(SELECT 1 FROM view(WITH t(x) AS (SELECT 1) SELECT t.x FROM t) tz) ty;
 
--- An IN subquery makes the analyzer put an internal `__subquery_column_<uuid>` name into the same
--- storage the alias list uses, and that name must never be re-emitted as a column alias list. The
--- rewrite that writes such a name is off by default, so activate it and read the AST of the `view`
--- argument, which is the one place an unresolved list is printed: the list of the subquery under
--- test has to be there, and no internal name may appear as a list. Both counts move if the guard is
--- dropped or the re-emission stops, so the pair pins the emission and its guard together.
+-- A regenerated body is always a union nested in a union, so a UNION-bodied CTE reaches the
+-- nested-union dispatch, which used to drop the list its own caller passed. The nested-union row
+-- is the one that pins that the list applies to every arm rather than only the first.
+SELECT 1 FROM view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT t.x FROM t) ty;
+SELECT 1 FROM view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT x FROM t) ty;
+SELECT 1 FROM view(WITH t(p, q) AS (SELECT 1, 2 UNION ALL SELECT 3, 4) SELECT t.p FROM t) ty;
+SELECT 1 FROM view(WITH t(x) AS ((SELECT 1 UNION ALL SELECT 2) UNION ALL SELECT 3) SELECT t.x FROM t) ty;
+SELECT 1 FROM remote('127.0.0.1', view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT t.x FROM t)) ty;
+
+-- These two read the AST of the `view` argument, which is the one place an unresolved alias list is
+-- printed, and assert the list is emitted there while an `IN` rewrite is active. The unresolved-only
+-- guard on the emission is pinned separately, by the column-pruning rows further down.
 SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty
     SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%) AS t(x)%';
 SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SELECT 1, 2)) ty
     SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%) AS t(p, q)%';
-SELECT count() FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
-    SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty
-    SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%(`__subquery_column_%';
 SELECT 1 FROM view(SELECT t.x FROM (SELECT 1) t(x) WHERE t.x IN (SELECT 1)) ty SETTINGS rewrite_in_to_join = 1;
 SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SELECT 1, 2)) ty SETTINGS rewrite_in_to_join = 1;
 
@@ -71,6 +77,9 @@ SELECT t.y FROM (SELECT 1 AS x) t(y);
 WITH t(x) AS (SELECT 1) SELECT t.x FROM t;
 WITH t(p, q) AS (SELECT 1, 2) SELECT t.p FROM t;
 WITH t AS (SELECT 1 AS x) SELECT t.x FROM t;
+WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT t.x FROM t ORDER BY t.x;
+WITH t(p, q) AS (SELECT 1, 2 UNION ALL SELECT 3, 4) SELECT t.p FROM t ORDER BY t.p;
+WITH t(x) AS ((SELECT 1 UNION ALL SELECT 2) UNION ALL SELECT 3) SELECT t.x FROM t ORDER BY t.x;
 
 -- A count mismatch stays an error, inside and outside `view`.
 SELECT t.x FROM (SELECT 1) t(x, y); -- { serverError BAD_ARGUMENTS }

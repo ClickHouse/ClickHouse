@@ -420,6 +420,10 @@ const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & table_expressio
     while (current)
     {
         if (const auto * query_node = current->as<QueryNode>())
+            /// A resolved node has already applied the list into its projection columns, and column
+            /// pruning shrinks those without shrinking the stored list, so re-emitting it for such a
+            /// node would ship a list longer than the projection. Three other writers reuse the same
+            /// storage too, two of them with internal `__subquery_column_<uuid>` names.
             return query_node->isResolved() ? no_aliases : query_node->getProjectionAliasesToOverride();
 
         const auto * union_node = current->as<UnionNode>();
