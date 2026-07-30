@@ -47,19 +47,20 @@ FROM outer_04512 o CROSS JOIN numbers(2) n
 ORDER BY o.id, n.number;
 
 -- The internal deduplication of the decorrelation domain must NOT inherit the user's DISTINCT
--- size limits. With max_rows_in_distinct=1 + distinct_overflow_mode='break', a user DISTINCT would
--- truncate the domain to a single correlated key, so every other outer key would miss in the final
--- join (NULL / under-counted). Since the step runs unbounded, all keys are still evaluated.
+-- size limits. Since the step runs unbounded, all correlated keys are still evaluated and the
+-- query succeeds. Use overflow mode 'throw' rather than 'break': DistinctTransform checks the
+-- limit only after inserting a whole chunk and still emits every new row from that chunk, so with
+-- 'break' a domain that arrives in a single chunk is never actually truncated and the assertion
+-- would pass even if the step inherited the user's limits.
 INSERT INTO inner_04512 VALUES (1, 'b', 200), (2, 'c', 300);
 SELECT '-- internal distinct must ignore user distinct limits --';
 SET max_rows_in_distinct = 1;
-SET distinct_overflow_mode = 'break';
+SET distinct_overflow_mode = 'throw';
 SELECT o.id, (SELECT count() FROM inner_04512 i WHERE i.id = o.id) AS c
 FROM outer_04512 o CROSS JOIN numbers(3) n
 GROUP BY o.id
 ORDER BY o.id;
 SET max_rows_in_distinct = 0;
-SET distinct_overflow_mode = 'throw';
 
 -- Duplicate correlated values do not require a join at all: the outer table itself can hold them.
 -- Reported separately as issue #112529 with a SUM over a subquery that has its own GROUP BY.
