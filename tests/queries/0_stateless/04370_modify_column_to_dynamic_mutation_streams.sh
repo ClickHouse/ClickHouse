@@ -62,16 +62,19 @@ ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_dynamic_type = 1;
 
     DROP TABLE IF EXISTS t_modify_variant_to_dyn;
-    CREATE TABLE t_modify_variant_to_dyn (x UInt64, y Variant(UInt64, String))
-    ENGINE = MergeTree ORDER BY x
+    -- PARTITION BY keeps the number of source parts (and so of MutatePart log entries)
+    -- deterministic: without it a background merge could combine the two inserts before the
+    -- ALTER and leave a single entry.
+    CREATE TABLE t_modify_variant_to_dyn (k UInt64, x UInt64, y Variant(UInt64, String))
+    ENGINE = MergeTree ORDER BY x PARTITION BY k
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
              min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 
-    INSERT INTO t_modify_variant_to_dyn SELECT number, number FROM numbers(3);
-    INSERT INTO t_modify_variant_to_dyn SELECT number, 'str_' || toString(number) FROM numbers(3, 3);
+    INSERT INTO t_modify_variant_to_dyn SELECT 1, number, number FROM numbers(3);
+    INSERT INTO t_modify_variant_to_dyn SELECT 2, number, 'str_' || toString(number) FROM numbers(3, 3);
 
     ALTER TABLE t_modify_variant_to_dyn MODIFY COLUMN y Dynamic(max_types = 4) SETTINGS mutations_sync = 2;
-    INSERT INTO t_modify_variant_to_dyn SELECT number, number FROM numbers(6, 3);
+    INSERT INTO t_modify_variant_to_dyn SELECT 1, number, number FROM numbers(6, 3);
 
     OPTIMIZE TABLE t_modify_variant_to_dyn FINAL;
 
@@ -84,12 +87,12 @@ ${CLICKHOUSE_CLIENT} --query "
 # assertion above while bypassing the stale-file accounting this test covers.
 # Mutation query may return before the entry is added to part log.
 # So, we may have to retry the flush of logs until all entries are actually flushed.
-# Two source parts exist at MODIFY time, so two MutatePart entries are expected.
+# Two partitions exist at MODIFY time, so exactly two MutatePart entries are expected.
 for _ in {1..20}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
     res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_modify_variant_to_dyn' AND event_type = 'MutatePart'")
 
-    if [[ $res -ge 2 ]]; then
+    if [[ $res -eq 2 ]]; then
         break
     fi
 
