@@ -2629,7 +2629,14 @@ void Planner::buildPlanForQueryNode()
                 false /*pre_distinct*/);
         }
 
-        if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
+        /// Under custom-key parallel replicas the per-replica LIMIT BY is not final (the split does not align
+        /// with the LIMIT BY key), so the initiator must re-apply it over the merged stream (#111555). The
+        /// replica applies it as a preliminary, deferring OFFSET to the finalizing initiator.
+        const bool custom_key_parallel_replicas = planner_context->getQueryContext()->canUseParallelReplicasCustomKey();
+        const bool apply_limit_by = expression_analysis_result.hasLimitBy()
+            && (!query_processing_info.isFromAggregationState()
+                || (custom_key_parallel_replicas && query_processing_info.isFinalizingStage()));
+        if (apply_limit_by)
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
             addExpressionStep(
@@ -2640,7 +2647,8 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
+            const bool preliminary_limit_by = custom_key_parallel_replicas && query_processing_info.isToAggregationState();
+            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, preliminary_limit_by /*do_not_skip_offset*/);
         }
 
         /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
