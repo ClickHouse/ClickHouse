@@ -1877,3 +1877,93 @@ SELECT 'null-elem identity',
     (SELECT count() FROM nk_t WHERE k IN (SELECT CAST(1, 'Nullable(UInt8)'))) = (SELECT count() FROM nk_o WHERE k IN (SELECT CAST(1, 'Nullable(UInt8)'))),
     (SELECT count() FROM nk_t WHERE k NOT IN (SELECT CAST(1, 'Nullable(UInt8)'))) = (SELECT count() FROM nk_o WHERE k NOT IN (SELECT CAST(1, 'Nullable(UInt8)')));
 DROP TABLE nk_t; DROP TABLE nk_o;
+
+SELECT '--- the lossy conversion path, not the element type, is what forfeits exactness ---';
+
+-- A nullable element is only unsound where the element is converted with `castColumnAccurateOrNull`
+-- and the null maps are merged, because that merge consults only the null map the cast produced: an
+-- element that was ALREADY NULL in the source survives as the nested default. Where the element can
+-- instead be cast with plain `castColumn` (`canBeSafelyCast`, which requires the target to accept
+-- NULL), the source NULL stays NULL and the prepared set is a faithful image, so those shapes must
+-- KEEP pruning. The two groups below pin both directions of that boundary.
+
+DROP TABLE IF EXISTS lp_t; DROP TABLE IF EXISTS lp_o;
+CREATE TABLE lp_t (k UInt8) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE lp_o (k UInt8) ENGINE = Memory;
+INSERT INTO lp_t VALUES (0), (1), (2);
+INSERT INTO lp_o VALUES (0), (1), (2);
+
+-- Same-width identity pair: `removeNullable` makes `Nullable(UInt8)` and `UInt8` compare equal, so a
+-- gate keyed on the element type alone blesses this as the identity case. It is NOT: `canBeSafelyCast`
+-- is false because the target is not nullable, so the lossy path runs anyway.
+SELECT 'lossy same-width NOT IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lp_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'lossy same-width NOT IN',
+    (SELECT count() FROM lp_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM lp_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
+
+SELECT 'lossy same-width NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lp_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) WHERE explain ILIKE '%element set%';
+SELECT 'lossy same-width NOT has',
+    (SELECT count() FROM lp_t WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k)) = (SELECT count() FROM lp_o WHERE NOT has([CAST(NULL, 'Nullable(UInt8)')], k));
+
+-- A literal array holding both a value and a NULL has element type `Array(Nullable(UInt8))`, which is
+-- the minimal form of the family `03733`'s `has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2))`
+-- block instantiates. `has` must stay correct as well as `NOT has`.
+SELECT 'lossy mixed array NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lp_t WHERE NOT has([toUInt8(1), NULL], k)) WHERE explain ILIKE '%element set%';
+SELECT 'lossy mixed array NOT has',
+    (SELECT count() FROM lp_t WHERE NOT has([toUInt8(1), NULL], k)) = (SELECT count() FROM lp_o WHERE NOT has([toUInt8(1), NULL], k)),
+    (SELECT count() FROM lp_t WHERE has([toUInt8(1), NULL], k)) = (SELECT count() FROM lp_o WHERE has([toUInt8(1), NULL], k));
+DROP TABLE lp_t; DROP TABLE lp_o;
+
+-- The cross-type mixed array: element type `Array(Nullable(UInt32))` against a `UInt64` key.
+DROP TABLE IF EXISTS lw_t; DROP TABLE IF EXISTS lw_o;
+CREATE TABLE lw_t (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+CREATE TABLE lw_o (k UInt64) ENGINE = Memory;
+INSERT INTO lw_t VALUES (0), (1), (2);
+INSERT INTO lw_o VALUES (0), (1), (2);
+SELECT 'lossy cross-type array NOT has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM lw_t WHERE NOT has([toUInt32(1), NULL], k)) WHERE explain ILIKE '%element set%';
+SELECT 'lossy cross-type array NOT has',
+    (SELECT count() FROM lw_t WHERE NOT has([toUInt32(1), NULL], k)) = (SELECT count() FROM lw_o WHERE NOT has([toUInt32(1), NULL], k)),
+    (SELECT count() FROM lw_t WHERE has([toUInt32(1), NULL], k)) = (SELECT count() FROM lw_o WHERE has([toUInt32(1), NULL], k));
+DROP TABLE lw_t; DROP TABLE lw_o;
+
+-- Keep-pruning side of the same boundary. A NULLABLE key takes the `canBeSafelyCast` exit, so every
+-- shape here must still say `element set`; a gate keyed on the element type would decline all of them
+-- and silently cost pruning on sound queries.
+DROP TABLE IF EXISTS sp8_t; DROP TABLE IF EXISTS sp8_o;
+CREATE TABLE sp8_t (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, allow_nullable_key = 1;
+CREATE TABLE sp8_o (k Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO sp8_t VALUES (0), (1), (2), (NULL);
+INSERT INTO sp8_o VALUES (0), (1), (2), (NULL);
+
+-- Strengthens the identity control above, which only ever passed a non-NULL value through the wrapper.
+SELECT 'safe identity actual NULL keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp8_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe identity actual NULL IN keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp8_t WHERE k IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe identity actual NULL',
+    (SELECT count() FROM sp8_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM sp8_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1),
+    (SELECT count() FROM sp8_t WHERE k IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM sp8_o WHERE k IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
+DROP TABLE sp8_t; DROP TABLE sp8_o;
+
+-- The same, cross-type: a `Nullable(UInt64)` key against a `Nullable(UInt8)` element. `canBeSafelyCast`
+-- holds because the target accepts NULL, so the source NULL is preserved and pruning is sound.
+DROP TABLE IF EXISTS sp64_t; DROP TABLE IF EXISTS sp64_o;
+CREATE TABLE sp64_t (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, allow_nullable_key = 1;
+CREATE TABLE sp64_o (k Nullable(UInt64)) ENGINE = Memory;
+INSERT INTO sp64_t VALUES (0), (1), (2), (NULL);
+INSERT INTO sp64_o VALUES (0), (1), (2), (NULL);
+SELECT 'safe cross-type NOT IN keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe cross-type NOT IN',
+    (SELECT count() FROM sp64_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM sp64_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
+SELECT 'safe cross-type array NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE NOT has([toUInt8(1), NULL], k)) WHERE explain ILIKE '%element set%';
+SELECT 'safe cross-type array NOT has',
+    (SELECT count() FROM sp64_t WHERE NOT has([toUInt8(1), NULL], k)) = (SELECT count() FROM sp64_o WHERE NOT has([toUInt8(1), NULL], k));
+DROP TABLE sp64_t; DROP TABLE sp64_o;
+
+-- A composite nullable key: both tuple elements take the safe exit, so the tuple atom keeps pruning.
+DROP TABLE IF EXISTS sptu_t; DROP TABLE IF EXISTS sptu_o;
+CREATE TABLE sptu_t (a Nullable(UInt8), b Nullable(UInt8)) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+CREATE TABLE sptu_o (a Nullable(UInt8), b Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO sptu_t VALUES (0, 0), (1, 1), (NULL, 1), (2, NULL);
+INSERT INTO sptu_o VALUES (0, 0), (1, 1), (NULL, 1), (2, NULL);
+SELECT 'safe nullable tuple keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe nullable tuple',
+    (SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) = (SELECT count() FROM sptu_o WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1);
+DROP TABLE sptu_t; DROP TABLE sptu_o;

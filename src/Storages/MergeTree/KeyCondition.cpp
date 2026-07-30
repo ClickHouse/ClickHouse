@@ -2729,13 +2729,7 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
 /// argument does not extend to values whose equality differs between the two engines that have to
 /// agree (signed zeros, NaN payloads). A cross-type composite is exact only under the identity case,
 /// because the composite runtime cast can throw where the preparation cast merely returns NULL.
-///
-/// `set_element_may_contain_null` restricts the result to the identity case: a source NULL is rewritten
-/// to the nested default by the cross-type cast below, so the prepared set holds a value the predicate's
-/// set does not. The identity case cannot hit that, because `castColumn` returns an `equals`-equal
-/// argument unchanged.
-static bool setIndexConversionPreservesEquality(
-    const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool set_element_may_contain_null = false)
+static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
 {
     /// Apply both unwrappings here rather than relying on the caller: `LowCardinality` also has to be
     /// stripped from nested types, otherwise an identical composite type compares unequal.
@@ -2753,7 +2747,7 @@ static bool setIndexConversionPreservesEquality(
     /// A custom name over an integer (`Bool`) installs a cast wrapper that clamps every nonzero value
     /// to 1, so the conversion is not injective. `Enum` carries its own type index and therefore never
     /// reaches this point.
-    return both_integers && !set_element_may_contain_null && !key->hasCustomName() && !set->hasCustomName();
+    return both_integers && !key->hasCustomName() && !set->hasCustomName();
 }
 
 static bool tryPrepareSetColumnsForIndex(
@@ -2841,12 +2835,7 @@ static bool tryPrepareSetColumnsForIndex(
             set_element_type = transformed_set_type;
         }
 
-        /// A nullable element reaches the cross-type cast below with its NULLs rewritten to the nested
-        /// default, so only the identity case may be treated as exact for it. Test the same predicate the
-        /// null-stripping branch below uses: `isNullable` alone is false for `LowCardinality(Nullable(T))`,
-        /// which takes that branch and is a carrier too.
-        if (!setIndexConversionPreservesEquality(
-                key_column_type, set_element_type, isNullableOrLowCardinalityNullable(set_element_type)))
+        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type))
             return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
@@ -2854,6 +2843,15 @@ static bool tryPrepareSetColumnsForIndex(
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
         }
+
+        /// Past this point the element is converted with `castColumnAccurateOrNull` and the null maps are
+        /// merged below. That merge consults only the null map the cast produced, so an element that was
+        /// ALREADY NULL in the source survives into the prepared set as the nested default - a value the
+        /// predicate's set does not contain. `IN` is only weakened by that, but `NOT IN`/`NOT has` are
+        /// strengthened, so the atom must not be treated as an exact image of the predicate.
+        /// `isNullable` alone is false for `LowCardinality(Nullable(T))`, which takes the same branch.
+        if (isNullableOrLowCardinalityNullable(set_element_type))
+            return false;
 
         if (!key_column_type->canBeInsideNullable())
             return false;

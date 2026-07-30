@@ -454,3 +454,21 @@ null-elem LC NOT has declines	1
 null-elem LC NOT has	1
 null-elem identity keeps pruning	1
 null-elem identity	1	1
+--- the lossy conversion path, not the element type, is what forfeits exactness ---
+lossy same-width NOT IN declines	1
+lossy same-width NOT IN	1
+lossy same-width NOT has declines	1
+lossy same-width NOT has	1
+lossy mixed array NOT has declines	1
+lossy mixed array NOT has	1	1
+lossy cross-type array NOT has declines	1
+lossy cross-type array NOT has	1	1
+safe identity actual NULL keeps pruning	1
+safe identity actual NULL IN keeps pruning	1
+safe identity actual NULL	1	1
+safe cross-type NOT IN keeps pruning	1
+safe cross-type NOT IN	1
+safe cross-type array NOT has keeps pruning	1
+safe cross-type array NOT has	1
+safe nullable tuple keeps pruning	1
+safe nullable tuple	1
