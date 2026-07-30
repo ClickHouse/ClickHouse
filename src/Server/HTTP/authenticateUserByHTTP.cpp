@@ -46,7 +46,15 @@ namespace
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
-    void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
+    /// An empty user name means that the request carried no user name and the default session
+    /// user is configured to be empty (i.e. requests without a user name are prohibited), so the
+    /// reject is recorded in `system.session_log` as a login failure to keep it auditable.
+    void checkUserNameNotEmptyAndServerHasEnoughMemory(
+        const String & user_name,
+        std::string_view method,
+        const ContextPtr & context,
+        Session & session,
+        const Poco::Net::SocketAddress & address)
     {
         auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
         if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
@@ -58,7 +66,11 @@ namespace
             LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
 
         if (user_name.empty())
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
+            session.onAuthenticationFailure(user_name, address, exception);
+            throw exception; /// NOLINT
+        }
     }
 }
 
@@ -154,7 +166,8 @@ bool authenticateUserByHTTP(
 
     if (config_credentials)
     {
-        checkUserNameNotEmptyAndServerHasEnoughMemory(config_credentials->getUserName(), "config authentication", global_context);
+        checkUserNameNotEmptyAndServerHasEnoughMemory(
+            config_credentials->getUserName(), "config authentication", global_context, session, request.clientAddress());
     }
     if (has_ssl_certificate_auth)
     {
@@ -163,7 +176,7 @@ bool authenticateUserByHTTP(
         /// If the header is not set (or empty), the certificate must authenticate the default session user.
         if (user.empty())
             user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -193,7 +206,7 @@ bool authenticateUserByHTTP(
         /// the password is checked against the default session user.
         if (user.empty())
             user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -223,7 +236,7 @@ bool authenticateUserByHTTP(
             /// An empty user name in Basic credentials means the default session user.
             if (user.empty())
                 user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context, session, request.clientAddress());
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -260,7 +273,7 @@ bool authenticateUserByHTTP(
             /// If the user name is not set (or set to an empty string), the default session user is assumed.
             if (user.empty())
                 user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context, session, request.clientAddress());
         }
     }
 

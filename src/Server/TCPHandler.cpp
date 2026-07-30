@@ -2085,9 +2085,15 @@ void TCPHandler::receiveHello()
         user_substituted_by_default = true;
 
         /// The default session user can be explicitly configured to be empty to prohibit
-        /// connections without a user name.
+        /// connections without a user name. The reject is recorded in `system.session_log` as a
+        /// login failure, so that prohibited anonymous attempts remain auditable.
         if (user.empty())
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+        {
+            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+            session = makeSession();
+            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
     }
 
     auto users_to_ignore_early_memory_limit_check = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();

@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SESSION_TIMEOUT;
 }
@@ -232,11 +233,15 @@ arrow::Status AuthMiddlewareFactory::StartCall(
             username = server.context()->getServerSettings()[ServerSetting::default_session_user];
 
             /// The default session user can be explicitly configured to be empty to prohibit
-            /// connections without a user name.
+            /// connections without a user name. The reject is recorded in `system.session_log`
+            /// as a login failure, so that prohibited anonymous attempts remain auditable.
             if (username.empty())
-                return arrow::flight::MakeFlightError(
-                    arrow::flight::FlightStatusCode::Unauthenticated,
+            {
+                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+                session->onAuthenticationFailure(username, getClientAddress(context), exception);
+                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, exception.message());
+            }
         }
 
         session->authenticate(username, password, getClientAddress(context));

@@ -888,6 +888,10 @@ namespace
         std::string quota_key = query_info.quota();
         Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
+        /// Authentication. The session is created before the empty-user-name check below, so that
+        /// a prohibited anonymous attempt is recorded in `system.session_log` as a login failure.
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
+
         if (user.empty())
         {
             /// An empty user name means the default session user (the `default_session_user` server setting).
@@ -896,12 +900,14 @@ namespace
             /// The default session user can be explicitly configured to be empty to prohibit
             /// connections without a user name, matching the native and Arrow Flight protocols.
             if (user.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            {
+                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+                session->onAuthenticationFailure(user, user_address, exception);
+                throw exception; /// NOLINT
+            }
         }
 
-        /// Authentication.
-        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
         session->setQuotaClientKey(quota_key);
 
