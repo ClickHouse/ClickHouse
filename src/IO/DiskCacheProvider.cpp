@@ -704,18 +704,19 @@ class DiskCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
 public:
     explicit ProbeCursor(DiskCacheProvider & provider_) : provider(provider_) {}
 
-    ICacheProvider::Resolution lookAt(
-        const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) override;
-
     /// The RANGED walk (one cache transaction): `getOrSet` over the
     /// grid-rounded ask resolves residency AND allocates - the cache's own
     /// `splitRange` shapes the virgin segments, so cells = segments by
     /// construction (no manual tiling, no cut-aliasing possible). Hits carry
     /// readers; misses carry OPEN writers sharing the one holder. The bypass
-    /// configuration (`read_if_exists_otherwise_bypass`) keeps the read-only
-    /// stepping adapter - no segment creation, writer-less misses.
+    /// configuration (`read_if_exists_otherwise_bypass`) falls to the read-only
+    /// `probeRange` - no segment creation, writer-less misses.
     std::vector<ICacheProvider::Resolution> lookAt(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
+
+protected:
+    ICacheProvider::Resolution resolveStep(
+        const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) override;
 
 private:
     void roll(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file);
@@ -935,7 +936,7 @@ void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t ob
     cell_idx = 0;
 }
 
-ICacheProvider::Resolution DiskCacheProvider::ProbeCursor::lookAt(
+ICacheProvider::Resolution DiskCacheProvider::ProbeCursor::resolveStep(
     const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file)
 {
     if (pos_in_file >= object_file_offset + object.bytes_size)
@@ -983,7 +984,7 @@ std::vector<ICacheProvider::Resolution> DiskCacheProvider::ProbeCursor::lookAt(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
     if (!provider.populatesOnMiss())
-        return ICacheProvider::IProbeCursor::lookAt(object, object_file_offset, range);
+        return probeRange(object, object_file_offset, range);
 
     std::vector<ICacheProvider::Resolution> out;
     const size_t object_size = object.bytes_size;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ChainedBuffers.h>
+#include <algorithm>
 #include <IO/IntervalSet.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
@@ -215,39 +216,55 @@ public:
     public:
         virtual ~IProbeCursor() = default;
 
-        /// Resolve one position of `object`'s residency - THE read-only probe.
-        /// EACH MISS IS ONE CELL of the tier: the provider owns the alignment
-        /// policy and the executor derives all fetch shaping from the cell
-        /// edges. `demand_end_in_file` is the exclusive end of CONTIGUOUS
-        /// DEMAND from `pos_in_file` (a request-map range clamped to the plan
-        /// ceiling; the ceiling itself when unmapped): the provider tiles miss
-        /// runs demand-shaped - interior cells up to the cache's own maximum
-        /// segment size, tapering to the boundary grid at the demand edge - so
-        /// segment sizes follow what will actually be read (page cache: whole
-        /// fixed blocks regardless). MUST NOT mutate the cache.
-        virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) = 0;
-
-        /// The RANGED walk: every resolution covering `range`, in offset
-        /// order - readers open on hits, WRITERS OPEN on misses (one cache
-        /// transaction resolves and allocates; the caller asks each tier only
-        /// for territory faster tiers miss, so no writer opens for pruned
-        /// cells). Cells at the range edges may overhang it (grid rounding,
-        /// object-end clamping). Default: adapt over the stepping `lookAt`
-        /// (no writers) until every provider implements it natively.
-        virtual std::vector<Resolution> lookAt(const StoredObject & object, size_t object_file_offset, ByteRange range)
+        /// READ-ONLY ranged residency: every resolution covering `range`, in
+        /// offset order, each once - hits with readers, misses WRITER-LESS, no
+        /// cache mutation. The cursor is the walk's own state; cells at the
+        /// range edges may overhang it (grid rounding, object-end clamping).
+        /// Loops the per-position `resolveStep` primitive.
+        std::vector<Resolution> probeRange(const StoredObject & object, size_t object_file_offset, ByteRange range)
         {
             std::vector<Resolution> out;
+            size_t collected_until = range.offset;
             size_t pos = range.offset;
             while (pos < range.end())
             {
-                auto r = lookAt(object, object_file_offset, pos, range.end());
+                auto r = resolveStep(object, object_file_offset, pos, range.end());
                 if (r.kind == Resolution::Kind::End)
                     break;
-                pos = r.range.end();
-                out.push_back(std::move(r));
+                const size_t end = r.range.end();
+                if (end > collected_until)
+                {
+                    out.push_back(std::move(r));
+                    collected_until = end;
+                }
+                pos = std::max(pos + 1, end);
             }
             return out;
         }
+
+        /// The RANGED walk WITH allocation: every resolution covering `range`,
+        /// readers on hits and WRITERS OPEN on misses (one cache transaction
+        /// resolves and allocates; the caller asks each tier only for territory
+        /// faster tiers miss, so no writer opens for pruned cells). Cells may
+        /// overhang the range edges. Default: the read-only probe - a
+        /// non-populating tier, or one whose writers the caller backfills;
+        /// populating tiers override to allocate at the call.
+        virtual std::vector<Resolution> lookAt(const StoredObject & object, size_t object_file_offset, ByteRange range)
+        {
+            return probeRange(object, object_file_offset, range);
+        }
+
+    protected:
+        /// The per-position residency PRIMITIVE (read-only): resolve `pos` into
+        /// its covering hit/miss and the stride the classification stays
+        /// constant over. EACH MISS IS ONE CELL of the tier (the provider owns
+        /// the alignment policy). `demand_end_in_file` is the exclusive end of
+        /// contiguous demand from `pos` - miss runs tile demand-shaped up to the
+        /// cache's max segment size, tapering to the boundary grid at the demand
+        /// edge (page cache: whole fixed blocks regardless). MUST NOT mutate the
+        /// cache. Not the public API - callers use the ranged `probeRange` /
+        /// `lookAt`.
+        virtual Resolution resolveStep(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t demand_end_in_file) = 0;
     };
 
     virtual std::unique_ptr<IProbeCursor> probe() = 0;

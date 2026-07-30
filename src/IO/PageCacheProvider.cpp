@@ -260,7 +260,8 @@ class PageCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
 public:
     explicit ProbeCursor(PageCacheProvider & provider_) : provider(provider_) {}
 
-    ICacheProvider::Resolution lookAt(
+protected:
+    ICacheProvider::Resolution resolveStep(
         const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/) override
     {
         /// Page-cache cells are whole fixed blocks; the demand shapes nothing here.

@@ -31,7 +31,8 @@ private:
     public:
         explicit Cursor(SpanProbeMockBase & mock_) : mock(mock_) {}
 
-        Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/) override
+    protected:
+        Resolution resolveStep(const StoredObject & object, size_t object_file_offset, size_t pos_in_file, size_t /*demand_end_in_file*/) override
         {
         static constexpr size_t PROBE_CHUNK = 8 * 1024 * 1024;
 
