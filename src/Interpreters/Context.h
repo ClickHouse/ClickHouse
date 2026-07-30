@@ -149,6 +149,8 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class ReaderExecutorLog;
+class DistributedCacheLog;
+class DistributedCacheServerLog;
 class FilesystemReadPrefetchesLog;
 class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
@@ -1635,6 +1637,9 @@ public:
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
 
+    bool isDistributedCacheServer() const;
+    void setDistributedCacheServer();
+
     Compiler & getCompiler();
 
     /// Call after initialization before using system logs. Call for global context.
@@ -1668,6 +1673,10 @@ public:
     std::shared_ptr<ReaderExecutorLog> getReaderExecutorLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
+#if ENABLE_DISTRIBUTED_CACHE
+    std::shared_ptr<DistributedCacheLog> getDistributedCacheLog() const;
+    std::shared_ptr<DistributedCacheServerLog> getDistributedCacheServerLog() const;
+#endif
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1778,6 +1787,7 @@ public:
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
+        DISTRIBUTED_CACHE, /// clickhouse-distributed-cache
     };
 
     ApplicationType getApplicationType() const;

@@ -677,7 +677,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
-#if defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)
+#if defined(QUERY_PROFILER_SUPPORTED)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
     if (!context->hasTraceCollector())
@@ -703,6 +703,7 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 
 void ThreadStatus::initQueryProfiler()
 {
+#if defined(QUERY_PROFILER_SUPPORTED)
     /// query profilers are useless without trace collector
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
@@ -739,6 +740,7 @@ void ThreadStatus::initQueryProfiler()
         /// QueryProfiler is optional.
         tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
     }
+#endif
 }
 
 void ThreadStatus::finalizeQueryProfiler()
