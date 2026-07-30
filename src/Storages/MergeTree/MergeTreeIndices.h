@@ -199,7 +199,7 @@ public:
     /// The final query filter must still be kept in the pipeline as the semantic source of truth.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(
         MergeTreeIndexGranulePtr /*granule*/,
-        const VectorSearchFilter * /*filter*/ = nullptr) const
+        const VectorSearchFilter * /*filter*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }

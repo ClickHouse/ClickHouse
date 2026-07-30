@@ -577,8 +577,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         ErrorCodes::INCORRECT_QUERY,
         "reference vector in the SELECT query");
 
+    /// A remapped row bitmap is an exact predicate for this vector granule. The fetch multiplier is
+    /// only needed when later postfiltering or rescoring can discard ANN candidates; exact
+    /// in-traversal search must keep the SQL LIMIT.
+    const bool has_exact_row_filter = filter != nullptr;
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
+    if (!has_exact_row_filter && (parameters->additional_filters_present || is_rescoring))
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
@@ -612,7 +616,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     /// Exact filtered search only needs to return rows that can survive the scalar predicate. The SQL
     /// LIMIT is still enforced later by the query plan after reading and final sorting.
     const size_t effective_result_limit = use_exact_filtered_search
-        ? std::max<size_t>(1, std::min<size_t>(limit, static_cast<size_t>(*accepted_rows)))
+        ? std::min<size_t>(parameters->limit, static_cast<size_t>(*accepted_rows))
         : limit;
     /// `filtered_search(..., exact=true)` computes distances only for rows accepted by the remapped
     /// row_bitmap predicate. This keeps the exact route semantically equivalent to prefilter while

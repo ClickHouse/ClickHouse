@@ -1130,6 +1130,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (use_skip_indexes_for_disjunctions)
                     partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
 
+                bool has_in_traversal_vector_consumer = false;
+                for (const auto index_idx : skip_indexes.per_part_index_orders[part_index])
+                {
+                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+                    if (!index_and_condition.index->isVectorSimilarityIndex() || !can_use_index(index_and_condition.index))
+                        continue;
+
+                    auto condition = index_and_condition.condition_template->generateForPartition(ranges.data_part->partition);
+                    if (condition && condition->supportsInTraversalVectorFilter())
+                    {
+                        has_in_traversal_vector_consumer = true;
+                        break;
+                    }
+                }
+
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
@@ -1164,14 +1179,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                             ranges.data_part,
                             ranges.ranges,
-                            ranges.read_hints,
+                            std::move(ranges.read_hints),
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
+                            index_and_condition.index->isRowBitmapIndex() && has_in_traversal_vector_consumer,
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
+
+                        if (index_and_condition.index->isVectorSimilarityIndex())
+                            ranges.read_hints.vector_search_filters.clear();
                     }
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
@@ -2479,11 +2498,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     const std::optional<KeyCondition> & key_condition_rpn_template,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const RangesInDataPartReadHints & in_read_hints,
+    RangesInDataPartReadHints in_read_hints,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    bool retain_vector_search_filter,
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
@@ -2492,7 +2512,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
-        return {ranges, in_read_hints};
+        return {ranges, std::move(in_read_hints)};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -2519,7 +2539,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         && !all_match
         && (!condition->supportsInTraversalVectorFilter() || in_read_hints.vector_search_filters.empty()))
     {
-        return {ranges, in_read_hints};
+        return {ranges, std::move(in_read_hints)};
     }
 
     MarkRanges index_ranges;
@@ -2542,7 +2562,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
-    RangesInDataPartReadHints read_hints = in_read_hints;
+    RangesInDataPartReadHints read_hints = std::move(in_read_hints);
     if (index_helper->isVectorSimilarityIndex())
         read_hints.vector_search_results.reset();
 
@@ -2967,7 +2987,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     size_t range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
                     /// Row-level scalar indexes return an exact row bitmap here. Other index types
                     /// return nullopt and continue using their regular mayBeTrueOnGranule() pruning.
-                    std::optional<VectorSearchFilter> vector_search_filter = condition->calculateVectorSearchFilter(granule);
+                    std::optional<VectorSearchFilter> vector_search_filter;
+                    if (retain_vector_search_filter)
+                        vector_search_filter = condition->calculateVectorSearchFilter(granule);
                     if (vector_search_filter)
                     {
                         /// Keep the source mark range with the bitmap so a later vector index can

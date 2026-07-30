@@ -99,6 +99,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
+            /*retain_vector_search_filter=*/false,
             use_for_disjunctions,
             partial_eval_results,
             log);
@@ -178,6 +179,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     vector_similarity_index_cache.get(),
+                    /*retain_vector_search_filter=*/false,
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
                     log);

@@ -157,7 +157,7 @@ public:
     bool supportsInTraversalVectorFilter() const override;
     /// Optional `filter` is consumed only by the exact filtered-search fallback. Non-exact ANN
     /// searches keep the existing postfilter behavior.
-    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule, const VectorSearchFilter * filter = nullptr) const override;
+    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule, const VectorSearchFilter * filter) const override;
     std::string getDescription() const override { return ""; }
 
 private:
