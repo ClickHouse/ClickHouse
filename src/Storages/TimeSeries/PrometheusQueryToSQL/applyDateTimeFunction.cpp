@@ -3,6 +3,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
@@ -112,25 +114,37 @@ namespace
         return &it->second;
     }
 
-    /// If `node` is exactly `vector(time())`, returns the inner `time()` function node; otherwise returns nullptr.
-    const PQT::Function * asVectorOfTime(const Node * node)
+    /// Finds the `time()` call reachable from `node` after peeling off any number of `scalar(...)`, `vector(...)`,
+    /// and unary `+...` wrappers. All of these are value-preserving no-ops in the generic conversion path:
+    /// applyFunctionScalar()'s CONST_SCALAR/SINGLE_SCALAR/SCALAR_GRID cases, applyFunctionVector(), and
+    /// applyUnaryOperator()'s '+' case each return their argument's SQLQueryPiece unchanged (aside from `type`/`node`),
+    /// so any nesting of these around `time()` - e.g. `vector(time())`, `scalar(vector(time()))`,
+    /// `vector(scalar(vector(time())))`, `+time()` - carries the exact same (possibly Float32-lossy) underlying value.
+    /// Returns nullptr if `node` isn't (possibly wrapped) exactly a bare `time()` call.
+    const PQT::Function * findTimeCallThroughScalarVectorWrappers(const Node * node)
     {
+        if (node->node_type == NodeType::UnaryOperator)
+        {
+            const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
+            if (unary_operator->operator_name != "+")
+                return nullptr;
+
+            return findTimeCallThroughScalarVectorWrappers(unary_operator->getArgument());
+        }
+
         if (node->node_type != NodeType::Function)
             return nullptr;
 
-        const auto * outer = static_cast<const PQT::Function *>(node);
-        if ((outer->function_name != "vector") || (outer->getArguments().size() != 1))
-            return nullptr;
+        const auto * function = static_cast<const PQT::Function *>(node);
 
-        const Node * inner_node = outer->getArguments()[0];
-        if (inner_node->node_type != NodeType::Function)
-            return nullptr;
+        if (isFunctionTime(function->function_name))
+            return function->getArguments().empty() ? function : nullptr;
 
-        const auto * inner = static_cast<const PQT::Function *>(inner_node);
-        if (!isFunctionTime(inner->function_name) || !inner->getArguments().empty())
-            return nullptr;
+        if ((isFunctionScalar(function->function_name) || isFunctionVector(function->function_name))
+            && (function->getArguments().size() == 1))
+            return findTimeCallThroughScalarVectorWrappers(function->getArguments()[0]);
 
-        return inner;
+        return nullptr;
     }
 }
 
@@ -162,13 +176,17 @@ SQLQueryPiece applyDateTimeFunction(
         time_argument.type = ResultType::INSTANT_VECTOR;
         arguments.push_back(std::move(time_argument));
     }
-    else if (const auto * time_node = asVectorOfTime(function_node->getArguments()[0]))
+    else if (const auto * time_node = findTimeCallThroughScalarVectorWrappers(function_node->getArguments()[0]))
     {
-        /// The argument is exactly `vector(time())`, which the PromQL spec says a 0-argument call like `f()` is
-        /// equivalent to. The generic conversion path already ran for this argument (fromFunctionTime() ->
-        /// makeTimeQueryPiece()), which represents the evaluation time via `context.scalar_data_type` - the same
-        /// Float32-losing-precision path described above. Rebuild the argument with makeTimeQueryPieceNative()
-        /// instead, exactly like the 0-argument branch above, so that `f(vector(time()))` and `f()` always agree.
+        /// The argument is `time()`, possibly wrapped in any nesting of `scalar(...)`/`vector(...)`/unary `+...`
+        /// (e.g. `vector(time())`, `scalar(vector(time()))`, `vector(scalar(vector(time())))`). The PromQL spec
+        /// says a 0-argument call like `f()` is equivalent to `f(vector(time()))`, and all of the wrappers above
+        /// are value-preserving, so every one of these spellings should agree with `f()`. The generic conversion
+        /// path already ran for this argument (fromFunctionTime() -> makeTimeQueryPiece(), then possibly
+        /// applyFunctionScalar()/applyFunctionVector()/applyUnaryOperator() passing it through unchanged), which
+        /// represents the evaluation time via `context.scalar_data_type` - the same Float32-losing-precision path
+        /// described above. Rebuild the argument with makeTimeQueryPieceNative() instead, exactly like the
+        /// 0-argument branch above, so that all of these spellings and `f()` always agree.
         auto time_argument = makeTimeQueryPieceNative(time_node, context);
         time_argument.type = ResultType::INSTANT_VECTOR;
         arguments[0] = std::move(time_argument);
