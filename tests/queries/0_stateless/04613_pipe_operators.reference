@@ -124,6 +124,18 @@ alice
 9
 0
 1
+-- A trailing comma is allowed in the select-list-like operators, as in an ordinary SELECT clause
+alice	100
+alice	250
+alice	250
+charlie	300
+alice	250	0	500
+charlie	300	0	600
+5	775
+alice
+bob
+charlie
+charlie	300
 -- The resulting AST is the same as with nested subqueries
 SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
 SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)

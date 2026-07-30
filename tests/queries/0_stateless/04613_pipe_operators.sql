@@ -126,6 +126,18 @@ FROM sampled SAMPLE 1 OFFSET 0; -- { clientError SYNTAX_ERROR }
 FROM sampled SAMPLE 1 OFFSET 0 |> LIMIT 1; -- { clientError SYNTAX_ERROR }
 DROP TABLE sampled;
 
+SELECT '-- A trailing comma is allowed in the select-list-like operators, as in an ordinary SELECT clause';
+FROM orders |> SELECT customer, amount, |> ORDER BY customer, amount |> LIMIT 2;
+FROM orders |> WHERE amount >= 250 |> SELECT customer, amount, |> ORDER BY customer;
+FROM orders |> WHERE amount >= 250 |> EXTEND amount * 2, |> ORDER BY customer;
+FROM orders |> AGGREGATE count(), sum(amount), |> LIMIT 1;
+FROM orders |> SELECT DISTINCT customer, |> ORDER BY customer;
+-- A trailing comma is also allowed at the very end of the query
+FROM orders |> WHERE customer = 'charlie' |> SELECT customer, amount,;
+-- A trailing comma is not accepted in front of a clause keyword, exactly as in an ordinary SELECT clause
+FROM orders |> AGGREGATE count() AS c, GROUP BY customer; -- { clientError SYNTAX_ERROR }
+FROM orders |> SELECT customer, , amount; -- { clientError SYNTAX_ERROR }
+
 -- The following sections require the analyzer: the old analyzer does not support WITH RECURSIVE
 -- and column alias lists on subqueries, and it expands asterisks in EXPLAIN SYNTAX.
 SET enable_analyzer = 1;

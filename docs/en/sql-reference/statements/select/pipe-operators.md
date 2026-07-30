@@ -74,6 +74,8 @@ FROM orders
 FROM orders |> SELECT customer, amount * 2 AS doubled
 ```
 
+A trailing comma is allowed at the end of the list of expressions in the same positions as in the `SELECT` clause of an ordinary query - here it can be followed by the end of the query or by the next `|>` operator: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. The same applies to the `EXTEND` and `AGGREGATE` operators.
+
 ### EXTEND {#extend}
 
 `|> EXTEND expr1 [AS alias1], ...` appends the listed expressions to the input columns; it is equivalent to `SELECT *, expr1 AS alias1, ...`:

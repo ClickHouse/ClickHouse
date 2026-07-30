@@ -180,6 +180,9 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserExpression exp;
     ParserNotEmptyExpressionList exp_list_with_aliases(true);
+    /// The select-list-like operators accept exactly the same syntax as the `SELECT` clause of an ordinary query,
+    /// including a trailing comma, e.g. `FROM t |> SELECT a, b,`.
+    ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserIdentifier identifier;
 
     /// The alias set by the AS operator; it is applied to the subquery when the next operator wraps the query.
@@ -212,7 +215,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
             bool distinct = s_distinct.ignore(pos, expected);
 
             ASTPtr select_list;
-            if (!exp_list_with_aliases.parse(pos, select_list, expected))
+            if (!exp_list_for_select_clause.parse(pos, select_list, expected))
                 return false;
 
             auto select = wrapQueryIntoSelect(std::move(query), pending_alias, std::move(select_list));
@@ -223,7 +226,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
         {
             /// |> EXTEND expr1 [AS alias1], ...   ->   SELECT *, expr1 AS alias1, ...
             ASTPtr extend_list;
-            if (!exp_list_with_aliases.parse(pos, extend_list, expected))
+            if (!exp_list_for_select_clause.parse(pos, extend_list, expected))
                 return false;
 
             ASTPtr select_list = makeAsteriskList();
@@ -331,7 +334,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
             /// The output columns are the grouping columns followed by the aggregate columns.
             /// Without GROUP BY, it is an aggregation of the whole table.
             ASTPtr aggregate_list;
-            if (!exp_list_with_aliases.parse(pos, aggregate_list, expected))
+            if (!exp_list_for_select_clause.parse(pos, aggregate_list, expected))
                 return false;
 
             ASTPtr group_list;
