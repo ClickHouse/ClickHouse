@@ -1,7 +1,2 @@
-asterisk
-qualified asterisk
-columns regexp
-columns list
-qualified columns regexp
-qualified columns list
+matcher in default expression
 no matcher
