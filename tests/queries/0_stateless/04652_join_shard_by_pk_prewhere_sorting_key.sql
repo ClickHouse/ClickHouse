@@ -117,9 +117,9 @@ SELECT 'row policy', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 A
 DROP ROW POLICY pol_04652 ON ok2;
 DROP TABLE ok2;
 
--- The restore set comes from the sorting key expression, so a wrapped or computed key column must
--- be covered too: LowCardinality is not stripped by removeNullable, and an expression key requires
--- the underlying column rather than the key name.
+-- The restore matches inputs by column NAME, never by type, so a LowCardinality key column is
+-- covered by the same name lookup as a plain one. An expression key is the other half: it requires
+-- the expression's underlying input column, not the key output name, as the cell below asserts.
 DROP TABLE IF EXISTS lc04652;
 CREATE TABLE lc04652 (a UInt32, b LowCardinality(String), c Int64, d String)
 ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 64;
@@ -135,8 +135,8 @@ CREATE TABLE ex04652 (a UInt32, b UInt32, c Int64, d String)
 ENGINE = MergeTree ORDER BY (a, b * 2, c) SETTINGS index_granularity = 64;
 INSERT INTO ex04652 SELECT number % 50, number % 200, toInt64(number), toString(number % 7) FROM numbers(2000);
 
-SELECT 'expression sorting key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ex04652 AS l INNER JOIN ex04652 AS r ON l.a = r.a WHERE r.c = 94))
-                               = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ex04652 AS l INNER JOIN ex04652 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+SELECT 'expression sorting key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ex04652 AS l INNER JOIN ex04652 AS r ON l.a = r.a WHERE r.b = 94))
+                               = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ex04652 AS l INNER JOIN ex04652 AS r ON l.a = r.a WHERE r.b = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
 
 DROP TABLE ex04652;
 
