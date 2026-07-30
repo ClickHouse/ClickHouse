@@ -63,3 +63,47 @@ def test_writes_date_column_with_time_transforms(started_cluster_iceberg_with_sp
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize(
+    "tz_settings",
+    [
+        {"iceberg_timezone_for_timestamptz": "Europe/Berlin"},
+        {"iceberg_timezone_for_timestamptz": ""},
+    ],
+)
+def test_writes_reject_non_utc_timestamptz_timezone(
+    started_cluster_iceberg_with_spark, storage_type, tz_settings
+):
+    """Non-default iceberg_timezone_for_timestamptz must not leak into partition transforms / Avro typing."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_reject_tz_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(id Int32, ts DateTime64(6, 'UTC'))",
+        2,
+        "toRelativeHourNum(ts)",
+    )
+
+    error = instance.query_and_get_error(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, toDateTime64('2024-01-01 23:30:00', 6, 'UTC'))",
+        settings={"allow_insert_into_iceberg": 1, **tz_settings},
+    )
+    assert "iceberg_timezone_for_timestamptz = 'UTC'" in error
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, toDateTime64('2024-01-01 23:30:00', 6, 'UTC'))",
+        settings={"allow_insert_into_iceberg": 1, "iceberg_timezone_for_timestamptz": "UTC"},
+    )
+    assert (
+        instance.query(
+            f"SELECT timezoneOf(ts) FROM {TABLE_NAME} LIMIT 1 "
+            "SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'"
+        ).strip()
+        == "Europe/Berlin"
+    )

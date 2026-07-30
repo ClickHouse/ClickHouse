@@ -71,6 +71,10 @@ struct TransformAndArgument
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
 
+/// Iceberg partition transforms and timestamptz Avro typing are UTC-based. Non-default
+/// `iceberg_timezone_for_timestamptz` is presentation-only and must not be used on write paths.
+void checkIcebergTimezoneSettingForWrite(const ContextPtr & context);
+
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

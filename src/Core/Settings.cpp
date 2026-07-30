@@ -8210,7 +8210,9 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
-Timezone for Iceberg timestamptz field.
+Timezone used to present Iceberg `timestamptz` as ClickHouse `DateTime64` on reads (`SELECT`, `DESCRIBE`, `SHOW CREATE`).
+
+Must remain `UTC` for Iceberg writes (INSERT, mutations, `OPTIMIZE ... MANIFEST`): partition transforms and written `timestamptz` Avro metadata are UTC-based.
 
 Possible values:
 

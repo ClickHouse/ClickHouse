@@ -657,6 +657,7 @@ void mutate(
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
     validateMutationWriteFormat(write_format);
+    checkIcebergTimezoneSettingForWrite(context);
 
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))

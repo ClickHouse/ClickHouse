@@ -1228,6 +1228,7 @@ void compactIcebergManifests(
 {
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
+    checkIcebergTimezoneSettingForWrite(context_);
 
     const size_t min_count_to_compact = context_->getSettingsRef()[DB::Setting::iceberg_manifest_min_count_to_compact];
 
@@ -1317,6 +1318,7 @@ void compactIcebergTable(
     ContextPtr context_,
     const String & write_format)
 {
+    checkIcebergTimezoneSettingForWrite(context_);
     checkIfIcebergHistorySupported(snapshots_info);
 
     auto plan = getPlan(

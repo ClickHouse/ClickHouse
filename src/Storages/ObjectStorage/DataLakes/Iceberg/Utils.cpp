@@ -89,6 +89,7 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsTimezone iceberg_timezone_for_timestamptz;
 }
 
 namespace ProfileEvents
@@ -471,6 +472,17 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
         }
     }
     return std::nullopt;
+}
+
+void checkIcebergTimezoneSettingForWrite(const ContextPtr & context)
+{
+    const String timezone = context->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
+    if (timezone != "UTC")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Iceberg writes require setting iceberg_timezone_for_timestamptz = 'UTC' (got '{}'). "
+            "This setting only affects how timestamptz is presented on reads",
+            timezone.empty() ? String("<empty>") : timezone);
 }
 
 enum class MostRecentMetadataFileSelectionWay

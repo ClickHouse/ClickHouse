@@ -347,13 +347,15 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 ## Timezone for `timestamptz` data type {#timestamptz-timezone}
 
-Setting `iceberg_timezone_for_timestamptz` can be used to set custom timezone for column with Iceberg type `timestamptz`.
+Setting `iceberg_timezone_for_timestamptz` controls how ClickHouse presents Iceberg `timestamptz` columns as `DateTime64` on reads (for example `SELECT`, `DESCRIBE`, `SHOW CREATE`, `timezoneOf`).
 
 Possible values:
 * Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
 * empty value - use session timezone
 
 Default value is `UTC`.
+
+Iceberg writes (`INSERT`, mutations, `OPTIMIZE ... MANIFEST`) require this setting to be `UTC`. Partition transforms and written `timestamptz` Avro metadata are always UTC-based; a non-default value is rejected on write paths.
 
 ## Asynchronous metadata prefetching {#async-metadata-prefetch}
 
