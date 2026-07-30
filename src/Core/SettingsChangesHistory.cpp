@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
+            {"use_text_index_match_token_evaluation_by_dictionary_scan", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -247,7 +248,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_like_evaluation_by_dictionary_scan", true, true, "New setting"},
             {"text_index_like_min_pattern_length", 4, 4, "New setting"},
             {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
-            {"use_text_index_match_token_evaluation_by_dictionary_scan", true, true, "New setting"},
             {"analyzer_inline_views", false, false, "New setting"},
             {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
