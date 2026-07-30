@@ -101,8 +101,8 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
 
-    if (settings.cursor_tree.has_value())
-        w.writeFieldValue("cursor_tree", Field(settings.cursor_tree.value()));
+    if (cursor.has_value())
+        w.writeFieldValue("cursor_tree", Field(cursor.value()));
 }
 
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
@@ -136,7 +136,7 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`StreamSettings` 'cursor_tree' element must be a (String, integer) tuple during AST JSON deserialization");
         }
-        settings.cursor_tree = std::move(map);
+        cursor = std::move(map);
     }
 }
 

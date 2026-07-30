@@ -964,7 +964,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<StreamingSettings> stream_settings;
+                std::optional<StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -982,7 +982,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
 
-                    stream_settings = StreamingSettings{};
+                    stream_settings = StreamSettings{};
 
                     if (ast_stream_settings.cursor.has_value())
                         stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());

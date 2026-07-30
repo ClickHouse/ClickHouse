@@ -132,7 +132,7 @@ StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metada
     if (!modifiers.hasStream())
         return metadata;
 
-    const auto & stream_settings = modifiers.getStreamingSettings();
+    const auto & stream_settings = modifiers.getStreamSettings();
     if (!stream_settings->watermark)
         return metadata;
 

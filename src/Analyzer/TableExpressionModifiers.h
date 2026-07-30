@@ -29,7 +29,7 @@ public:
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_,
-        std::optional<StreamingSettings> stream_settings_ = {})
+        std::optional<StreamSettings> stream_settings_ = {})
         : has_final(has_final_)
         , sample_size_ratio(sample_size_ratio_)
         , sample_offset_ratio(sample_offset_ratio_)
@@ -79,7 +79,7 @@ public:
     }
 
     /// Get stream settings
-    const std::optional<StreamingSettings> & getStreamingSettings() const
+    const std::optional<StreamSettings> & getStreamSettings() const
     {
         return stream_settings;
     }
@@ -97,7 +97,7 @@ private:
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
-    std::optional<StreamingSettings> stream_settings;
+    std::optional<StreamSettings> stream_settings;
 };
 
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
@@ -120,7 +120,7 @@ inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & 
     return !lhs.expression || lhs.expression->isEqual(*rhs.expression);
 }
 
-inline bool operator==(const StreamingSettings & lhs, const StreamingSettings & rhs)
+inline bool operator==(const StreamSettings & lhs, const StreamSettings & rhs)
 {
     /// Compare cursors
     {
@@ -150,7 +150,7 @@ inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressi
     return lhs.hasFinal() == rhs.hasFinal()
         && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio()
         && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio()
-        && lhs.getStreamingSettings() == rhs.getStreamingSettings();
+        && lhs.getStreamSettings() == rhs.getStreamSettings();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

@@ -484,7 +484,7 @@ static ASTPtr convertIntoTableExpressionAST(
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
 
-        const auto & stream_settings = table_expression_modifiers->getStreamingSettings();
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
         {
             ASTStreamSettings ast_stream_settings;

@@ -15,7 +15,6 @@ namespace DB
 ///
 struct ASTStreamSettings : public IAST
 {
-public:
     struct WatermarkSettings
     {
         String column;
@@ -26,17 +25,14 @@ public:
     std::optional<Map> cursor;
     std::optional<WatermarkSettings> watermark;
 
-    ASTStreamSettings() = default;
-    explicit ASTStreamSettings(StreamSettings settings_);
-
+public:
     String getID(char) const override { return "ASTStreamSettings"; }
     ASTPtr clone() const override;
     bool hasTweaks() const;
 
+protected:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
-
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 

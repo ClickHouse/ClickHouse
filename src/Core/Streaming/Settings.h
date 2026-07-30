@@ -18,11 +18,11 @@ struct WatermarkSettings
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
-struct StreamingSettings
+struct StreamSettings
 {
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 };
-using StreamingSettingsPtr = std::shared_ptr<StreamingSettings>;
+using StreamSettingsPtr = std::shared_ptr<StreamSettings>;
 
 }
