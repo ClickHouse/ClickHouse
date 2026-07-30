@@ -43,3 +43,4 @@ Carol	engineering
 1
 -- policy on a DEFAULT column with only its dependency stored: read is refused
 -- policy on a MATERIALIZED column with only its dependency stored: read is refused
+-- policy on a column shadowed by a projection expression: read is refused

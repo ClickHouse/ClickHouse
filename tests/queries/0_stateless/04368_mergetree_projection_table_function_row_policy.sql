@@ -279,3 +279,23 @@ SELECT x FROM mergeTreeProjection(currentDatabase(), 'materialized_dep_rls_proj'
 
 DROP ROW POLICY rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
 DROP TABLE materialized_dep_rls_proj;
+
+-- A projection that binds a parent column name to a transformed expression does not expose that column
+-- under the parent name (only genuine parent columns are readable), so the policy cannot be evaluated on
+-- transformed data - it fails closed rather than filtering the wrong rows.
+DROP TABLE IF EXISTS shadow_rls_proj;
+DROP ROW POLICY IF EXISTS rp_shadow_rls_proj ON shadow_rls_proj;
+
+CREATE TABLE shadow_rls_proj (a UInt8, c UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO shadow_rls_proj VALUES (1, 0), (2, 1), (3, 0);
+
+ALTER TABLE shadow_rls_proj ADD PROJECTION p (SELECT a, (a = 1) AS c ORDER BY a);
+ALTER TABLE shadow_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_shadow_rls_proj ON shadow_rls_proj FOR SELECT USING c TO ALL;
+
+SELECT '-- policy on a column shadowed by a projection expression: read is refused';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'shadow_rls_proj', 'p') ORDER BY a; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_shadow_rls_proj ON shadow_rls_proj;
+DROP TABLE shadow_rls_proj;
