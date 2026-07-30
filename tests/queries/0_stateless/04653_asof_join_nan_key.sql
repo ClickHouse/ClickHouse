@@ -91,8 +91,10 @@ SELECT 'BFloat16 nan ge' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1)
 -- finite-left form, which is already correct on master and would assert nothing here.
 SELECT 'Float32 fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toFloat32(5.0) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toFloat32(arrayJoin([1.0, 2.0, 3.0, 0. / 0.])) AS t, toUInt8(if(isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t <= r.t SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT 'BFloat16 fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toBFloat16(0. / 0.) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, toBFloat16(arrayJoin([1.0, 2.0, 3.0])) AS t, toUInt8(10 + t) AS v) AS r ON l.e = r.e AND l.t >= r.t SETTINGS join_algorithm = 'full_sorting_merge';
--- `nullIf` keeps 4.5 under the NULL bit, so discarding a pre-existing null map instead of
--- composing with it would let that row match and answer 88.
+-- A `Nullable` asof key means the null map already exists, so this covers the branch that mutates it
+-- instead of allocating one. Losing the pre-existing `NULL` bit is not observable here, because every
+-- asof consumer rejects the row on the `NaN` bit first, so composing the two is defensive rather than
+-- something this cell can detect. What it does detect is the `NaN` exclusion, which answered 99 before.
 SELECT 'Nullable fsmj' AS cell, groupArray(r.v) AS got FROM (SELECT toUInt8(1) AS e, toNullable(3.5) AS t) AS l ASOF JOIN (SELECT toUInt8(1) AS e, nullIf(arrayJoin([1.0, 2.0, 3.0, 4.5, 0. / 0.]), 4.5) AS t, toUInt8(multiIf(t IS NULL, 88, isNaN(t), 99, 10 + t)) AS v) AS r ON l.e = r.e AND l.t <= r.t SETTINGS join_algorithm = 'full_sorting_merge';
 
 -- NULL and NaN exclusions compose: the NULL row was already skipped, the NaN row is now too, so 13
