@@ -2643,7 +2643,9 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
-        if (query_node.hasOrderBy())
+        /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
+        /// not per shard (which would duplicate fill rows and break the INTERPOLATE column on merge).
+        if (query_node.hasOrderBy() && query_processing_info.isFinalizingStage())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
