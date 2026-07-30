@@ -2,7 +2,9 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -13,6 +15,7 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 
 #include <algorithm>
+#include <functional>
 
 namespace DB
 {
@@ -20,16 +23,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
 {
 
 /// Counts matching rows in one part from the text-index posting metadata, without reading rows.
+/// `check_cancelled` is polled between posting blocks and tokens so a large part stays interruptible.
 UInt64 computeCountForPart(
     const RangesInDataPart & part_with_ranges,
     const ReadFromTextIndexCount::ResolvedQuery & resolved,
-    const MergeTreeReaderSettings & reader_settings)
+    const MergeTreeReaderSettings & reader_settings,
+    const std::function<void()> & check_cancelled)
 {
     const auto & data_part = part_with_ranges.data_part;
     const auto & index = resolved.index;
@@ -112,6 +118,8 @@ UInt64 computeCountForPart(
         PostingList postings;
         for (size_t block_idx : token_info.getBlocksToRead(range))
         {
+            check_cancelled();
+
             if (candidates)
             {
                 const auto & block_range = token_info.ranges[block_idx];
@@ -134,6 +142,7 @@ UInt64 computeCountForPart(
         std::optional<PostingList> merged_postings;
         for (const auto & [_, token_info] : query_builder.tokens)
         {
+            check_cancelled();
             auto token_postings = read_postings(*token_info, full_range, nullptr);
             if (!merged_postings)
                 merged_postings = std::move(token_postings);
@@ -155,6 +164,7 @@ UInt64 computeCountForPart(
     PostingList candidates = read_postings(*token_infos.front(), full_range, nullptr);
     for (size_t i = 1; i < token_infos.size() && !candidates.isEmpty(); ++i)
     {
+        check_cancelled();
         const RowsRange candidate_range(candidates.minimum(), candidates.maximum());
         candidates &= read_postings(*token_infos[i], candidate_range, &candidates);
     }
@@ -177,11 +187,13 @@ public:
         SharedHeader header,
         StatePtr state_,
         std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved_,
-        MergeTreeReaderSettings reader_settings_)
+        MergeTreeReaderSettings reader_settings_,
+        QueryStatusPtr query_status_)
         : ISource(std::move(header))
         , state(std::move(state_))
         , resolved(std::move(resolved_))
         , reader_settings(std::move(reader_settings_))
+        , query_status(std::move(query_status_))
     {
     }
 
@@ -194,7 +206,15 @@ protected:
         if (part_idx >= state->parts.size())
             return {};
 
-        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings);
+        auto check_cancelled = [this]
+        {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+            if (query_status)
+                query_status->checkTimeLimit();
+        };
+
+        UInt64 count = computeCountForPart(state->parts[part_idx], *resolved, reader_settings, check_cancelled);
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
@@ -204,6 +224,7 @@ private:
     StatePtr state;
     std::shared_ptr<const ReadFromTextIndexCount::ResolvedQuery> resolved;
     MergeTreeReaderSettings reader_settings;
+    QueryStatusPtr query_status;
 };
 
 SharedHeader makeCountHeader(const String & count_column_name)
@@ -229,7 +250,7 @@ ReadFromTextIndexCount::ReadFromTextIndexCount(
 {
 }
 
-void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto state = std::make_shared<TextIndexCountSource::State>();
     state->parts = std::move(parts);
@@ -238,7 +259,8 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)
-        pipes.emplace_back(std::make_shared<TextIndexCountSource>(getOutputHeader(), state, resolved, reader_settings));
+        pipes.emplace_back(std::make_shared<TextIndexCountSource>(
+            getOutputHeader(), state, resolved, reader_settings, settings.process_list_element));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
