@@ -53,6 +53,7 @@ class HostMetricsCollector:
     _UNDER_CPU_PCT = 20.0  # average CPU below this -> CPU over-provisioned
     _RAM_PRESSURE_PCT = 95.0  # peak RAM at/above this -> RAM under-provisioned
     _CPU_STALL_RATIO = 0.5  # cpu stall seconds / duration above this -> CPU-bound
+    _IO_STALL_RATIO = 0.4  # io stall seconds / duration above this -> IO-bound
     _DISK_WARN_PCT = 85.0  # peak disk at/above this -> almost full
 
     def __init__(
@@ -458,6 +459,7 @@ class HostMetricsCollector:
         disk_gb = metrics.get("disk_total_gb")
         mem_full_s = psi.get("mem_full_s", 0)
         cpu_s = psi.get("cpu_s", 0)
+        io_s = psi.get("io_some_s", 0)
 
         # RAM: pressure (under-provisioned) takes precedence over idle headroom.
         if (mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT) or mem_full_s:
@@ -489,6 +491,16 @@ class HostMetricsCollector:
                 (
                     "under-utilized CPU",
                     f"Average CPU only {cpu_avg}% - consider a smaller runner",
+                )
+            )
+
+        # IO: sustained stall waiting on storage.
+        io_ratio = io_s / duration if duration else 0
+        if io_ratio > cls._IO_STALL_RATIO:
+            labels.append(
+                (
+                    "io-bound",
+                    f"IO stalled {io_s}s ({round(100 * io_ratio)}% of runtime) - storage may be the bottleneck",
                 )
             )
 
