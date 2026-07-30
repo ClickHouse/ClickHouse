@@ -6,9 +6,8 @@
 # (list/map/struct) was written to Parquet with `FieldRepetitionType::REQUIRED`, because
 # Array/Map are never wrapped in `Nullable` in the ClickHouse type, so the optionality is
 # not recoverable from the type and the Parquet writer never consulted the per-path Iceberg
-# metadata the ORC writer already uses. A `REQUIRED` group cannot encode a null container, so a
-# null list/map/struct was silently read back as an empty one, and the footer contradicted the
-# Iceberg schema published by the same commit.
+# metadata the ORC writer already uses. The footer then contradicted the Iceberg schema published
+# by the same commit, which is the mismatch this test pins.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
