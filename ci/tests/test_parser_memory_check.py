@@ -144,6 +144,84 @@ def test_cross_version_diff_correlates_same_allocation_stack():
     )
 
 
+def test_cross_version_diff_correlates_boost_container_allocation_prefix():
+    master_frames = [
+        "boost::container::vec_iterator<boost::intrusive_ptr<DB::IAST>*, false> "
+        "boost::container::vector<boost::intrusive_ptr<DB::IAST>>::"
+        "priv_insert_forward_range_no_capacity<boost::container::dtl::"
+        "insert_emplace_proxy<boost::container::new_allocator<boost::intrusive_ptr<DB::IAST>>, "
+        "boost::intrusive_ptr<DB::ASTLiteral>>>(boost::intrusive_ptr<DB::IAST>*, unsigned long)",
+        "boost::container::vector_alloc_holder<boost::container::new_allocator<"
+        "boost::intrusive_ptr<DB::IAST>>, unsigned int>::allocate(unsigned long)",
+        "boost::container::allocator_traits<boost::container::new_allocator<"
+        "boost::intrusive_ptr<DB::IAST>>>::allocate("
+        "boost::container::new_allocator<boost::intrusive_ptr<DB::IAST>>&, unsigned long)",
+        "boost::container::new_allocator<boost::intrusive_ptr<DB::IAST>>::allocate(unsigned long)",
+        "boost::intrusive_ptr<DB::IAST>* boost::container::dtl::"
+        "operator_new_allocate<boost::intrusive_ptr<DB::IAST>>(unsigned long)",
+        "DB::Layer::mergeElement(bool)",
+        "DB::FunctionLayer::parse(DB::IParser::Pos&, DB::Expected&, DB::Action&)",
+    ]
+    pr_frames = [
+        "boost::container::vec_iterator<boost::intrusive_ptr<DB::IAST>*, false> "
+        "boost::container::vector<boost::intrusive_ptr<DB::IAST>>::"
+        "priv_insert_forward_range_no_capacity<boost::container::dtl::"
+        "insert_emplace_proxy<boost::container::new_allocator<boost::intrusive_ptr<DB::IAST>>, "
+        "boost::intrusive_ptr<DB::IAST>>>(boost::intrusive_ptr<DB::IAST>*, unsigned long)",
+        "DB::Layer::mergeElement(bool)",
+        "DB::FunctionLayer::parse(DB::IParser::Pos&, DB::Expected&, DB::Action&)",
+    ]
+
+    master_stacks = [
+        (
+            48,
+            "master display",
+            parser_memory_check.flatten_frames_full(master_frames),
+            parser_memory_check.canonicalize_stack_frames(master_frames),
+        )
+    ]
+    pr_stacks = [
+        (
+            48,
+            "PR display",
+            parser_memory_check.flatten_frames_full(pr_frames),
+            parser_memory_check.canonicalize_stack_frames(pr_frames),
+        )
+    ]
+
+    assert (
+        parser_memory_check.compute_cross_version_diff(master_stacks, pr_stacks)
+        == []
+    )
+
+
+def test_cross_version_diff_keeps_distinct_callers_after_allocation_prefix():
+    allocation_frame = (
+        "boost::container::vec_iterator<boost::intrusive_ptr<DB::IAST>*, false> "
+        "boost::container::vector<boost::intrusive_ptr<DB::IAST>>::"
+        "priv_insert_forward_range_no_capacity<boost::container::dtl::"
+        "insert_emplace_proxy<boost::container::new_allocator<boost::intrusive_ptr<DB::IAST>>, "
+        "boost::intrusive_ptr<DB::IAST>>>(boost::intrusive_ptr<DB::IAST>*, unsigned long)"
+    )
+    master_canonical = parser_memory_check.canonicalize_stack_frames(
+        [allocation_frame, "DB::Layer::mergeElement(bool)"]
+    )
+    pr_canonical = parser_memory_check.canonicalize_stack_frames(
+        [allocation_frame, "DB::ASTSelectQuery::setExpression(Expression, ASTPtr&&)"]
+    )
+
+    assert master_canonical != pr_canonical
+
+
+def test_canonical_stack_keeps_allocation_prefix_without_clickhouse_caller():
+    frames = [
+        "boost::container::new_allocator<int>::allocate(unsigned long)",
+        "third_party::buildVector()",
+    ]
+
+    assert parser_memory_check.canonicalize_stack_frames(frames) == frames
+
+
 def test_compute_diff_excludes_dump_profile_allocations():
     stacks_after = {
         "stack": {

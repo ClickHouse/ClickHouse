@@ -242,12 +242,41 @@ def contains_excluded_stack_frame(frames: list) -> bool:
     )
 
 
+def is_boost_container_allocation_frame(frame: str) -> bool:
+    """Return whether a frame is Boost.Container allocation plumbing."""
+    return (
+        (
+            frame.startswith("boost::container::vec_iterator<")
+            and "::priv_insert_forward_range_no_capacity<" in frame
+        )
+        or (
+            frame.startswith("boost::container::vector_alloc_holder<")
+            and "::allocate(" in frame
+        )
+        or (
+            frame.startswith("boost::container::allocator_traits<")
+            and "::allocate(" in frame
+        )
+        or (
+            frame.startswith("boost::container::new_allocator<")
+            and "::allocate(" in frame
+        )
+        or (
+            "boost::container::dtl::operator_new_allocate<" in frame
+            and frame.endswith("(unsigned long)")
+        )
+    )
+
+
 def canonicalize_stack_frames(frames: list) -> list:
     """Build a cross-binary stack key from one primary symbol per address.
 
     Master binaries contain DWARF inline frames separated by `--`, while PR
     release binaries are built without debug information. Keeping only the
     primary symbol makes the same physical backtrace comparable on both sides.
+    Ignore a leading sequence of Boost.Container allocation implementation
+    frames when it leads to a ClickHouse frame because their template
+    specialization and inlining can differ between otherwise equivalent builds.
     """
     canonical = []
     for frame in filter_stack_frames(frames):
@@ -255,6 +284,20 @@ def canonicalize_stack_frames(frames: list) -> list:
         if primary == "??":
             continue
         canonical.append(re.sub(r"\.llvm\.\d+", "", primary))
+
+    allocation_prefix_size = 0
+    for frame in canonical:
+        if not is_boost_container_allocation_frame(frame):
+            break
+        allocation_prefix_size += 1
+
+    if (
+        allocation_prefix_size
+        and allocation_prefix_size < len(canonical)
+        and canonical[allocation_prefix_size].startswith("DB::")
+    ):
+        return canonical[allocation_prefix_size:]
+
     return canonical
 
 
