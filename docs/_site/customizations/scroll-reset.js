@@ -18,7 +18,6 @@
   // (/page#anchor) scroll to the anchor once the new page has rendered it,
   // since the banner bug breaks that scroll too.
   var lastPath = window.location.pathname;
-  var lastHash = window.location.hash;
   var traversed = false;
 
   window.addEventListener('popstate', function () {
@@ -68,21 +67,14 @@
 
   function watch() {
     var path = window.location.pathname;
-    var hash = window.location.hash;
     if (path !== lastPath) {
       lastPath = path;
-      lastHash = hash;
       if (traversed) {
         traversed = false;
-      } else if (hash) {
-        scrollToAnchor(hash, 180);
+      } else if (window.location.hash) {
+        scrollToAnchor(window.location.hash, 180);
       } else {
         window.scrollTo(0, 0);
-      }
-    } else if (hash !== lastHash) {
-      lastHash = hash;
-      if (hash) {
-        scrollToAnchor(hash, 180);
       }
     }
     window.requestAnimationFrame(watch);
