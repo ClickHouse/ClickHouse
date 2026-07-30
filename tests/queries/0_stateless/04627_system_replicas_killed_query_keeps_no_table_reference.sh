@@ -44,11 +44,12 @@ wait
 timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_status_no_pin SYNC" && echo "dropped"
 
 # The abandoned request is drained by the next query over a still-existing table:
-# it resolves to a dropped table and must not break the query.
+# it resolves to a dropped table and must not break the query. The query has to read
+# total_replicas, otherwise it uses the pool that holds no abandoned request.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_status_alive (k UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_status_alive', 'r1') ORDER BY k;
 "
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.replicas WHERE database = currentDatabase()"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM (SELECT total_replicas FROM system.replicas WHERE database = currentDatabase())"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_status_alive"
 
