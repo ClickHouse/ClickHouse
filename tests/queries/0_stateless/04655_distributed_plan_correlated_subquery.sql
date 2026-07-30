@@ -20,11 +20,15 @@ INSERT INTO t_corr_small SELECT number * 2, number FROM numbers(50);
 -- the auto-switch disables it for distributed plans regardless.
 -- correlated_subqueries_substitute_equivalent_expressions is pinned off: with the substitution
 -- the decorrelated plan has no common subplan and the buffer is never engaged.
+-- query_plan_merge_filter_into_join_condition is pinned on: the randomizer may set it to 0, and
+-- then the decorrelated correlation condition stays a filter above a CROSS JOIN, making the
+-- scalar aggregate queries below quadratic (10k x 10k rows) and timing out under sanitizers.
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_default_shuffle_join_bucket_count = 3, max_rows_to_group_by = 0,
     allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1,
-    correlated_subqueries_substitute_equivalent_expressions = 0;
+    correlated_subqueries_substitute_equivalent_expressions = 0,
+    query_plan_merge_filter_into_join_condition = 1;
 
 SELECT 'correlated scalar aggregate subquery works under make_distributed_plan';
 SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp);
