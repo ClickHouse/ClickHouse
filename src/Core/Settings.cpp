@@ -6071,6 +6071,11 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
         {"26.3", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."}) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
+
+With async_insert, pair this with an explicit max_insert_threads setting: the optimization caps
+the SELECT to max_insert_threads reading threads, and once capped to one thread the SELECT
+normally produces a single block, which stops being eligible for the async insert queue as soon
+as a second block appears.
 )", 0, \
         {"24.7", true, false, "The optimization does not make sense in many cases."}) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(

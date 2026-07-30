@@ -13,7 +13,6 @@ namespace DB
 
 class Chain;
 class ReadBuffer;
-class InsertDependenciesBuilder;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -63,10 +62,6 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
-    /// Overrides the dependency graph built below, for the async INSERT ... SELECT synchronous
-    /// fallback, which must reuse the state captured before its SELECT ran.
-    void setForcedInsertDependencies(std::shared_ptr<const InsertDependenciesBuilder> deps) { forced_insert_dependencies = std::move(deps); }
-
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
@@ -102,13 +97,13 @@ private:
     const bool async_insert;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
-    std::shared_ptr<const InsertDependenciesBuilder> forced_insert_dependencies;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
 
-    QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
-    QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
+    QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform);
+    QueryPipeline addInsertToSelectPipeline(
+        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform = false);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
