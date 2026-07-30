@@ -292,6 +292,39 @@ SELECT 'cell C2 serialized plan derives the same seed', (
     ORDER BY event_time_microseconds DESC
     LIMIT 1);
 
+-- The replicas must really have received a serialized plan rather than the query text: that is what
+-- distinguishes this cell from cell C. Without this row the cell stays green on the query-text
+-- fallback, because a re-planning replica derives the SAME seed from the same propagated
+-- `initial_query_id`, so the row above cannot tell the two paths apart. The discriminator is the
+-- number of plan constructions: the deserialize path constructs `QueryPlanOptimizationSettings`
+-- twice per receiver (`executeQuery.cpp:1980` and `:1987`; the second passes `do_optimize = false`,
+-- but the object is built at the call site, so both log the seed), while a replica re-planning the
+-- query text constructs it once (`InterpreterSelectQueryAnalyzer.cpp:403`). The initiator is
+-- excluded because it constructs twice on both arms whenever `parallel_replicas_local_plan = 1`
+-- (`InterpreterSelectQueryAnalyzer.cpp:192`, reached only by the initiator: `:184` returns early for
+-- a secondary query), so its id is exactly the one participant that can double without
+-- deserializing. Both subqueries read the initiator's own always-visible `query_log` row, so this
+-- needs no replica `query_log` join, whose flush this test cannot force (`SYSTEM FLUSH LOGS` has no
+-- cross-replica barrier).
+SELECT 'cell C2 replicas received a serialized plan', count() > uniqExact(query_id)
+FROM system.text_log
+WHERE logger_name = 'QueryPlanOptimizationSettings'
+  AND message LIKE '%random seed%'
+  AND extract(message, 'seed (\\d+)') = (
+      SELECT toString(greatest(sipHash64(query_id), 2))
+      FROM system.query_log
+      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
+        AND is_initial_query AND type != 'QueryStart'
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1)
+  AND query_id != (
+      SELECT query_id
+      FROM system.query_log
+      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c2'
+        AND is_initial_query AND type != 'QueryStart'
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1);
+
 DROP TABLE t1_04653;
 DROP TABLE t2_04653;
 DROP TABLE t3_04653;

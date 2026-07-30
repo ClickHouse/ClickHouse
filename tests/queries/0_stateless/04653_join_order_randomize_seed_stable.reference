@@ -15,3 +15,4 @@ cell C several plans carried the derived seed	1
 cell C fanned out to three replicas	1
 200
 cell C2 serialized plan derives the same seed	1
+cell C2 replicas received a serialized plan	1
