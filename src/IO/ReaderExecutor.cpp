@@ -454,7 +454,7 @@ void ReaderExecutor::setReadBound(std::optional<size_t> logical_end)
     if (!logical_end)
         read_bound.reset();
     else if (!read_bound || *read_bound < *logical_end)
-        read_bound = *logical_end;
+        read_bound = logical_end;
 }
 
 // ─── Transient reads (readBigAt) ───────────────────────────────────────────

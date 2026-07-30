@@ -438,8 +438,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         task_readers = previous_task->releaseReaders();
         task_readers.updateAllMarkRanges(ranges);
         task_readers.updatePlannedLastMark(planned_last_mark ? planned_last_mark : read_info->planned_last_mark);
-        task_readers.updateRequestMap(
-            planned_ranges.empty() ? read_info->planned_ranges : std::move(planned_ranges));
+        if (planned_ranges.empty())
+            task_readers.updateRequestMap(read_info->planned_ranges);
+        else
+            task_readers.updateRequestMap(std::move(planned_ranges));
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
