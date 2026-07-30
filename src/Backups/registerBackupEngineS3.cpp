@@ -207,16 +207,19 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
 
-            /// A query-overridden `role_arn` (`S3(collection, role_arn = ...)`) must not be assumed using the
-            /// collection's operator-provisioned keys; honor it only when the same query also overrode the base
-            /// key pair (mirrors `StorageS3Configuration::fromNamedCollection`). A `role_arn` from the stored
-            /// collection definition is left in place (a role-only collection then reaches the central rejection).
+            /// A query-overridden `role_arn` (`S3(collection, role_arn = ...)`) is honored even under the
+            /// restriction, but it must not be assumed using the collection's operator-provisioned keys as the
+            /// STS base. When the same query did not also override the base key pair, drop the collection keys
+            /// so the assume-role call is signed by the server's ambient identity instead (mirrors
+            /// `S3StorageParsedArguments::fromNamedCollection`). A `role_arn` from the stored collection
+            /// definition is left untouched and keeps the collection's own keys as its base.
+            bool drop_collection_keys_for_query_role = false;
             if (params.context->shouldRestrictUserQueryS3Credentials() && collection->isQueryOverridden("role_arn")
                 && !(collection->isQueryOverridden("access_key_id") && collection->isQueryOverridden("secret_access_key")))
             {
-                role_arn.clear();
-                role_session_name.clear();
-                external_id.clear();
+                access_key_id.clear();
+                secret_access_key.clear();
+                drop_collection_keys_for_query_role = true;
             }
 
             /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
@@ -230,8 +233,10 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::use_environment_credentials]
                 = collection->getOrDefault<bool>("use_environment_credentials", false);
             auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
-            /// Carry the collection's own `session_token` so temporary credentials are signed with it.
-            auth[S3AuthSetting::session_token] = collection->getOrDefault<String>("session_token", "");
+            /// Carry the collection's own `session_token` so temporary credentials are signed with it (unless
+            /// the collection keys were dropped above; the token belongs to those keys).
+            auth[S3AuthSetting::session_token]
+                = drop_collection_keys_for_query_role ? "" : collection->getOrDefault<String>("session_token", "");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;

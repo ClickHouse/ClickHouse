@@ -38,7 +38,32 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/sync_insert.xml",
-                "configs/allow_server_credentials.xml",
+                # Deliberately no s3_allow_server_credentials_in_user_queries opt-in: role_arn-based STS
+                # assume-role must work under the default restriction (the AssumeRole call is signed with the
+                # server's ambient credentials; only the assumed role's credentials sign the S3 requests).
+            ],
+        )
+
+        # Global <s3> config disables use_environment_credentials (so a bare, credential-less
+        # s3(url) stays anonymous by default) and no s3_allow_server_credentials_in_user_queries
+        # opt-in. A role_arn-based assume-role must still work: its STS base resolution is forced on
+        # internally for the role_arn case regardless of use_environment_credentials.
+        cluster.add_instance(
+            "s3_with_environment_credentials_disabled",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "aws",
+                "AWS_SECRET_ACCESS_KEY": "aws123",
+            },
+            main_configs=[
+                "configs/use_environment_credentials_disabled.xml",
+                "configs/remote_servers_test_shared_localhost.xml",
+                "configs/named_collections.xml",
+                "configs/s3_credentials_provider_cache_size.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
+                "configs/sync_insert.xml",
             ],
         )
 
@@ -94,6 +119,65 @@ def test_sts_smoke(started_cluster):
             extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
     """
     )
+
+
+def test_sts_smoke_env_credentials_disabled_no_opt_in(started_cluster):
+    # role_arn-based STS assume-role with no explicit keys at all, against a node whose global <s3>
+    # config disables use_environment_credentials and whose default profile carries no
+    # s3_allow_server_credentials_in_user_queries opt-in. Both SELECT and INSERT INTO FUNCTION forms
+    # must work: the AssumeRole call is signed with the server's ambient credentials and only the
+    # assumed role's credentials sign the S3 requests.
+    instance = started_cluster.instances["s3_with_environment_credentials_disabled"]
+
+    instance.query(
+        f"""
+        INSERT INTO FUNCTION s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape.csv', 'minio', '{minio_secret_key}')
+        SELECT number, number * 10, number * 100 FROM numbers(10) SETTINGS s3_truncate_on_insert = 1"""
+    )
+
+    # SELECT with role_arn and no explicit keys at all.
+    assert "45\t450\t4500\n" == instance.query(
+        f"""
+        SELECT sum(a), sum(b), sum(c) FROM s3(
+            'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape.csv',
+            'CSV', 'a Int64, b Int64, c Int64',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+    """
+    )
+
+    # INSERT INTO FUNCTION with role_arn and no explicit keys: the multipart-upload write path must
+    # also use the assumed role (not go out anonymous, which S3 rejects for multipart uploads).
+    instance.query(
+        f"""
+        INSERT INTO FUNCTION s3(
+            'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape_write.csv',
+            'CSV', 'a Int64, b Int64, c Int64',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+        SELECT number, number * 10, number * 100 FROM numbers(10) SETTINGS s3_truncate_on_insert = 1
+    """
+    )
+    assert "45\t450\t4500\n" == instance.query(
+        f"""
+        SELECT sum(a), sum(b), sum(c) FROM s3(
+            'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape_write.csv',
+            'minio', '{minio_secret_key}', 'CSV', 'a Int64, b Int64, c Int64')
+    """
+    )
+
+    # Control: a wrong session name still fails 403 (proves the role is actually being assumed and
+    # checked, not silently bypassed).
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"""
+            SELECT sum(a), sum(b), sum(c) FROM s3(
+                'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_prod_shape.csv',
+                'CSV', 'a Int64, b Int64, c Int64',
+                extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
+                SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
+        """
+        )
+    assert ei.value.returncode == 243
+    assert "HTTP response code: 403" in ei.value.stderr
 
 
 def test_sts_external_id(started_cluster):
