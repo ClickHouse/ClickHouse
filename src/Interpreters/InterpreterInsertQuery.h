@@ -103,7 +103,7 @@ private:
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform);
     QueryPipeline addInsertToSelectPipeline(
-        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform = false);
+        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
