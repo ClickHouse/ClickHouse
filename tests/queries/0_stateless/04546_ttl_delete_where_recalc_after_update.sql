@@ -278,3 +278,41 @@ SELECT count() FROM clear_column_direct_ttl_no_match;
 
 DROP TABLE clear_column_direct_ttl_recalc;
 DROP TABLE clear_column_direct_ttl_no_match;
+
+-- CLEAR COLUMN recomputes every MATERIALIZED column, including ones that do not read the
+-- cleared column. A projection or skip index over such a column must be rebuilt rather than
+-- hardlinked, otherwise it keeps serving the pre-mutation value. MODIFY COLUMN below is a
+-- metadata-only change (it schedules no mutation), so the rewrite happens on the clear.
+DROP TABLE IF EXISTS clear_column_unrelated_materialized;
+
+CREATE TABLE clear_column_unrelated_materialized
+(
+    id Int64,
+    c Int64,
+    d Int64 MATERIALIZED c + 1,
+    other Int64 MATERIALIZED 1,
+    PROJECTION p (SELECT other, count() GROUP BY other),
+    INDEX ix other TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
+
+INSERT INTO clear_column_unrelated_materialized (id, c) VALUES (1, 10), (2, 20);
+
+ALTER TABLE clear_column_unrelated_materialized MODIFY COLUMN other Int64 MATERIALIZED 2 SETTINGS mutations_sync = 2;
+-- No mutation is scheduled by the metadata-only MODIFY, so the part still holds other = 1.
+SELECT count() FROM system.mutations
+WHERE database = currentDatabase() AND table = 'clear_column_unrelated_materialized';
+
+ALTER TABLE clear_column_unrelated_materialized CLEAR COLUMN c SETTINGS mutations_sync = 2;
+
+-- The base part now holds the recomputed other = 2 ...
+SELECT id, c, d, other FROM clear_column_unrelated_materialized ORDER BY id;
+-- ... and the projection must agree with it instead of returning the stale other = 1.
+SELECT other, count() FROM clear_column_unrelated_materialized
+GROUP BY other ORDER BY other SETTINGS force_optimize_projection = 1;
+-- The skip index must also see the new value.
+SELECT count() FROM clear_column_unrelated_materialized WHERE other = 2;
+
+DROP TABLE clear_column_unrelated_materialized;
