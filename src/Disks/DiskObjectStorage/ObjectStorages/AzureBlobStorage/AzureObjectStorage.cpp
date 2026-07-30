@@ -522,7 +522,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 if (isRetryableAzureException(e))
                 {
                     const String & remote_path = object.remote_path;
-                    auto original = std::current_exception();
+                    std::exception_ptr retry_failure;
                     try
                     {
                         retryAzureOperation([&] { client_ptr->GetBlobClient(remote_path).Delete(); },
@@ -530,12 +530,18 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                         add_log_entry(object, avg_elapsed_us);
                         continue;
                     }
-                    catch (...) /// retries exhausted; record the original failure below
+                    catch (const Azure::Core::RequestFailedException & retry_e)
                     {
+                        add_log_entry(object, avg_elapsed_us, static_cast<Int32>(retry_e.StatusCode), retry_e.Message);
+                        retry_failure = std::current_exception();
                     }
-                    add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
+                    catch (const Azure::Core::Credentials::AuthenticationException & retry_e)
+                    {
+                        add_log_entry(object, avg_elapsed_us, -1, retry_e.what());
+                        retry_failure = std::current_exception();
+                    }
                     if (!throw_at_end)
-                        throw_at_end = original;
+                        throw_at_end = retry_failure;
                     continue;
                 }
 
