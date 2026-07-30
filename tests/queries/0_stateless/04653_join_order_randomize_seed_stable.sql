@@ -53,6 +53,9 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
 
 -- The seed must be the DERIVED value, not merely one value: a constant seed would also be unique within a
 -- query and across replicas.
+-- `system.query_log` is server-global and append-only, so every expected-seed lookup below is ordered and takes
+-- the NEWEST matching row: a stress thread runs with a fixed `--database`, so the same test can appear there
+-- repeatedly and an unordered single-row pick could hash a previous run's query id.
 SELECT 'cell A seed equals hash of initial query id', (
     SELECT groupUniqArray(extract(message, 'seed (\\d+)'))
     FROM system.text_log
@@ -69,6 +72,7 @@ SELECT 'cell A seed equals hash of initial query id', (
     FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = '04653_cell_a'
       AND is_initial_query AND type != 'QueryStart'
+    ORDER BY event_time_microseconds DESC
     LIMIT 1);
 
 -- Cell A must be non-vacuous: the query really did construct more than one plan.
@@ -105,14 +109,16 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
 -- feature off. Seeds 2 and 3 are used because the chosen order is a hash of (seed, relation index, table name),
 -- so two arbitrary seeds can legitimately land on the same order for one particular set of table names: seeds
 -- 12345 and 54321 do exactly that here. Seeds 2 and 3 are verified to differ for these table names.
+-- The join-swap pin is required because both the functional runner and the stress runner randomize the setting,
+-- and a forced swap changes the read order independently of the seed, which is what this row measures.
 SELECT 'cell B distinct seeds still reorder', (
     SELECT groupArray(explain) FROM (
         EXPLAIN PLAN SELECT count() FROM t1_04653 LEFT JOIN t2_04653 ON t1_04653.x = t2_04653.x JOIN t3_04653 ON t2_04653.y = t3_04653.y AND t1_04653.z = t3_04653.z
-        SETTINGS query_plan_optimize_join_order_randomize = 2, query_plan_optimize_join_order_limit = 3)
+        SETTINGS query_plan_optimize_join_order_randomize = 2, query_plan_optimize_join_order_limit = 3, query_plan_join_swap_table = 'auto')
     WHERE explain ILIKE '%ReadFromMergeTree%') != (
     SELECT groupArray(explain) FROM (
         EXPLAIN PLAN SELECT count() FROM t1_04653 LEFT JOIN t2_04653 ON t1_04653.x = t2_04653.x JOIN t3_04653 ON t2_04653.y = t3_04653.y AND t1_04653.z = t3_04653.z
-        SETTINGS query_plan_optimize_join_order_randomize = 3, query_plan_optimize_join_order_limit = 3)
+        SETTINGS query_plan_optimize_join_order_randomize = 3, query_plan_optimize_join_order_limit = 3, query_plan_join_swap_table = 'auto')
     WHERE explain ILIKE '%ReadFromMergeTree%');
 
 -- Cell B2 (must-not-change control): the default value 0 disables randomization entirely and is untouched.
@@ -178,6 +184,7 @@ SELECT 'cell C seed equals hash of initial query id', (
     FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
       AND is_initial_query AND type != 'QueryStart'
+    ORDER BY event_time_microseconds DESC
     LIMIT 1);
 
 -- Cell C must be non-vacuous: the query really did construct more than one plan.
@@ -192,9 +199,9 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
             SELECT query_id FROM system.query_log
             WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c' AND is_initial_query));
 
--- Cell C must be non-vacuous in the way that matters: at least two DISTINCT plan constructions carried this
--- query's derived seed. The scope is the seed value itself, computed from the initiator's own `query_log` row,
--- which is always locally visible; joining the replicas' rows instead would race their `query_log` flush
+-- Cell C non-vacuity, part 1: more than one plan construction carried this query's derived seed.
+-- The scope is the seed value itself, computed from the initiator's own `query_log` row, which is
+-- always locally visible; joining the replicas' rows instead would race their `query_log` flush
 -- (`SYSTEM FLUSH LOGS` has no cross-replica barrier).
 SELECT 'cell C several plans carried the derived seed', uniqExact(query_id) >= 2
 FROM system.text_log
@@ -205,6 +212,24 @@ WHERE logger_name = 'QueryPlanOptimizationSettings'
       FROM system.query_log
       WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
         AND is_initial_query AND type != 'QueryStart'
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1);
+
+-- Cell C non-vacuity, part 2: the configured fan-out really happened, so the multi-replica half of
+-- the coordination contract is exercised rather than assumed. The population that carries the
+-- derived seed is one initiator plan construction plus one per replica, so at
+-- `max_parallel_replicas = 3` the count is 4. This row is deliberately coupled to that setting: if
+-- the fixture's replica count is ever changed, this row must be updated with it.
+SELECT 'cell C fanned out to three replicas', uniqExact(query_id) = 4
+FROM system.text_log
+WHERE logger_name = 'QueryPlanOptimizationSettings'
+  AND message LIKE '%random seed%'
+  AND extract(message, 'seed (\\d+)') = (
+      SELECT toString(greatest(sipHash64(query_id), 2))
+      FROM system.query_log
+      WHERE current_database = currentDatabase() AND log_comment = '04653_cell_c'
+        AND is_initial_query AND type != 'QueryStart'
+      ORDER BY event_time_microseconds DESC
       LIMIT 1);
 
 DROP TABLE t1_04653;

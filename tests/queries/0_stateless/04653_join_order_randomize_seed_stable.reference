@@ -12,3 +12,4 @@ cell C one seed across replicas	1
 cell C seed equals hash of initial query id	1
 cell C saw several plan constructions	1
 cell C several plans carried the derived seed	1
+cell C fanned out to three replicas	1
