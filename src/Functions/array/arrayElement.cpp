@@ -2448,7 +2448,7 @@ bool FunctionArrayElement<mode>::gatherReplicated(
 
     const auto & indices = index_vec->getData();
     size_t rows = indices.size();
-
+    /// Each output element is one insertFrom reading directly from the shared nested data
     for (size_t i = 0; i < rows; ++i)
     {
         ssize_t nested_row = replication_indexes.getIndexAt(i);

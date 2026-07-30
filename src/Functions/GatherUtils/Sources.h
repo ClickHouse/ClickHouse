@@ -241,9 +241,10 @@ struct ConstSource : public Base
 
 
 /// ReplicatedSource<Base> makes the pair (nested array column, replication indexes) look like a flat source of logical rows.
-/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource over one of those.
-/// nested_row represents the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
-/// logical_row represents a row_index into the column as consumers see it:
+/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource
+///
+/// nested_row: the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
+/// logical_row: a row_index into the column as consumers see it:
 ///
 /// i.e.
 ///     nested column (3 rows):     A      B  C

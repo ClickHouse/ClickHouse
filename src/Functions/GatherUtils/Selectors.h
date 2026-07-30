@@ -63,10 +63,8 @@ struct ArraySourceSelector
     template <typename ... Args>
     static void select(IArraySource & source, Args && ... args)
     {
-        /// ReplicatedSource (see Sources.h) shadows the non-virtual iteration methods of its base
-        /// source, so it must be dispatched to the algorithm with its concrete type. Only selectors
-        /// that declare `supports_replicated_source = true` do that; anywhere else the base-typed
-        /// dispatch would silently iterate the compact nested rows and produce wrong results.
+        /// ReplicatedSource follows the non-virtual iteration methods of its base source, so it must be dispatched to the algorithm
+        /// with its concrete type. Only selectors that declare `supports_replicated_source = true` do that
         constexpr bool supports_replicated_source = requires { requires Base::supports_replicated_source; };
         if constexpr (!supports_replicated_source)
         {
