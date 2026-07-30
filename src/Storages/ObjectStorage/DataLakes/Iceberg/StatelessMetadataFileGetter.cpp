@@ -201,13 +201,12 @@ ManifestFileCacheKeys getManifestList(
                     i,
                     f_manifest_length);
             }
-            if (manifest_list_format_version > 1)
-            {
+            if (manifest_list_format_version > 1 && manifest_list_deserializer.hasPath(f_sequence_number))
                 added_sequence_number
                     = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
+            if (manifest_list_format_version > 1 && manifest_list_deserializer.hasPath(f_content))
                 content_type = Iceberg::ManifestFileContentType(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
-            }
             if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
