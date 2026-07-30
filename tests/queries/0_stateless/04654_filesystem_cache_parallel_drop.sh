@@ -22,7 +22,8 @@ $CLICKHOUSE_CLIENT --query "SELECT drop_cache_threads FROM system.filesystem_cac
 
 $CLICKHOUSE_CLIENT -m --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name';
-SELECT count() FROM test SETTINGS enable_filesystem_cache = 1;
+SELECT count() FROM test WHERE NOT ignore(*)
+SETTINGS enable_filesystem_cache = 1, optimize_trivial_count_query = 0, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
 SELECT count() > 0 FROM system.filesystem_cache WHERE cache_name = '$disk_name';
 SYSTEM DROP FILESYSTEM CACHE '$disk_name';
 SELECT count() FROM system.filesystem_cache WHERE cache_name = '$disk_name';
