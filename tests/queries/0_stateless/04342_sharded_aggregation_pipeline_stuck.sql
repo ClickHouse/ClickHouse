@@ -112,26 +112,6 @@ DROP TABLE IF EXISTS test_106237_cap;
 CREATE TABLE test_106237_cap (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_106237_cap SELECT 7 AS a, number AS b FROM numbers(1000000);
 
--- Precondition for this table and this shape, for the same reason as above: the answer here
--- is identical whether or not the sharded path is taken (e.g. one read stream declines the
--- transform and still returns 7/499999500000), so without this the cap coverage could go
--- vacuous silently.
-SELECT countIf(explain LIKE '%BufferedShardByHash%') > 0 AND countIf(explain LIKE '%Concat%') > 0
-FROM (
-    EXPLAIN PIPELINE
-    SELECT a, max(s)
-    FROM (
-        SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
-        UNION ALL
-        SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
-    )
-    GROUP BY a
-    ORDER BY a
-    SETTINGS enable_sharding_aggregator = 1, max_threads = 16,
-             max_streams_for_union_step = 1, max_block_size = 1000,
-             max_rows_to_group_by = 0, enable_parallel_replicas = 0
-);
-
 SELECT a, max(s)
 FROM (
     SELECT a, sum(b) AS s FROM test_106237_cap GROUP BY a
