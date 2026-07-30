@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -34,24 +34,24 @@ import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupporte
 
 ```yaml
 jsonData:
-  host: 127.0.0.1 # (обязательно) адрес сервера.
-  port: 9000      # (обязательно) порт сервера. Для native: по умолчанию 9440 (защищённый) и 9000 (незащищённый). Для HTTP: по умолчанию 8443 (защищённый) и 8123 (незащищённый).
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
 
-  protocol: native # (обязательно) протокол для подключения. Допустимые значения: "native" или "http".
-  secure: false    # установите true, если подключение защищённое.
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
 
-  username: default # имя пользователя для аутентификации.
+  username: default # the username used for authentication.
 
-  tlsSkipVerify:     <boolean> # при значении true пропускает проверку TLS.
-  tlsAuth:           <boolean> # установите true для включения TLS-аутентификации клиента.
-  tlsAuthWithCACert: <boolean> # установите true, если предоставлен CA‑сертификат. Обязательно для проверки самоподписанных TLS-сертификатов.
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
 
 secureJsonData:
-  password: secureExamplePassword # пароль для аутентификации.
+  password: secureExamplePassword # the password used for authentication.
 
-  tlsCACert:     <string> # TLS CA‑сертификат
-  tlsClientCert: <string> # TLS-сертификат клиента
-  tlsClientKey:  <string> # TLS-ключ клиента
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
 ```
 
 Обратите внимание, что при сохранении конфигурации из интерфейса добавляется свойство `version`. Оно показывает версию плагина, с которой была сохранена конфигурация.
@@ -118,12 +118,12 @@ secureJsonData:
 
 ```yaml
 jsonData:
-  defaultDatabase: default # база данных по умолчанию, загружаемая конструктором запросов. По умолчанию: "default".
-  defaultTable: <string>   # таблица по умолчанию, загружаемая конструктором запросов.
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
 
-  dialTimeout: 10    # тайм-аут подключения к серверу, в секундах. По умолчанию: "10".
-  queryTimeout: 60   # тайм-аут запроса при выполнении, в секундах. По умолчанию: 60. Требует наличия разрешений у пользователя; если возникает ошибка доступа, установите значение "0" для отключения.
-  validateSql: false # если установлено значение true, выполняется проверка SQL в редакторе SQL.
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
 ```
 
 <div id="opentelemetry">
@@ -156,16 +156,16 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 ```yaml
 jsonData:
   logs:
-    defaultDatabase: default # база данных журналов по умолчанию.
-    defaultTable: otel_logs  # таблица журналов по умолчанию. При использовании OTel укажите значение "otel_logs".
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
 
-    otelEnabled: false  # установите true, если OTel включён.
-    otelVersion: latest # версия схемы OTel collector. Версии отображаются в интерфейсе; значение "latest" соответствует последней доступной версии в плагине.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # Столбцы по умолчанию для нового запроса журналов. Игнорируется, если OTel включён.
-    timeColumn:       <string> # основной столбец времени для журнала.
-    levelColumn:   <string> # уровень/критичность записи журнала. Типичные значения: "INFO", "error" или "Debug".
-    messageColumn: <string> # сообщение/содержимое записи журнала.
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
 ```
 
 <div id="traces">
@@ -187,23 +187,23 @@ jsonData:
 ```yaml
 jsonData:
   traces:
-    defaultDatabase: default  # база данных трассировки по умолчанию.
-    defaultTable: otel_traces # таблица трассировки по умолчанию. Если используется OTel, должно быть установлено значение "otel_traces".
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
 
-    otelEnabled: false  # установите true, если OTel включён.
-    otelVersion: latest # версия схемы OTel collector для использования. Версии отображаются в интерфейсе, но "latest" будет использовать последнюю доступную версию в плагине.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # Столбцы по умолчанию, выбираемые при открытии нового запроса трассировки. Игнорируется, если OTel включён.
-    traceIdColumn:       <string>    # столбец trace ID.
-    spanIdColumn:        <string>    # столбец span ID.
-    operationNameColumn: <string>    # столбец имени операции.
-    parentSpanIdColumn:  <string>    # столбец ID родительского спана.
-    serviceNameColumn:   <string>    # столбец имени сервиса.
-    durationTimeColumn:  <string>    # столбец длительности.
-    durationUnitColumn:  <time unit> # единица измерения длительности. Допустимые значения: "seconds", "milliseconds", "microseconds" или "nanoseconds". Для OTel по умолчанию используется "nanoseconds".
-    startTimeColumn:     <string>    # столбец времени начала. Это основной столбец времени для спана трассировки.
-    tagsColumn:          <string>    # столбец тегов. Ожидается тип map.
-    serviceTagsColumn:   <string>    # столбец тегов сервиса. Ожидается тип map.
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
 <div id="column-aliases">
@@ -254,9 +254,9 @@ Grafana требует, чтобы таблица псевдонимов име�
 
 ```sql
 CREATE TABLE aliases (
-  `alias` String,  -- Имя псевдонима, отображаемое в селекторе столбцов Grafana
-  `select` String, -- Синтаксис SELECT для использования в генераторе SQL
-  `type` String    -- Тип результирующего столбца, позволяющий плагину адаптировать параметры интерфейса под тип данных.
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
 )
 ```
 
@@ -270,8 +270,8 @@ CREATE TABLE example_table (
 CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
 
 INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
-('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Сохранить исходный столбец из таблицы (необязательно)
-('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Добавить новый столбец, преобразующий TimestampNanos в Date
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
 ```
 
 Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:

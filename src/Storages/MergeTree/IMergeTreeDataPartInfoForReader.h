@@ -80,6 +80,8 @@ public:
     /// Look up a (sub)column present in the part, if any.
     virtual std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const = 0;
 
+    virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
+
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     /// Name of the parent part when this is a projection part, empty otherwise.
