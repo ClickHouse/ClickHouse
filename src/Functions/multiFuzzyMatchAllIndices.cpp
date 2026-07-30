@@ -19,7 +19,7 @@ using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<MultiM
 
 REGISTER_FUNCTION(MultiFuzzyMatchAllIndices)
 {
-    FunctionDocumentation::Description description = "Like [`multiFuzzyMatchAny`](#multiFuzzyMatchAny) but returns the array of all indices in any order that match the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance).";
+    FunctionDocumentation::Description description = "Like [`multiFuzzyMatchAny`](#multifuzzymatchany) but returns the array of all indices in any order that match the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance).";
     FunctionDocumentation::Syntax syntax = "multiFuzzyMatchAllIndices(haystack, distance, [pattern1, pattern2, ..., patternN])";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String"}},

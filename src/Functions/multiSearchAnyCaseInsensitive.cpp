@@ -20,7 +20,7 @@ using FunctionMultiSearchCaseInsensitive = FunctionsMultiStringSearch<MultiSearc
 REGISTER_FUNCTION(MultiSearchAnyCaseInsensitive)
 {
     FunctionDocumentation::Description description = R"(
-Like [multiSearchAny](#multiSearchAny) but ignores case.
+Like [multiSearchAny](#multisearchany) but ignores case.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchAnyCaseInsensitive(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {

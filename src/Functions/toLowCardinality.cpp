@@ -65,7 +65,7 @@ REGISTER_FUNCTION(ToLowCardinality)
 Converts the input argument to the [LowCardinality](/reference/data-types/lowcardinality) version of same data type.
 
 :::tip
-To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.
+To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#cast) function.
 For example: `CAST(x AS String)`.
 :::
     )";

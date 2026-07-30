@@ -22,7 +22,7 @@ using FunctionMultiSearchFirstPositionCaseInsensitive
 REGISTER_FUNCTION(MultiSearchFirstPositionCaseInsensitive)
 {
     FunctionDocumentation::Description description = R"(
-Like [multiSearchFirstPosition](#multiSearchFirstPosition) but ignores case.
+Like [multiSearchFirstPosition](#multisearchfirstposition) but ignores case.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchFirstPositionCaseInsensitive(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {

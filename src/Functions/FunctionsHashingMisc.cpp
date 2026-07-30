@@ -14,9 +14,9 @@ REGISTER_FUNCTION(Hashing)
     FunctionDocumentation::Description sipHash64_description = R"(
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
-This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
+This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#md5) hash function.
 
-The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
+The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
@@ -50,7 +50,7 @@ This affects for example integer types of different size, named and unnamed `Tup
     factory.registerFunction<FunctionSipHash64>(sipHash64_documentation);
 
     FunctionDocumentation::Description sipHash64Keyed_description = R"(
-Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument instead of using a fixed key.
+Like [`sipHash64`](#siphash64) but additionally takes an explicit key argument instead of using a fixed key.
 )";
     FunctionDocumentation::Syntax sipHash64Keyed_syntax = "sipHash64Keyed((k0, k1), arg1[,arg2, ...])";
     FunctionDocumentation::Arguments sipHash64Keyed_arguments = {
@@ -75,12 +75,12 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128_description = R"(
-Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
+Like [`sipHash64`](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
 :::tip use sipHash128Reference for new projects
 This 128-bit variant differs from the reference implementation and is weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
+New projects are advised to use [`sipHash128Reference`](#siphash128reference).
 :::
 )";
     FunctionDocumentation::Syntax sipHash128_syntax = "sipHash128(arg1[, arg2, ...])";
@@ -105,12 +105,12 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     factory.registerFunction<FunctionSipHash128>(sipHash128_documentation);
 
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
-Same as [`sipHash128`](#sipHash128) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [`sipHash128`](#siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
 :::tip use sipHash128ReferenceKeyed for new projects
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
+New projects should probably use [`sipHash128ReferenceKeyed`](#siphash128referencekeyed).
 :::
 )";
     FunctionDocumentation::Syntax sipHash128Keyed_syntax = "sipHash128Keyed((k0, k1), [arg1, arg2, ...])";
@@ -136,7 +136,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
-Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [`sipHash128`](/sql-reference/functions/hash-functions#siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
     )";
     FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Ref_arguments = {
@@ -160,7 +160,7 @@ Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but impl
     factory.registerFunction<FunctionSipHash128Reference>(sipHash128Ref_documentation);
 
     FunctionDocumentation::Description sipHash128RefKeyed_description = R"(
-Same as [`sipHash128Reference`](#sipHash128Reference) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [`sipHash128Reference`](#siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
     )";
     FunctionDocumentation::Syntax sipHash128RefKeyed_syntax = "sipHash128ReferenceKeyed((k0, k1), arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128RefKeyed_arguments = {
@@ -252,7 +252,7 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) value using the `Fingerprint64` method.
 
 :::tip
-`farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmHash64).
+`farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmhash64).
 :::
 
 :::note
@@ -285,7 +285,7 @@ This affects for example integer types of different size, named and unnamed `Tup
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) using the `Hash64` method.
 
 :::tip
-[`farmFingerprint64`](#farmFingerprint64) is preferred for a stable and portable value.
+[`farmFingerprint64`](#farmfingerprint64) is preferred for a stable and portable value.
 :::
 
 :::note
@@ -467,7 +467,7 @@ Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add97
     factory.registerFunction<FunctionJavaHashUTF16LE>(javaHashUTF16LE_documentation);
     FunctionDocumentation::Description hiveHash_description = R"(
 Calculates a "HiveHash" from a string.
-This is just [`JavaHash`](#javaHash) with zeroed out sign bits.
+This is just [`JavaHash`](#javahash) with zeroed out sign bits.
 This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
 :::caution
@@ -499,7 +499,7 @@ Use it only when this algorithm is already used in another system and you need t
     FunctionDocumentation::Description xxHash32_description = R"(
 Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string.
 
-For the 64-bit version see [`xxHash64`](#xxHash64)
+For the 64-bit version see [`xxHash64`](#xxhash64)
 )";
     FunctionDocumentation::Syntax xxHash32_syntax = "xxHash32(arg)";
     FunctionDocumentation::Arguments xxHash32_arguments = {
@@ -525,7 +525,7 @@ For the 64-bit version see [`xxHash64`](#xxHash64)
     FunctionDocumentation::Description xxHash64_description = R"(
 Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string.
 
-For the 32-bit version see [`xxHash32`](#xxHash32)
+For the 32-bit version see [`xxHash32`](#xxhash32)
 )";
     FunctionDocumentation::Syntax xxHash64_syntax = "xxHash64(arg)";
     FunctionDocumentation::Arguments xxHash64_arguments = {
@@ -551,7 +551,7 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Description xxHash64Spark_description = R"(
 Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
 
-This function is the same as [`xxHash64`](#xxHash64), but it uses seed `42` and returns the result as `Int64`.
+This function is the same as [`xxHash64`](#xxhash64), but it uses seed `42` and returns the result as `Int64`.
 Only `String` and `NULL` inputs are supported.
 For `NULL`, the function returns `42`, matching Spark's seed behavior.
 )";
@@ -613,12 +613,12 @@ For `NULL`, the function returns `42`, matching Spark's seed behavior.
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input
+[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
 resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
 
-Consider using the [`sipHash64`](#sipHash64) function instead.
+Consider using the [`sipHash64`](#siphash64) function instead.
 
 The function takes a variable number of input parameters.
 Arguments can be any of the supported data types.

@@ -8,7 +8,7 @@ namespace DB
 REGISTER_FUNCTION(RunningDifferenceStartingWithFirstValue)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the difference between consecutive row values in a data block, but unlike [`runningDifference`](#runningDifference), it returns the actual value of the first row instead of `0`.
+Calculates the difference between consecutive row values in a data block, but unlike [`runningDifference`](#runningdifference), it returns the actual value of the first row instead of `0`.
 
 :::warning Deprecated
 Only returns differences inside the currently processed data block.

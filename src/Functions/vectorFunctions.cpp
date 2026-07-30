@@ -1855,7 +1855,7 @@ Division by 0 causes an exception to be thrown.
 
     /// tupleIntDivOrZero documentation
     FunctionDocumentation::Description description_tupleIntDivOrZero = R"(
-Like [`tupleIntDiv`](#tupleIntDiv), performs element-wise integer division of two or more tuples of the same size, applied left-to-right.
+Like [`tupleIntDiv`](#tupleintdiv), performs element-wise integer division of two or more tuples of the same size, applied left-to-right.
 In case of division by 0, returns 0 for that element instead of throwing an exception.
 If any tuple contains non-integer elements, the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
 )";
@@ -2130,7 +2130,7 @@ An error will be thrown for division by 0.
 
     /// tupleIntDivOrZeroByNumber documentation
     FunctionDocumentation::Description description_tupleIntDivOrZeroByNumber = R"(
-Like [`tupleIntDivByNumber`](#tupleIntDivByNumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+Like [`tupleIntDivByNumber`](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
 It does not throw an error for zero divisors, but rather returns the quotient as zero.
 If either the tuple or div contain non-integer elements then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
 )";
@@ -2225,7 +2225,7 @@ SELECT L2Norm((1, 2))
 
     /// L2SquaredNorm documentation
     FunctionDocumentation::Description description_l2_squared_norm = R"(
-Calculates the square root of the sum of the squares of the vector elements (the [`L2Norm`](#L2Norm)) squared.
+Calculates the square root of the sum of the squares of the vector elements (the [`L2Norm`](#l2norm)) squared.
     )";
     FunctionDocumentation::Syntax syntax_l2_squared_norm = "L2SquaredNorm(vector)";
     FunctionDocumentation::Arguments arguments_l2_squared_norm = {

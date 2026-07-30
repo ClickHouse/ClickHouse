@@ -21,7 +21,7 @@ using FunctionPositionCaseInsensitiveUTF8
 REGISTER_FUNCTION(PositionCaseInsensitiveUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [`positionUTF8`](#positionUTF8) but searches case-insensitively.
+Like [`positionUTF8`](#positionutf8) but searches case-insensitively.
     )";
     FunctionDocumentation::Syntax syntax = "positionCaseInsensitiveUTF8(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments = {

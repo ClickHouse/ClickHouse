@@ -66,7 +66,7 @@ ClickHouse offers more granular precision with respect to numerics. For example,
 | [FLOAT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#floating_point_types)  | [Float64](/reference/data-types/float)                                                                                                                                        |
 | [GEOGRAPHY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#geography_type) | [Geo Data Types](/reference/data-types/float)                                                                                                                                 |
 | [INT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)    | [UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/reference/data-types/int-uint)                                                  |
-| [INTERVAL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types) | NA - [supported as expression](/reference/data-types/special-data-types/interval#usage-remarks) or [through functions](/reference/functions/regular-functions/date-time-functions#addYears) |
+| [INTERVAL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types) | NA - [supported as expression](/reference/data-types/special-data-types/interval#usage-remarks) or [through functions](/reference/functions/regular-functions/date-time-functions#addyears) |
 | [JSON](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#json_type)     | [JSON](/guides/clickhouse/data-formats/json/inference)                                                                                                                                 |
 | [STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)   | [String (bytes)](/reference/data-types/string)                                                                                                                                |
 | [STRUCT](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#constructing_a_struct)   | [Tuple](/reference/data-types/tuple), [Nested](/reference/data-types/nested-data-structures/index)                                                                       |
@@ -158,16 +158,16 @@ Compared to BigQuery's 8 array functions, ClickHouse has over 80 [built-in array
 
 A typical design pattern in ClickHouse is to use the [`groupArray`](/reference/functions/aggregate-functions/groupArray) aggregate function to (temporarily) transform specific row values of a table into an array. This then can be conveniently processed via array functions, and the result can be converted back into individual table rows via [`arrayJoin`](/reference/functions/regular-functions/array-join) aggregate function.
 
-Because ClickHouse SQL supports [higher order lambda functions](/reference/functions/regular-functions/overview#arrow-operator-and-lambda), many advanced array operations can be achieved by simply calling one of the higher order built-in array functions, instead of temporarily converting arrays back to tables, as it is often [required](https://cloud.google.com/bigquery/docs/arrays) in BigQuery, e.g. for [filtering](https://cloud.google.com/bigquery/docs/arrays#filtering_arrays) or [zipping](https://cloud.google.com/bigquery/docs/arrays#zipping_arrays) arrays. In ClickHouse these operations are just a simple function call of the higher order functions [`arrayFilter`](/reference/functions/regular-functions/array-functions#arrayFilter), and [`arrayZip`](/reference/functions/regular-functions/array-functions#arrayZip), respectively.
+Because ClickHouse SQL supports [higher order lambda functions](/reference/functions/regular-functions/overview#arrow-operator-and-lambda), many advanced array operations can be achieved by simply calling one of the higher order built-in array functions, instead of temporarily converting arrays back to tables, as it is often [required](https://cloud.google.com/bigquery/docs/arrays) in BigQuery, e.g. for [filtering](https://cloud.google.com/bigquery/docs/arrays#filtering_arrays) or [zipping](https://cloud.google.com/bigquery/docs/arrays#zipping_arrays) arrays. In ClickHouse these operations are just a simple function call of the higher order functions [`arrayFilter`](/reference/functions/regular-functions/array-functions#arrayfilter), and [`arrayZip`](/reference/functions/regular-functions/array-functions#arrayzip), respectively.
 
 In the following, we provide a mapping of array operations from BigQuery to ClickHouse:
 
 | BigQuery | ClickHouse |
 |----------|------------|
-| [ARRAY_CONCAT](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_concat) | [arrayConcat](/reference/functions/regular-functions/array-functions#arrayConcat) |
+| [ARRAY_CONCAT](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_concat) | [arrayConcat](/reference/functions/regular-functions/array-functions#arrayconcat) |
 | [ARRAY_LENGTH](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_length) | [length](/reference/functions/regular-functions/array-functions#length) |
-| [ARRAY_REVERSE](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_reverse) | [arrayReverse](/reference/functions/regular-functions/array-functions#arrayReverse) |
-| [ARRAY_TO_STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_to_string) | [arrayStringConcat](/reference/functions/regular-functions/splitting-merging-functions#arrayStringConcat) |
+| [ARRAY_REVERSE](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_reverse) | [arrayReverse](/reference/functions/regular-functions/array-functions#arrayreverse) |
+| [ARRAY_TO_STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_to_string) | [arrayStringConcat](/reference/functions/regular-functions/splitting-merging-functions#arraystringconcat) |
 | [GENERATE_ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_array) | [range](/reference/functions/regular-functions/array-functions#range) |
 
 **Create an array with one element for each row in a subquery**
@@ -278,7 +278,7 @@ SELECT GENERATE_DATE_ARRAY('2016-10-05', '2016-10-08') AS example;
  *--------------------------------------------------*/
 ```
 
-[range](/reference/functions/regular-functions/array-functions#range) + [arrayMap](/reference/functions/regular-functions/array-functions#arrayMap) functions
+[range](/reference/functions/regular-functions/array-functions#range) + [arrayMap](/reference/functions/regular-functions/array-functions#arraymap) functions
 
 _ClickHouse_
 
@@ -311,7 +311,7 @@ SELECT GENERATE_TIMESTAMP_ARRAY('2016-10-05 00:00:00', '2016-10-07 00:00:00',
 
 _ClickHouse_
 
-[range](/reference/functions/regular-functions/array-functions#range) + [arrayMap](/reference/functions/regular-functions/array-functions#arrayMap) functions
+[range](/reference/functions/regular-functions/array-functions#range) + [arrayMap](/reference/functions/regular-functions/array-functions#arraymap) functions
 
 ```sql
 SELECT arrayMap(x -> (toDateTime('2016-10-05 00:00:00') + toIntervalDay(x)), range(dateDiff('day', toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-07 00:00:00')) + 1)) AS timestamp_array
@@ -353,7 +353,7 @@ FROM Sequences;
 
 _ClickHouse_
 
-[arrayFilter](/reference/functions/regular-functions/array-functions#arrayFilter) function
+[arrayFilter](/reference/functions/regular-functions/array-functions#arrayfilter) function
 
 ```sql
 WITH Sequences AS
@@ -417,7 +417,7 @@ SELECT
 
 _ClickHouse_
 
-[arrayZip](/reference/functions/regular-functions/array-functions#arrayZip) function
+[arrayZip](/reference/functions/regular-functions/array-functions#arrayzip) function
 
 ```sql
 WITH Combinations AS
@@ -463,7 +463,7 @@ FROM Sequences AS s;
 
 _ClickHouse_
 
-[arraySum](/reference/functions/regular-functions/array-functions#arraySum), [arrayAvg](/reference/functions/regular-functions/array-functions#arrayAvg), ... function, or any of the over 90 existing aggregate function names as argument for the [arrayReduce](/reference/functions/regular-functions/array-functions#arrayReduce) function
+[arraySum](/reference/functions/regular-functions/array-functions#arraysum), [arrayAvg](/reference/functions/regular-functions/array-functions#arrayavg), ... function, or any of the over 90 existing aggregate function names as argument for the [arrayReduce](/reference/functions/regular-functions/array-functions#arrayreduce) function
 
 ```sql
 WITH Sequences AS

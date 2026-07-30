@@ -473,8 +473,8 @@ REGISTER_FUNCTION(DateDiff)
     FunctionDocumentation::Description description = R"(
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
-(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
-(see [`toRelativeYearNum`](#toRelativeYearNum)).
+(see [`toRelativeDayNum`](#torelativedaynum)), 1 month for unit month (see [`toRelativeMonthNum`](#torelativemonthnum)) and 1 year for unit year
+(see [`toRelativeYearNum`](#torelativeyearnum)).
 
 If the unit `week` was specified, then `dateDiff` assumes that weeks start on Monday.
 Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
@@ -553,7 +553,7 @@ The difference is calculated as `enddate` - `startdate`.
 
 This function is equivalent to `dateDiff('second', startdate, enddate)`.
 
-For calculating time differences in other units (hours, days, months, etc.), use the [`dateDiff`](#dateDiff) function instead.
+For calculating time differences in other units (hours, days, months, etc.), use the [`dateDiff`](#datediff) function instead.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeDiff(startdate, enddate)
@@ -609,7 +609,7 @@ The difference is calculated using a precision of 1 nanosecond.
 For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
 0 months for the month unit, and 0 years for the year unit.
 
-For an alternative to age, see function [`dateDiff`](#dateDiff).
+For an alternative to age, see function [`dateDiff`](#datediff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 age('unit', startdate, enddate[, timezone])

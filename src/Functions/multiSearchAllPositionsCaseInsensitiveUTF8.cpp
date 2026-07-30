@@ -21,7 +21,7 @@ using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8
 
 REGISTER_FUNCTION(MultiSearchAllPositionsCaseInsensitiveUTF8)
 {
-    FunctionDocumentation::Description description = "Like [`multiSearchAllPositionsUTF8`](#multiSearchAllPositionsUTF8) but ignores case.";
+    FunctionDocumentation::Description description = "Like [`multiSearchAllPositionsUTF8`](#multisearchallpositionsutf8) but ignores case.";
     FunctionDocumentation::Syntax syntax = "multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "UTF-8 encoded string in which the search is performed.", {"String"}},

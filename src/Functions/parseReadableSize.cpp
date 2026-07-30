@@ -225,7 +225,7 @@ FunctionDocumentation::Description description_parseReadableSize = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
 If the function is unable to parse the input value, it throws an exception.
 
-The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+The inverse operations of this function are [`formatReadableSize`](#formatreadablesize) and [`formatReadableDecimalSize`](#formatreadabledecimalsize).
 )";
 FunctionDocumentation::Syntax syntax_parseReadableSize = "parseReadableSize(x)";
 FunctionDocumentation::Arguments arguments_parseReadableSize = {
@@ -256,7 +256,7 @@ FunctionDocumentation::Description description_parseReadableSizeOrNull = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
 If the function is unable to parse the input value, it returns `NULL`.
 
-The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+The inverse operations of this function are [`formatReadableSize`](#formatreadablesize) and [`formatReadableDecimalSize`](#formatreadabledecimalsize).
 )";
 FunctionDocumentation::Syntax syntax_parseReadableSizeOrNull = "parseReadableSizeOrNull(x)";
 FunctionDocumentation::Arguments arguments_parseReadableSizeOrNull = {
@@ -288,7 +288,7 @@ FunctionDocumentation::Description description_parseReadableSizeOrZero = R"(
 Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as a unit (i.e. [ISO/IEC 80000-13](https://en.wikipedia.org/wiki/ISO/IEC_80000) or decimal byte unit), this function returns the corresponding number of bytes.
 If the function is unable to parse the input value, it returns `0`.
 
-The inverse operations of this function are [`formatReadableSize`](#formatReadableSize) and [`formatReadableDecimalSize`](#formatReadableDecimalSize).
+The inverse operations of this function are [`formatReadableSize`](#formatreadablesize) and [`formatReadableDecimalSize`](#formatreadabledecimalsize).
 )";
 FunctionDocumentation::Syntax syntax_parseReadableSizeOrZero = "parseReadableSizeOrZero(x)";
 FunctionDocumentation::Arguments arguments_parseReadableSizeOrZero = {

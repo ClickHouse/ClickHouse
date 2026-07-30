@@ -177,7 +177,7 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 ## See Also {#see-also}
 
 - [INTERVAL](/sql-reference/operators#interval) operator
-- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
 )DOCS_MD",
             .syntax = "IntervalDay",
             .related = {"IntervalSecond", "IntervalMonth"},

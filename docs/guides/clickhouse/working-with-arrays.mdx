@@ -194,7 +194,7 @@ SELECT length(string_array);
 └──────────────────────┘
 ```
 
-You can also use the [`arrayEnumerate`](/reference/functions/regular-functions/array-functions#arrayEnumerate) function to return an array of indexes of the elements:
+You can also use the [`arrayEnumerate`](/reference/functions/regular-functions/array-functions#arrayenumerate) function to return an array of indexes of the elements:
 
 ```sql
 WITH array('learning', 'ClickHouse', 'arrays') AS string_array
@@ -220,7 +220,7 @@ SELECT indexOf([4, 2, 8, 8, 9], 8);
 ```
 
 Notice that this function will return the first index it encounters if there are multiple identical values in the array.
-If your array elements are sorted in ascending order then you can use the [`indexOfAssumeSorted`](/reference/functions/regular-functions/array-functions#indexOfAssumeSorted) function.
+If your array elements are sorted in ascending order then you can use the [`indexOfAssumeSorted`](/reference/functions/regular-functions/array-functions#indexofassumesorted) function.
 
 The functions `has`, `hasAll` and `hasAny` are useful for determining whether an array contains a given value.
 Consider the following example:
@@ -305,7 +305,7 @@ GROUP BY FlightDate, Origin
 ORDER BY length(Destinations)
 ```
 </RunnableCode>
-The [`toStringCutToZero`](/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) in the query above is used to remove null characters which appear after some of the airport's 3 letter designation.
+The [`toStringCutToZero`](/reference/functions/regular-functions/type-conversion-functions#tostringcuttozero) in the query above is used to remove null characters which appear after some of the airport's 3 letter designation.
 
 With the data in this format, we can easily find the order of the busiest airports by finding the length of the rolled up "Destinations" arrays:
 
@@ -337,7 +337,7 @@ We saw in the previous query that Denver International Airport was the airport w
 Let's take a look at how many of those flights were on-time, delayed by 15-30 minutes or delayed by more than 30 minutes.
 
 Many of the array functions in ClickHouse are so-called ["higher-order functions"](/reference/functions/regular-functions/overview#higher-order-functions) and accept a lambda function as the first parameter.
-The [`arrayMap`](/reference/functions/regular-functions/array-functions#arrayMap) function is an example of one such higher-order function and returns a new array from the provided array by applying a lambda function to each element of the original array.
+The [`arrayMap`](/reference/functions/regular-functions/array-functions#arraymap) function is an example of one such higher-order function and returns a new array from the provided array by applying a lambda function to each element of the original array.
 
 Run the query below which uses the `arrayMap` function to see which flights were delayed or on-time.
 For pairs of origin/destinations, it shows the tail number and status for every flight:
@@ -363,7 +363,7 @@ GROUP BY ALL
 </RunnableCode>
 In the above query, the `arrayMap` function takes a single-element array `[DepDelayMinutes]` and applies the lambda function `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'` to categorize it.
 Then the first element of the resulting array is extracted with `[DepDelayMinutes][1]`.
-The [`arrayZip`](/reference/functions/regular-functions/array-functions#arrayZip) function combines the `Tail_Number` array and the `statuses` array into a single array.
+The [`arrayZip`](/reference/functions/regular-functions/array-functions#arrayzip) function combines the `Tail_Number` array and the `statuses` array into a single array.
 
 ### arrayFilter {#arrayfilter}
 
@@ -382,7 +382,7 @@ GROUP BY Origin, OriginCityName
 ORDER BY num_delays_30_min_or_more DESC
 ```
 </RunnableCode>
-In the query above we pass a lambda function as the first argument to the [`arrayFilter`](/reference/functions/regular-functions/array-functions#arrayFilter) function.
+In the query above we pass a lambda function as the first argument to the [`arrayFilter`](/reference/functions/regular-functions/array-functions#arrayfilter) function.
 This lambda function itself takes the delay in minutes (d) and returns `1` if the condition is met, else `0`.
 
 ```sql
@@ -391,7 +391,7 @@ d -> d >= 30
 
 ### arraySort and arrayIntersect {#arraysort-and-arrayintersect}
 
-Next, we'll figure out which pairs of major US airports serve the most common destinations with the help of the [`arraySort`](/reference/functions/regular-functions/array-functions#arraySort) and [`arrayIntersect`](/reference/functions/regular-functions/array-functions#arrayIntersect) functions.
+Next, we'll figure out which pairs of major US airports serve the most common destinations with the help of the [`arraySort`](/reference/functions/regular-functions/array-functions#arraysort) and [`arrayIntersect`](/reference/functions/regular-functions/array-functions#arrayintersect) functions.
 `arraySort` takes an array and sorts the elements in ascending order by default, although you can also pass a lambda function to it to define the sorting order.
 `arrayIntersect` takes multiple arrays and returns an array which contains elements present in all the arrays.
 

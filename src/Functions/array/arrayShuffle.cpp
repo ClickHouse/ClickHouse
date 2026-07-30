@@ -207,7 +207,7 @@ Value of limit shall be in range `[1..n]`. Values outside of that range are equi
 :::note
 This function will not materialize constants.
 
-The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
+The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayshuffle).
 :::
     )";
     syntax = "arrayPartialShuffle(arr [, limit[, seed]])";

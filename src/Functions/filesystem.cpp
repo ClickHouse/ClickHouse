@@ -109,7 +109,7 @@ REGISTER_FUNCTION(Filesystem)
 {
     FunctionDocumentation::Description description_filesystemAvailable = R"(
 Returns the amount of free space in the filesystem hosting the database persistence.
-The returned value is always smaller than the total free space ([`filesystemUnreserved`](/reference/functions/regular-functions/other-functions#filesystemUnreserved)) because some space is reserved for the operating system.
+The returned value is always smaller than the total free space ([`filesystemUnreserved`](/reference/functions/regular-functions/other-functions#filesystemunreserved)) because some space is reserved for the operating system.
     )";
     FunctionDocumentation::Syntax syntax_filesystemAvailable = "filesystemAvailable([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemAvailable = {
@@ -165,7 +165,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
 
     FunctionDocumentation::Description description_filesystemUnreserved = R"(
 Returns the total amount of free space on the filesystem hosting the database persistence (previously `filesystemFree`).
-See also [`filesystemAvailable`](#filesystemAvailable).
+See also [`filesystemAvailable`](#filesystemavailable).
 )";
     FunctionDocumentation::Syntax syntax_filesystemUnreserved = "filesystemUnreserved([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemUnreserved = {

@@ -359,7 +359,7 @@ Pads a string from the left with spaces or with a specified string (multiple tim
 
     FunctionDocumentation::Description description_left_utf8 = R"(
 Pads a UTF8 string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
-Unlike [`leftPad`](#leftPad) which measures the string length in bytes, the string length is measured in code points.
+Unlike [`leftPad`](#leftpad) which measures the string length in bytes, the string length is measured in code points.
 )";
     FunctionDocumentation::Syntax syntax_left_utf8 = "leftPadUTF8(string, length[, pad_string])";
     FunctionDocumentation::Examples examples_left_utf8 = {
@@ -395,7 +395,7 @@ Pads a string from the right with spaces or with a specified string (multiple ti
 
     FunctionDocumentation::Description description_right_utf8 = R"(
 Pads the string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
-Unlike [`rightPad`](#rightPad) which measures the string length in bytes, the string length is measured in code points.
+Unlike [`rightPad`](#rightpad) which measures the string length in bytes, the string length is measured in code points.
 )";
     FunctionDocumentation::Syntax syntax_right_utf8 = "rightPadUTF8(string, length[, pad_string])";
     FunctionDocumentation::ReturnedValue returned_value_right_utf8 = {"Returns a right-padded string of the given length.", {"String"}};

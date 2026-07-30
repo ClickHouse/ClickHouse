@@ -47,7 +47,7 @@ INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
 ```
 
-This is a reasonably simple query in ClickHouse thanks to the [`toStartOfDay`](/reference/functions/regular-functions/date-time-functions#toStartOfDay) function:
+This is a reasonably simple query in ClickHouse thanks to the [`toStartOfDay`](/reference/functions/regular-functions/date-time-functions#tostartofday) function:
 
 ```sql
 SELECT toStartOfDay(CreationDate) AS day,

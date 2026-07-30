@@ -128,7 +128,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
 Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
 This function can be useful if you need a fresh TLD list or if you have a custom list.
-Similar to [cutToFirstSignificantSubdomainCustom](#cutToFirstSignificantSubdomainCustom) but conforms to RFC 3986.
+Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but conforms to RFC 3986.
 
 **Configuration example**
 
@@ -176,7 +176,7 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
 Accepts custom TLD list name.
 It can be useful if you need a fresh TLD list or if you have a custom list.
-Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cuttofirstsignificantsubdomaincustomwithwww) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
 **Configuration example**
 

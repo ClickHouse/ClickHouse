@@ -220,7 +220,7 @@ Concatenates the provided strings, separating them by the specified separator.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_injective = R"(
-Like [`concatWithSeparator`](#concatWithSeparator) but assumes that `concatWithSeparator(sep[,exp1, exp2, ... ]) → result` is injective.
+Like [`concatWithSeparator`](#concatwithseparator) but assumes that `concatWithSeparator(sep[,exp1, exp2, ... ]) → result` is injective.
 A function is called injective if it returns different results for different arguments.
 
 Can be used for optimization of `GROUP BY`.

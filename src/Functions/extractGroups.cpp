@@ -112,7 +112,7 @@ public:
 REGISTER_FUNCTION(ExtractGroups)
 {
     FunctionDocumentation::Description description = R"(
-Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) or [`extractAllGroupsVertical`](/sql-reference/functions/splitting-merging-functions#extractAllGroupsVertical).
+Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractallgroupshorizontal) or [`extractAllGroupsVertical`](/sql-reference/functions/splitting-merging-functions#extractallgroupsvertical).
     )";
     FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {

@@ -104,7 +104,7 @@ REGISTER_FUNCTION(AssumeNotNull)
 Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](/reference/data-types/nullable).
 If the original value is `NULL`, an arbitrary result can be returned.
 
-See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
+See also: functions [`ifNull`](#ifnull) and [`coalesce`](#coalesce).
     )";
     FunctionDocumentation::Syntax syntax = "assumeNotNull(x)";
     FunctionDocumentation::Arguments arguments = {

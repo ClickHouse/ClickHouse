@@ -142,7 +142,7 @@ For example:
 
 :::tip
 You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
-although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
+although it is slower than [`isDecimalOverflow`](#isdecimaloverflow).
 :::
 )";
     FunctionDocumentation::Syntax syntax = "countDigits(x)";

@@ -128,7 +128,7 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
     FunctionDocumentation normalizedQueryHash_documentation = {normalizedQueryHash_description, normalizedQueryHash_syntax, normalizedQueryHash_arguments, {}, normalizedQueryHash_returned_value, normalizedQueryHash_examples, normalizedQueryHash_introduced_in, normalizedQueryHash_category};
 
     FunctionDocumentation::Description normalizedQueryHashKeepNames_description = R"(
-Like [`normalizedQueryHash`](#normalizedQueryHash) it returns identical 64 bit hash values without the values of literals for similar queries, but it does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with a placeholder before hashing.
+Like [`normalizedQueryHash`](#normalizedqueryhash) it returns identical 64 bit hash values without the values of literals for similar queries, but it does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with a placeholder before hashing.
 Can be helpful in analyzing query logs.
     )";
     FunctionDocumentation::Syntax normalizedQueryHashKeepNames_syntax = "normalizedQueryHashKeepNames(x)";

@@ -226,7 +226,7 @@ Settings:
 
 Functions:
 
-- [toLowCardinality](/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+- [toLowCardinality](/reference/functions/regular-functions/type-conversion-functions#tolowcardinality)
 
 ## Related content {#related-content}
 

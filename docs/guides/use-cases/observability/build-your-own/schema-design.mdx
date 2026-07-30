@@ -501,9 +501,9 @@ We recommend deciding on your ordering keys once you have structured your logs. 
 
 ## Using maps {#using-maps}
 
-Earlier examples show the use of map syntax `map['key']` to access values in the `Map(String, String)` columns. As well as using map notation to access the nested keys, specialized ClickHouse [map functions](/reference/functions/regular-functions/tuple-map-functions#mapKeys) are available for filtering or selecting these columns.
+Earlier examples show the use of map syntax `map['key']` to access values in the `Map(String, String)` columns. As well as using map notation to access the nested keys, specialized ClickHouse [map functions](/reference/functions/regular-functions/tuple-map-functions#mapkeys) are available for filtering or selecting these columns.
 
-For example, the following query identifies all of the unique keys available in the `LogAttributes` column using the [`mapKeys` function](/reference/functions/regular-functions/tuple-map-functions#mapKeys) followed by the [`groupArrayDistinctArray` function](/reference/functions/aggregate-functions/combinators) (a combinator).
+For example, the following query identifies all of the unique keys available in the `LogAttributes` column using the [`mapKeys` function](/reference/functions/regular-functions/tuple-map-functions#mapkeys) followed by the [`groupArrayDistinctArray` function](/reference/functions/aggregate-functions/combinators) (a combinator).
 
 ```sql
 SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
@@ -643,7 +643,7 @@ Dictionaries can be used for enriching datasets at query time or insert time. Ea
 - **Insert time** - This is typically appropriate if the enrichment value doesn't change and exists in an external source which can be used to populate the dictionary. In this case, enriching the row at insert time avoids the query time lookup to the dictionary. This comes at the cost of insert performance as well as an additional storage overhead, as enriched values will be stored as columns.
 - **Query time** - If values in a dictionary change frequently, query time lookups are often more applicable. This avoids needing to update columns (and rewrite data) if mapped values change. This flexibility comes at the expense of a query time lookup cost. This query time cost is typically appreciable if a lookup is required for many rows, e.g. using a dictionary lookup in a filter clause. For result enrichment, i.e. in the `SELECT`, this overhead is typically not appreciable.
 
-We recommend that users familiarize themselves with the basics of dictionaries. Dictionaries provide an in-memory lookup table from which values can be retrieved using dedicated [specialist functions](/reference/functions/regular-functions/ext-dict-functions#dictGetAll).
+We recommend that users familiarize themselves with the basics of dictionaries. Dictionaries provide an in-memory lookup table from which values can be retrieved using dedicated [specialist functions](/reference/functions/regular-functions/ext-dict-functions#dictgetall).
 
 For simple enrichment examples see the guide on Dictionaries [here](/concepts/features/dictionaries/index). Below, we focus on common observability enrichment tasks.
 
@@ -1553,7 +1553,7 @@ This index builds an inverted index over tokenized text data, enabling fast toke
 
 Text indexes are available starting from ClickHouse version 26.2.
 
-They can be defined on the following column types in MergeTree tables: [String](/reference/data-types/string), [FixedString](/reference/data-types/fixedstring), [Array(String)](/reference/data-types/array), [Array(FixedString)](/reference/data-types/array), and [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) map functions) columns in MergeTree tables.
+They can be defined on the following column types in MergeTree tables: [String](/reference/data-types/string), [FixedString](/reference/data-types/fixedstring), [Array(String)](/reference/data-types/array), [Array(FixedString)](/reference/data-types/array), and [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapkeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapvalues) map functions) columns in MergeTree tables.
 
 A text index requires a `tokenizer` argument in its definition. Optionally, a preprocessor function can be specified to transform the input string before tokenization.
 

@@ -22,7 +22,7 @@ using FunctionMultiSearchAllPositionsUTF8
 REGISTER_FUNCTION(MultiSearchAllPositionsUTF8)
 {
     FunctionDocumentation::Description description = R"(
-Like [`multiSearchAllPositions`](#multiSearchAllPositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
+Like [`multiSearchAllPositions`](#multisearchallpositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
     )";
     FunctionDocumentation::Syntax syntax = "multiSearchAllPositionsUTF8(haystack, needle1[, needle2, ...])";
     FunctionDocumentation::Arguments arguments = {

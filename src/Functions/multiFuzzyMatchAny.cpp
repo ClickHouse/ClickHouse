@@ -20,7 +20,7 @@ using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<MultiMatchAny
 REGISTER_FUNCTION(MultiFuzzyMatchAny)
 {
     FunctionDocumentation::Description description = R"(
-Like [`multiMatchAny`](#multiMatchAny) but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance).
+Like [`multiMatchAny`](#multimatchany) but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance).
 This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some edge cases.
 The performance depends on the edit distance value and patterns used, but it's always more expensive compared to non-fuzzy variants.
 

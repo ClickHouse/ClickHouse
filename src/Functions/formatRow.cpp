@@ -220,7 +220,7 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
     /// formatRowNoNewline documentation
     FunctionDocumentation::Description formatRowNoNewline_description = R"(
-Same as [`formatRow`](#formatRow), but trims the newline character of each row.
+Same as [`formatRow`](#formatrow), but trims the newline character of each row.
 
 Converts arbitrary expressions into a string via given format, but removes any trailing newline characters from the result.
     )";

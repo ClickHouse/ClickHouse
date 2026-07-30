@@ -63,7 +63,7 @@ REGISTER_FUNCTION(ToColumnTypeName)
 {
     FunctionDocumentation::Description description = R"(
 Returns the internal name of the data type of the given value.
-Unlike function [`toTypeName`](#toTypeName), the returned data type potentially includes internal wrapper columns like `Const` and `LowCardinality`.
+Unlike function [`toTypeName`](#totypename), the returned data type potentially includes internal wrapper columns like `Const` and `LowCardinality`.
 )";
     FunctionDocumentation::Syntax syntax = "toColumnTypeName(value)";
     FunctionDocumentation::Arguments arguments = {

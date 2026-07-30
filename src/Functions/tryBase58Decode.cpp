@@ -17,7 +17,7 @@ using FunctionTryBase58Decode = FunctionBaseXXConversion<TryBase58DecodeImpl>;
 REGISTER_FUNCTION(TryBase58Decode)
 {
     FunctionDocumentation::Description description = R"(
-Like [`base58Decode`](#base58Decode), but returns an empty string in case of error.
+Like [`base58Decode`](#base58decode), but returns an empty string in case of error.
 )";
     FunctionDocumentation::Syntax syntax = "tryBase58Decode(encoded[, expected_size])";
     FunctionDocumentation::Arguments arguments = {

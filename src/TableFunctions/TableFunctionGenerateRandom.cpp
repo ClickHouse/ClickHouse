@@ -216,7 +216,7 @@ SELECT * FROM random;
 └──────────────────────────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-In combination with [generateRandomStructure](/reference/functions/regular-functions/other-functions#generateRandomStructure):
+In combination with [generateRandomStructure](/reference/functions/regular-functions/other-functions#generaterandomstructure):
 
 ```sql
 SELECT * FROM generateRandom(generateRandomStructure(4, 101), 101) LIMIT 3;

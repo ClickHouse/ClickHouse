@@ -1195,7 +1195,7 @@ R"(
         FunctionDocumentation::Description description = R"(
 Retrieves the attribute values of all the nodes that matched each key in a [regular expression tree dictionary](/docs/sql-reference/statements/create/dictionary/layouts/regexp-tree).
 
-Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictGet).
+Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictget).
 )";
         FunctionDocumentation::Syntax syntax = "dictGetAll(dict_name, attr_names, id_expr[, limit])";
         FunctionDocumentation::Arguments arguments = {
@@ -1281,7 +1281,7 @@ R"(
 R"(
 Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 
-This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictGetHierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
+This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictgethierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
 
 If the key is itself a top-level node of the hierarchy, the key is returned. If the key is absent from the dictionary, `0` is returned.
 )";
@@ -1368,7 +1368,7 @@ R"(
     {
         FunctionDocumentation::Description description_dictGetChildren =
 R"(
-Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictGetHierarchy).
+Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
 )";
         FunctionDocumentation::Syntax syntax_dictGetChildren = "dictGetChildren(dict_name, key)";
         FunctionDocumentation::Arguments arguments_dictGetChildren =
@@ -1412,7 +1412,7 @@ R"(
     {
         FunctionDocumentation::Description description_dictGetDescendants =
 R"(
-Returns all descendants as if the [`dictGetChildren`](#dictGetChildren) function were applied `level` times recursively.
+Returns all descendants as if the [`dictGetChildren`](#dictgetchildren) function were applied `level` times recursively.
 )";
         FunctionDocumentation::Syntax syntax_dictGetDescendants = "dictGetDescendants(dict_name, key, level)";
         FunctionDocumentation::Arguments arguments_dictGetDescendants =

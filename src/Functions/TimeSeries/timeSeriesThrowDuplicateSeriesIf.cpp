@@ -175,7 +175,7 @@ REGISTER_FUNCTION(TimeSeriesThrowDuplicateSeriesIf)
 Checks the `condition` and if it's true throws an exception with the following message
 `Multiple series have the same tags <tags>, duplicate series in the same result set are not allowed`.
 If the `condition` is false the function returns `0`.
-This function is similar to [throwIf()](/sql-reference/functions/other-functions#throwIf),
+This function is similar to [throwIf()](/sql-reference/functions/other-functions#throwif),
 but uses a different error code and formats the error message differently.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesThrowDuplicateSeriesIf(condition, group)";

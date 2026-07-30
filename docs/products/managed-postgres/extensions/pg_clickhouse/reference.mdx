@@ -1053,45 +1053,45 @@ equivalents as follows:
   of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed down: PG
   raises on out-of-range input where CH returns `NaN`.
 * `date_part`:
-  * `date_part('day')`: [toDayOfMonth](/reference/functions/regular-functions/date-time-functions#toDayOfMonth)
-  * `date_part('doy')`: [toDayOfYear](/reference/functions/regular-functions/date-time-functions#toDayOfYear)
-  * `date_part('dow')`: [toDayOfWeek](/reference/functions/regular-functions/date-time-functions#toDayOfWeek)
-  * `date_part('year')`: [toYear](/reference/functions/regular-functions/date-time-functions#toYear)
-  * `date_part('month')`: [toMonth](/reference/functions/regular-functions/date-time-functions#toMonth)
-  * `date_part('hour')`: [toHour](/reference/functions/regular-functions/date-time-functions#toHour)
-  * `date_part('minute')`: [toMinute](/reference/functions/regular-functions/date-time-functions#toMinute)
-  * `date_part('second')`: [toSecond](/reference/functions/regular-functions/date-time-functions#toSecond)
-  * `date_part('quarter')`: [toQuarter](/reference/functions/regular-functions/date-time-functions#toQuarter)
-  * `date_part('isoyear')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toISOYear)
-  * `date_part('week')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toISOWeek)
-  * `date_part('epoch')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toUnixTimestamp)
+  * `date_part('day')`: [toDayOfMonth](/reference/functions/regular-functions/date-time-functions#todayofmonth)
+  * `date_part('doy')`: [toDayOfYear](/reference/functions/regular-functions/date-time-functions#todayofyear)
+  * `date_part('dow')`: [toDayOfWeek](/reference/functions/regular-functions/date-time-functions#todayofweek)
+  * `date_part('year')`: [toYear](/reference/functions/regular-functions/date-time-functions#toyear)
+  * `date_part('month')`: [toMonth](/reference/functions/regular-functions/date-time-functions#tomonth)
+  * `date_part('hour')`: [toHour](/reference/functions/regular-functions/date-time-functions#tohour)
+  * `date_part('minute')`: [toMinute](/reference/functions/regular-functions/date-time-functions#tominute)
+  * `date_part('second')`: [toSecond](/reference/functions/regular-functions/date-time-functions#tosecond)
+  * `date_part('quarter')`: [toQuarter](/reference/functions/regular-functions/date-time-functions#toquarter)
+  * `date_part('isoyear')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toisoyear)
+  * `date_part('week')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toisoweek)
+  * `date_part('epoch')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#tounixtimestamp)
 * `date_trunc`:
-  * `date_trunc('week')`: [toMonday](/reference/functions/regular-functions/date-time-functions#toMonday)
-  * `date_trunc('second')`: [toStartOfSecond](/reference/functions/regular-functions/date-time-functions#toStartOfSecond)
-  * `date_trunc('minute')`: [toStartOfMinute](/reference/functions/regular-functions/date-time-functions#toStartOfMinute)
-  * `date_trunc('hour')`: [toStartOfHour](/reference/functions/regular-functions/date-time-functions#toStartOfHour)
-  * `date_trunc('day')`: [toStartOfDay](/reference/functions/regular-functions/date-time-functions#toStartOfDay)
-  * `date_trunc('month')`: [toStartOfMonth](/reference/functions/regular-functions/date-time-functions#toStartOfMonth)
-  * `date_trunc('quarter')`: [toStartOfQuarter](/reference/functions/regular-functions/date-time-functions#toStartOfQuarter)
-  * `date_trunc('year')`: [toStartOfYear](/reference/functions/regular-functions/date-time-functions#toStartOfYear)
+  * `date_trunc('week')`: [toMonday](/reference/functions/regular-functions/date-time-functions#tomonday)
+  * `date_trunc('second')`: [toStartOfSecond](/reference/functions/regular-functions/date-time-functions#tostartofsecond)
+  * `date_trunc('minute')`: [toStartOfMinute](/reference/functions/regular-functions/date-time-functions#tostartofminute)
+  * `date_trunc('hour')`: [toStartOfHour](/reference/functions/regular-functions/date-time-functions#tostartofhour)
+  * `date_trunc('day')`: [toStartOfDay](/reference/functions/regular-functions/date-time-functions#tostartofday)
+  * `date_trunc('month')`: [toStartOfMonth](/reference/functions/regular-functions/date-time-functions#tostartofmonth)
+  * `date_trunc('quarter')`: [toStartOfQuarter](/reference/functions/regular-functions/date-time-functions#tostartofquarter)
+  * `date_trunc('year')`: [toStartOfYear](/reference/functions/regular-functions/date-time-functions#tostartofyear)
 * `extract(field FROM source)`: same mappings as `date_part`
-* `date(timestamp)` & `date(timestamptz)`: [toDate](/reference/functions/regular-functions/type-conversion-functions#toDate)
+* `date(timestamp)` & `date(timestamptz)`: [toDate](/reference/functions/regular-functions/type-conversion-functions#todate)
   (deparsed as CH alias `date`)
-* `array_position`: [indexOf](/reference/functions/regular-functions/array-functions#indexOf)
-* `array_cat`: [arrayConcat](/reference/functions/regular-functions/array-functions#arrayConcat)
-* `array_append`: [arrayPushBack](/reference/functions/regular-functions/array-functions#arrayPushBack)
-* `array_prepend`: [arrayPushFront](/reference/functions/regular-functions/array-functions#arrayPushFront)
-* `array_remove`: [arrayRemove](/reference/functions/regular-functions/array-functions#arrayRemove)
+* `array_position`: [indexOf](/reference/functions/regular-functions/array-functions#indexof)
+* `array_cat`: [arrayConcat](/reference/functions/regular-functions/array-functions#arrayconcat)
+* `array_append`: [arrayPushBack](/reference/functions/regular-functions/array-functions#arraypushback)
+* `array_prepend`: [arrayPushFront](/reference/functions/regular-functions/array-functions#arraypushfront)
+* `array_remove`: [arrayRemove](/reference/functions/regular-functions/array-functions#arrayremove)
 * `array_length` & `cardinality`: [length](/reference/functions/regular-functions/array-functions#length)
-* `array_to_string`: [arrayStringConcat](/reference/functions/regular-functions/array-functions#arrayStringConcat)
-* `string_to_array`: [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString)
-* `split_part`: [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitByString) + array subscript
-* `trim_array`: [arrayResize](/reference/functions/regular-functions/array-functions#arrayResize)
-* `array_fill`: [arrayWithConstant](/reference/functions/regular-functions/array-functions#arrayWithConstant)
-* `array_reverse`: [arrayReverse](/reference/functions/regular-functions/array-functions#arrayReverse)
-* `array_shuffle`: [arrayShuffle](/reference/functions/regular-functions/array-functions#arrayShuffle)
-* `array_sample`: [arrayRandomSample](/reference/functions/regular-functions/array-functions#arrayRandomSample)
-* `array_sort`: [arraySort](/reference/functions/regular-functions/array-functions#arraySort) / [arrayReverseSort](/reference/functions/regular-functions/array-functions#arrayReverseSort)
+* `array_to_string`: [arrayStringConcat](/reference/functions/regular-functions/array-functions#arraystringconcat)
+* `string_to_array`: [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitbystring)
+* `split_part`: [splitByString](/reference/functions/regular-functions/splitting-merging-functions#splitbystring) + array subscript
+* `trim_array`: [arrayResize](/reference/functions/regular-functions/array-functions#arrayresize)
+* `array_fill`: [arrayWithConstant](/reference/functions/regular-functions/array-functions#arraywithconstant)
+* `array_reverse`: [arrayReverse](/reference/functions/regular-functions/array-functions#arrayreverse)
+* `array_shuffle`: [arrayShuffle](/reference/functions/regular-functions/array-functions#arrayshuffle)
+* `array_sample`: [arrayRandomSample](/reference/functions/regular-functions/array-functions#arrayrandomsample)
+* `array_sort`: [arraySort](/reference/functions/regular-functions/array-functions#arraysort) / [arrayReverseSort](/reference/functions/regular-functions/array-functions#arrayreversesort)
 * `btrim`: [trimBoth](/reference/functions/regular-functions/string-functions#trimboth)
 * `ltrim`: [ltrim](/reference/functions/regular-functions/string-functions#ltrim)
 * `rtrim`: [rtrim](/reference/functions/regular-functions/string-functions#rtrim)
@@ -1106,30 +1106,30 @@ equivalents as follows:
 * `reverse(bytea)`: [reverse](/reference/functions/regular-functions/string-functions#reverse)
 * `strpos`: [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionutf8)
 * `regexp_like`: [match](/reference/functions/regular-functions/string-search-functions#match)
-* `regexp_match`: [extractGroups](/reference/functions/regular-functions/string-search-functions#extractGroups)
+* `regexp_match`: [extractGroups](/reference/functions/regular-functions/string-search-functions#extractgroups)
   if the regular expression contains parenthesized subexpressions; otherwise
-  [extractAll](/reference/functions/regular-functions/string-search-functions#extractAll)
-  sliced with [arraySlice](/reference/functions/regular-functions/array-functions#arraySlice).
-* `regexp_replace`: [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) or [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) when the `g` flag is present
-* `regexp_split_to_array`: [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
-* `md5`: [MD5](/reference/functions/regular-functions/hash-functions#MD5)
+  [extractAll](/reference/functions/regular-functions/string-search-functions#extractall)
+  sliced with [arraySlice](/reference/functions/regular-functions/array-functions#arrayslice).
+* `regexp_replace`: [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceregexpone) or [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceregexpall) when the `g` flag is present
+* `regexp_split_to_array`: [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitbyregexp)
+* `md5`: [MD5](/reference/functions/regular-functions/hash-functions#md5)
 * `json_extract_path_text`: [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `json_extract_path`: [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `json_extract_path`: [toJSONString](/reference/functions/regular-functions/json-functions#tojsonstring) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path_text`: [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `jsonb_extract_path`: [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `jsonb_extract_path`: [toJSONString](/reference/functions/regular-functions/json-functions#tojsonstring) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `bit_count(bytea)`: [bitCount](/reference/functions/regular-functions/bit-functions#bitcount)
-* `to_timestamp(float8)`: [fromUnixTimestamp](/reference/functions/regular-functions/date-time-functions#fromUnixTimestamp)
-* `to_char(timestamp[tz], fmt)`: [formatDateTime](/reference/functions/regular-functions/date-time-functions#formatDateTime)
+* `to_timestamp(float8)`: [fromUnixTimestamp](/reference/functions/regular-functions/date-time-functions#fromunixtimestamp)
+* `to_char(timestamp[tz], fmt)`: [formatDateTime](/reference/functions/regular-functions/date-time-functions#formatdatetime)
   when `fmt` is a string constant whose every keyword has a faithful
   ClickHouse equivalent. See [to_char()](#to_char) under Compatibility
   Notes for the supported keywords. Otherwise the function evaluates
   locally in PostgreSQL.
 * `statement_timestamp`, `transaction_timestamp`, & `clock_timestamp`:
-  [nowInBlock64](/reference/functions/regular-functions/date-time-functions#nowInBlock64)
+  [nowInBlock64](/reference/functions/regular-functions/date-time-functions#nowinblock64)
   (`nowInBlock64(9, $session_timezone)`)
 * `CURRENT_DATE`:
   [now](/reference/functions/regular-functions/date-time-functions#now) and
-  [toDate](/reference/functions/regular-functions/type-conversion-functions#toDate)
+  [toDate](/reference/functions/regular-functions/type-conversion-functions#todate)
   (`toDate(now($session_timezone))`)
 * `now`, `CURRENT_TIMESTAMP`, & `LOCALTIMESTAMP`:
   [now64](/reference/functions/regular-functions/date-time-functions#now64)
@@ -1147,16 +1147,16 @@ equivalents as follows:
 
 ### Pushdown operators {#pushdown-operators}
 
-* Array slice (`arr[L:U]`): [arraySlice](/reference/functions/regular-functions/array-functions#arraySlice)
-* `@>` (array contains): [hasAll](/reference/functions/regular-functions/array-functions#hasAll)
-* `<@` (array contained by): [hasAll](/reference/functions/regular-functions/array-functions#hasAll)
-* `&&` (array overlap): [hasAny](/reference/functions/regular-functions/array-functions#hasAny)
+* Array slice (`arr[L:U]`): [arraySlice](/reference/functions/regular-functions/array-functions#arrayslice)
+* `@>` (array contains): [hasAll](/reference/functions/regular-functions/array-functions#hasall)
+* `<@` (array contained by): [hasAll](/reference/functions/regular-functions/array-functions#hasall)
+* `&&` (array overlap): [hasAny](/reference/functions/regular-functions/array-functions#hasany)
 * `~` (regexp match): [match](/reference/functions/regular-functions/string-search-functions#match)
 * `!~` (regexp not match): [match](/reference/functions/regular-functions/string-search-functions#match)
 * `~*` (case insensitive regexp no match): [match](/reference/functions/regular-functions/string-search-functions#match)
 * `!~*` (case insensitive regexp not match): [match](/reference/functions/regular-functions/string-search-functions#match)
 * `->>` (JSON/JSONB extract element as text): [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `->` (JSON/JSONB extract): [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `->` (JSON/JSONB extract): [toJSONString](/reference/functions/regular-functions/json-functions#tojsonstring) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
 ### Custom functions {#custom-functions}
 
@@ -1177,29 +1177,29 @@ All [re2 extension] functions push down 1:1 to ClickHouse:
 
 * `re2match` → [match](/reference/functions/regular-functions/string-search-functions#match)
 * `re2extract` → [extract](/reference/functions/regular-functions/string-search-functions#extract)
-* `re2extractall` → [extractAll](/reference/functions/regular-functions/string-search-functions#extractAll)
-* `re2regexpextract` → [regexpExtract](/reference/functions/regular-functions/string-search-functions#regexpExtract)
-* `re2extractgroups` → [extractGroups](/reference/functions/regular-functions/string-search-functions#extractGroups)
-* `re2replaceregexpone` → [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne)
-* `re2replaceregexpall` → [replaceRegexpAll](/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)
-* `re2countmatches` → [countMatches](/reference/functions/regular-functions/string-search-functions#countMatches)
-* `re2countmatchescaseinsensitive` → [countMatchesCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countMatchesCaseInsensitive)
-* `re2multimatchany` → [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)
-* `re2multimatchanyindex` → [multiMatchAnyIndex](/reference/functions/regular-functions/string-search-functions#multiMatchAnyIndex)
-* `re2multimatchallindices` → [multiMatchAllIndices](/reference/functions/regular-functions/string-search-functions#multiMatchAllIndices)
+* `re2extractall` → [extractAll](/reference/functions/regular-functions/string-search-functions#extractall)
+* `re2regexpextract` → [regexpExtract](/reference/functions/regular-functions/string-search-functions#regexpextract)
+* `re2extractgroups` → [extractGroups](/reference/functions/regular-functions/string-search-functions#extractgroups)
+* `re2replaceregexpone` → [replaceRegexpOne](/reference/functions/regular-functions/string-replace-functions#replaceregexpone)
+* `re2replaceregexpall` → [replaceRegexpAll](/reference/functions/regular-functions/string-replace-functions#replaceregexpall)
+* `re2countmatches` → [countMatches](/reference/functions/regular-functions/string-search-functions#countmatches)
+* `re2countmatchescaseinsensitive` → [countMatchesCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countmatchescaseinsensitive)
+* `re2multimatchany` → [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multimatchany)
+* `re2multimatchanyindex` → [multiMatchAnyIndex](/reference/functions/regular-functions/string-search-functions#multimatchanyindex)
+* `re2multimatchallindices` → [multiMatchAllIndices](/reference/functions/regular-functions/string-search-functions#multimatchallindices)
 
 #### intarray {#intarray}
 
 One [intarray] function pushes down to ClickHouse:
 
-*   `idx` → [indexOf](/reference/functions/regular-functions/array-functions#indexOf)
+*   `idx` → [indexOf](/reference/functions/regular-functions/array-functions#indexof)
 
 #### fuzzystrmatch {#fuzzystrmatch}
 
 Two [fuzzystrmatch] functions push down to ClickHouse:
 
 *   `soundex`: [soundex](/reference/functions/regular-functions/string-functions#soundex)
-*   `levenshtein` (2-arg): [editDistanceUTF8](/reference/functions/regular-functions/string-functions#editDistanceUTF8)
+*   `levenshtein` (2-arg): [editDistanceUTF8](/reference/functions/regular-functions/string-functions#editdistanceutf8)
 
 ### Pushdown casts {#pushdown-casts}
 

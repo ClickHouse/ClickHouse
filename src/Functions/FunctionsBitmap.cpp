@@ -10,7 +10,7 @@ namespace DB
 REGISTER_FUNCTION(Bitmap)
 {
     /// Documentation for bitmapBuild
-    FunctionDocumentation::Description description_bitmapBuild = "Builds a bitmap from an unsigned integer array. It is the opposite of function [`bitmapToArray`](/sql-reference/functions/bitmap-functions#bitmapToArray).";
+    FunctionDocumentation::Description description_bitmapBuild = "Builds a bitmap from an unsigned integer array. It is the opposite of function [`bitmapToArray`](/sql-reference/functions/bitmap-functions#bitmaptoarray).";
     FunctionDocumentation::Syntax syntax_bitmapBuild = "bitmapBuild(array)";
     FunctionDocumentation::Arguments arguments_bitmapBuild = {
         {"array", "Unsigned integer array.", {"Array(UInt*)"}},
@@ -30,7 +30,7 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapBuild>(documentation_bitmapBuild);
 
     /// Documentation for bitmapToArray
-    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapBuild).";
+    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapbuild).";
     FunctionDocumentation::Syntax syntax_bitmapToArray = "bitmapToArray(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapToArray = {
         {"bitmap", "Bitmap to convert. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},

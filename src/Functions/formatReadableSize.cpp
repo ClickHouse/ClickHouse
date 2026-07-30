@@ -11,7 +11,7 @@ REGISTER_FUNCTION(FormatReadableSize)
     FunctionDocumentation::Description description = R"(
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
 
-The opposite operations of this function are [`parseReadableSize`](#parseReadableSize), [`parseReadableSizeOrZero`](#parseReadableSizeOrZero), and [`parseReadableSizeOrNull`](#parseReadableSizeOrNull).
+The opposite operations of this function are [`parseReadableSize`](#parsereadablesize), [`parseReadableSizeOrZero`](#parsereadablesizeorzero), and [`parseReadableSizeOrNull`](#parsereadablesizeornull).
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableSize(value[, precision])";

@@ -17,7 +17,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
 The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/reference/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictget) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 

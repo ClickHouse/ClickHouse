@@ -171,7 +171,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     factory.registerFunction<FunctionDetectCharset>(documentation_charset);
 
     FunctionDocumentation::Description description_unknown = R"(
-Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
+Similar to the [`detectLanguage`](#detectlanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
 Prefer this version when your character set is UTF-16 or UTF-32.
 
 :::warning

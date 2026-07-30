@@ -61,9 +61,9 @@ SELECT * FROM dt32;
 
 **See Also**
 
-- [toDate32](/reference/functions/regular-functions/type-conversion-functions#toDate32)
-- [toDate32OrZero](/sql-reference/functions/type-conversion-functions#toDate32OrZero)
-- [toDate32OrNull](/sql-reference/functions/type-conversion-functions#toDate32OrNull)
+- [toDate32](/reference/functions/regular-functions/type-conversion-functions#todate32)
+- [toDate32OrZero](/sql-reference/functions/type-conversion-functions#todate32orzero)
+- [toDate32OrNull](/sql-reference/functions/type-conversion-functions#todate32ornull)
 )DOCS_MD",
             .syntax = "Date32",
             .related = {"Date", "DateTime"},

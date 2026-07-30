@@ -102,7 +102,7 @@ Using `java.sql.Time` is limited to the `LocalTime` range. Internally, `java.sql
 
 <Note>
 - `toTime` always requires `Date`, `DateTime`, or another similar type. It does not accept strings. Related issue: https://github.com/ClickHouse/ClickHouse/issues/89896
-- It is aliased to [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+- It is aliased to [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#totimewithfixeddate).
 - There is a timezone-related issue: https://github.com/ClickHouse/ClickHouse/pull/90310
 </Note>
 
@@ -120,7 +120,7 @@ String representation has complexities:
 
 - If no timezone is specified in the column definition and a string is passed on write, it will be converted from the server timezone to a UTC timestamp number. When a value is read from such a column, it will be converted from a UTC timestamp to a literal timestamp using the server or session timezone (a similar approach is applied to timestamp literals in expressions where the timezone is not defined explicitly).
 - If a timezone is specified in the column definition, then only that timezone is used in all string conversions. This contradicts the logic when no timezone is specified, so it requires a good understanding of how data is written for each column in the query.
-- If a date is passed as a string in a format that includes a timezone, then a conversion function is needed. Usually [`parseDateTimeBestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffort) is used.
+- If a date is passed as a string in a format that includes a timezone, then a conversion function is needed. Usually [`parseDateTimeBestEffort`](/reference/functions/regular-functions/type-conversion-functions#parsedatetimebesteffort) is used.
 
 ### How the JDBC driver handles timestamps {#how-jdbc-driver-handles-timestamps}
 

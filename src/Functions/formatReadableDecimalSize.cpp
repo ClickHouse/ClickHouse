@@ -11,7 +11,7 @@ REGISTER_FUNCTION(FormatReadableDecimalSize)
     FunctionDocumentation::Description description = R"(
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as a string.
 
-The opposite operations of this function are [`parseReadableSize`](#parseReadableSize).
+The opposite operations of this function are [`parseReadableSize`](#parsereadablesize).
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableDecimalSize(value[, precision])";
     FunctionDocumentation::Arguments arguments = {
