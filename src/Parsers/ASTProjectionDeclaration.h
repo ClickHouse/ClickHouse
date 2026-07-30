@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -22,6 +23,8 @@ public:
 
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
