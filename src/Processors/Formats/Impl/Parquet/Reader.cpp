@@ -12,6 +12,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
+#include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
@@ -138,8 +139,15 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Cannot decompress Snappy: ClickHouse was compiled without Snappy support");
 #endif
         case parq::CompressionCodec::GZIP:
+#if USE_LIBDEFLATE
+            /// One-shot libdeflate: the whole page is in memory and the uncompressed size is known,
+            /// which is faster than the streaming zlib path.
+            Libdeflate::decompress(CompressionMethod::Gzip, data, compressed_size, out, uncompressed_size);
+            return;
+#else
             method = CompressionMethod::Gzip;
             break;
+#endif
         case parq::CompressionCodec::LZO:
             /// Arrow also doesn't support it.
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LZO decompression is not supported");
@@ -170,6 +178,9 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         std::move(mem_buf),
         method,
         /*zstd_window_log_max*/ 0,
+        /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+        /// this dispatch never sees it, so the snappy mode here is irrelevant.
+        SnappyMode::Basic,
         uncompressed_size,
         out);
     size_t pos = 0;
@@ -367,8 +378,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+            /// No file-readable column for this key-condition column: it has no column-chunk
+            /// stats, so it cannot prune. Skip it (its range stays the whole universe).
             if (!output_idx.has_value())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition uses PREWHERE output");
+                continue;
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (output_info.is_primitive)
@@ -439,8 +452,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+            /// No file-readable column for this key-condition column: it has no page-index
+            /// stats, so it cannot prune. Skip it (page-level pruning is disabled for it).
             if (!output_idx.has_value())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column condition uses PREWHERE output");
+                continue;
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
@@ -747,15 +762,57 @@ void Reader::preparePrewhere()
         if (!actions_settings.has_value())
             actions_settings.emplace();
 
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
-        prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+        bool success = false;
 
-        bool success = tryBuildPrewhereSteps(
-            prewhere_info_patched,
-            *actions_settings,
-            prewhere_expr_info,
-            /*force_short_circuit_execution*/ false);
+        /// The per-condition split only registers kept prewhere outputs while filtering, so it is
+        /// used only when needs_filter is true; otherwise fall through to the single step below.
+        if (needs_filter)
+        {
+            auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+            prewhere_info_patched->need_filter = needs_filter;
+
+            success = tryBuildPrewhereSteps(
+                prewhere_info_patched,
+                *actions_settings,
+                prewhere_expr_info,
+                /*force_short_circuit_execution*/ false);
+
+            /// A cross-step column is addressable only if it is an original prewhere input or an
+            /// intermediate an earlier step wrote to a dedicated prewhere-output slot. Otherwise the
+            /// split step is unaddressable (or would resolve to a physical column that only shares the
+            /// generated name), so fall back to a single step.
+            NameSet addressable_columns;
+            for (const auto & col : dag.getRequiredColumns())
+                addressable_columns.insert(col.name);
+
+            for (const auto & step : prewhere_expr_info.steps)
+            {
+                if (!success)
+                    break;
+                for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
+                {
+                    if (!addressable_columns.contains(col.name))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+                if (!success)
+                    break;
+
+                /// An intermediate this step computes can be read by a later step only through a
+                /// dedicated prewhere-output slot: one present in `extended_sample_block` whose slot is
+                /// not an original output column. This mirrors how `add_single_step` registers prewhere
+                /// outputs, and excludes generated names that only collide with physical columns.
+                for (const auto * node : step->actions->getActionsDAG().getOutputs())
+                {
+                    auto idx = extended_sample_block.findPositionByName(node->result_name);
+                    if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value())
+                        addressable_columns.insert(node->result_name);
+                }
+            }
+        }
 
         if (success)
         {
@@ -763,8 +820,7 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                if (needs_filter)
-                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else

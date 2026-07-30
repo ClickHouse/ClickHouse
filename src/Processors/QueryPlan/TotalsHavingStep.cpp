@@ -231,6 +231,11 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         final);
 }
 
+QueryPlanStepPtr TotalsHavingStep::clone() const
+{
+    return std::make_unique<TotalsHavingStep>(*this);
+}
+
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {

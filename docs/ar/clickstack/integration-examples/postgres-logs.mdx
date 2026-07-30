@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * مساحة قرص كافية لملفات السجل
 
 <Steps>
-  <Step>
-    #### تهيئة تسجيل PostgreSQL
-
+  <Step title="تهيئة تسجيل PostgreSQL" id="configure-postgres">
     يدعم PostgreSQL عدة تنسيقات للسجلات. ولإجراء parsing منظَّم باستخدام OpenTelemetry، نوصي باستخدام تنسيق CSV لأنه يوفّر مخرجات متسقة وقابلة للمعالجة.
 
     يوجد ملف `postgresql.conf` عادةً في:
@@ -89,9 +87,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إنشاء تهيئة مخصصة لـ OTel collector
-
+  <Step title="إنشاء تهيئة مخصصة لـ OTel collector" id="custom-otel">
     يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال تحميل ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `postgres-logs-monitoring.yaml` يتضمن التهيئة التالية:
@@ -153,9 +149,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### هيّئ ClickStack لتحميل إعدادات مخصّصة
-
+  <Step title="هيّئ ClickStack لتحميل إعدادات مخصّصة" id="load-custom">
     لتمكين إعدادات مخصّصة للمجمّع في عملية نشر ClickStack الحالية، يجب عليك:
 
     1. ربط ملف الإعدادات المخصّص عند `/etc/otelcol-contrib/custom.config.yaml`
@@ -197,9 +191,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتأكد من أن السجلات تتدفق:
 
     1. انتقل إلى عرض البحث
@@ -214,15 +206,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة بيانات تجريبية
+  ## مجموعة البيانات التجريبية
 </div>
 
 للمستخدمين الذين يريدون اختبار تكامل سجلات PostgreSQL قبل تهيئة أنظمتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية لسجلات PostgreSQL مُولَّدة مسبقًا بأنماط واقعية.
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة البيانات النموذجية
-
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
     نزّل ملف السجل النموذجي:
 
     ```bash
@@ -230,9 +220,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### إنشاء إعداد collector للاختبار
-
+  <Step title="إنشاء إعداد collector للاختبار" id="test-config">
     أنشئ ملفًا باسم `postgres-logs-demo.yaml` بالإعداد التالي:
 
     ```yaml
@@ -277,9 +265,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تشغيل ClickStack باستخدام الإعداد التجريبي
-
+  <Step title="تشغيل ClickStack باستخدام الإعداد التجريبي" id="run-demo">
     شغّل ClickStack باستخدام السجلات والإعداد التجريبيين:
 
     ```bash
@@ -292,9 +278,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verify-demo-logs">
     بعد تشغيل ClickStack:
 
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
@@ -320,13 +304,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر تصورات أساسية لسجلات PostgreSQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="تنزيل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">تنزيل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة المعلومات الجاهزة مسبقًا
-
+  <Step title="استيراد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم Dashboards
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
@@ -337,9 +319,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### عرض لوحة المعلومات
-
+  <Step title="عرض لوحة المعلومات" id="created-dashboard">
     سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
@@ -405,4 +385,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
