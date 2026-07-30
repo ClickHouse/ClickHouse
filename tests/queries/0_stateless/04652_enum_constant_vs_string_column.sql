@@ -145,15 +145,23 @@ SELECT 'or_chain_rewritten_to_in', (SELECT arraySort(groupArray(v)) FROM pk_str
     = (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v IN ('7', 'zz', 'V0')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0);
 
+-- Guards the chain length that the cell above depends on: three disjuncts must still collapse into a
+-- single IN at the default optimize_min_equality_disjunction_chain_length, so or_chain_rewritten_to_in
+-- cannot silently degrade into two standalone equals that pk_equals already covers. The disjuncts are
+-- deliberately plain String literals, not enum constants, so this cell measures the chain length
+-- mechanism only and stays independent of whether an enum constant is eligible for the rewrite at all,
+-- which is a separate question that index and rewrite eligibility rules may legitimately change.
 -- Matched with the trailing comma, because a bare '%in%' also matches ordinary, result_type and other
 -- identifiers. This is a mechanism guard rather than a bug detector: the rewrite fires before the fix too.
+-- enable_analyzer is pinned because EXPLAIN QUERY TREE throws NOT_IMPLEMENTED without the analyzer, which
+-- would abort the whole file on the old analyzer job and under compatibility settings below 24.3. The pin
+-- belongs on the outer SELECT: inside the subquery it is rejected as a setting changed in a subquery.
 SELECT 'or_chain_is_rewritten', countIf(explain LIKE '%function_name: in,%') = 1
     AND countIf(explain LIKE '%function_name: or,%') = 0
 FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM pk_str
-    WHERE v = CAST('7', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
-       OR v = CAST('zz', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)')
-       OR v = CAST('V0', 'Enum8(\'7\' = 3, \'zz\' = 9, \'V0\' = 1)'));
+    WHERE v = '7' OR v = 'zz' OR v = 'V0')
+SETTINGS enable_analyzer = 1;
 
 SELECT 'tuple_in', (SELECT groupArray(a) FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
