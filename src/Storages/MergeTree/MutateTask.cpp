@@ -3553,10 +3553,12 @@ bool MutateTask::prepare()
 
         /// No row in the part is expired under the new TTL (or `materialize_ttl_recalculate_only` asks
         /// for a metadata-only refresh, which is exactly what the shift does): clone the part and shift
-        /// its TTL infos. Rewriting `ttl.txt` and `checksums.txt` in place is only possible when every
-        /// file of the part is stored separately; a packed part cannot be modified after it is written,
-        /// so it takes the regular rewrite below.
-        if (delta && (recalculate_only || source_ttl_infos.table_ttl.min + *delta >= ctx->time_of_mutation)
+        /// its TTL infos. `ITTLAlgorithm::isTTLExpired` treats `ttl == current_time` as expired, so the
+        /// comparison must be strict: a part whose earliest expiry equals `time_of_mutation` is partially
+        /// expired and takes the regular rewrite below. Rewriting `ttl.txt` and `checksums.txt` in place
+        /// is only possible when every file of the part is stored separately; a packed part cannot be
+        /// modified after it is written, so it takes the regular rewrite below as well.
+        if (delta && (recalculate_only || source_ttl_infos.table_ttl.min + *delta > ctx->time_of_mutation)
             && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
             LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
