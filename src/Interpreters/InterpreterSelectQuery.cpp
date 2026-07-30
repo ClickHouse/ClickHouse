@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -34,7 +35,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
@@ -211,6 +212,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
@@ -1621,45 +1623,36 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
-    const auto & [field, type] = evaluateConstantExpression(node, context);
+    const auto [column, type] = evaluateConstantExpressionAsColumn(node, context);
 
     if (!isNativeNumber(type))
         throw Exception(
             ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type", type->getName(), expr);
 
     // First check if it is nonnegative limit since they are more common
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>()))
+        return {converted->getUInt(0), 0, false};
+
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeInt64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeUInt64());
-        if (!converted_value.isNull())
-            return {converted_value.safeGet<UInt64>(), 0, false};
+        Int64 int_value = converted->getInt(0);
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+
+        const UInt64 magnitude = -static_cast<UInt64>(int_value);
+        return {magnitude, 0, true};
     }
 
+    if (ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeFloat64>()))
     {
-        const Field converted_value = convertFieldToType(field, DataTypeInt64());
-        if (!converted_value.isNull())
-        {
-            Int64 int_value = converted_value.safeGet<Int64>();
-            chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
-
-            const UInt64 magnitude = -static_cast<UInt64>(int_value);
-            return {magnitude, 0, true};
-        }
-    }
-
-    {
-        Field converted_value = convertFieldToType(field, DataTypeFloat64());
-        if (!converted_value.isNull())
-        {
-            auto value = converted_value.safeGet<Float64>();
-            if (value < 1 && value > 0)
-                return {0, value, false};
-        }
+        auto value = converted->getFloat64(0);
+        if (value < 1 && value > 0)
+            return {0, value, false};
     }
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
         "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), field),
+        applyVisitor(FieldVisitorToString(), (*column)[0]),
         expr);
 }
 
@@ -2336,7 +2329,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            executeWithFill(query_plan);
+            /// WITH FILL / INTERPOLATE must run only on the finalizing node (to_stage == Complete),
+            /// over the merged stream, not per shard - otherwise fill rows are duplicated after the merge.
+            if (options.to_stage == QueryProcessingStage::Complete)
+                executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
@@ -3017,7 +3013,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]};
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_parallel_single_level_merge]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -3056,7 +3053,12 @@ void InterpreterSelectQuery::executeAggregation(
     else
         group_by_info = nullptr;
 
-    if (!group_by_info && settings[Setting::force_aggregation_in_order])
+    /// `getSortDescriptionFromGroupBy` calls `getColumnName` on every GROUP BY child, but with
+    /// GROUPING SETS those children are `ExpressionList` nodes, so in-order aggregation cannot apply.
+    const bool force_aggregation_in_order
+        = !group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey();
+
+    if (force_aggregation_in_order)
     {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;
@@ -3087,7 +3089,7 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order],
+        force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
