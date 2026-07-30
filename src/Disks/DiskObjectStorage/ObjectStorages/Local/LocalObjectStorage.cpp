@@ -2,8 +2,8 @@
 
 #include <array>
 #include <atomic>
-#include <compare>
 #include <filesystem>
+#include <tuple>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -68,11 +68,9 @@ struct timespec getMTime(const struct stat & file_stat)
 #endif
 }
 
-std::strong_ordering compareTimespec(const struct timespec & left, const struct timespec & right)
+bool isLaterThan(const struct timespec & left, const struct timespec & right)
 {
-    if (auto order = left.tv_sec <=> right.tv_sec; order != std::strong_ordering::equal)
-        return order;
-    return left.tv_nsec <=> right.tv_nsec;
+    return std::tie(left.tv_sec, left.tv_nsec) > std::tie(right.tv_sec, right.tv_nsec);
 }
 
 String makeETag(const struct stat & file_stat)
@@ -368,7 +366,7 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
 
     /// The payload was written after the replaced version had been published, so a
     /// clock of any usable resolution already separates the two on its own.
-    if (compareTimespec(getMTime(temp_stat), replaced_mtime) == std::strong_ordering::greater)
+    if (isLaterThan(getMTime(temp_stat), replaced_mtime))
         return;
 
     /// A nanosecond is enough on every filesystem that keeps sub-second inode times
@@ -402,7 +400,7 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
         if (0 != ::stat(temp_path.c_str(), &temp_stat))
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, temp_path, "Cannot stat file {}", temp_path);
 
-        if (compareTimespec(getMTime(temp_stat), replaced_mtime) == std::strong_ordering::greater)
+        if (isLaterThan(getMTime(temp_stat), replaced_mtime))
             return;
     }
 
