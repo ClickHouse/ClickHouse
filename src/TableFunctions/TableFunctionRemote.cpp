@@ -85,7 +85,12 @@ ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr conte
     chassert(cluster);
     /// Forward the mode: for a table-function target resolved on a local shard it selects a read-only or a
     /// writable client of the underlying storage, so a read must not ask for a writable one.
-    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr, is_insert_query);
+    /// A table-function target is itself read-only by contract (there is no remote table to insert into, and
+    /// `StorageDistributed::write` rejects such an INSERT with `NOT_IMPLEMENTED`), so even when the caller is
+    /// an INSERT or CREATE ... AS, its structure is always probed in read mode. It cannot be rejected earlier,
+    /// here or in `executeImpl`: `CREATE TABLE ... AS remote(...)` legitimately arrives with the insert mode.
+    return getStructureOfRemoteTable(
+        *cluster, remote_table_id, context, remote_table_function_ptr, is_insert_query && !remote_table_function_ptr);
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
