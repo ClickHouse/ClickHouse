@@ -30,7 +30,7 @@ using Processors = std::list<ProcessorPtr>;
 class PushingPipelineExecutor
 {
 public:
-    explicit PushingPipelineExecutor(QueryPipeline & pipeline_);
+    explicit PushingPipelineExecutor(QueryPipeline & pipeline_, bool report_read_progress = true);
     ~PushingPipelineExecutor();
 
     /// Get structure of returned block or chunk.

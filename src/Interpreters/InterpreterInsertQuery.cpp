@@ -1331,7 +1331,10 @@ BlockIO InterpreterInsertQuery::execute()
             // SELECT populate into a temporary _tmp_replace_* table), so it would re-check INSERT on
             // the temporary name and fail with ACCESS_DENIED. A remote destination (isRemote(), e.g.
             // Distributed) needs its own write handling rather than a single local sink, so it is
-            // excluded too. Fall back to the synchronous pipeline silently.
+            // excluded too. A table function destination is excluded as well: `getTable` re-analyzes
+            // `query.select` for a structure hint on the flush thread, whose context has a different
+            // current database, so it fails or resolves wrongly. Fall back to the synchronous
+            // pipeline silently.
             const bool in_transaction =
                 context->getCurrentTransaction() != nullptr
                 || settings[Setting::implicit_transaction];
@@ -1344,7 +1347,8 @@ BlockIO InterpreterInsertQuery::execute()
                 && !in_transaction
                 && !non_parallel_quorum
                 && !skip_target_insert_access_check
-                && !table->isRemote();
+                && !table->isRemote()
+                && !query.table_function;
             if (async_insert_select)
                 buildAsyncInsertSelectPipeline(res, query, query_ptr, table, async_insert_queue, context, settings, logger);
             else
