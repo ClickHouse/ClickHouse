@@ -345,7 +345,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -803,8 +802,9 @@ MergeTreeData::MergeTreeData(
                               (*settings)[MergeTreeSetting::check_sample_column_is_correct] && sanity_checks);
     }
 
+    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
     /// Runs after `setProperties` above, which validated the index descriptions.
-    checkStreamFilenamesForCollision(metadata_, *settings, sanity_checks);
+    checkSkipIndexFilenamesForCollision(metadata_, *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
 
     /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
@@ -5438,10 +5438,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
     /// Must run after `checkProperties`: it validates the index descriptions, and the collision check
     /// constructs real index objects whose creators assume a validated description.
-    checkStreamFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
+    checkSkipIndexFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -10283,11 +10284,8 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     return total_rows;
 }
 
-void MergeTreeData::checkStreamFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
+void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
 {
-    /// Re-derive the settings from the metadata rather than reading the installed ones: an ALTER
-    /// MODIFY SETTING is validated before `changeSettings` installs it, so the live settings (and the
-    /// `escape_filenames` flag cached on every index description) still hold the pre-ALTER values.
     auto settings = getDefaultSettings();
     if (metadata.settings_changes)
     {
@@ -10295,166 +10293,90 @@ void MergeTreeData::checkStreamFilenamesForCollision(const StorageInMemoryMetada
         settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
     }
 
-    checkStreamFilenamesForCollision(metadata, *settings, throw_on_error);
+    checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
+    SerializationInfo::Settings serialization_settings
+    {
+        static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        false,
+        settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        settings[MergeTreeSetting::serialization_info_version],
+        settings[MergeTreeSetting::string_serialization_version],
+        settings[MergeTreeSetting::nullable_serialization_version],
+        settings[MergeTreeSetting::map_serialization_version],
+        settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
+    for (const auto & column : columns_list)
+    {
+        std::unordered_map<String, String> column_streams;
+
+        auto callback = [&](const auto & substream_path)
+        {
+            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
+            column_streams.emplace(stream_name, full_stream_name);
+        };
+
+        auto serialization = column.type->getSerialization(serialization_settings);
+        serialization->enumerateStreams(callback);
+
+        for (const auto & [stream_name, full_stream_name] : column_streams)
+        {
+            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            if (!inserted)
+            {
+                const auto & [other_full_name, other_column_name] = it->second;
+                auto other_type = columns.getPhysical(other_column_name).type;
+
+                auto message = fmt::format(
+                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+
+                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+
+                if (throw_on_error)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                return;
+            }
+        }
+    }
 }
 
 namespace
 {
 
-/// Enumerate the streams that appear only once a data-dependent serialization kind is chosen.
-///
-/// The write path builds its `SerializationInfo` with `choose_kind = true` and feeds it real data
-/// (`MergeTreeDataWriter.cpp`, `MergeTask.cpp`), so `chooseKindStack` can select Sparse and
-/// `SerializationSparse::enumerateStreams` then contributes a `<base>.sparse.idx` offsets stream.
-/// A DDL-time check has no data, so it must synthesise the kind instead: an all-defaults `Data`
-/// makes the defaults ratio 1.0, which exceeds `ratio_of_defaults_for_sparse_serialization` for
-/// every value below 1.0 and therefore yields the widest kind stack the writer could ever pick.
-///
-/// Going through `createSerializationInfo` (rather than wrapping the top-level serialization by
-/// hand) is what makes nested owners work: `Tuple` chooses a kind per ELEMENT, so its Sparse
-/// streams are `<base>%2E<elem>.sparse.idx` and a top-level wrap would never produce them.
-/// `Detached` and `Replicated` are deliberately not synthesised: neither is reachable here.
-/// `Detached` exists only for in-flight block marshalling, and the only producer of `Replicated`
-/// is `DataTypeTuple::getSerializationInfoImpl` for an already-replicated column, which the
-/// writer materialises away before a part is written.
-void enumerateStreamsForDataDependentKinds(
-    const NameAndTypePair & column,
-    const SerializationInfo::Settings & serialization_settings,
-    const ColumnPtr & sample_column,
-    const ISerialization::StreamCallback & callback)
-{
-    if (serialization_settings.isAlwaysDefault())
-        return;
-
-    auto kind_settings = serialization_settings;
-    kind_settings.choose_kind = true;
-
-    auto info = column.type->createSerializationInfo(kind_settings);
-    info->addDefaults(1);
-
-    column.type->getSerialization(*info)->enumerateStreams(callback, column.type, sample_column);
-}
-
-/// The distinct `SerializationInfo::Settings` the writers could build for one table.
-///
-/// A zero-level part (the one an INSERT produces) and a merged part do not necessarily agree:
-/// `MergeTreeDataWriter` reads `map_serialization_version_for_zero_level_parts` while `MergeTask`
-/// reads `map_serialization_version`, and the two settings are declared independently. Since
-/// `SerializationMap::enumerateStreams` only emits its `.buckets_info` stream for the bucketed
-/// version, checking one version alone leaves the other path's stream unmodelled. Enumerating the
-/// union covers whichever part type is written first.
-///
-/// Only `map_serialization_version` needs this: it is the sole `SerializationInfoSettings` member
-/// with a `_for_zero_level_parts` twin. The string and nullable versions have no such twin, and
-/// `object_shared_data_serialization_version_for_zero_level_parts` is not part of these settings at
-/// all (it belongs to `ISerialization::EnumerateStreamsSettings`).
-///
-/// Both variants are built through the constructor, exactly as the writers do, because it is the
-/// constructor that resets every type-specialized version below `WITH_TYPES`. Assigning the member
-/// afterwards would model a bucketed Map that no write path can ever produce, and the check would
-/// then reject a definition that is in fact safe.
-std::vector<SerializationInfo::Settings> getSerializationSettingsVariants(const MergeTreeSettings & settings)
-{
-    auto make_settings = [&](MergeTreeMapSerializationVersion map_serialization_version)
-    {
-        return SerializationInfo::Settings
-        {
-            static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-            false,
-            settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-            settings[MergeTreeSetting::serialization_info_version],
-            settings[MergeTreeSetting::string_serialization_version],
-            settings[MergeTreeSetting::nullable_serialization_version],
-            map_serialization_version,
-            settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-        };
-    };
-
-    auto merge_path_settings = make_settings(settings[MergeTreeSetting::map_serialization_version]);
-    auto insert_path_settings = make_settings(settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
-
-    std::vector<SerializationInfo::Settings> variants{merge_path_settings};
-    if (insert_path_settings != merge_path_settings)
-        variants.push_back(insert_path_settings);
-
-    return variants;
-}
-
 /// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
-class StreamFilenameCollisionChecker
+///
+/// Skip indices claim `skp_idx_<name>[<suffix>]` per substream, and each substream opens both a data
+/// file and a marks file from that base. Only the base is keyed: two indices can differ in their data
+/// extension yet still share one marks file, because the marks extension is a single writer-wide
+/// value.
+class SkipIndexFilenameCollisionChecker
 {
 public:
-    StreamFilenameCollisionChecker(const MergeTreeSettings & settings_, LoggerPtr log_, bool throw_on_error_)
+    SkipIndexFilenameCollisionChecker(const MergeTreeSettings & settings_, LoggerPtr log_, bool throw_on_error_)
         : settings(settings_), log(std::move(log_)), throw_on_error(throw_on_error_)
     {
     }
 
-    /// Returns false when a collision was found and reported without throwing, so the caller stops.
-    bool addColumns(const ColumnsDescription & columns)
-    {
-        auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-            ? Nested::collect(columns.getAllPhysical())
-            : columns.getAllPhysical();
-        auto serialization_settings_variants = getSerializationSettingsVariants(settings);
-
-        for (const auto & column : columns_list)
-        {
-            std::unordered_map<String, String> column_streams;
-
-            auto callback = [&](const auto & substream_path)
-            {
-                auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
-                String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-                column_streams.emplace(stream_name, full_stream_name);
-            };
-
-            /// Some streams exist only once a value that a DDL-time check cannot observe is known,
-            /// so enumerating the plain serialization once is not enough. Three things are unknown
-            /// here and each is supplied explicitly, and because every pass feeds the same per-column
-            /// map the result is their union: an index can never share a base with a stream that a
-            /// later write will open.
-            ///
-            ///  - The serialization KIND depends on the data. Sparse is reachable at default settings
-            ///    and its offsets stream is named `<base>.sparse.idx`, so `.idx` is part of the NAME
-            ///    and can alias a skip index. `enumerateStreamsForDataDependentKinds` synthesises it.
-            ///  - The Map serialization VERSION differs between the insert and merge paths, so both
-            ///    are enumerated (see `getSerializationSettingsVariants`).
-            ///  - Some types gate their nested streams on having a COLUMN: `Dynamic` returns right
-            ///    after `.dynamic_structure` when none is given, hiding the `.variant_discr` stream
-            ///    that `Variant` then emits unconditionally. An empty column of the column's own type
-            ///    passes that gate, which is enough for the structural streams a fresh column already
-            ///    determines. It does NOT recover streams that exist only for values actually present
-            ///    (a JSON column's dynamic paths, a Dynamic column's concrete variants); those stay
-            ///    data-dependent and are out of this check's reach.
-            ColumnPtr sample_column = column.type->createColumn();
-            for (const auto & serialization_settings : serialization_settings_variants)
-            {
-                column.type->getSerialization(serialization_settings)->enumerateStreams(callback, column.type, sample_column);
-                enumerateStreamsForDataDependentKinds(column, serialization_settings, sample_column, callback);
-            }
-
-            auto owner = fmt::format("Column '{} {}'", column.name, column.type->getName());
-            for (const auto & [stream_name, full_stream_name] : column_streams)
-            {
-                if (!add(stream_name, full_stream_name, owner))
-                    return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// Skip indices claim `skp_idx_<name>[<suffix>]` per substream, and each substream opens both a
-    /// data file and a marks file from that base. Only the base is keyed: two indices can differ in
-    /// their data extension yet still share one marks file, because the marks extension is a single
-    /// writer-wide value.
     /// @escape_filenames_override is set for the table namespace, where it must come from the
     /// candidate settings: `AlterCommands::apply` MODIFY_SETTING only records the change in
     /// `settings_changes`, and `MergeTreeData::changeSettings` refreshes every description's cached
     /// `escape_filenames` afterwards, so the descriptions still hold the pre-ALTER value here. It is
-    /// left unset for a projection, whose descriptions are the only source of truth: their escaping
-    /// is fixed at construction and `changeSettings` never revisits them.
-    bool addSkipIndices(
+    /// left unset for a projection, whose descriptions are the only source of truth: their escaping is
+    /// fixed at construction and `changeSettings` never revisits them.
+    void add(
         const StorageMetadataPtr & metadata_snapshot,
         const IndicesDescription & indices,
         std::optional<bool> escape_filenames_override)
@@ -10477,37 +10399,29 @@ public:
                 auto full_stream_name = file_name + substream.suffix;
                 auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
 
-                if (!add(stream_name, full_stream_name, owner))
-                    return false;
+                auto [it, inserted] = stream_name_to_owner.emplace(stream_name, std::pair{full_stream_name, owner});
+                if (inserted)
+                    continue;
+
+                const auto & [other_full_name, other_owner] = it->second;
+
+                auto message = fmt::format(
+                    "{} and {} have streams ({} and {}) with collision in file name {}",
+                    owner, other_owner, full_stream_name, other_full_name, stream_name);
+
+                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+                    message += ". It may be a collision between a filename for one index and a hash of filename for another index (see setting 'replace_long_file_name_to_hash')";
+
+                if (throw_on_error)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                return;
             }
         }
-
-        return true;
     }
 
 private:
-    bool add(const String & stream_name, const String & full_stream_name, const String & owner)
-    {
-        auto [it, inserted] = stream_name_to_owner.emplace(stream_name, std::pair{full_stream_name, owner});
-        if (inserted)
-            return true;
-
-        const auto & [other_full_name, other_owner] = it->second;
-
-        auto message = fmt::format(
-            "{} and {} have streams ({} and {}) with collision in file name {}",
-            owner, other_owner, full_stream_name, other_full_name, stream_name);
-
-        if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-            message += ". It may be a collision between a filename for one stream and a hash of filename for another stream (see setting 'replace_long_file_name_to_hash')";
-
-        if (throw_on_error)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-        LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-        return false;
-    }
-
     const MergeTreeSettings & settings;
     LoggerPtr log;
     bool throw_on_error;
@@ -10516,7 +10430,22 @@ private:
 
 }
 
-void MergeTreeData::checkStreamFilenamesForCollision(
+void MergeTreeData::checkSkipIndexFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
+{
+    /// Re-derive the settings from the metadata rather than reading the installed ones: an ALTER
+    /// MODIFY SETTING is validated before `changeSettings` installs it, so the live settings (and the
+    /// `escape_filenames` flag cached on every index description) still hold the pre-ALTER values.
+    auto settings = getDefaultSettings();
+    if (metadata.settings_changes)
+    {
+        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+    }
+
+    checkSkipIndexFilenamesForCollision(metadata, *settings, throw_on_error);
+}
+
+void MergeTreeData::checkSkipIndexFilenamesForCollision(
     const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const
 {
     /// Constructing real index objects is what makes `getSubstreams` the single source of truth for
@@ -10525,17 +10454,11 @@ void MergeTreeData::checkStreamFilenamesForCollision(
     /// this only after `setProperties`/`checkProperties` has validated the index descriptions.
     auto metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(metadata);
 
-    {
-        StreamFilenameCollisionChecker checker(settings, log.load(), throw_on_error);
-        if (!checker.addColumns(metadata.getColumns()))
-            return;
-        if (!checker.addSkipIndices(
-                metadata_snapshot, metadata.secondary_indices, settings[MergeTreeSetting::escape_index_filenames]))
-            return;
-    }
+    SkipIndexFilenameCollisionChecker checker(settings, log.load(), throw_on_error);
+    checker.add(metadata_snapshot, metadata.secondary_indices, settings[MergeTreeSetting::escape_index_filenames]);
 
     /// A projection's files live in its own `<name>.proj/` directory, so it is a separate namespace
-    /// and must not be pooled with the table's streams. Its settings are an overlay on the table's.
+    /// and must not be pooled with the table's indices. Its settings are an overlay on the table's.
     for (const auto & projection : metadata.projections)
     {
         if (!projection.metadata)
@@ -10545,11 +10468,8 @@ void MergeTreeData::checkStreamFilenamesForCollision(
         if (!projection.settings_changes.empty())
             projection_settings->applyChanges(projection.settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
-        StreamFilenameCollisionChecker checker(*projection_settings, log.load(), throw_on_error);
-        if (!checker.addColumns(projection.metadata->getColumns()))
-            return;
-        if (!checker.addSkipIndices(projection.metadata, projection.metadata->secondary_indices, std::nullopt))
-            return;
+        SkipIndexFilenameCollisionChecker projection_checker(*projection_settings, log.load(), throw_on_error);
+        projection_checker.add(projection.metadata, projection.metadata->secondary_indices, std::nullopt);
     }
 }
 

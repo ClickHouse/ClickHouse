@@ -2142,13 +2142,15 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const;
 
-    /// Validates that no two stream owners inside one filename namespace resolve to the same base
-    /// stream name. Columns and skip indices share that namespace: a column named `skp_idx_a` and an
-    /// index named `a` both own `skp_idx_a.*`, and with `escape_index_filenames = 0` an index named
-    /// `a.pos` aliases a text index `a`'s positional substream. Each projection is its own namespace
+    void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
+    void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    /// Validates that no two skip indices resolve to the same base stream name. With
+    /// `escape_index_filenames = 0` an index named `a.pos` claims `skp_idx_a.pos`, which is also what a
+    /// text index named `a` derives for its positional substream. Each projection is its own namespace
     /// (its files live in `<name>.proj/`) and is validated separately.
-    void checkStreamFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
-    void checkStreamFilenamesForCollision(
+    void checkSkipIndexFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
+    void checkSkipIndexFilenamesForCollision(
         const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const;
 
     StorageSnapshotPtr

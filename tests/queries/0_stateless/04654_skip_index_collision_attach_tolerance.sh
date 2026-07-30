@@ -40,9 +40,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_inert"
 
 inert_uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 ${CLICKHOUSE_CLIENT} --send_logs_level=error -q "
-    ATTACH TABLE t_inert UUID '${inert_uuid}' (k UInt64, skp_idx_h UInt64, w UInt64,
-        INDEX h w > 0 TYPE hypothesis GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY k
+    ATTACH TABLE t_inert UUID '${inert_uuid}' (k UInt64, s String, w UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+        INDEX \`a.dct\` w > 0 TYPE hypothesis GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY k SETTINGS escape_index_filenames = 0
 " 2>&1 | grep -c "collision in file name"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_inert"
@@ -52,9 +53,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_not_inert"
 
 not_inert_uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
 ${CLICKHOUSE_CLIENT} --send_logs_level=error -q "
-    ATTACH TABLE t_not_inert UUID '${not_inert_uuid}' (k UInt64, skp_idx_h UInt64, w UInt64,
-        INDEX h w TYPE minmax GRANULARITY 1)
-    ENGINE = MergeTree ORDER BY k
+    ATTACH TABLE t_not_inert UUID '${not_inert_uuid}' (k UInt64, s String, w UInt64,
+        INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+        INDEX \`a.dct\` w TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY k SETTINGS escape_index_filenames = 0
 " 2>&1 | grep -c -m1 "collision in file name"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_not_inert"
