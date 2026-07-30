@@ -565,8 +565,7 @@ SELECT
 
 Introduced in: v1.1.0
 
-Removes the first `name=value` occurrence of each requested parameter from a URL.
-Only parameters spelled as `name=` are matched, so a value-less flag parameter is left intact, e.g. `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` returns the URL unchanged.
+Removes the `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
     
 
@@ -583,7 +582,7 @@ cutURLParameter(url, name)
 
 **Returned value**
 
-URL with the first `name=value` occurrence of each requested parameter removed. [`String`](/reference/data-types/string)
+URL with `name` URL parameter removed. [`String`](/reference/data-types/string)
 
 **Examples**
 
