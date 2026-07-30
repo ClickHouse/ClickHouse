@@ -657,7 +657,7 @@ TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
 
     auto cols = makeUInt64Columns(keys);
     VectorWithMemoryTracking<String> encoded;
-    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_encoded_size=*/256, encoded);
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
     for (size_t i = 0; i < keys.size(); ++i)
     {
         std::string value;
