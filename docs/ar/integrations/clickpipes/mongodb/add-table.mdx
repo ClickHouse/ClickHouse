@@ -21,9 +21,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن القيام بذلك باتباع الخطوات التالية:
 
-1. [أوقِف](/ar/integrations/clickpipes/mongodb/pause-and-resume) خط الأنابيب.
+1. [إيقاف مؤقت](/ar/integrations/clickpipes/mongodb/pause-and-resume) لخط الأنابيب.
 2. انقر على Edit Table settings.
-3. اعثر على جدولك، ويمكن القيام بذلك بالبحث عنه في شريط البحث.
+3. اعثر على جدولك - ويمكن القيام بذلك بالبحث عنه في شريط البحث.
 4. حدِّد الجدول بالنقر على مربع الاختيار.
 
 <br />
@@ -31,8 +31,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
 
 5. انقر على update.
-6. عند نجاح التحديث، سيمرّ خط الأنابيب بالحالات `Setup` ثم `Snapshot` ثم `Running`. ويمكن تتبّع التحميل الأوّلي للجدول في علامة التبويب **Tables**.
+6. عند نجاح التحديث، سيمرّ خط الأنابيب بالحالات `Setup` ثم `Snapshot` ثم `Running` بهذا الترتيب. ويمكن تتبّع التحميل الأوّلي للجدول في علامة التبويب **Tables**.
 
 <Info>
-  يُستأنف CDC للجداول الحالية تلقائيًا بعد اكتمال اللقطة للجدول الجديد.
+  يُستأنف CDC للجداول الحالية تلقائيًا بعد اكتمال snapshot للجدول الجديد.
 </Info>
