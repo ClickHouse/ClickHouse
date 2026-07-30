@@ -324,6 +324,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
+bool isParallelReplicasInitiatorWithProjectionSupport(const ContextPtr & context)
+{
+    return context->canUseParallelReplicasOnInitiator()
+        && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->getSettingsRef()[Setting::parallel_replicas_support_projection];
+}
+
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     : QueryPlanOptimizationSettings(
         from->getSettingsRef(),
@@ -331,9 +338,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
         from->getPreparedSetsCache(),
-        from->canUseParallelReplicasOnInitiator()
-            && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
-            && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
+        isParallelReplicasInitiatorWithProjectionSupport(from))
 {
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())

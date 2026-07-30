@@ -1,0 +1,11 @@
+-- non-parallel
+4000
+4	6147
+-- count() over a Merge table
+4000
+-- count() over the merge() table function
+4000
+-- projection read over a Merge table
+4	6147
+-- projection read over the merge() table function
+4	6147

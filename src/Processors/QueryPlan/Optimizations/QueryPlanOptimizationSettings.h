@@ -18,6 +18,11 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class QueryPlan;
 
+/// Whether the plan being optimized is the initiator's local plan for parallel replicas and the
+/// initiator is allowed to read projections locally. Remote replicas must not read projections
+/// themselves, so for them the projection reads are replaced with an empty source.
+bool isParallelReplicasInitiatorWithProjectionSupport(const ContextPtr & context);
+
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(

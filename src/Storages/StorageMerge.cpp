@@ -632,7 +632,15 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
+            QueryPlanOptimizationSettings optimization_settings(context);
+
+            /// See the same adjustment in `createChildrenPlans`: the child plans of the initiator's
+            /// local plan read with parallel replicas, but `context` has parallel replicas switched off.
+            if (parallel_replicas_local_plan_info)
+                optimization_settings.is_parallel_replicas_initiator_with_projection_support
+                    = isParallelReplicasInitiatorWithProjectionSupport(parallel_replicas_local_plan_info->context);
+
+            child.plan.optimize(optimization_settings);
         }
     }
 
@@ -1015,7 +1023,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
-                child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
+                QueryPlanOptimizationSettings optimization_settings(modified_context);
+
+                /// `modified_context` descends from the context of the initiator's local plan, in which
+                /// parallel replicas are switched off, while the child reading step has just been wrapped
+                /// into a parallel replicas reading step. Without restoring the flag, the projection
+                /// optimizations would take this initiator-local child for a remote replica and replace
+                /// the projection reads with an empty source, losing the rows the initiator must return.
+                if (parallel_replicas_local_plan_info)
+                    optimization_settings.is_parallel_replicas_initiator_with_projection_support
+                        = isParallelReplicasInitiatorWithProjectionSupport(parallel_replicas_local_plan_info->context);
+
+                child.plan.optimize(optimization_settings);
             }
 
             res.emplace_back(std::move(child));
