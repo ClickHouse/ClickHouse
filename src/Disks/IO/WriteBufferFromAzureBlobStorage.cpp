@@ -4,6 +4,7 @@
 
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/getBlobPropertiesWithRetry.h>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -383,7 +384,9 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         try
         {
             auto blob_client = blob_container_client->GetBlobClient(blob_path);
-            blob_client.GetProperties();
+            /// The upload already succeeded; a transient 403/auth on this verification must not turn a good
+            /// write into a final failure, so retry it like the write path (getBlobPropertiesWithRetry).
+            getBlobPropertiesWithRetry(blob_client, max_unexpected_write_error_retries, blob_path, log);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
