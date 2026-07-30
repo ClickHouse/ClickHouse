@@ -628,12 +628,14 @@ def test_rename_with_parallel_slow_insert(started_cluster):
 
 
 def test_rename_with_async_insert_select(started_cluster):
-    """With async_insert=1, RENAME COLUMN must not be blocked by a running INSERT ... SELECT.
+    """RENAME COLUMN must not be blocked by a running local INSERT ... SELECT.
 
-    The async path does not hold a table write lock while the SELECT is executing,
-    so the rename can proceed immediately.  The insert itself always waits for the
-    flush (wait_for_async_insert is forced to 1 on the async INSERT ... SELECT path),
-    so the data must be queryable under the original column name once insert() returns.
+    The destination table's lockForShare is released before the pipeline runs, on both
+    the synchronous fallback and the async queue route; see the comment above that
+    acquisition in InterpreterInsertQuery.cpp.
+
+    This test does not cover the self reference lock ordering hazard documented next to
+    that same acquisition.
     """
     if node1.is_built_with_sanitizer():
         pytest.skip("Consume tons of memory with sanitizer")
@@ -655,9 +657,10 @@ def test_rename_with_async_insert_select(started_cluster):
 
         def timed_insert():
             nonlocal insert_end
-            # With async_insert=True the SELECT runs without holding the table write lock,
-            # so the rename can proceed immediately.  The flush may fail with Code 16 if
-            # the rename beat it to the column; that is expected async-insert behaviour.
+            # The rename can proceed immediately regardless of async_insert, per the
+            # docstring above: this query's destination lockForShare is already released by
+            # the time the SELECT runs. The flush may fail with Code 16 if the rename beat
+            # it to the column; that is expected async insert behaviour.
             insert(
                 node1, table_name, 10000, ["num", "num2"],
                 1,

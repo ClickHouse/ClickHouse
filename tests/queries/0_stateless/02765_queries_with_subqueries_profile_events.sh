@@ -24,8 +24,7 @@ $CLICKHOUSE_CLIENT -q "
 for enable_analyzer in 1; do
     query_id="$(random_str 10)"
     INSERT_QUERY_ID=$query_id
-    # async_insert=0: query_log is checked by query_id right after the INSERT; async flush races.
-    query="INSERT INTO input SELECT * FROM numbers(1) SETTINGS async_insert = 0"
+    query="INSERT INTO input SELECT * FROM numbers(1)"
     echo "$query"
     $CLICKHOUSE_CLIENT --parallel_distributed_insert_select=0 --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
 

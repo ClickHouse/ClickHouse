@@ -107,6 +107,10 @@ def test_jbod_balanced_merge(start_cluster):
 
         p = Pool(20)
 
+        # async_insert = 0: the destinations are MergeTree, so these inserts would otherwise take the
+        # async insert queue route, which coalesces concurrent single-block INSERT ... SELECTs into
+        # fewer and larger parts. This test balances parts across JBOD disks, so it needs one part per
+        # insert.
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
@@ -175,6 +179,8 @@ def test_replicated_balanced_merge_fetch(start_cluster):
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
         p = Pool(5)
 
+        # async_insert = 0: see test_jbod_balanced_merge above, one part per insert is what gets
+        # balanced across the disks here.
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block

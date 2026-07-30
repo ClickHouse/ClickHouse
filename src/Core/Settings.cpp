@@ -5565,10 +5565,8 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 
-With async_insert, pair this with an explicit max_insert_threads setting: the optimization caps
-the SELECT to max_insert_threads reading threads, and once capped to one thread the SELECT
-normally produces a single block, which stops being eligible for the async insert queue as soon
-as a second block appears.
+Pair this with an explicit `max_insert_threads` setting: the optimization caps the `SELECT` to
+`max_insert_threads` reading threads, which changes how many blocks the `SELECT` produces.
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
 Allow to execute alters which affects not only tables metadata, but also data on disk
@@ -7148,7 +7146,9 @@ If disabled and the INSERT query contains inline data, the server will not send 
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
-If true wait for processing of asynchronous insertion.
+If true wait for processing of asynchronous insertion. This setting is ignored for an `INSERT ... SELECT`
+that takes the async insert queue route: that route always waits for the flush unconditionally, because
+returning early would hide a flush failure from a client whose INSERT already reported success.
 )", 0) \
     DECLARE(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Timeout for waiting for processing asynchronous insertion.
