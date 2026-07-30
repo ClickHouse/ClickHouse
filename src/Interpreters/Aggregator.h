@@ -151,6 +151,17 @@ public:
         bool enable_adaptive_aggregator = false;
         UInt64 adaptive_aggregator_freeze_threshold = 0;
 
+        /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
+        /// plan optimization (never by users) when the plan proves this aggregation feeds
+        /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
+        /// only its n best cells by that count. Exact, because a group outside its own
+        /// bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
+        /// out of the constructor and of the plan serialization deliberately: a deserialized
+        /// plan re-runs without the optimization, which is the safe direction.
+        size_t bucket_top_k = 0;
+        bool bucket_top_k_ascending = false;
+        size_t bucket_top_k_count_index = 0;
+
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
@@ -856,6 +867,12 @@ private:
         Int32 bucket) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+
+    /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
+    /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
+    /// upstream receives at most 256 * n candidate rows instead of every group.
+    template <typename Method>
+    AggregatedChunk convertOneBucketToChunkTopK(Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket) const;
 
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,

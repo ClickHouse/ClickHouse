@@ -49,6 +49,7 @@ struct QueryPlanOptimizationSettings
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
+    bool aggregation_bucket_top_k;
     bool split_filter;
     bool merge_expressions;
     bool merge_filters;

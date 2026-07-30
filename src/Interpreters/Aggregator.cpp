@@ -2081,6 +2081,9 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
         pools_for_output = &pools_with_bucket_arena;
     }
 
+    if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket);
+
     auto result = convertToBlockImpl(
         method,
         method.data.impls[bucket],
@@ -2091,6 +2094,128 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
         return_single_block);
     Chunk chunk = std::move(result[0]);
 
+    return AggregatedChunk{std::move(chunk), bucket};
+}
+
+template <typename Method>
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket) const
+{
+    auto & data = method.data.impls[bucket];
+    chassert(params.bucket_top_k_count_index < params.aggregates_size);
+    ProfileEvents::increment(ProfileEvents::AggregationBucketTopKConversions);
+
+    /// One selection pass with a bounded heap: the count is read straight from the state (the
+    /// inline table value for simple count, the count state's UInt64 otherwise), so no cell is
+    /// finalized to be ranked, and the state pointers are chased exactly once - a second full
+    /// pass over the bucket costs more than the whole materialization it saves. The heap keeps
+    /// the first-seen cells on boundary ties, which is exact for LIMIT semantics: any correct
+    /// top set is valid, and the sorter above orders it.
+    const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_count_index];
+    const auto count_of = [&](const AggregateDataPtr & mapped) -> UInt64
+    {
+        if (is_simple_count)
+            return getCountState(reinterpret_cast<AggregateDataPtr>(&const_cast<AggregateDataPtr &>(mapped)));
+        return *reinterpret_cast<const UInt64 *>(mapped + count_offset);
+    };
+    const auto better
+        = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
+
+    /// The key is stored as whatever the cells hand out (the packed-string cell, for one,
+    /// unpacks to a view), so the candidate insertion below takes it exactly like the ordinary
+    /// conversion's per-cell callback does.
+    using TableKey = std::decay_t<decltype(std::declval<const typename std::decay_t<decltype(data)>::cell_type &>().getKey())>;
+    struct Candidate
+    {
+        UInt64 value;
+        TableKey key;
+        AggregateDataPtr mapped;
+    };
+    /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
+    const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
+
+    std::vector<Candidate> top;
+    top.reserve(std::min(params.bucket_top_k, data.size()));
+    data.forEachValue(
+        [&](const auto & key, auto & mapped)
+        {
+            const UInt64 value = count_of(mapped);
+            if (top.size() < params.bucket_top_k)
+            {
+                top.push_back({value, key, mapped});
+                std::push_heap(top.begin(), top.end(), worse_first);
+            }
+            else if (better(value, top.front().value))
+            {
+                std::pop_heap(top.begin(), top.end(), worse_first);
+                top.back() = {value, key, mapped};
+                std::push_heap(top.begin(), top.end(), worse_first);
+            }
+        });
+
+    const size_t keep = top.size();
+    auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
+    auto shuffled_key_sizes = method.shuffleKeyColumns(out_cols.raw_key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+    IColumn::SerializationSettings serialization_settings{
+        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+    PaddedPODArray<AggregateDataPtr> places;
+    places.reserve(keep);
+    for (const auto & candidate : top)
+    {
+        method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+        if (is_simple_count)
+            assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
+        else
+            places.push_back(candidate.mapped);
+    }
+
+    /// Losers only need their nontrivial states destroyed - that is the one case that pays a
+    /// second pass; for the common all-POD queries there is nothing to destroy and the bucket
+    /// just clears. Winner states are destroyed by `insertResultsIntoColumns` after their
+    /// results are inserted, like any final conversion, so they are nulled in the table first.
+    std::vector<size_t> nontrivial_destructors;
+    if (!is_simple_count)
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (!aggregate_functions[i]->hasTrivialDestructor())
+                nontrivial_destructors.push_back(i);
+
+    if (!nontrivial_destructors.empty())
+    {
+        PaddedPODArray<AggregateDataPtr> winners;
+        winners.reserve(keep);
+        for (const auto & candidate : top)
+            winners.push_back(candidate.mapped);
+        std::sort(winners.begin(), winners.end());
+
+        data.forEachValue(
+            [&](const auto &, auto & mapped)
+            {
+                if (std::binary_search(winners.begin(), winners.end(), mapped))
+                {
+                    mapped = nullptr;
+                    return;
+                }
+                for (const auto i : nontrivial_destructors)
+                    aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
+                mapped = nullptr;
+            });
+    }
+
+    Chunk chunk;
+    if (is_simple_count)
+        chunk = finalizeChunk(params, std::move(out_cols), /*final=*/true);
+    else
+    {
+        bool use_compiled_functions = false;
+#if USE_EMBEDDED_COMPILER
+        use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
+#endif
+        chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, use_compiled_functions);
+    }
+
+    data.clearAndShrink();
     return AggregatedChunk{std::move(chunk), bucket};
 }
 

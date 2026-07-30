@@ -61,6 +61,15 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const Aggregator::Params & getParams() const { return params; }
+    bool isFinal() const { return final; }
+
+    /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
+    void enableBucketTopK(size_t n, bool ascending, size_t count_index)
+    {
+        params.bucket_top_k = n;
+        params.bucket_top_k_ascending = ascending;
+        params.bucket_top_k_count_index = count_index;
+    }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
