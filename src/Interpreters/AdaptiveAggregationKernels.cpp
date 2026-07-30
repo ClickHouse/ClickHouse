@@ -579,16 +579,18 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
     const size_t total = adaptive.miss_hashes.size();
 
-    /// Group (hash, record) pairs by (bucket, a few extra hash bits): a duplicate key always
-    /// lands in the same group, so the dedup below only compares within a group, and group-id
-    /// order is bucket-major, which is the block's slice layout. The group count scales with
-    /// the batch (~16 records per group), so the histogram stays cache-resident and small
-    /// batches do not pay for counters they cannot fill.
-    const UInt32 sub_bits = std::min<UInt32>(8, std::bit_width(total >> 12));
+    /// Group the records by (bucket, a few extra hash bits): a duplicate key always lands in
+    /// the same group, so the dedup below only compares within a group, and group-id order is
+    /// bucket-major, which is the block's slice layout. The group count scales with the batch
+    /// (~16 records per group), so the histogram stays cache-resident and small batches do not
+    /// pay for counters they cannot fill. A bypassed pass (see `DedupProductivity`) degrades
+    /// the grouping to plain buckets and the dedup scan below to a straight append.
+    const bool dedup = adaptive.publish_dedup.shouldDedup();
+    const UInt32 sub_bits = dedup ? std::min<UInt32>(8, std::bit_width(total >> 12)) : 0;
     const size_t num_groups = num_buckets << sub_bits;
 
-    auto & pairs = adaptive.sort_pairs_scratch;
-    pairs.resize(total);
+    auto & grouped_indexes = adaptive.grouped_index_scratch;
+    grouped_indexes.resize(total);
     auto & offsets = adaptive.group_offsets_scratch;
     auto & cursor = adaptive.group_cursor_scratch;
     offsets.assign(num_groups + 1, 0);
@@ -608,7 +610,7 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
         offsets[g + 1] += offsets[g];
     }
     for (size_t i = 0; i < total; ++i)
-        pairs[cursor[group_of(i)]++] = {adaptive.miss_hashes[i], static_cast<UInt32>(i)};
+        grouped_indexes[cursor[group_of(i)]++] = static_cast<UInt32>(i);
 
     /// Fixed-size keys stage no per-record size (see the kernels); the publish substitutes the
     /// compile-time constant.
@@ -643,7 +645,8 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
         const size_t group_out_begin = out;
         for (size_t i = group_begin; i < group_end; ++i)
         {
-            const auto [hash, idx] = pairs[i];
+            const auto idx = grouped_indexes[i];
+            const UInt64 hash = adaptive.miss_hashes[idx];
             const size_t size = [&]
             {
                 if constexpr (adaptive_key_stages_bytes<SharedKey>)
@@ -657,13 +660,17 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
             /// them: the generic key holder of the packed method would re-pack the key and
             /// re-compute its content hash per record, and the staged arrays already hold both.
             /// All byte uses happen inside the holder's lifetime (see `withStagedKeyBytes`).
+            /// A bypassed pass hands the append an empty candidate range, so nothing is scanned.
             withStagedKeyBytes<SharedKey>(
                 local_find_state,
                 key_row,
                 size,
                 scratch_pool,
                 [&](const KeyBytesRef & key)
-                { mergeOrAppendStagedCount(keys, multiplicities, hash, key, adaptive.miss_multiplicities[idx], group_out_begin, out, byte_pos); });
+                {
+                    mergeOrAppendStagedCount(
+                        keys, multiplicities, hash, key, adaptive.miss_multiplicities[idx], dedup ? group_out_begin : out, out, byte_pos);
+                });
         }
     }
 
@@ -677,6 +684,9 @@ void NO_INLINE Aggregator::buildDeduplicatedCountChunk(
     keys.routing_hashes.resize(out);
     multiplicities.resize(out);
     keys.key_bytes.resize(byte_pos);
+
+    if (dedup)
+        adaptive.publish_dedup.record(total, out);
 }
 
 template <typename SharedKey, typename State>

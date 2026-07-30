@@ -25,6 +25,13 @@ namespace DB
 constexpr size_t adaptive_bypass_sample_rows = 65'536;
 /// Probing the frozen table pays off only while at least one row in this many hits it.
 constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
+/// A count-record dedup pass (the publish's within-block pass or the seal's cross-mini pass)
+/// is bypassed after this many consecutive passes whose records almost all survived it - the
+/// pass costs a per-record candidate scan and finds nothing on a distinct stream. While
+/// bypassed, every `adaptive_dedup_resample_interval`-th pass runs the dedup anyway, so a
+/// stream whose distribution turns repetitive gets its dedup back.
+constexpr size_t adaptive_dedup_unproductive_passes_to_bypass = 4;
+constexpr size_t adaptive_dedup_resample_interval = 64;
 /// The drain reserves a bucket's table after sampling this fraction of its records.
 constexpr size_t adaptive_reserve_sample_inverse = 8;
 /// Headroom over the sampled insert rate when reserving.
@@ -428,10 +435,57 @@ struct AdaptiveAggregationProducer
     PaddedPODArray<UInt64> miss_key_sizes;
     PaddedPODArray<UInt32> miss_multiplicities;
 
-    /// Scratch for the value-staged publish grouping (see `buildDeduplicatedCountChunk`).
-    std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
+    /// Scratch for the value-staged publish grouping: the records' staging indexes in group
+    /// order (the hashes stay in `miss_hashes`, so the entries are four bytes, not sixteen).
+    std::vector<UInt32> grouped_index_scratch;
     std::vector<UInt32> group_offsets_scratch;
     std::vector<UInt32> group_cursor_scratch;
+
+    /// Productivity tracking of a count-record dedup pass. The publish's within-block pass and
+    /// the seal's cross-mini pass are tracked separately, because a stream can be distinct
+    /// within blocks yet repetitive across them. Bypassing is always correct - duplicate count
+    /// records merge at the drain's emplace - so a stale decision costs staged memory until
+    /// the next resample, never results.
+    struct DedupProductivity
+    {
+        size_t consecutive_unproductive = 0;
+        size_t passes_since_resample = 0;
+        bool bypassed = false;
+
+        /// Whether the next pass should dedup: always while engaged, and periodically as a
+        /// resample while bypassed, so a distribution change re-engages the dedup.
+        bool shouldDedup()
+        {
+            if (!bypassed)
+                return true;
+            if (++passes_since_resample < adaptive_dedup_resample_interval)
+                return false;
+            passes_since_resample = 0;
+            return true;
+        }
+
+        /// Feeds back a pass that ran the dedup: one productive pass re-engages, enough
+        /// consecutive passes that merged almost nothing (less than 1/64 of the records)
+        /// bypass.
+        void record(size_t input_records, size_t surviving_records)
+        {
+            if (input_records == 0)
+                return;
+            if (surviving_records * 64 > input_records * 63)
+            {
+                if (++consecutive_unproductive >= adaptive_dedup_unproductive_passes_to_bypass)
+                    bypassed = true;
+            }
+            else
+            {
+                consecutive_unproductive = 0;
+                bypassed = false;
+            }
+        }
+    };
+
+    DedupProductivity publish_dedup;
+    DedupProductivity seal_dedup;
 
     /// Small per-block staging batches buffered for coalescing: they are merged into one
     /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the

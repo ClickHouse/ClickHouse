@@ -101,69 +101,24 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
     return chunks;
 }
 
-void Aggregator::stageChunk(
-    AdaptiveAggregationProducer & adaptive, MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
+namespace
 {
-    /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
-    /// least half the seal target could only ever merge with one neighbor, gaining almost
-    /// nothing for a full extra copy of its data, so it is enqueued as-is.
-    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
-    {
-        publishStagedChunk(*adaptive.session, std::move(block));
-        return;
-    }
 
-    adaptive.pending_chunks.push_back(std::move(block));
-    adaptive.pending_staged_bytes += estimated_payload_bytes;
-
-    if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
-        sealPendingChunks(adaptive);
-}
-
-void Aggregator::flushPendingChunks(AdaptiveAggregationProducer & adaptive) const
-{
-    if (!adaptive.pending_chunks.empty())
-        sealPendingChunks(adaptive);
-}
-
-void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
+/// Concatenates the minis' bucket-grouped keys into `keys`: bucket b's records are the
+/// concatenation of the minis' b-slices in buffer order. A caller's payload concatenation must
+/// walk the same (bucket, mini) order, so a record keeps one position across the key, hash,
+/// and payload arrays.
+void concatenateStagedKeys(StagedChunk::StagedKeys & keys, const std::vector<MutableStagedChunkPtr> & minis)
 {
     constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
 
-    auto & minis = adaptive.pending_chunks;
-    const size_t num_minis = minis.size();
-
-    if (num_minis == 1)
-    {
-        publishStagedChunk(*adaptive.session, minis.front());
-        minis.clear();
-        adaptive.pending_staged_bytes = 0;
-        return;
-    }
-
-    auto chunk = std::make_shared<StagedChunk>();
-    auto & keys = chunk->keys;
-    const bool counts_only = minis.front()->countsOnly();
-
-    if (counts_only)
-    {
-        sealValueStagedChunkDeduplicated(minis, *chunk);
-    }
-    else
-    {
-    auto columns_of = [](const StagedChunk & mini) -> const Columns &
-    { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
-
-    /// Bucket b's records are the concatenation of the batches' b-slices in buffer order. Every
-    /// per-array pass below walks the same (bucket, batch) order, so a record keeps one position
-    /// across the key, hash, and argument arrays.
     size_t total = 0;
     for (size_t b = 0; b < num_buckets; ++b)
     {
         keys.bucket_offsets[b] = static_cast<UInt32>(total);
         for (const auto & mini : minis)
         {
-            chassert(mini->countsOnly() == counts_only);
+            chassert(mini->countsOnly() == minis.front()->countsOnly());
             total += mini->keys.recordsForBucket(b);
         }
     }
@@ -214,6 +169,100 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
         if (!keys.fixed_key_size)
             keys.key_offsets[total] = byte_pos;
     }
+}
+
+/// The bypassed count seal: a straight concatenation with no cross-mini dedup. Duplicate count
+/// records are legal - the drain merges them at its emplace - so a stale bypass costs staged
+/// memory until the next resample, never results.
+void sealValueStagedChunkConcatenated(const std::vector<MutableStagedChunkPtr> & minis, StagedChunk & chunk)
+{
+    concatenateStagedKeys(chunk.keys, minis);
+
+    auto & multiplicities = chunk.payload.emplace<StagedChunk::CountPayload>().multiplicities;
+    multiplicities.resize(chunk.keys.size());
+    size_t pos = 0;
+    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+        for (const auto & mini : minis)
+        {
+            const auto & mini_multiplicities = std::get<StagedChunk::CountPayload>(mini->payload).multiplicities;
+            const size_t begin = mini->keys.bucket_offsets[b];
+            const size_t length = mini->keys.recordsForBucket(b);
+            if (!length)
+                continue;
+            memcpy(&multiplicities[pos], &mini_multiplicities[begin], length * sizeof(UInt32));
+            pos += length;
+        }
+}
+
+}
+
+void Aggregator::stageChunk(
+    AdaptiveAggregationProducer & adaptive, MutableStagedChunkPtr block, size_t estimated_payload_bytes) const
+{
+    /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
+    /// least half the seal target could only ever merge with one neighbor, gaining almost
+    /// nothing for a full extra copy of its data, so it is enqueued as-is.
+    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
+    {
+        publishStagedChunk(*adaptive.session, std::move(block));
+        return;
+    }
+
+    adaptive.pending_chunks.push_back(std::move(block));
+    adaptive.pending_staged_bytes += estimated_payload_bytes;
+
+    if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
+        sealPendingChunks(adaptive);
+}
+
+void Aggregator::flushPendingChunks(AdaptiveAggregationProducer & adaptive) const
+{
+    if (!adaptive.pending_chunks.empty())
+        sealPendingChunks(adaptive);
+}
+
+void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
+{
+    constexpr size_t num_buckets = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+
+    auto & minis = adaptive.pending_chunks;
+    const size_t num_minis = minis.size();
+
+    if (num_minis == 1)
+    {
+        publishStagedChunk(*adaptive.session, minis.front());
+        minis.clear();
+        adaptive.pending_staged_bytes = 0;
+        return;
+    }
+
+    auto chunk = std::make_shared<StagedChunk>();
+    auto & keys = chunk->keys;
+    const bool counts_only = minis.front()->countsOnly();
+
+    if (counts_only)
+    {
+        /// The cross-mini dedup merges keys repeating across the buffered batches, which the
+        /// per-block publish dedup cannot see. On a distinct stream it merges nothing; the
+        /// productivity tracker then degrades the seal to a straight concatenation.
+        if (adaptive.seal_dedup.shouldDedup())
+        {
+            size_t input_records = 0;
+            for (const auto & mini : minis)
+                input_records += mini->keys.size();
+            sealValueStagedChunkDeduplicated(minis, *chunk);
+            adaptive.seal_dedup.record(input_records, chunk->keys.size());
+        }
+        else
+            sealValueStagedChunkConcatenated(minis, *chunk);
+    }
+    else
+    {
+        concatenateStagedKeys(keys, minis);
+        const size_t total = keys.size();
+
+        auto columns_of = [](const StagedChunk & mini) -> const Columns &
+        { return std::get<StagedChunk::AggregatePayload>(mini.payload).argument_columns; };
 
         auto & argument_columns = chunk->payload.emplace<StagedChunk::AggregatePayload>().argument_columns;
         argument_columns.assign(columns_of(*minis.front()).size(), nullptr);
