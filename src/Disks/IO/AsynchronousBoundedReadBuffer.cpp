@@ -171,8 +171,8 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
 
     /// Publish the file range the prefetch may cover, so that concurrent readBigAt calls can tell
-    /// whether it may serve their range without consuming it. Page cache reads are block-aligned.
-    prefetch_window_begin = use_page_cache ? file_offset_of_buffer_end / buffer_size * buffer_size : file_offset_of_buffer_end;
+    /// whether it may serve their range without consuming it.
+    prefetch_window_begin = file_offset_of_buffer_end;
     prefetch_window_end.store(prefetch_window_begin + buffer_size, std::memory_order_release);
 
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
