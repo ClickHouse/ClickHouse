@@ -451,16 +451,21 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (hive_partitioning_sample_path_resolved)
         return;
 
-    /// The resolution result must not depend on the settings or credentials of whichever query
-    /// touches the table first. Resolve with the global context, like a server startup ATTACH.
-    auto resolution_context = Context::createCopy(Context::getGlobalContextInstance());
-    resolution_context->setSetting("use_hive_partitioning", true);
+    /// Listing the storage happens on behalf of the triggering query, so it must use its context.
+    /// Rebuilding the client with any other one would ignore that session's credential restriction.
+    auto access_context = Context::createCopy(query_context);
+    access_context->setSetting("use_hive_partitioning", true);
+
+    /// The resulting column types are shared by every session, so infer them from the server
+    /// settings instead of the ones of whichever query happens to resolve the table first.
+    auto inference_context = Context::createCopy(Context::getGlobalContextInstance());
+    inference_context->setSetting("use_hive_partitioning", true);
 
     std::string sample_path;
     try
     {
-        configuration->update(object_storage, resolution_context);
-        sample_path = getPathSample(resolution_context);
+        configuration->update(object_storage, access_context);
+        sample_path = getPathSample(access_context);
     }
     catch (...)
     {
@@ -477,7 +482,7 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
-    auto current_metadata = getInMemoryMetadataPtr(resolution_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
     /// Errors thrown below stay unresolved on purpose, so they are reported until they go away.
@@ -487,7 +492,7 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         sample_path,
         /* inferred_schema */ false,
         format_settings,
-        resolution_context);
+        inference_context);
 
     if (!new_metadata.columns.empty() && new_file_columns.empty())
     {
@@ -499,7 +504,7 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
     file_columns = std::move(new_file_columns);
 
-    new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, resolution_context));
+    new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
     setInMemoryMetadata(new_metadata);
 
     hive_partitioning_sample_path_resolved = true;

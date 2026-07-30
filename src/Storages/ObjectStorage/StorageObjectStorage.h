@@ -244,9 +244,9 @@ protected:
 
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;
-    /// Guarded by the mutex. Stays false on failures, so the resolution is retried per query.
-    bool hive_partitioning_sample_path_resolved = false;
     std::mutex hive_partitioning_resolution_mutex;
+    /// Stays false on a failed resolution, so the next query retries it.
+    bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
     LoggerPtr log;
 
