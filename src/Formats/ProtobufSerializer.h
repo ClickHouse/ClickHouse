@@ -47,6 +47,7 @@ public:
         bool with_envelope,
         bool flatten_google_wrappers,
         bool oneof_presence,
+        bool input_datetime64_legacy_seconds,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(

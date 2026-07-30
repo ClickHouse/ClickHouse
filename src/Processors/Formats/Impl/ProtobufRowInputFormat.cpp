@@ -19,6 +19,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool with_length_delimiter_,
     bool flatten_google_wrappers_,
     bool oneof_presence_,
+    bool input_datetime64_legacy_seconds_,
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
     , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
@@ -26,6 +27,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     , with_length_delimiter(with_length_delimiter_)
     , flatten_google_wrappers(flatten_google_wrappers_)
     , oneof_presence(oneof_presence_)
+    , input_datetime64_legacy_seconds(input_datetime64_legacy_seconds_)
 {
 }
 
@@ -41,6 +43,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
         /* with_envelope = */ false,
         flatten_google_wrappers,
         oneof_presence,
+        input_datetime64_legacy_seconds,
         *reader);
 }
 
@@ -172,6 +175,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     with_length_delimiter,
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
+                    settings.protobuf.input_datetime64_legacy_seconds,
                     settings.protobuf.google_protos_path);
             });
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
