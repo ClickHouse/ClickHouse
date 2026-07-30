@@ -43,7 +43,9 @@ class time_zone;
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 /// It must cover the whole representable range (down to year 0000), otherwise the relative hour/minute helpers below
 /// would feed a negative dividend into C++ truncating division and round pre-1970 values towards zero instead of -inf.
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366L * 86400)
+/// `366LL`, not `366L`: the value is about 6.2e10 and so needs 64 bits, which `long` only has
+/// on LP64 platforms - on an LLP64 one it is 32 bits and the constant silently wraps.
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366LL * 86400)
 /// NOLINTEND(modernize-macro-to-enum)
 
 
