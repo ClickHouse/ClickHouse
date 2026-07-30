@@ -4,12 +4,14 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/Base64.h>
+#include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -67,4 +69,40 @@ TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
 
     /// Previously leads to a crash
     view_column->insertDefault();
+}
+
+/// `createView` and the copy constructor used to drop the aggregate-state `version`, so a column
+/// produced by `permute`, `filter`, `cloneResized`, ... serialized its states with the default
+/// format instead of the one named by its type. `type_string` was even lost entirely in copies.
+TEST(ColumnAggregateFunction, ViewsAndCopiesPreserveVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    using namespace DB;
+
+    AggregateFunctionFactory & factory = AggregateFunctionFactory::instance();
+    DataTypes argument_types
+        = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()),
+           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())};
+    AggregateFunctionProperties properties;
+    /// `sumMap` is versioned: version 0 and version 1 serialize the values differently.
+    auto aggregate_function = factory.get("sumMap", NullsAction::EMPTY, argument_types, {}, properties);
+    ASSERT_EQ(aggregate_function->getDefaultVersion(), size_t{1});
+
+    /// A non-zero version is the one that shows up in the type name.
+    const size_t version = 1;
+    auto column = ColumnAggregateFunction::create(aggregate_function, version);
+    column->insertDefault();
+    column->insertDefault();
+
+    const String expected_type_string = (*column)[0].safeGet<AggregateFunctionStateData>().name;
+    /// The version is part of the type name, which is what makes it observable here.
+    ASSERT_TRUE(expected_type_string.starts_with("AggregateFunction(1, sumMap")) << expected_type_string;
+
+    IColumn::Permutation permutation = {1, 0};
+    auto view = column->permute(permutation, 0);
+    EXPECT_EQ((*view)[0].safeGet<AggregateFunctionStateData>().name, expected_type_string);
+
+    auto copy = ColumnAggregateFunction::create(assert_cast<const ColumnAggregateFunction &>(*column));
+    EXPECT_EQ((*copy)[0].safeGet<AggregateFunctionStateData>().name, expected_type_string);
 }
