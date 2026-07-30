@@ -1,4 +1,5 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/lambdaBodySafety.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -60,6 +61,11 @@ struct ConditionList
 /// Also rejects subgraphs containing ARRAY_JOIN, because pushing such predicates below
 /// a JOIN would cause the array expansion to execute twice (once in the pushed-down filter
 /// and once in the original filter above the JOIN), producing duplicate rows.
+/// Non-deterministic subgraphs are rejected for the same reason: the partial predicate is
+/// evaluated in ADDITION to the original filter above the JOIN, so a function like `rand`
+/// would be drawn twice per row and only the rows passing both draws would survive.
+/// Statefulness needs no test here, because tryPushDownFilter has already refused the whole
+/// step in that case.
 bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
     if (node.type == ActionsDAG::ActionType::INPUT)
@@ -72,6 +78,14 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
     else
     {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+
+        /// A lambda body is not part of this DAG, so the metadata above cannot see a `rand` inside
+        /// `arrayExists(z -> rand(z) % 2 = 0, [a])`.
+        if (inspectLambdaBodies(node).has_non_deterministic)
+            return false;
+
         for (const auto * child : node.children)
         {
             if (!onlyDependsOnAvailableColumns(*child, available_columns))
