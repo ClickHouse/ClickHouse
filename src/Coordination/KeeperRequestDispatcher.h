@@ -343,7 +343,9 @@ private:
     bool tryPopRequest(KeeperRequestForSession & request); // call instead of requests_queue.tryPop
 
     /// Pop everything from requests_queue and responses_queue, discarding it.
-    void drainQueues();
+    /// Returns the number of response bytes released, i.e. how much response_bytes_in_all_queues
+    /// was decremented by.
+    size_t drainQueues();
 
     void recreateStreamWithBackoff();
     void dropInFlightRequests();

@@ -1,3 +1,4 @@
+import re
 import struct
 import threading
 import time
@@ -362,11 +363,13 @@ def test_create2_errors_existing_and_missing_parent(started_cluster):
 def test_no_logical_error_on_shutdown_with_late_commit(started_cluster):
     """No thread may still be producing responses when the dispatcher checks its byte counters.
 
-    keeper_shutdown_delay_before_queue_check widens the window between draining the queues and
-    checking that they accounted for zero bytes. Writes are kept in flight while the node is
-    stopped, so any producer that outlives the drain lands inside that window. Before the
-    shutdown phase split the nuraft commit thread was one, because it is only joined by
-    KeeperServer::shutdown, which used to run after the check.
+    keeper_shutdown_delay_before_queue_check sleeps at two points: at the end of shutdownRequests,
+    where the dispatcher's own consumer threads are already joined but nuraft's commit thread is
+    not, and between the final drain and the byte checks. Writes are kept in flight while the node
+    is stopped, so responses land in the first window with nothing to pop them, and any producer
+    that outlives the final drain lands in the second. Before the shutdown phase split the nuraft
+    commit thread was such a producer, because it is only joined by KeeperServer::shutdown, which
+    used to run after the check.
     """
     wait_nodes()
 
@@ -430,6 +433,19 @@ def test_no_logical_error_on_shutdown_with_late_commit(started_cluster):
         assert joined[-1] < checked[-1], (
             "queue byte accounting was checked before the nuraft commit thread was joined, "
             f"so a producer could still be running: {markers}"
+        )
+
+        # The drain after the join must actually have collected something, otherwise the test
+        # would still pass with that drain deleted. The failpoint keeps the dispatcher inside
+        # shutdownRequests after it joined its own response thread, so the responses the commit
+        # thread publishes in that window have no consumer and survive until this drain.
+        drained = re.search(r"drained (\d+) response bytes", markers[checked[-1]])
+        assert (
+            drained
+        ), f"marker line did not report a drained byte count: {markers[checked[-1]]}"
+        assert int(drained.group(1)) > 0, (
+            "the drain after the nuraft join released 0 response bytes, so it is not exercised "
+            f"by this test: {markers[checked[-1]]}"
         )
     finally:
         stop.set()
