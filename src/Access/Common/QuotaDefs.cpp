@@ -32,7 +32,15 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
 {
     if (!(value % output_denominator))
         return std::to_string(value / output_denominator);
-    return toString(static_cast<double>(value) / static_cast<double>(output_denominator));
+    /// The fraction is rendered from the stored integer rather than from a division of doubles, which
+    /// would round away the low bits of a value near the top of the range and make `SHOW CREATE QUOTA`
+    /// non-replayable (18446744073709551615 nanoseconds would be shown as the out-of-range
+    /// 18446744073.709553). The remainder is nonzero here, so it has a last nonzero digit to stop at.
+    String fraction = std::to_string(value % output_denominator);
+    fraction.insert(0, decimalZerosOfPowerOfTen(output_denominator) - fraction.size(), '0');
+    while (fraction.back() == '0')
+        fraction.pop_back();
+    return std::to_string(value / output_denominator) + "." + fraction;
 }
 
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const

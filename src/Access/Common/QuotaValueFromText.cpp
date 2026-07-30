@@ -5,7 +5,9 @@
 #include <base/arithmeticOverflow.h>
 #include <base/hex.h>
 
+#include <algorithm>
 #include <bit>
+#include <limits>
 
 
 namespace DB
@@ -17,19 +19,15 @@ namespace ErrorCodes
 }
 
 
-namespace
+size_t decimalZerosOfPowerOfTen(UInt64 power_of_ten)
 {
-    /// The number of decimal zeros of a power of ten, e.g. 3 for 1000.
-    size_t decimalZerosOfPowerOfTen(UInt64 multiplier)
+    size_t zeros = 0;
+    for (UInt64 rest = power_of_ten; rest != 1; rest /= 10, ++zeros)
     {
-        size_t zeros = 0;
-        for (UInt64 rest = multiplier; rest != 1; rest /= 10, ++zeros)
-        {
-            if (rest == 0 || rest % 10 != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a power of ten, got {}", multiplier);
-        }
-        return zeros;
+        if (rest == 0 || rest % 10 != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a power of ten, got {}", power_of_ten);
     }
+    return zeros;
 }
 
 std::optional<NumericLiteralParts> splitNumericLiteral(std::string_view text)
@@ -131,63 +129,73 @@ bool isIntegralScaledNumericLiteral(const NumericLiteralParts & parts, UInt64 mu
 std::optional<QuotaValue> exactScaledValueOfNumericLiteral(const NumericLiteralParts & parts, UInt64 multiplier)
 {
     const size_t multiplier_zeros = decimalZerosOfPowerOfTen(multiplier);
-    const QuotaValue base = parts.is_hex ? 16 : 10;
+    const UInt128 base = parts.is_hex ? 16 : 10;
 
     /// Trailing zeros of the fractional part do not change the value, while multiplying them in
-    /// could overflow QuotaValue for a value that fits (e.g. 18446744073709551615.0).
+    /// could overflow the accumulation for a value that fits (e.g. 18446744073709551615.0).
+    std::string_view integer_part = parts.integer_part;
     std::string_view fractional_part = parts.fractional_part;
     while (fractional_part.ends_with('0'))
         fractional_part.remove_suffix(1);
 
-    /// Decimal digits below the scale are truncated away in the end; dropping them before the
-    /// accumulation keeps a value that fits exact instead of overflowing the accumulation
-    /// (e.g. 18446744073.7095516155 scaled by 10^9 is QuotaValue max and a half).
-    if (!parts.is_hex)
+    /// The digits of a hexadecimal value are four bits each, while its exponent counts bits.
+    /// The scaled value is the mantissa digits shifted by this many digits (bits for a hexadecimal one).
+    Int64 shift = parts.exponent + static_cast<Int64>(multiplier_zeros)
+        - static_cast<Int64>(fractional_part.size()) * (parts.is_hex ? 4 : 1);
+
+    /// A negative decimal shift truncates the lowest digits away in the end; dropping them before the
+    /// accumulation keeps a value that fits exact instead of overflowing the accumulation, both for
+    /// digits below the scale (18446744073.7095516155 scaled by 10^9 is QuotaValue max and a half)
+    /// and for a mantissa that only fits after the shift (184467440737095516150e-1 is QuotaValue max).
+    if (!parts.is_hex && shift < 0)
     {
-        Int64 surviving_digits = parts.exponent + static_cast<Int64>(multiplier_zeros);
-        if (surviving_digits >= 0 && static_cast<Int64>(fractional_part.size()) > surviving_digits)
-            fractional_part = fractional_part.substr(0, static_cast<size_t>(surviving_digits));
+        for (std::string_view * digits : {&fractional_part, &integer_part})
+        {
+            size_t dropped = std::min(static_cast<size_t>(-shift), digits->size());
+            digits->remove_suffix(dropped);
+            shift += static_cast<Int64>(dropped);
+            if (shift == 0)
+                break;
+        }
     }
 
-    QuotaValue value = 0;
-    for (std::string_view digits : {parts.integer_part, fractional_part})
+    /// The accumulation is done in a wider type, because the hexadecimal multiplication below needs
+    /// the room and because a positive shift may bring a value back into the QuotaValue range.
+    UInt128 value = 0;
+    for (std::string_view digits : {integer_part, fractional_part})
     {
         for (char c : digits)
         {
-            QuotaValue digit = parts.is_hex ? unhex(c) : static_cast<QuotaValue>(c - '0');
+            UInt128 digit = parts.is_hex ? static_cast<UInt128>(unhex(c)) : static_cast<UInt128>(c - '0');
             if (common::mulOverflow(value, base, value) || common::addOverflow(value, digit, value))
                 return {};
         }
     }
 
-    if (value == 0)
-        return value;
-
     /// The multiplier 10^n shifts a decimal value by n digits and a hexadecimal one, whose exponent
     /// counts bits, by n bits; the remaining factor 5^n of a hexadecimal multiplication is applied
     /// here, before the shift, so that the truncation below is done on the multiplied value.
-    if (parts.is_hex)
+    if (parts.is_hex && value != 0)
     {
         for (size_t k = 0; k < multiplier_zeros; ++k)
         {
-            if (common::mulOverflow(value, static_cast<QuotaValue>(5), value))
+            if (common::mulOverflow(value, static_cast<UInt128>(5), value))
                 return {};
         }
     }
 
-    /// The digits of a hexadecimal value are four bits each, while its exponent counts bits.
-    Int64 shift = parts.exponent + static_cast<Int64>(multiplier_zeros)
-        - static_cast<Int64>(fractional_part.size()) * (parts.is_hex ? 4 : 1);
-    const QuotaValue unit = parts.is_hex ? 2 : 10;
+    const UInt128 unit = parts.is_hex ? 2 : 10;
     for (; shift < 0 && value != 0; ++shift)
         value /= unit;
-    for (; shift > 0; --shift)
+    for (; shift > 0 && value != 0; --shift)
     {
         if (common::mulOverflow(value, unit, value))
             return {};
     }
 
-    return value;
+    if (value > std::numeric_limits<QuotaValue>::max())
+        return {};
+    return static_cast<QuotaValue>(value);
 }
 
 }

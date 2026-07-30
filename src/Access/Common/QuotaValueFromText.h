@@ -23,6 +23,9 @@ struct NumericLiteralParts
     Int64 exponent = 0;
 };
 
+/// The number of decimal zeros of a power of ten, e.g. 3 for 1000.
+size_t decimalZerosOfPowerOfTen(UInt64 power_of_ten);
+
 /// Splits a numeric value into its parts. Handles a decimal form with an optional exponent
 /// (1.5, 1.5e1) and a hexadecimal float (0x1.8p1); returns nothing for any other text (e.g. inf, nan).
 std::optional<NumericLiteralParts> splitNumericLiteral(std::string_view text);

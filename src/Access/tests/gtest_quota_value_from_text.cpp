@@ -2,6 +2,8 @@
 
 #include <Access/Common/QuotaValueFromText.h>
 
+#include <limits>
+
 using namespace DB;
 
 namespace
@@ -55,6 +57,12 @@ TEST(QuotaValueFromText, Unscaled)
     EXPECT_EQ(scale("18446744073709551615.0", 1), exact(18446744073709551615ULL));
     EXPECT_EQ(scale("18446744073709551616", 1), does_not_fit);
     EXPECT_EQ(scale("1e20", 1), does_not_fit);
+    /// A mantissa that fits into the range only after a negative exponent shifts its lowest digits
+    /// away: those digits are discarded before the value is computed, instead of overflowing it.
+    EXPECT_EQ(scale("184467440737095516150e-1", 1), exact(18446744073709551615ULL));
+    EXPECT_EQ(scale("1844674407370955161500e-2", 1), exact(18446744073709551615ULL));
+    EXPECT_EQ(scale("184467440737095516159e-1", 1), exact(18446744073709551615ULL, /* integral= */ false));
+    EXPECT_EQ(scale("184467440737095516160e-1", 1), does_not_fit);
     /// A hexadecimal float, whose exponent counts bits.
     EXPECT_EQ(scale("0x20000000000001p0", 1), exact(9007199254740993));
     EXPECT_EQ(scale("0x1.8p1", 1), exact(3));
@@ -90,4 +98,27 @@ TEST(QuotaValueFromText, Scaled)
     EXPECT_EQ(scale("0x1.8p0", nanoseconds), exact(1500000000));
     EXPECT_EQ(scale("0x3p-31", nanoseconds), exact(1, /* integral= */ false));
     EXPECT_EQ(scale("0x1p64", nanoseconds), does_not_fit);
+    /// The exponent form of the value at the top of the range: its mantissa does not fit on its own.
+    EXPECT_EQ(scale("184467440737095516150e-10", nanoseconds), exact(18446744073709551615ULL));
+}
+
+/// A scaled value must be shown back exactly, so that the output of `SHOW CREATE QUOTA` can be
+/// replayed: it used to be rendered through a double, which rounds the top of the range out of it.
+TEST(QuotaValueFromText, ScaledRoundTrip)
+{
+    const auto & info = QuotaTypeInfo::get(QuotaType::EXECUTION_TIME);
+
+    EXPECT_EQ(info.valueToString(std::numeric_limits<QuotaValue>::max()), "18446744073.709551615");
+    EXPECT_EQ(info.valueToString(18446744073000000000ULL), "18446744073");
+    EXPECT_EQ(info.valueToString(1500000000), "1.5");
+    EXPECT_EQ(info.valueToString(1), "0.000000001");
+    EXPECT_EQ(info.valueToString(0), "0");
+
+    for (QuotaValue value : {QuotaValue(0),
+                             QuotaValue(1),
+                             QuotaValue(1500000000),
+                             QuotaValue(18446744073000000000ULL),
+                             QuotaValue(18446744073709551614ULL),
+                             std::numeric_limits<QuotaValue>::max()})
+        EXPECT_EQ(info.stringToValue(info.valueToString(value)), value) << info.valueToString(value);
 }

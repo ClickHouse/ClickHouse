@@ -15,6 +15,8 @@
 # above 2^53 too (9007199254740993.0 used to be stored as 9007199254740992).
 # Quoted (string-literal) limits go through a size-suffix parse that used to skip overflow checking,
 # so an out-of-range quoted value silently wrapped around before the range checks; it must throw now.
+# A scaled limit is shown back exactly rather than through a double, so that `SHOW CREATE QUOTA` of a
+# value at the top of the range can be replayed instead of being rejected as out of range.
 # Note: a `--` comment attached to a hinted query would shadow its test hint, so the queries below carry no leading SQL comments.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -82,17 +84,33 @@ SHOW CREATE QUOTA ${QUOTA}_h;
 CREATE QUOTA ${QUOTA}_x FOR INTERVAL 1 hour MAX queries = 0x1.8p1;
 SHOW CREATE QUOTA ${QUOTA}_x;
 
+-- An exponent form whose mantissa fits into the range only after the exponent is applied keeps its
+-- exact value: the digits that a negative exponent shifts away are discarded before the value is
+-- computed (184467440737095516150e-1 is exactly the maximum, while its 21-digit mantissa is not).
+CREATE QUOTA ${QUOTA}_n FOR INTERVAL 1 hour MAX queries = 184467440737095516150e-1;
+SHOW CREATE QUOTA ${QUOTA}_n;
+
 -- A limit of a quota type with an output denominator is scaled by it exactly: a value at the top of
 -- the range must be accepted, while the rounded product of doubles is 2^64 and used to be rejected
 -- (18446744073.709551615 nanoseconds is exactly the maximum). The value 18446744073 has no exact
--- double product either. The stored nanoseconds are shown back through a double, hence the rounding
--- in the output below.
+-- double product either. The stored nanoseconds are shown back exactly, not through a double.
 CREATE QUOTA ${QUOTA}_s FOR INTERVAL 1 hour MAX execution_time = 18446744073.709551615;
 SHOW CREATE QUOTA ${QUOTA}_s;
 
 CREATE QUOTA ${QUOTA}_i FOR INTERVAL 1 hour MAX execution_time = 18446744073;
 SHOW CREATE QUOTA ${QUOTA}_i;
 
+-- The same scaled value in the exponent form, whose mantissa does not fit into the range on its own.
+CREATE QUOTA ${QUOTA}_o FOR INTERVAL 1 hour MAX execution_time = 184467440737095516150e-10;
+SHOW CREATE QUOTA ${QUOTA}_o;
+" | sed "s/$QUOTA/q_04617/g"
+
+# A scaled limit at the top of the range must be replayable: `SHOW CREATE QUOTA` used to render it
+# through a double (18446744073.709553), which is out of range and could not be executed again.
+$CLICKHOUSE_CLIENT --query "$($CLICKHOUSE_CLIENT --query "SHOW CREATE QUOTA ${QUOTA}_s" | sed "s/${QUOTA}_s/${QUOTA}_r/")"
+$CLICKHOUSE_CLIENT --query "SHOW CREATE QUOTA ${QUOTA}_r" | sed "s/$QUOTA/q_04617/g"
+
+$CLICKHOUSE_CLIENT --query "
 DROP QUOTA $QUOTA;
 DROP QUOTA ${QUOTA}_e;
 DROP QUOTA ${QUOTA}_u;
@@ -100,6 +118,9 @@ DROP QUOTA ${QUOTA}_p;
 DROP QUOTA ${QUOTA}_m;
 DROP QUOTA ${QUOTA}_h;
 DROP QUOTA ${QUOTA}_x;
+DROP QUOTA ${QUOTA}_n;
 DROP QUOTA ${QUOTA}_s;
 DROP QUOTA ${QUOTA}_i;
-" | sed "s/$QUOTA/q_04617/g"
+DROP QUOTA ${QUOTA}_o;
+DROP QUOTA ${QUOTA}_r;
+"
