@@ -20,9 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Renders a cursor tree as a SQL-compatible nested map literal:
-///     {'partition_a': {'block_number': 10, 'block_offset': 20}}
-void formatCursorTree(WriteBuffer & wb, CursorTreeNode * node)
+void formatCursorTree(WriteBuffer & wb, const CursorTreeNode * node)
 {
     wb << '{';
 
@@ -101,6 +99,13 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 
     if (cursor)
         w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
+
+    if (watermark)
+    {
+        w.writeString("watermark_column", watermark->column);
+        w.writeChild("watermark_expression", watermark->expression);
+        w.writeInt("watermark_idle_timeout_ms", static_cast<Int64>(watermark->idle_timeout.count()));
+    }
 }
 
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
@@ -108,33 +113,14 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     if (r.has("cursor_tree"))
+        cursor = buildCursorTree(r.readField("cursor_tree").safeGet<Map>());
+
+    if (r.has("watermark_column"))
     {
-        /// `ParserStreamSettings` produces `cursor_tree` only as a flat `Map` of
-        /// `(String dotted path, unsigned integer leaf)` tuples, and `buildCursorTree` (reached from
-        /// `formatImpl` and `QueryTreeBuilder`) relies on that shape via `safeGet`. Validate every
-        /// element here so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` at the boundary
-        /// instead of inside formatter/analyzer code. The leaf may be `UInt64` (parser-produced) or
-        /// `Int64` (`cursorTreeToMap`-produced, see `Analyzer/Utils.cpp`); both satisfy `safeGet<Int64>`.
-        Field field = r.readField("cursor_tree");
-        if (field.getType() != Field::Types::Map)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`StreamSettings` 'cursor_tree' must be a Map during AST JSON deserialization");
-
-        Map map = std::move(field.safeGet<Map>());
-        for (const auto & element : map)
-        {
-            if (element.getType() != Field::Types::Tuple)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "`StreamSettings` 'cursor_tree' element must be a tuple during AST JSON deserialization");
-
-            const auto & tuple = element.safeGet<Tuple>();
-            if (tuple.size() != 2
-                || tuple.at(0).getType() != Field::Types::String
-                || (tuple.at(1).getType() != Field::Types::UInt64 && tuple.at(1).getType() != Field::Types::Int64))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "`StreamSettings` 'cursor_tree' element must be a (String, integer) tuple during AST JSON deserialization");
-        }
-        cursor = buildCursorTree(map);
+        watermark = std::make_shared<WatermarkSettings>();
+        watermark->column = r.getString("watermark_column");
+        watermark->expression = r.readChild("watermark_expression");
+        watermark->idle_timeout = std::chrono::milliseconds(r.getInt("watermark_idle_timeout_ms"));
     }
 }
 

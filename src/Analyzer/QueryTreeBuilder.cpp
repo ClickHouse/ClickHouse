@@ -980,11 +980,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 if (table_expression.stream_settings)
                 {
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-
                     stream_settings = StreamSettings{};
                     stream_settings->cursor = ast_stream_settings.cursor;
-                    if (ast_stream_settings.watermark)
-                        stream_settings->watermark = ast_stream_settings.watermark->clone();
+                    stream_settings->watermark = ast_stream_settings.watermark;
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));

@@ -28,15 +28,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         buffer << ", sample_offset: " << ASTSampleRatio::toString(*sample_offset_ratio);
 
     if (stream_settings)
-    {
         buffer << ", stream";
-
-        if (stream_settings->cursor)
-            buffer << " cursor";
-
-        if (stream_settings->watermark)
-            buffer << " watermark";
-    }
 }
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
@@ -118,10 +110,6 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (has_final || sample_size_ratio || sample_offset_ratio)
             buffer << ' ';
         buffer << "STREAM";
-        if (stream_settings->cursor)
-            buffer << " CURSOR";
-        if (stream_settings->watermark)
-            buffer << " WATERMARK";
     }
 
     return buffer.str();
