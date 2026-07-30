@@ -163,6 +163,7 @@ inline const std::array<BFloat16, 256> & dequantizeLevels()
 /// For each prefix, the value is `(phi(lo) - phi(hi)) / (Phi(hi) - Phi(lo))` over its retained fine-cell interval,
 /// precomputed offline from these Float32 boundaries and rounded to Float32.
 /// `gtest_lloyd_max_quantizer.cpp` independently recomputes every entry from `BOUNDARIES`.
+// clang-format off
 // NOLINTBEGIN(modernize-use-std-numbers): generated quantizer data can lie near named mathematical constants.
 inline constexpr Float32 POSITIVE_PREFIX_CENTROIDS[127] = {
     0x1.988454p-1f,
@@ -200,6 +201,7 @@ inline constexpr Float32 POSITIVE_PREFIX_CENTROIDS[127] = {
     0x1.33304cp+1f, 0x1.54f7fap+1f, 0x1.82dbbp+1f, 0x1.c98f46p+1f,
 };
 // NOLINTEND(modernize-use-std-numbers)
+// clang-format on
 
 /// Reconstruction values, as `Float32`, keyed directly by the raw code byte (the untransposed `QBit(Int8)` byte, which is
 /// `index XOR 0x80`), for every precision `1..8`. Used by the `...TransposedQuantized` distance functions to dequantize a
