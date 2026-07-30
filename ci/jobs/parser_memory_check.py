@@ -350,6 +350,17 @@ def flatten_frames_full(frames: list) -> list:
     return flat
 
 
+def aggregate_canonical_stacks(stacks: list) -> tuple:
+    """Aggregate stack bytes and display names by canonical frames."""
+    byte_map = {}
+    display_map = {}
+    for b, s, _full, canonical in stacks:
+        key = tuple(canonical)
+        byte_map[key] = byte_map.get(key, 0) + b
+        display_map[key] = s
+    return byte_map, display_map
+
+
 def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
     """Compute per-stack diff between master and PR allocation profiles.
     Input: lists of
@@ -357,18 +368,8 @@ def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
     Uses canonical frames as map keys to correlate debug and stripped binaries,
     but returns the formatted string for display.
     Returns list of (delta, master_bytes, pr_bytes, stack_str) sorted by |delta| desc."""
-    master_map = {}
-    master_display = {}
-    for b, s, _full, canonical in master_stacks:
-        key = tuple(canonical)
-        master_map[key] = master_map.get(key, 0) + b
-        master_display[key] = s
-    pr_map = {}
-    pr_display = {}
-    for b, s, _full, canonical in pr_stacks:
-        key = tuple(canonical)
-        pr_map[key] = pr_map.get(key, 0) + b
-        pr_display[key] = s
+    master_map, master_display = aggregate_canonical_stacks(master_stacks)
+    pr_map, pr_display = aggregate_canonical_stacks(pr_stacks)
     all_keys = set(master_map.keys()) | set(pr_map.keys())
     diffs = []
     for key in all_keys:
@@ -380,6 +381,30 @@ def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
             diffs.append((delta, m, p, display))
     diffs.sort(key=lambda x: -abs(x[0]))
     return diffs
+
+
+def build_cross_version_diff_flamegraph_inputs(
+    master_stacks: list, pr_stacks: list
+) -> tuple:
+    """Build correlated flamegraph inputs containing only non-zero differences."""
+    master_map, _ = aggregate_canonical_stacks(master_stacks)
+    pr_map, _ = aggregate_canonical_stacks(pr_stacks)
+    master_collapsed = []
+    pr_collapsed = []
+
+    for key in set(master_map.keys()) | set(pr_map.keys()):
+        master_bytes = master_map.get(key, 0)
+        pr_bytes = pr_map.get(key, 0)
+        if master_bytes == pr_bytes:
+            continue
+
+        stack = ";".join(reversed(key))
+        if master_bytes > 0:
+            master_collapsed.append((stack, master_bytes))
+        if pr_bytes > 0:
+            pr_collapsed.append((stack, pr_bytes))
+
+    return master_collapsed, pr_collapsed
 
 
 def format_cross_diff_html(cross_diff: list) -> str:
@@ -723,12 +748,17 @@ def generate_html_report(
             else '<div class="flame-placeholder">(no allocation data for flamegraph)</div>'
         )
         diff_flame_svg = generate_diff_flamegraph_svg(
-            r.get("collapsed_master", []), r.get("collapsed_pr", [])
+            r.get("cross_diff_collapsed_master", []),
+            r.get("cross_diff_collapsed_pr", []),
         )
         diff_flame_html = (
             f'<div class="flame-container">{diff_flame_svg}</div>'
             if diff_flame_svg
-            else '<div class="flame-placeholder">(no data for diff flamegraph)</div>'
+            else (
+                '<div class="flame-placeholder">(identical allocation profiles)</div>'
+                if not r.get("cross_diff", [])
+                else '<div class="flame-placeholder">(no positive allocation data for diff flamegraph)</div>'
+            )
         )
 
         rows_html += (
@@ -1262,6 +1292,8 @@ def main():
                 "master_stacks": [],
                 "pr_stacks": [],
                 "cross_diff": [],
+                "cross_diff_collapsed_master": [],
+                "cross_diff_collapsed_pr": [],
                 "collapsed_pr": [],
                 "collapsed_master": [],
             })
@@ -1337,6 +1369,10 @@ def main():
         )
 
         cross_diff = compute_cross_version_diff(master_stacks, pr_stacks)
+        (
+            cross_diff_collapsed_master,
+            cross_diff_collapsed_pr,
+        ) = build_cross_version_diff_flamegraph_inputs(master_stacks, pr_stacks)
 
         html_data.append({
             "num": query_num,
@@ -1349,6 +1385,8 @@ def main():
             "master_stacks": master_stacks,
             "pr_stacks": pr_stacks,
             "cross_diff": cross_diff,
+            "cross_diff_collapsed_master": cross_diff_collapsed_master,
+            "cross_diff_collapsed_pr": cross_diff_collapsed_pr,
             "collapsed_pr": pr_analysis.get("collapsed", []),
             "collapsed_master": master_analysis.get("collapsed", []),
         })

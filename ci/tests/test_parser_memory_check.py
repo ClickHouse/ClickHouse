@@ -193,6 +193,9 @@ def test_cross_version_diff_correlates_boost_container_allocation_prefix():
         parser_memory_check.compute_cross_version_diff(master_stacks, pr_stacks)
         == []
     )
+    assert parser_memory_check.build_cross_version_diff_flamegraph_inputs(
+        master_stacks, pr_stacks
+    ) == ([], [])
 
 
 def test_cross_version_diff_keeps_distinct_callers_after_allocation_prefix():
@@ -211,6 +214,44 @@ def test_cross_version_diff_keeps_distinct_callers_after_allocation_prefix():
     )
 
     assert master_canonical != pr_canonical
+
+
+def test_cross_version_diff_flamegraph_uses_canonical_stacks():
+    master_stacks = [
+        (
+            48,
+            "master display",
+            ["master full frame"],
+            ["DB::Layer::mergeElement(bool)", "DB::ParserExpression::parseImpl()"],
+        )
+    ]
+    pr_stacks = [
+        (
+            48,
+            "PR display",
+            ["PR full frame"],
+            ["DB::ASTSelectQuery::setExpression()", "DB::ParserExpression::parseImpl()"],
+        )
+    ]
+
+    master_collapsed, pr_collapsed = (
+        parser_memory_check.build_cross_version_diff_flamegraph_inputs(
+            master_stacks, pr_stacks
+        )
+    )
+
+    assert master_collapsed == [
+        (
+            "DB::ParserExpression::parseImpl();DB::Layer::mergeElement(bool)",
+            48,
+        )
+    ]
+    assert pr_collapsed == [
+        (
+            "DB::ParserExpression::parseImpl();DB::ASTSelectQuery::setExpression()",
+            48,
+        )
+    ]
 
 
 def test_canonical_stack_keeps_allocation_prefix_without_clickhouse_caller():
