@@ -1,5 +1,6 @@
 #include <functional>
 #include <iterator>
+#include <base/sort.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1376,21 +1377,60 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     ASTPtr expr = row_policy_filter_ptr->expression;
 
     actions_dag = analyzeExpressionToActionsDAG(expr, needed_columns, local_context);
-    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
-    const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
-    const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
 
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
-    sample_block_columns.getDifference(required_columns, added, deleted);
-    if (!deleted.empty() || added.size() != 1)
+    /// The filter column is dropped from the stream after filtering, so it must be a dedicated
+    /// column that does not coincide with a data column. Wrap the policy predicate in a
+    /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
+    /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
+    /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
+    const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
+
+    /// The alias name must be unique against the current DAG outputs and against the child table's
+    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
+    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
+    NameSet reserved_names;
+    for (const auto & column : needed_columns)
+        reserved_names.insert(column.name);
+
+    filter_column_name = "__row_policy_filter";
+    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
+        filter_column_name = "__row_policy_filter_" + std::to_string(i);
+
+    const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
+
+    /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
+    /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
+    /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
+    ///
+    /// The source columns are listed in `needed_columns` (table) order: `PlannerActionsVisitor`
+    /// registers DAG inputs in first-use order, so for a bare-column policy such as `USING b` over
+    /// `[a, b, c]` the predicate input `b` comes first in the outputs. `ActionsDAG::updateHeader`
+    /// materializes the result block in output order, so keeping that order would reorder the
+    /// stream header behind the filter.
+    ActionsDAG::NodeRawConstPtrs source_outputs;
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type == ActionsDAG::ActionType::INPUT)
+            source_outputs.push_back(output);
+
+    std::unordered_map<std::string_view, size_t> column_positions;
+    for (const auto & column : needed_columns)
+        column_positions.emplace(column.name, column_positions.size());
+
+    ::sort(source_outputs.begin(), source_outputs.end(), [&](const auto * lhs, const auto * rhs)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot determine row level filter; {} columns deleted, {} columns added",
-            deleted.size(), added.size());
-    }
+        auto position = [&](const auto * node)
+        {
+            auto it = column_positions.find(node->result_name);
+            return it == column_positions.end() ? column_positions.size() : it->second;
+        };
+        return position(lhs) < position(rhs);
+    });
 
-    filter_column_name = added.getNames().front();
+    ActionsDAG::NodeRawConstPtrs new_outputs = std::move(source_outputs);
+    new_outputs.push_back(&alias_node);
+    actions_dag.getOutputs() = std::move(new_outputs);
+
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 }
 
 void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
