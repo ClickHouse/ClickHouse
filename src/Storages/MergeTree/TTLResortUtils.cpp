@@ -96,9 +96,12 @@ std::optional<NameSet> getMaterializedColumnSourceColumns(
 
 /// The physical storage columns of every MATERIALIZED column, mapped to the physical storage
 /// columns their default expression reads from. Used to walk materialized-dependency chains.
-/// MATERIALIZED columns whose default expression reads an EPHEMERAL column are omitted (they cannot
-/// be recomputed from on-disk data, and since a `SET` target is always a physical column such a
-/// column can never be transitively affected by the `SET` anyway).
+/// MATERIALIZED columns whose default expression reads an EPHEMERAL column are omitted: they cannot
+/// be recomputed from on-disk data, because an ephemeral column is only available during INSERT.
+/// Such a column may still read regular columns a `SET` rewrites, in which case its stored value
+/// goes stale, matching the behaviour the ordinary mutation path already has for a mixed ephemeral
+/// dependency (`04044_mutation_ephemeral_materialized`). The part stays ordered by the stored value,
+/// so the primary index remains consistent with the data.
 std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {

@@ -122,7 +122,7 @@ DROP TABLE t_mut_sub;
 -- skip index depends on the subcolumn `t.a`. The rebuild decision must map `t.a` to its storage
 -- column `t`, otherwise the index is hardlinked from the source part and keeps pre-SET minmax
 -- values; the index expression must also be recomputed after the TTL SET (computing it before the
--- aggregation crashes the mutation). The index column `t.a` is intentionally NOT in the sorting
+-- aggregation makes the mutation fail with an exception). The index column `t.a` is intentionally NOT in the sorting
 -- key so the primary key cannot mask a stale skip index during pruning.
 DROP TABLE IF EXISTS t_mut_idx;
 CREATE TABLE t_mut_idx (sk UInt32, t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a UInt32, b UInt32), v UInt32,
