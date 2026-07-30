@@ -43,12 +43,14 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0,
              min_bytes_for_full_part_storage = 0,
+             max_bytes_to_merge_at_max_space_in_pool = 1,
              refresh_statistics_interval = 0;
 
     CREATE TABLE t_packed (a UInt64 STATISTICS(basic), b UInt64)
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0,
              min_bytes_for_full_part_storage = '1G',
+             max_bytes_to_merge_at_max_space_in_pool = 1,
              refresh_statistics_interval = 0;
 
     INSERT INTO t_full SELECT number, number FROM numbers(1000);
