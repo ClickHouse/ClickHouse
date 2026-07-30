@@ -93,6 +93,8 @@ public:
     /// The paths `ssl_ca`, `ssl_cert` and `ssl_key` are only accepted from a collection defined in the
     /// server configuration file, and only if the query did not override them. Everywhere else the
     /// credentials have to be given as contents, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`.
+    /// The contents are the SQL-safe form of the same credential, so passing them in a query replaces
+    /// the path inherited from the collection, unless the operator marked that path as not overridable.
     static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
     /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`

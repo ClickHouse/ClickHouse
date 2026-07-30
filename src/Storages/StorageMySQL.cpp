@@ -356,15 +356,23 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
                 "Pass the contents of the file in `{}` instead",
                 key, contents_key);
 
-        return value;
-    };
+        /// The contents are the SQL-safe form of the same credential, so a query passing them replaces
+        /// the path inherited from the collection - that is the only way to override the credential
+        /// from SQL at all. Both forms coming from the collection definition itself remain ambiguous.
+        if (named_collection.isQueryOverridden(contents_key))
+        {
+            /// A credential the operator explicitly locked (`<ssl_ca overridable="false">`) cannot be
+            /// replaced through the contents form either.
+            if (!named_collection.isOverridable(key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
 
-    auto get_contents = [&](const std::string & contents_key, const std::string & path, const std::string & key)
-    {
-        auto value = named_collection.getOrDefault<String>(contents_key, "");
-        if (!value.empty() && !path.empty())
+            return String{};
+        }
+
+        if (!named_collection.getOrDefault<String>(contents_key, "").empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
+
         return value;
     };
 
@@ -372,9 +380,9 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     ssl_params.ca_path = get_path("ssl_ca", "ssl_ca_pem");
     ssl_params.cert_path = get_path("ssl_cert", "ssl_cert_pem");
     ssl_params.key_path = get_path("ssl_key", "ssl_key_pem");
-    ssl_params.ca_pem = get_contents("ssl_ca_pem", ssl_params.ca_path, "ssl_ca");
-    ssl_params.cert_pem = get_contents("ssl_cert_pem", ssl_params.cert_path, "ssl_cert");
-    ssl_params.key_pem = get_contents("ssl_key_pem", ssl_params.key_path, "ssl_key");
+    ssl_params.ca_pem = named_collection.getOrDefault<String>("ssl_ca_pem", "");
+    ssl_params.cert_pem = named_collection.getOrDefault<String>("ssl_cert_pem", "");
+    ssl_params.key_pem = named_collection.getOrDefault<String>("ssl_key_pem", "");
     return ssl_params;
 }
 

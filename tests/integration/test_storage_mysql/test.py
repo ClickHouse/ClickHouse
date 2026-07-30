@@ -1442,6 +1442,54 @@ def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
         node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
 
 
+def test_mysql_ssl_contents_override_configured_paths(started_cluster):
+    """The contents form is the only way to override a TLS credential from SQL, so it replaces the
+    path inherited from a collection defined in the configuration file rather than conflicting with it.
+
+    `mysql_with_ssl` carries all three paths, and the query supplies all three as contents.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    credentials = f"""
+        ssl_ca_pem = {quote_certificate("ca.pem")},
+        ssl_cert_pem = {quote_certificate("client-cert.pem")},
+        ssl_key_pem = {quote_certificate("client-key.pem")}
+    """
+
+    try:
+        assert (
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})")
+            == "0\n"
+        )
+
+        # The contents replace the configured path instead of being ignored: an unusable certificate
+        # fails even though the path in the collection points at a valid one.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_with_ssl, ssl_cert_pem = 'not a certificate')"
+            )
+        assert "cannot be specified at the same time" not in str(exception.value)
+
+        # A credential the operator locked with `overridable="false"` cannot be replaced through the
+        # contents form either.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
+        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
+    finally:
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
 def test_mysql_reading_clone(started_cluster):
     table_name = "test_mysql_reading_clone"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

@@ -305,12 +305,20 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     {
         /// mysql(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
         markSecretArgument(4);
+        findTLSCredentialsSecretArguments(5);
     }
+}
+
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+{
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
 }
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
@@ -948,11 +956,13 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     {
         /// MySQL(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         markSecretArgument(3);
+        findTLSCredentialsSecretArguments(4);
     }
 }
 

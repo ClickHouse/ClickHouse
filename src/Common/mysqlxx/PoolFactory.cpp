@@ -23,7 +23,7 @@ PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned defa
     return get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
 }
 
-static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
+std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
         const std::string & config_name, unsigned default_max_connections)
 {
     bool shared = config.getBool(config_name + ".share_connection", false);
@@ -41,22 +41,31 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     /// Parent-level compression setting; used as fallback for replicas that do not override it.
     bool parent_compression = config.getBool(config_name + ".enable_compression", false);
 
+    /// Resolves a connection parameter with the same lookup order as `Pool::Pool`: a replica-level
+    /// value first, the parent config as the fallback. For the parent config itself both lookups are
+    /// the same key, so the lambda works for the non-replica form as well.
+    auto get_param = [&](const std::string & prefix, const std::string & key)
+    {
+        const std::string replica_key = prefix + "." + key;
+        return config.has(replica_key) ? config.getString(replica_key) : config.getString(config_name + "." + key, "");
+    };
+
     /// The TLS credentials belong to the connection, so two sources that share an endpoint but not
     /// their credentials must not share a pool: one of them would authenticate as the other. A hash
-    /// keeps the certificates themselves out of the key. Every credential is resolved with the same
-    /// lookup order as `Pool::Pool` - a replica-level value first, the parent config as the fallback -
-    /// and folded into the segment of the replica it belongs to.
+    /// keeps the certificates themselves out of the key. Folded into the segment of the replica the
+    /// credentials belong to.
     auto ssl_key_part = [&](const std::string & prefix)
     {
         SipHash hash;
         for (const auto & key : {"ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"})
-        {
-            const std::string replica_key = prefix + "." + key;
-            const std::string parent_key = config_name + "." + key;
-            hash.update(config.has(replica_key) ? config.getString(replica_key) : config.getString(parent_key, ""));
-        }
+            hash.update(get_param(prefix, key));
         return "&ssl=" + std::to_string(hash.get64());
     };
+
+    /// `Pool::Pool` connects over a Unix socket when one is configured, so the socket path is a part
+    /// of the endpoint: two sources with the same host, port, user and database but different sockets
+    /// talk to different MySQL instances and must not share a pool.
+    auto socket_part = [&](const std::string & prefix) { return "&socket=" + get_param(prefix, "socket"); };
 
     if (config.has(config_name + ".replica"))
     {
@@ -71,20 +80,22 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
                 std::string tmp_host = config.getString(replica_name + ".host", host);
                 std::string tmp_port = config.getString(replica_name + ".port", port);
                 std::string tmp_user = config.getString(replica_name + ".user", user);
+                std::string tmp_db = config.getString(replica_name + ".db", db);
 
                 /// Resolve compression per replica: replica-level value takes priority,
                 /// falling back to the parent config (same lookup order as Pool::Pool).
                 std::string tmp_compression = config.getBool(replica_name + ".enable_compression", parent_compression) ? "1" : "0";
 
-                entry_name += (entry_name.empty() ? "" : "|") + tmp_user + "@" + tmp_host + ":" + tmp_port + "/" + db
-                    + "?compression=" + tmp_compression + ssl_key_part(replica_name);
+                entry_name += (entry_name.empty() ? "" : "|") + tmp_user + "@" + tmp_host + ":" + tmp_port + "/" + tmp_db
+                    + "?compression=" + tmp_compression + socket_part(replica_name) + ssl_key_part(replica_name);
             }
         }
     }
     else
     {
         std::string compression_value = parent_compression ? "1" : "0";
-        entry_name = user + "@" + host + ":" + port + "/" + db + "?compression=" + compression_value + ssl_key_part(config_name);
+        entry_name = user + "@" + host + ":" + port + "/" + db + "?compression=" + compression_value + socket_part(config_name)
+            + ssl_key_part(config_name);
     }
 
     /// `connection_pool_size` and `connection_wait_timeout` describe the shared pool itself (a single
