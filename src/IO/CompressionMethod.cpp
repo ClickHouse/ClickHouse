@@ -25,6 +25,12 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <charconv>
+#include <Poco/String.h>
+#include <string_view>
+
+#include <Common/StringUtils.h>
+
 
 namespace DB
 {
@@ -61,24 +67,103 @@ std::string toContentEncodingName(CompressionMethod method)
 
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 {
-    /// The compression methods are ordered from most to least preferred.
+    struct Entry
+    {
+        std::string_view coding;
+        double q_value = 1.0;
+    };
+    std::vector<Entry> entries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    if (list.contains("zstd"))
-        return CompressionMethod::Zstd;
-    if (list.contains("br"))
-        return CompressionMethod::Brotli;
-    if (list.contains("lz4"))
-        return CompressionMethod::Lz4;
-    if (list.contains("snappy"))
-        return CompressionMethod::Snappy;
-    if (list.contains("gzip"))
-        return CompressionMethod::Gzip;
-    if (list.contains("deflate"))
-        return CompressionMethod::Zlib;
-    if (list.contains("xz"))
-        return CompressionMethod::Xz;
-    if (list.contains("bz2"))
-        return CompressionMethod::Bzip2;
+    size_t pos = 0;
+    while (pos < list.size())
+    {
+        while (pos < list.size() && isWhitespaceASCII(list[pos]))
+            ++pos;
+        if (pos >= list.size())
+            break;
+
+        size_t comma = list.find(',', pos);
+        if (comma == std::string::npos)
+            comma = list.size();
+
+        std::string_view token(list.data() + pos, comma - pos);
+        while (!token.empty() && isWhitespaceASCII(token.back()))
+            token.remove_suffix(1);
+
+        pos = comma + 1;
+
+        auto semicolon = token.find(';');
+        if (semicolon == std::string_view::npos)
+        {
+            entries.push_back({token, 1.0});
+            continue;
+        }
+
+        std::string_view coding = token.substr(0, semicolon);
+        while (!coding.empty() && isWhitespaceASCII(coding.back()))
+            coding.remove_suffix(1);
+
+        double q = 1.0;
+        std::string_view params = token.substr(semicolon + 1);
+        auto qpos = params.find("q=");
+        if (qpos == std::string_view::npos)
+            qpos = params.find("Q=");
+        if (qpos != std::string_view::npos)
+        {
+            auto qval = params.substr(qpos + 2);
+            while (!qval.empty() && isWhitespaceASCII(qval.front()))
+                qval.remove_prefix(1);
+            auto [_, ec] = std::from_chars(qval.data(), qval.data() + qval.size(), q);
+            if (ec != std::errc{})
+                q = 1.0;
+        }
+
+        entries.push_back({coding, q});
+    }
+
+    static constexpr std::pair<std::string_view, CompressionMethod> preferred[] = {
+        {"zstd", CompressionMethod::Zstd},
+#if USE_BROTLI
+        {"br", CompressionMethod::Brotli},
+#endif
+        {"lz4", CompressionMethod::Lz4},
+#if USE_SNAPPY
+        {"snappy", CompressionMethod::Snappy},
+#endif
+        {"gzip", CompressionMethod::Gzip},
+        {"deflate", CompressionMethod::Zlib},
+        {"xz", CompressionMethod::Xz},
+#if USE_BZIP2
+        {"bz2", CompressionMethod::Bzip2},
+#endif
+    };
+
+    /// `*` is the wildcard: matches every content-coding not explicitly listed (RFC 9110 §12.5.3).
+    double star_q = -1.0;
+    for (const auto & entry : entries)
+    {
+        if (Poco::icompare(entry.coding, std::string_view("*")) == 0)
+            star_q = entry.q_value;
+    }
+
+    for (const auto & [name, method] : preferred)
+    {
+        bool listed = false;
+        for (const auto & entry : entries)
+        {
+            if (Poco::icompare(entry.coding, name) == 0)
+            {
+                listed = true;
+                if (entry.q_value > 0.0)
+                    return method;
+                break;
+            }
+        }
+        /// `*;q=N` (N > 0) covers every coding the client did not explicitly list.
+        if (!listed && star_q > 0.0)
+            return method;
+    }
+
     return CompressionMethod::None;
 }
 

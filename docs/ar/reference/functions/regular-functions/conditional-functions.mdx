@@ -320,22 +320,22 @@ SELECT clamp(15, 0, 7) AS result;
   ## greatest
 </div>
 
-أُضيفت في: v1.1.0
+تم تقديمه في: v1.1.0
 
-تعيد أكبر قيمة بين الوسيطات.
-يتم تجاهل الوسيطات `NULL`.
+تُرجع أكبر قيمة من بين الوسائط.
+يتم تجاهل الوسائط التي قيمتها `NULL`.
 
-* بالنسبة إلى المصفوفات، تعيد المصفوفة الأكبر ترتيبًا معجميًا.
-* بالنسبة إلى أنواع `DateTime`، تتم ترقية نوع النتيجة إلى أكبر نوع (مثلًا، `DateTime64` عند مزجه مع `DateTime32`).
+* بالنسبة إلى المصفوفات، تُرجع أكبر مصفوفة وفق الترتيب المعجمي.
+* بالنسبة إلى أنواع `DateTime`، يُرقّى نوع النتيجة إلى أكبر نوع (على سبيل المثال، `DateTime64` عند دمجه مع `DateTime32`).
 
 <Info>
   **استخدم الإعداد `least_greatest_legacy_null_behavior` لتغيير سلوك `NULL`**
 
-  قدّم الإصدار [24.12](/ar/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) تغييرًا غير متوافق مع الإصدارات السابقة، بحيث يتم تجاهل قيم `NULL`، بينما كان يُرجِع سابقًا `NULL` إذا كانت إحدى الوسيطات `NULL`.
+  قدّم الإصدار [24.12](/ar/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) تغييرًا غير متوافق مع الإصدارات السابقة، بحيث يتم تجاهل قيم `NULL`، بينما كان يُرجِع سابقًا `NULL` إذا كانت إحدى الوسائط `NULL`.
   للاحتفاظ بالسلوك السابق، اضبط الإعداد `least_greatest_legacy_null_behavior` (الافتراضي: `false`) على `true`.
 </Info>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 greatest(x1[, x2, ...])
@@ -345,17 +345,17 @@ greatest(x1[, x2, ...])
 
 * `x1[, x2, ...]` — قيمة واحدة أو عدة قيم للمقارنة. يجب أن تكون جميع الوسائط من أنواع قابلة للمقارنة. [`Any`](/ar/reference/data-types/index)
 
-**القيمة المعادة**
+**القيمة المُعادة**
 
-تُرجِع أكبر قيمة بين الوسائط، مع ترقيتها إلى أوسع نوع متوافق. [`Any`](/ar/reference/data-types/index)
+تُرجِع أكبر قيمة بين الوسائط، بعد ترقيتها إلى أوسع نوع متوافق. [`Any`](/ar/reference/data-types/index)
 
 **أمثلة**
 
 **الأنواع الرقمية**
 
 ```sql title=Query
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -379,13 +379,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **أنواع DateTime**
 
 ```sql title=Query
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯(now(), 3))─┐
-│  2025-05-28 15:50:53.000 │
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
 └──────────────────────────┘
 ```
 
@@ -456,7 +456,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
 <Info>
   **استخدم الإعداد `least_greatest_legacy_null_behavior` لتغيير سلوك `NULL`**
 
-  قدّم الإصدار [24.12](/ar/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) تغييرًا غير متوافق مع الإصدارات السابقة، بحيث يتم تجاهل قيم `NULL`، بينما كان يعيد سابقًا القيمة `NULL` إذا كان أحد الوسائط `NULL`.
+  قدّم الإصدار [24.12](/ar/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) تغييرًا غير متوافق مع الإصدارات السابقة، بحيث يتم تجاهل قيم `NULL`، بينما كان يعيد سابقًا القيمة `NULL` إذا كانت إحدى الوسائط `NULL`.
   للاحتفاظ بالسلوك السابق، اضبط الإعداد `least_greatest_legacy_null_behavior` (القيمة الافتراضية: `false`) على `true`.
 </Info>
 
@@ -479,8 +479,8 @@ least(x1[, x2, ...])
 **الأنواع الرقمية**
 
 ```sql title=Query
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -504,13 +504,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **أنواع DateTime**
 
 ```sql title=Query
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
+┌─least(toDate⋯0.000', 3))─┐
+│  2025-01-01 12:00:00.000 │
 └──────────────────────────┘
 ```
 
