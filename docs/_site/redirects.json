@@ -52592,19 +52592,11 @@
     "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes"
   },
   {
-    "destination": "/chdb/api/python",
-    "source": "/chdb/guides/python-udf"
-  },
-  {
     "destination": "/products/cloud/features/sql-console-features/clickstack",
     "source": "/cloud/manage/clickstack"
   },
   {
-    "destination": "/products/cloud/features/data-catalogs",
-    "source": "/integrations/data-catalogs"
-  },
-  {
-    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes",
     "source": "/integrations/estuary/clickpipes"
   },
   {
