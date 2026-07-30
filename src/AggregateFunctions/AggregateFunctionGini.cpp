@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -115,7 +116,7 @@ struct AggregateFunctionGiniData
         long double normalized_pairwise_difference_sum = 0;
         for (size_t i = 0; i + 1 < n; ++i)
         {
-            long double difference;
+            long double difference = 0;
             if constexpr (is_floating_point<Value>)
                 difference = toLongDouble(array[i + 1]) - toLongDouble(array[i]);
             else
@@ -185,10 +186,9 @@ AggregateFunctionPtr createAggregateFunctionGini(const std::string & name, const
                         argument_type->getName(), name);
 
     WhichDataType which(argument_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionGini<TYPE>>(argument_type);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
+    AggregateFunctionPtr function(createWithNumericType<AggregateFunctionGini>(*argument_type, argument_type));
+    if (function)
+        return function;
 
     if (which.idx == TypeIndex::Decimal32) return std::make_shared<AggregateFunctionGini<Decimal32>>(argument_type);
     if (which.idx == TypeIndex::Decimal64) return std::make_shared<AggregateFunctionGini<Decimal64>>(argument_type);
