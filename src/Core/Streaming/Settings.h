@@ -1,20 +1,22 @@
 #pragma once
 
-#include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/CursorTree.h>
+
+#include <Parsers/IAST_fwd.h>
 
 #include <chrono>
 
 namespace DB
 {
 
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-
 struct WatermarkSettings
 {
     String column;
-    QueryTreeNodePtr expression;
+    ASTPtr expression;
     std::chrono::milliseconds idle_timeout{0};
+
+public:
+    std::shared_ptr<WatermarkSettings> clone() const;
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
@@ -22,6 +24,9 @@ struct StreamSettings
 {
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
+
+public:
+    std::shared_ptr<StreamSettings> clone() const;
 };
 using StreamSettingsPtr = std::shared_ptr<StreamSettings>;
 

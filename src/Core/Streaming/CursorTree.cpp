@@ -1,4 +1,3 @@
-#include <Core/Streaming/CursorTree_fwd.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Common/Exception.h>
