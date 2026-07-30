@@ -245,12 +245,14 @@ done
 #     with a non-constant haystack, a constant non-trivial pattern and a constant replacement, and only
 #     once the pattern has been compiled - hence the two settings and the many short rows.
 #     That the pattern really was compiled is asserted rather than argued, by the `CompileRegexpFunction`
-#     event this PR adds: it is incremented only in `compileMatcher`, and is read back for this query's own
-#     `query_id`. `argMax` over `event_time_microseconds` rather than `sum`, because the stress runner gives
-#     some threads one fixed database for every test, so across repeats the same id accumulates rows and a
-#     sum would answer with an earlier run's compile. The cache must be dropped first for the same reason:
-#     `CacheBase::getOrSet` returns early on a hit without invoking the load lambda, so the increment is
-#     skipped entirely when the pattern is already cached.
+#     event this PR adds: `getRegexpJITMatcher` charges it once the matcher has survived both the holder
+#     construction and the cache insertion, so it cannot claim a compile the query then fell back from, and
+#     it is read back for this query's own `query_id`. `argMax` over `event_time_microseconds` rather than
+#     `sum`, because the stress runner gives some threads one fixed database for every test, so across
+#     repeats the same id accumulates rows and a sum would answer with an earlier run's compile. The cache
+#     must be dropped first for the same reason:
+#     `CacheBase::getOrSet` returns early on a hit without invoking the load lambda, so nothing is compiled
+#     and the event is not charged when the pattern is already cached.
 #     A failed compile is silent by design, and a build with no embedded compiler can never obtain the
 #     matcher, so that is asserted directly: `USE_EMBEDDED_COMPILER` is substituted unconditionally, so on
 #     such a build the row is empty and anything that is not `ON` takes the fail-loud branch.
