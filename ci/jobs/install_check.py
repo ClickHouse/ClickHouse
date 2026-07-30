@@ -195,8 +195,23 @@ for pkg in /packages/clickhouse-client*tgz; do
 done
 [ "$(stat -c %i /etc/clickhouse-client/config.xml)" = "$inode" ]
 [ "$(stat -c %h /etc/clickhouse-client/config.xml)" = "2" ]
-diff /etc/clickhouse-client/config.xml /backup/config.xml
+# `cmp`/`diff` are not installed in the minimal images, compare the contents in the shell.
+[ "$(cat /etc/clickhouse-client/config.xml)" = "$(cat /backup/config.xml)" ]
 [ "$(cat /etc/clickhouse-client/config.xml)" != "<clickhouse></clickhouse>" ]""",
+        f"Install tgz over a dangling symlink in {image}": r"""#!/bin/bash -ex
+# A symlink whose target does not exist yet has to survive the installation as well: `-e`
+# follows the link, so the installer must test for the link itself before testing existence.
+mkdir -p /etc/clickhouse-client /shared
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ -s /shared/config.xml ]""",
     }
     return test_install(image, tests)
 

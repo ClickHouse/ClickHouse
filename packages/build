@@ -101,14 +101,16 @@ fi
 # inode. Everything else - and that is the common case, including every fresh installation -
 # is replaced by a rename, which needs no additional disk space.
 keep_destination_inode () {
-    if [ ! -e "$1" ]; then
-        return 1
-    fi
     # An existing symlink at the destination is written through, the way copying did, so that
     # an installation keeping its configs or binaries elsewhere and linking to them keeps the
-    # indirection after an upgrade.
+    # indirection after an upgrade. The symlink test comes before the existence test, because
+    # `-e` follows the link: a dangling symlink looks nonexistent to it, while the link still
+    # has to survive rather than be replaced by a plain file.
     if [ -L "$1" ]; then
         return 0
+    fi
+    if [ ! -e "$1" ]; then
+        return 1
     fi
     # Only a regular file can be written through.
     if [ ! -f "$1" ]; then
@@ -124,14 +126,19 @@ keep_destination_inode () {
     case "$(echo "$listing" | awk '{print $1}')" in
         *+) return 0 ;;
     esac
-    if [ -n "$GETFATTR" ]; then
-        # The SELinux label is skipped: it is not carried over by a rename either, but it is
-        # recreated from the policy by `restorecon` below, and on an SELinux system every
-        # single file has one, which would make the rename path unreachable.
-        attributes=$($GETFATTR --absolute-names --match=- --dump -- "$1" 2> /dev/null | grep -v -e '^#' -e '^$' -e '^security\.selinux=' || true)
-        if [ -n "$attributes" ]; then
-            return 0
-        fi
+    if [ -z "$GETFATTR" ]; then
+        # Without `getfattr` there is no portable way to tell whether the destination carries
+        # extended attributes, so an existing regular file conservatively keeps its inode.
+        # The disk-space saving is unaffected: it comes from the fresh installation, where no
+        # destination exists and the rename path is taken above.
+        return 0
+    fi
+    # The SELinux label is skipped: it is not carried over by a rename either, but it is
+    # recreated from the policy by `restorecon` below, and on an SELinux system every
+    # single file has one, which would make the rename path unreachable.
+    attributes=$($GETFATTR --absolute-names --match=- --dump -- "$1" 2> /dev/null | grep -v -e '^#' -e '^$' -e '^security\.selinux=' || true)
+    if [ -n "$attributes" ]; then
+        return 0
     fi
     return 1
 }
