@@ -220,18 +220,17 @@ protected:
     /// propagating them as the outer query's (see `JoinStep::updatePipeline`). Not serialized, so a
     /// round trip drops it.
     ///
-    /// A marked join cannot reach a serialization boundary unrefused, and the refusal is fail-closed
-    /// rather than route-specific: decorrelation always adds `CommonSubplanStep` and
-    /// `CommonSubplanReferenceStep`, a cached subquery adds `ReadFromQueryResultCacheStep`, and none
-    /// of them override the `IQueryPlanStep::isSerializable` default of `false`, so
-    /// `assertFragmentSerializable` rejects the fragment and `IQueryPlanStep::serialize` throws. A
-    /// future step that carries the subquery's totals across a boundary has to opt into
-    /// serialization, which is where this member would have to be serialized too.
+    /// Runtime-only: `JoinStepLogical::serialize` does not write it. On the routes exercised so far that
+    /// has not mattered, because a totals-carrying decorrelated plan is refused before it reaches a
+    /// serialization boundary, each route for its own reason. That is an observation about those routes,
+    /// not a proof that no such path exists. If a step ever carries the subquery's totals across a
+    /// serialization boundary, this member has to be serialized too.
     ///
-    /// Each route also refuses earlier for its own reason. Examples, not an exhaustive list:
+    /// Examples, not an exhaustive list:
     ///  - `make_distributed_plan`: `planHasUnsupportedDistributedStep` refuses a
-    ///    `TotalsHavingStep`-carrying plan (optimizeTree.cpp, makeDistributed.cpp); a cached totals
-    ///    stream carries no such step and is caught by the fail-closed check above instead.
+    ///    `TotalsHavingStep`-carrying plan (optimizeTree.cpp, makeDistributed.cpp). A cached totals
+    ///    stream carries no such step and escapes that scan; what refuses that shape is not established
+    ///    here.
     ///  - parallel replicas: `findQueryForParallelReplicas` declines a decorrelated join tree.
     ///  - a set-subquery plan serialized recursively (Serialization.cpp, SetsSerialization.cpp),
     ///    permitted under `parallel_replicas_allow_in_with_subquery`: `addCreatingSetsTransform`
