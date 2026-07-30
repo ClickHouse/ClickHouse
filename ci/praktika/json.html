@@ -1049,16 +1049,41 @@
         const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
         const durationLeft = ((clampedDuration - minValue) / range) * 100;
 
-        const topLabelBox = document.createElement("div");
-        //topLabelBox.style.fontSize = "10px";
-        topLabelBox.style.marginBottom = "4px";
+        // Percentile rank of this run's duration among recent runs, so the
+        // header can show how it compares (e.g. "faster than 60%").
+        const percentileOf = (d) => {
+            if (d <= values[0]) return keys[0];
+            if (d >= values[values.length - 1]) return keys[keys.length - 1];
+            for (let i = 0; i < values.length - 1; i++) {
+                if (d >= values[i] && d <= values[i + 1]) {
+                    const span = values[i + 1] - values[i] || 1;
+                    return keys[i] + ((d - values[i]) / span) * (keys[i + 1] - keys[i]);
+                }
+            }
+            return keys[keys.length - 1];
+        };
+        const fasterThan = Math.max(0, Math.min(100, Math.round(100 - percentileOf(duration))));
 
-        const currentLabel = document.createElement("div");
-        currentLabel.style.textAlign = "left";
-        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
+        // Header matches the storage-usage / host-usage widgets: a plain label,
+        // then the value + comparison on the next line, right-aligned and faded.
+        const infoContainer = document.createElement("div");
+        infoContainer.style.display = "flex";
+        infoContainer.style.flexDirection = "column";
+        infoContainer.style.fontSize = "0.8em";
+        infoContainer.style.marginBottom = "4px";
 
-        topLabelBox.appendChild(currentLabel);
-        chartWrapper.appendChild(topLabelBox);
+        const nameRow = document.createElement("div");
+        nameRow.textContent = "duration";
+
+        const detailsRow = document.createElement("div");
+        detailsRow.style.textAlign = "right";
+        detailsRow.style.fontSize = "0.85em";
+        detailsRow.style.color = "#666";
+        detailsRow.textContent = `${formatDurationMs(duration)} (faster than ${fasterThan}%)`;
+
+        infoContainer.appendChild(nameRow);
+        infoContainer.appendChild(detailsRow);
+        chartWrapper.appendChild(infoContainer);
 
         // --- Bar
         const bar = document.createElement("div");
@@ -1395,7 +1420,7 @@
         nameRow.style.textOverflow = "ellipsis";
         nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
         nameRow.id = "storage-usage-name";
-        nameRow.textContent = "uploaded:";
+        nameRow.textContent = "uploaded";
 
         // Second line: XX% ...padding... YYYMB
         const detailsRow = document.createElement("div");
@@ -1482,7 +1507,7 @@
 
         // Show the total uploaded by default
         const showTotalUploaded = () => {
-            updateDisplay("uploaded:", uploadedMB, 100);
+            updateDisplay("uploaded", uploadedMB, 100);
         };
 
         // Show details for specific segment
