@@ -3,6 +3,9 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
+#include <cmath>
+#include <limits>
+
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
@@ -222,6 +225,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
@@ -247,6 +251,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read;
+    extern const SettingsUInt64 merge_tree_min_bytes_per_read_stream;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read;
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
@@ -985,6 +990,18 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
+size_t ReadFromMergeTree::getTotalQueryNodes() const
+{
+    if (!is_parallel_reading_from_replicas)
+        return 1;
+
+    /// The parallel-replicas execution context replaces `max_parallel_replicas` with the effective coordinator
+    /// size after filtering inactive replicas.
+    return std::min<size_t>(
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        context->getSettingsRef()[Setting::max_parallel_replicas]);
+}
+
 Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -997,11 +1014,7 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
+    const size_t total_query_nodes = getTotalQueryNodes();
 
     PoolSettings pool_settings{
         .threads = max_streams,
@@ -1224,6 +1237,181 @@ Pipe ReadFromMergeTree::readByLayers(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
+/// `parts_with_ranges`.
+///
+/// Returns 0 if nothing usable could be estimated, in which case the caller must not cap.
+///
+/// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
+/// against is proportional to the work done per stream, which scales with the number of values
+/// processed, not with how well they compress. A highly compressible column (e.g. a constant
+/// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
+/// expressions and aggregation.
+static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, const Names & column_names, const Settings & settings)
+{
+    const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+
+    size_t total_bytes = 0;
+
+    for (const auto & part : parts_with_ranges)
+    {
+        const auto & data_part = *part.data_part;
+
+        const size_t part_marks = data_part.getMarksCount();
+        if (part_marks == 0)
+            continue;
+
+        /// Only a fraction of the part may survive primary key / partition pruning. Scaling by it
+        /// keeps the cap meaningful for selective queries, which would otherwise be sized as if the
+        /// whole part were read.
+        const size_t selected_marks = std::min(part.ranges.getNumberOfMarks(), part_marks);
+        if (selected_marks == 0)
+            continue;
+
+        /// Several requested subcolumns can share streams. Group them by their physical column so
+        /// multiple subcolumns are never charged more than the complete physical column.
+        std::unordered_map<String, NameSet> requested_names_by_column;
+        for (const auto & col_name : column_names)
+        {
+            if (auto col = data_part.tryGetColumn(col_name))
+                requested_names_by_column[col->getNameInStorage()].emplace(col_name);
+        }
+
+        size_t part_bytes = 0;
+        bool part_bytes_known = true;
+
+        for (const auto & [physical_name, requested_names] : requested_names_by_column)
+        {
+            size_t col_bytes = 0;
+            if (requested_names.size() == 1)
+            {
+                const auto & requested_name = *requested_names.begin();
+                const auto col = data_part.tryGetColumn(requested_name);
+                if (col && col->isSubcolumn() && use_subcolumn_sizes)
+                    col_bytes = data_part.getSubcolumnSize(requested_name).data_uncompressed;
+            }
+
+            /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
+            /// upper bound that counts every shared stream exactly once.
+            if (col_bytes == 0)
+                col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+
+            if (col_bytes == 0)
+            {
+                /// Compact parts do not track per-column sizes, so `getColumnSize` yields 0 there.
+                /// Fall back to the whole part rather than silently under-counting this column.
+                part_bytes_known = false;
+                break;
+            }
+
+            if (__builtin_add_overflow(part_bytes, col_bytes, &part_bytes))
+            {
+                part_bytes = std::numeric_limits<size_t>::max();
+                break;
+            }
+        }
+
+        if (!part_bytes_known)
+            part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+
+        const auto selected_bytes_wide
+            = (static_cast<UInt128>(part_bytes) * selected_marks + part_marks - 1) / part_marks;
+        const size_t selected_bytes = selected_bytes_wide > std::numeric_limits<size_t>::max()
+            ? std::numeric_limits<size_t>::max()
+            : static_cast<size_t>(selected_bytes_wide);
+
+        if (__builtin_add_overflow(total_bytes, selected_bytes, &total_bytes))
+            return std::numeric_limits<size_t>::max();
+    }
+
+    return total_bytes;
+}
+
+/// Cap the number of read streams based on the estimated size of the data being read.
+///
+/// The mark-based stream reduction uses index_granularity_bytes (e.g. 10 MB) as a proxy for bytes
+/// per mark. For narrow columns (e.g. UInt16 where each mark is ~16 KB uncompressed), this
+/// overestimates by hundreds of times and creates far too many streams. Each stream spawns a full
+/// pipeline processor chain
+/// whose overhead (thread scheduling, graph traversal, aggregate state init/merge) grows superlinearly
+/// with stream count.
+///
+/// Cost model: T(N) = W/N + F + V·N, where W = useful work, F = fixed overhead, V = per-stream
+/// variable cost. Optimal N = sqrt(W/V). Expressing in bytes: W = total_bytes / throughput, and
+/// C = throughput · V is the byte-equivalent per-stream overhead cost, giving:
+///     optimal_N = sqrt(total_bytes / C)
+/// The setting merge_tree_min_bytes_per_read_stream provides C (default 64 KB, 0 disables).
+///
+/// Never reduce below this many streams: the per-stream overhead only dominates once the pipeline is
+/// wide, so capping a narrow pipeline changes its shape without winning anything.
+static constexpr size_t MIN_STREAMS_TO_CAP_BY_READ_BYTES = 16;
+
+static void capStreamsByReadBytes(
+    size_t & num_streams,
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const Settings & settings,
+    size_t total_query_nodes,
+    LoggerPtr log,
+    std::string_view context_hint = {})
+{
+    const size_t overhead_cost_bytes = settings[Setting::merge_tree_min_bytes_per_read_stream];
+    if (overhead_cost_bytes == 0)
+        return;
+
+    const size_t total_bytes = estimateReadBytes(parts_with_ranges, column_names, settings);
+    if (total_bytes == 0)
+        return;
+
+    /// With parallel replicas every node plans over the whole set of parts but reads only its own
+    /// share of them, so each node must size its streams by that share. Otherwise every node caps
+    /// as if it read everything, overestimating by about sqrt(total_query_nodes).
+    const size_t query_nodes = std::max<size_t>(1, total_query_nodes);
+    const size_t bytes_per_node = static_cast<size_t>(
+        (static_cast<UInt128>(total_bytes) + query_nodes - 1) / query_nodes);
+
+    /// Round up: truncating sqrt(3.99) to 1 would halve the streams for a rounding artefact.
+    const size_t max_streams_by_volume = std::max<size_t>(
+        1, static_cast<size_t>(std::ceil(std::sqrt(static_cast<double>(bytes_per_node) / static_cast<double>(overhead_cost_bytes)))));
+
+    /// The stream count also sets the width of everything downstream of the read - PREWHERE,
+    /// expression evaluation and aggregation - but the estimate above only measures how many bytes
+    /// are read, not how much CPU work each of those bytes costs. A CPU-bound query over a small
+    /// column (several hash functions per row, or a high-cardinality `GROUP BY`) would lose most of
+    /// its parallelism to a cap derived purely from data volume. Two lower bounds keep that bounded:
+    ///
+    /// - a fixed fraction of the requested streams, so the worst case for such a query stays
+    ///   bounded no matter how wide the pipeline is;
+    /// - an absolute floor, because the per-stream overhead this cap removes only dominates once the
+    ///   pipeline is wide. Below the floor there is nothing to win, while narrowing the read to a
+    ///   single stream would change the shape of the whole pipeline (a one-stream read is planned as
+    ///   a concatenation read in order rather than a thread pool), which is a large behaviour change
+    ///   to make for no gain.
+    const size_t min_streams = std::max<size_t>(MIN_STREAMS_TO_CAP_BY_READ_BYTES, num_streams / 4);
+    const size_t capped_num_streams = std::max(max_streams_by_volume, min_streams);
+
+    if (capped_num_streams < num_streams)
+    {
+        LOG_DEBUG(log, "Reducing num_streams from {} to {}{} (estimated_read_bytes={}, query_nodes={}, overhead_cost={}, by_volume={})",
+            num_streams, capped_num_streams, context_hint, total_bytes, total_query_nodes, overhead_cost_bytes, max_streams_by_volume);
+        num_streams = capped_num_streams;
+    }
+}
+
+size_t ReadFromMergeTree::getNumStreamsCappedByReadBytes(
+    size_t num_streams, const RangesInDataParts & parts_with_ranges) const
+{
+    capStreamsByReadBytes(
+        num_streams,
+        parts_with_ranges,
+        all_column_names,
+        context->getSettingsRef(),
+        getTotalQueryNodes(),
+        log,
+        " while reading by layers");
+    return num_streams;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1267,6 +1455,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             else
                 num_streams = parts_with_ranges.size();
         }
+
+        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -1462,6 +1652,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
         }
+
+        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log);
     }
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -1472,11 +1664,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
+    const size_t total_query_nodes = getTotalQueryNodes();
 
     PoolSettings pool_settings{
         .threads = num_streams,
@@ -1851,6 +2039,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
+
+    if (num_streams > 1)
+        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log, " in FINAL");
 
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.

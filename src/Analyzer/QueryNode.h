@@ -101,6 +101,8 @@ public:
         return settings_changes;
     }
 
+    void setSettingChange(std::string_view name, const Field & value);
+
     void clearSettingsChanges()
     {
         settings_changes.clear();

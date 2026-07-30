@@ -43,10 +43,11 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         )
 
     node1.query(
-        f"CREATE TABLE {db}.tt (key Int64, value String) ENGINE = ReplicatedMergeTree ORDER BY key"
+        f"CREATE TABLE {db}.tt (key Int64, value String) ENGINE = ReplicatedMergeTree ORDER BY key "
+        "SETTINGS index_granularity = 8192, index_granularity_bytes = 0"
     )
     node1.query(
-        f"INSERT INTO {db}.tt SELECT number, toString(number) FROM numbers(100000)"
+        f"INSERT INTO {db}.tt SELECT number, toString(number) FROM numbers(2000000)"
     )
     # Make sure the surviving replica holds a full local copy of the data.
     node2.query(f"SYSTEM SYNC REPLICA {db}.tt")
@@ -57,6 +58,21 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         f"SELECT count() FROM system.clusters WHERE cluster = '{db}' AND is_active = 1",
         "3\n",
     )
+
+    stream_count_query = f"""
+        SELECT max(toUInt32OrZero(extract(explain, 'MergeTreeSelect.*× (\\d+)')))
+        FROM (EXPLAIN PIPELINE SELECT sum(key) FROM {db}.tt SETTINGS max_parallel_replicas = 3)
+    """
+    stream_count_settings = {
+        "enable_parallel_replicas": 1,
+        "cluster_for_parallel_replicas": db,
+        "max_threads": 64,
+        "merge_tree_min_rows_for_concurrent_read": 0,
+        "merge_tree_min_bytes_for_concurrent_read": 0,
+        "merge_tree_min_read_task_size": 1,
+        "merge_tree_min_bytes_per_read_stream": 4096,
+    }
+    three_replica_streams = int(node1.query(stream_count_query, settings=stream_count_settings))
 
     # Stop one replica gracefully: it stays registered in the cluster definition but becomes inactive.
     node3.stop_clickhouse()
@@ -83,7 +99,13 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
                 "cluster_for_parallel_replicas": db,
             },
         )
-        assert result == "4999950000\n"
+        assert result == "1999999000000\n"
+
+        # With fewer participating nodes, each node reads a larger share and needs more local streams. The
+        # configured cluster and `max_parallel_replicas` are unchanged, so this specifically verifies that the
+        # stream cap uses the coordinator's live replica count.
+        two_replica_streams = int(node1.query(stream_count_query, settings=stream_count_settings))
+        assert two_replica_streams > three_replica_streams
 
         # The coordinator must be created for the 2 active replicas, not the 3 registered ones.
         assert node1.contains_in_log(
