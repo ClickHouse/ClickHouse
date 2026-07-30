@@ -154,9 +154,9 @@ static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const
 
     if (node->getNodeType() == QueryTreeNodeType::JOIN)
     {
-        if (auto res = findTableExpression(node->as<JoinNode>()->getLeftTableExpression(), table_name))
+        if (auto res = findTableExpression(node->as<JoinNode>()->getLeftTableExpressionNode(), table_name))
             return res;
-        if (auto res = findTableExpression(node->as<JoinNode>()->getRightTableExpression(), table_name))
+        if (auto res = findTableExpression(node->as<JoinNode>()->getRightTableExpressionNode(), table_name))
             return res;
     }
     return nullptr;
@@ -187,7 +187,7 @@ static void checkNewAnalyzer(
     if (!query_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
 
-    query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
+    query_info.table_expression = static_pointer_cast<ITableExpressionNode>(findTableExpression(query_node->getJoinTreeNode(), "table"));
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
