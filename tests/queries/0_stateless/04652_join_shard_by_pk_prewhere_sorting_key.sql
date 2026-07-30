@@ -59,8 +59,18 @@ SELECT 'bare PREWHERE key col mid', (SELECT sum(cityHash64(d)) FROM (SELECT l.d 
 
 -- Control for the cells above: the flag must be cleared only for a column the sorting key needs, so
 -- a bare filter on a non-key column keeps being removed and must not start leaking into the header.
-SELECT 'control bare PREWHERE non-key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE d != '') AS r ON l.a = r.a))
-                                      = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN (SELECT * FROM ok2 PREWHERE d != '') AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+-- `ok2` has no non-key numeric column and a `String` cannot be a bare filter at all
+-- (`canBeUsedInBooleanContext`), so this control needs its own table. `e` is `% 200 + 1`, always
+-- truthy, so the control filters nothing and compares a full result.
+DROP TABLE IF EXISTS nk04652;
+CREATE TABLE nk04652 (a UInt32, b UInt32, c Int64, e UInt32, d String)
+ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 64;
+INSERT INTO nk04652 SELECT number % 50, number % 200, toInt64(number), number % 200 + 1, toString(number % 7) FROM numbers(2000);
+
+SELECT 'control bare PREWHERE non-key', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM nk04652 AS l INNER JOIN (SELECT * FROM nk04652 PREWHERE e) AS r ON l.a = r.a))
+                                      = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM nk04652 AS l INNER JOIN (SELECT * FROM nk04652 PREWHERE e) AS r ON l.a = r.a) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
+
+DROP TABLE nk04652;
 
 -- An outer join reaches the branch only when the filter is on a side the join preserves: a filter on
 -- the non-preserved side stays above the join as a `Filter (WHERE)` step and never becomes PREWHERE.
@@ -134,10 +144,20 @@ DROP ROW POLICY pol_04652 ON ok2;
 
 -- The row-level DAG has the same hole as the PREWHERE one: a policy whose predicate is a bare
 -- sorting-key column makes that column the row-level filter column, so it too is erased by name
--- after the DAG runs. `b` is truthy for all but the 10 rows where `number % 200 = 0`, so unlike
--- `b < 1000` above this policy does filter, and the oracle compares the filtered result.
+-- after the DAG runs. This fixture's `b = 0` rows all have `a = 0` while `r.c = 94` restricts the
+-- join to `a = 44`, so the policy changes no row of the joined result and the digest alone cannot
+-- see it; the plan guard below is what pins the policy, the PREWHERE, the sharding and the
+-- in-order read on this path.
 DROP ROW POLICY IF EXISTS pol_bare_04652 ON ok2;
 CREATE ROW POLICY pol_bare_04652 ON ok2 USING b TO ALL;
+
+SELECT 'bare row policy plan shape',
+       countIf(explain LIKE '%Row level filter%') = 4
+   AND countIf(explain LIKE '%Prewhere filter%') = 2
+   AND countIf(explain LIKE '%Sharding%') = 1
+   AND countIf(explain LIKE '%ReadType: InOrder%') = 2
+FROM (EXPLAIN actions = 1, pretty = 0
+      SELECT l.d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94);
 
 SELECT 'bare row policy col', (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94))
                             = (SELECT sum(cityHash64(d)) FROM (SELECT l.d AS d FROM ok2 AS l INNER JOIN ok2 AS r ON l.a = r.a WHERE r.c = 94) SETTINGS join_algorithm = 'hash', query_plan_join_shard_by_pk_ranges = 0);
