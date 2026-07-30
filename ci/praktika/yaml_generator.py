@@ -105,7 +105,7 @@ name: {NAME}
 
 on:
   workflow_dispatch:
-    inputs:{DISPATCH_INPUTS}
+    inputs:{DISPATCH_INPUTS}{TAG_PUSH_TRIGGER}
 
 env:
   # Force the stdout and stderr streams to be unbuffered
@@ -519,6 +519,11 @@ class PullRequestPushYamlGen:
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {
                 "DISPATCH_INPUTS": dispatch_inputs,
+                "TAG_PUSH_TRIGGER": (
+                    f"\n  push:\n    tags: {self.workflow_config.tags}"
+                    if self.workflow_config.tags
+                    else ""
+                ),
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
                 ),

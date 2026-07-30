@@ -10,6 +10,8 @@ on:
         required: false
         type: boolean
         default: false
+  push:
+    tags: ['*']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
