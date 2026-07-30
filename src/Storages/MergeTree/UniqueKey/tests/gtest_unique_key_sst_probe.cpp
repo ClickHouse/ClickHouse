@@ -39,6 +39,15 @@
 #include <string>
 #include <vector>
 
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFile.h>
+
+#if USE_SSL
+#include <Disks/DiskEncrypted.h>
+#include <IO/FileEncryptionCommon.h>
+#endif
+
 
 using namespace DB;
 
@@ -589,7 +598,75 @@ TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
         writer.addEncoded(encoded[0], 0);
         writer.addEncoded(encoded[1], 1); /// out-of-order → throws
     }, DB::Exception);
+
+    /// The destructor must have removed the abandoned partial SST file.
+    EXPECT_FALSE(std::filesystem::exists(finalPath()));
 }
+
+#if USE_SSL
+/// Exercise `SSTIndexWriter` through `DiskEncrypted` (non-trivial `WriteBuffer`),
+/// then round-trip: decrypt → `SstFileReader` validates keys and row numbers.
+TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
+{
+    /// Build an encrypted disk wrapping a local disk.
+    std::filesystem::path enc_root = tmp_path / "enc_root";
+    std::filesystem::create_directories(enc_root);
+    auto local_disk = std::make_shared<DiskLocal>("enc_local", enc_root.string());
+
+    auto enc_settings = std::make_unique<DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = local_disk;
+    enc_settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
+    const String key = "1234567890123456";
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+    enc_settings->all_keys[enc_settings->current_key_fingerprint] = key;
+    auto enc_disk = std::make_shared<DiskEncrypted>("enc_disk", std::move(enc_settings));
+
+    auto enc_volume = std::make_shared<SingleDiskVolume>("enc_volume", enc_disk);
+    auto enc_storage = std::make_shared<DataPartStorageOnDiskFull>(enc_volume, "", "enc_part");
+
+    /// Write a small sorted SST through the encrypted-disk adapter.
+    std::vector<UInt64> keys{100, 200, 300, 400, 500};
+    auto block = makeUInt64Block(keys);
+
+    UInt64 written = SSTIndexWriter::writeFromBlock(
+        *enc_storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    ASSERT_EQ(written, keys.size());
+
+    /// The file exists on the underlying local disk (encrypted on disk).
+    std::string enc_final_path = enc_storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
+    ASSERT_TRUE(std::filesystem::exists(enc_final_path));
+
+    /// Read the decrypted SST content through the storage adapter and dump
+    /// to a plain temp file so `SstFileReader` can open it.
+    auto read_buf = enc_storage->readFile(SSTIndexWriter::FILE_NAME, ReadSettings{}, {});
+    String decrypted;
+    readStringUntilEOF(decrypted, *read_buf);
+    read_buf.reset();
+
+    std::filesystem::path plain_path = tmp_path / "decrypted.sst";
+    {
+        WriteBufferFromFile wb(plain_path.string());
+        wb.write(decrypted.data(), decrypted.size());
+        wb.finalize();
+    }
+
+    /// Verify the round-trip: keys and row numbers must be correct.
+    rocksdb::SstFileReader reader(makeReaderOptions());
+    ASSERT_TRUE(reader.Open(plain_path.string()).ok());
+
+    auto cols = makeUInt64Columns(keys);
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_encoded_size=*/256, encoded);
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        std::string value;
+        ASSERT_TRUE(sstIteratorContains(reader, encoded[i], &value))
+            << "missing key at row " << i;
+        EXPECT_EQ(decodeRowNumberBE(value), static_cast<UInt32>(i));
+    }
+}
+#endif // USE_SSL
 
 #endif  // USE_ROCKSDB
 
