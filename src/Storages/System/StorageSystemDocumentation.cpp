@@ -464,9 +464,9 @@ bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alia
 }
 
 /// Whether a recorded change is the introduction of the entity — a setting or an alias of one — that it is being
-/// rendered for. It is, when the change is from a value to itself and its reason does not say otherwise: such a record has no
-/// effect on `compatibility` and is written either to make a setting that did not exist before known to it, or to
-/// note something else about a setting that already exists (that it became obsolete, or that it graduated from
+/// rendered for. It is, when the change is from a value to itself and its reason does not say otherwise: such a
+/// record has no effect on `compatibility` and is written either to make a setting that did not exist before known
+/// to it, or to note something else about a setting that already exists (that it became obsolete, or that it graduated from
 /// experimental to beta, say). A setting introduced with a compatibility value that differs from its default is
 /// instead recorded as an ordinary change of the default and is indistinguishable from one, so it is reported as
 /// such rather than claimed to be an introduction that the history does not actually record.
