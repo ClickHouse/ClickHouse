@@ -884,7 +884,7 @@ void StorageKafka2::createReplica()
             throw Coordination::Exception::fromPath(code, replica_path);
     }
 
-    if (shard_count > 0 && code == Coordination::Error::ZNODEEXISTS)
+    if (code == Coordination::Error::ZNODEEXISTS)
     {
         String stored_data;
         if (keeper->tryGet(replica_path, stored_data))
