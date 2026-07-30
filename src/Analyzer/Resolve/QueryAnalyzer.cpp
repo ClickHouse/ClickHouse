@@ -142,14 +142,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// A MATERIALIZED CTE is materialized once into a temporary table, so its body cannot
-/// depend on outer-scope columns: a correlated body would need a different materialization
-/// per call site. A correlated body also leaves PLACEHOLDER nodes (correlated-column
-/// markers) in its ActionsDAG that the materialized-CTE build path never decorrelates,
-/// so they reach `ExpressionActions::execute` and throw `Trying to execute PLACEHOLDER
-/// action`. Reject it at analysis time instead. The check must run for every reference,
-/// because two clones of the same body can resolve differently (one non-correlated, one
-/// correlated) and only the correlated clone must be rejected.
+/// A MATERIALIZED CTE is materialized once, so its body cannot be correlated.
+/// Must run for every reference: clones of one body can resolve differently.
 void checkMaterializedCTESubqueryIsNotCorrelated(
     const QueryTreeNodePtr & subquery,
     const std::string & cte_name,
