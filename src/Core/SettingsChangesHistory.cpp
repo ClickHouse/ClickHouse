@@ -1583,4 +1583,3 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 }
 
 }
-
