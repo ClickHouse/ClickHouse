@@ -9,6 +9,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
+#include <limits>
+
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -36,6 +38,7 @@ namespace ErrorCodes
 #if USE_ICU
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
 #else
     extern const int SUPPORT_IS_DISABLED;
 #endif
@@ -880,6 +883,14 @@ bool IcuTokenizer::nextInString(
     [[maybe_unused]] size_t & __restrict token_length) const
 {
 #if USE_ICU
+    /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
+    /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
+    if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "The 'icu' tokenizer cannot process values larger than {} bytes",
+            std::numeric_limits<int32_t>::max());
+
     UBreakIterator * iterator = getThreadLocalIcuWordIterator(locale);
 
     /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
