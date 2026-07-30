@@ -118,7 +118,11 @@ static StreamDisjointnessProperty applyStreamDisjointness(
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(step))
     {
+        /// `max_rows_to_group_by` is a global `GROUP BY` limit, enforced during the merge phase in
+        /// normal aggregation. Skipping the merge would enforce it against each stream's own hash
+        /// table instead of globally, so in that case we keep the merge and the limit stays global.
         if (settings.aggregate_partitions_independently && !aggregating->isGroupingSets()
+            && aggregating->getParams().max_rows_to_group_by == 0
             && partitionDeterminedByKeys(property, aggregating->getParams().keys))
         {
             aggregating->skipMerging();
