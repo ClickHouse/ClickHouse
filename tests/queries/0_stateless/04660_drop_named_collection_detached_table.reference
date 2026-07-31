@@ -1,0 +1,9 @@
+--- a temporarily detached table still holds the named collection ---
+1
+1
+--- the same in an Ordinary database, where dependencies are tracked by name ---
+--- a table in a detached database still holds it, too ---
+--- a permanently detached table does not hold it: the metadata is not loaded at startup ---
+0
+--- check_named_collection_dependencies = 0 still allows dropping it ---
+0
