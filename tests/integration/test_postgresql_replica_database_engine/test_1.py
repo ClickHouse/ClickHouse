@@ -316,6 +316,50 @@ def test_drop_database_while_replication_startup_not_finished(started_cluster):
         pg_manager.drop_materialized_db()
 
 
+def test_drop_database_cancels_startup_retries(started_cluster):
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    retry_message = "Failed to start replication from PostgreSQL"
+    failpoint = "database_materialized_postgresql_pause_before_table_drop"
+
+    count_before_restart = int(instance.count_in_log(retry_message))
+
+    with started_cluster.pause_container_using_signal("postgres1"):
+        # Restart while PostgreSQL is unreachable: the startup task fails and keeps
+        # re-scheduling itself every 5 seconds, while the nested tables already exist.
+        instance.restart_clickhouse()
+        deadline = time.monotonic() + 120
+        while int(instance.count_in_log(retry_message)) == count_before_restart:
+            assert time.monotonic() < deadline, "replication startup did not fail"
+            time.sleep(0.5)
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        drop_thread = threading.Thread(
+            target=instance.query, args=("DROP DATABASE test_database SYNC",)
+        )
+        drop_thread.start()
+        try:
+            # The drop pauses at the failpoint on the first table, which is reached
+            # after `stopReplication` has already run.
+            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+
+            # `stopReplication` must have cancelled the startup retry task. Hold the
+            # drop open across several retry periods (the task re-schedules itself
+            # every 5 seconds) and check that no retry fires while the tables are
+            # being dropped.
+            baseline = int(instance.count_in_log(retry_message))
+            time.sleep(20)
+            assert int(instance.count_in_log(retry_message)) == baseline
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            drop_thread.join()
+
+
 def test_restart_server_while_replication_startup_not_finished(started_cluster):
     NUM_TABLES = 5
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 100000)

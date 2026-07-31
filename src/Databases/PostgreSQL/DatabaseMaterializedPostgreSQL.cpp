@@ -15,6 +15,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
+#include <Common/FailPoint.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -47,6 +48,11 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+}
+
+namespace FailPoints
+{
+    extern const char database_materialized_postgresql_pause_before_table_drop[];
 }
 
 namespace ErrorCodes
@@ -568,6 +574,14 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
+    /// Cancel the startup retry loop first: `tryStartSynchronization` keeps re-scheduling itself
+    /// every 5 seconds until startup succeeds, and `InterpreterDropQuery` calls this method long
+    /// before `shutdown` deactivates the task. Without this, a queued retry could re-enter
+    /// `startSynchronization` and recreate `replication_handler` and the wrapper map while the
+    /// database tables are being flushed and dropped. Deactivate before taking `handler_mutex`:
+    /// the task body locks the same mutex, and `deactivate` waits for a running execution.
+    startup_task->deactivate();
+
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
@@ -590,6 +604,8 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::database_materialized_postgresql_pause_before_table_drop);
+
     /// Modify context into nested_context and pass query to Atomic database.
     DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
 }
