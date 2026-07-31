@@ -1441,7 +1441,7 @@
         } catch (e) { /* completion will be unavailable */ }
     }
 
-    const COMPLETION_DISPLAY_LIMIT = 100;
+    const COMPLETION_DISPLAY_LIMIT = 1000;
     let pending_completion_display = null;
     /// Signature of the last match list already printed — used to avoid stacking
     /// duplicate column listings on repeated Tab.
@@ -1504,7 +1504,9 @@
 
     /// Inverse of parseKeeperArg / formatKeeperNodeName for one CLI argument.
     /// Converts mixed bare tokens, `\ `/`\\` escapes, and quoted segments into a real znode path.
-    /// Returns null on malformed input (e.g. unclosed quote), matching parse failure in the CLI.
+    /// An unclosed quote is accepted (content kept): tab completion may leave a partial
+    /// quoted prefix such as /'semi; and must keep refining on the next Tab, matching
+    /// keeper-client's unescapePath / open-quote completion contract.
     function unescapeKeeperArg(arg) {
         let result = "";
         let i = 0;
@@ -1528,7 +1530,6 @@
 
             if (ch === "'" || ch === '"') {
                 const quote = takeChar();
-                let closed = false;
                 while (!atEnd()) {
                     if (peek() === "\\" && hasNext()) {
                         result += takeEscapedChar();
@@ -1536,13 +1537,11 @@
                     }
                     if (peek() === quote) {
                         advance();
-                        closed = true;
                         break;
                     }
                     result += takeChar();
                 }
-                if (!closed)
-                    return null;
+                /// Unclosed quote: keep decoded content and stop (end of arg).
                 continue;
             }
 
@@ -1567,6 +1566,28 @@
             result += takeChar();
         }
         return result;
+    }
+
+    /// Format a multi-match common prefix for insertion into the input line.
+    /// Uses the same rules as escapeKeeperNodeName, but when quoting is required
+    /// leaves the quote open — the next Tab continues inside the quote until a
+    /// single leaf match can close it (same contract as keeper-client).
+    function escapeKeeperCompletionPrefix(name) {
+        let needs_escaping = false;
+        let needs_quoting = false;
+        for (let i = 0; i < name.length; i++) {
+            const ch = name[i];
+            if (ch === ' ' || ch === '\\') {
+                needs_escaping = true;
+            } else if (!isKeeperBarePathChar(ch)) {
+                needs_quoting = true;
+            }
+        }
+        if (!needs_escaping && !needs_quoting)
+            return name;
+        if (!needs_quoting)
+            return name.replaceAll('\\', '\\\\').replaceAll(' ', '\\ ');
+        return "'" + name.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
     }
 
     /// Escape each path segment for round-tripping through the CLI parser.
@@ -1663,9 +1684,8 @@
         const argPart = value.substring(spaceIdx + 1).trimStart();
         /// Completions insert CLI-escaped text (e.g. space\\ node). Unescape before
         /// path lookup / prefix matching so a second Tab uses the real znode path.
+        /// Partial open quotes (e.g. /'semi;) are kept — not treated as malformed.
         const unescapedArg = unescapeKeeperArg(argPart);
-        if (unescapedArg === null)
-            return;
 
         let parentDir, namePrefix, pathPrefix;
 
@@ -1713,7 +1733,11 @@
                 return;
             }
 
-            input.value = cmdPart + escapedPathPrefix + longestCommonPrefix(matches);
+            /// LCP on raw znode names, then format. Quoting leaves the quote open so
+            /// the next Tab can still refine (LCP on already-escaped strings would
+            /// also open a quote, but must not be fed back as a parse error).
+            input.value = cmdPart + escapedPathPrefix + escapeKeeperCompletionPrefix(
+                longestCommonPrefix(raw_matches));
             showCompletionMatches(value, matches);
         } catch (e) { /* ignore fetch errors */ }
     }
