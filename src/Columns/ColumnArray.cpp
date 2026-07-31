@@ -52,9 +52,11 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     /// so the consistency of the offsets is checked for an empty nested column as well:
     /// otherwise a column with, say, offsets = [1] and no elements at all passes unnoticed,
     /// and then sizeAt returns a size that is not there and the consumers read the nested column out of bounds.
-    if (!offsets_concrete->empty() && data)
+    /// Empty offsets mean zero rows, i.e. an implicit last offset of 0, so the nested column must be empty too:
+    /// otherwise the column reports zero rows while carrying hidden elements.
+    if (data)
     {
-        Offset last_offset = offsets_concrete->getData().back();
+        Offset last_offset = offsets_concrete->empty() ? 0 : offsets_concrete->getData().back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)

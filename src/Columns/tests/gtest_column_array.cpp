@@ -42,6 +42,9 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(2), 1);
 }
 
+/// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so EXPECT_THROW can't catch it.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+
 TEST(ColumnArray, InconsistentOffsetsAreRejected)
 {
     /// The last offset is greater than the number of elements in the nested column.
@@ -55,4 +58,10 @@ TEST(ColumnArray, InconsistentOffsetsAreRejected)
     /// would read the nested column out of bounds.
     EXPECT_THROW(createArray({}, {1}), Exception);
     EXPECT_THROW(createArray({}, {0, 1}), Exception);
+
+    /// The offsets are empty (an implicit last offset of 0), but the nested column is not:
+    /// the column would report zero rows while carrying hidden elements.
+    EXPECT_THROW(createArray({10}, {}), Exception);
 }
+
+#endif
