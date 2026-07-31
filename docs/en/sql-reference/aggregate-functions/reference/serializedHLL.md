@@ -17,7 +17,7 @@ serializedHLL([lg_k, type])(expression)
 
 ## Arguments {#arguments}
 
-- `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md).
+- `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md). 128/256-bit integers are not supported because they have no Apache DataSketches-compatible encoding; convert them explicitly (e.g. with `toString`) first.
 
 ## Parameters (optional) {#parameters}
 
@@ -77,15 +77,27 @@ GROUP BY minute;
 
 ### Materialized View Pattern {#materialized-view-pattern}
 
+`serializedHLL` returns a final `String` value, not an aggregate function state, so table engines
+such as `AggregatingMergeTree` cannot combine sketches for duplicate keys during background merges.
+Store one sketch per insert batch in a plain `MergeTree` table and combine them at query time with
+[mergeSerializedHLL](../../../sql-reference/aggregate-functions/reference/mergeSerializedHLL):
+
 ```sql
--- Store sketches for incremental aggregation
+-- Store one partial sketch per insert batch
 CREATE MATERIALIZED VIEW daily_user_sketches
-ENGINE = AggregatingMergeTree()
+ENGINE = MergeTree()
 ORDER BY date
 AS SELECT
     date,
     serializedHLL(12)(user_id) AS user_sketch
 FROM events
+GROUP BY date;
+
+-- Combine the partial sketches at query time
+SELECT
+    date,
+    cardinalityFromHLL(mergeSerializedHLL(user_sketch)) AS unique_users
+FROM daily_user_sketches
 GROUP BY date;
 ```
 

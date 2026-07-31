@@ -142,6 +142,17 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
     const DataTypePtr & data_type = argument_types[0];
 
     WhichDataType which(*data_type);
+    /// 128/256-bit integers have no Apache DataSketches primitive overload, so there is no encoding
+    /// that another DataSketches producer could reproduce from the same logical values. Hashing their
+    /// raw bytes would silently produce ClickHouse-only sketches and break the interoperability
+    /// contract of this function, so reject them up front.
+    if (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}: 128/256-bit integers have no "
+            "Apache DataSketches-compatible encoding. Convert the values to a supported type explicitly, "
+            "e.g. to String with toString.",
+            argument_types[0]->getName(), name);
     if (which.isNumber())
     {
         /// createWithNumericType returns nullptr for numeric types outside FOR_NUMERIC_TYPES (e.g. Decimal).
@@ -223,7 +234,7 @@ Creates a serialized HyperLogLog (HLL) sketch for approximate cardinality estima
 )";
     FunctionDocumentation::Syntax syntax = "serializedHLL([lg_k, type])(expression)";
     FunctionDocumentation::Arguments arguments = {
-        {"expression", "Column expression.", {"Int*", "UInt*", "Float*", "String", "FixedString"}}
+        {"expression", "Column expression. 128/256-bit integers are not supported because they have no Apache DataSketches-compatible encoding.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float*", "String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Serialized binary HLL sketch.", {"String"}
