@@ -259,3 +259,32 @@ If it fails, ask a maintainer for help.
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
+
+## Revert CI regressions {#revert-ci-regressions}
+
+This is not a check on your pull request: it runs on `master` every hour, and it may revert a pull request that has already been merged.
+
+The job takes the failures the CI database recorded for `master` over the last 24 hours and groups them by test name, and by check name for the failures that are not attributed to any test, such as a build failure or a job that ran out of time.
+A group that failed more than twice is handed to an AI agent, which is given the repository, the `gh` CLI and read-only access to the CI database, and answers a single question: was this failure introduced by a recently merged pull request, and which one.
+
+Only an unambiguous answer leads to an action.
+When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
+At most two pull requests are reverted per run.
+
+If your pull request was reverted:
+
+- The revert pull request explains what fails and why the change was blamed. If the attribution is wrong, say so there and bring the change back.
+- The `Reapply "..."` draft pull request holds your change unchanged. Fix the failure on that branch, mark it ready for review, and let it go through normal CI.
+
+Every investigation is recorded in the `checks_investigated` table of the CI database, including the ones that revert nothing.
+The table joins with `checks` on `test_name`, `check_name`, `commit_shas`, `report_url` and `offending_pull_request_number`, so the history of what the job looked at, what it concluded and what it did is queryable on [play.clickhouse.com](https://play.clickhouse.com/):
+
+```sql
+SELECT investigation_time, test_name, check_name, failure_count, verdict, confidence, action, explanation
+FROM checks_investigated
+WHERE investigation_time >= now() - INTERVAL 7 DAY
+ORDER BY investigation_time DESC;
+```
+
+The job is implemented in `ci/jobs/revert_ci_regressions.py` and runs as part of the `Hourly` workflow.
+A separate workflow, `.github/workflows/revert_broken_prs.yml`, reverts merges that landed while their own CI was red; both use the same `revert-<pull request number>` branch name, so a pull request is never reverted twice.

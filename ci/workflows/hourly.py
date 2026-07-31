@@ -23,11 +23,25 @@ workflow = Workflow.Config(
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
             enable_gh_auth=True,
         ),
+        Job.Config(
+            # Investigates the failures that keep happening on master and
+            # reverts the pull requests that caused them. See
+            # ci/jobs/revert_ci_regressions.py. The job bounds itself to
+            # RUN_BUDGET_SEC so that consecutive hourly runs never overlap;
+            # the timeout here only catches a run that hangs past that.
+            name="Revert CI regressions",
+            command="python3 ./ci/jobs/revert_ci_regressions.py",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            enable_gh_auth=True,
+            timeout=70 * 60,
+        ),
     ],
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
-    cron_schedules=["0 */1 * * 1-5"],
+    # Every hour, every day: a regression merged on a Friday evening must not
+    # sit on master until Monday.
+    cron_schedules=["0 * * * *"],
 )
 
 WORKFLOWS = [
