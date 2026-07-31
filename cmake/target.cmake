@@ -36,6 +36,9 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     # mingw-w64's `off_t` is 32 bits unless this is set, which would cap file offsets at 2 GiB.
     # It also makes `fseeko`/`ftello`/`stat` and friends resolve to their 64-bit variants.
     add_definitions(-D _FILE_OFFSET_BITS=64)
+    # The Windows CRT declares `M_PI` and the rest of the `M_*` constants only when asked to;
+    # they are not standard C, so <cmath> hides them by default.
+    add_definitions(-D _USE_MATH_DEFINES)
     # `O_CLOEXEC` asks that a descriptor not survive into a child process. Windows has no `exec`,
     # so it spells the same idea as handle inheritance: `_O_NOINHERIT`, from the same <fcntl.h>
     # that every user of `O_CLOEXEC` already includes to get `open`.
