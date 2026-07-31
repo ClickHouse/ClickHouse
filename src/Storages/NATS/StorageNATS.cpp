@@ -118,6 +118,20 @@ StorageNATS::StorageNATS(
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
 
+    /// A credential source specified in the table settings overrides both config-level sources
+    /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
+    /// Only when neither is specified in the table settings, fall back to the config,
+    /// where having both sources at once is as ambiguous as in the table settings.
+    if (nats_credential_file.empty() && nats_credentials.empty())
+    {
+        nats_credential_file = getContext()->getConfigRef().getString("nats.credential_file", "");
+        nats_credentials = getContext()->getConfigRef().getString("nats.credentials", "");
+        if (!nats_credential_file.empty() && !nats_credentials.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "You can specify only one of `nats.credential_file` and `nats.credentials` in the server configuration");
+    }
+
     configuration =
     {
         .url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
@@ -125,8 +139,8 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
-        .credentials = nats_credentials.empty() ? getContext()->getConfigRef().getString("nats.credentials", "") : nats_credentials,
+        .credential_file = nats_credential_file,
+        .credentials = nats_credentials,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
