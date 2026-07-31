@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: long, no-async-insert
+# Tag long -- runs right at the 180s flaky-check limit, and a change to
+# 03008_deduplication.python pulls this test into the flaky check.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
