@@ -118,6 +118,10 @@
 #    include <Common/Jemalloc.h>
 #endif
 
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
+
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <delta_kernel_ffi.hpp>
 namespace DB
@@ -602,7 +606,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+
+#if ENABLE_DISTRIBUTED_CACHE
+            const auto user_id = DistributedCache::getFilesystemCacheUserId(getContext());
+#else
             const auto user_id = FileCache::getCommonOrigin().user_id;
+#endif
 
             if (query.filesystem_cache_name.empty())
             {
@@ -636,6 +645,14 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
+#if ENABLE_DISTRIBUTED_CACHE
+        case Type::CLEAR_DISTRIBUTED_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
+            DistributedCache::clearDistributedCache(getContext(), query, log);
+            break;
+        }
+#endif
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
@@ -2757,7 +2774,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
         case Type::CLEAR_FILESYSTEM_CACHE:
-        case Type::CLEAR_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::CLEAR_PAGE_CACHE:
         case Type::CLEAR_SCHEMA_CACHE:
@@ -2765,6 +2781,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
+            break;
+        }
+        case Type::CLEAR_DISTRIBUTED_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:
