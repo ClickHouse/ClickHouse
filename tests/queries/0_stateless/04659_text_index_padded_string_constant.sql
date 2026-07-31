@@ -66,6 +66,39 @@ INSERT INTO a_str_utf8_log SELECT number, if(number = 7, concat('VALUE', unhex('
 SELECT 'A25', count() FROM a_str_utf8_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
 SELECT 'A25', count() FROM a_str_utf8     WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
 
+-- A27: the tokenbf_v1 twin of A25. The token tokenizer advances one byte at a time and never consults seqLength, so
+-- it has no final-token clamp and trimming is token-preserving for it whatever the trimmed bytes are. The decline
+-- A25 needs must therefore not fire here, or this index stops pruning where it used to. The answer is correct either
+-- way, so the granule row in direction B is the half that catches it.
+DROP TABLE IF EXISTS a_tok_utf8;
+DROP TABLE IF EXISTS a_tok_utf8_log;
+CREATE TABLE a_tok_utf8 (id UInt64, s String,
+    INDEX idx_s s TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_tok_utf8_log (id UInt64, s String) ENGINE = Log;
+INSERT INTO a_tok_utf8     SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_tok_utf8_log SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A27', count() FROM a_tok_utf8_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+SELECT 'A27', count() FROM a_tok_utf8     WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+
+-- A28: an IPv6 index. The validator accepts IPv6 alongside String and FixedString, and although IPv6 is not a
+-- DataTypeFixedString it is stored and tokenized as exactly 16 raw bytes, which is also what `equals` compares
+-- against a FixedString(16) constant (its own special case runs before any common-type cast). So this domain has a
+-- width and the probe must be padded back to it, not trimmed. The needle ends in ten zero bytes, so a trimmed probe
+-- covers every filler and the index stops pruning; the answer stays correct, so only the granule row in direction B
+-- sees it. The fillers deliberately carry no long zero run: they share the needle's leading grams but not its
+-- zero-run grams, which is what makes an exact probe selective here.
+DROP TABLE IF EXISTS a_ip6;
+DROP TABLE IF EXISTS a_ip6_log;
+CREATE TABLE a_ip6 (id UInt64, ip IPv6,
+    INDEX idx_ip ip TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_ip6_log (id UInt64, ip IPv6) ENGINE = Log;
+INSERT INTO a_ip6     SELECT number, if(number = 7, toIPv6('2001:db8::'), toIPv6('2001:db8:1:2:3:4:5:' || hex(number + 256))) FROM numbers(64);
+INSERT INTO a_ip6_log SELECT number, if(number = 7, toIPv6('2001:db8::'), toIPv6('2001:db8:1:2:3:4:5:' || hex(number + 256))) FROM numbers(64);
+SELECT 'A28', count() FROM a_ip6_log WHERE ip = toFixedString(reinterpretAsFixedString(toIPv6('2001:db8::')), 16);
+SELECT 'A28', count() FROM a_ip6     WHERE ip = toFixedString(reinterpretAsFixedString(toIPv6('2001:db8::')), 16);
+
 -- sparse_grams shares the same condition class and is affected identically.
 DROP TABLE IF EXISTS a_sparse;
 CREATE TABLE a_sparse (id UInt64, v Array(String),
@@ -162,10 +195,18 @@ INSERT INTO a_mk_log SELECT number, if(number = 7, map(toFixedString('VALUE0', 8
 -- A20/A21 land on the map branch (the column name is `m`, so only map_key_index resolves) and A22 on the scalar
 -- `has` arm (the column name is literally `mapKeys(m)`, so key_index matches directly). Both spellings are reached,
 -- so a test with only one covers half the class.
+--
+-- The pin keeps these on the map branch they are labelled for. optimize_functions_to_subcolumns would otherwise
+-- rewrite mapContainsKey(m, x) into has(m.keys, x), which is another spelling of the arm A22 already covers, and
+-- that setting is randomized per run. Today the rewrite cannot fire here anyway - the pass treats every column a
+-- secondary index needs as a key column and only whitelists arrayElement for those - but that whitelist is an
+-- explicit exception list with a TODO next to it, so the pin is what keeps these cells on their labelled branch if
+-- mapContainsKey is ever added to it. Pinning the one setting rather than disabling randomization keeps the rest of
+-- the run randomized.
 SELECT 'A20', count() FROM a_mk_log WHERE mapContainsKey(m, toFixedString('VALUE0', 10));
-SELECT 'A20', count() FROM a_mk     WHERE mapContainsKey(m, toFixedString('VALUE0', 10));
+SELECT 'A20', count() FROM a_mk     WHERE mapContainsKey(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'A21', count() FROM a_mk_log WHERE mapContains(m, toFixedString('VALUE0', 10));
-SELECT 'A21', count() FROM a_mk     WHERE mapContains(m, toFixedString('VALUE0', 10));
+SELECT 'A21', count() FROM a_mk     WHERE mapContains(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'A22', count() FROM a_mk_log WHERE has(mapKeys(m), toFixedString('VALUE0', 10));
 SELECT 'A22', count() FROM a_mk     WHERE has(mapKeys(m), toFixedString('VALUE0', 10));
 
@@ -179,7 +220,7 @@ CREATE TABLE a_mv_log (id UInt64, m Map(String, FixedString(8))) ENGINE = Log;
 INSERT INTO a_mv SELECT number, if(number = 7, map('k', toFixedString('VALUE0', 8)), map('k', toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8))) FROM numbers(64);
 INSERT INTO a_mv_log SELECT number, if(number = 7, map('k', toFixedString('VALUE0', 8)), map('k', toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8))) FROM numbers(64);
 SELECT 'A16', count() FROM a_mv_log WHERE mapContainsValue(m, toFixedString('VALUE0', 10));
-SELECT 'A16', count() FROM a_mv     WHERE mapContainsValue(m, toFixedString('VALUE0', 10));
+SELECT 'A16', count() FROM a_mv     WHERE mapContainsValue(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0;
 -- The mapValues redirect is a third entry point into the equals arm; there value_type does describe the compared
 -- operand, so it is re-encoded like any other FixedString-valued path.
 SELECT 'A16b', count() FROM a_mv_log WHERE m['k'] = toFixedString('VALUE0', 10);
@@ -210,8 +251,8 @@ SELECT 'B4', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE ha
 SELECT 'B5', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE s = 'VALUE0') WHERE explain ILIKE '%Granules: 1/64%';
 SELECT 'B6', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE s = toFixedString('VALUE0', 8)) WHERE explain ILIKE '%Granules: 1/64%';
 SELECT 'B7', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_lc WHERE s = 'VALUE0') WHERE explain ILIKE '%Granules: 1/64%';
-SELECT 'B8', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mk WHERE mapContainsKey(m, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
-SELECT 'B9', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE mapContainsValue(m, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B8', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mk WHERE mapContainsKey(m, toFixedString('VALUE0', 8)) SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B9', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE mapContainsValue(m, toFixedString('VALUE0', 8)) SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 1/64%';
 -- The reversed shape `has(<constant array>, <indexed scalar>)` shares the array arm but compares padded bytes, so
 -- its probe is left alone.
 SELECT 'B10', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE has(['VALUE0'], s)) WHERE explain ILIKE '%Granules: 1/64%';
@@ -261,6 +302,24 @@ SELECT 'B16', count() FROM c_str_pfx     WHERE endsWith(s, toFixedString('0', 1)
 -- sequence-completeness guard, which is what makes it the load-bearing half.
 SELECT 'B17', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE s = toFixedString('VALUE0LONGER', 12)) WHERE explain ILIKE '%Granules: 0/64%';
 SELECT 'B17g', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str_utf8 WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%Granules: 0/64%';
+
+-- B18: the tokenbf_v1 half of A27. B17g's decline must NOT extend to this tokenizer, so this reads an exact prune
+-- where B17g reads a decline - the same query shape on the same data, one index type apart.
+SELECT 'B18', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_tok_utf8 WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%Granules: 1/64%';
+
+-- B19: the IPv6 half of A28. Trimming this probe instead of padding it back to 16 bytes reads all 64 granules.
+SELECT 'B19', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_ip6 WHERE ip = toFixedString(reinterpretAsFixedString(toIPv6('2001:db8::')), 16)) WHERE explain ILIKE '%Granules: 1/64%';
+
+-- B20-B23: the WIDE-constant granule rows. B8/B9 above use an exact-width constant, where the padding is the
+-- identity, so they pass whether or not the probe is re-encoded; the cells this change actually alters on these arms
+-- are the wide-constant ones (A20/A21/A16/A11), and those were asserted on the answer alone. These four assert that
+-- each still prunes exactly.
+SELECT 'B20', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mk WHERE mapContainsKey(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B21', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mk WHERE mapContains(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B22', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE mapContainsValue(m, toFixedString('VALUE0', 10)) SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 1/64%';
+-- The widthless equals arm needs a fixture whose fillers do NOT share the probe's grams, so c_str cannot serve (there
+-- sharing them is the point). a_str's fillers are `FILLERn`, so an exact probe prunes to one granule.
+SELECT 'B23', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 1/64%';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Direction C: the adversarial shared-gram fixture. Every filler shares all of the trimmed probe's 3-grams, so a
@@ -343,8 +402,13 @@ SELECT 'C-str', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM c_str 
 -- 2026-07-29-p2-tokenbfv1ngrambfv1-map-default-mat. It is wrong on master and stays wrong here, so it is pinned as
 -- UNCHANGED rather than asserted against the oracle. This row is what proves the fix leaves it alone, and what
 -- stops a later reader importing a second root cause into this change.
--- ---------------------------------------------------------------------------------------------------
-
+--
+-- ⛔ The pinned D1 value is the WRONG answer, deliberately. An absent key yields the map value type's default, an
+-- 8-NUL FixedString(8), which compares equal to toFixedString('', 3) under the zero-padded comparison, so the true
+-- answer is 64 and not 0. The 0 comes from a separate guard that matches the constant against the value type's own
+-- default and declines. D1 is pinned only to prove this change leaves that guard bit-identical to master: an all-NUL
+-- constant is exactly the shape the trim path handles, so without this row a later widening of the normalization into
+-- that guard would be silent. Do not "fix" D1 here; fixing it belongs to the task named above.
 SELECT 'D1', count() FROM a_mv WHERE m['absent'] = toFixedString('', 3);
 SELECT 'D2', count() FROM a_mk WHERE m[toFixedString('absent', 8)] = '';
 
@@ -352,6 +416,10 @@ DROP TABLE a_str;
 DROP TABLE a_str_log;
 DROP TABLE a_str_utf8;
 DROP TABLE a_str_utf8_log;
+DROP TABLE a_tok_utf8;
+DROP TABLE a_tok_utf8_log;
+DROP TABLE a_ip6;
+DROP TABLE a_ip6_log;
 DROP TABLE a_lc_utf8;
 DROP TABLE a_lc_utf8_log;
 DROP TABLE a_sparse;

@@ -4,6 +4,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/formatIPv6.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -333,6 +334,49 @@ bool isUtf8SequenceComplete(std::string_view value)
     return i == value.size();
 }
 
+/// Whether the tokenizer walks its input by `UTF8::seqLength` and clamps the last token to the buffer end. Such a
+/// tokenizer gives a value that stops inside a declared sequence a shorter final token than the same bytes
+/// followed by more, so only those constrain what may be trimmed away.
+///
+/// The three kinds this index can be built with are answered from their `nextInString`: the n-gram and sparse-gram
+/// tokenizers both advance by `UTF8::seqLength` (the latter through `SparseGramsImpl<true>`), while the token
+/// tokenizer advances one byte at a time and never consults it. Every other kind answers yes: none of them can
+/// reach this index (only `ngrambf_v1`, `tokenbf_v1` and `sparse_grams` are registered to
+/// `bloomFilterIndexTextCreator`), so rather than reason about them, answer conservatively, which also makes a
+/// future tokenizer constrained until it has been looked at.
+bool tokenizerClampsTokensToBufferEnd(const ITokenizer & tokenizer)
+{
+    switch (tokenizer.getType())
+    {
+        case ITokenizer::Type::SplitByNonAlpha:
+            return false;
+        case ITokenizer::Type::Ngrams:
+        case ITokenizer::Type::SparseGrams:
+        case ITokenizer::Type::SplitByString:
+        case ITokenizer::Type::Array:
+        case ITokenizer::Type::AsciiCJK:
+            return true;
+            /// No `default:` to make the compiler warn if not all enum values are handled.
+    }
+    return true;
+}
+
+/// The width of the fixed-size byte domain the index stores its values in, if it has one. `FixedString(N)` is
+/// the obvious case; `IPv6` is the other one this index accepts (`bloomFilterIndexTextValidator`), and although
+/// it is not a `DataTypeFixedString` it is stored and tokenized as exactly 16 raw bytes, and `equals` compares
+/// all 16 against a `FixedString(16)` constant without any cast (`FunctionsComparison.h`, the `IPV6_BINARY_LENGTH`
+/// special case, which runs before `getLeastSupertype`). Treating it as widthless would trim bytes the comparison
+/// keeps and cost pruning.
+std::optional<size_t> indexDomainByteWidth(const DataTypePtr & indexed_type)
+{
+    const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(primitive_type.get()))
+        return fixed_string_type->getN();
+    if (WhichDataType(primitive_type).isIPv6())
+        return IPV6_BINARY_LENGTH;
+    return {};
+}
+
 /// The granule tokenizes the stored bytes verbatim, so for a `FixedString(N)` column it tokenizes all N bytes
 /// including the NUL padding. A `FixedString` constant carries its own padding in the `Field`, which need not
 /// agree with what the executing function compares: `hasAny`/`hasAll` cast both arguments to a common type,
@@ -341,34 +385,32 @@ bool isUtf8SequenceComplete(std::string_view value)
 /// granule is skipped.
 ///
 /// Re-encode the constant into the bytes the index actually stores, so the probe tokens are a subset of the
-/// granule's. Trailing NULs are removed first. When the indexed column is `FixedString(N)` the trimmed value
-/// is padded back to exactly N bytes: any stored value that compares equal to the constant holds those same N
-/// bytes, so the probe tokenizes byte for byte like the granule. When the indexed column is `String` there is
-/// no width to pad to and only the trimmed value can be probed, which is token-preserving for the token
-/// tokenizer unconditionally (a NUL is a separator, so removing one cannot change any token) but for the
-/// n-gram tokenizer only while the trimmed value does not end inside a declared UTF-8 sequence: that tokenizer
-/// steps by `UTF8::seqLength` and clamps its last gram to the buffer, so a trailing lead byte whose sequence
-/// runs past the end yields a shorter gram than the same bytes followed by the padding. Such a probe is not a
-/// subset and would skip a matching granule, so decline instead.
+/// granule's. Trailing NULs are removed first. When the index has a fixed byte width the trimmed value is padded
+/// back to exactly that width: any stored value that compares equal to the constant holds those same bytes, so
+/// the probe tokenizes byte for byte like the granule. When the index has no width only the trimmed value can be
+/// probed. That is token-preserving whenever the tokenizer walks byte by byte, because a NUL is a separator and
+/// removing one cannot change any token. It is not token-preserving for a tokenizer that walks by
+/// `UTF8::seqLength` and clamps its last token to the buffer: there a value ending in a lead byte whose sequence
+/// runs past the end yields a shorter token than the same bytes followed by the padding, so the probe is not a
+/// subset and would skip a matching granule. Require sequence-completeness for those tokenizers and decline
+/// otherwise.
 ///
 /// `indexed_type` is the index column's type as stored in `index_data_types`, before `getPrimitiveType`.
 /// Returns false when the constant cannot be represented in the index domain, in which case the caller must
 /// not use the index.
-bool normalizeStringConstantForIndexDomain(const DataTypePtr & indexed_type, String & value)
+bool normalizeStringConstantForIndexDomain(const ITokenizer & tokenizer, const DataTypePtr & indexed_type, String & value)
 {
-    const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(primitive_type.get());
+    const auto width = indexDomainByteWidth(indexed_type);
 
     trimRight(value, '\0');
 
-    if (!fixed_string_type)
-        return isUtf8SequenceComplete(value);
+    if (!width)
+        return !tokenizerClampsTokensToBufferEnd(tokenizer) || isUtf8SequenceComplete(value);
 
-    const size_t n = fixed_string_type->getN();
-    if (value.size() > n)
+    if (value.size() > *width)
         return false;
 
-    value.resize(n, '\0');
+    value.resize(*width, '\0');
     return true;
 }
 
@@ -376,6 +418,8 @@ bool normalizeStringConstantForIndexDomain(const DataTypePtr & indexed_type, Str
 /// exactly as stored, padding included, so their probe needs re-encoding only when the index has a width to
 /// re-encode into. With a `String` constant they compare a needle that keeps its own NULs against a stored
 /// value that does not, so the predicate cannot match at all and normalizing would only cost selectivity.
+/// The `IPv6` domain is deliberately not included: a membership predicate over it and a `FixedString` constant
+/// has no common type and is rejected at analysis, so this stays the `FixedString` question it was.
 bool needsMembershipNormalization(const DataTypePtr & indexed_type, const WhichDataType & constant_type)
 {
     return constant_type.isFixedString() && WhichDataType(BloomFilter::getPrimitiveType(indexed_type)).isFixedString();
@@ -651,7 +695,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             auto value = const_value.safeGet<String>();
             /// The index column is `mapKeys(<map>)`, so the map key type supplies the width to re-encode into.
             if (needsMembershipNormalization(index_data_types[*map_key_index], value_data_type)
-                && !normalizeStringConstantForIndexDomain(index_data_types[*map_key_index], value))
+                && !normalizeStringConstantForIndexDomain(*tokenizer, index_data_types[*map_key_index], value))
                 return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
@@ -678,7 +722,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             auto value = const_value.safeGet<String>();
             /// The index column is `mapValues(<map>)`, so the map value type supplies the width to re-encode into.
             if (needsMembershipNormalization(index_data_types[*map_value_index], value_data_type)
-                && !normalizeStringConstantForIndexDomain(index_data_types[*map_value_index], value))
+                && !normalizeStringConstantForIndexDomain(*tokenizer, index_data_types[*map_value_index], value))
                 return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
@@ -715,7 +759,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 return false;
 
             auto value = element.safeGet<String>();
-            if (normalize && !normalizeStringConstantForIndexDomain(index_data_types[*key_index], value))
+            if (normalize && !normalizeStringConstantForIndexDomain(*tokenizer, index_data_types[*key_index], value))
                 return false;
 
             bloom_filters.back().emplace_back(params);
@@ -731,7 +775,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         auto value = const_value.safeGet<String>();
         if (needsMembershipNormalization(index_data_types[*key_index], value_data_type)
-            && !normalizeStringConstantForIndexDomain(index_data_types[*key_index], value))
+            && !normalizeStringConstantForIndexDomain(*tokenizer, index_data_types[*key_index], value))
             return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
@@ -762,7 +806,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         const bool normalize = !const_value_is_redirected_map_key
             && (value_data_type.isFixedString()
                 || WhichDataType(BloomFilter::getPrimitiveType(index_data_types[*key_index])).isFixedString());
-        if (normalize && !normalizeStringConstantForIndexDomain(index_data_types[*key_index], value))
+        if (normalize && !normalizeStringConstantForIndexDomain(*tokenizer, index_data_types[*key_index], value))
             return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
