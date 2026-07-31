@@ -1,6 +1,5 @@
 #pragma once
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Formats/ParseError.h>
 
 namespace DB
 {
@@ -93,9 +92,8 @@ protected:
             deserializeText(column, istr, settings, whole);
             return true;
         }
-        catch (...) // Ok: tryDeserializeText is a try-pattern
+        catch (...)
         {
-            rethrowIfNotParseError();
             return false;
         }
     }

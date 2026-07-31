@@ -6,7 +6,6 @@ keywords: ['LineAsStringWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/LineAsStringWithNamesAndTypes
 title: 'LineAsStringWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -20,7 +19,7 @@ but prints two header rows: one with column names, the other with types.
 
 ## Example usage {#example-usage}
 
-```sql title="Query"
+```sql
 CREATE TABLE example (
     name String,
     value Int32

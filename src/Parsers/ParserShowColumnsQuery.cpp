@@ -20,7 +20,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String from2_str;
 
-    auto query = make_intrusive<ASTShowColumnsQuery>();
+    auto query = std::make_shared<ASTShowColumnsQuery>();
 
     if (!ParserKeyword(Keyword::SHOW).ignore(pos, expected))
         return false;

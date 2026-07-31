@@ -3,9 +3,9 @@
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/ThreadStatus.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
@@ -19,12 +19,12 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /** Interprets the INSERT query.
   */
-class InterpreterInsertQuery : public IInterpreter, WithMutableContext
+class InterpreterInsertQuery : public IInterpreter, WithContext
 {
 public:
     InterpreterInsertQuery(
         const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
@@ -38,6 +38,10 @@ public:
     BlockIO execute() override;
 
     StorageID getDatabaseTable() const;
+
+    /// Return explicitly specified column names to insert.
+    /// If none explicit names were specified, returns nullopt.
+    std::optional<Names> getInsertColumnNames() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -55,16 +59,7 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    /// Skip the target-table `INSERT` access check for this query. Used only for the internal populate of
-    /// `CREATE TABLE ... AS SELECT` published via `doCreateOrReplaceTable`: the target is a random
-    /// `_tmp_replace_*` name that the user neither holds nor needs `INSERT` on, and the final-name `INSERT`
-    /// privilege is verified up front by the caller. The source `SELECT` access is still checked as the user.
-    /// Never set this for a user-visible target table.
-    void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
-
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
-
-    static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
 private:
     static Block getSampleBlock(
@@ -80,8 +75,6 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
-    bool select_query_sorted = false;
-    bool skip_target_insert_access_check = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
@@ -91,12 +84,11 @@ private:
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
-    std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>
-    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);
+    std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
-    std::optional<QueryPipeline>
-    distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
+    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }

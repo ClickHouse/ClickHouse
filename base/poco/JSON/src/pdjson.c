@@ -176,7 +176,7 @@ static int pushchar(json_stream *json, int c)
             json->data.string = buffer;
         }
     }
-    json->data.string[json->data.string_fill++] = (char)c;
+    json->data.string[json->data.string_fill++] = c;
     return 0;
 }
 
@@ -330,7 +330,7 @@ static int read_unicode(json_stream *json)
     return encode_utf8(json, cp);
 }
 
-static int read_escaped(json_stream *json)
+int read_escaped(json_stream *json)
 {
     int c = json->source.get(&json->source);
     if (c == END_OF_SOURCE) {

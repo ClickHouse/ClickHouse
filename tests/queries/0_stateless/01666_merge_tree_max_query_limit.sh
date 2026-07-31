@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-azure-blob-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
-# The throttle asserted below is a per-table counter keyed on query id. Under parallel replicas one
-# statement becomes several reads of the same table on the same server, each carrying a different
-# query id, so the long running query competes against itself for the single max_concurrent_queries
-# slot and is rejected instead of holding it.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0"
 
 function wait_for_query_to_start() {
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT sum(read_rows) FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
@@ -27,7 +20,7 @@ insert into simple select number, number + 100 from numbers(5000);
 query_id="long_running_query-$CLICKHOUSE_DATABASE"
 
 echo "Spin up a long running query"
-${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.1) from simple settings max_block_size = 1, max_threads = 1 format Null" --query_id "$query_id" >/dev/null 2>&1 &
+${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.1) from simple settings max_block_size = 1 format Null" --query_id "$query_id" >/dev/null 2>&1 &
 wait_for_query_to_start "$query_id"
 
 # query which reads marks >= min_marks_to_honor_max_concurrent_queries is throttled
@@ -79,6 +72,6 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "select i from simple where 
 # We have to search the server's error log because the following warning message
 # is generated during pipeline destruction and thus is not sent to the client.
 ${CLICKHOUSE_CLIENT} --query "system flush logs text_log"
-if [[ $(${CLICKHOUSE_CLIENT} --query "select count() > 0 from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' and level = 'Warning' and message_format_string like '%We have query_id removed but it\'s not recorded. This is a bug%' format TSVRaw SETTINGS max_rows_to_read = 0") == 1 ]]; then echo "We have query_id removed but it's not recorded. This is a bug." >&2; exit 1; fi
+if [[ $(${CLICKHOUSE_CLIENT} --query "select count() > 0 from system.text_log where query_id = '$query_id' and level = 'Warning' and message like '%We have query_id removed but it\'s not recorded. This is a bug%' format TSVRaw SETTINGS max_rows_to_read = 0") == 1 ]]; then echo "We have query_id removed but it's not recorded. This is a bug." >&2; exit 1; fi
 
 ${CLICKHOUSE_CLIENT} --query "drop table simple"

@@ -5,13 +5,12 @@ description: 'This engine provides integration with the Apache Hadoop ecosystem 
 sidebar_label: 'HDFS'
 sidebar_position: 80
 slug: /engines/table-engines/integrations/hdfs
-title: 'HDFS table engine'
-doc_type: 'reference'
+title: 'HDFS'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# HDFS table engine
+# HDFS
 
 <CloudNotSupportedBadge/>
 
@@ -241,7 +240,6 @@ libhdfs3 support HDFS namenode HA.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_etag` — ETag of the file. Type: `LowCardinality(String)`. HDFS has no native ETag, so the value is synthesized from the file's modification time and size as `<mtime_seconds>_<size>`. Because `libhdfs3` exposes the modification time only at one-second precision, a rewrite within the same second that keeps the same size yields the same value; for that reason this synthesized ETag is not used as a content-cache key.
 
 ## Storage settings {#storage-settings}
 

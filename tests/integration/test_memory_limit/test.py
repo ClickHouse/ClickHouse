@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 import time
 from multiprocessing.dummy import Pool
 
@@ -38,11 +39,6 @@ def test_multiple_queries():
     def run_query(node):
         try:
             node.query("SELECT * FROM system.numbers GROUP BY number")
-        except Exception as ex:
-            print("Exception", ex)
-            raise ex
-        try:
-            node.query("SYSTEM FLUSH LOGS")
         except Exception as ex:
             print("Exception", ex)
             raise ex
