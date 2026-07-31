@@ -74,6 +74,26 @@ TEST(RoaringBitmapRangeCardinality, MatchesRbRangeCountForLargeBitmap)
     EXPECT_EQ(subset.size(), via_range);
 }
 
+TEST(RoaringBitmapRangeCardinality, SumOfRowGroupRangesMatchesWholeFile)
+{
+    DataLakeObjectMetadata::ExcludedRows bitmap;
+    for (UInt64 i = 0; i < 10'000; ++i)
+        bitmap.add(i * 7);
+    ASSERT_TRUE(bitmap.isLarge());
+
+    constexpr size_t rows_per_group = 1'000;
+    constexpr size_t num_groups = 200;
+    UInt64 summed = 0;
+    for (size_t group = 0; group < num_groups; ++group)
+    {
+        const UInt64 start = group * rows_per_group;
+        summed += bitmap.rb_range_cardinality(start, start + rows_per_group);
+    }
+
+    EXPECT_EQ(summed, bitmap.rb_range_cardinality(0, num_groups * rows_per_group));
+    EXPECT_EQ(summed, bitmap.size());
+}
+
 TEST(DeletionVectorNeedOnlyCount, ConstChunkUsesRangeCardinality)
 {
     /// Large enough that a dense Filter would be expensive; const columns stay O(1).

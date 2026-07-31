@@ -632,15 +632,17 @@ public:
     /**
      * Count set bits in `[range_start, range_end)` without allocating a result bitmap.
      * Used by need-only-count DV filtering to avoid an O(N) dense Filter over file rows.
+     * Implemented via roaring `rank` so repeated per-row-group queries stay O(containers),
+     * not O(row_groups × cardinality).
      */
     UInt64 rb_range_cardinality(UInt64 range_start, UInt64 range_end) const /// NOLINT
     {
-        UInt64 count = 0;
         if (range_start >= range_end)
-            return count;
+            return 0;
 
         if (isSmall())
         {
+            UInt64 count = 0;
             for (const auto & x : small)
             {
                 const UInt64 val = static_cast<UInt64>(x.getValue());
@@ -650,17 +652,26 @@ public:
             return count;
         }
 
-        for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
+        /// |bitmap ∩ [start, end)| = rank(end - 1) - rank(start - 1). Same formula as DeleteBitmap.
+        if constexpr (sizeof(T) < 8)
         {
-            if (*it < range_start)
-                continue;
-
-            if (*it < range_end)
-                ++count;
-            else
-                break;
+            constexpr UInt64 max_row = std::numeric_limits<UInt32>::max();
+            if (range_start > max_row)
+                return 0;
+            const UInt64 hi_inclusive = std::min(range_end - 1, max_row);
+            if (hi_inclusive < range_start)
+                return 0;
+            const UInt64 upper = roaring_bitmap->rank(static_cast<UInt32>(hi_inclusive));
+            const UInt64 lower = (range_start == 0) ? 0 : roaring_bitmap->rank(static_cast<UInt32>(range_start - 1));
+            return upper - lower;
         }
-        return count;
+        else
+        {
+            const UInt64 hi_inclusive = range_end - 1;
+            const UInt64 upper = roaring_bitmap->rank(hi_inclusive);
+            const UInt64 lower = (range_start == 0) ? 0 : roaring_bitmap->rank(range_start - 1);
+            return upper - lower;
+        }
     }
 
     /**
