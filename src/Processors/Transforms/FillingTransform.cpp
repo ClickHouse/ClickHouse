@@ -279,12 +279,8 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime())
         return;
 
-    auto is_representable = [&type](const Field & value)
-    {
-        auto column = type->createColumn();
-        column->insert(value);
-        return equals((*column)[0], value);
-    };
+    /// `convertFieldToType` returns Null for a value that is out of range of the target type.
+    auto is_representable = [&type](const Field & value) { return !convertFieldToType(value, *type).isNull(); };
 
     if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
         throw Exception(
