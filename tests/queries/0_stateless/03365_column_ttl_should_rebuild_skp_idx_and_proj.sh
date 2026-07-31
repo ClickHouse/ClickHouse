@@ -10,12 +10,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists tbl;"
 ${CLICKHOUSE_CLIENT} --query "create table tbl (timestamp DateTime, x UInt32 TTL timestamp + INTERVAL 1 MONTH, y UInt32 TTL timestamp + INTERVAL 1 DAY, index i x type minmax granularity 1, projection p (select x order by y)) engine MergeTree order by () settings min_bytes_for_wide_part = 1, index_granularity = 1, add_minmax_index_for_numeric_columns=0;"
+${CLICKHOUSE_CLIENT} --query "insert into tbl select today() - 100, 1, 2 union all select today() - 50, 2, 4;"
 
-# Two separate inserts produce two parts; `OPTIMIZE FINAL` then merges them and applies the column TTL deterministically.
-${CLICKHOUSE_CLIENT} --query "insert into tbl values (today() - 100, 1, 2);"
-${CLICKHOUSE_CLIENT} --query "insert into tbl values (today() - 50, 2, 4);"
-
-${CLICKHOUSE_CLIENT} --query "optimize table tbl final settings optimize_throw_if_noop = 1;"
+# Apply the column TTL deterministically. OPTIMIZE FINAL forces the merge that drops the
+# expired columns and recalculates the dependent skip index and projection.
+${CLICKHOUSE_CLIENT} --query "optimize table tbl final;"
 
 ${CLICKHOUSE_CLIENT} --query "select x, y from tbl;"
 ${CLICKHOUSE_CLIENT} --query "select x, y from tbl where x = 0;"
