@@ -141,12 +141,13 @@ printf "row1\n" > "$TEST_DIR_ABS/dedup/root/f.txt"
 ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasA"
 ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasB"
 
-# A symlink to a FILE, alongside its target. Canonical deduplication would collapse
-# these into one row, but `alias.txt` and `real.txt` are two names the user asked for
-# and both must be reported, so deduplicating by canonical path is restricted to
-# expansions containing a whole-segment `**`, which are the only ones that can walk
-# into a directory an ancestor symlink aliases. A plain `*` and an implicit directory
-# listing must both keep reporting two rows.
+# A symlink to a FILE, alongside its target. Both `alias.txt` and `real.txt` are names
+# the pattern selected and both must be reported, so the deduplication key resolves only
+# the PARENT directory and leaves the final component as written. Resolving the whole
+# path collapses the two into one row and drops a `_file` value the user asked for. This
+# has to hold for a `**` expansion too, where the key is canonical: the zero-level branch
+# reaches both entries at `root` itself, so a fully-canonical key would map them both to
+# `real.txt`. A plain `*` and an implicit directory listing must report two rows as well.
 mkdir -p "$TEST_DIR_ABS/filelink/root"
 printf "row1\n" > "$TEST_DIR_ABS/filelink/root/real.txt"
 ln -s real.txt "$TEST_DIR_ABS/filelink/root/alias.txt"
@@ -298,14 +299,16 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/branching/r
 echo "dense-alias-graph-is-bounded"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasgraph/root/**/*.txt', 'TSV', 'val String')"
 
-# A file symlink beside its target: both names must still be reported, by a plain `*`
-# and by an implicit directory listing. Deduplicating these by canonical path would
-# drop a `_file` value the user selected, so it must not apply to expansions with no
-# whole-segment `**`.
+# A file symlink beside its target: both names must still be reported, by a plain `*`,
+# by a recursive `**`, and by an implicit directory listing. The `**` spelling is the one
+# that uses the canonical key, so it is what fails if the key resolves the final path
+# component instead of only its parent.
 echo "file-symlink-keeps-both-names"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/filelink/root/*.txt', 'TSV', 'val String') ORDER BY _file"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root/**/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/filelink/root/**/*.txt', 'TSV', 'val String') ORDER BY _file"
 
 # Writes through a glob stay refused even when deduplication leaves one path. The
 # pattern below matches one file under two names, so a read-only test based on the

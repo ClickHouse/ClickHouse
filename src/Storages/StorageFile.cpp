@@ -195,29 +195,30 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
-    /// `canonical_hint` lets a caller that has already resolved the path pass the result in,
-    /// so the resolution is not repeated.
-    auto add_matched_path = [&](const std::string & path, size_t bytes, const std::string * canonical_hint = nullptr)
+    auto add_matched_path = [&](const std::string & path, size_t bytes)
     {
-        /// Deduplicate on the CANONICAL path: the same file can be named by several distinct
-        /// lexical paths when a symlink aliases one of its ancestors (`root/file.txt` and
-        /// `root/a/back/file.txt` for `root/a/back -> ..`), and a lexical key cannot see that
-        /// those are one file. Fall back to the lexical form if the path cannot be resolved.
+        /// Resolve the PARENT directory but keep the final component as written. A symlink
+        /// aliasing an ancestor gives one file several lexical paths that a lexical key cannot
+        /// recognize as one (`root/file.txt` and `root/a/back/file.txt` for `root/a/back -> ..`),
+        /// so the parent has to be resolved. The final component must NOT be, because a symlink
+        /// to a file is a separate name the pattern selected and reporting only its target would
+        /// drop a `_file` value the user asked for (`root/alias.txt -> real.txt` matched by
+        /// `root/**/*.txt` is two rows, not one). Fall back to the lexical form when the parent
+        /// cannot be resolved.
         std::string dedup_key;
         if (!deduplicate_by_canonical_path)
         {
             dedup_key = fs::path(path).lexically_normal().string();
         }
-        else if (canonical_hint)
-        {
-            dedup_key = *canonical_hint;
-        }
         else
         {
+            const fs::path as_path(path);
             std::error_code canon_ec;
-            dedup_key = fs::canonical(path, canon_ec).string();
+            const auto parent_canonical = fs::canonical(as_path.parent_path(), canon_ec);
             if (canon_ec)
-                dedup_key = fs::path(path).lexically_normal().string();
+                dedup_key = as_path.lexically_normal().string();
+            else
+                dedup_key = (parent_canonical / as_path.filename()).string();
         }
         if (matched_paths.emplace(std::move(dedup_key)).second)
         {
@@ -235,9 +236,9 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            /// Also serves as the existence check; the returned value is reused as the
-            /// deduplication key below so the path is resolved only once.
-            const auto canonical_path = fs::canonical(path_for_ls + for_match).string();
+            /// Also serves as the existence check: the throwing overload is what makes the
+            /// `catch` below skip a suffix that does not resolve.
+            (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             /// This exact-match branch is reached for suffixes without globs, including the
@@ -247,7 +248,7 @@ void listFilesWithRegexpMatchingImpl(
             /// directory); in that case keep the byte count at zero but still return the path.
             std::error_code size_ec;
             const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, &canonical_path);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {

@@ -33,6 +33,9 @@ file-symlink-keeps-both-names
 alias.txt
 real.txt
 2
+2
+alias.txt
+real.txt
 glob-insert-stays-readonly
 refused
 1
