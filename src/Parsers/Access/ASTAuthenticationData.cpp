@@ -126,13 +126,8 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
                 size_t child_idx = 0;
                 if (has_jwt_processor)
                 {
-<<<<<<< HEAD
-                    prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
-                    parameter = true;
-=======
                     ostr << " PROCESSOR ";
                     children[child_idx++]->format(ostr, settings);
->>>>>>> 52e87d75685 (Merge pull request #1777 from Altinity/fix/antalya-26.3/oauth-address-audit)
                 }
                 if (has_jwt_claims)
                 {
