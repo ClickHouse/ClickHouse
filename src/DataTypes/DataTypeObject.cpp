@@ -1980,6 +1980,7 @@ To materialize type hints in existing data, you can either:
 - Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
   - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
   - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
 
   Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.
 

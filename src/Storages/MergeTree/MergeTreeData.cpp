@@ -5413,13 +5413,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     old_index.name);
             }
 
-            /// Projections are intentionally not checked here for the only current lazy conversion
-            /// (a JSON type-hint change). A projection cannot reference a JSON subcolumn at all
-            /// (`Projections cannot contain individual subcolumns`) and a whole JSON column cannot be
-            /// a projection key, so no projection persists a JSON-typed-path-derived value positionally;
-            /// the whole JSON column stored in a projection is read back with per-part CAST like any
-            /// ordinary column. If a future lazy conversion applies to a type that CAN appear in a
-            /// projection key or aggregate state, this needs a result-type check for projections too.
+            /// Projection sort key -> the projection's own `primary.idx`, serialized positionally like
+            /// the main sorting key. A projection can sort on a subcolumn when the whole parent column
+            /// is also selected (e.g. `SELECT id, j ORDER BY j.a`).
+            const auto & new_projections = new_metadata.getProjections();
+            for (const auto & projection : old_metadata.getProjections())
+            {
+                if (!expression_uses_changed_subcolumn(projection.metadata->getSortingKey().expression))
+                    continue;
+
+                /// Dropped in the same ALTER -> nothing left to corrupt.
+                if (!new_projections.has(projection.name))
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used in the sort key of "
+                    "projection '{}'; a metadata-only ALTER cannot rebuild the projection's primary index. "
+                    "Drop the projection first to run this change",
+                    backQuoteIfNeed(command.column_name),
+                    projection.name);
+            }
         }
     }
 

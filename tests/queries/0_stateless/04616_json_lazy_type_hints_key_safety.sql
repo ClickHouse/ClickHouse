@@ -106,8 +106,7 @@ ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError AL
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
--- ALLOW: projection referencing the whole JSON column (subcolumns cannot be in a
--- projection and whole JSON cannot be a projection key, so it is safe)
+-- ALLOW: projection stores the whole JSON column but does not sort on the subcolumn.
 -- ============================================================
 CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
 SETTINGS deduplicate_merge_projection_mode = 'drop';
@@ -120,6 +119,28 @@ DETACH TABLE t_json_key_safety;
 ATTACH TABLE t_json_key_safety;
 SELECT 'projection read after reload:', id, j.a FROM t_json_key_safety
 ORDER BY id LIMIT 3 SETTINGS force_optimize_projection = 1;
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: projection sort key on the subcolumn -> primary.idx positionally persisted on j.a.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS deduplicate_merge_projection_mode = 'drop';
+ALTER TABLE t_json_key_safety ADD PROJECTION p (SELECT id, j ORDER BY j.a);
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'projection sorts on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: projection sort key wraps the subcolumn in a type-sensitive reinterpretAsString(j.a).
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS deduplicate_merge_projection_mode = 'drop';
+ALTER TABLE t_json_key_safety ADD PROJECTION p (SELECT id, j ORDER BY reinterpretAsString(j.a));
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'projection sort key wraps subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
