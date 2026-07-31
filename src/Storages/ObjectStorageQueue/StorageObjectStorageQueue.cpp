@@ -966,14 +966,16 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
+        /// Re-check dependencies inside the loop — if the MV was detached
+        /// mid-batch, stop processing and leave remaining files unprocessed
+        /// so re-attaching the view can resume ingestion with no gap.
+        /// Same pattern as Kafka engines (StorageKafka.cpp:619).
+        if (!getDependencies())
+            break;
+
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         auto effective_max_files = max_files_override.load();
-
-        /// FIXME:
-        /// it is possible that MV is dropped just before we start the insert,
-        /// but in this case we would not throw any exception, so
-        /// data will not be inserted anywhere.
         InterpreterInsertQuery interpreter(
             insert,
             queue_context,
