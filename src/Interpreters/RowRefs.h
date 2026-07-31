@@ -453,6 +453,9 @@ public:
     /// Per-block row store base pointers (block_no -> RowDataStore*). A block without a row store stores nullptr.
     const RowDataStore * const * rowStoresData() const { return row_stores.data(); }
 
+    /// Number of registered blocks. Must not be called before the build phase is finished.
+    size_t size() const { return blocks.size(); }
+
     const StoredBlock * at(UInt32 block_no) const
     {
         chassert(block_no < blocks.size());

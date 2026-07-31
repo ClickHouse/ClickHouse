@@ -1,0 +1,30 @@
+<test>
+    <!--
+        Lazy FINAL must not apply to queries that can stop reading early: its
+        set-building phase reads all rows selected for the filter columns before
+        either branch can return the first row, even when the runtime check picks
+        the fallback. The first two queries (a small LIMIT without ORDER BY and a
+        read-in-order LIMIT) must skip the optimization. The last query is a
+        control with a clustered filter and no limit: lazy FINAL still applies
+        there and must not regress.
+    -->
+    <settings>
+        <query_plan_optimize_lazy_final>1</query_plan_optimize_lazy_final>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lazy_final_limit (k UInt64, v UInt64, c UInt8, payload String)
+        ENGINE = ReplacingMergeTree
+        ORDER BY k
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES lazy_final_limit</fill_query>
+    <fill_query>INSERT INTO lazy_final_limit SELECT number, cityHash64(number, 1) % 100, number &lt; 50000, toString(cityHash64(number, 11)) FROM numbers_mt(8000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_limit SELECT number, cityHash64(number, 2) % 100, number &lt; 50000, toString(cityHash64(number, 12)) FROM numbers_mt(8000000)</fill_query>
+
+    <query>SELECT k, payload FROM lazy_final_limit FINAL WHERE v = 7 LIMIT 100 FORMAT Null</query>
+    <query>SELECT k, payload FROM lazy_final_limit FINAL WHERE v = 7 ORDER BY k LIMIT 100 FORMAT Null</query>
+    <query>SELECT count(), max(cityHash64(payload)) FROM lazy_final_limit FINAL WHERE c = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_final_limit</drop_query>
+</test>
