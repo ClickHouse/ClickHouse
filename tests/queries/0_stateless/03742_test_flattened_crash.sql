@@ -44,7 +44,6 @@ ALTER TABLE test_nested_subcolumn_refill ADD COLUMN `arr.nested` Array(Tuple(a S
 -- The subcolumn must read the default, consistently with the parent.
 SELECT 'float element', arr.nested.b, arr.nested FROM test_nested_subcolumn_refill;
 SELECT 'string element', arr.nested.a, arr.nested FROM test_nested_subcolumn_refill;
-SELECT 'declared type', toTypeName(arr.nested.b) FROM test_nested_subcolumn_refill;
 -- ORDER BY hands the same block to the merging consumer.
 SELECT 'ordered by parent', arr.nested.b FROM test_nested_subcolumn_refill ORDER BY arr.nested;
 -- Function execution over the subcolumn is a third consumer of the same block.

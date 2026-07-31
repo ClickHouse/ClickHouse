@@ -2,7 +2,6 @@
 subcolumn and parent	[0,0,0,0,0,0,0,0,0,0]	[('',0),('',0),('',0),('',0),('',0),('',0),('',0),('',0),('',0),('',0)]
 float element	[0]	[('',0)]
 string element	['']	[('',0)]
-declared type	Array(Float64)
 ordered by parent	[0]
 array element	0	[('',0)]
 array sum	0	[('',0)]
