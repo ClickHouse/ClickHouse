@@ -17,6 +17,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -27,7 +29,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -182,11 +183,14 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            auto convert_func = makeASTFunction("_CAST",
-                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
-                make_intrusive<ASTLiteral>(required_column.type->getName()));
-
+            /// _CAST(if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T')), 'T')
+            auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
+            auto cast_default = makeASTFunction("_CAST", default_value, make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto cast_value = makeASTFunction("_CAST", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)), make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto filled = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
+            auto convert_func = makeASTFunction("_CAST", std::move(filled), make_intrusive<ASTLiteral>(required_column.type->getName()));
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+
             continue;
         }
 
@@ -232,7 +236,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
@@ -240,8 +244,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -374,19 +377,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return column->convertToFullColumnIfConst();
+        return const_column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
-    column = data_type.getSubcolumn(subcolumn_name, column);
+    ColumnPtr data_column = const_column->getDataColumnPtr();
+    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
 
-    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
+    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
@@ -425,7 +428,8 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    bool share_nested_offsets,
+    const NameSet & additional_available_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -452,6 +456,15 @@ void fillMissingColumns(
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+            continue;
+
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
+        if (storage_snapshot
+            && requested_column->isSubcolumn()
+            && (available_columns.contains(requested_column->getNameInStorage())
+                || additional_available_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
@@ -495,10 +508,17 @@ void fillMissingColumns(
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
-            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
+            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
+            /// and must be kept, otherwise the Tuple wrapper is lost.
+            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
+            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
             {
-                if (path.back().type == ISerialization::Substream::TupleElement)
+                if (path.back().type != ISerialization::Substream::TupleElement)
+                    return;
+
+                if (subcolumn_name == requested_subcolumn_name
+                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 

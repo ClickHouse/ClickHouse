@@ -59,6 +59,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -201,6 +202,74 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subq
     return result_ast;
 }
 
+namespace
+{
+
+/// Within a single `SELECT`'s projection list, strip the alias from any element
+/// whose alias duplicates an earlier element's alias but with a different body.
+///
+/// `SELECT *` over joined subqueries with overlapping column names and
+/// `joined_subquery_requires_alias = 0` produces projections like
+/// `__table1.name AS name, __table3.name AS name` — the same alias bound to
+/// different bodies. The self-shadowing shape `SELECT *, day + 365 AS day`
+/// produces `__table3.day AS day, __table3.day + 365 AS day` likewise. Re-resolving
+/// the dispatched AST on a remote replica trips `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
+/// Stripping the alias on the later occurrence is safe because the user-visible
+/// column names come from the coordinator's projection metadata, not the AST sent
+/// to the receiver, and an outer reference to the alias binds to the first
+/// occurrence anyway.
+///
+/// Same-alias-same-body duplicates (e.g. three identical `__table1.v AS v`
+/// projections produced by `SELECT td.v, td.k, td.v, tl.v, tl.k, td.v` over a
+/// JOIN) are kept intact: stripping their aliases would rename them to
+/// `__table1.v` and break position-by-name lookup of the source stream on the
+/// receiver, which manifests as `THERE_IS_NO_COLUMN`.
+///
+/// See https://github.com/ClickHouse/ClickHouse/issues/74324.
+void deduplicateProjectionAliases(ASTSelectQuery & select_query)
+{
+    auto projection_ast = select_query.select();
+    if (!projection_ast)
+        return;
+
+    std::unordered_map<String, IASTHash> alias_to_first_body_hash;
+    for (auto & child : projection_ast->children)
+    {
+        auto * with_alias = dynamic_cast<ASTWithAlias *>(child.get());
+        if (!with_alias)
+            continue;
+        const auto & alias = with_alias->alias;
+        if (alias.empty())
+            continue;
+
+        /// `getTreeHash(ignore_aliases=true)` ignores aliases at every level of the
+        /// subtree, so it is a body-only hash regardless of what alias is currently
+        /// set on this node.
+        const auto body_hash = child->getTreeHash(/*ignore_aliases=*/true);
+        auto [it, inserted] = alias_to_first_body_hash.emplace(alias, body_hash);
+        if (!inserted && it->second != body_hash)
+            with_alias->setAlias(String());
+    }
+}
+
+/// Apply `deduplicateProjectionAliases` to every `SELECT` in the AST, including
+/// nested subqueries. Each subquery is its own alias scope and the whole AST is
+/// re-analyzed on the remote replica, so the duplicate-alias conflict can occur at
+/// any nesting level — not just the top-level `SELECT` that is dispatched.
+void deduplicateProjectionAliasesRecursive(const ASTPtr & ast)
+{
+    if (!ast)
+        return;
+
+    if (auto * select_query = ast->as<ASTSelectQuery>())
+        deduplicateProjectionAliases(*select_query);
+
+    for (const auto & child : ast->children)
+        deduplicateProjectionAliasesRecursive(child);
+}
+
+}
+
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 {
     /// Remove CTEs information from distributed queries.
@@ -209,48 +278,7 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     /// Removing cte_name forces subquery to be always printed.
     auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
 
-    /// Strip duplicate projection aliases when the duplicate has a different body
-    /// from a previous occurrence with the same alias.
-    ///
-    /// `SELECT *` over joined subqueries with overlapping column names and
-    /// `joined_subquery_requires_alias = 0` produces projections like
-    /// `__table1.name AS name, __table3.name AS name` — the same alias bound to
-    /// different bodies. Re-resolving the dispatched AST on a remote replica
-    /// trips `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. Stripping the alias on the later
-    /// occurrence is safe because the user-visible column names come from the
-    /// coordinator's projection metadata, not the AST sent to the receiver.
-    ///
-    /// Same-alias-same-body duplicates (e.g. three identical `__table1.v AS v`
-    /// projections produced by `SELECT td.v, td.k, td.v, tl.v, tl.k, td.v` over a
-    /// JOIN) are kept intact: stripping their aliases would rename them to
-    /// `__table1.v` and break position-by-name lookup of the source stream on the
-    /// receiver, which manifests as `THERE_IS_NO_COLUMN`.
-    ///
-    /// See https://github.com/ClickHouse/ClickHouse/issues/74324.
-    if (auto * select_query = ast->as<ASTSelectQuery>())
-    {
-        if (auto projection_ast = select_query->select())
-        {
-            std::unordered_map<String, IASTHash> alias_to_first_body_hash;
-            for (auto & child : projection_ast->children)
-            {
-                auto * with_alias = dynamic_cast<ASTWithAlias *>(child.get());
-                if (!with_alias)
-                    continue;
-                const auto & alias = with_alias->alias;
-                if (alias.empty())
-                    continue;
-
-                /// `getTreeHash(ignore_aliases=true)` ignores aliases at every
-                /// level of the subtree, so it is a body-only hash regardless of
-                /// what alias is currently set on this node.
-                const auto body_hash = child->getTreeHash(/*ignore_aliases=*/true);
-                auto [it, inserted] = alias_to_first_body_hash.emplace(alias, body_hash);
-                if (!inserted && it->second != body_hash)
-                    with_alias->setAlias(String());
-            }
-        }
-    }
+    deduplicateProjectionAliasesRecursive(ast);
 
     return ast;
 }
@@ -343,7 +371,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     const auto & query_node_typed = query_node->as<const QueryNode &>();
 
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTreeNode());
 
     while (!join_tree_nodes_to_process.empty())
     {
@@ -379,8 +407,8 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode());
                 break;
             }
             default:
@@ -422,7 +450,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTreeNode().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -437,7 +465,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -451,8 +479,8 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode().get());
                 break;
             }
             default:
@@ -471,7 +499,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
-    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTreeNode().get());
 }
 
 
@@ -488,11 +516,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
 
     for (const auto & table_expression : table_nodes)
     {
@@ -519,7 +547,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
                 result_replacement_map->emplace(table_expression, dummy_table_node);
 
             dummy_table_node->setAlias(table_expression->getAlias());
-            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+            if (table_node)
+                replacement_map.emplace(table_node, std::move(dummy_table_node));
+            else
+                replacement_map.emplace(table_function_node, std::move(dummy_table_node));
         }
     }
 
@@ -532,11 +563,13 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
+    select_query_info.apply_query_level_final_if_no_modifiers
+        = planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_apply_final_to_all_joined_tables];
     return select_query_info;
 }
 
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -575,7 +608,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -637,10 +670,7 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
     {
         if (node.column)
         {
-            const IColumn * column = node.column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
-
+            const IColumn * column = &node.column->getDataColumn();
             if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
                 useful_sets.insert(column_set->getData());
         }
@@ -758,14 +788,30 @@ QueryPlanStepPtr projectOnlyUsedColumns(
 {
     ActionsDAG project_only_used_columns_actions;
 
-    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
-
-    auto & outputs = project_only_used_columns_actions.getOutputs();
+    /// The projection must reproduce the header this subplan was referenced with: one output per used
+    /// identifier, in identifier order, resolved to the first same-named column (exactly how
+    /// `CommonSubplanReferenceStep`'s header is built, with `getByName` per identifier). In particular,
+    /// when the stream carries the same name more than once (e.g. `SELECT number, *` projects the same
+    /// identifier twice), the surplus duplicates must not leak into the output: the plan above the
+    /// reference was built against the deduplicated header. All stream columns become inputs, so the
+    /// unused ones are consumed and dropped.
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> first_input_by_name;
     for (const auto & column : stream_header->getColumnsWithTypeAndName())
     {
         const auto * input_node = &project_only_used_columns_actions.addInput(column);
-        if (used_column_identifiers_set.contains(column.name))
-            outputs.push_back(input_node);
+        first_input_by_name.emplace(column.name, input_node);
+    }
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & identifier : used_column_identifiers)
+    {
+        auto it = first_input_by_name.find(identifier);
+        if (it == first_input_by_name.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Used column {} is missing from the common subplan header: [{}]",
+                identifier,
+                stream_header->dumpNames());
+        outputs.push_back(it->second);
     }
 
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));

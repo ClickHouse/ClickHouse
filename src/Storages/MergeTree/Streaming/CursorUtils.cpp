@@ -14,32 +14,23 @@
 namespace DB
 {
 
-MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
+std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor)
 {
-    MergeTreeCursor cursor;
+    std::map<String, PartitionCursor> merge_tree_cursor;
 
-    if (!cursor_tree)
-        return cursor;
+    if (!cursor)
+        return merge_tree_cursor;
 
-    for (const auto & [partition_id, node] : *cursor_tree)
+    for (const auto & [partition_id, node] : *cursor)
     {
         const auto & partition_node = std::get<CursorTreeNodePtr>(node);
-        cursor[partition_id] = PartitionCursor{
+        merge_tree_cursor[partition_id] = PartitionCursor{
             .block_number = partition_node->getValue("block_number"),
             .block_offset = partition_node->getValue("block_offset", -1),
         };
     }
 
-    return cursor;
-}
-
-Names extendWithAuxiliaryColumns(Names columns)
-{
-    for (const auto & aux_name : {String("_partition_id"), String(BlockNumberColumn::name), String(BlockOffsetColumn::name)})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    return columns;
+    return merge_tree_cursor;
 }
 
 FilterDAGInfo buildPartitionFilter(
@@ -78,10 +69,10 @@ FilterDAGInfo buildPartitionFilter(
 
     const auto string_type = std::make_shared<DataTypeString>();
     const auto int64_type = std::make_shared<DataTypeInt64>();
-    const auto & partition_const = dag.addColumn(ColumnWithTypeAndName{string_type->createColumnConst(1, partition_id), string_type, "_partition_id_const"});
-    const auto & safe_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, safe_block_number), int64_type, "_safe_block_number_const"});
-    const auto & last_bn_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, last_emitted_position.block_number), int64_type, "_last_bn_const"});
-    const auto & last_bo_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, last_emitted_position.block_offset), int64_type, "_last_bo_const"});
+    const auto & partition_const = dag.addColumn(string_type->createColumnConst(1, partition_id), string_type, "_partition_id_const");
+    const auto & safe_const = dag.addColumn(int64_type->createColumnConst(1, safe_block_number), int64_type, "_safe_block_number_const");
+    const auto & last_bn_const = dag.addColumn(int64_type->createColumnConst(1, last_emitted_position.block_number), int64_type, "_last_bn_const");
+    const auto & last_bo_const = dag.addColumn(int64_type->createColumnConst(1, last_emitted_position.block_offset), int64_type, "_last_bo_const");
 
     const auto construct_function = [&context](const String & name) { return FunctionFactory::instance().get(name, context); };
     const auto & eq_partition = dag.addFunction(construct_function("equals"), {partition_input, &partition_const}, "");

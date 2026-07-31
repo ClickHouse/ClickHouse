@@ -21,8 +21,8 @@ public:
 
         if (const auto * function = node->as<FunctionNode>())
         {
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
-                ++aggregate_functions_counter;
+            if (isAggregateOrGroupingFunction(*function))
+                ++aggregate_or_grouping_functions_counter;
         }
 
         expressions.emplace_back(node);
@@ -45,8 +45,8 @@ public:
 
         if (const auto * function = top_expression->as<FunctionNode>())
         {
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
-                --aggregate_functions_counter;
+            if (isAggregateOrGroupingFunction(*function))
+                --aggregate_or_grouping_functions_counter;
         }
 
         expressions.pop_back();
@@ -74,9 +74,17 @@ public:
         return alias_name_to_expressions.contains(alias);
     }
 
-    bool hasAggregateFunction() const
+    /** Returns true if the stack contains an aggregate, window, or `grouping` function.
+      *
+      * It is used to decide whether an expression equal to a GROUP BY key must be converted
+      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate and window
+      * functions are computed before the nullability is applied to the keys, and arguments
+      * of the `grouping` function only identify GROUP BY keys and are compared with them
+      * in their original form by `GroupingFunctionsResolvePass`.
+      */
+    bool hasAggregateOrGroupingFunction() const
     {
-        return aggregate_functions_counter > 0;
+        return aggregate_or_grouping_functions_counter > 0;
     }
 
     QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
@@ -129,8 +137,16 @@ public:
     }
 
 private:
+    static bool isAggregateOrGroupingFunction(const FunctionNode & function)
+    {
+        /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
+        /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
+        return AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
+            || function.getFunctionName() == "grouping";
+    }
+
     QueryTreeNodes expressions;
-    size_t aggregate_functions_counter = 0;
+    size_t aggregate_or_grouping_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 

@@ -107,6 +107,37 @@ def get_run_command(
     )
 
 
+def generate_dictionary(
+    fuzzers_path: Path, repo_path: Path, image: DockerImage
+) -> None:
+    # The libFuzzer dictionary (all.dict) lists every function, data type and
+    # keyword known to the server. It is generated here from the release binary,
+    # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
+    clickhouse_bin = fuzzers_path / "clickhouse"
+    assert clickhouse_bin.exists(), "ClickHouse release binary not found"
+    clickhouse_bin.chmod(clickhouse_bin.stat().st_mode | 0o111)
+
+    uid = os.getuid()
+    gid = os.getgid()
+    # The whole repository is mounted (read-only), not just tests/: update_dict.sh
+    # verifies that the source-derived dictionary covers the binary-derived one,
+    # and derives the source root from its own location, so it must run from a
+    # full checkout.
+    cmd = (
+        f"docker run --rm "
+        f"--user {uid}:{gid} "
+        f"--workdir=/fuzzers "
+        f"--volume={fuzzers_path}:/fuzzers "
+        f"--volume={repo_path}:/repo:ro "
+        f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
+        f'-e OUTPUT_DIR="/fuzzers" '
+        f"{image} "
+        f"bash /repo/tests/fuzz/update_dict.sh"
+    )
+    logging.info("Generating fuzzer dictionary: %s", cmd)
+    subprocess.check_call(cmd, shell=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
@@ -335,7 +366,7 @@ def process_results(result_path: Path):
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
-            raw_logs.append(f"Fuzzing FAILED.")
+            raw_logs.append("Fuzzing FAILED.")
             if file_path_out.exists():
                 log_files.append(str(file_path_out))
             if file_path_stdout.exists():
@@ -414,6 +445,8 @@ def main():
             )
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
+
+    generate_dictionary(fuzzers_path, repo_path, docker_image)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)

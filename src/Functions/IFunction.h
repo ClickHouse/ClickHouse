@@ -7,9 +7,12 @@
 #include <Core/ValuesWithType.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <Functions/ComparisonOrderDomain.h>
+#include <Interpreters/Context_fwd.h>
 
 #include "config.h"
 
+#include <functional>
 #include <memory>
 
 /// This file contains user interface for functions.
@@ -29,6 +32,10 @@ namespace DB
 class Field;
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -239,6 +246,14 @@ public:
       */
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
 
+    /** Return the shared ordering used by this resolved comparison.
+      * An invalid domain means that composing this comparison transitively is not proven safe.
+      */
+    virtual ComparisonOrderDomain getComparisonOrderDomain() const
+    {
+        return {};
+    }
+
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
       * Sometimes, functions are "deterministic" in scope of single query
@@ -316,6 +331,10 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /// True if the result depends only on argument values, not column names. formatRowNoNewline
+    /// and toTypeName are counter examples. Default is conservative
+    virtual bool isNameInsensitive() const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -334,6 +353,14 @@ public:
       * nullptr might be returned if the point (a single value) is invalid for this function.
       */
     virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
+
+    /// has same address for all aliases / case variants of a function
+    /// nullptr when the function is constructed outside the factory
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
+
+private:
+    mutable const FunctionCreator * factory_handle = nullptr;
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
@@ -399,10 +426,20 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
+    /// Overload that receives argument types for functions whose return type depends on argument types.
+    /// By default delegates to the no-argument version above.
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
+    {
+        return getReturnTypeForDefaultImplementationForDynamic();
+    }
+
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
 
 protected:
 
@@ -475,12 +512,21 @@ protected:
       */
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
+    /** Controls the default `Variant` adaptor for a `Variant` argument that carries a custom type name
+      * (e.g. `Geometry`, which is a custom-named `Variant`). Defaults to
+      * `useDefaultImplementationForVariant`. A function returns false for the custom-named `Variant`
+      * types it handles itself, to keep the custom name, while every other `Variant` argument still
+      * goes through the default adaptor.
+      */
+    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
-};
 
-using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+    /// mutable beacuse it's set after construction by FunctionFactory, resolvers themselves are otherwise immutable
+    mutable const FunctionCreator * factory_handle = nullptr;
+};
 
 /// Old function interface. Check documentation in IFunction.h.
 /// If client do not need stateful properties it can implement this interface.
@@ -553,8 +599,13 @@ public:
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
+    {
+        return getReturnTypeForDefaultImplementationForDynamic();
+    }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -562,6 +613,10 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+    virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
+    {
+        return {};
+    }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
@@ -573,6 +628,9 @@ public:
 
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }
+
+    /// See `IFunctionBase::isNameInsensitive`
+    virtual bool isNameInsensitive() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
