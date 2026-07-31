@@ -1,5 +1,7 @@
 #include <optional>
 #include <shared_mutex>
+#include <string_view>
+#include <unordered_map>
 
 #include <Core/Field.h>
 
@@ -349,123 +351,254 @@ static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & col
     return precision_null_map_column;
 }
 
-/// The plain Time64 -> Time cast truncates sub-second digits and clamps out-of-range whole seconds,
-/// so lossy probe rows are instead marked below and treated like NULL keys.
+/// Lossy temporal probe conversions (Time64 -> Time, DateTime64 -> DateTime) truncate sub-second digits
+/// and clamp/saturate out-of-range whole seconds, so such probe values are pre-converted below with the
+/// plain-cast semantics and the lossy rows are marked to be treated like NULL keys.
 
-/// Type-only pre-check: true when every differing leaf of (from, to) is a Time64 -> Time conversion,
-/// recursing through Array/Tuple/Map and looking through Nullable and target LowCardinality wrappers.
-static bool timeLossPlanCovers(const DataTypePtr & from_wrapped, const DataTypePtr & to_wrapped, bool & has_time64_to_time)
+static constexpr Int64 MAX_TIME_SECONDS = 3599999;          /// 999:59:59, == MAX_TIME_TIMESTAMP
+static constexpr Int64 MAX_DATETIME_SECONDS = 0xFFFFFFFF;   /// == MAX_DATETIME_TIMESTAMP
+
+/// Type-only pre-check: does the (from, to) tree contain a Time64 -> Time or DateTime64 -> DateTime leaf?
+/// Keeps unrelated IN queries allocation-free. Nullable is unwrapped on both sides, LowCardinality on the
+/// target side; named tuples are matched by name like createTupleWrapper, unnamed ones positionally.
+static bool containsTemporalLossLeaf(const DataTypePtr & from_wrapped, const DataTypePtr & to_wrapped)
 {
     DataTypePtr from_type = removeNullable(from_wrapped);
     DataTypePtr to_type = removeNullable(removeLowCardinality(to_wrapped));
 
-    if (from_type->equals(*to_type))
+    WhichDataType which_from(from_type);
+    WhichDataType which_to(to_type);
+    if ((which_from.isTime64() && which_to.isTime()) || (which_from.isDateTime64() && which_to.isDateTime()))
         return true;
 
-    if (WhichDataType(from_type).isTime64() && WhichDataType(to_type).isTime())
-    {
-        has_time64_to_time = true;
-        return true;
-    }
     if (const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get()))
     {
         const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-        return to_array && timeLossPlanCovers(from_array->getNestedType(), to_array->getNestedType(), has_time64_to_time);
+        return to_array && containsTemporalLossLeaf(from_array->getNestedType(), to_array->getNestedType());
     }
     if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get()))
     {
         const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
-        if (!to_tuple || to_tuple->getElements().size() != from_tuple->getElements().size())
+        if (!to_tuple)
+            return false;
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+        {
+            const auto & to_names = to_tuple->getElementNames();
+            std::unordered_map<std::string_view, size_t> to_positions;
+            for (size_t i = 0; i < to_names.size(); ++i)
+                to_positions[to_names[i]] = i;
+            const auto & from_names = from_tuple->getElementNames();
+            for (size_t i = 0; i < from_names.size(); ++i)
+            {
+                auto it = to_positions.find(from_names[i]);
+                if (it != to_positions.end()
+                    && containsTemporalLossLeaf(from_tuple->getElements()[i], to_tuple->getElements()[it->second]))
+                    return true;
+            }
+            return false;
+        }
+        if (from_tuple->getElements().size() != to_tuple->getElements().size())
             return false;
         for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
-            if (!timeLossPlanCovers(from_tuple->getElements()[i], to_tuple->getElements()[i], has_time64_to_time))
-                return false;
-        return true;
+            if (containsTemporalLossLeaf(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+                return true;
+        return false;
     }
     if (const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get()))
     {
         const auto * to_map = typeid_cast<const DataTypeMap *>(to_type.get());
-        return to_map && timeLossPlanCovers(from_map->getNestedType(), to_map->getNestedType(), has_time64_to_time);
+        return to_map && containsTemporalLossLeaf(from_map->getNestedType(), to_map->getNestedType());
     }
     return false;
 }
 
-/// Per-position lossy flags for a tree accepted by timeLossPlanCovers. NULL positions are never marked.
-static PaddedPODArray<UInt8> collectTimeLossFlags(const DataTypePtr & from_wrapped, const IColumn & column, const DataTypePtr & to_wrapped)
+struct PreparedTemporalColumn
 {
-    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&column))
+    ColumnPtr column;
+    DataTypePtr type;
+    /// Per-position lossy flags, sized column->size(). NULL positions are never marked.
+    PaddedPODArray<UInt8> loss_flags;
+    bool changed = false;
+};
+
+template <typename FromFieldType, typename ToFieldType>
+static PreparedTemporalColumn convertTemporalLeaf(
+    const IDataType & from_type, const IColumn & column, const DataTypePtr & to_type, Int64 min_whole_seconds, Int64 max_whole_seconds, UInt32 scale)
+{
+    const auto & data = assert_cast<const ColumnDecimal<FromFieldType> &>(column).getData();
+    const Int64 scale_multiplier = scale >= 1 ? common::exp10_i32(scale) : 1;
+
+    auto converted = ColumnVector<ToFieldType>::create();
+    auto & vec_to = converted->getData();
+    vec_to.resize(data.size());
+
+    PreparedTemporalColumn result;
+    result.loss_flags.assign(data.size(), static_cast<UInt8>(0));
+
+    for (size_t i = 0; i < data.size(); ++i)
     {
-        auto flags = collectTimeLossFlags(removeNullable(from_wrapped), nullable_column->getNestedColumn(), to_wrapped);
+        const Int64 raw = data[i];
+        const bool fractional = (raw % scale_multiplier) != 0;
+        /// Round toward negative infinity, like TransformDateTime64.
+        Int64 whole = raw / scale_multiplier;
+        if (raw < 0 && fractional)
+            --whole;
+        if (fractional || whole < min_whole_seconds || whole > max_whole_seconds)
+            result.loss_flags[i] = 1;
+        vec_to[i] = static_cast<ToFieldType>(std::clamp<Int64>(whole, min_whole_seconds, max_whole_seconds));
+    }
+
+    result.column = std::move(converted);
+    result.type = to_type;
+    result.changed = true;
+    (void)from_type;
+    return result;
+}
+
+/// Recursively converts Time64 -> Time and DateTime64 -> DateTime leaves with the plain-cast semantics,
+/// rebuilding composite columns around them and collecting per-position lossy flags. All other leaves are
+/// left untouched for the subsequent (accurate) cast, which then keeps its semantics for them.
+static PreparedTemporalColumn preprocessTemporalLeaves(const DataTypePtr & from_wrapped, const ColumnPtr & column_wrapped, const DataTypePtr & to_wrapped)
+{
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column_wrapped.get()))
+    {
+        auto nested = preprocessTemporalLeaves(removeNullable(from_wrapped), nullable_column->getNestedColumnPtr(), to_wrapped);
+        if (!nested.changed)
+            return {column_wrapped, from_wrapped, {}, false};
         const auto & null_map = nullable_column->getNullMapData();
-        for (size_t i = 0; i < flags.size(); ++i)
+        for (size_t i = 0; i < nested.loss_flags.size(); ++i)
             if (null_map[i])
-                flags[i] = 0;
-        return flags;
+                nested.loss_flags[i] = 0;
+        nested.column = ColumnNullable::create(nested.column, nullable_column->getNullMapColumnPtr());
+        nested.type = makeNullable(nested.type);
+        return nested;
     }
 
     DataTypePtr from_type = removeNullable(from_wrapped);
     DataTypePtr to_type = removeNullable(removeLowCardinality(to_wrapped));
 
-    PaddedPODArray<UInt8> flags(column.size(), 0);
+    WhichDataType which_from(from_type);
+    WhichDataType which_to(to_type);
 
-    if (WhichDataType(from_type).isTime64() && WhichDataType(to_type).isTime())
-    {
-        const auto & data = assert_cast<const ColumnDecimal<Time64> &>(column).getData();
-        const auto scale = assert_cast<const DataTypeTime64 &>(*from_type).getScale();
-        const Int64 scale_multiplier = scale >= 1 ? common::exp10_i32(scale) : 1;
-        static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
-        for (size_t i = 0; i < data.size(); ++i)
-        {
-            const Int64 value = data[i];
-            const bool fractional = (value % scale_multiplier) != 0;
-            /// Round toward negative infinity, like the cast does.
-            Int64 whole = value / scale_multiplier;
-            if (value < 0 && fractional)
-                --whole;
-            if (fractional || whole < -max_time_seconds || whole > max_time_seconds)
-                flags[i] = 1;
-        }
-    }
-    else if (const auto * array_column = typeid_cast<const ColumnArray *>(&column))
+    if (which_from.isTime64() && which_to.isTime())
+        return convertTemporalLeaf<Time64, Int32>(
+            *from_type, *column_wrapped, to_type, -MAX_TIME_SECONDS, MAX_TIME_SECONDS,
+            assert_cast<const DataTypeTime64 &>(*from_type).getScale());
+    if (which_from.isDateTime64() && which_to.isDateTime())
+        return convertTemporalLeaf<DateTime64, UInt32>(
+            *from_type, *column_wrapped, to_type, 0, MAX_DATETIME_SECONDS,
+            assert_cast<const DataTypeDateTime64 &>(*from_type).getScale());
+
+    if (const auto * array_column = typeid_cast<const ColumnArray *>(column_wrapped.get()))
     {
         const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
         const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
         if (from_array && to_array)
         {
-            auto element_flags = collectTimeLossFlags(from_array->getNestedType(), array_column->getData(), to_array->getNestedType());
-            const auto & offsets = array_column->getOffsets();
-            size_t prev_offset = 0;
-            for (size_t row = 0; row < offsets.size(); ++row)
+            auto nested = preprocessTemporalLeaves(from_array->getNestedType(), array_column->getDataPtr(), to_array->getNestedType());
+            if (nested.changed)
             {
-                for (size_t pos = prev_offset; pos < offsets[row]; ++pos)
-                    flags[row] |= element_flags[pos];
-                prev_offset = offsets[row];
+                PreparedTemporalColumn result;
+                result.column = ColumnArray::create(nested.column, array_column->getOffsetsPtr());
+                result.type = std::make_shared<DataTypeArray>(nested.type);
+                result.changed = true;
+                result.loss_flags.assign(array_column->size(), static_cast<UInt8>(0));
+                const auto & offsets = array_column->getOffsets();
+                size_t prev_offset = 0;
+                for (size_t row = 0; row < offsets.size(); ++row)
+                {
+                    for (size_t pos = prev_offset; pos < offsets[row]; ++pos)
+                        result.loss_flags[row] |= nested.loss_flags[pos];
+                    prev_offset = offsets[row];
+                }
+                return result;
             }
         }
     }
-    else if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column))
+    else if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column_wrapped.get()))
     {
         const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_type.get());
         const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_type.get());
-        if (from_tuple && to_tuple && from_tuple->getElements().size() == to_tuple->getElements().size())
+        if (from_tuple && to_tuple)
         {
-            for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
+            const auto & from_elements = from_tuple->getElements();
+            const auto & to_elements = to_tuple->getElements();
+
+            /// Match elements the same way createTupleWrapper does: by name for named tuples, else positionally.
+            std::vector<std::optional<size_t>> to_index(from_elements.size());
+            if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
             {
-                auto element_flags = collectTimeLossFlags(from_tuple->getElements()[i], tuple_column->getColumn(i), to_tuple->getElements()[i]);
-                for (size_t row = 0; row < flags.size(); ++row)
-                    flags[row] |= element_flags[row];
+                const auto & to_names = to_tuple->getElementNames();
+                std::unordered_map<std::string_view, size_t> to_positions;
+                for (size_t i = 0; i < to_names.size(); ++i)
+                    to_positions[to_names[i]] = i;
+                const auto & from_names = from_tuple->getElementNames();
+                for (size_t i = 0; i < from_names.size(); ++i)
+                    if (auto it = to_positions.find(from_names[i]); it != to_positions.end())
+                        to_index[i] = it->second;
+            }
+            else if (from_elements.size() == to_elements.size())
+            {
+                for (size_t i = 0; i < from_elements.size(); ++i)
+                    to_index[i] = i;
+            }
+
+            bool any_changed = false;
+            Columns new_columns(from_elements.size());
+            DataTypes new_types(from_elements.size());
+            PaddedPODArray<UInt8> flags(tuple_column->size(), 0);
+            for (size_t i = 0; i < from_elements.size(); ++i)
+            {
+                if (to_index[i])
+                {
+                    auto element = preprocessTemporalLeaves(from_elements[i], tuple_column->getColumnPtr(i), to_elements[*to_index[i]]);
+                    if (element.changed)
+                    {
+                        any_changed = true;
+                        for (size_t row = 0; row < flags.size(); ++row)
+                            flags[row] |= element.loss_flags[row];
+                    }
+                    new_columns[i] = std::move(element.column);
+                    new_types[i] = std::move(element.type);
+                }
+                else
+                {
+                    new_columns[i] = tuple_column->getColumnPtr(i);
+                    new_types[i] = from_elements[i];
+                }
+            }
+            if (any_changed)
+            {
+                PreparedTemporalColumn result;
+                result.column = ColumnTuple::create(std::move(new_columns));
+                result.type = from_tuple->hasExplicitNames()
+                    ? std::make_shared<DataTypeTuple>(new_types, from_tuple->getElementNames())
+                    : std::make_shared<DataTypeTuple>(new_types);
+                result.loss_flags = std::move(flags);
+                result.changed = true;
+                return result;
             }
         }
     }
-    else if (const auto * map_column = typeid_cast<const ColumnMap *>(&column))
+    else if (const auto * map_column = typeid_cast<const ColumnMap *>(column_wrapped.get()))
     {
         const auto * from_map = typeid_cast<const DataTypeMap *>(from_type.get());
         const auto * to_map = typeid_cast<const DataTypeMap *>(to_type.get());
         if (from_map && to_map)
-            return collectTimeLossFlags(from_map->getNestedType(), map_column->getNestedColumn(), to_map->getNestedType());
+        {
+            auto nested = preprocessTemporalLeaves(from_map->getNestedType(), map_column->getNestedColumnPtr(), to_map->getNestedType());
+            if (nested.changed)
+            {
+                nested.column = ColumnMap::create(nested.column);
+                nested.type = std::make_shared<DataTypeMap>(nested.type);
+                return nested;
+            }
+        }
     }
-    return flags;
+
+    return {column_wrapped, from_wrapped, {}, false};
 }
+
 static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
@@ -583,45 +716,44 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
         /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
         /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
+        /// Pre-convert lossy Time64 -> Time and DateTime64 -> DateTime probe leaves with the plain-cast
+        /// semantics and remember the lossy rows; the remaining conversions keep accurate semantics below.
+        if (containsTemporalLossLeaf(column_to_cast.type, data_types[i]))
+        {
+            auto prepared = preprocessTemporalLeaves(column_to_cast.type, column_to_cast.column, data_types[i]);
+            if (prepared.changed)
+            {
+                column_to_cast.column = std::move(prepared.column);
+                column_to_cast.type = std::move(prepared.type);
+
+                bool has_lossy_values = false;
+                for (const auto flag : prepared.loss_flags)
+                    has_lossy_values |= flag != 0;
+                if (has_lossy_values)
+                {
+                    if (!accumulated_lossy_null_map)
+                    {
+                        accumulated_lossy_null_map = ColumnUInt8::create();
+                        accumulated_lossy_null_map->getData() = std::move(prepared.loss_flags);
+                    }
+                    else
+                    {
+                        auto & accumulated = accumulated_lossy_null_map->getData();
+                        for (size_t row = 0; row < accumulated.size(); ++row)
+                            accumulated[row] |= prepared.loss_flags[row];
+                    }
+                }
+            }
+        }
+
         auto target_type_without_nullable = removeNullable(data_types[i]);
         bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
 
-        /// Trees whose only inexact conversions are Time64 -> Time use a plain cast plus an explicit loss
-        /// map: an accurate cast would throw for composite probes, and a composite cast result cannot be
-        /// wrapped in Nullable. The type-only pre-check keeps unrelated IN queries allocation-free.
-        bool has_time64_to_time = false;
-        const bool time_loss_plan = timeLossPlanCovers(column_to_cast.type, data_types[i], has_time64_to_time) && has_time64_to_time;
-        if (time_loss_plan)
-        {
-            auto lossy_flags = collectTimeLossFlags(column_to_cast.type, *column_to_cast.column, data_types[i]);
-            bool has_lossy_values = false;
-            for (const auto flag : lossy_flags)
-                has_lossy_values |= flag != 0;
-            if (has_lossy_values)
-            {
-                if (!accumulated_lossy_null_map)
-                {
-                    accumulated_lossy_null_map = ColumnUInt8::create();
-                    accumulated_lossy_null_map->getData() = std::move(lossy_flags);
-                }
-                else
-                {
-                    auto & accumulated = accumulated_lossy_null_map->getData();
-                    for (size_t row = 0; row < accumulated.size(); ++row)
-                        accumulated[row] |= lossy_flags[row];
-                }
-            }
-        }
-
         if (use_cast_accurate_or_null)
         {
-            if (time_loss_plan)
-                /// Lossy rows are already marked; exact rows must convert, so cast plainly keeping the Nullable shape.
-                result = castColumn(column_to_cast, column_to_cast.type->isNullable() ? makeNullable(data_types[i]) : data_types[i], cast_cache.get());
-            else
-                result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
@@ -634,10 +766,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             {
                 auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
                 const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                ColumnWithTypeAndName nested_to_cast(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name);
-                result = time_loss_plan
-                    ? castColumn(nested_to_cast, data_types[i], cast_cache.get())
-                    : castColumnAccurate(nested_to_cast, data_types[i], cast_cache.get());
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
                 if (!null_map_holder)
                 {
                     null_map_holder = column_nullable.getNullMapColumnPtr();
@@ -658,9 +787,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             }
             else
             {
-                result = time_loss_plan
-                    ? castColumn(column_to_cast, data_types[i], cast_cache.get())
-                    : castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
             }
         }
 
