@@ -1,4 +1,7 @@
 #include <Common/MemoryWorker.h>
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#endif
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -362,10 +365,19 @@ MemoryWorker::MemoryWorker(
     /// with their own finite limits do not also poison this threshold; here we
     /// want only the host's physical RAM.
     {
+#if defined(OS_WINDOWS)
+        /// `GlobalMemoryStatusEx` reports the installed physical memory in bytes directly, so
+        /// there is no page count to multiply out as there is with `sysconf`.
+        MEMORYSTATUSEX memory_status{};
+        memory_status.dwLength = sizeof(memory_status);
+        if (GlobalMemoryStatusEx(&memory_status))
+            host_memory_bytes = memory_status.ullTotalPhys;
+#else
         int64_t num_pages = sysconf(_SC_PHYS_PAGES);
         int64_t page_size_bytes = sysconf(_SC_PAGESIZE);
         if (num_pages > 0 && page_size_bytes > 0)
             host_memory_bytes = static_cast<uint64_t>(num_pages) * static_cast<uint64_t>(page_size_bytes);
+#endif
     }
 
     if (config.use_cgroup)
