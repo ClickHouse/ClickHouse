@@ -186,7 +186,17 @@ public:
         if (token->value)
         {
             /// Another thread already produced the value while we waited for token->mutex.
-            ++hits;
+            /// If a concurrent clear() discarded that insert, the value is not resident —
+            /// count a miss (same class of outcome as the producer when insertion is skipped).
+            {
+                std::lock_guard cache_lock(mutex);
+                if (auto cached = cache_policy->get(key))
+                {
+                    ++hits;
+                    return std::make_pair(std::move(cached), false);
+                }
+            }
+            ++misses;
             return std::make_pair(token->value, false);
         }
 

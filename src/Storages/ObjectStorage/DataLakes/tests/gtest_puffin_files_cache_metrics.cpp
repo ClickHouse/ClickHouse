@@ -5,6 +5,11 @@
 #include <Common/ProfileEvents.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <thread>
+
 using namespace DB;
 
 namespace ProfileEvents
@@ -65,6 +70,70 @@ TEST(PuffinFilesCacheMetrics, ClearDuringLoadCountsAsMissNotHit)
     ASSERT_NE(second, nullptr);
     EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheMisses] - misses_before, 2u);
     EXPECT_EQ(counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 0u);
+}
+
+TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
+{
+    PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
+
+    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-waiter", 100, 200, "data/file-w.parquet", 1, 100);
+    ASSERT_TRUE(key.has_value());
+
+    const auto hits_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits].load();
+    const auto misses_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses].load();
+
+    std::promise<void> load_started;
+    std::promise<void> allow_load_finish;
+    std::promise<void> waiter_entered;
+    auto load_started_future = load_started.get_future();
+    auto allow_load_finish_future = allow_load_finish.get_future();
+    auto waiter_entered_future = waiter_entered.get_future();
+
+    std::atomic<size_t> load_calls{0};
+    std::atomic<bool> waiter_load_called{false};
+
+    std::thread producer(
+        [&]()
+        {
+            cache.getOrSetDeletionVector(
+                *key,
+                [&]()
+                {
+                    ++load_calls;
+                    load_started.set_value();
+                    allow_load_finish_future.wait();
+                    cache.clear();
+                    return makeExcludedRows({42});
+                });
+        });
+
+    ASSERT_EQ(load_started_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+
+    std::thread waiter(
+        [&]()
+        {
+            waiter_entered.set_value();
+            cache.getOrSetDeletionVector(
+                *key,
+                [&]()
+                {
+                    waiter_load_called.store(true);
+                    return makeExcludedRows({99});
+                });
+        });
+
+    ASSERT_EQ(waiter_entered_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    /// Give the waiter time to block on the shared insert token before the producer finishes.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    allow_load_finish.set_value();
+    producer.join();
+    waiter.join();
+
+    EXPECT_EQ(load_calls.load(), 1u);
+    EXPECT_FALSE(waiter_load_called.load());
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits].load() - hits_before, 0u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses].load() - misses_before, 2u);
 }
 
 TEST(PuffinFilesCacheMetrics, OrdinaryHitAndMissCounters)
