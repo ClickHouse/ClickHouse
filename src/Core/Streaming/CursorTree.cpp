@@ -1,4 +1,3 @@
-#include <Core/Streaming/CursorTree_fwd.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Common/Exception.h>
@@ -23,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, CursorTreeNode * node)
+void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, const CursorTreeNode * node)
 {
     for (const auto & [k, v] : *node)
     {
@@ -38,14 +37,18 @@ void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, Vec
     }
 }
 
-MapWithMemoryTracking<String, Int64> collapseTree(CursorTreeNode * node)
+Map collapseTree(const CursorTreeNode * node)
 {
     MapWithMemoryTracking<String, Int64> collapsed_tree;
     VectorWithMemoryTracking<String> path;
 
     collapseTreeImpl(collapsed_tree, path, node);
 
-    return collapsed_tree;
+    Map result;
+    for (const auto & [k, v] : collapsed_tree)
+        result.push_back(Tuple{k, v});
+
+    return result;
 }
 
 }
@@ -133,6 +136,11 @@ Int64 & CursorTreeNode::setValue(const String & key, Int64 value)
     return std::get<Int64>(cell);
 }
 
+CursorTreeNodePtr CursorTreeNode::clone() const
+{
+    return buildCursorTree(collapseTree(this));
+}
+
 CursorTreeNode::Data::iterator CursorTreeNode::begin()
 {
     return data.begin();
@@ -158,13 +166,7 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
     chassert(ptr != nullptr);
-    MapWithMemoryTracking<String, Int64> collapsed_tree = collapseTree(ptr.get());
-    Map result;
-
-    for (const auto & [k, v] : collapsed_tree)
-        result.push_back(Tuple{k, v});
-
-    return result;
+    return collapseTree(ptr.get());
 }
 
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
