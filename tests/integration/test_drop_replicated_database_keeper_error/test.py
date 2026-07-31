@@ -146,9 +146,44 @@ def test_detach_database_still_reports_keeper_error(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
 
 
+def test_detach_database_removes_active_node_on_healthy_session(started_cluster):
+    # Must-not-regress: with a healthy session the eager removal in
+    # DatabaseReplicatedDDLWorker::shutdown() still happens, so SYSTEM DROP DATABASE REPLICA does
+    # not spuriously report the replica as active.
+    #
+    # Observed on DETACH, not DROP: DatabaseCatalog::detachDatabase calls db->drop() only when
+    # dropping, and DatabaseReplicated::drop removes the whole replica path recursively. So on a
+    # DROP the active node is gone either way and the eager removal is unobservable.
+    db = "rdb_detach_healthy"
+    _create_replicated_database(db)
+    zk = cluster.get_kazoo_client("zoo1")
+    active = f"{_replica_path(db)}/active"
+    replica = _replica_path(db)
+
+    # No failpoint here: this is the healthy session path.
+    node.query(f"DETACH DATABASE {db}")
+
+    assert zk.exists(active) is None, (
+        "The eager removal in DatabaseReplicatedDDLWorker::shutdown did not remove the active "
+        "node on a healthy session (the behaviour added in 7ecd310)."
+    )
+    # Nothing removed the replica path itself, so the active node's absence above can only be
+    # attributed to the shutdown path.
+    assert zk.exists(replica) is not None, (
+        "The replica path was removed, so this test cannot attribute the missing active node to "
+        "the eager removal."
+    )
+    assert _database_count(db) == "0"
+
+    node.query(f"ATTACH DATABASE {db}")
+    node.query(f"DROP DATABASE {db} SYNC")
+
+
 def test_drop_database_removes_active_node_on_healthy_session(started_cluster):
-    # Must-not-regress: with a healthy session the eager removal still happens, so
-    # SYSTEM DROP DATABASE REPLICA does not spuriously report the replica as active.
+    # Must-not-regress: a healthy DROP takes neither the injected error nor the best-effort
+    # branch. The eager removal itself is asserted by
+    # test_detach_database_removes_active_node_on_healthy_session above, because
+    # DatabaseReplicated::drop removes the replica path recursively and would mask it here.
     db = "rdb_drop_healthy"
     _create_replicated_database(db)
     zk = cluster.get_kazoo_client("zoo1")
