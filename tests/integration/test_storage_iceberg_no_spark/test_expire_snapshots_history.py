@@ -72,6 +72,12 @@ def test_iceberg_history_made_current_at_stable_after_expire(
     snapshot drops out of the log. system.iceberg_history read made_current_at only from the
     snapshot-log, so such a snapshot showed the epoch (1970-01-01) instead of its real commit
     time. The fix falls back to the snapshot's own timestamp-ms.
+
+    Stability holds here because ClickHouse writes a snapshot's log entry with the same
+    timestamp-ms as the snapshot itself, so the fallback returns the value the log had. It is not
+    a general guarantee: the two timestamps are independent in the Iceberg spec, and
+    `test_iceberg_history_dropped_log_entry_falls_back_to_commit_time` pins what happens when they
+    differ.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_expire_history_" + get_uuid_str()
@@ -187,3 +193,88 @@ def test_iceberg_history_without_snapshot_log(started_cluster_iceberg_no_spark):
             f"snapshot {snapshot_id} reports made_current_at {made_current_at_ms} with "
             f"snapshot-log absent, expected its own timestamp-ms {snapshot_ts[snapshot_id]}"
         )
+
+
+def test_iceberg_history_dropped_log_entry_falls_back_to_commit_time(
+    started_cluster_iceberg_no_spark,
+):
+    """When a snapshot leaves snapshot-log, made_current_at moves to its commit time.
+
+    The two timestamps are independent in the Iceberg spec: `snapshots[].timestamp-ms` is when a
+    snapshot was committed, `snapshot-log[].timestamp-ms` is when it became current. A writer that
+    stages a snapshot and publishes it later (cherry-pick, rollback, staged commit) sets them to
+    different values, whereas ClickHouse always writes them equal.
+
+    Once the log entry is trimmed away, the made-current time is simply not in this metadata file
+    any more, so it cannot be preserved. The fallback reports the commit time instead of the epoch,
+    which means the value MOVES for such a snapshot. This test pins that behaviour so the
+    best-effort contract is explicit rather than an untested side effect - the sibling
+    `..._stable_after_expire` test only covers ClickHouse-written metadata, where the two
+    timestamps coincide and the fallback happens to be lossless.
+
+    The divergence is handcrafted: no ClickHouse write path can produce it.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_history_log_time_differs_" + get_uuid_str()
+
+    create_iceberg_table(
+        "local",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int)",
+        format_version=2,
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1);")
+    instance.query(f"INSERT INTO {table_name} VALUES (2);")
+
+    meta, prev = _read_latest_metadata(instance, table_name)
+    assert len(meta.get("snapshots", [])) == 2, f"expected two snapshots, got: {meta.get('snapshots')}"
+
+    # Order by commit time so `older` is the one that will be dropped from the log below.
+    older, newer = sorted(meta["snapshots"], key=lambda s: s["timestamp-ms"])
+    older_id, newer_id = str(older["snapshot-id"]), str(newer["snapshot-id"])
+
+    # Give the older snapshot a made-current time well clear of its commit time, so the two cannot
+    # be confused for one another, and keep it below the newer commit so the log stays ordered.
+    commit_ms = older["timestamp-ms"]
+    made_current_ms = commit_ms + 1000
+    assert made_current_ms < newer["timestamp-ms"], (
+        f"cannot place a distinct made-current time between the two commits: "
+        f"{commit_ms} and {newer['timestamp-ms']}"
+    )
+
+    meta["snapshot-log"] = [
+        {"snapshot-id": older["snapshot-id"], "timestamp-ms": made_current_ms},
+        {"snapshot-id": newer["snapshot-id"], "timestamp-ms": newer["timestamp-ms"]},
+    ]
+    _write_next_metadata(instance, table_name, meta, prev)
+
+    # Premise: while the log entry exists, the log time wins over the commit time.
+    with_log = _history(instance, table_name)
+    assert with_log[older_id][0] == made_current_ms, (
+        f"expected the snapshot-log time {made_current_ms} to win while the entry exists, "
+        f"got {with_log[older_id][0]} (commit time is {commit_ms})"
+    )
+
+    # Now trim the older entry, exactly as expire_snapshots would.
+    meta, prev = _read_latest_metadata(instance, table_name)
+    meta["snapshot-log"] = [
+        e for e in meta["snapshot-log"] if str(e["snapshot-id"]) != older_id
+    ]
+    _write_next_metadata(instance, table_name, meta, prev)
+
+    without_log = _history(instance, table_name)
+    # The documented best-effort behaviour: the commit time, NOT the epoch and NOT the old value.
+    assert without_log[older_id][0] == commit_ms, (
+        f"expected the commit time {commit_ms} after the log entry was trimmed, "
+        f"got {without_log[older_id][0]}"
+    )
+    assert without_log[older_id][0] != made_current_ms, (
+        "made_current_at cannot stay at the log time once the log entry is gone; if this ever "
+        "holds, the value is being recovered from somewhere and the contract can be tightened"
+    )
+    # The snapshot still listed in the log is untouched.
+    assert without_log[newer_id][0] == newer["timestamp-ms"], (
+        f"snapshot still in the log changed: {without_log[newer_id][0]}"
+    )
