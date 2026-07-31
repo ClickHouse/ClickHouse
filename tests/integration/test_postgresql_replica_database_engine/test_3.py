@@ -4577,6 +4577,168 @@ def test_attach_fails_closed_when_foreign_schema_table_added_to_whole_schema_pub
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_fails_closed_when_publication_publish_flags_altered(started_cluster):
+    # The attach-time membership checks prove WHICH tables the publication publishes; the definition check
+    # proves HOW it publishes them. Here the table list still matches, but an operator ran
+    # ALTER PUBLICATION ... SET (publish = 'insert') while the server was down: resuming from the slot
+    # through that publication would silently omit every UPDATE and DELETE, and restoring the definition
+    # afterwards cannot recover them (pgoutput resolves the publication definition from a historic catalog
+    # snapshot at each change's LSN). The attach must fail closed instead.
+    table = "publish_flags_altered"
+    mat_db = "publish_flags_altered_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication definition is altered to publish only INSERTs, and UPDATEs
+    # are committed: the changes that resuming through the altered publication would silently never deliver.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" SET (publish = \'insert\')')
+    cursor.execute(f"UPDATE {table} SET value = value + 1000 WHERE key < 10")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "does not publish all operation types",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: nothing advances and the omitted UPDATEs are not half-applied.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+        )
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the database removes the altered publication and its slot, and
+    # recreating it takes a fresh snapshot with a full publication, so every row - including the updated
+    # ones - is restored. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 10 == int(
+        instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_row_filter_added(started_cluster):
+    # The PostgreSQL 15+ variant of the definition check: the publication still publishes exactly this
+    # engine's table, but an operator rewrote it with a row filter
+    # (ALTER PUBLICATION ... SET TABLE t WHERE (...)) while the server was down. Resuming from the slot
+    # through it would silently drop every change the filter excludes, so the attach must fail closed.
+    table = "publication_row_filter"
+    mat_db = "publication_row_filter_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" SET TABLE ONLY {table} WHERE (key < 5)'
+    )
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "applies a row filter or a column list",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the engine does not resume through the filtered publication.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild, restoring every row including the gap ones.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -757,7 +757,10 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
                 "the pre-salt publication {} publishes a different set of tables than this engine replicates, so "
                 "it belongs to another engine",
                 doubleQuoteString(name));
-        return {};
+        /// The table list alone does not prove the publication publishes those tables the way ClickHouse
+        /// created it to: an altered definition (for example publish = 'insert', or a row filter) silently
+        /// filters the replication stream, so it disqualifies the publication from adoption just the same.
+        return publicationDefinitionConflict(tx, name);
     };
 
     if (use_unique_replication_consumer_identifier)
@@ -893,6 +896,11 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
                 "the legacy publication {} publishes a different set of tables than this engine replicates in "
                 "schema '{}', so it belongs to another engine",
                 doubleQuoteString(legacy_publication_name), postgres_schema);
+        /// The table list alone does not prove the publication publishes those tables the way ClickHouse
+        /// created it to: an altered definition (for example publish = 'insert', or a row filter) silently
+        /// filters the replication stream, so it disqualifies the publication from adoption just the same.
+        if (ownership_conflict.empty())
+            ownership_conflict = publicationDefinitionConflict(tx, legacy_publication_name);
     }
 
     if (!ownership_conflict.empty())
@@ -967,6 +975,14 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///     adoptLegacyReplicationIdentityIfNeeded() enforces when adopting a legacy publication. (A whole-
     ///     schema database engine detects the same drift against its on-disk table set already in
     ///     fetchRequiredTables().)
+    ///
+    ///  5. The slot and the publication both survive and the table list matches, but the publication's
+    ///     definition has been altered (for example ALTER PUBLICATION ... SET (publish = 'insert'), or a
+    ///     row filter or column list on PostgreSQL 15 and newer). Resuming from the slot streams WAL
+    ///     filtered through the altered definition, so the filtered-out changes (every UPDATE and DELETE
+    ///     with publish = 'insert') are silently omitted, and restoring the definition later cannot recover
+    ///     them (pgoutput resolves the publication definition from a historic catalog snapshot at each
+    ///     change's LSN - the same rule as case 1).
     ///
     /// Recreate the object for a clean rebuild in the re-snapshot cases: dropping it removes any surviving
     /// slot or publication, and the fresh snapshot repopulates every row into empty nested tables, so nothing
@@ -1098,6 +1114,25 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     "replication starts automatically once the conflict is resolved, without a server restart "
                     "or a manual re-attach.",
                     doubleQuoteString(publication_name), colliding);
+
+            /// The membership checks above prove WHICH tables the publication publishes; this one proves HOW
+            /// it publishes them. It also re-verifies a publication adoptLegacyReplicationIdentityIfNeeded()
+            /// switched to above, and - because it does not depend on the expected table set - covers the
+            /// whole-schema database engine too (whose membership checks live in fetchRequiredTables()).
+            const String definition_conflict = publicationDefinitionConflict(tx, publication_name);
+            if (!definition_conflict.empty())
+                throw Exception(
+                    ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot start MaterializedPostgreSQL replication on attach: {}. Resuming from the "
+                    "existing replication slot through this altered publication would silently filter the "
+                    "replication stream (for example, with publish = 'insert' every UPDATE and DELETE is "
+                    "omitted), and the changes filtered out while the alteration was in effect cannot be "
+                    "recovered afterwards (pgoutput resolves the publication definition from a historic "
+                    "catalog snapshot at each change's LSN), so replication is refused. Recreate this object "
+                    "for a clean rebuild, or restore the publication definition on the PostgreSQL side and "
+                    "rebuild the affected tables: startup keeps retrying and replication starts automatically "
+                    "once the conflict is resolved, without a server restart or a manual re-attach.",
+                    definition_conflict);
         }
     }
 
@@ -1993,6 +2028,36 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
 
 template
 std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::work & tx) const;
+
+
+String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontransaction & tx, const String & name) const
+{
+    pqxx::result flags{tx.exec(fmt::format(
+        "SELECT pubinsert AND pubupdate AND pubdelete AND pubtruncate FROM pg_publication WHERE pubname = '{}'", name))};
+    if (flags.empty())
+        return fmt::format("the publication {} does not exist", doubleQuoteString(name));
+    if (!flags[0][0].as<bool>())
+        return fmt::format(
+            "the publication {} does not publish all operation types "
+            "(ClickHouse creates it with the default publish = 'insert, update, delete, truncate')",
+            doubleQuoteString(name));
+
+    /// Row filters (pg_publication_rel.prqual) and column lists (pg_publication_rel.prattrs) exist since
+    /// PostgreSQL 15; ClickHouse creates the publication with neither.
+    if (tx.conn().server_version() >= 150000)
+    {
+        pqxx::result filtered{tx.exec(fmt::format(
+            "SELECT count(*) FROM pg_publication_rel r JOIN pg_publication p ON r.prpubid = p.oid "
+            "WHERE p.pubname = '{}' AND (r.prqual IS NOT NULL OR r.prattrs IS NOT NULL)", name))};
+        if (filtered[0][0].as<Int64>() > 0)
+            return fmt::format(
+                "the publication {} applies a row filter or a column list to at least one published table "
+                "(ClickHouse creates it with neither)",
+                doubleQuoteString(name));
+    }
+
+    return {};
+}
 
 
 namespace

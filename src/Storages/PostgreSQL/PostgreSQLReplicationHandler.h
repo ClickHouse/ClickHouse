@@ -89,6 +89,15 @@ private:
     template <typename T>
     std::set<std::pair<String, String>> fetchPublishedTablePairs(T & tx) const;
 
+    /// An existing publication may only be adopted or resumed through when its definition matches what
+    /// ClickHouse creates: all four operation types published (pubinsert, pubupdate, pubdelete,
+    /// pubtruncate - CREATE PUBLICATION's defaults) and, on PostgreSQL 15 and newer, no row filter or
+    /// column list on any published table. A publication with the right table list but an altered
+    /// definition (for example ALTER PUBLICATION ... SET (publish = 'insert')) silently filters the
+    /// replication stream, and the filtered-out changes cannot be recovered once the slot advances.
+    /// Returns a human-readable reason when the definition does not match, or an empty string when it does.
+    String publicationDefinitionConflict(pqxx::nontransaction & tx, const String & name) const;
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
