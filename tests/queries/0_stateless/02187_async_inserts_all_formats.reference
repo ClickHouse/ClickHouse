@@ -1,6 +1,7 @@
 Arrow
 ArrowStream
 Avro
+AvroConfluent
 BSONEachRow
 Buffers
 CSV
@@ -21,6 +22,7 @@ JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
+JSONL
 JSONLines
 JSONObjectEachRow
 JSONStringsEachRow

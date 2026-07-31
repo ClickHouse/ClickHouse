@@ -1,0 +1,176 @@
+---
+description: 'Guía para configurar y administrar QUOTAS de uso de recursos en ClickHouse'
+sidebarTitle: 'QUOTAS'
+slug: /operations/quotas
+title: 'QUOTAS'
+doc_type: 'guide'
+---
+
+<Info>
+  **QUOTAS en ClickHouse Cloud**
+
+  Las QUOTAS son compatibles con ClickHouse Cloud, pero deben crearse mediante la [sintaxis DDL](/es/reference/statements/create/quota). El enfoque de configuración XML que se documenta a continuación **no es compatible**.
+</Info>
+
+Las QUOTAS le permiten limitar el uso de recursos durante un período de tiempo o hacer un seguimiento del uso de los recursos.
+Las QUOTAS se configuran en la configuración del usuario, que normalmente es &#39;users.xml&#39;.
+
+El sistema también tiene una función para limitar la complejidad de una sola consulta. Consulte la sección [Restricciones sobre la complejidad de las consultas](/es/concepts/features/configuration/settings/query-complexity).
+
+A diferencia de las restricciones sobre la complejidad de las consultas, las QUOTAS:
+
+* Imponen restricciones sobre un conjunto de consultas que pueden ejecutarse durante un período de tiempo, en lugar de limitar una sola consulta.
+* Contabilizan los recursos consumidos en todos los servidores remotos para el procesamiento distribuido de consultas.
+
+Veamos la sección del archivo &#39;users.xml&#39; que define las QUOTAS.
+
+```xml
+<!-- Cuotas -->
+<quotas>
+    <!-- Nombre de la cuota. -->
+    <default>
+        <!-- Restricciones para un período de tiempo. Puede definir múltiples intervalos con diferentes restricciones. -->
+        <interval>
+            <!-- Duración del intervalo. -->
+            <duration>3600</duration>
+
+            <!-- Sin límite. Solo recopila datos para el intervalo de tiempo especificado. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+De forma predeterminada, la QUOTA hace un seguimiento del consumo de recursos por hora, sin limitar su uso.
+El consumo de recursos calculado para cada intervalo se escribe en el log del servidor después de cada petición.
+
+```xml
+<statbox>
+    <!-- Restricciones para un período de tiempo. Puede definir múltiples intervalos con diferentes restricciones. -->
+    <interval>
+        <!-- Duración del intervalo. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+Para la QUOTA &#39;statbox&#39;, se establecen restricciones para cada hora y para cada período de 24 horas (86.400 segundos). El intervalo de tiempo se cuenta a partir de un momento fijo definido por la implementación. En otras palabras, el intervalo de 24 horas no necesariamente comienza a medianoche.
+
+Cuando finaliza el intervalo, se restablecen todos los valores recopilados. Para la hora siguiente, el cálculo de la QUOTA vuelve a empezar.
+
+Estas son las cantidades que se pueden restringir:
+
+`queries` – El número total de solicitudes.
+
+`query_selects` – El número total de solicitudes SELECT.
+
+`query_inserts` – El número total de solicitudes de inserción.
+
+`errors` – El número de consultas que generaron una excepción.
+
+`result_rows` – El número total de filas devueltas como resultado.
+
+`result_bytes` - El tamaño total de las filas devueltas como resultado.
+
+`read_rows` – El número total de filas de origen leídas de las tablas para ejecutar la consulta en todos los servidores remotos.
+
+`read_bytes` - El tamaño total leído de las tablas para ejecutar la consulta en todos los servidores remotos.
+
+`written_bytes` - El tamaño total de una operación de escritura.
+
+`execution_time` – El tiempo total de ejecución de la consulta, en segundos (tiempo real transcurrido).
+
+`failed_sequential_authentications` - El número total de errores de autenticación secuenciales.
+
+`queries_per_normalized_hash` – El número máximo de ejecuciones de una misma consulta normalizada. Las consultas normalizadas son consultas en las que los literales se reemplazan por marcadores de posición, por lo que `SELECT 1` y `SELECT 2` se consideran la misma consulta normalizada. Este límite se controla de forma independiente para cada patrón de consulta normalizada distinto.
+
+Si se supera el límite durante al menos un intervalo de tiempo, se lanza una excepción con un mensaje que indica qué restricción se ha superado, para qué intervalo y cuándo comienza el nuevo intervalo (cuándo se pueden volver a enviar consultas).
+
+Las QUOTAS pueden usar la función de &quot;clave de QUOTA&quot; para hacer un seguimiento de los recursos de varias claves de forma independiente. Este es un ejemplo de ello:
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+También puede asociar las QUOTAS al hash de la consulta normalizada, de modo que cada patrón de consulta distinto tenga su propio bucket de QUOTA independiente. En la configuración XML, esto se escribe como `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+Esto mismo se puede expresar con la sintaxis DDL:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+En este ejemplo, el usuario puede ejecutar hasta 100 veces cada consulta normalizada distinta por hora. `SELECT number FROM numbers(1)` y `SELECT number FROM numbers(2)` comparten el mismo bucket (porque tienen la misma forma normalizada), pero `SELECT number, number FROM numbers(1)` usa un bucket distinto.
+
+La QUOTA se asigna a los usuarios en la sección &#39;users&#39; de la configuración. Consulte la sección &quot;Derechos de acceso&quot;.
+
+Para el procesamiento distribuido de consultas, las cantidades acumuladas se almacenan en el servidor que realiza la solicitud. Por lo tanto, si el usuario cambia a otro servidor, la QUOTA allí &quot;volverá a empezar&quot;.
+
+Cuando se reinicia el servidor, las QUOTAS se restablecen.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Creación de aplicaciones de página única con ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

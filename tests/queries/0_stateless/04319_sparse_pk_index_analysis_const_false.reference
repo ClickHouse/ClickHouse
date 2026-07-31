@@ -1,0 +1,20 @@
+-- { echoOn }
+
+EXPLAIN ESTIMATE
+SELECT count() FROM t_sparse_pk_const_false
+WHERE 0
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+default	t_sparse_pk_const_false	0	0	0
+SELECT count() FROM t_sparse_pk_const_false
+WHERE 0
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+0
+EXPLAIN ESTIMATE
+SELECT count() FROM t_sparse_pk_const_false
+WHERE 0
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+default	t_sparse_pk_const_false	0	0	0
+SELECT count() FROM t_sparse_pk_const_false
+WHERE 0
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+0

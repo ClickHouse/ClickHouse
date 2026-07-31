@@ -25,15 +25,23 @@ class SerializationVariantElement;
 class SerializationVariantElementNullMap final : public SimpleTextSerialization
 {
 private:
-    SerializationVariantElementNullMap(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
-        : variant_element_name(variant_element_name_), variant_discriminator(variant_discriminator_)
+    SerializationVariantElementNullMap(
+        const String & variant_element_name_,
+        ColumnVariant::Discriminator variant_discriminator_,
+        size_t num_variants_)
+        : variant_element_name(variant_element_name_)
+        , variant_discriminator(variant_discriminator_)
+        , num_variants(num_variants_)
     {
     }
 
 public:
-    static UInt128 getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+    static UInt128 getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_);
 
-    static SerializationPtr create(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+    static SerializationPtr create(
+        const String & variant_element_name_,
+        ColumnVariant::Discriminator variant_discriminator_,
+        size_t num_variants_ = 0);
 
     size_t allocatedBytes() const override;
 
@@ -85,12 +93,14 @@ public:
         const String variant_element_name;
         const ColumnVariant::Discriminator global_variant_discriminator;
         const ColumnVariant::Discriminator local_variant_discriminator;
+        size_t num_variants;
 
         VariantNullMapSubcolumnCreator(
             const ColumnPtr & local_discriminators_,
             const String & variant_element_name_,
             ColumnVariant::Discriminator global_variant_discriminator_,
-            ColumnVariant::Discriminator local_variant_discriminator_);
+            ColumnVariant::Discriminator local_variant_discriminator_,
+            size_t num_variants_ = 0);
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
@@ -109,6 +119,9 @@ private:
     /// we need variant element type name and global discriminator.
     String variant_element_name;
     ColumnVariant::Discriminator variant_discriminator;
+    /// Total number of variants in the Variant type; used for bounds-checking
+    /// compact discriminators read from the wire.
+    size_t num_variants;
 
 };
 
