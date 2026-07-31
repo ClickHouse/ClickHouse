@@ -20,7 +20,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <filesystem>
+#include <Poco/TemporaryFile.h>
 
 using namespace DB;
 
@@ -132,8 +132,8 @@ TEST(ParquetV3NeedOnlyCountBuckets, CountsOnlyAssignedRowGroups)
     tryRegisterFormats();
     const auto context = getContext().context;
 
-    const String path = "/home/iantonspb/ClickHouse/tmp/gtest_parquet_v3_need_only_count_buckets.parquet";
-    std::filesystem::create_directories("/home/iantonspb/ClickHouse/tmp");
+    Poco::TemporaryFile temp_file;
+    const String path = temp_file.path();
     constexpr size_t rows_per_group = 10;
     constexpr size_t num_groups = 3;
     writeMultiRowGroupParquet(path, rows_per_group, num_groups);
