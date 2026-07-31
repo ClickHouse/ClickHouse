@@ -12,8 +12,11 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinFile.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileSize.h>
 
 namespace DB
 {
@@ -21,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -53,6 +57,23 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
         read_settings.enable_filesystem_cache = false;
 
     auto read_buffer = createReadBuffer(puffin_object, object_storage, context, log, read_settings);
+
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(read_buffer.get());
+    if (!seekable)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin deletion vector read requires a seekable buffer");
+
+    auto file_size = tryGetFileSizeFromReadBuffer(*read_buffer);
+    if (!file_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine Puffin file size for '{}'", puffin_path);
+
+    const auto blobs = readPuffinFooterBlobsFromSeekable(*seekable, *file_size);
+    bindDeletionVectorBlob(
+        blobs,
+        content_offset,
+        content_size_in_bytes,
+        expected_data_file.serialize(),
+        expected_cardinality);
+
     auto deleted_positions = readDeletionVectorFromPuffin(
         *read_buffer, content_offset, content_size_in_bytes, expected_cardinality);
 
