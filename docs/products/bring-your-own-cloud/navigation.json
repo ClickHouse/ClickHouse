@@ -4,7 +4,7 @@
     {
       "group": "Overview",
       "pages": [
-        "products/cloud/guides/infrastructure/deployment-options/byoc/overview",
+        "products/bring-your-own-cloud/overview/overview",
         "products/bring-your-own-cloud/overview/architecture"
       ]
     },
