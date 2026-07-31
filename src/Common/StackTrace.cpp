@@ -606,18 +606,18 @@ void StackTrace::tryCapture()
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-/// The type-erasing wrappers of `std::function` and the invoke helpers they forward through, spelled
-/// as they appear after @c replacements dropped the `::__1` ABI namespace. These are the frames whose
-/// demangled names are pure noise: they spell out the whole captured type and say nothing that the
-/// surrounding frames do not already say. Everything else keeps its name, including a `std::` symbol
-/// that merely happens to live in a `__functional` header (`std::hash`, `std::less`, ...) - such a
-/// frame is where the code really is, so its name is the only useful part of it.
+/// The type-erasing wrappers of `std::function`, spelled as they appear after @c replacements dropped
+/// the `::__1` ABI namespace. These are the frames whose demangled names are pure noise: they spell out
+/// the whole captured type and say nothing that the surrounding frames do not already say. Everything
+/// else keeps its name, including a `std::` symbol that merely happens to live in a `__functional`
+/// header (`std::hash`, `std::less`, ...) - such a frame is where the code really is, so its name is
+/// the only useful part of it. In particular, the generic invocation helpers (`std::invoke`,
+/// `std::__invoke`, `std::mem_fn`) are deliberately not here: they are not `std::function`-specific,
+/// and a frame's name can name the callable they dispatch to - a single-frame prefix match cannot tell
+/// a `std::function` trampoline from a direct use, so they keep their names.
 constexpr std::string_view std_function_plumbing[] = {
     "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
     "std::function<",     /// `std::function::operator()` and its constructors
-    "std::__invoke",      /// `__invoke`, `__invoke_r`, `__invoke_void_return_wrapper`
-    "std::invoke",
-    "std::__mem_fn<",
 };
 
 static bool isStdFunctionPlumbing(const String & symbol_name)

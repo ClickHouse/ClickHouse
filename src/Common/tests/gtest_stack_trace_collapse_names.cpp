@@ -28,7 +28,6 @@ TEST(StackTraceCollapseNames, HidesStdFunctionPlumbing)
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, std_function_trampoline), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::__function::__value_func<void ()>::operator()() const"), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator()() const"), "?");
-    EXPECT_EQ(StackTrace::collapseDemangledNames(invoke_h, "std::__1::__invoke<DB::AsyncLoader::Pool&>(DB::AsyncLoader::Pool&)"), "?");
 }
 
 /// The file of a frame is the source line the faulting instruction maps to, and an ordinary function can
@@ -44,9 +43,10 @@ TEST(StackTraceCollapseNames, KeepsOrdinaryFunctionAttributedToFunctionalHeader)
 }
 
 /// Not every symbol that lives in a `__functional` header is `std::function` plumbing: libc++ puts
-/// `std::hash`, `std::less`, `std::identity` and friends there too. A frame of one of those is where
-/// the code really is, so it must keep its name - only the type-erasing wrappers and the invoke
-/// helpers they forward through are noise.
+/// `std::hash`, `std::less`, `std::identity` and friends there too, as well as the generic invocation
+/// helpers `std::invoke` / `std::__invoke` / `std::mem_fn`, which are used far beyond `std::function`.
+/// A frame of one of those is where the code really is, and its name can name the callable it
+/// dispatches to, so it must keep its name - only the type-erasing wrappers of `std::function` are noise.
 TEST(StackTraceCollapseNames, KeepsMeaningfulStdSymbolFromFunctionalHeader)
 {
     EXPECT_EQ(
@@ -55,6 +55,10 @@ TEST(StackTraceCollapseNames, KeepsMeaningfulStdSymbolFromFunctionalHeader)
         "std::hash<String>::operator()");
     EXPECT_EQ(StackTrace::collapseDemangledNames(hash_h, "std::__1::__murmur2_or_cityhash<unsigned long, 64ul>::operator()"),
               "std::__murmur2_or_cityhash<unsigned long, 64ul>::operator()");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(invoke_h, "std::__1::__invoke<DB::AsyncLoader::Pool&>(DB::AsyncLoader::Pool&)"),
+              "std::__invoke<DB::AsyncLoader::Pool&>(DB::AsyncLoader::Pool&)");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(invoke_h, "std::__1::invoke<void (&)(int), int>(void (&)(int), int&&)"),
+              "std::invoke<void (&)(int), int>(void (&)(int), int&&)");
 }
 
 TEST(StackTraceCollapseNames, ShortensKnownSpellings)
