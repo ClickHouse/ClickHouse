@@ -7,8 +7,6 @@ title: 'timeSeriesSelector'
 doc_type: 'reference'
 ---
 
-# timeSeriesSelector Table Function
-
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
 This function is similar to [range selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors) but it's used to implement [instant selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors) too.
 

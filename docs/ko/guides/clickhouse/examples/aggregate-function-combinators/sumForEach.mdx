@@ -1,0 +1,57 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'sumForEach 집계 함수(aggregate function) 사용 예시'
+keywords: ['sum', 'ForEach', 'combinator', '예시', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 설명
+</div>
+
+[`ForEach`](/ko/reference/functions/aggregate-functions/combinators#-foreach) 조합자는 [`sum`](/ko/reference/functions/aggregate-functions/sum) 집계 함수에 적용할 수 있으며, 행 값을 대상으로 작동하는 집계 함수를 배열 컬럼을 대상으로 작동하는 집계 함수로 바꿉니다. 즉, 여러 행에 걸쳐 배열의 각 요소별로 집계를 적용합니다.
+
+<div id="example-usage">
+  ## 예시 사용법
+</div>
+
+이 예시에서는 [SQL playground](https://sql.clickhouse.com/)에서 사용할 수 있는 `hits` 데이터셋을 사용합니다.
+
+`hits` 테이블에는 `isMobile`이라는 UInt8 타입의 컬럼이 있으며,
+데스크톱은 `0`, 모바일은 `1`로 표시됩니다:
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+`sumForEach` 집계 조합자 함수를 사용해
+하루 중 시간대에 따라 데스크톱 트래픽과 모바일 트래픽이 어떻게 달라지는지 분석합니다. 아래 실행 버튼을
+클릭해 쿼리를 대화형으로 실행하십시오:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- sumForEach를 사용하여 한 번에 데스크톱 방문과 모바일 방문을 집계합니다
+      sumForEach([
+          IsMobile = 0, -- 데스크톱 방문 (IsMobile = 0)
+          IsMobile = 1  -- 모바일 방문 (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`sum`](/ko/reference/functions/aggregate-functions/sum)
+* [`ForEach` 조합자](/ko/reference/functions/aggregate-functions/combinators#-foreach)

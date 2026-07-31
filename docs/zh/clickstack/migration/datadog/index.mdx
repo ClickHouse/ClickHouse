@@ -1,0 +1,333 @@
+---
+slug: /use-cases/observability/clickstack/migration/datadog
+title: '从 Datadog 迁移到 ClickStack'
+sidebarTitle: '从 Datadog 迁移'
+description: '使用 ClickStack OpenTelemetry Collector 中的 Datadog receiver，从 Datadog 迁移到 ClickStack'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', '迁移', '可观测性', 'ClickStack']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+迁移可观测性平台，通常不只是更换数据存储的位置。Datadog agent 和 SDKs 可能早已部署在成千上万个应用、主机、虚拟机和 Kubernetes Pod (容器组) 中。如果还没来得及评估另一个后端，就得先为所有这些重新做插桩，那么迁移在产生任何价值之前，就已经变成了一个大型项目。
+
+内置于 ClickStack 版 OpenTelemetry (OTel) collector 中的 **Datadog receiver** 消除了这部分前期成本。现有的 Datadog agent 和 SDKs 无需任何改动即可继续运行。你不用再把遥测数据发送到 Datadog，而是将它们指向该 receiver；它会把 Datadog 的原生日志、trace 和指标载荷转换为 OpenTelemetry 数据模型，并通过标准的 collector 管道传递到 ClickStack。
+
+由于该 receiver 位于常规 collector 管道中，你可以用它来：
+
+* **在不改动应用代码的情况下并行评估 ClickStack 和 Datadog**，利用现有 agent 将同一份遥测数据同时发送到两个平台。
+* **平滑迁移到 ClickStack**，保留当前采集层，并逐步采用 OpenTelemetry 插桩。
+* **长期并行运行两套技术栈**，让每个平台各尽其长。
+
+<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="迁移 Datadog agents" size="lg" background />
+
+<div id="why-run-clickstack-alongside-datadog">
+  ## 为什么将 ClickStack 与 Datadog 搭配使用
+</div>
+
+对大多数团队来说，把可观测性数据迁出 Datadog 的主要原因是成本。随着应用规模扩大、完成埋点的服务越来越多，日志和 trace 量也会持续增长，团队往往只能在增加支出和减少遥测数据保留量之间二选一。而这些成本控制又会进一步限制你在调查时能看到的信息：采样后的链路追踪、未建立索引的日志、汇总后的指标，以及较短的保留窗口，都会在最需要的时候减少可用的上下文。
+
+[ClickStack](/zh/clickstack/overview) 构建于 ClickHouse 之上，对于大规模日志和 tracing 工作负载，其成本效率相比 Datadog 可高出 100 倍以上。也正是这种存储经济性的差异，让将 ClickStack 与 Datadog 搭配使用变得很有价值：
+
+* **更长的保留期。** 按照运维需求而不是预算来设置保留期，保留那些你可能在几周甚至几个月后仍需要的事件。
+* **全保真数据。** 无需采样即可存储每一条日志和每一个 trace，让调查基于完整数据而非样本进行。
+* **无 API 速率限制。** 以查询数据库的方式查询遥测数据，而不是通过按量计费的 API，并且没有按查询或按端点的限流。
+* **完整的 SQL 访问能力。** 使用 SQL 分析日志、指标和链路追踪，并将它们与 ClickHouse 中已有的业务数据或基础设施数据关联起来。
+* **智能体工作负载。** 通过 [ClickStack MCP server](/zh/clickstack/mcp) 将遥测数据开放给 AI 智能体，并直接在 ClickHouse 上运行不限量的分析查询。
+
+全保真遥测数据对智能体调查尤其有价值。智能体无法对在调查开始前就已被丢弃的事件进行推理，而且它还需要足够长的历史数据，才能将当前事故与更早的故障、行为变化以及更长期的模式进行比较。
+
+<div id="how-the-datadog-receiver-works">
+  ## Datadog receiver 的工作原理
+</div>
+
+在典型的 OpenTelemetry 部署中，遥测数据在到达后端之前，会先发送到 OpenTelemetry collector。collector 会从以 agent 模式运行的 collectors，以及为应用埋点的 [OpenTelemetry SDKs](/zh/clickstack/ingesting-data/sdks/index) 接收数据，应用所需的过滤或转换，将事件按批次处理，然后导出到目标端。
+
+<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="简单的 OTel 管道" size="lg" background />
+
+[Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) 为这一架构增加了另一种输入。它提供了一个端点，能够理解 Datadog agents 和 SDKs 使用的协议，并将传入的 Datadog 载荷转换为 OpenTelemetry 数据模型。之后，这些数据会像其他遥测数据一样，通过常规的 collector 管道继续处理。
+
+现有的 Datadog agents 只需重新配置为将日志和链路追踪发送到运行在 ClickStack collector 上的 receiver。应用可以继续使用现有的 Datadog SDKs，而已经部署在整个基础设施中的 agents 也无需改动。
+
+<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog 到 OpenTelemetry" size="lg" background />
+
+由于 collector 管道可以使用多个 exporter，同一份遥测数据就可以同时发送到 Datadog 和 ClickStack。这也正是并行评估和长期并行运行成为可能的原因：你可以基于完全相同的数据对比两个平台，然后再独立决定是否迁移。
+
+<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="迁移 Datadog agents" size="lg" background />
+
+<div id="what-the-receiver-handles">
+  ## receiver 处理的内容
+</div>
+
+receiver 会将 Datadog 载荷转换为正确的 OpenTelemetry 表示，以便 ClickStack 无需任何 Datadog 特有逻辑即可解释、关联和查询这些数据：
+
+* **日志记录。** Datadog 的毫秒级时间戳会被转换为纳秒，用于填充 OpenTelemetry 的 timestamp、observed timestamp、body 和 severity 字段，因此这些记录不再显示为 Unix epoch。
+* **资源属性和严重性。** Datadog 的状态值 (如 `info`、`warn` 和 `error`) 会映射到对应的 OpenTelemetry `SeverityNumber` 和 `SeverityText`。hostname、service name、environment，以及已知的 container、cloud 和 Kubernetes 标签，都会提升为标准资源属性。
+* **trace 与日志关联。** `dd.trace_id` 和 `dd.span_id` 字段会填充 OpenTelemetry 的 trace 和 span 标识符，receiver 还会根据 Datadog 的拆分表示重建完整的 128 位 trace ID。该功能默认启用，可让来自 Datadog 的日志和 span 与使用 OpenTelemetry 埋点的服务建立关联。
+* **结构化 JSON 日志。** 默认启用的 `decode_json_message` 选项会执行通常由 Datadog backend 完成的 JSON 处理，提取 body、timestamp、severity、trace 标识符、resource 字段以及其余 attributes。
+* **与当前 Agent 的兼容性。** Datadog Agent 7.59 及更高版本默认使用 Zstandard 压缩 HTTP 载荷。receiver 同时支持 Zstandard 和 gzip，因此当前 Agent 连接时不会因载荷被拒绝。
+
+这些变更已包含在 ClickStack collector 发行版中并会自动完成配置，同时也可在 [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) 项目中使用。
+
+<div id="enabling-the-datadog-receiver">
+  ## 启用 Datadog receiver
+</div>
+
+Datadog receiver 包含在 ClickStack 发行的 OpenTelemetry Collector 中，监听端口 `8126`。它默认处于禁用状态，可通过 `ENABLE_DATADOG_RECEIVER` 环境变量启用。
+
+启用后，将 Datadog agent 指向该 receiver，并使用 ClickStack 摄取密钥进行身份验证。该密钥的来源取决于你的部署方式：如果使用 **托管 ClickStack**，你需要运行独立的 collector，并在启动时自行设置该密钥；如果使用 **开源 ClickStack**，系统会为你生成该密钥，你可以从 ClickStack 界面 (HyperDX) 中复制。请在下方选择你的部署方式。
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    使用托管 ClickStack 时，你需要部署一个独立的 ClickStack 收集器，将数据摄取到你的 ClickHouse Cloud 服务。你可以在收集器启动时使用自己选择的身份验证令牌对其进行保护，并将同一个令牌复用为 Datadog agent 的 API 密钥。
+
+    <Steps>
+      <Step title="部署启用接收器的收集器" id="deploy-collector-managed">
+        <Note>
+          **ClickStack OpenTelemetry collector 与标准 OpenTelemetry collector**
+
+          Datadog 接收器内置于 ClickStack 发行版的 OpenTelemetry collector 中，并已预先配置好。如果你更倾向于使用标准的 [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) 发行版，则需要自行配置该接收器。我们对该接收器的所有更改和改进都会推送到上游，因此你也可以在那里使用它们。有关配置选项，请参阅 [Datadog receiver README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/datadogreceiver/README.md)。
+        </Note>
+
+        运行[独立 ClickStack 收集器](/zh/clickstack/ingesting-data/collector)，并将其指向你的 ClickHouse Cloud 服务。使用 `ENABLE_DATADOG_RECEIVER=true` 启用 Datadog 接收器，暴露端口 `8126`，并通过设置你自己的 `OTLP_AUTH_TOKEN` 来保护摄取：
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+        docker run --name clickstack-collector \
+          -e ENABLE_DATADOG_RECEIVER=true \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          -p 8126:8126 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        现在，该接收器可通过 `http://localhost:8126` 访问，而 `OTLP_AUTH_TOKEN` 中的令牌就是你传递给 Datadog agent 的密钥。有关如何保护收集器的更多详细信息 (包括 Helm 的对应配置) ，请参阅[“保护收集器”](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+      </Step>
+
+      <Step title="配置 Datadog agent" id="configure-datadog-agent-managed">
+        更新位于 `/opt/datadog-agent/etc/datadog.yaml` 的 agent 配置文件，将日志、链路追踪和指标发送到该接收器。使用 `OTLP_AUTH_TOKEN` 的值作为 API 密钥，并将每个目标端都指向该接收器端点：
+
+        ```yaml
+        api_key: "<YOUR_OTLP_AUTH_TOKEN>"
+
+        # 指标目标端
+        dd_url: "http://localhost:8126"
+
+        # ClickStack 当前支持 Datadog v2 指标摄取端点。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # trace 目标端
+        apm_config:
+          enabled: true
+          apm_dd_url: "http://localhost:8126"
+
+        # 日志目标端
+        logs_enabled: true
+
+        logs_config:
+          logs_dd_url: "http://localhost:8126"
+          force_use_http: true
+
+        # 这些功能需要 Datadog 的后端，而我们并未使用它，因此将其禁用。
+        remote_updates: false
+
+        remote_configuration:
+          enabled: false
+        ```
+
+        此配置将会：
+
+        * 将指标、链路追踪和日志发送到该接收器，而不是发送到 Datadog。
+        * 禁用 v3 指标摄取，因为 ClickStack 支持 Datadog v2 指标端点。
+        * 关闭远程更新和远程配置，因为它们依赖 Datadog 后端。
+      </Step>
+
+      <Step title="重启 agent" id="restart-agent-managed">
+        重启 Datadog agent，使其加载新配置。在 macOS 上：
+
+        ```shell
+        sudo launchctl kickstart -k system/com.datadoghq.agent
+        ```
+
+        现在，来自该 agent 的遥测数据会流入 ClickStack，你可以在 HyperDX 中查看。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    使用开源 ClickStack 时，collector 会使用在部署时生成的摄取 key 来保护其端点。你需要启用该 receiver，从 ClickStack 界面 (HyperDX) 复制该 key，并将其用作 Datadog agent 的 API key。
+
+    <Steps>
+      <Step title="启动已启用 receiver 的 collector" id="start-collector-oss">
+        下面的示例使用的是[一体化镜像](/zh/clickstack/deployment/all-in-one)。如果你使用的是其他部署模式，请确保将相同的 flag 应用于运行 collector 的容器。
+
+        设置 `ENABLE_DATADOG_RECEIVER=true` 并暴露端口 `8126`：
+
+        ```shell
+        docker run --name clickstack \
+          -p 8080:8080 \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          -p 8126:8126 \
+          -e ENABLE_DATADOG_RECEIVER=true \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+
+        现在可通过 `http://localhost:8126` 访问该 receiver。
+
+        <Note>
+          **在本地运行 Datadog agent**
+
+          Datadog agent 也会监听端口 `8126`。如果 agent 和 collector 运行在同一台主机上，请将 collector 映射到其他主机端口以避免冲突，例如 `-p 18126:8126`，并让 agent 改为指向该端口。
+        </Note>
+
+        按照[开源入门指南](/zh/clickstack/getting-started/oss#navigate-to-hyperdx-ui)中的说明完成其余设置。
+      </Step>
+
+      <Step title="复制你的摄取 API key" id="copy-ingestion-key-oss">
+        在 ClickStack 界面 (HyperDX) 中，选择左下角的用户菜单，进入 **Team Settings &gt; API Keys**，然后复制 **Ingestion API Key**。
+
+        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="ClickStack 摄取 key" size="lg" background />
+      </Step>
+
+      <Step title="配置 Datadog agent" id="configure-datadog-agent-oss">
+        更新 `/opt/datadog-agent/etc/datadog.yaml` 中的 agent 配置文件，将日志、链路追踪和指标发送到该 receiver。使用你的 ClickStack 摄取 key 作为 API key，并将各个目标端指向该 receiver 的端点：
+
+        ```yaml
+        api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
+
+        # 指标目标端
+        dd_url: "http://localhost:8126"
+
+        # ClickStack 当前支持 Datadog v2 指标摄取端点。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # 链路追踪目标端
+        apm_config:
+          enabled: true
+          apm_dd_url: "http://localhost:8126"
+
+        # 日志目标端
+        logs_enabled: true
+
+        logs_config:
+          logs_dd_url: "http://localhost:8126"
+          force_use_http: true
+
+        # 这些功能需要 Datadog 的 backend，而我们并未使用它，因此将其禁用。
+        remote_updates: false
+
+        remote_configuration:
+          enabled: false
+        ```
+
+        此配置将：
+
+        * 将指标、链路追踪和日志发送到该 receiver，而不是 Datadog。
+        * 禁用 v3 指标摄取，因为该 receiver 支持 Datadog v2 指标端点。
+        * 关闭远程更新和远程配置，因为它们依赖 Datadog backend。
+      </Step>
+
+      <Step title="重启 agent" id="restart-agent-oss">
+        重启 Datadog agent 以加载新配置。在 macOS 上：
+
+        ```shell
+        sudo launchctl kickstart -k system/com.datadoghq.agent
+        ```
+
+        现在，agent 发送的遥测数据会流入 ClickStack，你可以在 HyperDX 中查看。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="worked-example">
+  ## 实操示例
+</div>
+
+以下示例使用一个示例应用，展示数据如何从已插桩的应用，经由 Datadog agent，最终进入 ClickStack 的完整链路。
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/i4wj8C8yqYw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+<Steps>
+  <Step title="克隆并运行示例应用" id="clone-sample-app">
+    该示例使用 [Hacker News demo app](https://github.com/ClickHouse/hn-news-analyzer)，并在 `datadog-instrumentation` 分支中集成了 Datadog。克隆该分支：
+
+    ```shell
+    git clone --branch datadog-instrumentation https://github.com/ClickHouse/hn-news-analyzer.git
+    ```
+
+    按照 [README 中的说明](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) 运行该应用。
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+  </Step>
+
+  <Step title="启动已启用 receiver 的 ClickStack" id="launch-clickstack-example">
+    启动启用了 Datadog receiver 的 all-in-one 镜像。这里我们将 receiver 映射到主机端口 `18126`，以避免与本地 Datadog agent 冲突，后者同样使用 `8126`：
+
+    ```shell
+    docker run --name clickstack \
+      -p 8080:8080 \
+      -p 8123:8123 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      -p 127.0.0.1:18126:8126 \
+      -e ENABLE_DATADOG_RECEIVER=true \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    receiver 可通过 `http://127.0.0.1:18126` 访问。
+  </Step>
+
+  <Step title="安装并配置 Datadog agent" id="install-agent-example">
+    [安装 Datadog agent](https://docs.datadoghq.com/agent/?tab=Host-based)。在 macOS 上：
+
+    ```shell
+    DD_SITE="datadoghq.com" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_mac_os.sh)"
+    ```
+
+    更新 `/opt/datadog-agent/etc/datadog.yaml`，使其指向端口 `18126` 上的 receiver，并将你的 ClickStack 摄取密钥用作 API key，然后重启 agent：
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    ```
+
+    有关完整的 agent 配置以及如何找到你的摄取密钥，请参阅 [启用 Datadog receiver](#enabling-the-datadog-receiver)。
+  </Step>
+
+  <Step title="在 ClickStack 中探索你的遥测数据" id="explore-telemetry">
+    打开 [http://localhost:8080](http://localhost:8080) 上的 HyperDX 界面，探索从 Datadog agent 采集到的链路追踪、日志和指标。
+
+    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="ClickStack 中的 Datadog 链路追踪 2" size="lg" background />
+
+    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="ClickStack 中的 Datadog 链路追踪 1" size="lg" background />
+
+    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="ClickStack 中的 Datadog 链路追踪 3" size="lg" background />
+  </Step>
+</Steps>
+
+<div id="what-you-can-migrate-today">
+  ## 当前可迁移的内容
+</div>
+
+Datadog receiver 是 OpenTelemetry Collector Contrib 中的一个 alpha 组件，并且在 ClickStack collector 发行版中被标记为 Experimental，因此需要通过特性开关启用。
+
+该 receiver 已针对 **日志和 trace** 工作负载进行了充分测试，推荐用于基于这些信号评估 ClickStack。**指标** 虽然可用，但仍需进一步测试和开发。该 receiver 目前支持 Datadog 的 v1 和 v2 metrics intake 端点；使用更新协议版本的 agent 必须显式配置为通过受支持的端点发送指标。
+
+目前，如果你的应用已经使用 Datadog SDKs，或你的基础设施中正在运行 Datadog agent，这个 receiver 可以帮助你快速评估 ClickStack。并行运行两条管道，验证数据在 ClickStack 中的呈现方式和查询效果，然后再决定是否推进更大范围的迁移。如果评估结果显示出明显优势，同一架构也支持渐进式迁移：在各项服务逐步迁移到 OpenTelemetry 的过程中，保留现有的 Datadog instrumentation。

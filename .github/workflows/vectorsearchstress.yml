@@ -119,7 +119,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "VectorSearchStress" --ci --timestamp
 
   vector_search_stress:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-large-storage]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Vector Search Stress"
     outputs:

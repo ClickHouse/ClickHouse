@@ -17,7 +17,8 @@ void ProjectionIndexCommitOrder::fillProjectionDescription(
     const IAST * index_expr,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context) const
+    const ContextPtr & query_context,
+    const MergeTreeSettings & projection_settings) const
 {
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
 
@@ -37,7 +38,7 @@ void ProjectionIndexCommitOrder::fillProjectionDescription(
     order_expr_list->children.push_back(order_expr_list->arguments);
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expr_list));
 
-    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, partition_key, query_context);
+    ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, partition_key, query_context, projection_settings);
 }
 
 Block ProjectionIndexCommitOrder::calculate(
