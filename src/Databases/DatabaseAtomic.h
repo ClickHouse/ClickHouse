@@ -75,7 +75,7 @@ public:
     void tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
-    void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled) override;
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid) override;
 

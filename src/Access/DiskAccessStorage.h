@@ -86,6 +86,11 @@ private:
     /// Whether writing of the list files has been failed since the recent restart of the server.
     bool failed_to_write_lists TSA_GUARDED_BY(mutex) = false;
 
+    /// Whether there are stale `<old_id>.sql` files on disk which we couldn't remove.
+    /// If this is true, writeLists() keeps the `need_rebuild_lists.mark` file until
+    /// SYSTEM RELOAD USERS or next startup runs reloadAllAndRebuildLists() and resolves the issues.
+    bool has_stale_files_on_disk TSA_GUARDED_BY(mutex) = false;
+
     /// List files are written in a separate thread.
     std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
 

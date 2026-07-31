@@ -7,8 +7,6 @@ title: 'C++ Style Guide'
 doc_type: 'guide'
 ---
 
-# C++ style guide
-
 ## General recommendations {#general-recommendations}
 
 The following are recommendations, not requirements.

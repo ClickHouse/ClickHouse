@@ -1,4 +1,10 @@
-from helpers.kafka.common_direct import *
+import logging
+import time
+
+from kafka import KafkaAdminClient
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -258,13 +264,13 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
         )
 
-    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition:|1|1|1|default|kafka_JSONEachRow
+    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)|1|1|1|default|kafka_Avro
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition|1|1|1|default|kafka_JSONEachRow
 """
     # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
     result_system_kafka_consumers = instance.query_with_retry(
         """
-        SELECT substr(exceptions.text[1], 1, 139), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
+        SELECT substr(exceptions.text[1], 1, 138), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
         """,
         retry_count=max_retries,
         sleep_time=1,
@@ -288,7 +294,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     k.kafka_create_topic(admin_client, "tomv")
 
     instance.query(
-        f"""
+        """
         DROP TABLE IF EXISTS kafka_materialized;
         DROP TABLE IF EXISTS kafka_consumer;
         DROP TABLE IF EXISTS kafka1;

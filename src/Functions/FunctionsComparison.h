@@ -5,8 +5,8 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -14,15 +14,19 @@
 #include <Core/DecimalComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
@@ -141,7 +145,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -173,19 +177,13 @@ struct NumComparisonImpl
             vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorVectorImpl_x86_64_v3(a, b, c);
-            return;
-        }
 #endif
 
         vectorVectorImpl(a, b, c);
     }
 
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -208,12 +206,6 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -287,6 +279,28 @@ struct StringComparisonImpl
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data(), b_size), 0);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
+    /// `String` vector vs constant `FixedString`. `string_vector_constant` uses a plain
+    /// `memcmp`, which respects the constant's trailing NUL padding and disagrees with the
+    /// `String` vs `FixedString` vector path (which uses zero-padded comparison, per SQL
+    /// semantics that `toFixedString('abc', 5) = 'abc'`).
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data(), b_n), 0);
 
             prev_a_offset = a_offsets[i];
         }
@@ -378,6 +392,14 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -480,6 +502,30 @@ struct StringEqualsImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. See the same-named method in
+    /// `StringComparisonImpl` for the rationale: the constant's trailing NUL padding
+    /// must not be respected, otherwise the result disagrees with the `String` vs
+    /// `FixedString` vector path.
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto a_size = a_offsets[i] - prev_a_offset;
+
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_n);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16( /// NOLINT
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -563,6 +609,14 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -686,7 +740,7 @@ struct ComparisonParams
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison : public IFunction
+class FunctionComparison final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -697,8 +751,47 @@ public:
 
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
+    bool isNameInsensitive() const override { return true; }
 private:
     const ComparisonParams params;
+
+    static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
+    {
+        using Kind = ComparisonOrderDomain::Kind;
+
+        const auto nested_type = removeLowCardinality(type);
+        if (nested_type->isNullable())
+            return {};
+        /// All integer and float widths (`BFloat16` included) share one accurate numeric order
+        /// that never rounds the integer side; `Enum` compares by its underlying numeric value.
+        if (isInteger(nested_type) || isFloat(nested_type) || isEnum(nested_type))
+            return {.kind = Kind::Number};
+        if (isString(nested_type))
+            return {.kind = Kind::String};
+        if (isDateOrDate32(nested_type))
+            return {.kind = Kind::Date};
+        if (isDateTime(nested_type))
+            return {.kind = Kind::TimePoint, .scale = 0};
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        /// Mixed `Time64` scales rescale and can throw `DECIMAL_OVERFLOW` (interval arithmetic can
+        /// leave values beyond the clamped range), so the scale keys the domain, like `TimePoint`.
+        if (WhichDataType(nested_type).isTime())
+            return {.kind = Kind::TimeOfDay, .scale = 0};
+        if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimeOfDay, .scale = time64_type->getScale()};
+        /// Equal-scale decimals compare their underlying integers directly (regardless of width);
+        /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
+        if (isDecimal(nested_type))
+            return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
+        /// Cross-width `FixedString` comparisons zero-pad into one shared byte order; `String`
+        /// stays separate, it distinguishes values that differ only in trailing zero bytes.
+        if (isFixedString(nested_type))
+            return {.kind = Kind::FixedString};
+        /// Remaining comparable types chain only with their equal type and its canonical order.
+        /// Three-valued comparisons (Nullable Tuple elements) never reach the pass at all.
+        return {.kind = Kind::ExactType, .exact_type = nested_type};
+    }
 
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
@@ -821,11 +914,15 @@ private:
         const ColumnString::Chars * c1_const_chars = nullptr;
         ColumnString::Offset c0_const_size = 0;
         ColumnString::Offset c1_const_size = 0;
+        const ColumnString      * c0_const_string       = nullptr;
+        const ColumnFixedString * c0_const_fixed_string = nullptr;
+        const ColumnString      * c1_const_string       = nullptr;
+        const ColumnFixedString * c1_const_fixed_string = nullptr;
 
         if (c0_const)
         {
-            const ColumnString * c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
-            const ColumnFixedString * c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
+            c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
+            c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
 
             if (c0_const_string)
             {
@@ -843,8 +940,8 @@ private:
 
         if (c1_const)
         {
-            const ColumnString * c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
-            const ColumnFixedString * c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
+            c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
+            c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
 
             if (c1_const_string)
             {
@@ -881,6 +978,9 @@ private:
         else if (c0_string && c1_fixed_string)
             StringImpl::string_vector_fixed_string_vector(
                 c0_string->getChars(), c0_string->getOffsets(), c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
+        else if (c0_string && c1_const_fixed_string)
+            StringImpl::string_vector_constant_fixed_string(
+                c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
         else if (c0_string && c1_const)
             StringImpl::string_vector_constant(
                 c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
@@ -897,6 +997,9 @@ private:
         else if (c0_fixed_string && c1_const)
             StringImpl::fixed_string_vector_constant(
                 c0_fixed_string->getChars(), c0_fixed_string->getN(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_const_fixed_string && c1_string)
+            StringImpl::constant_fixed_string_string_vector(
+                *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
         else if (c0_const && c1_string)
             StringImpl::constant_string_vector(
                 *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
@@ -961,7 +1064,7 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
             {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
@@ -1210,6 +1313,20 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
+    {
+        if constexpr (is_null_safe_cmp_mode || IsOperation<Op>::not_equals)
+            return {};
+
+        if (arguments.size() != 2)
+            return {};
+
+        auto left_domain = getComparisonOrderDomainForType(arguments[0]);
+        if (!left_domain.isValid() || left_domain != getComparisonOrderDomainForType(arguments[1]))
+            return {};
+        return left_domain;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
@@ -1277,6 +1394,22 @@ public:
                 {
                     ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                    {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
+                else
+                {
+                    /// One side is `String`/`FixedString`. At runtime the string is parsed as a tuple
+                    /// value matching the structure of the tuple side and compared element-wise.
+                    /// Recursively compute the element-vs-string comparison type so that nested
+                    /// `Nullable` (or `Nothing`/`Dynamic`/`Variant`) elements transitively propagate
+                    /// `Nullable` to the outer return type. Without this, e.g.
+                    /// `Tuple(Tuple(Nullable(String))) <= String` would be inferred as `UInt8`
+                    /// while the runtime produces `Nullable(UInt8)`, tripping the type-mismatch
+                    /// assertion in the analyzer's constant-folding path (STID 3344-4a3c).
+                    const DataTypePtr & string_side_type = left_tuple ? arguments[1] : arguments[0];
+                    ColumnsWithTypeAndName args = left_tuple
+                        ? ColumnsWithTypeAndName{{nullptr, element_type, ""}, {nullptr, string_side_type, ""}}
+                        : ColumnsWithTypeAndName{{nullptr, string_side_type, ""}, {nullptr, element_type, ""}};
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
@@ -1575,7 +1708,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
-        assert(2 == arguments.size());
+        chassert(2 == arguments.size());
 
         llvm::Value * result = nullptr;
         castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)

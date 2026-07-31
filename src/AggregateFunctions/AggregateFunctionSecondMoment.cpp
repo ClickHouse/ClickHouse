@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T> using AggregateFunctionSecondMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 2>>;
 
+void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory & factory)
 {
     /// varSamp documentation
@@ -211,6 +212,7 @@ SELECT stddevPop(population) AS stddev FROM test_data;
     factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("STDDEV", "stddevSamp", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STD", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
 }
 

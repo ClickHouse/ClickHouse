@@ -17,9 +17,11 @@
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <IO/SharedThreadPools.h>
 #include <Server/waitServersToFinish.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
@@ -70,6 +72,7 @@ constexpr unsigned char keeper_resource_embedded_xml[] =
 
 extern const char * GIT_HASH;
 
+int mainEntryClickHouseKeeper(int argc, char ** argv);
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
     DB::Keeper app;
@@ -161,12 +164,13 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
+        std::string app_name = (commandName() == "clickhouse-keeper") ? "clickhouse-keeper" : "clickhouse keeper";
         auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -207,7 +211,7 @@ void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] con
 {
     if (arg == "force-recovery")
     {
-        assert(value.empty());
+        chassert(value.empty());
         config().setBool("keeper_server.force_recovery", true);
         return;
     }
@@ -363,8 +367,6 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
 
@@ -387,6 +389,7 @@ try
     SCOPE_EXIT({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
+        DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
@@ -398,6 +401,12 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        /// `memory_worker_rss_speculative_reserve_ratio` is intentionally not wired here:
+        /// speculation only influences the global `will_be_rss > current_hard_limit`
+        /// branch in `MemoryTracker::allocImpl`, but `clickhouse-keeper` never sets the
+        /// global hard limit (it enforces `keeper_server.max_memory_usage_soft_limit`
+        /// separately in `KeeperServer::isExceedingMemorySoftLimit`), so the speculation
+        /// would have no effect and is left disabled (`ratio = 0`).
     };
 
     MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
@@ -583,10 +592,11 @@ try
         port_name = "keeper_server.http_control.secure_port";
         createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
         {
+#if USE_SSL
             auto my_http_context = httpContext();
 
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
             socket.setSendTimeout(my_http_context->getSendTimeout());
             servers->emplace_back(
@@ -599,6 +609,10 @@ try
                     server_pool,
                     socket,
                     http_params));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
         });
     }
 
@@ -633,7 +647,6 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
-            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());
@@ -675,7 +688,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
