@@ -84,6 +84,14 @@ If empty, incremental read is not allowed.
     DECLARE(String, paimon_replica_name, "", R"(
 Replica name for Paimon incremental read state. Must be set and unique per replica.
 )", 0) \
+    DECLARE(String, iceberg_compaction_keeper_path, "", R"(
+Keeper path used to serialize background Iceberg compaction across replicas.
+When set, a replica must acquire an ephemeral lock at `<path>/compaction_lock`
+before running compaction, so that several replicas do not repeat the same
+merge. When empty (default), no cross-replica locking is done and correctness
+relies solely on the optimistic commit CAS. Requires Keeper to be configured.
+Must be unique per table.
+)", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
