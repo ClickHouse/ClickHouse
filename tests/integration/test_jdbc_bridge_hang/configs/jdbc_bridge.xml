@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Point the JDBC bridge at the in-container mock HTTP server (mocks/unresponsive_bridge.py).
+         The JDBC bridge is never started by the server (startBridgeManually() == true), so the
+         server only sends the ping handshake and the columns_info request to this address. -->
+    <jdbc_bridge>
+        <host>127.0.0.1</host>
+        <port>9020</port>
+    </jdbc_bridge>
+</clickhouse>
