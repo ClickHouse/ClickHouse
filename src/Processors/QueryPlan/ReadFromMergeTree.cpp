@@ -2030,8 +2030,7 @@ void ReadFromMergeTree::buildIndexes(
         ReadFromMergeTree::Indexes{KeyCondition{
             filter_dag,
             query_context,
-            primary_key_column_names,
-            primary_key.expression,
+            primary_key,
             /* single_point_ = */ false,
             /* skip_analysis_ = */ !settings[Setting::use_primary_key]}});
 
