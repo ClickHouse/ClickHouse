@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -10,6 +11,9 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageView.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -229,7 +233,15 @@ struct CollectReferencedTablesMatcher
         if (data.cannot_verify)
             return;
 
-        if (const auto * table_expression = node->as<ASTTableExpression>())
+        if (const auto * select = node->as<ASTSelectQuery>())
+        {
+            /// `WITH RECURSIVE` cannot be fully expanded by `ApplyWithSubqueryVisitor` (a recursive CTE
+            /// reference stays a bare identifier inside the substituted body), so a same-named real table
+            /// could be mistaken for the CTE. Fail closed.
+            if (select->recursive_with)
+                data.cannot_verify = true;
+        }
+        else if (const auto * table_expression = node->as<ASTTableExpression>())
         {
             if (table_expression->table_function)
                 data.cannot_verify = true;
@@ -298,8 +310,132 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
+/// A view can reference other views, so the dependency walk below is recursive. Any sane chain is
+/// shallow; give up (fail closed) on anything deeper instead of risking unbounded recursion.
+static constexpr size_t MAX_TABLE_DEPENDENCY_RECURSION_DEPTH = 32;
+
+static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context, size_t depth);
+
+/// Computes the folded modification hash of a single referenced table, looking through view-like
+/// wrappers: a `View` has no data of its own, so its hash is derived from the tables behind its stored
+/// SELECT, and reading a `MaterializedView` reads its target table. Engines that neither override
+/// `getModificationHash` nor are handled here (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
+static std::optional<UInt128> computeSingleTableModificationHash(const StorageID & table_id, ContextPtr context, size_t depth)
 {
+    if (depth > MAX_TABLE_DEPENDENCY_RECURSION_DEPTH)
+        return {};
+
+    /// Resolve through the context so that an unqualified name picks the same table the query will
+    /// actually read - in particular a temporary or external table that shadows a permanent one, not
+    /// just `current_database.<name>`.
+    StorageID resolved_id = StorageID::createEmpty();
+    try
+    {
+        resolved_id = context->resolveStorageID(table_id);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: could not resolve a referenced table, so we cannot verify consistency and
+        /// conservatively bail out.
+        return {};
+    }
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+        return {};
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+
+    /// `getModificationHash` is computed here, before the query's regular access checks in the
+    /// interpreter/planner. For external engines (`URL`, object storage, `Distributed`) it performs
+    /// credentialed I/O - an HTTP request, an object listing, a remote `system.tables` query. Only
+    /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
+    /// (fail closed) and the query is rejected later by the normal access check with the usual error.
+    /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`.
+    /// For a view with `SQL SECURITY DEFINER` the invoker may legitimately lack access to the underlying
+    /// tables; the recursion below then bails out and the feature is conservatively disabled.
+    {
+        const auto access = context->getAccess();
+        bool can_read = access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
+        if (!can_read)
+        {
+            for (const auto & column : metadata->getColumns())
+            {
+                if (access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name, column.name))
+                {
+                    can_read = true;
+                    break;
+                }
+            }
+        }
+        if (!can_read)
+            return {};
+    }
+
+    std::optional<UInt128> table_hash;
+    if (typeid_cast<const StorageView *>(storage.get()))
+    {
+        /// The stored SELECT was CTE-expanded and database-qualified at CREATE time
+        /// (`InterpreterCreateQuery`), so its table references resolve unambiguously here.
+        const auto & inner_query = metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return {};
+        table_hash = computeReferencedTablesModificationHashImpl(inner_query->clone(), context, depth + 1);
+    }
+    else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        table_hash = computeSingleTableModificationHash(materialized_view->getTargetTableId(), context, depth + 1);
+    }
+    else
+    {
+        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+        table_hash = storage->getModificationHash(snapshot, context);
+    }
+
+    if (!table_hash)
+        return {}; /// The referenced table cannot tell whether it changed.
+
+    /// Fold the resolved table identity (including the UUID, which distinguishes a temporary table or
+    /// a re-created table from a same-named permanent one) so that distinct tables do not cancel out.
+    SipHash per_table;
+    per_table.update(resolved_id.database_name);
+    per_table.update(resolved_id.table_name);
+    per_table.update(resolved_id.uuid);
+    per_table.update(*table_hash);
+
+    /// A view in a database without UUIDs (`Ordinary`) can be re-created with a different definition
+    /// but the same identity, and the new definition may read the same tables. Fold the stored SELECT
+    /// so that a definition change is detected as a modification.
+    if (typeid_cast<const StorageView *>(storage.get()))
+    {
+        IASTHash view_query_hash = metadata->getSelectQuery().inner_query->getTreeHash(/*ignore_aliases*/ false);
+        per_table.update(view_query_hash.low64);
+        per_table.update(view_query_hash.high64);
+    }
+
+    return per_table.get128();
+}
+
+static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context, size_t depth)
+{
+    if (depth > MAX_TABLE_DEPENDENCY_RECURSION_DEPTH)
+        return {};
+
+    /// Expand CTEs first, the same way the interpreter does, so that in
+    /// `WITH q AS (SELECT ... FROM t) SELECT ... FROM q` the reference `q` is not mistaken for a real
+    /// (or temporary) table of the same name: the walker below must see the base tables the query will
+    /// actually read. The caller passes a throwaway copy of the AST, so in-place expansion is fine.
+    try
+    {
+        ApplyWithSubqueryVisitor(context).visit(ast);
+    }
+    catch (...)
+    {
+        /// E.g. `WITH RECURSIVE` with the old analyzer; the query itself will throw the same error
+        /// later, so just report that consistency cannot be verified.
+        return {};
+    }
+
     CollectReferencedTablesMatcher::Data finder_data;
     CollectReferencedTablesVisitor(finder_data).visit(ast);
 
@@ -311,64 +447,10 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     std::vector<UInt128> table_hashes;
     for (const auto & table_id : finder_data.table_ids)
     {
-        /// Resolve through the context so that an unqualified name picks the same table the query will
-        /// actually read - in particular a temporary or external table that shadows a permanent one, not
-        /// just `current_database.<name>`.
-        StorageID resolved_id = StorageID::createEmpty();
-        try
-        {
-            resolved_id = context->resolveStorageID(table_id);
-        }
-        catch (...)
-        {
-            /// Ok to ignore: could not resolve a referenced table (e.g. a CTE), so we cannot verify
-            /// consistency and conservatively bail out.
-            return {};
-        }
-
-        auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-        if (!storage)
-            return {};
-
-        auto metadata = storage->getInMemoryMetadataPtr(context, false);
-
-        /// `getModificationHash` is computed here, before the query's regular access checks in the
-        /// interpreter/planner. For external engines (`URL`, object storage, `Distributed`) it performs
-        /// credentialed I/O - an HTTP request, an object listing, a remote `system.tables` query. Only
-        /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
-        /// (fail closed) and the query is rejected later by the normal access check with the usual error.
-        /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`.
-        {
-            const auto access = context->getAccess();
-            bool can_read = access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
-            if (!can_read)
-            {
-                for (const auto & column : metadata->getColumns())
-                {
-                    if (access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name, column.name))
-                    {
-                        can_read = true;
-                        break;
-                    }
-                }
-            }
-            if (!can_read)
-                return {};
-        }
-
-        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
-        auto table_hash = storage->getModificationHash(snapshot, context);
+        auto table_hash = computeSingleTableModificationHash(table_id, context, depth);
         if (!table_hash)
-            return {}; /// A referenced table cannot tell whether it changed.
-
-        /// Fold the resolved table identity (including the UUID, which distinguishes a temporary table or
-        /// a re-created table from a same-named permanent one) so that distinct tables do not cancel out.
-        SipHash per_table;
-        per_table.update(resolved_id.database_name);
-        per_table.update(resolved_id.table_name);
-        per_table.update(resolved_id.uuid);
-        per_table.update(*table_hash);
-        table_hashes.push_back(per_table.get128());
+            return {};
+        table_hashes.push_back(*table_hash);
     }
 
     /// Combine in a deterministic, order-independent way.
@@ -379,6 +461,12 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     for (const auto & table_hash : table_hashes)
         hash.update(table_hash);
     return hash.get128();
+}
+
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
+{
+    /// The CTE expansion inside mutates the AST, so work on a copy.
+    return computeReferencedTablesModificationHashImpl(ast->clone(), context, 0);
 }
 
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
