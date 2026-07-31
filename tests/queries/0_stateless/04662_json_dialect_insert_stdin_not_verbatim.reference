@@ -1,0 +1,2 @@
+--- piped stdin data is inserted (expect: 3 6) ---
+3	6
