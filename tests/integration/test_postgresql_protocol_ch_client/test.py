@@ -439,15 +439,12 @@ def test_copy_csv_null_semantics(started_cluster):
 
 
 def test_datetime_scale_roundtrip(started_cluster):
-    # `DateTime` and `DateTime64` must not collapse to `DateTime64(6)` through self-connect schema
-    # inference: the fractional-second precision is carried in the `timestamp` type modifier (as
-    # PostgreSQL does), `format_type` renders it as `timestamp(p) without time zone`, and the reader maps
-    # `timestamp(p)` back to `DateTime64(p)`. A scale above 6 does not fit PostgreSQL's `timestamp` at
-    # all, so such a column falls back to text and is read as `String` (value preserved).
-    #
-    # A 32-bit `DateTime` column comes back as `DateTime64(0)`: `timestamp(0)` is a native PostgreSQL
-    # type with a far wider range, so it must not be narrowed to `DateTime` for real PostgreSQL
-    # sources. The second-resolution values are identical, only the type is wider.
+    # Every `DateTime` / `DateTime64` column stays on the text fallback and is read back as `String`
+    # (`Array(String)` for arrays) with the exact text rendering preserved. PostgreSQL's `timestamp
+    # without time zone` cannot carry the time zone the wall-clock text is rendered in: even a column
+    # without an explicit zone renders its text in the *source* server's default time zone, and a reader
+    # that reconstructed a `DateTime64(p)` would reinterpret that text in its *own* default zone,
+    # silently shifting every epoch whenever the zones differ. Text is lossless.
     node.query("DROP TABLE IF EXISTS test_dt_scales SYNC")
     node.query(
         "CREATE TABLE test_dt_scales "
@@ -464,7 +461,7 @@ def test_datetime_scale_roundtrip(started_cluster):
     assert node.query(
         "SELECT toTypeName(dt), toTypeName(dt3), toTypeName(dt6), toTypeName(dt9), toTypeName(adt3) "
         f"FROM {pg_source('default', 'test_dt_scales')} LIMIT 1"
-    ) == "DateTime64(0)\tDateTime64(3)\tDateTime64(6)\tString\tArray(DateTime64(3))\n"
+    ) == "String\tString\tString\tString\tArray(String)\n"
 
     assert node.query(
         f"SELECT dt, dt3, dt6, dt9, adt3 FROM {pg_source('default', 'test_dt_scales')} ORDER BY dt"
@@ -475,10 +472,8 @@ def test_datetime_scale_roundtrip(started_cluster):
 
 
 def test_datetime64_scale0_stays_text(started_cluster):
-    # A `DateTime64(0)` must not be advertised as a native `timestamp(0)`: on the wire that is
-    # indistinguishable from a 32-bit `DateTime`, which the reader would recover, narrowing the 64-bit
-    # range and corrupting values outside `DateTime`'s 1970..2106 window. A scalar such column stays on the
-    # text fallback and is read back as `String` with the full value preserved. A top-level
+    # A `DateTime64(0)` stays on the text fallback like every other `DateTime` flavor, and its values -
+    # including those outside the 32-bit `DateTime` 1970..2106 window - are preserved exactly. A top-level
     # `Array(DateTime64(0))` is advertised as a generic text array (`text[]`), so it is read back as
     # `Array(String)` - the array structure is kept and each element carries the full value as text.
     node.query("DROP TABLE IF EXISTS test_dt64_scale0 SYNC")
@@ -556,8 +551,10 @@ def test_wire_types_for_wide_and_decimal(started_cluster):
 
 def test_wire_types_for_datetime(started_cluster):
     # A direct PostgreSQL client reading `DateTime` / `DateTime64` columns over the wire must see the
-    # PostgreSQL `timestamp` OID (1114) in the `RowDescription`, consistent with the table-name path that
-    # advertises them as `timestamp` in `pg_attribute` - not the `varchar` fallback (OID 1043).
+    # `varchar` OID (1043) in the `RowDescription`, consistent with the table-name path that keeps them
+    # on the text fallback in `pg_attribute`: `timestamp without time zone` cannot carry the time zone
+    # the text is rendered in, so advertising it would let a reader with a different default time zone
+    # silently shift the epochs.
     node.query("DROP TABLE IF EXISTS test_wire_datetime SYNC")
     node.query(
         "CREATE TABLE test_wire_datetime "
@@ -576,15 +573,11 @@ def test_wire_types_for_datetime(started_cluster):
     try:
         cur = conn.cursor()
         cur.execute("SELECT dt, dt64, dt64_zero, dt64_wide FROM test_wire_datetime")
-        # 1114 = timestamp (without time zone). A DateTime64 scale above 6 does not fit PostgreSQL's
-        # timestamp precision (0..6), so it falls back to varchar (1043) with the full value as text. A
-        # DateTime64(0) is also on the varchar fallback: a native timestamp(0) is indistinguishable from a
-        # 32-bit DateTime, whose narrower range the reader would recover.
-        assert [c.type_code for c in cur.description] == [1114, 1114, 1043, 1043]
-        # The text value is PostgreSQL's timestamp format, so psycopg2 parses it into a Python datetime.
+        assert [c.type_code for c in cur.description] == [1043, 1043, 1043, 1043]
+        # Every value arrives as the exact text rendering in the source server's default time zone.
         row = cur.fetchone()
-        assert str(row[0]) == "2023-01-02 03:04:05"
-        assert str(row[1]) == "2023-01-02 03:04:05.123000"
+        assert row[0] == "2023-01-02 03:04:05"
+        assert row[1] == "2023-01-02 03:04:05.123"
         assert row[2] == "2023-01-02 03:04:05"
         assert row[3] == "2023-01-02 03:04:05.123456789"
     finally:
@@ -769,27 +762,27 @@ def test_datetime_with_timezone_stays_text(started_cluster):
         "(1, '2024-01-02 03:04:05', '2024-01-02 03:04:05.123', '2024-01-02 03:04:05')"
     )
 
-    # Timezone-bearing columns fall back to text (String); a plain DateTime still round-trips natively
-    # as the `timestamp(0)` it is advertised as, which the reader maps to `DateTime64(0)`.
+    # Every `DateTime` flavor falls back to text (String): a column without an explicit zone is no
+    # safer than one with it - its text is rendered in the source server's default time zone, which the
+    # wire cannot carry either.
     assert node.query(
         "SELECT toTypeName(dt_utc), toTypeName(dt64_tz), toTypeName(dt) "
         f"FROM {pg_source('default', 'test_dt_tz')} LIMIT 1"
-    ) == "String\tString\tDateTime64(0)\n"
+    ) == "String\tString\tString\n"
 
     # The values are the exact rendering in each column's own time zone - nothing is reinterpreted.
     assert node.query(
         f"SELECT dt_utc, dt64_tz, dt FROM {pg_source('default', 'test_dt_tz')} ORDER BY id"
     ) == "2024-01-02 03:04:05\t2024-01-02 03:04:05.123\t2024-01-02 03:04:05\n"
 
-    # The direct wire path agrees: timezone-bearing columns are varchar (1043), a plain one stays
-    # timestamp (1114).
+    # The direct wire path agrees: every `DateTime` flavor is varchar (1043).
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
     )
     try:
         cur = conn.cursor()
         cur.execute("SELECT dt_utc, dt64_tz, dt FROM test_dt_tz")
-        assert [c.type_code for c in cur.description] == [1043, 1043, 1114]
+        assert [c.type_code for c in cur.description] == [1043, 1043, 1043]
         row = cur.fetchone()
         assert row[0] == "2024-01-02 03:04:05"
         assert row[1] == "2024-01-02 03:04:05.123"
@@ -1586,6 +1579,17 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SET application_name TO 'jdbc;a';")
         assert cur.statusmessage == "SET", cur.statusmessage
 
+        # The value is arbitrarily long (drivers put free-form client info there): the classifier must
+        # scan the whole statement, not a fixed-size prefix that a long value would overflow, pushing a
+        # perfectly valid no-op into real `SET` processing.
+        cur.execute("SET application_name TO '%s'" % ("x" * 500))
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name = '%s'" % ("long;value " * 50))
+        assert cur.statusmessage == "SET", cur.statusmessage
+        # A trailing statement is still rejected even when it is pushed far out by a long value.
+        with pytest.raises(Exception):
+            cur.execute("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+
         # A query containing the magic text as a literal is executed, not swallowed.
         cur.execute("SELECT 'SET application_name'")
         assert cur.fetchall() == [("SET application_name",)]
@@ -1601,3 +1605,76 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
             cur.execute("SET application_name TO 'x'; SELECT 1")
     finally:
         conn.close()
+
+
+def test_copy_to_stdout_zero_rows(started_cluster):
+    # A `COPY ... TO STDOUT` whose result has no rows at all must complete cleanly ("COPY 0") and leave
+    # the connection usable. The per-row serialization finalizes its write buffer after each row, so a
+    # result that never enters the row loop used to leave the buffer neither finalized nor canceled -
+    # a logical error (an exception in a sanitizer build) that took the whole server down.
+    node.query("DROP TABLE IF EXISTS test_copy_zero_rows SYNC")
+    node.query(
+        "CREATE TABLE test_copy_zero_rows (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+    try:
+        conn = py_psql.connect(
+            host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+        )
+        try:
+            cur = conn.cursor()
+            # An empty table and an empty subquery result both take the zero-row path.
+            out = io.StringIO()
+            cur.copy_expert("COPY test_copy_zero_rows TO STDOUT", out)
+            assert out.getvalue() == ""
+            out = io.StringIO()
+            cur.copy_expert(
+                "COPY (SELECT number FROM system.numbers WHERE number < 0 LIMIT 1) TO STDOUT",
+                out,
+            )
+            assert out.getvalue() == ""
+            # The connection survives and keeps working.
+            cur.execute("SELECT 1")
+            assert cur.fetchall() == [(1,)]
+        finally:
+            conn.close()
+
+        # The self-connect read path issues the same zero-row `COPY` for an empty table (and for the
+        # catalog probe of a table that does not exist), and must come back empty rather than kill the
+        # server.
+        assert (
+            node.query(f"SELECT count() FROM {pg_source('default', 'test_copy_zero_rows')}")
+            == "0\n"
+        )
+        # The server is still alive.
+        assert node.query("SELECT 1") == "1\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS test_copy_zero_rows SYNC")
+
+
+def test_search_path_reports_connected_database(started_cluster):
+    # `current_setting('search_path')` must report the database unqualified names actually resolve in -
+    # the connected database (`current_schema()`) - not PostgreSQL's default `public`. A client that
+    # discovers the default schema through this function must arrive where the server itself resolves
+    # unqualified names.
+    node.query("DROP DATABASE IF EXISTS spath_db SYNC")
+    node.query("CREATE DATABASE spath_db")
+    try:
+        for database in ["default", "spath_db"]:
+            conn = py_psql.connect(
+                host=node.ip_address,
+                port=PG_PORT,
+                user="pguser",
+                password="pgpass",
+                database=database,
+            )
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT current_setting('search_path')")
+                assert cur.fetchall() == [(database,)]
+                # It agrees with `current_schema()`, the other discovery mechanism.
+                cur.execute("SELECT current_schema()")
+                assert cur.fetchall() == [(database,)]
+            finally:
+                conn.close()
+    finally:
+        node.query("DROP DATABASE IF EXISTS spath_db SYNC")

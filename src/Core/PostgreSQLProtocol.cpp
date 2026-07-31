@@ -1,8 +1,6 @@
 #include <Core/PostgreSQLProtocol.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
@@ -83,32 +81,17 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         case TypeIndex::Date32:
             return {ColumnType::DATE, 4};
 
-        /// `DateTime` and `DateTime64` map to PostgreSQL `timestamp` (without time zone), consistent with the
-        /// table-name path in the `pg_attribute` emulation (see PostgreSQLHandler). The value is rendered as
-        /// text - ClickHouse's `YYYY-MM-DD hh:mm:ss[.ffffff]` form is exactly PostgreSQL's timestamp text
-        /// format. PostgreSQL stores the fractional-second precision (0..6) directly in the type modifier
-        /// for the time types, so carry the scale there: a 32-bit `DateTime` has second precision (0). A
-        /// `DateTime64` scale above 6 does not fit PostgreSQL's `timestamp` at all and falls back to the
-        /// text type below, preserving the full value. So does a `DateTime64(0)`: it would be advertised
-        /// with the same `timestamp` + scale-0 modifier as a 32-bit `DateTime`, which the reader recovers
-        /// as `DateTime`, silently narrowing the 64-bit range and corrupting out-of-range values - only a
-        /// 32-bit `DateTime` may be advertised as `timestamp(0)`. The same text fallback applies to a type
-        /// with an explicit time zone (e.g. `DateTime('UTC')`): `timestamp without time zone` cannot carry
-        /// the zone, and a reader reconstructing a plain `DateTime`/`DateTime64(p)` would reinterpret the
-        /// values in its default time zone, silently shifting the stored epochs.
+        /// `DateTime` and `DateTime64` stay on the text fallback (consistent with the table-name path in
+        /// the `pg_attribute` emulation, see PostgreSQLHandler), because PostgreSQL's `timestamp without
+        /// time zone` cannot carry the time zone the value's wall-clock text is rendered in. For a type
+        /// with an explicit zone (e.g. `DateTime('UTC')`) that is obvious; but a `DateTime` without one is
+        /// no safer: its text is rendered in the *source* server's default time zone, while a reader that
+        /// reconstructs a plain `DateTime`/`DateTime64(p)` reinterprets that text in its *own* default
+        /// time zone - whenever the two zones differ, the same wire text becomes a different epoch and the
+        /// values are silently shifted. As text the full value round-trips losslessly as `String`.
         case TypeIndex::DateTime:
-        {
-            if (assert_cast<const DataTypeDateTime &>(*data_type).hasExplicitTimeZone())
-                return {ColumnType::VARCHAR, -1};
-            return {ColumnType::TIMESTAMP, 8, 0};
-        }
         case TypeIndex::DateTime64:
-        {
-            const auto & date_time64 = assert_cast<const DataTypeDateTime64 &>(*data_type);
-            if (date_time64.getScale() >= 1 && date_time64.getScale() <= 6 && !date_time64.hasExplicitTimeZone())
-                return {ColumnType::TIMESTAMP, 8, static_cast<Int32>(date_time64.getScale())};
             return {ColumnType::VARCHAR, -1};
-        }
 
         /// Carry the actual precision and scale so that a self-connected `Decimal(p, s)` round-trips through
         /// schema inference instead of collapsing to a bare `numeric` (which `convertPostgreSQLDataType`

@@ -354,14 +354,12 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
     if (!isSingleStatementQuery(query))
         return std::nullopt;
 
-    /// Enough to cover the longest recognized command plus its argument: a PostgreSQL identifier
-    /// is at most 63 bytes, and a qualified `RESET extension.setting` name consists of two of them.
-    /// If the normalized prefix fills this budget completely, the statement may continue beyond it,
-    /// so we could not verify that nothing trails the argument — treat it as not recognized.
-    static constexpr size_t max_prefix_len = 160;
-    String prefix = PostgreSQLProtocol::Messaging::CommandComplete::extractNormalizedPrefix(query, max_prefix_len);
-    if (prefix.size() == max_prefix_len)
-        return std::nullopt;
+    /// Normalize the whole statement, not a fixed-size prefix: a `SET application_name TO '...'`
+    /// value is arbitrarily long (drivers put free-form client info there), and cutting it off at a
+    /// byte budget would push a perfectly valid no-op past the cap and execute it as a real
+    /// ClickHouse `SET`, breaking connection setup. Normalization never grows the text, and the
+    /// single-statement scan above already walked the whole packet, so this stays linear.
+    String prefix = PostgreSQLProtocol::Messaging::CommandComplete::extractNormalizedPrefix(query, query.size());
 
     /// The single-statement guard above rejected any statement after a terminating `;`, so the only
     /// `;` that can remain at the end is that terminator itself (with trailing whitespace already
@@ -1344,6 +1342,11 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             }
             rows_count += static_cast<Int32>(materialized.rows());
         }
+        /// The buffer is finalized after each row above, but a result with no rows at all (for example a
+        /// catalog probe for a table that does not exist) never enters the loop, and a `WriteBuffer` must
+        /// not reach its destructor neither finalized nor canceled. `finalize` is idempotent, so this is
+        /// a no-op when the last row already finalized the buffer.
+        output_buffer.finalize();
         /// A COPY TO STDOUT must be terminated by CopyDone, then CommandComplete ("COPY n"), then
         /// ReadyForQuery (sent by the caller). libpq/pqxx report an error if CommandComplete is missing.
         message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
@@ -2138,6 +2141,14 @@ SELECT
     /// `convertPostgreSQLDataType` turns such a `numeric(p, 0)` back into a Decimal (or `Int256` for a
     /// precision above the Decimal256 range) that preserves the range. Only `UInt32`/`Int64`, which fit into
     /// `bigint`, keep OID 20.
+    ///
+    /// `DateTime`/`DateTime64` deliberately take the text fallback (the trailing 25/1009 default) instead of
+    /// `timestamp`: PostgreSQL's `timestamp without time zone` cannot carry the time zone the wall-clock text
+    /// is rendered in. That is obvious for a type with an explicit zone (`DateTime('UTC')`), but a `DateTime`
+    /// without one is no safer - its text is rendered in the *source* server's default time zone, while a
+    /// reader reconstructing a plain `DateTime`/`DateTime64(p)` reinterprets it in its *own* default zone,
+    /// silently shifting every stored epoch whenever the two zones differ. As text the value round-trips
+    /// losslessly as `String`. The direct `RowDescription` path in `PostgreSQLProtocol.cpp` matches this.
     multiIf(cols.ndims > 0,
                 multiIf(cols.base IN ('Bool', 'Boolean'), 1000,
                         cols.base IN ('Int8', 'UInt8', 'Int16'), 1005,
@@ -2149,7 +2160,6 @@ SELECT
                         cols.base = 'Float64', 1022,
                         cols.base = 'UUID', 2951,
                         cols.base IN ('Date', 'Date32'), 1182,
-                        cols.is_native_timestamp, 1115,
                         cols.base IN ('String', 'FixedString'), 1009,
                         1009),
             cols.base IN ('Bool', 'Boolean'), 16,
@@ -2162,7 +2172,6 @@ SELECT
             cols.base = 'Float64', 701,
             cols.base = 'UUID', 2950,
             cols.base IN ('Date', 'Date32'), 1082,
-            cols.is_native_timestamp, 1114,
             cols.base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
     oids.oid AS attrelid,
@@ -2177,19 +2186,6 @@ SELECT
     /// every 256-bit integer). `convertPostgreSQLDataType` maps such a `numeric(p > 76, 0)` back to `Int256`;
     /// PostgreSQL `numeric` is signed, so a self-connected `UInt256` above the `Int256` maximum is rejected
     /// on the reading side (fail-closed) rather than recovered.
-    ///
-    /// For `timestamp`, PostgreSQL stores the fractional-second precision (0..6) directly in the modifier;
-    /// carry the `DateTime`/`DateTime64` scale there so `format_type` renders `timestamp(p) without time
-    /// zone` and schema inference recovers `DateTime` (a 32-bit `DateTime`, p = 0) or `DateTime64(p)`
-    /// (p = 1..6) instead of collapsing every timestamp to `DateTime64(6)`. A `DateTime64(0)` is not
-    /// advertised as `timestamp` (see `is_native_timestamp`): scale 0 is indistinguishable on the wire from
-    /// a 32-bit `DateTime`, which the reader would recover, narrowing its 64-bit range. A `DateTime64` scale
-    /// above 6 does not fit PostgreSQL's `timestamp` at all. Both stay on the text fallback (see `atttypid`
-    /// above) and read back as `String` with the full value preserved. The same text fallback applies to a
-    /// `DateTime`/`DateTime64` with an explicit
-    /// time zone (e.g. `DateTime('UTC')`): PostgreSQL's `timestamp without time zone` cannot carry the zone,
-    /// and the reader would reconstruct a plain `DateTime`/`DateTime64(p)` whose values are then interpreted
-    /// in the server default time zone - silently shifting the stored epochs whenever the zones differ.
     /// Everything else uses -1 ("no modifier").
     multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256')
                 AND cols.decimal_precision IS NOT NULL AND cols.decimal_scale IS NOT NULL,
@@ -2197,8 +2193,6 @@ SELECT
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
-            cols.is_native_timestamp,
-                toInt32(assumeNotNull(cols.dt_precision)),
             -1) AS atttypmod,
     /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
     /// materializes can be NULL: a `Nullable`/`LowCardinality(Nullable(...))` scalar, or an array whose
@@ -2228,27 +2222,7 @@ FROM (
         extract(type, '^((?:Nullable\(|LowCardinality\(|Array\()*)') AS wrappers,
         /// Count only the leading `Array(` wrappers. An `Array(` nested inside a `Map`/`Tuple` argument
         /// list must not make the column look like a top-level array: such columns are exposed as text.
-        toInt32(countSubstrings(wrappers, 'Array(')) AS ndims,
-        /// The fractional-second precision of a `DateTime`/`DateTime64` column (0 for `DateTime`).
-        /// `system.columns.datetime_precision` is NULL for an element wrapped in `Array(...)`, so fall
-        /// back to parsing the scale out of the type name, skipping the same leading wrappers as `base`.
-        coalesce(datetime_precision,
-                 toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime64\(([0-9]+)')),
-                 if (base = 'DateTime', 0, NULL)) AS dt_precision,
-        /// Whether the `DateTime`/`DateTime64` carries an explicit time zone argument (a quoted string
-        /// inside the type's parentheses, e.g. `DateTime('UTC')`, `DateTime64(3, 'Europe/Berlin')`),
-        /// skipping the same leading wrappers as `base`. Such a column stays on the text fallback:
-        /// `timestamp without time zone` cannot represent the zone, and advertising it would make the
-        /// reading side reinterpret the values in the server default time zone.
-        match(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime(64)?\([^)]*\'') AS dt_has_timezone,
-        /// Whether the column may be advertised as a native PostgreSQL `timestamp` (rather than the text
-        /// fallback). Only a 32-bit `DateTime` (scale 0) and a `DateTime64` with a scale of 1..6 without a
-        /// time zone qualify. A `DateTime64(0)` is deliberately excluded: it would be advertised with the
-        /// same `timestamp` + scale-0 modifier as a 32-bit `DateTime`, and the reader recovers a scale-0
-        /// timestamp as `DateTime`, which would narrow the 64-bit range and corrupt out-of-range values.
-        /// It stays on the text fallback and round-trips losslessly as `String`.
-        ((base = 'DateTime' AND dt_precision = 0) OR (base = 'DateTime64' AND dt_precision BETWEEN 1 AND 6))
-            AND NOT dt_has_timezone AS is_native_timestamp
+        toInt32(countSubstrings(wrappers, 'Array(')) AS ndims
     FROM system.columns
     /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
     /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so

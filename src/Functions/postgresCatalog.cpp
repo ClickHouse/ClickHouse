@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
 
 #include <Common/config_version.h>
 
@@ -171,7 +172,9 @@ class FunctionCurrentSetting final : public IFunction
 {
 public:
     static constexpr auto name = "current_setting";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCurrentSetting>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCurrentSetting>(context->getCurrentDatabase()); }
+
+    explicit FunctionCurrentSetting(String current_database_) : current_database(std::move(current_database_)) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -232,7 +235,7 @@ public:
     }
 
 private:
-    static bool lookup(const String & setting_name, String & value)
+    bool lookup(const String & setting_name, String & value) const
     {
         if (setting_name == "server_version")
             value = VERSION_STRING;
@@ -247,11 +250,17 @@ private:
         else if (setting_name == "timezone")
             value = "UTC";
         else if (setting_name == "search_path")
-            value = "public";
+            /// Unqualified table names resolve in the connected database (`current_schema()` is
+            /// `currentDatabase`), so report exactly that - not PostgreSQL's default `public`. A client
+            /// that discovers the default schema through this function must arrive at the same place the
+            /// server itself resolves unqualified names in.
+            value = current_database;
         else
             return false;
         return true;
     }
+
+    String current_database;
 };
 
 }
