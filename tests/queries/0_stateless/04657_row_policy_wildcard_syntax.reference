@@ -1,8 +1,6 @@
-mydb	mytable	policy_04657	PERMISSIVE	default	SELECT	1
-CREATE POLICY policy_04657 ON mydb.mytable AS PERMISSIVE FOR SELECT USING 1 TO default
-mydb		policy_04657	PERMISSIVE	default	SELECT	1
-CREATE POLICY policy_04657 ON mydb.* AS PERMISSIVE FOR SELECT USING 1 TO default
-		policy_04657	PERMISSIVE	default	SELECT	1
-CREATE POLICY policy_04657 ON *.* AS PERMISSIVE FOR SELECT USING 1 TO default
-	mytable	policy_04657	PERMISSIVE	default	SELECT	1
-CREATE POLICY policy_04657 ON mytable AS PERMISSIVE FOR SELECT USING 1 TO default
+policy_04657	db_04657	mytable	0	0	['default']	[]
+CREATE ROW POLICY policy_04657 ON db_04657.mytable FOR SELECT USING 1 TO default
+policy_04657	db_04657		0	0	['default']	[]
+CREATE ROW POLICY policy_04657 ON db_04657.* FOR SELECT USING 1 TO default
+policy_04657	db_04657	mytable	0	0	['default']	[]
+CREATE ROW POLICY policy_04657 ON db_04657.mytable FOR SELECT USING 1 TO default

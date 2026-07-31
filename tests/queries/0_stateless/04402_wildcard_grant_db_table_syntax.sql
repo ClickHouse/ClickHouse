@@ -33,10 +33,10 @@ DROP USER user_04402;
 
 -- BUG WAS HERE: db*.table was silently interpreted as db.table*
 -- Now it must be rejected as invalid/ambiguous syntax
-GRANT SELECT ON db*.table TO user_04402; -- { clientError SYNTAX_ERROR }
+GRANT SELECT ON db*.table TO user_04402; -- { serverError SYNTAX_ERROR }
 
 -- db wildcard + specific table name = also invalid
-GRANT SELECT ON db*.mytable TO user_04402; -- { clientError SYNTAX_ERROR }
+GRANT SELECT ON db*.mytable TO user_04402; -- { serverError SYNTAX_ERROR }
 
 -- db wildcard + table wildcard combined = also invalid
-GRANT SELECT ON mydb*.mytable* TO user_04402; -- { clientError SYNTAX_ERROR }
+GRANT SELECT ON mydb*.mytable* TO user_04402; -- { serverError SYNTAX_ERROR }
