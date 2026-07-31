@@ -1146,7 +1146,10 @@ def test_nats_jet_stream_does_not_resubscribe_while_healthy(nats_cluster):
     # cycle would tear down and rebuild the subscription every few hundred milliseconds.
     _setup_restart_table("test_subject", "test_consumer")
 
-    seen_before = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+    # The count is anchored to an absolute log offset, so zero means zero: no such line was written
+    # after this point, however much else the instance logged meanwhile.
+    anchor = nats_helpers.log_line_count(instance)
+    assert anchor > 0, "log offset anchor is not a line number: {}".format(anchor)
 
     for round_index in range(3):
         first_key = round_index * 10
@@ -1154,12 +1157,9 @@ def test_nats_jet_stream_does_not_resubscribe_while_healthy(nats_cluster):
 
     time.sleep(5)
 
-    # `count_in_recent_log` counts within a fixed tail of the log, so a busy instance can push
-    # older matches out of the window and the count can legitimately go DOWN. Only growth means a
-    # resubscribe happened, so assert the direction rather than equality.
-    seen_after = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
-    assert seen_after <= seen_before, "resubscribed {} times without a broker restart".format(
-        seen_after - seen_before)
+    assert nats_helpers.log_line_count(instance) >= anchor, "the log rotated, the offset is stale"
+    resubscribes = nats_helpers.count_in_log_after(instance, RESUBSCRIBE_LOG_LINE, anchor)
+    assert resubscribes == 0, "resubscribed {} times without a broker restart".format(resubscribes)
 
 
 def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
@@ -1182,15 +1182,18 @@ def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
     # so keeps adding lines here.
     time.sleep(5)
 
-    settled_at = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+    # The count is anchored to an absolute log offset, so zero means zero: no such line was written
+    # after this point, however much else the instance logged meanwhile.
+    anchor = nats_helpers.log_line_count(instance)
+    assert anchor > 0, "log offset anchor is not a line number: {}".format(anchor)
+
     time.sleep(10)
-    settled_after = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
 
     # The streaming task reschedules about twice a second, so a detector stuck reporting a dead
-    # subscription would add tens of lines over this window. The count is taken within a fixed tail
-    # of the log, so it can also go down as older matches scroll out; only growth is a failure.
-    assert settled_after <= settled_at, "kept resubscribing after recovery: {} more lines".format(
-        settled_after - settled_at)
+    # subscription would add tens of lines over this window.
+    assert nats_helpers.log_line_count(instance) >= anchor, "the log rotated, the offset is stale"
+    resubscribes = nats_helpers.count_in_log_after(instance, RESUBSCRIBE_LOG_LINE, anchor)
+    assert resubscribes == 0, "kept resubscribing after recovery: {} more lines".format(resubscribes)
 
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
