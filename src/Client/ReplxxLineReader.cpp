@@ -14,13 +14,15 @@
 #include <chrono>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
 #include <functional>
-#include <sys/file.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <csignal>
+#include <sys/types.h>
+#if !defined(OS_WINDOWS)
+#include <unistd.h>
+#include <sys/file.h>
+#include <sys/wait.h>
 #include <dlfcn.h>
+#endif
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
@@ -90,6 +92,12 @@ std::string getEditor()
 /// (for the vfork via dlsym())
 int executeCommand(char * const argv[])
 {
+#if defined(OS_WINDOWS)
+    /// Spawning a child is `vfork` plus `execvp` plus `waitpid` here, none of which Windows has -
+    /// it has `CreateProcess`, which is a different shape. This is only reached by the features
+    /// that hand the buffer to another program: `EDITOR` and the interactive history search.
+    throw std::runtime_error(fmt::format("Running '{}' is not implemented on Windows", argv[0]));
+#else
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
@@ -142,6 +150,7 @@ int executeCommand(char * const argv[])
         throw std::runtime_error(fmt::format("Child process was stopped by signal {}", WSTOPSIG(status)));
 
     throw std::runtime_error("Child process was not exited normally by unknown reason");
+#endif
 }
 
 void writeRetry(int fd, const std::string & data)

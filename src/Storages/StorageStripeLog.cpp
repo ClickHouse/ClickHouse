@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <sys/types.h>
 
 #include <optional>
@@ -610,7 +611,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getRelativePath();
-    disk->createDirectories(temp_dir);
+    disk->createDirectories(pathToGenericString(temp_dir));
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
@@ -621,7 +622,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file_path);
-        String hardlink_file_path = temp_dir / data_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / data_file_name);
         disk->createHardLink(data_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path), allow_checksums_from_remote_paths);
@@ -633,7 +634,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String index_file_name = fileName(index_file_path);
-        String hardlink_file_path = temp_dir / index_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / index_file_name);
         disk->createHardLink(index_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path), allow_checksums_from_remote_paths);
@@ -694,7 +695,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         /// Append the data file.
         auto old_data_size = file_checker.getFileSize(data_file_path);
         {
-            String file_path_in_backup = data_path_in_backup_fs / fileName(data_file_path);
+            String file_path_in_backup = pathToGenericString(data_path_in_backup_fs / fileName(data_file_path));
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
@@ -703,7 +704,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 
         /// Append the index.
         {
-            String index_path_in_backup = data_path_in_backup_fs / fileName(index_file_path);
+            String index_path_in_backup = pathToGenericString(data_path_in_backup_fs / fileName(index_file_path));
             IndexForNativeFormat extra_indices;
             if (!backup->fileExists(index_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);

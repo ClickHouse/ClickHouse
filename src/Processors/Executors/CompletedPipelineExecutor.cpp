@@ -87,7 +87,7 @@ void CompletedPipelineExecutor::execute()
 
         while (!data->is_finished)
         {
-            if (data->finish_event.tryWait(interactive_timeout_ms))
+            if (data->finish_event.tryWait(static_cast<long>(interactive_timeout_ms)))
                 break;
 
             if (is_cancelled_callback())

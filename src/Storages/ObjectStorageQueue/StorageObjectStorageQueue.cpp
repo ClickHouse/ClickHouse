@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -465,7 +466,7 @@ void StorageObjectStorageQueue::startup()
     bool created_new_metadata = false;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
         zookeeper_name,
-        zk_path,
+        pathToGenericString(zk_path),
         std::move(temp_metadata),
         getStorageID(),
         created_new_metadata);
@@ -480,7 +481,7 @@ void StorageObjectStorageQueue::startup()
             /// and if /registry is empty (no table was concurrently created).
             ObjectStorageQueueMetadataFactory::instance().remove(
                 zookeeper_name,
-                zk_path,
+                pathToGenericString(zk_path),
                 getStorageID(),
                 /* is_drop */created_new_metadata,
                 /* keep_data_in_keeper */false);
@@ -557,7 +558,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
+        ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, pathToGenericString(zk_path), getStorageID(), is_drop, keep_data_in_keeper);
 
         files_metadata.reset();
     }

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -630,7 +631,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     /// Reading index.mrk
     IndexForNativeFormat index;
     {
-        String index_file_path = data_path_in_backup_fs / "index.mrk";
+        String index_file_path = pathToGenericString(data_path_in_backup_fs / "index.mrk");
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
@@ -662,7 +663,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     size_t new_bytes = 0;
     size_t new_rows = 0;
     {
-        String data_file_path = data_path_in_backup_fs / "data.bin";
+        String data_file_path = pathToGenericString(data_path_in_backup_fs / "data.bin");
         if (!backup->fileExists(data_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 

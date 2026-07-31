@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <algorithm>
 #include <DataTypes/DataTypesNumber.h>
 #include <chrono>
@@ -1676,15 +1677,15 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
+        String remote_replica_path = pathToGenericString(fs::path(query.replica_zk_path)  / "replicas" / query.replica);
 
         /// query.replica_zk_path keeps the legacy one-slash normalization so the drop below targets the
         /// same live znode that tables store (a full collapse here would regress dropping a remote replica
         /// of a table created with a trailing slash). For the self-protection comparison, collapse both
         /// sides so a self-drop spelled with extra trailing slashes still matches the local table.
         const String canonical_remote_replica_path
-            = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false))
-            / "replicas" / query.replica;
+            = pathToGenericString(fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false))
+            / "replicas" / query.replica);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
@@ -1698,9 +1699,9 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
                     /// past this guard against a query path canonicalized to "/a/replicas/...".
                     const String local_replica_path
-                        = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
+                        = pathToGenericString(fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
                               storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
-                        / "replicas" / storage_replicated->getReplicaName();
+                        / "replicas" / storage_replicated->getReplicaName());
                     /// Match the keeper too: a table on a different keeper with the same path string is a
                     /// different znode, so it must not block a drop targeting query.zk_name.
                     if (local_replica_path == canonical_remote_replica_path
@@ -1795,7 +1796,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto & res = table_metadata[i];
         if (res.error != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(res.error, fs::path(zookeeper_path) / "metadata");
+            throw zkutil::KeeperException::fromPath(res.error, pathToGenericString(fs::path(zookeeper_path) / "metadata"));
 
         table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
     }
@@ -1930,7 +1931,7 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
 {
     auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
     auto default_db_disk = getContext()->getDatabaseDisk();
-    for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    for (const auto it = default_db_disk->iterateDirectory(pathToGenericString(metadata_dir_path)); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         if (!default_db_disk->existsFile(sub_path))

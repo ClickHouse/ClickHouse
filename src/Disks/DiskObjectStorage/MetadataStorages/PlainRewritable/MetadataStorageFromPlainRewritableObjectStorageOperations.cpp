@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -80,19 +81,19 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
-    if (fs_tree->getDirectoryRemoteInfo(path))
+    if (fs_tree->getDirectoryRemoteInfo(pathToGenericString(path)))
         return;
 
-    if (fs_tree->existsFile(path))
+    if (fs_tree->existsFile(pathToGenericString(path)))
         throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "File '{}' already exists", path.parent_path());
 
     if (!recursive)
-        if (!fs_tree->existsDirectory(path.parent_path().parent_path()))
+        if (!fs_tree->existsDirectory(pathToGenericString(path.parent_path().parent_path())))
             throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path.parent_path().parent_path());
 
     auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
 
-    if (fs_tree->existsDirectory(path))
+    if (fs_tree->existsDirectory(pathToGenericString(path)))
         LOG_TRACE(
             getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
             "Materializing virtual directory '{}' with remote path='{}'",
@@ -123,7 +124,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     ProfileEvents::increment(metrics->directory_created);
     auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
-    fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{directory_remote_path, metadata.etag, metadata.last_modified.epochTime(), {}});
+    fs_tree->recordDirectoryPath(pathToGenericString(path), DirectoryRemoteInfo{directory_remote_path, metadata.etag, metadata.last_modified.epochTime(), {}});
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
@@ -216,14 +217,14 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     constexpr bool validate_content = false;
 #endif
 
-    if (!fs_tree->existsDirectory(path_from))
+    if (!fs_tree->existsDirectory(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_from);
-    else if (fs_tree->existsDirectory(path_to))
+    else if (fs_tree->existsDirectory(pathToGenericString(path_to)))
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_to);
     else if (normalizePath(path_from).empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't move root folder");
 
-    from_tree_info = fs_tree->getSubtreeRemoteInfo(path_from);
+    from_tree_info = fs_tree->getSubtreeRemoteInfo(pathToGenericString(path_from));
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
@@ -236,13 +237,13 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
             continue;
         }
 
-        auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
+        auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(pathToGenericString(sub_path_from)) : std::nullopt);
 
         changed_paths.insert(sub_path_from);
         rewriteSingleDirectory(sub_path_from, sub_path_to, *write_buf);
     }
 
-    fs_tree->moveDirectory(path_from, path_to);
+    fs_tree->moveDirectory(pathToGenericString(path_from), path_to);
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
@@ -280,14 +281,14 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
 {
-    if (!fs_tree->existsDirectory(path))
+    if (!fs_tree->existsDirectory(pathToGenericString(path)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
-    else if (auto children = fs_tree->listDirectory(path); !children.empty())
+    else if (auto children = fs_tree->listDirectory(pathToGenericString(path)); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
     else if (normalizePath(path).empty())
         return;
 
-    info = fs_tree->getDirectoryRemoteInfo(path).value();
+    info = fs_tree->getDirectoryRemoteInfo(pathToGenericString(path)).value();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 

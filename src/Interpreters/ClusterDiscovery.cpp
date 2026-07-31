@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -308,7 +309,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             callback = res.first;
         }
         nodes = zk->getChildrenWatch(
-            getShardsListPath(zk_root),
+            pathToGenericString(getShardsListPath(zk_root)),
             &stat,
             Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
     }
@@ -509,7 +510,7 @@ void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
     /// Create root node in observer mode not to get 'No node' error
-    String node_path = getShardsListPath(info.zk_root) / current_node_name;
+    String node_path = pathToGenericString(getShardsListPath(info.zk_root) / current_node_name);
     zk->createAncestors(node_path);
 
     if (info.current_node_is_observer)

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -638,7 +639,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             {
                 /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
                 fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-                part->renameTo(new_relative_path, false);
+                part->renameTo(pathToGenericString(new_relative_path), false);
             }
             else if (part_dir.starts_with("tmp_restore_" + part->name))
             {

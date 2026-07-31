@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
 #include <Core/Defines.h>
@@ -64,7 +65,14 @@ namespace
 
 bool errnoIndicatesReadOnlyDisk(int err)
 {
-    return err == EROFS || err == EACCES || err == EPERM || err == ENOSPC || err == EDQUOT;
+    if (err == EROFS || err == EACCES || err == EPERM || err == ENOSPC)
+        return true;
+#if defined(EDQUOT)
+    /// A disk quota. Not in the Windows CRT's `<errno.h>`, which has no notion of one.
+    if (err == EDQUOT)
+        return true;
+#endif
+    return false;
 }
 
 UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
@@ -167,11 +175,11 @@ public:
     String path() const override
     {
         if (entry->is_directory())
-            return dir_path / entry->path().filename() / "";
-        return dir_path / entry->path().filename();
+            return pathToGenericString(dir_path / entry->path().filename() / "");
+        return pathToGenericString(dir_path / entry->path().filename());
     }
 
-    String name() const override { return entry->path().filename(); }
+    String name() const override { return pathToGenericString(entry->path().filename()); }
 
 private:
     fs::path dir_path;
@@ -371,12 +379,12 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 
 void DiskLocal::renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    DB::renameExchange(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
+    DB::renameExchange(pathToGenericString(fs::path(disk_path) / old_path), fs::path(disk_path) / new_path);
 }
 
 bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
 {
-    return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
+    return DB::renameExchangeIfSupported(pathToGenericString(fs::path(disk_path) / old_path), fs::path(disk_path) / new_path);
 }
 
 void DiskLocal::prepareRead(
@@ -490,7 +498,7 @@ void DiskLocal::removeDirectory(const String & path)
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (!existsDirectory(fs_path))
+    if (!existsDirectory(pathToGenericString(fs_path)))
         return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)

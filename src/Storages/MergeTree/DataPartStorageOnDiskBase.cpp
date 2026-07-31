@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <string_view>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
@@ -74,12 +75,12 @@ DiskPtr DataPartStorageOnDiskBase::getDisk() const
 
 std::string DataPartStorageOnDiskBase::getFullPath() const
 {
-    return fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "";
+    return pathToGenericString(fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "");
 }
 
 std::string DataPartStorageOnDiskBase::getRelativePath() const
 {
-    return fs::path(root_path) / part_dir / "";
+    return pathToGenericString(fs::path(root_path) / part_dir / "");
 }
 
 std::string DataPartStorageOnDiskBase::getParentDirectory() const
@@ -88,7 +89,7 @@ std::string DataPartStorageOnDiskBase::getParentDirectory() const
     fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
 
     if (part_dir_without_slash.has_parent_path())
-        return part_dir_without_slash.parent_path();
+        return pathToGenericString(part_dir_without_slash.parent_path());
     return "";
 }
 
@@ -108,7 +109,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     {
         res = getPartDirForPrefix(prefix, detached, try_no);
 
-        if (!volume->getDisk()->existsDirectory(full_relative_path / res))
+        if (!volume->getDisk()->existsDirectory(pathToGenericString(full_relative_path / res)))
             return res;
 
         /// If part with compacted storage is broken then we probably
@@ -169,7 +170,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!existsFile("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME, detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, pathToGenericString(fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME), detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->existsFile("checksums.txt"))
         return false;
 
@@ -229,12 +230,12 @@ std::string DataPartStorageOnDiskBase::getPartDirectory() const
 
 std::string DataPartStorageOnDiskBase::getFullRootPath() const
 {
-    return fs::path(volume->getDisk()->getPath()) / root_path / "";
+    return pathToGenericString(fs::path(volume->getDisk()->getPath()) / root_path / "");
 }
 
 Poco::Timestamp DataPartStorageOnDiskBase::getLastModified() const
 {
-    return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir);
+    return volume->getDisk()->getLastModified(pathToGenericString(fs::path(root_path) / part_dir));
 }
 
 static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from)
@@ -330,14 +331,14 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     for (const auto & name : actual_file_names)
     {
         auto path = relative_path / name;
-        size_t file_size = disk->getFileSize(path);
+        size_t file_size = disk->getFileSize(pathToGenericString(path));
 
         auto & file_desc = description.files[name];
 
         file_desc.file_size = file_size;
         file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
+            return disk->readFile(pathToGenericString(path), read_settings.adjustBufferSize(file_size), file_size);
         };
     }
 
@@ -415,7 +416,7 @@ void DataPartStorageOnDiskBase::backup(
         temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getRelativePath();
         temp_part_dir = temp_dir / part_path_in_backup.relative_path();
-        disk->createDirectories(temp_part_dir);
+        disk->createDirectories(pathToGenericString(temp_part_dir));
     }
 
     /// For example,
@@ -444,13 +445,13 @@ void DataPartStorageOnDiskBase::backup(
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
 
-        if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(filepath_on_disk))
+        if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(pathToGenericString(filepath_on_disk)))
             return;
 
         if (make_temporary_hard_links)
         {
-            String hardlink_filepath = temp_part_dir / filepath;
-            disk->createHardLink(filepath_on_disk, hardlink_filepath);
+            String hardlink_filepath = pathToGenericString(temp_part_dir / filepath);
+            disk->createHardLink(pathToGenericString(filepath_on_disk), hardlink_filepath);
             filepath_on_disk = hardlink_filepath;
         }
 

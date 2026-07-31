@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -64,7 +65,7 @@ bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & 
 {
     auto key_prefix = getKeyForPath(object_storage->getCommonKeyPrefix(), path).serialize();
     auto directory = std::filesystem::path(std::move(key_prefix)) / "";
-    return object_storage->existsOrHasAnyChild(directory);
+    return object_storage->existsOrHasAnyChild(pathToGenericString(directory));
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::string & path) const

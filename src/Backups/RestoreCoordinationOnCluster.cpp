@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupCoordinationOnCluster.h>
 
 #include <Backups/BackupCoordinationStage.h>
@@ -145,7 +146,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & 
         {
             with_retries.renewZooKeeper(zk);
 
-            String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
+            String path = pathToGenericString(fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name));
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);
@@ -292,7 +293,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
             /// we need to remove leading '/' from root_zk_path
             auto normalized_root_zk_path = root_zk_path.substr(1);
-            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
+            std::string restore_lock_path = pathToGenericString(fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path));
             zk->createAncestors(restore_lock_path);
             auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
 

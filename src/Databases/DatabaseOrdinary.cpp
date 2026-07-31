@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <memory>
 
@@ -196,7 +197,7 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, boo
     else
         data_path = getTableDataPath(name);
 
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
+    return pathToGenericString((data_path / CONVERT_TO_REPLICATED_FLAG_NAME));
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -236,7 +237,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
-    String table_metadata_path = full_path;
+    String table_metadata_path = pathToGenericString(full_path);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
     writeMetadataFile(

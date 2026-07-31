@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <base/sleep.h>
 
@@ -153,7 +154,7 @@ void DatabaseReplicatedDDLWorker::shutdown()
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
     if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
     {
-        String active_path = fs::path(database->replica_path) / "active";
+        String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
         active_node_holder_zookeeper->tryRemove(active_path);
     }
 
@@ -173,7 +174,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     auto zookeeper = getZooKeeper();
 
     /// Create "active" node (remove previous one if necessary)
-    String active_path = fs::path(database->replica_path) / "active";
+    String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
     String active_id = toString(ServerUUID::get());
 
     LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
@@ -305,7 +306,7 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
     {
         auto zookeeper = getZooKeeper();
 
-        String active_path = fs::path(database->replica_path) / "active";
+        String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
@@ -643,13 +644,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    String entry_path = fs::path(queue_dir) / entry_name;
+    String entry_path = pathToGenericString(fs::path(queue_dir) / entry_name);
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
     Coordination::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
-    String try_node_path = fs::path(entry_path) / "try";
+    String try_node_path = pathToGenericString(fs::path(entry_path) / "try");
     if (!dry_run && zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
     {
         task->is_initial_query = initiator_name == task->host_id_str;

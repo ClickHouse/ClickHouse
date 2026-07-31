@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -254,7 +255,7 @@ String CacheMetadata::getFileSegmentPath(
     const OriginInfo & origin,
     std::optional<size_t> size) const
 {
-    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
+    return pathToGenericString(fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size));
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -262,9 +263,9 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
-        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+        return pathToGenericString(fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str);
 
-    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
+    return pathToGenericString(fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str);
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const

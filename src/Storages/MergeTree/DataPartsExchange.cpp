@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 
 #include "config.h"
@@ -335,7 +336,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception(
                 ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                 "Unexpected size of file {}, expected {} got {}",
-                std::string(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
+                pathToGenericString(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
                 desc.file_size, hashing_out.count());
 
         writePODBinary(hashing_out.getHash(), out);
@@ -678,7 +679,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     auto storage_id = data.getStorageID();
-    String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
+    String new_part_path = pathToGenericString(fs::path(data.getFullPathOnDisk(disk)) / part_name / "");
     auto entry = data.getContext()->getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.getPartitionId(), part_name, new_part_path,

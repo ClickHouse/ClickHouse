@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/SipHash.h>
@@ -344,7 +345,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         const size_t num_tries = 100;
         for (size_t i = 0; i < num_tries; ++i)
         {
-            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
+            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(pathToGenericString(alter_settings_lock_path), *zookeeper->getKeeper(), toString(getCurrentTime()));
 
             if (alter_settings_lock)
                 break;
@@ -484,7 +485,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     /// because we modify metadata under ephemeral metadata lock,
     /// so we do not want to retry if it expires.
     if (is_initial_query)
-        zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
+        zookeeper->set(pathToGenericString(table_metadata_path), new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
 }
@@ -495,7 +496,7 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
-        zookeeper_path,
+        pathToGenericString(zookeeper_path),
         value,
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
@@ -538,7 +539,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const auto table_metadata_path = zookeeper_path / "metadata";
     bool warned = false;
 
-    zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
+    zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(pathToGenericString(zookeeper_path)); });
 
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -583,14 +584,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 }
             }
 
-            requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+            requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zookeeper_path), "", zkutil::CreateMode::Persistent));
             requests.emplace_back(zkutil::makeCreateRequest(
-                                    table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
+                                    pathToGenericString(table_metadata_path), table_metadata.toString(), zkutil::CreateMode::Persistent));
 
             for (const auto & path : metadata_paths)
             {
                 const auto zk_path = zookeeper_path / path;
-                requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
+                requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zk_path), "", zkutil::CreateMode::Persistent));
             }
 
             if (!table_metadata.last_processed_path.empty())
@@ -784,14 +785,14 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                 }
 
                 auto new_registry_str = registry_str + "," + self.serialize();
-                requests.push_back(zkutil::makeSetRequest(registry_path, new_registry_str, stat.version));
+                requests.push_back(zkutil::makeSetRequest(pathToGenericString(registry_path), new_registry_str, stat.version));
             }
             else
             {
                 created_new_metadata = true;
 
                 requests.push_back(zkutil::makeCreateRequest(
-                    registry_path,
+                    pathToGenericString(registry_path),
                     self.serialize(),
                     zkutil::CreateMode::Persistent));
 

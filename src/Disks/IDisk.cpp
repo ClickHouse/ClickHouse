@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
 #include <Core/UUID.h>
@@ -162,7 +163,7 @@ static void asyncCopy(
     else /// Directory
     {
         fs::path dest(to_path);
-        to_disk.createDirectories(dest);
+        to_disk.createDirectories(pathToGenericString(dest));
 
         /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
         /// dest is an exception, but it's passed as value, not reference

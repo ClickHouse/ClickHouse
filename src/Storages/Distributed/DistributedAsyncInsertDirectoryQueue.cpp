@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
@@ -696,7 +697,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
 void DistributedAsyncInsertDirectoryQueue::markAsBroken(const std::string & file_path)
 {
-    const String & broken_file_path = fs::path(broken_path) / fs::path(file_path).filename();
+    const String & broken_file_path = pathToGenericString(fs::path(broken_path) / fs::path(file_path).filename());
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
     auto broken_dir_sync_guard = getDirectorySyncGuard(broken_relative_path);

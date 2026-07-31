@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
@@ -54,7 +55,7 @@ namespace
         auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
         if (canonical_directory_path.has_filename())
             canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
+        return pathToGenericString(canonical_directory_path);
     }
 }
 

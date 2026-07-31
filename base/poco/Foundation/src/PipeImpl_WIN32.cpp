@@ -24,7 +24,7 @@ PipeImpl::PipeImpl()
 	SECURITY_ATTRIBUTES attr;
 	attr.nLength              = sizeof(attr);
 	attr.lpSecurityDescriptor = NULL;
-	attr.bInheritHandle       = FALSE;
+	attr.bInheritHandle       = 0;
 	
 	if (!CreatePipe(&_readHandle, &_writeHandle, &attr, 0))
 		throw CreateFileException("anonymous pipe");

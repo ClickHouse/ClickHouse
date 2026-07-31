@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
@@ -156,7 +157,7 @@ void BackupMetadataFinder::findRootPathsInBackup()
     root_paths_in_backup.push_back(root_path);
 
     /// Add shard-related part to the root path.
-    Strings shards_in_backup = backup->listFiles(root_path / "shards", /*recursive*/ false);
+    Strings shards_in_backup = backup->listFiles(pathToGenericString(root_path / "shards"), /*recursive*/ false);
     if (shards_in_backup.empty())
     {
         if (restore_settings.shard_num_in_backup > 1)
@@ -178,7 +179,7 @@ void BackupMetadataFinder::findRootPathsInBackup()
     }
 
     /// Add replica-related part to the root path.
-    Strings replicas_in_backup = backup->listFiles(root_path / "replicas", /*recursive*/ false);
+    Strings replicas_in_backup = backup->listFiles(pathToGenericString(root_path / "replicas"), /*recursive*/ false);
     if (replicas_in_backup.empty())
     {
         if (restore_settings.replica_num_in_backup > 1)
@@ -291,7 +292,7 @@ void BackupMetadataFinder::findTableInBackupImpl(
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
     auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
-    bool table_has_data = backup->hasFiles(data_path_in_backup);
+    bool table_has_data = backup->hasFiles(pathToGenericString(data_path_in_backup));
 
     std::lock_guard lock{mutex};
 
@@ -357,7 +358,7 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
         if (!metadata_path && !try_metadata_path.empty() && backup->fileExists(try_metadata_path))
             metadata_path = try_metadata_path;
 
-        Strings file_names = backup->listFiles(try_tables_metadata_path, /*recursive*/ false);
+        Strings file_names = backup->listFiles(pathToGenericString(try_tables_metadata_path), /*recursive*/ false);
         for (const String & file_name : file_names)
         {
             if (!file_name.ends_with(".sql"))
@@ -421,7 +422,7 @@ void BackupMetadataFinder::findEverythingInBackup(
 
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        Strings file_names = backup->listFiles(root_path_in_backup / "metadata", /*recursive*/ false);
+        Strings file_names = backup->listFiles(pathToGenericString(root_path_in_backup / "metadata"), /*recursive*/ false);
         for (String & file_name : file_names)
         {
             if (file_name.ends_with(".sql"))
@@ -429,7 +430,7 @@ void BackupMetadataFinder::findEverythingInBackup(
             database_names_in_backup.emplace(unescapeForFileName(file_name));
         }
 
-        if (backup->hasFiles(root_path_in_backup / "temporary_tables" / "metadata"))
+        if (backup->hasFiles(pathToGenericString(root_path_in_backup / "temporary_tables" / "metadata")))
             database_names_in_backup.emplace(DatabaseCatalog::TEMPORARY_DATABASE);
     }
 

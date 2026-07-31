@@ -26,7 +26,7 @@ NamedEventImpl::NamedEventImpl(const std::string& name):
 	_name(name)
 {
 	UnicodeConverter::toUTF16(_name, _uname);
-	_event = CreateEventW(NULL, FALSE, FALSE, _uname.c_str());
+	_event = CreateEventW(NULL, 0, 0, _uname.c_str());
 	if (!_event)
 	{
 		DWORD dwRetVal = GetLastError(); 

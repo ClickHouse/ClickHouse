@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <thread>
 #include <Core/Settings.h>
@@ -103,9 +104,9 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     auto db_disk = getDisk();
 
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    db_disk->createDirectories(pathToGenericString(DatabaseCatalog::getMetadataDirPath()));
     if (db_disk->isSymlinkSupported())
-        db_disk->createDirectories(path_to_table_symlinks);
+        db_disk->createDirectories(pathToGenericString(path_to_table_symlinks));
     tryCreateMetadataSymlink();
 }
 
@@ -140,8 +141,8 @@ void DatabaseAtomic::drop(ContextPtr)
     {
         if (db_disk->isSymlinkSupported() && !db_disk->isReadOnly())
         {
-            db_disk->removeFileIfExists(path_to_metadata_symlink);
-            db_disk->removeRecursive(path_to_table_symlinks);
+            db_disk->removeFileIfExists(pathToGenericString(path_to_metadata_symlink));
+            db_disk->removeRecursive(pathToGenericString(path_to_table_symlinks));
         }
     }
     catch (...)
@@ -215,7 +216,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
 
-        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+        db_disk->createDirectories(pathToGenericString(fs::path(table_metadata_path_drop).parent_path()));
 
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -548,11 +549,11 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 
     // When `db_disk` is a `DiskLocal` object, `existsDirectory` will return false if the input path is a symlink.
     // So we use `existsFileOrDirectory` here to check if the symlink exists.
-    if (!db_disk->existsFileOrDirectory(path_to_table_symlinks))
+    if (!db_disk->existsFileOrDirectory(pathToGenericString(path_to_table_symlinks)))
         return;
 
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
-    for (const auto it = db_disk->iterateDirectory(path_to_table_symlinks); it->isValid(); it->next())
+    for (const auto it = db_disk->iterateDirectory(pathToGenericString(path_to_table_symlinks)); it->isValid(); it->next())
     {
         auto table_path = fs::path(it->path());
         if (table_path.filename().empty())
@@ -586,7 +587,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
                 table_names = table_name_to_path;
             }
             if (db_disk->isSymlinkSupported())
-                db_disk->createDirectories(path_to_table_symlinks);
+                db_disk->createDirectories(pathToGenericString(path_to_table_symlinks));
             for (const auto & table : table_names)
             {
                 /// All tables in database should be loaded at this point
@@ -645,7 +646,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         if (!table->storesDataOnDisk())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
-        String link = path_to_table_symlinks / escapeForFileName(table_name);
+        String link = pathToGenericString(path_to_table_symlinks / escapeForFileName(table_name));
 
         LOG_DEBUG(
             log,
@@ -655,13 +656,13 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
             link);
 
         /// If it already points where needed.
-        if (db_disk->equivalentNoThrow(table_data_path, link))
+        if (db_disk->equivalentNoThrow(pathToGenericString(table_data_path), link))
             return;
 
         if (if_data_path_exist && !db_disk->existsFileOrDirectory(data_path))
             return;
 
-        db_disk->createDirectorySymlink(table_data_path, link);
+        db_disk->createDirectorySymlink(pathToGenericString(table_data_path), link);
     }
     catch (...)
     {
@@ -678,7 +679,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
     try
     {
-        String path = path_to_table_symlinks / escapeForFileName(table_name);
+        String path = pathToGenericString(path_to_table_symlinks / escapeForFileName(table_name));
         db_disk->removeFileIfExists(path);
     }
     catch (...)
@@ -696,7 +697,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
     chassert(path_to_metadata_symlink != metadata_path);
-    if (db_disk->existsFileOrDirectory(path_to_metadata_symlink))
+    if (db_disk->existsFileOrDirectory(pathToGenericString(path_to_metadata_symlink)))
     {
         if (!db_disk->isSymlink(path_to_metadata_symlink))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} already exists", path_to_metadata_symlink);

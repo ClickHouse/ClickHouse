@@ -297,7 +297,7 @@ void FileImpl::copyToImpl(const std::string& path) const
 
 	std::wstring upath;
 	convertPath(path, upath);
-	if (CopyFileW(_upath.c_str(), upath.c_str(), FALSE) == 0)
+	if (CopyFileW(_upath.c_str(), upath.c_str(), 0) == 0)
 		handleLastErrorImpl(_path);
 }
 

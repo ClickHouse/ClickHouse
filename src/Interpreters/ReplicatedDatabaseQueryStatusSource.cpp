@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -110,7 +111,7 @@ Strings ReplicatedDatabaseQueryStatusSource::getNodesToWait()
         node_to_wait = "synced";
     }
 
-    return {String(fs::path(node_path) / node_to_wait), String(fs::path(node_path) / "active")};
+    return {pathToGenericString(fs::path(node_path) / node_to_wait), pathToGenericString(fs::path(node_path) / "active")};
 }
 
 Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()

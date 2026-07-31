@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
@@ -36,7 +37,7 @@ std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorag
         return std::make_unique<UserDefinedSQLObjectsZooKeeperStorage>(global_context, config.getString(zookeeper_path_key));
     }
 
-    String default_path = fs::path{global_context->getPath()} / "user_defined" / "";
+    String default_path = pathToGenericString(fs::path{global_context->getPath()} / "user_defined" / "");
     String path = config.getString(disk_path_key, default_path);
     return std::make_unique<UserDefinedSQLObjectsDiskStorage>(global_context, path);
 }

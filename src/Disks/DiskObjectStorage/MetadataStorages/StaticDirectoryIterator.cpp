@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 
 namespace DB
@@ -27,9 +28,9 @@ std::string StaticDirectoryIterator::path() const
 std::string StaticDirectoryIterator::name() const
 {
     if (iter->filename().empty())
-        return iter->parent_path().filename();
+        return pathToGenericString(iter->parent_path().filename());
 
-    return iter->filename();
+    return pathToGenericString(iter->filename());
 }
 
 }

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <atomic>
@@ -329,9 +330,9 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
-            std::string(dir), dir.has_parent_path(), dir.has_relative_path(), std::string(root), pathStartsWith(dir, root));
+            pathToGenericString(dir), dir.has_parent_path(), dir.has_relative_path(), pathToGenericString(root), pathStartsWith(dir, root));
 
-        std::string dir_str = dir;
+        std::string dir_str = pathToGenericString(dir);
         if (0 != rmdir(dir_str.data()))
         {
             if (errno == ENOTDIR || errno == ENOTEMPTY)
@@ -509,7 +510,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             }
             else
             {
-                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
+                if (auto metadata = tryGetObjectMetadata(pathToGenericString(entry_path), /*with_tags=*/ false))
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 

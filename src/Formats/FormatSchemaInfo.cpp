@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Formats/FormatSchemaInfo.h>
 
@@ -73,7 +74,7 @@ FormatSchemaInfo::FormatSchemaInfo(
 
     auto default_schema_directory = [&format_schema_path]()
     {
-        static const String str = fs::canonical(format_schema_path) / "";
+        static const String str = pathToGenericString(fs::canonical(format_schema_path) / "");
         return str;
     };
 
@@ -155,7 +156,7 @@ void FormatSchemaInfo::verifySchemaFileName(const String & format_schema, bool r
             message_name = format_schema_message_name;
 
         path = fs::path(format_schema_file_name);
-        String filename = path.has_filename() ? path.filename() : path.parent_path().filename();
+        String filename = pathToGenericString(path.has_filename() ? path.filename() : path.parent_path().filename());
         if (filename.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid file name in 'format_schema' setting");
     }
@@ -286,9 +287,9 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.close();
 
         if (fs::exists(file_path))
-            DB::renameExchange(temp_path, file_path);
+            DB::renameExchange(pathToGenericString(temp_path), file_path);
         else
-            DB::renameNoReplace(temp_path, file_path);
+            DB::renameNoReplace(pathToGenericString(temp_path), file_path);
 
         fs::remove(temp_path);
     }

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <atomic>
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -318,7 +319,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     }
 
     Strings part_names;
-    String parallel_quorum_parts_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel";
+    String parallel_quorum_parts_path = pathToGenericString(fs::path(storage.zookeeper_path) / "quorum" / "parallel");
     if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
     {
         for (auto & part_name : part_names)
@@ -345,13 +346,13 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
-    String is_active_path = fs::path(storage.replica_path) / "is_active";
+    String is_active_path = pathToGenericString(fs::path(storage.replica_path) / "is_active");
     zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    ops.emplace_back(zkutil::makeSetRequest(pathToGenericString(fs::path(storage.replica_path) / "host"), address.toString(), -1));
 
     try
     {
@@ -486,8 +487,8 @@ Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zku
         }
 
         const Coordination::Requests ops = {
-            zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(table_stat.version), replica_stat.version),
-            zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", table_stat.version),
+            zkutil::makeSetRequest(pathToGenericString(fs::path(replica_path) / "metadata_version"), std::to_string(table_stat.version), replica_stat.version),
+            zkutil::makeCheckRequest(pathToGenericString(fs::path(zookeeper_path) / "metadata"), table_stat.version),
         };
         Coordination::Responses ops_responses;
         const Coordination::Error code = zookeeper->tryMulti(ops, ops_responses);

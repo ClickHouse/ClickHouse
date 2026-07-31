@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCache.h>
 
 #include <IO/Operators.h>
@@ -2227,7 +2228,7 @@ void FileCache::loadMetadataImpl()
 
             auto path = key_prefix_it->path();
 
-            const std::string key_prefix_dir_name = path.filename();
+            const std::string key_prefix_dir_name = pathToGenericString(path.filename());
             if (key_prefix_it->is_directory() &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::Data) &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::System)

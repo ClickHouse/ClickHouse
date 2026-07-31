@@ -26,7 +26,7 @@ class TraceCollector;
 class TraceSender
 {
 public:
-    static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = -1;
+    static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = TRACE_MEMORY_CONTEXT_UNKNOWN;
 
     struct Extras
     {

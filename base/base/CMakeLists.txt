@@ -16,6 +16,7 @@ set (SRCS
     getFQDNOrHostName.cpp
     getL2CacheSize.cpp
     getMemoryAmount.cpp
+    getOSUserName.cpp
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp

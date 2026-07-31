@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -127,7 +128,7 @@ void AggregatedZooKeeperLog::observe(
     EntryKey entry_key{
         .session_id = session_id,
         .operation = operation,
-        .parent_path = path.parent_path(),
+        .parent_path = pathToGenericString(path.parent_path()),
         .component = component,
         .is_subrequest = is_subrequest
     };

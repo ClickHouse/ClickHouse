@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -270,9 +271,10 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     if (path.starts_with("/"))
         path = path.substr(1);
 
-    std::string result = include_connection_info
+    std::string result = pathToGenericString(
+        include_connection_info
         ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path;
+        : fs::path(configuration.getNamespace()) / path);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache

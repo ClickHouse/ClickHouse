@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
@@ -197,7 +198,7 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
     }
     const String suffix = preserve_path ? src.remote_path : fileName(src.remote_path);
     chassert(!suffix.starts_with('/'));
-    const String remote_path = fs::path(move_prefix) / suffix;
+    const String remote_path = pathToGenericString(fs::path(move_prefix) / suffix);
     return StoredObject(remote_path);
 }
 

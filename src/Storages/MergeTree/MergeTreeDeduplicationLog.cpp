@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
@@ -68,13 +69,13 @@ std::string getLogPath(const std::string & prefix, size_t number)
 {
     std::filesystem::path path(prefix);
     path /= std::filesystem::path(std::string{"deduplication_log_"} + std::to_string(number) + ".txt");
-    return path;
+    return pathToGenericString(path);
 }
 
 size_t getLogNumber(const std::string & path_str)
 {
     std::filesystem::path path(path_str);
-    std::string filename = path.stem();
+    std::string filename = pathToGenericString(path.stem());
     Strings filename_parts;
     boost::split(filename_parts, filename, boost::is_any_of("_"));
 

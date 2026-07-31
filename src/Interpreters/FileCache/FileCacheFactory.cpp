@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -273,7 +274,7 @@ std::string getPathPrefixForRelativeCachePath(ContextPtr context)
     if (!config_fs_caches_dir.empty())
         return config_fs_caches_dir;
 
-    return fs::path(context->getPath()) / "caches";
+    return pathToGenericString(fs::path(context->getPath()) / "caches");
 }
 
 }

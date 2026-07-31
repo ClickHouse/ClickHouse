@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
@@ -104,7 +105,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
         /// is not applicable.
         auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false, std::nullopt)->isValid();
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(pathToGenericString(common_key_prefix)) : object_storage->iterate(pathToGenericString(common_key_prefix), 0, /*with_tags=*/ false, std::nullopt)->isValid();
         /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {

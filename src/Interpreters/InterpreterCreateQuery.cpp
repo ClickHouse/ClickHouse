@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 
 #include <filesystem>
@@ -244,14 +245,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
-    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    default_db_disk->createDirectories(pathToGenericString(DatabaseCatalog::getMetadataDirPath()));
     auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
     {
-        if (!default_db_disk->existsFile(metadata_file_path))
+        if (!default_db_disk->existsFile(pathToGenericString(metadata_file_path)))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, metadata_file_path);
@@ -301,7 +302,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid);
 
-        if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
+        if (!create.attach && default_db_disk->existsDirectory(pathToGenericString(metadata_path)) && !default_db_disk->isDirectoryEmpty(pathToGenericString(metadata_path)))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else
@@ -325,7 +326,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
-    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
+    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(pathToGenericString(metadata_file_path));
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -337,7 +338,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(create, pathToGenericString(metadata_path / ""), getContext(), mode, internal);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -354,7 +355,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        default_db_disk->removeFileIfExists(metadata_tmp_file_path);
+        default_db_disk->removeFileIfExists(pathToGenericString(metadata_tmp_file_path));
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
@@ -378,7 +379,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
+            default_db_disk->moveFile(pathToGenericString(metadata_tmp_file_path), metadata_file_path);
             renamed = true;
         }
 
@@ -398,8 +399,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            chassert(default_db_disk->existsFile(metadata_file_path));
-            default_db_disk->removeFileIfExists(metadata_file_path);
+            chassert(default_db_disk->existsFile(pathToGenericString(metadata_file_path)));
+            default_db_disk->removeFileIfExists(pathToGenericString(metadata_file_path));
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
@@ -1809,7 +1810,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 data_path = (user_files / data_path).lexically_normal();
             if (!startsWith(data_path, user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), String(user_files));
 
             /// Data path must be relative to root_path
             create.attach_from_path = fs::relative(data_path, root_path) / "";

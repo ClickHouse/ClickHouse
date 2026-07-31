@@ -14,6 +14,13 @@
 #endif
 
 #if defined(OS_WINDOWS)
+/// `localtime_r` is the reentrant `localtime`. The Windows CRT spells it `localtime_s`, with the
+/// arguments the other way round and an `errno_t` return instead of a pointer.
+inline std::tm * localtime_r(const std::time_t * time, std::tm * result)
+{
+    return ::localtime_s(result, time) == 0 ? result : nullptr;
+}
+
 /// `timegm` is the inverse of `gmtime`: it interprets a broken-down time as UTC, where `mktime`
 /// interprets it as local time and so depends on the current time zone. The Windows CRT provides
 /// exactly this under its own name.

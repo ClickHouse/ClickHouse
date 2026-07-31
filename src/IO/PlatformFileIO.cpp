@@ -1,8 +1,12 @@
 #include <IO/PlatformFileIO.h>
 
+#include <base/pathToString.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <limits>
+
+#include <fcntl.h>
 
 #if defined(OS_WINDOWS)
 #include <io.h>
@@ -101,6 +105,32 @@ int platformFDataSync(int fd)
     return ::_commit(fd);
 }
 
+int platformOpenDirectory(const std::string & path)
+{
+    auto * handle = CreateFileW(
+        pathFromString(path).c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        errno = GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? ENOENT : EACCES;
+        return -1;
+    }
+
+    const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY);
+    if (fd == -1)
+    {
+        CloseHandle(handle);
+        errno = EMFILE;
+    }
+    return fd;
+}
+
 #else
 
 Int64 platformRead(int fd, char * to, size_t bytes)
@@ -125,6 +155,16 @@ int platformFDataSync(int fd)
     return ::fsync(fd);
 #else
     return ::fdatasync(fd);
+#endif
+}
+
+int platformOpenDirectory(const std::string & path)
+{
+    /// macOS has no `O_DIRECTORY`; a plain read-only open of a directory works there.
+#if defined(O_DIRECTORY)
+    return ::open(path.c_str(), O_DIRECTORY);
+#else
+    return ::open(path.c_str(), O_RDONLY);
 #endif
 }
 

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -115,7 +116,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         String escaped_object_name = filename.substr(0, filename.length() - strlen(".sql"));
         String object_name = unescapeForFileName(escaped_object_name);
 
-        String filepath = data_path_in_backup_fs / filename;
+        String filepath = pathToGenericString(data_path_in_backup_fs / filename);
         auto in = backup->readFile(filepath);
         String statement_def;
         readStringUntilEOF(statement_def, *in);

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <unordered_set>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -67,7 +68,7 @@ Chunk DDLOnClusterQueryStatusSource::generateChunkWithUnfinishedHosts() const
 
 Strings DDLOnClusterQueryStatusSource::getNodesToWait()
 {
-    return {String(fs::path(node_path) / "finished"), String(fs::path(node_path) / "active")};
+    return {pathToGenericString(fs::path(node_path) / "finished"), pathToGenericString(fs::path(node_path) / "active")};
 }
 Chunk DDLOnClusterQueryStatusSource::handleTimeoutExceeded()
 {

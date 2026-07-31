@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
@@ -910,10 +911,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         auto data_part_disk = data_part_volume->getDisk();
         auto relative_part_dir = fs::path(data.getRelativeDataPath()) / part_dir;
-        if (data_part_disk->existsDirectory(relative_part_dir))
+        if (data_part_disk->existsDirectory(pathToGenericString(relative_part_dir)))
         {
             LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(data_part_disk->getPath()) / relative_part_dir).string());
-            data_part_disk->removeRecursive(relative_part_dir);
+            data_part_disk->removeRecursive(pathToGenericString(relative_part_dir));
         }
     }
 

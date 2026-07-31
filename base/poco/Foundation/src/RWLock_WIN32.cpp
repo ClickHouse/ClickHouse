@@ -20,15 +20,15 @@ namespace Poco {
 
 RWLockImpl::RWLockImpl(): _readers(0), _writersWaiting(0), _writers(0)
 {
-	_mutex = CreateMutexW(NULL, FALSE, NULL);
+	_mutex = CreateMutexW(NULL, 0, NULL);
 	if (_mutex == NULL)
 		throw SystemException("cannot create reader/writer lock");
 
-	_readEvent = CreateEventW(NULL, TRUE, TRUE, NULL);
+	_readEvent = CreateEventW(NULL, 1, 1, NULL);
 	if (_readEvent == NULL)
 		throw SystemException("cannot create reader/writer lock");
 
-	_writeEvent = CreateEventW(NULL, TRUE, TRUE, NULL);
+	_writeEvent = CreateEventW(NULL, 1, 1, NULL);
 	if (_writeEvent == NULL)
 		throw SystemException("cannot create reader/writer lock");
 }
@@ -75,7 +75,7 @@ void RWLockImpl::readLockImpl()
 	HANDLE h[2];
 	h[0] = _mutex;
 	h[1] = _readEvent;
-	switch (WaitForMultipleObjects(2, h, TRUE, INFINITE))
+	switch (WaitForMultipleObjects(2, h, 1, INFINITE))
 	{
 	case WAIT_OBJECT_0:
 	case WAIT_OBJECT_0 + 1:
@@ -118,7 +118,7 @@ void RWLockImpl::writeLockImpl()
 	HANDLE h[2];
 	h[0] = _mutex;
 	h[1] = _writeEvent;
-	switch (WaitForMultipleObjects(2, h, TRUE, INFINITE))
+	switch (WaitForMultipleObjects(2, h, 1, INFINITE))
 	{
 	case WAIT_OBJECT_0:
 	case WAIT_OBJECT_0 + 1:
@@ -143,7 +143,7 @@ bool RWLockImpl::tryWriteLockImpl()
 	HANDLE h[2];
 	h[0] = _mutex;
 	h[1] = _writeEvent;
-	switch (WaitForMultipleObjects(2, h, TRUE, 1))
+	switch (WaitForMultipleObjects(2, h, 1, 1))
 	{
 	case WAIT_OBJECT_0:
 	case WAIT_OBJECT_0 + 1:
@@ -186,7 +186,7 @@ DWORD RWLockImpl::tryReadLockOnce()
 	HANDLE h[2];
 	h[0] = _mutex;
 	h[1] = _readEvent;
-	DWORD result = WaitForMultipleObjects(2, h, TRUE, 1); 
+	DWORD result = WaitForMultipleObjects(2, h, 1, 1); 
 	switch (result)
 	{
 	case WAIT_OBJECT_0:

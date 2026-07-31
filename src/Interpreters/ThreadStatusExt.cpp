@@ -346,7 +346,9 @@ void ThreadStatus::applyQuerySettings()
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
+#if !defined(OS_WINDOWS)
     initQueryProfiler();
+#endif
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -420,7 +422,9 @@ void ThreadStatus::detachFromGroup()
     /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
+#if !defined(OS_WINDOWS)
     finalizeQueryProfiler();
+#endif
     finalizePerformanceCounters();
 
     performance_counters.setParent(&ProfileEvents::global_counters);

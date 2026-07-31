@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -65,7 +66,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(getLogger("getLockForSyncMode"), "Got lock (try: {}, path: {}) for lightweight update", i, lock_path.string());
-            return zkutil::EphemeralNodeHolder::existing(lock_path, *zookeeper);
+            return zkutil::EphemeralNodeHolder::existing(pathToGenericString(lock_path), *zookeeper);
         }
 
         if (code != Coordination::Error::ZNODEEXISTS)
@@ -137,8 +138,8 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         }
 
         Coordination::Requests ops;
-        ops.push_back(zkutil::makeCreateRequest(in_progress_path / "update-", affected_columns_str, zkutil::CreateMode::EphemeralSequential));
-        ops.push_back(zkutil::makeSetRequest(in_progress_path, "", parent_stat.version));
+        ops.push_back(zkutil::makeCreateRequest(pathToGenericString(in_progress_path / "update-"), affected_columns_str, zkutil::CreateMode::EphemeralSequential));
+        ops.push_back(zkutil::makeSetRequest(pathToGenericString(in_progress_path), "", parent_stat.version));
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);

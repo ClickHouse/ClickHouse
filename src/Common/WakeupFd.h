@@ -1,24 +1,25 @@
 #pragma once
 
-/// Not built on Windows. This is a self-pipe, and Windows pipes are not pollable alongside
-/// sockets - neither `WSAPoll` nor wepoll accepts anything but a `SOCKET` - so the wakeup for a
-/// Windows event loop has to be a loopback socket pair (or `PostQueuedCompletionStatus`) rather
-/// than this. That belongs with the `Epoll` backend for Windows, which does not exist yet; until
-/// then the only consumers, `PollingQueue` and `MergeTreeBoundsSubscription`, are not built
-/// there either. See docs/en/development/build-cross-windows.md.
-#if !defined(OS_WINDOWS)
+#include <Common/Socket.h>
 
+#if !defined(OS_WINDOWS)
 #include <Common/PipeFDs.h>
+#endif
 
 namespace DB
 {
 
-/// Portable async wakeup primitive backed by a non-blocking self-pipe.
-/// Works on every Unix. Designed for use with IProcessor::schedule().
+/// Portable async wakeup primitive. Designed for use with IProcessor::schedule().
+///
+/// A non-blocking self-pipe on Unix. On Windows it is a connected loopback socket pair instead,
+/// because a Windows pipe cannot be waited on together with sockets - neither `WSAPoll` nor wepoll
+/// accepts anything but a `SOCKET` - and the whole point of this class is to be one more thing an
+/// event loop that already watches sockets can wait on. libuv and Asio do the same.
 class WakeupFd
 {
 public:
     WakeupFd();
+    ~WakeupFd();
 
     WakeupFd(const WakeupFd &) = delete;
     WakeupFd & operator=(const WakeupFd &) = delete;
@@ -26,7 +27,7 @@ public:
     WakeupFd & operator=(WakeupFd &&) = delete;
 
     /// Readable end — register this with epoll/kqueue/poll for POLLIN.
-    int fd() const { return pipe.fds_rw[0]; }
+    int fd() const;
 
     /// Wake any waiter polling on fd().
     /// Idempotent: multiple notify() between drains collapse to "at least one byte is readable".
@@ -36,9 +37,14 @@ public:
     void drain() const;
 
 private:
+#if defined(OS_WINDOWS)
+    /// Owned, unlike the `Socket` handles passed around elsewhere: these two exist only for this
+    /// object and are closed with it.
+    Socket read_end;
+    Socket write_end;
+#else
     PipeFDs pipe;
+#endif
 };
 
 }
-
-#endif

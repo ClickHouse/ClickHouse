@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <atomic>
 #include <map>
 #include <set>
@@ -4035,7 +4036,7 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
         std::set<std::string> files;
         if (pattern[0] != '/')
         {
-            const String absolute_path = config_dir / pattern;
+            const String absolute_path = pathToGenericString(config_dir / pattern);
             Poco::Glob::glob(absolute_path, files, 0);
             if (files.empty())
                 Poco::Glob::glob(pattern, files, 0);

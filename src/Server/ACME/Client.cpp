@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
@@ -166,13 +167,13 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     auto zk = Context::getGlobalContextInstance()->getZooKeeper();
 
-    zk->createIfNotExists(fs::path(zookeeper_path), "");
-    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname, "");
-    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "challenges", "");
-    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains", "");
+    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path)), "");
+    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname), "");
+    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "challenges"), "");
+    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains"), "");
 
     for (const auto & domain : domains)
-        zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains" / domain, "");
+        zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain), "");
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
@@ -248,7 +249,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             LOG_DEBUG(
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
-                std::string(active_order_path),
+                pathToGenericString(active_order_path),
                 REFRESH_TASK_HAPPY_PATH_MS
             );
             refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -264,7 +265,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 LOG_DEBUG(
                     log,
                     "Certificate order lock {} is active; retrying after {}ms",
-                    std::string(active_order_path),
+                    pathToGenericString(active_order_path),
                     REFRESH_TASK_HAPPY_PATH_MS
                 );
                 refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -275,7 +276,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             {
                 auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
 
-                zk->createOrUpdate(path, token, zkutil::CreateMode::Ephemeral);
+                zk->createOrUpdate(pathToGenericString(path), token, zkutil::CreateMode::Ephemeral);
             };
 
             active_order = api->order(domains, order_callback);
@@ -289,7 +290,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             LOG_DEBUG(
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
-                std::string(active_order_path),
+                pathToGenericString(active_order_path),
                 REFRESH_TASK_HAPPY_PATH_MS
             );
             refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -319,7 +320,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             for (const auto & domain : domains)
             {
                 auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key";
-                zk->createOrUpdate(path, pkey, zkutil::CreateMode::Persistent);
+                zk->createOrUpdate(pathToGenericString(path), pkey, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated private key for domain {}", domain);
             }
 
@@ -345,7 +346,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             for (const auto & domain : domains)
             {
                 auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate";
-                zk->createOrUpdate(path, certificate, zkutil::CreateMode::Persistent);
+                zk->createOrUpdate(pathToGenericString(path), certificate, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated certificate for domain {}", domain);
             }
 

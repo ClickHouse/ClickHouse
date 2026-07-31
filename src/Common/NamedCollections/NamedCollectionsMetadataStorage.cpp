@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
@@ -190,7 +191,7 @@ protected:
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
-        return fs::path(root_path) / file_name_as_path;
+        return pathToGenericString(fs::path(root_path) / file_name_as_path);
     }
 
 private:
@@ -365,7 +366,7 @@ private:
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
-        return fs::path(root_path) / file_name_as_path;
+        return pathToGenericString(fs::path(root_path) / file_name_as_path);
     }
 };
 

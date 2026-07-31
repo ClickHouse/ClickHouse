@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -23,12 +24,12 @@ namespace
 {
     std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
     {
-        return zk_path / "buckets" / toString(bucket) / "processed";
+        return pathToGenericString(zk_path / "buckets" / toString(bucket) / "processed");
     }
 
     std::string getProcessedPathWithoutBucket(const std::filesystem::path & zk_path)
     {
-        return zk_path / "processed";
+        return pathToGenericString(zk_path / "processed");
     }
 
     bool useBucketsForProcessing(size_t buckets_num)
@@ -132,7 +133,7 @@ namespace
     {
         auto bucket_path = getProcessedBucketPath(zk_path, path, buckets_num, bucketing_mode, partitioning_mode, parser);
         if (hasPartitioningMode(partitioning_mode))
-            return std::filesystem::path(std::move(bucket_path)) / getPartitionKey(path, partitioning_mode, parser);
+            return pathToGenericString(std::filesystem::path(std::move(bucket_path)) / getPartitionKey(path, partitioning_mode, parser));
         return bucket_path;
     }
 

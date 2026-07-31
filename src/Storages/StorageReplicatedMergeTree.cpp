@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/Defines.h>
 
 #include <atomic>
@@ -775,7 +776,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
             if (!getZooKeeper()->existsWatch(
-                    fs::path(zookeeper_path) / "mutations" / mutation_id,
+                    pathToGenericString(fs::path(zookeeper_path) / "mutations" / mutation_id),
                     &exists_stat,
                     Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
@@ -796,7 +797,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
 
-            String mutation_pointer = fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer";
+            String mutation_pointer = pathToGenericString(fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer");
 
             std::string mutation_pointer_value;
             /// Replica could be removed
@@ -1529,7 +1530,7 @@ bool StorageReplicatedMergeTree::dropReplica(
     {
         /// Remove "host" node first to mark replica as dropped (the choice is arbitrary,
         /// it could be any node without children that exists since ancient server versions and not re-created on startup)
-        [[maybe_unused]] auto code = zookeeper->tryRemove(fs::path(remote_replica_path) / "host");
+        [[maybe_unused]] auto code = zookeeper->tryRemove(pathToGenericString(fs::path(remote_replica_path) / "host"));
         chassert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
 
         /// Then try to remove paths that are known to be flat (all children are leafs)

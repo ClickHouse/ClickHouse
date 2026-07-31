@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -105,7 +106,7 @@ void MergeTreeReaderStream::init()
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
+            pathToGenericString(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {

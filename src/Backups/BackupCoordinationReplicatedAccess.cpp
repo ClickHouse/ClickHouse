@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 
 #include <filesystem>
@@ -41,7 +42,7 @@ Strings BackupCoordinationReplicatedAccess::getFilePaths(const String & access_z
     /// for a backup of ReplicatedAccessStorage on different hosts.
     Strings res;
     res.reserve(file_paths.file_paths.size());
-    String filename = fs::path{*file_paths.file_paths.begin()}.filename();
+    String filename = pathToGenericString(fs::path{*file_paths.file_paths.begin()}.filename());
     for (const auto & file_path : file_paths.file_paths)
         res.emplace_back(fs::path{file_path}.replace_filename(filename));
 

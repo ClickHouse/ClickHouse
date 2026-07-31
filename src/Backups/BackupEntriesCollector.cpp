@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Access/AccessControl.h>
 #include <Common/CurrentThread.h>
 #include <Access/Common/AccessEntityType.h>
@@ -867,7 +868,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         /// other replicas to fill the storage's data in the backup.
         /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
         if (table_info.replicated_table_zk_path)
-            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, data_path_in_backup);
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, pathToGenericString(data_path_in_backup));
         return;
     }
 
@@ -876,7 +877,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
     try
     {
-        storage->backupData(*this, data_path_in_backup, table_info.partitions);
+        storage->backupData(*this, pathToGenericString(data_path_in_backup), table_info.partitions);
     }
     catch (Exception & e)
     {

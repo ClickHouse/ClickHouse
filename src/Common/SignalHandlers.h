@@ -1,5 +1,10 @@
 #pragma once
 
+/// Whether a fatal signal has already been handled and the process is on its way down.
+/// Declared for every platform - `executeQuery` asks before starting work - although on Windows
+/// nothing sets it, since there is no handler there to set it from.
+bool isCrashed();
+
 /// Fault and termination handling built on `sigaction`. Windows reports faults through
 /// Structured Exception Handling instead - `AddVectoredExceptionHandler` and friends - which
 /// is a different mechanism, not a renamed one.

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -3563,10 +3564,10 @@ bool MutateTask::prepare()
     /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
     {
         auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
+        if (ctx->disk->existsDirectory(pathToGenericString(relative_tmp_dir)))
         {
             LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
+            ctx->disk->removeRecursive(pathToGenericString(relative_tmp_dir));
         }
     }
 

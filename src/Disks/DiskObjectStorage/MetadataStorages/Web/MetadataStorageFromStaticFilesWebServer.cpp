@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -100,7 +101,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     assertExists(path);
 
     auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
+    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string()));
     remote_path = remote_path.substr(object_storage.getBaseURL().size());
 
     auto file_info = getFileInfo(path);
@@ -110,7 +111,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorageObjectsIfExist(const std::string & path) const
 {
     auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
+    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string()));
     remote_path = remote_path.substr(object_storage.getBaseURL().size());
 
     if (auto file_info = tryGetFileInfo(path))
@@ -159,7 +160,7 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
             object_storage.getContext()->getSettingsRef(),
             object_storage.getContext()->getServerSettings());
 
-        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
+        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(pathToGenericString(fs::path(full_url) / ".index")))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                                 .withSettings(object_storage.getContext()->getReadSettings())
                                 .withTimeouts(timeouts)
@@ -190,7 +191,7 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
                 : FileData::createFileInfo(size);
 
             auto file_path = fs::path(path) / file_name;
-            const bool inserted = files.add(file_path, file_data).second;
+            const bool inserted = files.add(pathToGenericString(file_path), file_data).second;
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
@@ -238,7 +239,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
         shared_lock.unlock();
 
         const auto parent_path = fs::path(path).parent_path();
-        auto parent_info = tryGetFileInfo(parent_path);
+        auto parent_info = tryGetFileInfo(pathToGenericString(parent_path));
         if (!parent_info)
         {
             return nullptr;
@@ -248,7 +249,7 @@ MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFi
         {
             std::unique_lock unique_lock(metadata_mutex);
             if (!parent_info->loaded_children)
-                loadFiles(parent_path, unique_lock);
+                loadFiles(pathToGenericString(parent_path), unique_lock);
         }
 
         shared_lock.lock();

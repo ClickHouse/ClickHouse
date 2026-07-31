@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
@@ -267,7 +268,7 @@ void RestorerFromBackup::loadSystemAccessTables()
         {
             if (!access_restorer)
                 access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
-            access_restorer->addDataPath(table_info.data_path_in_backup);
+            access_restorer->addDataPath(pathToGenericString(table_info.data_path_in_backup));
         }
     }
 

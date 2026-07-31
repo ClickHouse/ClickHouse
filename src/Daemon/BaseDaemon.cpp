@@ -9,8 +9,10 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#if !defined(OS_WINDOWS)
 #include <sys/wait.h>
 #include <sys/resource.h>
+#endif
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
@@ -71,6 +73,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -163,7 +166,12 @@ void BaseDaemon::kill()
     pid_file.reset();
     /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
     /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+#if defined(OS_WINDOWS)
+    /// There is no `SIGKILL` on Windows; 9 is the number it has everywhere else.
+    _exit(128 + 9);
+#else
     _exit(128 + SIGKILL);
+#endif
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
@@ -176,8 +184,18 @@ std::string BaseDaemon::getDefaultConfigFileName() const
     return "config.xml";
 }
 
+/// `BaseDaemon` is the harness for `clickhouse-server` and `clickhouse-keeper`, neither of which
+/// is built for Windows: the parts below are POSIX process and signal management with no Windows
+/// counterpart - a `fork`-based watchdog, a signal-handler pipe, a walk of `/proc/self/fd`. The
+/// class itself still has to exist, because `SystemLog` and `AsynchronousMetrics` ask
+/// `BaseDaemon::tryGetInstance` whether they are running inside a daemon (on Windows they never
+/// are). So these report that they were not ported rather than pretending to have run.
 void BaseDaemon::closeFDs()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "closeFDs is not implemented on Windows");
+#else
+
 #if !defined(USE_XRAY)
     /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
@@ -229,6 +247,7 @@ void BaseDaemon::closeFDs()
         }
     }
 #endif
+#endif
 }
 
 
@@ -262,6 +281,9 @@ void BaseDaemon::initialize(Application & self)
 #endif
 
     /// This must be done before creation of any files (including logs).
+#if !defined(OS_WINDOWS)
+    /// Windows has no umask: permissions on a created file come from the parent directory's ACL,
+    /// and there is no process-wide mask to subtract from them.
     mode_t umask_num = 0027;
     if (config().has("umask"))
     {
@@ -271,6 +293,7 @@ void BaseDaemon::initialize(Application & self)
         stream >> std::oct >> umask_num;
     }
     umask(umask_num);
+#endif
 
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
@@ -447,6 +470,10 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Signal handling is not implemented on Windows");
+#else
+
     CrashWriter::initialize(config());
     if (config().getBool("send_crash_reports.enabled", false)
         && config().getBool("send_crash_reports.send_logical_errors", false)
@@ -492,6 +519,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+#endif
 #endif
 }
 
@@ -544,8 +572,13 @@ void BaseDaemon::onTerminateRequestSignal()
 
 void BaseDaemon::waitForTerminationRequest()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination signal is not implemented on Windows");
+#else
+
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
+#endif
 }
 
 
@@ -558,6 +591,10 @@ void BaseDaemon::shouldSetupWatchdog(char * argv0_)
 
 void BaseDaemon::setupWatchdog()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The watchdog is not implemented on Windows");
+#else
+
     /// Initialize in advance to avoid double initialization in forked processes.
     DateLUT::serverTimezoneInstance();
 
@@ -766,6 +803,7 @@ void BaseDaemon::setupWatchdog()
         else
             _exit(exit_code);
     }
+#endif
 }
 
 

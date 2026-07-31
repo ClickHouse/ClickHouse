@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
@@ -883,15 +884,15 @@ void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, St
     auto zk_root_path_fs = fs::path(path_prefix_) / std::string_view{zk_root_path_}.substr(1);
     zk_root_path_ = zk_root_path_fs;
 
-    String zk_data_path_to_remove = zk_root_path_fs / "data";
+    String zk_data_path_to_remove = pathToGenericString(zk_root_path_fs / "data");
 
     auto metadata_path_fs = zk_root_path_fs / "metadata";
-    String zk_metadata_path_to_remove = metadata_path_fs;
-    String zk_tables_path_to_remove = metadata_path_fs / "tables";
+    String zk_metadata_path_to_remove = pathToGenericString(metadata_path_fs);
+    String zk_tables_path_to_remove = pathToGenericString(metadata_path_fs / "tables");
 
-    String zk_dropped_path_to_remove = metadata_path_fs / "dropped";
-    String zk_dropped_lock_path_to_remove = fs::path(zk_dropped_path_to_remove) / "lock";
-    String zk_dropped_lock_version_path = metadata_path_fs / "drop_lock_version";
+    String zk_dropped_path_to_remove = pathToGenericString(metadata_path_fs / "dropped");
+    String zk_dropped_lock_path_to_remove = pathToGenericString(fs::path(zk_dropped_path_to_remove) / "lock");
+    String zk_dropped_lock_version_path = pathToGenericString(metadata_path_fs / "drop_lock_version");
 
     LOG_INFO(logger, "Removing table data in ZooKeeper at {}", zk_root_path_);
 

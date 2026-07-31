@@ -1,7 +1,16 @@
 /// Fault and termination handling built on `sigaction`. Windows reports faults through
 /// Structured Exception Handling instead - `AddVectoredExceptionHandler` and friends - which
 /// is a different mechanism, not a renamed one.
-#if !defined(OS_WINDOWS)
+#include <Common/SignalHandlers.h>
+
+#if defined(OS_WINDOWS)
+
+bool isCrashed()
+{
+    return false;
+}
+
+#else
 
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>

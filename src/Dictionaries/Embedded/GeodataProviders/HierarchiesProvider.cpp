@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -32,13 +33,13 @@ RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string
 
 void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 {
-    std::string basename = fs::path(path).stem();
+    std::string basename = pathToGenericString(fs::path(path).stem());
     fs::path dir_path = fs::canonical(path).parent_path();
 
     fs::directory_iterator dir_end;
     for (fs::directory_iterator dir_it(dir_path); dir_it != dir_end; ++dir_it)
     {
-        std::string candidate_basename = dir_it->path().stem();
+        std::string candidate_basename = pathToGenericString(dir_it->path().stem());
 
         if (candidate_basename.starts_with(basename)
             && (candidate_basename.size() > basename.size() + 1)

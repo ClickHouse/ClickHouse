@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/UUID.h>
 #include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
@@ -770,7 +771,7 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
     /// If not exist, create a node with the database name for introspection.
     /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
     auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
+    auto error_code = current_zookeeper->trySet(pathToGenericString(db_name_path), getDatabaseName());
     if (error_code == Coordination::Error::ZNONODE)
         current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
@@ -1499,7 +1500,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     return getQueryStatus(
         zookeeper_name,
         node_path,
-        fs::path(zookeeper_path) / "replicas",
+        pathToGenericString(fs::path(zookeeper_path) / "replicas"),
         query_context,
         hosts_to_wait,
         std::move(database_guard));
@@ -2331,7 +2332,7 @@ void DatabaseReplicated::dropReplica(
     if (database_mark != REPLICATED_DATABASE_MARK)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
 
-    String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
+    String database_replica_path = pathToGenericString(fs::path(database_zookeeper_path) / "replicas" / full_replica_name);
     if (!zookeeper->exists(database_replica_path))
     {
         if (!throw_if_noop)
@@ -2429,7 +2430,7 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::renameDatabase");
     DatabaseAtomic::renameDatabase(query_context, new_name);
     auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    getZooKeeper()->set(db_name_path, getDatabaseName());
+    getZooKeeper()->set(pathToGenericString(db_name_path), getDatabaseName());
 }
 
 void DatabaseReplicated::stopReplication()

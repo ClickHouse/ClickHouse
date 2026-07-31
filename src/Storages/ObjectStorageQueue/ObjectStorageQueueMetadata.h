@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/pathToString.h>
 #include <filesystem>
 #include <optional>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -115,7 +116,7 @@ public:
     /// Get object storage type: s3, azure, local, etc.
     ObjectStorageType getType() const { return storage_type; }
     /// Get base path to keeper metadata.
-    std::string getPath() const { return zookeeper_path; }
+    std::string getPath() const { return pathToGenericString(zookeeper_path); }
     /// Get statuses (state, processed rows, processing time)
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }

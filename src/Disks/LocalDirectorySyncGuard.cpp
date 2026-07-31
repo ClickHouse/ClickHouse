@@ -4,12 +4,7 @@
 #include <Common/ErrnoException.h>
 #include <Disks/IDisk.h>
 #include <Common/Stopwatch.h>
-#include <fcntl.h> // O_RDWR
-
-/// OSX does not have O_DIRECTORY
-#ifndef O_DIRECTORY
-#define O_DIRECTORY O_RDWR
-#endif
+#include <IO/PlatformFileIO.h>
 
 namespace ProfileEvents
 {
@@ -29,7 +24,7 @@ namespace ErrorCodes
 }
 
 LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
-    : fd(::open(full_path.c_str(), O_DIRECTORY))
+    : fd(platformOpenDirectory(full_path))
 {
     if (-1 == fd)
         ErrnoException::throwFromPath(
@@ -44,16 +39,8 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
     {
         Stopwatch watch;
 
-#if defined(OS_DARWIN)
-        /// macOS does not declare fdatasync in this build, so use fsync. Unlike
-        /// F_FULLFSYNC it does not force a drive-cache flush, matching the
-        /// fdatasync semantics used on Linux.
-        if (-1 == ::fsync(fd))
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fsync");
-#else
-        if (-1 == ::fdatasync(fd))
+        if (-1 == platformFDataSync(fd))
             throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");
-#endif
         if (-1 == ::close(fd))
             throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 

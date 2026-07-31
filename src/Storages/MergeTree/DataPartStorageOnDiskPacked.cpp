@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 
 #include <IO/Expect404ResponseScope.h>
@@ -73,12 +74,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskPacked>(volume, std::string(fs::path(root_path) / part_dir), name, getReadSettings());
+    return std::make_shared<DataPartStorageOnDiskPacked>(volume, pathToGenericString(fs::path(root_path) / part_dir), name, getReadSettings());
 }
 
 bool DataPartStorageOnDiskPacked::exists() const
 {
-    return volume->getDisk()->existsFileOrDirectory(fs::path(root_path) / part_dir);
+    return volume->getDisk()->existsFileOrDirectory(pathToGenericString(fs::path(root_path) / part_dir));
 }
 
 bool DataPartStorageOnDiskPacked::existsDirectory(const std::string & file_name) const
@@ -89,7 +90,7 @@ bool DataPartStorageOnDiskPacked::existsDirectory(const std::string & file_name)
     /// exceed the OS filename limit, so probing them would throw ENAMETOOLONG instead of returning false
     /// and wrongly mark the part broken during checkConsistency.
     if (isWrittenSeparately(file_name))
-        return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir / file_name);
+        return volume->getDisk()->existsDirectory(pathToGenericString(fs::path(root_path) / part_dir / file_name));
     return false;
 }
 
@@ -102,7 +103,7 @@ public:
         : files(std::move(files_))
         , files_it(files.begin())
         , disk(std::move(disk_))
-        , dir_it(disk->iterateDirectory(fs::path(root_path_) / part_dir_))
+        , dir_it(disk->iterateDirectory(pathToGenericString(fs::path(root_path_) / part_dir_)))
         , part_dir(part_dir_)
     {
     }
@@ -160,7 +161,7 @@ public:
             return dir_it->path();
         }
 
-        return fs::path(part_dir) / *files_it;
+        return pathToGenericString(fs::path(part_dir) / *files_it);
     }
 
 private:
@@ -189,7 +190,7 @@ Poco::Timestamp DataPartStorageOnDiskPacked::getFileLastModified(const String & 
 {
     auto disk = volume->getDisk();
     if (isWrittenSeparately(file_name))
-        return disk->getLastModified(fs::path(root_path) / part_dir / file_name);
+        return disk->getLastModified(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 
     if (!reader)
         throw Exception(ErrorCodes::NOT_INITIALIZED,
@@ -216,7 +217,7 @@ bool DataPartStorageOnDiskPacked::existsFileImpl(const std::string & file_name) 
 
     auto disk = volume->getDisk();
     if (isWrittenSeparately(file_name))
-        return disk->existsFile(fs::path(root_path) / part_dir / file_name);
+        return disk->existsFile(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 
     if (!reader)
         return false;
@@ -235,12 +236,12 @@ size_t DataPartStorageOnDiskPacked::getFileSizeImpl(const String & file_name) co
 
     auto disk = volume->getDisk();
     if (isWrittenSeparately(file_name))
-        return disk->getFileSize(fs::path(root_path) / part_dir / file_name);
+        return disk->getFileSize(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 
     /// The archive itself is a physical file on disk; its size can be read directly
     /// without going through the packed index (which only knows individual file sizes).
     if (file_name == DATA_FILE_NAME)
-        return disk->getFileSize(fs::path(root_path) / part_dir / DATA_FILE_NAME);
+        return disk->getFileSize(pathToGenericString(fs::path(root_path) / part_dir / DATA_FILE_NAME));
 
     if (!disk->existsFile(getRelativeDataPath()))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist, cannot get file size of {}", getRelativeDataPath(), file_name);
@@ -257,10 +258,10 @@ PackedFilesIO::FileOffset DataPartStorageOnDiskPacked::getFileOffsetAndSize(cons
     auto disk = volume->getDisk();
 
     if (file_name == DATA_FILE_NAME)
-        return {0, disk->getFileSize(fs::path(root_path) / part_dir / DATA_FILE_NAME)};
+        return {0, disk->getFileSize(pathToGenericString(fs::path(root_path) / part_dir / DATA_FILE_NAME))};
 
     if (isWrittenSeparately(file_name))
-        return {0, disk->getFileSize(fs::path(root_path) / part_dir / file_name)};
+        return {0, disk->getFileSize(pathToGenericString(fs::path(root_path) / part_dir / file_name))};
 
     if (!disk->existsFile(getRelativeDataPath()))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist, cannot get file size of {}", getRelativeDataPath(), file_name);
@@ -285,7 +286,7 @@ std::optional<UInt64> DataPartStorageOnDiskPacked::getPackedFileUncompressedSize
 UInt32 DataPartStorageOnDiskPacked::getRefCount(const String & file_name) const
 {
     if (isWrittenSeparately(file_name))
-        return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
+        return volume->getDisk()->getRefCount(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 
     return reader ? volume->getDisk()->getRefCount(getRelativeDataPath()) : 0;
 }
@@ -314,7 +315,7 @@ String DataPartStorageOnDiskPacked::getUniqueId() const
     if (!disk->supportZeroCopyReplication())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
 
-    return disk->getUniqueId(fs::path(getRelativePath()) / DATA_FILE_NAME);
+    return disk->getUniqueId(pathToGenericString(fs::path(getRelativePath()) / DATA_FILE_NAME));
 }
 
 void DataPartStorageOnDiskPacked::prepareReadImpl(
@@ -352,7 +353,7 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
 
     if (isWrittenSeparately(name))
     {
-        volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+        volume->getDisk()->prepareRead(pathToGenericString(fs::path(root_path) / part_dir / name), settings, read_hint, pipeline);
         return;
     }
 
@@ -415,9 +416,9 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     {
         auto file_path = fs::path(root_path) / part_dir / name;
         if (transaction)
-            return transaction->writeFile(file_path, buf_size, mode, settings);
+            return transaction->writeFile(pathToGenericString(file_path), buf_size, mode, settings);
 
-        return volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
+        return volume->getDisk()->writeFile(pathToGenericString(file_path), buf_size, mode, settings);
     }
 
     if (writer)

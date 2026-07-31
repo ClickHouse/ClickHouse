@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
@@ -401,7 +402,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
+    String pattern = pathToGenericString(fs::absolute(fs_pattern).lexically_normal()); /// Normalize path.
     bool can_be_directory = true;
 
     if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
@@ -1320,7 +1321,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (args.format_name == "Distributed")
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
-    String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
+    String table_dir_path = pathToGenericString(fs::path(base_path) / relative_table_dir_path / "");
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
 

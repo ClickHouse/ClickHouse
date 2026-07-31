@@ -65,7 +65,7 @@ public:
     virtual ~AsyncTaskExecutor() = default;
 
 
-    /// Kept as a member alias so that `AsyncTaskExecutor::Event::READ` keeps resolving; the
+    /// Kept as a member alias so that `AsyncEvent::READ` keeps resolving; the
     /// values live in <Common/AsyncCallback.h>, which does not depend on fibers.
     using Event = AsyncEvent;
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/pathToString.h>
 #include <Databases/DatabasesCommon.h>
 #include <Disks/IDisk.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -66,7 +67,7 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
-    String getTableDataPath(const String & table_name) const override { return std::filesystem::path(data_path) / escapeForFileName(table_name) / ""; }
+    String getTableDataPath(const String & table_name) const override { return pathToGenericString(std::filesystem::path(data_path) / escapeForFileName(table_name) / ""); }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 

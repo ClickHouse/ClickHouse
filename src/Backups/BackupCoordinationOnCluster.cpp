@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupCoordinationOnCluster.h>
 
 #include <Access/Common/AccessEntityType.h>
@@ -736,7 +737,7 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
             keeper_map_table_infos.emplace_back(
                 std::move(data[0]),
                 BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
-                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[1])});
+                    .table_id = pathToGenericString(fs::path(tables[i]).filename()), .data_path_in_backup = std::move(data[1])});
         }
     });
 

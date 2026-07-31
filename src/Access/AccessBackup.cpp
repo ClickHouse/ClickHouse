@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessEntityIO.h>
@@ -230,7 +231,7 @@ std::pair<String, BackupEntryPtr> makeBackupEntryForAccessEntities(
     }
 
     String filename = fmt::format("access-{}.txt", UUIDHelpers::generateV4());
-    String file_path_in_backup = fs::path{data_path_in_backup} / filename;
+    String file_path_in_backup = pathToGenericString(fs::path{data_path_in_backup} / filename);
     return {file_path_in_backup, ab.toBackupEntry()};
 }
 
@@ -270,7 +271,7 @@ void AccessRestorerFromBackup::loadFromBackup()
         const String & data_path_in_backup = data_paths_in_backup[data_path_index];
 
         fs::path data_path_in_backup_fs = data_path_in_backup;
-        Strings filenames = backup->listFiles(data_path_in_backup_fs, /*recursive*/ false);
+        Strings filenames = backup->listFiles(pathToGenericString(data_path_in_backup_fs), /*recursive*/ false);
         if (filenames.empty())
             continue;
 
@@ -283,7 +284,7 @@ void AccessRestorerFromBackup::loadFromBackup()
 
         for (const String & filename : filenames)
         {
-            String filepath_in_backup = data_path_in_backup_fs / filename;
+            String filepath_in_backup = pathToGenericString(data_path_in_backup_fs / filename);
             AccessEntitiesInBackup ab;
 
             try

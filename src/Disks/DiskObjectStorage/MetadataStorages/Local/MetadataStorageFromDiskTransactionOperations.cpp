@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -228,7 +229,7 @@ CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(std::string
 void CreateDirectoryRecursiveOperation::execute()
 {
     fs::path p(path);
-    while (!disk.existsFileOrDirectory(p))
+    while (!disk.existsFileOrDirectory(pathToGenericString(p)))
     {
         paths_created.push_back(p);
         if (!p.has_parent_path())

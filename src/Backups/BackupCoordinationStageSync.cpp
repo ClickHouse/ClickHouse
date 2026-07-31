@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupCoordinationStageSync.h>
 
 #include <base/chrono_io.h>
@@ -315,7 +316,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
         if (!zookeeper->exists(zookeeper_path))
         {
             zookeeper_path_pos = requests.size();
-            requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+            requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zookeeper_path), "", zkutil::CreateMode::Persistent));
         }
 
         size_t num_hosts_node_pos = requests.size();
@@ -413,7 +414,7 @@ void BackupCoordinationStageSync::checkConcurrency(Coordination::ZooKeeperWithFa
             code = zookeeper->tryGetChildren(fs::path{root_zookeeper_path} / found_operation / "stage", stages);
 
             if (!((code == Coordination::Error::ZOK) || (code == Coordination::Error::ZNONODE)))
-                throw zkutil::KeeperException::fromPath(code, fs::path{root_zookeeper_path} / found_operation / "stage");
+                throw zkutil::KeeperException::fromPath(code, pathToGenericString(fs::path{root_zookeeper_path} / found_operation / "stage"));
 
             if (code == Coordination::Error::ZOK)
             {
@@ -590,7 +591,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
 
     /// Get zk nodes and subscribe on their changes.
     Strings new_zk_nodes = zookeeper->getChildrenWatch(
-        zookeeper_path,
+        pathToGenericString(zookeeper_path),
         nullptr,
         Coordination::WatchCallbackPtrOrEventPtr{zk_nodes_changed, ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination});
     std::sort(new_zk_nodes.begin(), new_zk_nodes.end()); /// Sorting is necessary because we compare the list of zk nodes with its previous versions.
@@ -905,7 +906,7 @@ void BackupCoordinationStageSync::createStageNode(const String & stage, const St
 
 String BackupCoordinationStageSync::getStageNodePath(const String & stage) const
 {
-    return fs::path{zookeeper_path} / ("current|" + current_host + "|" + stage);
+    return pathToGenericString(fs::path{zookeeper_path} / ("current|" + current_host + "|" + stage));
 }
 
 

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
@@ -1177,7 +1178,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getRelativePath();
-    disk->createDirectories(temp_dir);
+    disk->createDirectories(pathToGenericString(temp_dir));
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
@@ -1189,7 +1190,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file.path);
-        String hardlink_file_path = temp_dir / data_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / data_file_name);
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
@@ -1202,7 +1203,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String marks_file_name = fileName(marks_file_path);
-        String hardlink_file_path = temp_dir / marks_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / marks_file_name);
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
@@ -1267,7 +1268,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         /// Append data files.
         for (const auto & data_file : data_files)
         {
-            String file_path_in_backup = data_path_in_backup_fs / fileName(data_file.path);
+            String file_path_in_backup = pathToGenericString(data_path_in_backup_fs / fileName(data_file.path));
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
@@ -1278,7 +1279,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         {
             /// Append marks.
             size_t num_extra_marks = 0;
-            String file_path_in_backup = data_path_in_backup_fs / fileName(marks_file_path);
+            String file_path_in_backup = pathToGenericString(data_path_in_backup_fs / fileName(marks_file_path));
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 

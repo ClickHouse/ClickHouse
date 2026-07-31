@@ -1,3 +1,4 @@
+#include <base/getOSUserName.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -460,11 +461,7 @@ String ClientInfo::getVersionStr() const
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
-    os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
-        os_user.resize(strlen(os_user.c_str()));
-    else
-        os_user.clear();    /// Don't mind if we cannot determine user login.
+    os_user = getOSUserName();
 
     client_hostname = getFQDNOrHostName();
 

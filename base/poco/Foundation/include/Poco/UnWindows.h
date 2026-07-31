@@ -156,6 +156,20 @@
 /// included later still compiles, it just loses the annotation.
 #undef IN
 #undef OUT
+/// `TRUE` and `FALSE` expand to `1` and `0`, and are perfectly ordinary enumerator names -
+/// `FilterResult::FALSE`, `RPNEvaluationIndexUsefulnessState::TRUE`. A macro cannot be qualified
+/// away, so leaving them defined makes those declarations unparseable; and an `#undef` at the
+/// declaration is not enough either, because the next `windows.h` in the translation unit puts
+/// them back before the use. Hence here, once, for everything downstream. Poco's own Windows
+/// sources used to pass these to Win32 calls and now pass the `1` and `0` they stood for.
+#undef TRUE
+#undef FALSE
+/// mingw-w64's <excpt.h> defines these three as aliases for the structured-exception-handling
+/// intrinsics, in lower case and unprefixed. `exception_code` is an ordinary field name -
+/// `QueryViewsLogElement::exception_code` - which the macro rewrites into a call.
+#undef exception_code
+#undef exception_info
+#undef abnormal_termination
 #endif // POCO_NO_UNWINDOWS
 
 #endif // Foundation_UnWindows_INCLUDED

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/ProtocolDefines.h>
 #include "config.h"
 
@@ -4311,7 +4312,7 @@ void ClientBase::runInteractive()
                 if (should_create_parent_directories && history_file.has_parent_path())
                     fs::create_directories(history_file.parent_path());
 
-                FS::createFile(history_file);
+                FS::createFile(pathToGenericString(history_file));
             }
             catch (const ErrnoException & e)
             {

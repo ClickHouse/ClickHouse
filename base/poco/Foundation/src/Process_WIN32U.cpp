@@ -202,13 +202,13 @@ ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const Arg
 	bool mustInheritHandles = false;
 	if (inPipe)
 	{
-		DuplicateHandle(hProc, inPipe->readHandle(), hProc, &startupInfo.hStdInput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, inPipe->readHandle(), hProc, &startupInfo.hStdInput, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 		inPipe->close(Pipe::CLOSE_READ);
 	} 
 	else if (GetStdHandle(STD_INPUT_HANDLE))
 	{
-		DuplicateHandle(hProc, GetStdHandle(STD_INPUT_HANDLE), hProc, &startupInfo.hStdInput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, GetStdHandle(STD_INPUT_HANDLE), hProc, &startupInfo.hStdInput, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 	} 
 	else
@@ -218,12 +218,12 @@ ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const Arg
 	// outPipe may be the same as errPipe, so we duplicate first and close later.
 	if (outPipe)
 	{
-		DuplicateHandle(hProc, outPipe->writeHandle(), hProc, &startupInfo.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, outPipe->writeHandle(), hProc, &startupInfo.hStdOutput, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 	} 
 	else if (GetStdHandle(STD_OUTPUT_HANDLE))
 	{
-		DuplicateHandle(hProc, GetStdHandle(STD_OUTPUT_HANDLE), hProc, &startupInfo.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, GetStdHandle(STD_OUTPUT_HANDLE), hProc, &startupInfo.hStdOutput, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 	} 
 	else
@@ -232,12 +232,12 @@ ProcessHandleImpl* ProcessImpl::launchImpl(const std::string& command, const Arg
 	}
 	if (errPipe)
 	{
-		DuplicateHandle(hProc, errPipe->writeHandle(), hProc, &startupInfo.hStdError, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, errPipe->writeHandle(), hProc, &startupInfo.hStdError, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 	} 
 	else if (GetStdHandle(STD_ERROR_HANDLE))
 	{
-		DuplicateHandle(hProc, GetStdHandle(STD_ERROR_HANDLE), hProc, &startupInfo.hStdError, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		DuplicateHandle(hProc, GetStdHandle(STD_ERROR_HANDLE), hProc, &startupInfo.hStdError, 0, 1, DUPLICATE_SAME_ACCESS);
 		mustInheritHandles = true;
 	} 
 	else
@@ -305,7 +305,7 @@ void ProcessImpl::killImpl(ProcessHandleImpl& handle)
 
 void ProcessImpl::killImpl(PIDImpl pid)
 {
-	HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+	HANDLE hProc = OpenProcess(PROCESS_TERMINATE, 0, pid);
 	if (hProc)
 	{
 		if (TerminateProcess(hProc, 0) == 0)
@@ -344,7 +344,7 @@ bool ProcessImpl::isRunningImpl(const ProcessHandleImpl& handle)
 
 bool ProcessImpl::isRunningImpl(PIDImpl pid)
 {
-	HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+	HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
 	bool result = true;
 	DWORD exitCode;
 	BOOL rc = GetExitCodeProcess(hProc, &exitCode);

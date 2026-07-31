@@ -42,7 +42,7 @@ bool MutexImpl::tryLockImpl(long milliseconds)
 	{
 		try
 		{
-			if (TryEnterCriticalSection(&_cs) == TRUE)
+			if (TryEnterCriticalSection(&_cs) == 1)
 				return true;
 		}
 		catch (...)
