@@ -6,7 +6,6 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
 #include <Backups/BackupPacker.h>
-#include <Backups/getBackupDataFileName.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesIO.h>
@@ -40,6 +39,7 @@
 #include <filesystem>
 #include <optional>
 #include <set>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -125,6 +125,16 @@ namespace
         return path;
     }
 
+    /// A backup stores one object per data_file_name -- byte-identical files share one, and a file that is empty
+    /// or comes entirely from the base backup has none. This is what `num_entries` / `size_of_entries` count, so
+    /// the write and the read path must both go through here or `system.backups` reports two different numbers.
+    bool countsAsPhysicalEntry(const BackupFileInfo & info, std::unordered_set<String> & counted_objects)
+    {
+        if (info.data_file_name.empty())
+            return false;
+        return counted_objects.emplace(info.data_file_name).second;
+    }
+
     /// Validate that a file name from a backup does not contain path traversal sequences.
     /// This prevents a corrupted or tampered backup from accessing files outside the intended directories during restore.
     void validateFileNameFromBackup(const String & file_name, const String & field_name, const String & backup_name_for_logging)
@@ -199,7 +209,6 @@ BackupImpl::BackupImpl(
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , data_file_name_generator(params.data_file_name_generator)
-    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , backup_id(params.backup_id)
@@ -467,12 +476,18 @@ void BackupImpl::writeBackupMetadata()
     size_t num_all_file_infos = 0;
     bool base_backup_in_use = false;
     Int64 max_pack_id = -1;
+    /// Names of the objects that live inside a pack. A reference inherits its target's data_file_name but
+    /// keeps pack_id == -1, so a per-file `pack_id < 0` test would count it as an own object whenever it is
+    /// iterated before its packed target; the name is the same for both, whatever the order.
+    std::unordered_set<String> packed_object_names;
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
     {
         ++num_all_file_infos;
         if (info.base_size)
             base_backup_in_use = true;
         max_pack_id = std::max(max_pack_id, info.pack_id);
+        if (info.pack_id >= 0)
+            packed_object_names.emplace(info.data_file_name);
     });
 
     if (num_all_file_infos == 0)
@@ -542,6 +557,7 @@ void BackupImpl::writeBackupMetadata()
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
+    std::unordered_set<String> counted_objects;
 
     *out << "<contents>";
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
@@ -577,18 +593,11 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files
-            || (info.size && (info.size != info.base_size)
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
-        if (has_entry)
+        /// Packs are accounted per object below, not per member (see writeFilePack).
+        if (countsAsPhysicalEntry(info, counted_objects) && !packed_object_names.contains(info.data_file_name))
         {
-            /// Packs are accounted per object below, not per member (see writeFilePack).
-            if (info.pack_id < 0)
-            {
-                ++num_entries;
-                size_of_entries += info.size - info.base_size;
-            }
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
         }
 
         *out << "</file>";
@@ -639,6 +648,7 @@ void BackupImpl::readBackupMetadata()
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
+    std::unordered_set<String> counted_objects;
 
     bool contents_seen = false;
 
@@ -812,8 +822,7 @@ void BackupImpl::readBackupMetadata()
 
         ++num_files;
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
-        if (has_entry)
+        if (countsAsPhysicalEntry(info, counted_objects))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;

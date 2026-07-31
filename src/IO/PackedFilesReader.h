@@ -54,9 +54,7 @@ public:
 
     /// Wraps an already-opened archive buffer as a view over one member's [offset, offset + size) range.
     /// Shared with callers that open the archive buffer themselves (e.g. a backup reader that goes through
-    /// IBackupReader rather than a DiskPtr). The view seeks into the archive, so `archive_buffer` should come
-    /// from a plain pread-style read method: an explicit seek() on a direct-io buffer returns the offset floored
-    /// to the O_DIRECT alignment, which leaves the view tracking the wrong position.
+    /// IBackupReader rather than a DiskPtr).
     static std::unique_ptr<ReadBufferFromFileBase> viewMember(
         std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
 
