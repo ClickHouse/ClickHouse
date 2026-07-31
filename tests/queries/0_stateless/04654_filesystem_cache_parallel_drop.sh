@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-distributed-cache
 # Tag no-fasttest: requires S3 disk
 # Tag no-parallel: uses SYSTEM DROP FILESYSTEM CACHE
+# Tag no-distributed-cache: reads go through the distributed cache and do not populate the local filesystem cache
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
