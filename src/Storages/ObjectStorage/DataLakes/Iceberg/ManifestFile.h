@@ -165,6 +165,13 @@ struct ProcessedManifestFileEntry
 
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
 
+/// Puffin deletion vectors must identify the data file via the dedicated `referenced_data_file`
+/// manifest field (non-empty). Position-delete lower/upper bounds must not be used as a fallback.
+void requireDirectReferencedDataFileForPuffinDeletionVector(
+    bool set_from_referenced_data_file_field,
+    const std::optional<IcebergPathFromMetadata> & referenced_path,
+    const IcebergPathFromMetadata & manifest_file_path);
+
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
