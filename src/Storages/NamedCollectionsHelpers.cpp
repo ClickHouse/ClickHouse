@@ -72,6 +72,14 @@ namespace
         }
 
         auto value = literal_value->as<ASTLiteral>()->value;
+
+        /// A named collection value is stored as text, and an aggregate state has no text
+        /// representation: fieldToString() on it raises a LOGICAL_ERROR (an abort under
+        /// debug/sanitizers). The value comes from the query, so this is a user error.
+        if (value.getType() == Field::Types::AggregateFunctionState)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Value of key '{}' cannot be an aggregate function state", key);
+
         return std::pair{key, Field(value)};
     }
 }
@@ -104,7 +112,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
     bool throw_unknown_collection,
-    std::vector<std::pair<std::string, ASTPtr>> * complex_args,
+    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
     const StorageID * dependent_table_id)
 {
     if (asts.empty())
@@ -162,6 +170,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
         const auto & [key, value] = *value_override;
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->markQueryOverridden(key);
     }
 
     if (dependent_table_id)

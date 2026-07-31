@@ -2,10 +2,12 @@
 
 #if USE_H3
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <h3api.h>
 
@@ -38,7 +40,7 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        std::vector<H3Index> res0_indexes;
+        VectorWithMemoryTracking<H3Index> res0_indexes;
         const auto cell_count = res0CellCount();
         res0_indexes.resize(cell_count);
         getRes0Cells(res0_indexes.data());

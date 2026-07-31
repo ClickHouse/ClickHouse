@@ -1,5 +1,7 @@
 -- Tags: distributed
 
+SET explain_query_plan_default = 'legacy';
+
 set prefer_localhost_replica = 1;
 
 -- { echo }

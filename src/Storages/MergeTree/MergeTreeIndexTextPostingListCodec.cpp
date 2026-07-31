@@ -29,6 +29,7 @@ void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
         segment_descriptors.emplace_back();
         segment_descriptors.back().row_id_begin = row_id;
         segment_descriptors.back().compressed_data_offset = compressed_data.size();
+        segment_block_metas.emplace_back();
 
         prev_row_id = row_id;
         current_segment.emplace_back(row_id - prev_row_id);
@@ -61,6 +62,7 @@ void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
         segment_descriptors.emplace_back();
         segment_descriptors.back().row_id_begin = row_ids.front();
         segment_descriptors.back().compressed_data_offset = compressed_data.size();
+        segment_block_metas.emplace_back();
 
         prev_row_id = row_ids.front();
     }
@@ -113,13 +115,28 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
     info.offsets.reserve(segment_descriptors.size());
     info.ranges.reserve(segment_descriptors.size());
 
-    for (const auto & descriptor : segment_descriptors)
+    for (size_t seg_idx = 0; seg_idx < segment_descriptors.size(); ++seg_idx)
     {
+        const auto & descriptor = segment_descriptors[seg_idx];
         info.offsets.emplace_back(out.count());
         info.ranges.emplace_back(descriptor.row_id_begin, descriptor.row_id_end);
+
         Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin);
         header.write(out);
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
+
+        /// Index Section: append per-block metadata after segment payload.
+        /// This allows PostingListCursor to binary-search for blocks without
+        /// decoding the entire segment. The cursor reads header + payload + Index Section
+        /// sequentially, so no offset storage is needed in the dictionary.
+        const auto & block_metas = segment_block_metas[seg_idx].metas;
+        writeVarUInt(block_metas.size(), out);
+
+        for (const auto & meta : block_metas)
+            writeVarUInt(meta.last_row_id, out);
+
+        for (const auto & meta : block_metas)
+            writeVarUInt(meta.relative_offset, out);
     }
 }
 
@@ -144,6 +161,15 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     auto & segment_descriptor = segment_descriptors.back();
     segment_descriptor.cardinality += segment.size();
     segment_descriptor.row_id_end = prev_row_id;
+
+    /// Record packed block metadata for V2 Index Section.
+    /// relative_offset is relative to the segment's compressed_data_offset.
+    auto & block_metas = segment_block_metas.back().metas;
+    block_metas.push_back(
+    {
+        prev_row_id,
+        compressed_data.size() - segment_descriptor.compressed_data_offset
+    });
 
     auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(segment);
     size_t remaining_memory = compressed_data.capacity() - compressed_data.size();
