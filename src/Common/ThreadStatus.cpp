@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && !defined(OS_WINDOWS)
 namespace
 {
 
@@ -137,7 +137,7 @@ ThreadStatus::ThreadStatus()
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && !defined(OS_WINDOWS)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
