@@ -96,10 +96,13 @@ bool isRowPreservingStep(const IQueryPlanStep & step)
     /// Reading the source: PREWHERE written in the view drops rows, and an outer predicate must
     /// not join that same PREWHERE chain. A row policy of the definer needs no barrier — the
     /// reading step always applies it before PREWHERE and before any pushed-down filter.
-    if (const auto * source_with_filter = typeid_cast<const SourceStepWithFilter *>(&step))
+    ///
+    /// `typeid_cast` compares types exactly, so matching these two base classes needs
+    /// `dynamic_cast` — every reading step is a subclass of them, never one of them.
+    if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(&step))
         return source_with_filter->getPrewhereInfo() == nullptr;
 
-    if (typeid_cast<const ISourceStep *>(&step))
+    if (dynamic_cast<const ISourceStep *>(&step))
         return true;
 
     return false;
