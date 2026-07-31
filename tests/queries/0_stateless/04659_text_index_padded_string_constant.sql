@@ -49,6 +49,23 @@ SELECT 'A17', count() FROM a_str     WHERE NOT (s != toFixedString('VALUE0', 8))
 SELECT 'A18', count() FROM a_str_log WHERE NOT (s != toFixedString('VALUE0', 10));
 SELECT 'A18', count() FROM a_str     WHERE NOT (s != toFixedString('VALUE0', 10));
 
+-- A25: a widthless index cannot pad the probe back, so it ships the trimmed constant. That is token-preserving only
+-- while the trimmed value does not end inside a declared UTF-8 sequence: the n-gram tokenizer steps by seqLength and
+-- clamps its final gram to the buffer, so a stored value ending `C2 00` yields the gram `5545C200` while the trimmed
+-- probe `..C2` yields `5545C2` - not a subset, so the granule holding the matching row was skipped. The stored value
+-- must keep a NUL AFTER the lead byte: with the lead byte last there is nothing to trim and the probe is the stored
+-- value itself, so an exact-width fixture would assert nothing here.
+DROP TABLE IF EXISTS a_str_utf8;
+DROP TABLE IF EXISTS a_str_utf8_log;
+CREATE TABLE a_str_utf8 (id UInt64, s String,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_str_utf8_log (id UInt64, s String) ENGINE = Log;
+INSERT INTO a_str_utf8     SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_str_utf8_log SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A25', count() FROM a_str_utf8_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+SELECT 'A25', count() FROM a_str_utf8     WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+
 -- sparse_grams shares the same condition class and is affected identically.
 DROP TABLE IF EXISTS a_sparse;
 CREATE TABLE a_sparse (id UInt64, v Array(String),
@@ -105,6 +122,19 @@ SELECT 'A14', count() FROM a_lc_log WHERE s = toFixedString('VALUE0', 8);
 SELECT 'A14', count() FROM a_lc     WHERE s = toFixedString('VALUE0', 8);
 SELECT 'A15', count() FROM a_lc_log WHERE s = toFixedString('VALUE0', 10);
 SELECT 'A15', count() FROM a_lc     WHERE s = toFixedString('VALUE0', 10);
+
+-- A26: the LowCardinality(String) twin of A25. The dictionary type is widthless, so this also ships a trimmed probe
+-- and needs the same sequence-completeness guard.
+DROP TABLE IF EXISTS a_lc_utf8;
+DROP TABLE IF EXISTS a_lc_utf8_log;
+CREATE TABLE a_lc_utf8 (id UInt64, s LowCardinality(String),
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_lc_utf8_log (id UInt64, s LowCardinality(String)) ENGINE = Log;
+INSERT INTO a_lc_utf8     SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_lc_utf8_log SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A26', count() FROM a_lc_utf8_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+SELECT 'A26', count() FROM a_lc_utf8     WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
 
 -- LowCardinality(FixedString(8)): the width comes from the dictionary type, so the probe is re-encoded to 8 bytes.
 DROP TABLE IF EXISTS a_lcfs;
@@ -222,6 +252,16 @@ SELECT 'B15g', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM c_str_p
 SELECT 'B16', count() FROM c_str_pfx_log WHERE endsWith(s, toFixedString('0', 1));
 SELECT 'B16', count() FROM c_str_pfx     WHERE endsWith(s, toFixedString('0', 1));
 
+-- B17/B17g: the two decline paths, asserted as declines rather than left silent. A constant wider than the indexed
+-- FixedString(8) (B17) and a trimmed constant that is not UTF-8-sequence-complete on a widthless index (B17g) both
+-- make the atom UNKNOWN, so the skip index removes nothing and every granule is read. The answer is 0 either way, so
+-- only the granule count can tell a decline from a prune - and it must be asserted as the ABSENCE of the skip index's
+-- `Granules: 0/64` line, not the presence of `64/64`: the plan also carries the primary key's own unconditional
+-- `Granules: 64/64` line, so matching that would pass under a prune too (measured vacuous). B17g fails without the
+-- sequence-completeness guard, which is what makes it the load-bearing half.
+SELECT 'B17', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE s = toFixedString('VALUE0LONGER', 12)) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'B17g', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str_utf8 WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%Granules: 0/64%';
+
 -- ---------------------------------------------------------------------------------------------------
 -- Direction C: the adversarial shared-gram fixture. Every filler shares all of the trimmed probe's 3-grams, so a
 -- probe that is merely sound rather than exact reads all 64 granules. None of these rows is visible to a
@@ -310,6 +350,10 @@ SELECT 'D2', count() FROM a_mk WHERE m[toFixedString('absent', 8)] = '';
 
 DROP TABLE a_str;
 DROP TABLE a_str_log;
+DROP TABLE a_str_utf8;
+DROP TABLE a_str_utf8_log;
+DROP TABLE a_lc_utf8;
+DROP TABLE a_lc_utf8_log;
 DROP TABLE a_sparse;
 DROP TABLE a_fs;
 DROP TABLE a_fs_log;

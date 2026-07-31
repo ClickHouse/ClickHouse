@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -322,6 +323,16 @@ std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::
 namespace
 {
 
+/// Whether every UTF-8 sequence declared by a lead byte ends within `value`, i.e. walking it by `seqLength`
+/// lands exactly on its end. A byte that declares no continuation counts as one, matching the tokenizer.
+bool isUtf8SequenceComplete(std::string_view value)
+{
+    size_t i = 0;
+    while (i < value.size())
+        i += UTF8::seqLength(static_cast<UInt8>(value[i]));
+    return i == value.size();
+}
+
 /// The granule tokenizes the stored bytes verbatim, so for a `FixedString(N)` column it tokenizes all N bytes
 /// including the NUL padding. A `FixedString` constant carries its own padding in the `Field`, which need not
 /// agree with what the executing function compares: `hasAny`/`hasAll` cast both arguments to a common type,
@@ -330,14 +341,19 @@ namespace
 /// granule is skipped.
 ///
 /// Re-encode the constant into the bytes the index actually stores, so the probe tokens are a subset of the
-/// granule's. Trailing NULs are removed first: a NUL is a separator for the token tokenizer, so dropping one
-/// cannot change any token, and for the n-gram tokenizer the remaining grams stay a subset. When the indexed
-/// column is `FixedString(N)` the trimmed value is padded back to exactly N bytes, matching the stored
-/// encoding; when it is `String` there is no width to pad to and the trimmed value is the only sound probe.
+/// granule's. Trailing NULs are removed first. When the indexed column is `FixedString(N)` the trimmed value
+/// is padded back to exactly N bytes: any stored value that compares equal to the constant holds those same N
+/// bytes, so the probe tokenizes byte for byte like the granule. When the indexed column is `String` there is
+/// no width to pad to and only the trimmed value can be probed, which is token-preserving for the token
+/// tokenizer unconditionally (a NUL is a separator, so removing one cannot change any token) but for the
+/// n-gram tokenizer only while the trimmed value does not end inside a declared UTF-8 sequence: that tokenizer
+/// steps by `UTF8::seqLength` and clamps its last gram to the buffer, so a trailing lead byte whose sequence
+/// runs past the end yields a shorter gram than the same bytes followed by the padding. Such a probe is not a
+/// subset and would skip a matching granule, so decline instead.
 ///
 /// `indexed_type` is the index column's type as stored in `index_data_types`, before `getPrimitiveType`.
-/// Returns false when the constant cannot be represented in the index domain, in which case it cannot match
-/// any stored value and the caller must not use the index.
+/// Returns false when the constant cannot be represented in the index domain, in which case the caller must
+/// not use the index.
 bool normalizeStringConstantForIndexDomain(const DataTypePtr & indexed_type, String & value)
 {
     const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
@@ -346,7 +362,7 @@ bool normalizeStringConstantForIndexDomain(const DataTypePtr & indexed_type, Str
     trimRight(value, '\0');
 
     if (!fixed_string_type)
-        return true;
+        return isUtf8SequenceComplete(value);
 
     const size_t n = fixed_string_type->getN();
     if (value.size() > n)
