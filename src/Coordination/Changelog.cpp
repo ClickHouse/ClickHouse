@@ -2434,6 +2434,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
+                itr->second->deleted = true;
                 removeChangelogAsync(itr->second);
                 itr = existing_changelogs.erase(itr);
             }
@@ -2700,6 +2701,15 @@ void Changelog::backgroundChangelogOperationsThread()
             const auto & changelog = *changelog_operation->changelog;
             try
             {
+                {
+                    std::lock_guard lock(writer_mutex);
+                    auto it = existing_changelogs.find(changelog.from_log_index);
+                    if (it != existing_changelogs.end() && it->second.get() != &changelog)
+                    {
+                        LOG_INFO(log, "Skipping removal of {} because it was recreated", changelog.path);
+                        continue;
+                    }
+                }
                 changelog.disk->removeFile(changelog.path);
                 LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
             }
