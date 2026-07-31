@@ -140,6 +140,11 @@ def postgres_login(port, user, password=""):
 
 def session_log_count(node, type_, user, interface):
     node.query("SYSTEM FLUSH LOGS session_log")
+    # `system.session_log` is created lazily on the first flushed entry, so it does
+    # not exist yet on a node that has not recorded any login (e.g. `node_reject`
+    # before the first rejected connection attempt).
+    if node.query("EXISTS TABLE system.session_log").strip() == "0":
+        return 0
     return int(node.query(f"SELECT count() FROM system.session_log WHERE type = '{type_}' AND user = '{user}' AND interface = '{interface}'"))
 
 
