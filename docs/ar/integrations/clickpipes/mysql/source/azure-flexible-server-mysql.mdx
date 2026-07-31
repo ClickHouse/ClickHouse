@@ -49,7 +49,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   لا يدعم ClickPipes اتصالات Azure Private Link. إذا كنت لا تسمح بالوصول العام إلى مثيل Azure Flexible Server for MySQL، فيمكنك [استخدام نفق SSH](/ar/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access) للاتصال بأمان. وسيتم دعم Azure Private Link في المستقبل.
 </Note>
 
-بعد ذلك، يجب أن تسمح لـ ClickPipes بالاتصال بـ مثيل Azure Flexible Server for MySQL.
+بعد ذلك، يجب أن تسمح لـ ClickPipes بالاتصال بمثيل Azure Flexible Server for MySQL.
 
 <Tabs>
   <Tab title="السماح بعناوين IP الخاصة بـ ClickPipes">
@@ -68,17 +68,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     إذا كنت لا تسمح بالوصول العام إلى مثيل Azure Flexible Server for MySQL، فيجب أولاً إعداد مضيف bastion عبر SSH لتمرير الاتصال بأمان. لإعداد مضيف bastion عبر SSH على Azure:
 
     1. أنشئ Azure Virtual Machine (VM) وابدأ تشغيله باتباع [الوثائق الرسمية](https://learn.microsoft.com/en-us/azure/virtual-machines/linux/quick-create-portal?tabs=ubuntu).
-       * تأكد من أن الجهاز الظاهري موجود في Virtual Network ‏(VNet) نفسها الخاصة بـ مثيل Azure Flexible Server for MySQL، أو في VNet مقترنة مع توفر الاتصال.
+       * تأكد من أن الجهاز الظاهري موجود في Virtual Network ‏(VNet) نفسها الخاصة بمثيل Azure Flexible Server for MySQL، أو في VNet مقترنة مع توفر الاتصال.
        * تأكد من أن الجهاز الظاهري لديه [عنوان IP عام ثابت](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address). ستستخدم عنوان IP هذا عند ربط ClickPipes بمضيف bastion عبر SSH.
 
     2. حدِّث قواعد Network Security Group ‏(NSG) الخاصة بمضيف bastion عبر SSH للسماح بحركة المرور الواردة من [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للمنطقة التي نُشرت فيها خدمتك.
 
-    3. حدِّث قواعد firewall الخاصة بـ مثيل Azure Flexible Server for MySQL للسماح بحركة المرور من [عنوان IP الخاص](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) لمضيف bastion عبر SSH.
+    3. حدِّث قواعد firewall الخاصة بمثيل Azure Flexible Server for MySQL للسماح بحركة المرور من [عنوان IP الخاص](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) لمضيف bastion عبر SSH.
   </Tab>
 </Tabs>
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟
+  ## ما التالي؟
 </div>
 
-يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) وبدء إدخال البيانات من مثيل Azure Flexible Server for MySQL إلى ClickHouse Cloud. احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد المثيل، لأنك ستحتاج إليها خلال عملية إنشاء ClickPipe.
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) والبدء في إدخال البيانات من مثيل Azure Flexible Server for MySQL إلى ClickHouse Cloud. احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد المثيل، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

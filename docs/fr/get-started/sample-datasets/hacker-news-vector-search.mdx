@@ -30,9 +30,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
 </div>
 
 <Steps>
-  <Step>
-    ### Créer la table
-
+  <Step title="Créer la table" id="create-table">
     Créez la table `hackernews` pour stocker les publications &amp; leurs embeddings, ainsi que les attributs associés :
 
     ```sql
@@ -63,9 +61,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     la recherche de similarité vectorielle combinée au post-filtrage/pré-filtrage, comme expliqué dans la [documentation](/fr/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Charger les données
-
+  <Step title="Charger les données" id="load-table">
     Pour charger le jeu de données à partir du fichier `Parquet`, exécutez l’instruction SQL suivante :
 
     ```sql
@@ -75,9 +71,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     L’insertion de 28,74 millions de lignes dans la table va prendre quelques minutes.
   </Step>
 
-  <Step>
-    ### Créer un index de similarité vectorielle
-
+  <Step title="Créer un index de similarité vectorielle" id="build-vector-similarity-index">
     Exécutez la requête SQL suivante pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `hackernews` :
 
     ```sql
@@ -94,9 +88,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     La construction et l’enregistrement de l’index peuvent même prendre quelques minutes, voire une heure, pour l’ensemble du jeu de données de 28,74 millions, selon le nombre de cœurs CPU disponibles et la bande passante du stockage.
   </Step>
 
-  <Step>
-    ### Effectuer une recherche ANN
-
+  <Step title="Effectuer une recherche ANN" id="perform-ann-search">
     Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement cet index :
 
     ```sql title="Query"
@@ -110,9 +102,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     Le chargement initial de l’index vectoriel en mémoire peut prendre de quelques secondes à quelques minutes.
   </Step>
 
-  <Step>
-    ### Générer des embeddings pour la requête de recherche
-
+  <Step title="Générer des embeddings pour la requête de recherche" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) proposent des modèles d&#39;embedding locaux et faciles à utiliser pour capturer le sens sémantique des phrases et des paragraphes.
 
     Le jeu de données HackerNews contient des embeddings vectoriels générés à partir du modèle

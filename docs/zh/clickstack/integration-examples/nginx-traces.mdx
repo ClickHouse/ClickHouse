@@ -34,9 +34,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * ClickStack 主机名或 IP 地址
 
 <Steps>
-  <Step>
-    #### 安装 OpenTelemetry Nginx 模块
-
+  <Step title="安装 OpenTelemetry Nginx 模块" id="install-module">
     为 Nginx 添加链路追踪的最简单方式，是使用内置 OpenTelemetry 支持的官方 Nginx image。
 
     ##### 使用 nginx:otel image
@@ -55,9 +53,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 Nginx 将链路追踪发送到 ClickStack
-
+  <Step title="配置 Nginx 将链路追踪发送到 ClickStack" id="configure-nginx">
     将 OpenTelemetry 配置添加到你的 `nginx.conf` 文件中。该配置会加载模块，并将链路追踪发送到 ClickStack 的 OTLP 端点。
 
     首先，获取你的 API key：
@@ -159,9 +155,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证链路追踪
-
+  <Step title="在 HyperDX 中验证链路追踪" id="verifying-traces">
     配置完成后，登录 HyperDX 并确认链路追踪是否已开始流入。你应该会看到类似下面的内容；如果没有看到链路追踪，请尝试调整时间范围：
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="查看链路追踪" />
@@ -172,12 +166,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-对于想在配置生产系统之前先测试 Nginx 链路追踪集成的用户，我们提供了一个预先生成的 Nginx 链路追踪 演示数据集，其中包含逼真的流量模式。
+对于想在配置生产系统之前先测试 Nginx 链路追踪集成的用户，我们提供了一个预先生成的 Nginx 链路追踪演示数据集，其中包含逼真的流量模式。
 
 <Steps>
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     如果你还没有运行 ClickStack，请使用以下命令启动：
 
     ```bash
@@ -193,10 +185,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 端口 4318：OTLP HTTP 端点 (用于演示链路追踪)
   </Step>
 
-  <Step>
-    #### 下载样本数据集
-
-    下载样本 链路追踪 文件，并将时间戳更新为当前时间：
+  <Step title="下载样本数据集" id="download-sample">
+    下载样本链路追踪文件，并将时间戳更新为当前时间：
 
     ```bash
     # 下载 traces
@@ -212,10 +202,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 保留原始流量模式，并整体移位到当前时间
   </Step>
 
-  <Step>
-    #### 将链路追踪发送到 ClickStack
-
-    将你的 API key 设置为环境变量 (如果尚未设置) ：
+  <Step title="将链路追踪发送到 ClickStack" id="send-traces">
+    将你的 API key 设置为环境变量 (如果尚未设置)：
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
@@ -225,7 +213,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     1. 在你的 ClickStack URL 中打开 HyperDX
     2. 进入 Settings → API Keys
-    3. 复制你的**摄取 API key**
+    3. 复制你的 **摄取 API key**
 
     然后将链路追踪发送到 ClickStack：
 
@@ -245,9 +233,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     你应该会看到类似 `{"partialSuccess":{}}` 的响应，表示链路追踪已成功发送。全部 1,000 条链路追踪都会被摄取到 ClickStack 中。
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证链路追踪
-
+  <Step title="在 HyperDX 中验证链路追踪" id="verify-demo-traces">
     1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建一个账户)
     2. 进入搜索视图，并将数据源设为 `Traces`
     3. 将时间范围设置为 **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
@@ -271,13 +257,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你开始使用 ClickStack 监控链路追踪，我们提供了用于链路追踪数据的关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预置仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号菜单中的“导入仪表盘”。
 
@@ -288,9 +272,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="完成导入" />
   </Step>
 
-  <Step>
-    #### 仪表盘创建后，所有可视化都会预先配置好。
-
+  <Step title="仪表盘创建后，所有可视化都会预先配置好。" id="created-dashboard">
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区进行调整) 。导入的仪表盘默认不会设置时间范围。
     </Note>
@@ -358,7 +340,7 @@ tail -f /var/log/nginx/access.log
 * 针对特定用例 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 进入生产环境
 </div>
 
-本指南将链路追踪直接从 Nginx OpenTelemetry 模块发送到 ClickStack 的 OTLP 端点。对于生产环境部署，我们建议自行运行 OTel collector 作为网关，以提供批处理能力和弹性。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南将链路追踪直接从 Nginx OpenTelemetry 模块发送到 ClickStack 的 OTLP 端点。对于生产环境部署，我们建议部署您自己的 OTel collector 作为网关，以提供批处理和更强的容错能力。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
