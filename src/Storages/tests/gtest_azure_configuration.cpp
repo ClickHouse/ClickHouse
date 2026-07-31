@@ -21,6 +21,7 @@
 
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -313,13 +314,25 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
 /// `getRequestSettings` is shared with the OneLake / `*.fabric.microsoft.com` path, whose writes
 /// route to `WriteBufferFromAzureDataLakeStorage` and ignore these settings, so validation must
 /// live at the writer (`WriteBufferFromAzureBlobStorage`), not at settings resolution.
-TEST(AzureRequestSettings, ValidateUploadSettingsRejectsZeroMinUploadPartSize)
+///
+/// The check is expressed through the writer's constructor (rather than calling
+/// `validateUploadSettings` directly) so that this test also compiles against sources without the
+/// fix, where it fails at runtime — the internal assertion aborts instead of a clean exception.
+TEST(AzureRequestSettings, WriterRejectsZeroMinUploadPartSize)
 {
-    AzureBlobStorage::RequestSettings settings;
-    settings.min_upload_part_size = 0;
+    auto settings = std::make_shared<AzureBlobStorage::RequestSettings>();
+    settings->min_upload_part_size = 0;
 
     ASSERT_THROW_ERROR_CODE(
-        settings.validateUploadSettings(), Exception, ErrorCodes::INVALID_SETTING_VALUE, "azure_min_upload_part_size");
+        WriteBufferFromAzureBlobStorage(
+            /* blob_container_client_ */ nullptr,
+            /* blob_path_ */ "test_blob",
+            /* buf_size_ */ 1024,
+            WriteSettings{},
+            settings),
+        Exception,
+        ErrorCodes::INVALID_SETTING_VALUE,
+        "azure_min_upload_part_size");
 }
 
 TEST(AzureRequestSettings, GetRequestSettingsDoesNotValidate)
