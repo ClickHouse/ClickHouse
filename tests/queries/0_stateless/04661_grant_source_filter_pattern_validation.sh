@@ -14,10 +14,10 @@ user="user_04661_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
 
-${CLICKHOUSE_CLIENT} --query "GRANT READ ON S3('[') TO $user" 2>&1 | grep -c "CANNOT_COMPILE_REGEXP"
+${CLICKHOUSE_CLIENT} --query "GRANT READ ON S3('[') TO $user" 2>&1 | grep -q "CANNOT_COMPILE_REGEXP" && echo "OK"
 
 # `CHECK GRANT` builds the same elements through its own interpreter.
-${CLICKHOUSE_CLIENT} --query "CHECK GRANT READ ON S3('[')" 2>&1 | grep -c "CANNOT_COMPILE_REGEXP"
+${CLICKHOUSE_CLIENT} --query "CHECK GRANT READ ON S3('[')" 2>&1 | grep -q "CANNOT_COMPILE_REGEXP" && echo "OK"
 
 # A valid pattern is accepted on both paths.
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON S3('s3://bucket/.*') TO $user"
