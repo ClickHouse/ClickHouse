@@ -6,6 +6,13 @@ SET max_parallel_replicas = 1;
 -- ceiling; reset them so the `table_join` lookup fast path (declined on any non-zero limit) is exercised.
 SET max_rows_in_join = 0, max_bytes_in_join = 0;
 SET allow_experimental_lookup_index = 1;
+-- The result of an `ANY` join under `join_any_take_last_row = 1` observably depends on whether the
+-- optimizer swaps the join sides (a swapped `HashJoin` no longer keeps the last duplicate-key right
+-- row), and `query_plan_optimize_join_order_randomize` perturbs the cardinality estimates per table,
+-- so the indexed and non-indexed tables can get different swap decisions. Pin both so the parity
+-- checks below compare identical regular-join plans; this is unrelated to the lookup index itself.
+SET query_plan_join_swap_table = 'false';
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_lookup_take_last_probe SYNC;
 DROP TABLE IF EXISTS t_lookup_take_last_dim SYNC;
