@@ -36,6 +36,7 @@ struct BaseSettingsHelpers
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
+    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 

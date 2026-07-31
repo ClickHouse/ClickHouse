@@ -64,6 +64,16 @@ void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, 
         String{name}, String{type}, String{name});
 }
 
+void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name)
+{
+    /// For consumers that read a `SettingChange` without a settings schema at hand, so they know the
+    /// setting is not Bool but not what its type is.
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Setting '{}' is not Bool, so it cannot be set without a value. Write '{} = <value>'",
+        String{name}, String{name});
+}
+
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
