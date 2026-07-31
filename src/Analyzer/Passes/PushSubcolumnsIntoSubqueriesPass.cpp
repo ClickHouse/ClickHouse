@@ -161,8 +161,8 @@ void collectEligibleTargets(const QueryTreeNodePtr & join_tree_node, bool can_be
         bool left_defaultable = can_be_filled_with_defaults || kind == JoinKind::Right || kind == JoinKind::Full || kind == JoinKind::Paste;
         bool right_defaultable = can_be_filled_with_defaults || kind == JoinKind::Left || kind == JoinKind::Full || kind == JoinKind::Paste;
 
-        collectEligibleTargets(join_node->getLeftTableExpression(), left_defaultable, state);
-        collectEligibleTargets(join_node->getRightTableExpression(), right_defaultable, state);
+        collectEligibleTargets(join_node->getLeftTableExpressionNode(), left_defaultable, state);
+        collectEligibleTargets(join_node->getRightTableExpressionNode(), right_defaultable, state);
         return;
     }
 
@@ -175,7 +175,7 @@ void collectEligibleTargets(const QueryTreeNodePtr & join_tree_node, bool can_be
 
     if (auto * array_join_node = join_tree_node->as<ArrayJoinNode>())
     {
-        collectEligibleTargets(array_join_node->getTableExpression(), can_be_filled_with_defaults, state);
+        collectEligibleTargets(array_join_node->getTableExpressionNode(), can_be_filled_with_defaults, state);
         return;
     }
 
@@ -419,7 +419,7 @@ void processQuery(QueryNode & query_node, QueryProcessingState & state)
 
     if (state.collect_candidates)
     {
-        collectEligibleTargets(query_node.getJoinTree(), false /*can_be_filled_with_defaults*/, state);
+        collectEligibleTargets(query_node.getJoinTreeNode(), false /*can_be_filled_with_defaults*/, state);
 
         for (auto it = state.eligible_targets.begin(); it != state.eligible_targets.end();)
         {
@@ -451,7 +451,7 @@ void processQuery(QueryNode & query_node, QueryProcessingState & state)
     }
 
     const std::initializer_list<std::pair<QueryTreeNodePtr *, ClauseKind>> clauses = {
-        {&query_node.getJoinTree(), ClauseKind::PreAggregation},
+        {&query_node.getJoinTreeNode(), ClauseKind::PreAggregation},
         {&query_node.getPrewhere(), ClauseKind::PreAggregation},
         {&query_node.getWhere(), ClauseKind::PreAggregation},
         {&query_node.getWithNode(), ClauseKind::PostAggregation},
