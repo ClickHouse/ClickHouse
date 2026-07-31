@@ -7,8 +7,7 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <Common/HTTPFieldLess.h>
-
-#include <map>
+#include <Common/MapWithMemoryTracking.h>
 
 
 namespace DB
@@ -35,7 +34,7 @@ public:
         /// the context. A function built while analyzing a subquery can be executed after the context that
         /// built it is gone - e.g. a scalar subquery whose expression actions are reused by the outer query -
         /// and looking the context up at execution time throws `Context has expired`.
-        : http_headers(context_->getClientInfo().http_headers)
+        : http_headers(context_->getClientInfo().http_headers.begin(), context_->getClientInfo().http_headers.end())
     {
         if (!context_->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
@@ -80,7 +79,7 @@ public:
     }
 
 private:
-    const std::map<String, String, HTTPFieldLess> http_headers;
+    const MapWithMemoryTracking<String, String, HTTPFieldLess> http_headers;
 };
 
 }
