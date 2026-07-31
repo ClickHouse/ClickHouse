@@ -1,0 +1,122 @@
+---
+slug: /cloud/managed-postgres/branching
+sidebarTitle: 'Ramificações'
+title: 'Ramificações'
+description: 'Crie ramificações isoladas de banco de dados a partir de snapshots pontuais para fluxos de trabalho de desenvolvimento, staging, testes e recuperação'
+keywords: ['managed postgres', 'ramificações', 'pitr', 'recuperação para um ponto no tempo', 'staging', 'desenvolvimento', 'ramificação de banco de dados']
+doc_type: 'guide'
+---
+
+O Managed Postgres oferece suporte à criação de branchs isoladas de banco de dados com recuperação pontual (PITR).
+
+Uma branch é uma implantação do PostgreSQL totalmente independente, criada a partir de um momento específico de um banco de dados existente. As branchs podem ser usadas para desenvolvimento, staging, testes, depuração, validação de dados ou fluxos de trabalho de recuperação — sem impactar o banco de dados de origem.
+
+Ao contrário de implementações com copy-on-write que compartilham armazenamento com o banco de dados primário, as branchs do Managed Postgres são restauradas a partir de backups e operam como implantações independentes do PostgreSQL.
+
+<div id="branching">
+  ## Como o branching funciona
+</div>
+
+A criação de branches se baseia na mesma infraestrutura de backup e recuperação usada para a [recuperação pontual (PITR)](/pt-BR/products/managed-postgres/backup-and-restore).
+
+Quando você cria um branch, o Managed Postgres restaura um backup base do armazenamento de objetos, reaplica os segmentos de WAL necessários para chegar ao ponto de recuperação solicitado e provisiona uma nova implantação do PostgreSQL a partir do estado recuperado. Quando a recuperação é concluída, o branch passa a operar de forma independente do banco de dados de origem.
+
+O branch resultante é uma cópia completa do banco de dados de origem no momento selecionado.
+
+<div id="common-use-cases">
+  ## Casos de uso comuns
+</div>
+
+<div id="dev-and-testing">
+  ### Desenvolvimento e testes
+</div>
+
+Crie uma branch a partir de um banco de dados de produção ou de staging para validar alterações na aplicação, migrações ou novos recursos usando dados realistas.
+
+<div id="staging-environments">
+  ### Ambientes de staging
+</div>
+
+Mantenha um ambiente de staging que reflita de perto o ambiente de produção sem afetar as cargas de trabalho em produção.
+
+<div id="date-validation">
+  ### Validação de dados
+</div>
+
+Teste alterações no esquema, estratégias de indexação e otimizações de consultas antes de implantá-las em produção.
+
+<div id="recovery-and-investigation">
+  ### Recuperação e investigação
+</div>
+
+Recupere um banco de dados até um ponto específico no tempo para diagnóstico, auditoria ou validação do comportamento do aplicativo.
+
+<div id="branch-sizing">
+  ## Dimensionamento de branches
+</div>
+
+As branches são implantações independentes de PostgreSQL e podem ser dimensionadas separadamente do banco de dados de origem.
+
+Por exemplo, uma implantação de produção pode rodar com uma configuração mais robusta, enquanto uma branch de desenvolvimento ou staging pode usar um perfil de capacidade computacional menor para reduzir custos. Isso permite que as equipes criem ambientes temporários sem precisar igualar os recursos computacionais da produção.
+
+<div id="branch-creation-time">
+  ## Tempo de criação de branch
+</div>
+
+Como o Managed Postgres usa armazenamento PostgreSQL baseado em NVMe, as branches são restauradas a partir de backups, em vez de serem criadas por mecanismos de copy-on-write no nível do armazenamento. Como resultado, a criação de branches não é instantânea.
+
+Os tempos típicos de criação de branches variam de alguns minutos a dezenas de minutos, dependendo de:
+
+* Tamanho do banco de dados
+* Tamanho do backup
+* Ponto de recuperação
+* Quantidade de WAL que precisa ser reaplicada
+* Configuração geral do cluster
+
+Na maioria das implantações, as branches ficam disponíveis em poucos minutos. Bancos de dados maiores podem exigir mais tempo.
+
+Se o tempo de criação de branches se tornar um gargalo no seu fluxo de trabalho, entre em contato com a equipe da ClickHouse. Em muitos casos, o desempenho da recuperação de branches pode ser otimizado com base nas características da carga de trabalho e nos requisitos de recuperação.
+
+<div id="branches-v-local-dev">
+  ## Branches vs desenvolvimento local
+</div>
+
+Uma dúvida comum é se todo desenvolvedor deve usar uma branch de produção como ambiente de desenvolvimento.
+
+Embora as branches sejam úteis para fluxos de trabalho de teste, validação e staging, em geral elas não são a abordagem mais recomendada para o desenvolvimento diário de aplicações. Cada branch é uma implantação separada do PostgreSQL que precisa ser restaurada a partir de backups e mantida de forma independente. Criar um grande número de branches pode aumentar os custos de infraestrutura e a complexidade operacional.
+
+Para a maioria das organizações, recomendamos:
+
+* Usar branches do PostgreSQL para fluxos de trabalho de staging, teste, depuração e validação.
+* Usar ambientes locais do PostgreSQL para o desenvolvimento diário.
+* Gerar conjuntos de dados sintéticos para desenvolvimento ou usar conjuntos de dados sanitizados, quando apropriado.
+* Evitar o desenvolvimento rotineiro diretamente em branches derivadas de produção.
+
+Essa abordagem reduz a carga nos sistemas de produção, melhora a velocidade de desenvolvimento e ajuda a garantir que os dados de produção permaneçam adequadamente protegidos.
+
+Para obter orientações sobre como criar ambientes locais de desenvolvimento do PostgreSQL usando Docker, consulte [Ambientes locais de desenvolvimento](/pt-BR/products/managed-postgres/local-development).
+
+<div id="recommended-workflow">
+  ## Fluxo de trabalho recomendado
+</div>
+
+Um fluxo de trabalho comum é o seguinte:
+
+```text
+Production Database
+        │
+        ├─────────────► Branch
+        │                  │
+        │                  ├── Staging
+        │                  ├── Validation
+        │                  ├── Migration Testing
+        │                  └── Incident Investigation
+        │
+        └─────────────► Local Development
+                               │
+                               ├── Docker PostgreSQL
+                               ├── Application Migrations
+                               └── Synthetic Test Data
+```
+
+Branches são mais adequados para ambientes que precisam de uma cópia de um banco de dados semelhante ao ambiente de produção. Para o desenvolvimento de rotina, ambientes locais do PostgreSQL normalmente oferecem um fluxo de trabalho mais rápido, com menor custo e mais escalável.

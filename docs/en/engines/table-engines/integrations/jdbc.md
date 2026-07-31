@@ -45,7 +45,7 @@ ENGINE = JDBC(datasource, external_database, external_table)
 
 - `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
 
-- These parameters can also be passed using [named collections](operations/named-collections.md).
+- These parameters can also be passed using [named collections](/operations/named-collections.md).
 
 ## Usage example {#usage-example}
 

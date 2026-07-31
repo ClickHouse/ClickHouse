@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
@@ -96,7 +96,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
 {
     const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
@@ -113,7 +113,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode, internal);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -125,9 +125,9 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
-void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features)
+void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
 {
-    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features}).second)
+    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
 }
 
@@ -145,7 +145,7 @@ bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
     return it->second.features.is_external;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -163,7 +163,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .database_name = database_name,
         .metadata_path = metadata_path,
         .uuid = create.uuid,
-        .context = context};
+        .context = context,
+        .mode = mode,
+        .internal = internal};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;

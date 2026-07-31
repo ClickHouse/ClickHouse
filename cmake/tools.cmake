@@ -98,6 +98,14 @@ else ()
     message (FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
+# nm (used by helper scripts that inspect symbol tables, e.g. cmake/localize_rust_c_symbols.sh)
+ch_find_program (NM_PATH NAMES "llvm-nm-${COMPILER_VERSION_MAJOR}" "llvm-nm" "nm")
+if (NM_PATH)
+    message (STATUS "Using nm: ${NM_PATH}")
+else ()
+    message (FATAL_ERROR "Cannot find nm.")
+endif ()
+
 # Strip
 ch_find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
 if (STRIP_PATH)

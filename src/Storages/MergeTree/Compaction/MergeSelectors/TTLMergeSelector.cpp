@@ -100,7 +100,7 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
 
     for (auto range = parts_ranges.begin(); range != parts_ranges.end(); ++range)
     {
-        assert(!range->empty());
+        chassert(!range->empty());
         const auto & range_partition = range->front().info.getPartitionId();
 
         if (needToPostponePartition(range_partition))
@@ -230,7 +230,10 @@ time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) cons
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    return part.general_ttl_info.has_value();
+    if (!part.general_ttl_info.has_value())
+        return false;
+
+    return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
