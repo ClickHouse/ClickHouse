@@ -169,11 +169,10 @@ void ASTIdentifier::restoreTable()
 
 boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
-    /// An empty part is a query parameter placeholder whose expression lives in `children`; the
-    /// rebuilt identifier below carries no parameters, so such a name cannot be represented here.
-    for (const auto & part : name_parts)
-        if (part.empty())
-            return nullptr;
+    /// A parameterized name is not resolvable: the rebuilt identifier below would drop the
+    /// parameter expressions and keep only their empty-string placeholders.
+    if (isParam())
+        return nullptr;
 
     if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
     if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
