@@ -30,9 +30,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
 ***
 
 <Steps>
-  <Step stepNumber={0}>
-    ## Paso 0: Configuración de la cuenta de servicio
-
+  <Step stepNumber={0} title="Paso 0: Configuración de la cuenta de servicio" id="step-0-service-account-setup">
     En entornos FedRAMP donde la autenticación directa de usuarios está restringida, cree una cuenta de servicio para la suplantación de identidad.
 
     ### Opción 1: Desde la Consola de GCP
@@ -109,9 +107,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={1}>
-    ## Paso 1: Configurar variables de entorno (`00-env.sh`)
-
+  <Step stepNumber={1} title={<>Paso 1: Configurar variables de entorno (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
     Cree este archivo e inclúyalo antes de ejecutar cualquier otro script. Actualice todos los valores según su entorno.
 
     ```bash expandable
@@ -225,9 +221,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={2}>
-    ## Paso 2: Crear Artifact Registry (`01-artifact-registry.sh`)
-
+  <Step stepNumber={2} title={<>Paso 2: Crear Artifact Registry (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -269,9 +263,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={3}>
-    ## Paso 3: Copiar imágenes de contenedor (`02-copy-images.sh`)
-
+  <Step stepNumber={3} title={<>Paso 3: Copiar imágenes de contenedor (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
     Se requiere [skopeo](https://github.com/containers/skopeo) para conservar la compatibilidad con todas las arquitecturas.
 
     ```bash expandable
@@ -348,9 +340,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={4}>
-    ## Paso 4: Configurar la VPC y la subred (`03-vpc-subnet.sh`)
-
+  <Step stepNumber={4} title={<>Paso 4: Configurar la VPC y la subred (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
     Este script supone que ya dispone de una VPC existente con un bastión. Crea o actualiza la subred de GKE con los rangos secundarios necesarios.
 
     **Importante: requisitos sobre los límites CIDR** - bloques `/14`: el tercer octeto debe ser divisible por 4 (p. ej., `10.244.0.0`, NO `10.245.0.0`) - bloques `/20`: el cuarto octeto debe ser 0 y el tercer octeto debe estar alineado en múltiplos de 16 (p. ej., `10.252.0.0`)
@@ -433,9 +423,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={5}>
-    ## Paso 5: Crear Cloud NAT (`04-cloud-nat.sh`)
-
+  <Step stepNumber={5} title={<>Paso 5: Crear Cloud NAT (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
     Los nodos Private de GKE requieren Cloud NAT para acceder a internet saliente.
 
     ```bash expandable
@@ -489,9 +477,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={6}>
-    ## Paso 6: Crear una cuenta de servicio de GCP (`05-service-account.sh`)
-
+  <Step stepNumber={6} title={<>Paso 6: Crear una cuenta de servicio de GCP (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
     ```bash
     #!/bin/bash
     set -e
@@ -522,9 +508,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={7}>
-    ## Paso 7: Crear un bucket de GCS (`06-gcs-bucket.sh`)
-
+  <Step stepNumber={7} title={<>Paso 7: Crear un bucket de GCS (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -573,9 +557,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={8}>
-    ## Paso 8: Crear clúster de GKE (`07-gke-cluster.sh`)
-
+  <Step stepNumber={8} title={<>Paso 8: Crear clúster de GKE (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
     Crea un **clúster de GKE totalmente privado** -- los nodos worker solo tienen IP internas, el plano de control no tiene endpoint público y todo el acceso debe hacerse desde la VPC a través del bastión.
 
     ```bash expandable
@@ -655,9 +637,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={9}>
-    ## Paso 9: Crear grupos de nodos (`08-node-pools.sh`)
-
+  <Step stepNumber={9} title={<>Paso 9: Crear grupos de nodos (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
     | Pool de nodos | Tipo de máquina                             | Disco                        | Etiquetas                | Taints                                      |
     | ------------- | ------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper        | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                  | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -732,9 +712,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={10}>
-    ## Paso 10: Desplegar el conjunto de daemon de Local SSD (`09-local-ssd-daemonset.sh`)
-
+  <Step stepNumber={10} title={<>Paso 10: Desplegar el conjunto de daemon de Local SSD (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
     GKE Container-Optimized OS tiene un sistema de archivos raíz de solo lectura, por lo que no se puede crear `/nvme`. El conjunto de daemon formatea y monta el Local SSD en `/mnt/disks/ssd0`.
 
     **Importante:** Despliega esto **antes** del clúster de ClickHouse para evitar condiciones de carrera.
@@ -834,9 +812,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={11}>
-    ## Paso 11: Agregar etiquetas de topología (`10-topology-labels.sh`)
-
+  <Step stepNumber={11} title={<>Paso 11: Agregar etiquetas de topología (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
     ```bash
     #!/bin/bash
     set -e
@@ -871,9 +847,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={12}>
-    ## Paso 12: Instalar los requisitos previos de Kubernetes
-
+  <Step stepNumber={12} title="Paso 12: Instalar los requisitos previos de Kubernetes" id="step-12-install-kubernetes-prerequisites">
     ### Instalar los CRDs de VolumeSnapshot (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1027,9 +1001,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={13}>
-    ## Paso 13: Pasos de FIPS (condicional)
-
+  <Step stepNumber={13} title="Paso 13: Pasos de FIPS (condicional)" id="step-13-fips-steps-conditional">
     Omita esta sección si `ENABLE_FIPS=false`.
 
     ### Crear certificados compatibles con FIPS (`14-create-fips-certs.sh`)
@@ -1099,9 +1071,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={14}>
-    ## Paso 14: Instalar el operador (`16-install-operator.sh`)
-
+  <Step stepNumber={14} title={<>Paso 14: Instalar el operador (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1154,9 +1124,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={15}>
-    ## Paso 15: Desplegar el clúster de ClickHouse (`17-install-cluster.sh`)
-
+  <Step stepNumber={15} title={<>Paso 15: Desplegar el clúster de ClickHouse (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1270,9 +1238,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={16}>
-    ## Paso 16: Vincular Workload Identity (`18-bind-helm-workload-identity.sh`)
-
+  <Step stepNumber={16} title={<>Paso 16: Vincular Workload Identity (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
     El gráfico de Helm crea su propia cuenta de servicio (`ch-${CLUSTER_NAME}-sa`). Debe vincular Workload Identity a esta cuenta de servicio para acceder a GCS.
 
     **Importante:** Los pods de Keeper y del servidor creados durante el paso 15 se inician antes de que exista esta vinculación, por lo que fallarán con errores 403 de GCS. Este script reinicia los pods después de realizar la vinculación.
@@ -1373,9 +1339,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step stepNumber={17}>
-    ## Paso 17: Verificar la instalación
-
+  <Step stepNumber={17} title="Paso 17: Verificar la instalación" id="step-17-verify-installation">
     ### Modo estándar (sin TLS)
 
     ```text

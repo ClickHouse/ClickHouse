@@ -172,6 +172,7 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
+
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -485,6 +486,43 @@ bool IcebergMetadata::optimize(
 #endif
 }
 
+bool IcebergMetadata::optimizeManifestFiles(
+       const StorageMetadataPtr & metadata_snapshot,
+       ContextPtr context,
+       std::shared_ptr<DataLake::ICatalog> catalog,
+       const StorageID & storage_id)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
+        if (persistent_components.format_version >= 3)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+                "row-lineage 'first_row_id' round-trip is not implemented");
+
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+
+        // Perform manifest-only compaction using the current snapshot from the metadata file
+        compactIcebergManifests(
+            persistent_components,
+            object_storage,
+            data_lake_settings,
+            sample_block,
+            context,
+            write_format,
+            catalog,
+            storage_id);
+
+        return true;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call OPTIMIZE TABLE ... MANIFEST for iceberg tables.");
+    }
+}
+
 std::pair<IcebergDataSnapshotPtr, Int32>
 IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
 {
@@ -619,6 +657,11 @@ void IcebergMetadata::mutate(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
+    /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
+    /// retry loop, bound to the metadata version actually being mutated. That closes
+    /// the TOCTOU gap a pre-check here would leave for concurrent writers committing
+    /// non-Parquet data files between the check and the write.
+
     DB::Iceberg::mutate(
         commands,
         context,
@@ -635,9 +678,14 @@ void IcebergMetadata::mutate(
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg does not support multiple mutation commands in a single ALTER");
+
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
+
+    Iceberg::validateMutationWriteFormat(write_format);
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
@@ -761,7 +809,7 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (location_path.find("://") == String::npos && !location_path.starts_with('/'))
+    if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
@@ -771,7 +819,8 @@ void IcebergMetadata::createInitial(
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
-    auto compression_suffix = compression_method_str;
+    /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
@@ -787,7 +836,7 @@ void IcebergMetadata::createInitial(
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().find("PreconditionFailed") != String::npos)
+            && e.message().contains("PreconditionFailed"))
             return;
         throw;
     }
@@ -801,7 +850,7 @@ void IcebergMetadata::createInitial(
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
@@ -1311,7 +1360,13 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+            /// update_row_numbers_info = true: every transform that can precede this one (the
+            /// position-delete transform, an earlier equality-delete filter) maintains
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            return std::make_shared<FilterTransform>(
+                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
+                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                /*update_row_numbers_info=*/true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }

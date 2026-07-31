@@ -1,0 +1,8 @@
+array of pairs
+[(0,0.9),(1,0.1)]
+string scalars
+[(0,0.9),(1,0.1)]
+stored DDL keeps the priors literal
+1
+after reload
+[(0,0.9),(1,0.1)]
