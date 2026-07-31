@@ -1676,17 +1676,10 @@ ReturnType readDateTimeTextFallback(
 
         if constexpr (throw_exception)
         {
-            /// The calendar year 0 for DateTime64 is valid only if the month and day are valid, non-zero values
-            if (unlikely(year == 0 && (month == 0 || day == 0)))
-                datetime = 0;
-            else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-        }
-        else
-        {
-            if (saturate_on_overflow)
+            if constexpr (dt64_mode)
             {
-                /// Use saturating version - makeDateTime saturates out-of-range years
+                /// Calendar year 0 is valid for DateTime64 only with non-zero month and day,
+                /// 0000-00-00 (and missing month/day) still maps to the Unix epoch.
                 if (unlikely(year == 0 && (month == 0 || day == 0)))
                     datetime = 0;
                 else
@@ -1694,18 +1687,61 @@ ReturnType readDateTimeTextFallback(
             }
             else
             {
-                /// Use non-saturating version - return false for out-of-range values
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
-                    return false;
-
-                if constexpr (!dt64_mode)
+                /// DateTime cannot represent year 0, keep the historical mapping to the Unix epoch.
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
+        }
+        else
+        {
+            if (saturate_on_overflow)
+            {
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if constexpr (dt64_mode)
                 {
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                        datetime = 0;
+                    else
+                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+                else
+                {
+                    if (unlikely(year == 0))
+                        datetime = 0;
+                    else
+                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+            }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                if constexpr (dt64_mode)
+                {
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                    {
+                        datetime = 0;
+                    }
+                    else
+                    {
+                        auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                        if (!datetime_maybe)
+                            return false;
+                        datetime = *datetime_maybe;
+                    }
+                }
+                else
+                {
+                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                    if (!datetime_maybe)
+                        return false;
+
                     if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
                         return false;
-                }
 
-                datetime = *datetime_maybe;
+                    datetime = *datetime_maybe;
+                }
             }
         }
     }

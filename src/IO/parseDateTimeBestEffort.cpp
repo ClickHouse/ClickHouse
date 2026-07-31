@@ -934,6 +934,15 @@ ReturnType parseDateTimeBestEffortImpl(
         UInt16 curr_year = local_time_zone.toYear(today);
         year = local_time_zone.makeDayNum(curr_year, month, day_of_month) <= today ? curr_year : curr_year - 1;
     }
+    else if (year == 0)
+    {
+        /// Calendar year 0 is only representable in DateTime64. For DateTime, accepting it produces a negative
+        /// time_t that convertFromTime later clamps to the Unix epoch, which looks like a successful parse of
+        /// 1970-01-01 (e.g. parseDateTimeBestEffortOrNull('0000')) despite year 0 being out of supported range.
+        // Throw an explicit error instead.
+        if constexpr (!is_64)
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
+    }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 
