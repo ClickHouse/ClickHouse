@@ -10,7 +10,7 @@ SELECT gini(number) FROM numbers(10);
 SELECT gini(x) FROM (SELECT number = 3 AS x FROM numbers(4));
 
 -- GROUP BY: two groups, equal and unequal.
-SELECT g, gini(x) FROM (
+SELECT g, abs(gini(x) - if(g = 0, 7.0 / 30, 1.0 / 5)) < 1e-15 FROM (
     SELECT number % 2 AS g, 5 AS x FROM numbers(10)
     UNION ALL
     SELECT number % 2 AS g, number AS x FROM numbers(10)
@@ -79,4 +79,4 @@ SELECT giniMerge(state) FROM (
 SELECT giniIf(number, number < 5) FROM numbers(10);
 
 -- -Array combinator.
-SELECT giniArray(arr) FROM (SELECT [1, 2, 3, 10] :: Array(Int32) AS arr);
+SELECT abs(giniArray(arr) - 7.0 / 16) < 1e-15 FROM (SELECT [1, 2, 3, 10] :: Array(Int32) AS arr);
