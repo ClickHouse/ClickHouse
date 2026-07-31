@@ -145,6 +145,52 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+/// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
+/// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
+/// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
+/// that flag over, otherwise `clone()->format()` diverges from `format()`. Assert on the formatted
+/// string rather than `getTreeHash`, because the tree hash does not include the flag.
+TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
+{
+    const std::vector<String> queries = {
+        "CREATE INDEX i ON t ((a())) TYPE a GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b) -> a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a + b) * a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t (a, b) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE HYPOTHETICAL INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must format identically to the original (this is what the distributed-DDL clone
+        /// path relies on). The tree hash omits the flag, so compare the rendered text.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->formatWithSecretsOneLine(), cloned->formatWithSecretsOneLine()) << "clone of: " << query;
+
+        /// And the original must survive a format+reparse+format round trip, and the reparsed AST
+        /// must be identical to the original. The AST-equality check is what catches the tuple
+        /// literal `(1, 2)`: without the extra wrapper the string round-trips but the reparse
+        /// rebuilds it as a `tuple(...)` function, so `executeQueryImpl`'s tree-hash comparison
+        /// (which runs before the string comparison) still trips `Inconsistent AST formatting`.
+        String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparse_parser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparse_parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "AST roundtrip of: " << query;
+    }
+}
+
 TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
 {
     /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
