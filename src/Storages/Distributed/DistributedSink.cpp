@@ -28,6 +28,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <climits>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -797,7 +798,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local || !settings[Setting::prefer_localhost_replica])
-                dir_names.push_back(address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]));
+            {
+                const auto & dir_name = address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]);
+                if (dir_name.size() > NAME_MAX)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Path '{}' for async distributed INSERT is too long (exceed {} limit)", dir_name, NAME_MAX);
+                dir_names.push_back(dir_name);
+            }
 
         if (!dir_names.empty())
             writeToShard(shard_info, block_to_send, dir_names);
