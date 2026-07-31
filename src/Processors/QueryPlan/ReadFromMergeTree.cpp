@@ -536,14 +536,19 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         read_task_callback_,
         replica_number);
 
-    /// `prefer_multiple_streams` and `virtual_row_conversion` are read-in-order state that lives
-    /// outside `SelectQueryInfo`, so the constructor does not carry them — propagate them
-    /// explicitly, like `clone` does. `virtual_row_conversion` matters because
+    /// `prefer_multiple_streams`, `virtual_row_conversion` and `output_each_partition_through_separate_port`
+    /// are plan-local state that lives outside `SelectQueryInfo`, so the constructor does not carry
+    /// them — propagate them explicitly, like `clone` does. `virtual_row_conversion` matters because
     /// `optimizeReadInOrder` keeps the read-in-order-through-join plan only when the virtual-row
     /// markers are available (see the `joins_to_keep_in_order` check there); executing a rebuilt
     /// read without them would make the sort after the join unable to tell which stream to pull.
+    /// `output_each_partition_through_separate_port` matters because the downstream `LimitByStep`
+    /// / `AggregatingStep` in the cloned fragment already committed to skipping the stream merge;
+    /// a rebuilt read that forgets the flag could split one partition across several streams and
+    /// silently emit duplicate `LIMIT BY` groups or partially aggregated results.
     step->prefer_multiple_streams = prefer_multiple_streams;
     step->virtual_row_conversion = virtual_row_conversion;
+    step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
 
     return step;
 }
@@ -3679,6 +3684,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     cloned_step->prefer_multiple_streams = prefer_multiple_streams;
     cloned_step->virtual_row_conversion = virtual_row_conversion;
+    cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
     return cloned_step;
 }
 
