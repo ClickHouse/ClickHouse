@@ -11,7 +11,7 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <hadoop.version>2.8.5</hadoop.version>
+        <hadoop.version>3.4.0</hadoop.version>
         <log4j.version>2.17.1</log4j.version>
     </properties>
 

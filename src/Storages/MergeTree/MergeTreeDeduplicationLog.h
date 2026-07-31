@@ -19,7 +19,7 @@ struct MergeTreeDeduplicationLogNameDescription
     std::string path;
 
     /// How many entries we have in log
-    size_t entries_count;
+    size_t entries_count{};
 };
 
 /// Simple string-key HashTable with fixed size based on STL containers.

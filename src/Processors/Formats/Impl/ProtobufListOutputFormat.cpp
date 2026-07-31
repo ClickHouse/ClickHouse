@@ -46,9 +46,10 @@ void ProtobufListOutputFormat::finalizeImpl()
 
 void ProtobufListOutputFormat::resetFormatterImpl()
 {
-    (*serializer).reset();
+    serializer->resetState();
 }
 
+void registerOutputFormatProtobufList(FormatFactory & factory);
 void registerOutputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -73,6 +74,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatProtobufList(FormatFactory &);
 void registerOutputFormatProtobufList(FormatFactory &) {}
 }
 

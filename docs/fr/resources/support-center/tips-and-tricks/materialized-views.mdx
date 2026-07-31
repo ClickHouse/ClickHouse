@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'Vues matérialisées'
+doc_type: 'guide'
+keywords: [
+  'vues matérialisées ClickHouse',
+  'optimisation des vues matérialisées',
+  'problèmes de stockage des vues matérialisées',
+  'bonnes pratiques des vues matérialisées',
+  'patterns d’agrégation de base de données',
+  'anti-patterns des vues matérialisées',
+  'problèmes d’explosion du stockage',
+  'performances des vues matérialisées',
+  'optimisation des vues de base de données',
+  'stratégie d’agrégation',
+  'résolution des problèmes liés aux vues matérialisées',
+  'surcoût de stockage des vues'
+]
+title: 'Retours d’expérience - vues matérialisées'
+description: 'Exemples concrets de vues matérialisées, problèmes et solutions'
+---
+
+*Ce guide fait partie d’une collection d’enseignements issus de rencontres de la communauté. Pour découvrir d’autres solutions et retours d’expérience concrets, vous pouvez [parcourir les contenus par problème spécifique](/fr/resources/support-center/tips-and-tricks/community-wisdom).*
+*Trop de parts ralentissent votre base de données ? Consultez le guide communautaire [Too Many Parts](/fr/resources/support-center/tips-and-tricks/too-many-parts).*
+*En savoir plus sur les [Vues matérialisées](/fr/concepts/features/materialized-views/index).*
+
+<div id="storage-antipattern">
+  ## L&#39;anti-pattern du stockage x10
+</div>
+
+**Problème réel en production :** *&quot;Nous avions une vue matérialisée. La table brute de logs faisait environ 20 Go, mais la vue créée à partir de cette table de logs est montée à 190 Go, soit presque 10x la taille de la table brute. Cela s&#39;est produit parce que nous créions une ligne par attribut, et chaque log peut avoir 10 attributs.&quot;*
+
+**Règle :** Si votre `GROUP BY` crée plus de lignes qu&#39;il n&#39;en élimine, vous êtes en train de construire un index coûteux, pas une vue matérialisée.
+
+<div id="mv-health-validation">
+  ## Validation de la santé d’une vue matérialisée en production
+</div>
+
+Cette requête vous aide à prévoir si une vue matérialisée va compresser vos données ou les faire exploser avant sa création. Exécutez-la sur votre table et vos colonnes réelles pour éviter le scénario de « l’explosion à 190 Go ».
+
+**Ce qu’elle montre :**
+
+* **Faible ratio d’agrégation** (&lt;10 %) = Bonne MV, compression significative
+* **Ratio d’agrégation élevé** (&gt;70 %) = Mauvaise MV, risque d’explosion du stockage
+* **Multiplicateur de stockage** = Dans quelle mesure votre MV sera plus grande ou plus petite
+
+```sql
+-- Replace with your actual table and columns
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- If aggregation_ratio > 70%, reconsider your MV design
+-- If aggregation_ratio < 10%, you'll get good compression
+```
+
+<div id="mv-problems">
+  ## Quand les vues matérialisées deviennent un problème
+</div>
+
+**Signes avant-coureurs à surveiller :**
+
+* La latence d&#39;insertion augmente (des requêtes qui prenaient 10 ms prennent désormais plus de 100 ms)
+* Les erreurs &quot;Too many parts&quot; apparaissent plus fréquemment
+* Des pics de CPU se produisent pendant les opérations d&#39;insertion
+* Des timeouts d&#39;insertion surviennent alors qu&#39;ils ne se produisaient pas auparavant
+
+Vous pouvez comparer les performances d&#39;insertion avant et après l&#39;ajout de MV à l&#39;aide de `system.query_log` pour suivre l&#39;évolution de la durée des requêtes.
+
+<div id="video-sources">
+  ## Sources vidéo
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - Source de l’étude de cas « trop enthousiaste à propos des vues matérialisées » et de « l’explosion de 20GB→190GB »
