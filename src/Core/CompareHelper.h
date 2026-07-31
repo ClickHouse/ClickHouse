@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/NaNUtils.h>
+#include <cstring>
 
 
 namespace DB
@@ -62,7 +63,17 @@ struct FloatCompareHelper
         return a > b;
     }
 
-    static constexpr bool equals(T a, T b, int nan_direction_hint) { return compare(a, b, nan_direction_hint) == 0; }
+    static bool equals(T a, T b, int nan_direction_hint)
+    {
+        /// Use bitwise comparison for float types to distinguish -0.0 from 0.0
+        /// and other bitwise-different values that compare equal.
+        /// This is consistent with GROUP BY and the hash-based DISTINCT variant.
+        if (isNaN(a) && isNaN(b))
+            return true;
+        if (isNaN(a) || isNaN(b))
+            return false;
+        return memcmp(&a, &b, sizeof(T)) == 0;
+    }
 
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
