@@ -131,6 +131,7 @@ public:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope,
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
@@ -165,7 +166,9 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_,
+        TopKThresholdTrackerPtr threshold_tracker,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -181,6 +184,7 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         QueryPipelineProcessorsCollector & collector,
+        const TemporaryDataOnDiskScopePtr & tmp_data_scope,
         bool skip_partial_sort = false);
 
     Type type;

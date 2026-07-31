@@ -543,7 +543,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
             SortingStep::fullSortStreams(
-                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */, settings.tmp_data_scope);
         }
 
         if (pipeline.getNumStreams() > 1)

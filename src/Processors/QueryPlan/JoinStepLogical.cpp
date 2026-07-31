@@ -1097,9 +1097,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
+    /// The temporary data scope must be the one of the query that is being executed, not the server-wide root,
+    /// so that a spilling join is accounted in `max_temporary_data_on_disk_size_for_query` / `..._for_user`.
+    /// See `QueryPlanOptimizationSettings::tmp_data_scope`.
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
-        Context::getGlobalContextInstance()->getTempDataOnDisk());
+        optimization_settings.tmp_data_scope);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)

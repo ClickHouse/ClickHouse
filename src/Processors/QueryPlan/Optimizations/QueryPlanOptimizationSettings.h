@@ -16,6 +16,9 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+
 class QueryPlan;
 
 struct QueryPlanOptimizationSettings
@@ -177,6 +180,11 @@ struct QueryPlanOptimizationSettings
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
+
+    /// Temporary data scope of the query that is being executed (per-query scope installed by `ProcessList::insert`,
+    /// or the server-wide root when there is none). Join algorithms that spill to disk must create their child scopes
+    /// from it, otherwise `max_temporary_data_on_disk_size_for_query` / `..._for_user` are not accounted.
+    TemporaryDataOnDiskScopePtr tmp_data_scope;
 
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime

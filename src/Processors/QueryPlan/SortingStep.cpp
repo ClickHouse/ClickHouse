@@ -1,6 +1,5 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -425,12 +424,19 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline,
+    const Settings & sort_settings,
+    const SortDescription & result_sort_desc,
+    UInt64 limit_,
+    TopKThresholdTrackerPtr threshold_tracker,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope)
 {
     bool increase_sort_description_compile_attempts = true;
 
+    /// The scope must be the one of the query that is being executed (see `BuildQueryPipelineSettings::tmp_data_scope`),
+    /// so that `max_temporary_data_on_disk_size_for_query` / `..._for_user` are accounted for the spilled data.
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-    if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
+    if (const auto & data = tmp_data_scope)
         tmp_data_on_disk = data->childScope({
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
@@ -476,6 +482,7 @@ void SortingStep::fullSortStreams(
     const Settings & sort_settings,
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope,
     const bool skip_partial_sort,
     TopKThresholdTrackerPtr threshold_tracker)
 {
@@ -504,15 +511,21 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, tmp_data_scope);
 }
 
-void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
+void SortingStep::fullSort(
+    QueryPipelineBuilder & pipeline,
+    const SortDescription & result_sort_desc,
+    const UInt64 limit_,
+    QueryPipelineProcessorsCollector & collector,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope,
+    const bool skip_partial_sort)
 {
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, tmp_data_scope, skip_partial_sort, threshold_tracker);
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
@@ -543,7 +556,7 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     }
 }
 
-void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
@@ -603,7 +616,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    fullSort(pipeline, result_description, limit, collector);
+    fullSort(pipeline, result_description, limit, collector, build_settings.tmp_data_scope);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
