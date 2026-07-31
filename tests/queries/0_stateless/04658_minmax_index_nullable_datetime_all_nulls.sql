@@ -21,8 +21,9 @@
 --     is *incompatible* with the expected one instead of throwing `LOGICAL_ERROR`
 --     / `BAD_GET`. This makes `system.parts` queries succeed (showing epoch /
 --     `1970-01-01` for those parts) instead of failing.
---   * `checkPartitionKeyAndInitMinMax` falls back to unwrapping `Nullable` (via
---     `removeNullable`) only when the partition key has no non-`Nullable`
+--   * `checkPartitionKeyAndInitMinMax` falls back to unwrapping `Nullable` and
+--     `LowCardinality(Nullable(...))` (via `removeLowCardinalityAndNullable`)
+--     only when the partition key has no non-`Nullable`
 --     Date/DateTime/DateTime64 column, so an all-`Nullable` date/time key
 --     populates `min_*`/`max_*` instead of staying silently empty, while a mixed
 --     key such as `(d Date, nd Nullable(Date))` keeps selecting the non-`Nullable`
@@ -293,3 +294,72 @@ SELECT
 FROM system.parts WHERE database = currentDatabase() AND table = 'test_mixed_datetime_and_nullable_datetime' AND active;
 
 DROP TABLE IF EXISTS test_mixed_datetime_and_nullable_datetime;
+-- =====================================================
+-- Case 13: LowCardinality(Nullable(DateTime)) partition key with a real
+-- non-NULL value. `allow_nullable_key` permits this wrapper too, and the minmax
+-- writer unwraps `LowCardinality` before taking extremes, so the fallback in
+-- `checkPartitionKeyAndInitMinMax` must treat it as a nullable date/time
+-- carrier: `min_time` / `max_time` must reflect the value instead of staying
+-- silently at epoch because `minmax_idx_time_column_pos` stayed -1.
+-- =====================================================
+SET allow_suspicious_low_cardinality_types = 1;
+
+DROP TABLE IF EXISTS test_lc_nullable_datetime_nonnull;
+
+CREATE TABLE test_lc_nullable_datetime_nonnull (id UInt64, event_time LowCardinality(Nullable(DateTime('UTC'))))
+ENGINE = MergeTree()
+PARTITION BY event_time
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_lc_nullable_datetime_nonnull (id, event_time) VALUES (1, toDateTime('2024-06-15 12:00:00', 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_nullable_datetime_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_lc_nullable_datetime_nonnull;
+
+-- =====================================================
+-- Case 14: LowCardinality(Nullable(Date)) partition key with a real non-NULL
+-- value. The `Date` analogue of case 13, covering the date branch of the
+-- fallback.
+-- =====================================================
+DROP TABLE IF EXISTS test_lc_nullable_date_nonnull;
+
+CREATE TABLE test_lc_nullable_date_nonnull (id UInt64, event_date LowCardinality(Nullable(Date)))
+ENGINE = MergeTree()
+PARTITION BY event_date
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_lc_nullable_date_nonnull (id, event_date) VALUES (1, toDate('2024-06-15'));
+
+SELECT
+    min_date = toDate('2024-06-15') AS min_matches,
+    max_date = toDate('2024-06-15') AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_nullable_date_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_lc_nullable_date_nonnull;
+
+-- =====================================================
+-- Case 15: LowCardinality(Nullable(DateTime)) partition key with every row
+-- NULL. The minmax writer materializes the `LowCardinality` column and takes
+-- `getExtremesNullLast`, so the bounds are `Null` exactly as in case 2 —
+-- reading `system.parts` must not throw and the part surfaces as epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_lc_nullable_datetime_all_nulls;
+
+CREATE TABLE test_lc_nullable_datetime_all_nulls (id UInt64, event_time LowCardinality(Nullable(DateTime('UTC'))))
+ENGINE = MergeTree()
+PARTITION BY event_time
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_lc_nullable_datetime_all_nulls (id, event_time) VALUES (1, NULL), (2, NULL);
+
+SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_nullable_datetime_all_nulls' AND active;
+
+DROP TABLE IF EXISTS test_lc_nullable_datetime_all_nulls;

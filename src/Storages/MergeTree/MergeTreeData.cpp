@@ -1457,8 +1457,11 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
         scan([](const DataTypePtr & type) { return isDateTime(type) || isDateTime64(type); }, has_datetime_column, minmax_idx_time_column_pos);
 
     /// Only when there is no non-`Nullable` candidate at all — e.g. an all-`Nullable` date/time
-    /// partition key (issue #92834) — fall back to `Nullable(...)` columns unwrapped via
-    /// `removeNullable`, so such a key populates the minmax index instead of staying silently empty.
+    /// partition key (issue #92834) — fall back to `Nullable(...)` and `LowCardinality(Nullable(...))`
+    /// columns unwrapped via `removeLowCardinalityAndNullable`, so such a key populates the
+    /// minmax index instead of staying silently empty. `LowCardinality(Nullable(...))` is included
+    /// because `allow_nullable_key` permits it and the minmax writer unwraps `LowCardinality` before
+    /// taking extremes, so its index bounds look exactly like the plain `Nullable` case.
     /// Restricted to new-syntax tables: old-syntax tables (`ENGINE = MergeTree(date, ...)`) encode the
     /// part's min/max date into the part name and the old-format write path in `MergeTreeDataWriter`
     /// dereferences the bound with `safeGet<UInt64>`, so a `Nullable(Date)` column must stay rejected
@@ -1467,11 +1470,17 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     const bool unwrap_nullable = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (unwrap_nullable && !has_date_column && !has_datetime_column)
     {
-        scan([](const DataTypePtr & type) { return type->isNullable() && isDate(removeNullable(type)); },
+        auto is_nullable_carrier = [](const DataTypePtr & type) { return type->isNullable() || type->isLowCardinalityNullable(); };
+        scan([&](const DataTypePtr & type) { return is_nullable_carrier(type) && isDate(removeLowCardinalityAndNullable(type)); },
              has_date_column, minmax_idx_date_column_pos);
         if (!has_date_column)
-            scan([](const DataTypePtr & type)
-                 { return type->isNullable() && (isDateTime(removeNullable(type)) || isDateTime64(removeNullable(type))); },
+            scan([&](const DataTypePtr & type)
+                 {
+                     if (!is_nullable_carrier(type))
+                         return false;
+                     const auto nested = removeLowCardinalityAndNullable(type);
+                     return isDateTime(nested) || isDateTime64(nested);
+                 },
                  has_datetime_column, minmax_idx_time_column_pos);
     }
 }
