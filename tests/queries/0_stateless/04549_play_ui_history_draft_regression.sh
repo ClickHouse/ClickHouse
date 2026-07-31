@@ -77,7 +77,7 @@ function extractTopLevel(header_re, name)
 /// DOM rendering, the per-tab run path and persistence I/O are stubbed below.
 const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tabRuntimeDefaults',
     'makeTab', 'nextRunId', 'getActiveTab', 'captureActiveTab', 'buildHistoryParams',
-    'writeHistoryEntry', 'sameParamValues', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
+    'writeHistoryEntry', 'sameParamValues', 'maskQuotedAndComments', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'closeOtherTabs', 'scheduleSave', 'loadFromDb',

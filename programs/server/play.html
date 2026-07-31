@@ -9191,15 +9191,111 @@ function sameParamValues(a, b)
     return a_names.every(name => Object.prototype.hasOwnProperty.call(b, name) && a[name] === b[name]);
 }
 
+/// Blank out the character ranges of `text` that the query lexer would tokenize as string
+/// literals, quoted identifiers, heredocs or comments, mirroring the lexical rules of the
+/// lexer behind `tokenize` (`src/Parsers/Lexer.cpp`): `'…'`/`"…"`/backtick-quoted atoms with
+/// backslash escapes and closing-quote doubling, the unicode-quoted atoms, `$tag$…$tag$`
+/// heredocs, and the `--`, `//`, `# `, `#!` and nested `/* */` comments. A quoted range is
+/// replaced by a single quote character and a comment by a single space, so a scan of the
+/// result cannot match text the lexer would never surface as significant tokens, while
+/// everything the lexer WOULD surface is preserved verbatim (comments collapse to whitespace,
+/// which is insignificant between tokens). A construct the lexer treats as an error swallowing
+/// the rest of the text (an unterminated quote or multi-line comment) swallows it here too, so
+/// the two views agree; a dollar sign that opens no complete heredoc stays an ordinary
+/// character, exactly like the lexer's standalone-dollar path.
+function maskQuotedAndComments(text)
+{
+    let out = '';
+    let i = 0;
+    const n = text.length;
+    while (i < n)
+    {
+        const c = text[i];
+        if (c === "'" || c === '"' || c === '`')
+        {
+            out += "'";
+            ++i;
+            while (i < n)
+            {
+                if (text[i] === '\\') i += 2;
+                else if (text[i] === c)
+                {
+                    ++i;
+                    if (i < n && text[i] === c) ++i;   /// a doubled closing quote: the atom continues
+                    else break;
+                }
+                else ++i;
+            }
+        }
+        else if (c === '‘' || c === '“')
+        {
+            /// A unicode-quoted atom (‘…’ string, “…” identifier): no escapes, the first
+            /// closing quote ends it.
+            const close = text.indexOf(c === '‘' ? '’' : '”', i + 1);
+            out += "'";
+            i = close === -1 ? n : close + 1;
+        }
+        else if ((c === '-' && text[i + 1] === '-') || (c === '/' && text[i + 1] === '/')
+            || (c === '#' && (text[i + 1] === ' ' || text[i + 1] === '!')))
+        {
+            /// A single-line comment: up to, not including, the newline (`#` alone is not a
+            /// comment opener — the lexer requires a following space or `!`).
+            const nl = text.indexOf('\n', i);
+            out += ' ';
+            i = nl === -1 ? n : nl;
+        }
+        else if (c === '/' && text[i + 1] === '*')
+        {
+            /// A multi-line comment; nesting is supported, per the SQL standard.
+            let depth = 1;
+            i += 2;
+            while (i < n && depth > 0)
+            {
+                if (text[i] === '/' && text[i + 1] === '*') { ++depth; i += 2; }
+                else if (text[i] === '*' && text[i + 1] === '/') { --depth; i += 2; }
+                else ++i;
+            }
+            out += ' ';
+        }
+        else if (c === '$')
+        {
+            /// A heredoc opens only with a word-character tag AND a closing tag present.
+            const tag_end = text.indexOf('$', i + 1);
+            const tag_ok = tag_end !== -1 && /^\w*$/.test(text.slice(i + 1, tag_end));
+            const close = tag_ok ? text.indexOf(text.slice(i, tag_end + 1), tag_end + 1) : -1;
+            if (close !== -1)
+            {
+                out += "'";
+                i = close + (tag_end + 1 - i);
+            }
+            else
+            {
+                out += c;
+                ++i;
+            }
+        }
+        else
+        {
+            out += c;
+            ++i;
+        }
+    }
+    return out;
+}
+
 /// Whether the query text still contains a `{name:` parameter-placeholder opener for `name`
-/// (whitespace-tolerant). A conservative TEXTUAL test — no tokenization — for the one place the
-/// authoritative rebuild (`updateQueryParams` -> `syncParamsAfterRebuild`) cannot be awaited: it
-/// can only over-report (the pattern inside a string literal or comment), never miss a real
+/// among what the lexer would surface as code — string literals, quoted identifiers, heredocs
+/// and comments are blanked out first (`maskQuotedAndComments`), so placeholder-shaped text
+/// inside them (`SELECT '{name:Int32}'`, `-- {name:Int32}`) does not count as a live
+/// placeholder. A synchronous test for the places the authoritative rebuild
+/// (`updateQueryParams` -> `syncParamsAfterRebuild`) cannot be awaited. Still conservative in
+/// the KEEP direction: it can only over-report relative to the token-level extraction (e.g.
+/// `{name::` — a `::` token, not the `:` the extraction requires), never miss a real
 /// placeholder, so a binding is dropped only when it is certainly gone from the text.
 function queryMentionsParam(text, name)
 {
     const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp('\\{\\s*' + escaped + '\\s*:').test(text || '');
+    return new RegExp('\\{\\s*' + escaped + '\\s*:').test(maskQuotedAndComments(text || ''));
 }
 
 /// True when the tab's editor (query + params) still exactly matches the query/params that
@@ -9324,10 +9420,11 @@ function saveHistory(stateData, titleForDoc, tab) {
     /// an observable window where the URL pairs the new draft with a removed placeholder's
     /// binding (`/play?param_x=1#SELECT 1`) — a reload or a copied link taken in that window
     /// resurrects the stale binding under a text that no longer has the placeholder. The rebuild
-    /// cannot be awaited here (the completed run must be recorded now), so prune conservatively
-    /// by TEXT: drop a binding only when the draft nowhere contains a placeholder opener for its
-    /// name (`queryMentionsParam`). A false keep (the pattern inside a string literal or comment)
-    /// is repaired in place when the rebuild lands, exactly as before; a surviving placeholder
+    /// cannot be awaited here (the completed run must be recorded now), so prune synchronously
+    /// by a lexer-aware scan of the draft: drop a binding unless the draft still contains a
+    /// placeholder opener for its name outside string literals and comments
+    /// (`queryMentionsParam`). A false keep (the scan's rare over-report, e.g. `{x::`) is
+    /// repaired in place when the rebuild lands, exactly as before; a surviving placeholder
     /// keeps its binding either way.
     else if (tab.params)
     {

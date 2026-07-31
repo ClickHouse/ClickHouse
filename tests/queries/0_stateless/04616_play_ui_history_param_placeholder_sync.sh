@@ -22,11 +22,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   - a placeholder-removing edit made while a run is IN FLIGHT: the completed run must not leak
 #     the stale binding under the newer draft — whichever side wins the race. When the rebuild
 #     lands first, `tab.params` already follows the draft; when the COMPLETION writes first, its
-#     own entry must already be clean (`saveHistory` prunes the map by a conservative textual
-#     placeholder scan of the draft, `queryMentionsParam`, so the stale `param_*` never reaches
+#     own entry must already be clean (`saveHistory` prunes the map by a lexer-aware placeholder
+#     scan of the draft, `queryMentionsParam`, so the stale `param_*` never reaches
 #     the URL even transiently), while a placeholder that SURVIVES the edit keeps its binding;
 #     the landing rebuild then re-folds the inputs authoritatively
-#     (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`).
+#     (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`);
+#   - the scan is LEXER-AWARE: placeholder-shaped text inside a string literal, a quoted
+#     identifier, a heredoc or a comment (`maskQuotedAndComments`) is not a live placeholder,
+#     so moving a placeholder into quotes/comments prunes its binding like removing it — while
+#     the scan never under-reports against the real token-level extraction (cross-checked
+#     against the embedded WASM lexer below).
 # The harness extracts the real functions from the served /play page and drives them under node
 # with stub DOM/history objects; the parameter inputs are real enough for `updateQueryParams` to
 # build (create/remove elements, value carry-over, the trusted-edit listener).
@@ -63,7 +68,7 @@ function extractTopLevel(header_re, name)
 /// from the page. Only rendering and persistence I/O are stubbed below.
 const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tabRuntimeDefaults',
     'makeTab', 'nextRunId', 'getActiveTab', 'captureActiveTab', 'buildHistoryParams',
-    'writeHistoryEntry', 'sameParamValues', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun',
+    'writeHistoryEntry', 'sameParamValues', 'maskQuotedAndComments', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun',
     'effectiveDatabase', 'sameServerAddress', 'effectiveConnectionUser',
     'stampSelectedDatabaseConnection', 'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory',
     'markBootstrapDirty', 'scheduleSave', 'persist', 'restoreEditor',
@@ -727,6 +732,105 @@ function reset()
     sandbox.tokenize = real_tokenize;
     assert_params('param edit before rebuild: the landing rebuild keeps the edited binding', active().params, { y: '3' });
     assert_eq('param edit before rebuild: the entry stays clean after the rebuild lands', curUrl().includes('param_x'), false);
+
+    /// The synchronous placeholder scan (`queryMentionsParam`) must be LEXER-AWARE:
+    /// placeholder-shaped text inside a string literal, a quoted identifier, a heredoc or a
+    /// comment is NOT a live placeholder — treating it as one keeps a stale binding alive
+    /// across the synchronous prunes (the capture funnel, `saveHistory`'s diverged-draft path)
+    /// with nothing to repair the entry afterwards. Every verdict is cross-checked against the
+    /// REAL token-level extraction (`extractQueryParams` over the embedded WASM lexer): the
+    /// scan must never report false where the extraction finds the placeholder (a live binding
+    /// would be lost), it may only over-report (the conservative KEEP direction).
+    const mention_cases = [
+        ['SELECT {x:Int32}', true],
+        ['SELECT { x : Int32 }', true],
+        ['SELECT {/*c*/x/*c*/: Int32}', true],
+        ["SELECT '{x:Int32}'", false],
+        ["SELECT '{x:', {y:Int32}", false],
+        ["SELECT 'it''s not {x:Int32}'", false],
+        ["SELECT '\\' {x:Int32}'", false],
+        ['SELECT "{x:Int32}"', false],
+        ['SELECT `{x:Int32}`', false],
+        ['SELECT 1 -- {x:Int32}', false],
+        ['SELECT 1 // {x:Int32}', false],
+        ['# {x:Int32}', false],
+        ['#!{x:Int32}', false],
+        ['#{x:Int32}', true],                     /// `#` without a space/`!` opens no comment
+        ['SELECT /* {x:Int32} */ 1', false],
+        ['SELECT /* /* {x:Int32} */ nested */ 1', false],
+        ['SELECT $${x:Int32}$$', false],
+        ['SELECT $tag${x:Int32}$tag$', false],
+        ["SELECT '{x:Int32}", false],             /// an unterminated string swallows the rest
+        ['SELECT /* {x:Int32}', false],           /// an unterminated comment swallows the rest
+        ["SELECT '{x:Int32}', {x:Int32}", true],
+        ['-- {x:Int32}\nSELECT {x:Int32}', true],
+        ['SELECT $ + {x:Int32}', true],           /// a standalone dollar opens no heredoc
+        ['SELECT $tag$ {x:Int32}', true],         /// no closing tag: not a heredoc either
+    ];
+    for (const [q, expected] of mention_cases)
+    {
+        assert_eq('mentions ' + JSON.stringify(q), sandbox.queryMentionsParam(q, 'x'), expected);
+        const extracted = sandbox.extractQueryParams(await sandbox.tokenize(q)).some(p => p.name === 'x');
+        if (extracted && !expected)
+        {
+            console.error('FAIL: miscalibrated case ' + JSON.stringify(q) + ': the real lexer extraction finds the placeholder but the scan reports it gone');
+            process.exit(1);
+        }
+    }
+
+    /// Through the capture funnel: an edit that turns the placeholder into the LITERAL
+    /// '{x:Int32}' removes it, and a structural leave before the rebuild lands must prune the
+    /// binding — a raw text scan would keep it (the pattern is still in the text), stamp
+    /// `param_x=1` into the left tab's entry/URL, and the activation that follows supersedes
+    /// the rebuild, so nothing would ever repair the entry. A placeholder surviving OUTSIDE
+    /// the quotes keeps its binding.
+    reset();
+    await type('SELECT {x:Int32}, {y:Int32}');
+    setTrustedParam('x', '1');
+    setTrustedParam('y', '2');
+    await run('SELECT {x:Int32}, {y:Int32}');
+    const literal_other = sandbox.makeTab();
+    literal_other.query = 'SELECT 42';
+    sandbox.tabs.push(literal_other);
+    const literal_left = active();
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                    /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    let release_literal_rebuild;
+    tokenize_hold = new Promise(resolve => { release_literal_rebuild = resolve; });
+    const literal_rebuild = type("SELECT '{x:Int32}', {y:Int32}");   /// x is literal text now; rebuild gated
+    tokenize_hold = null;
+    await sandbox.switchToTab(literal_other.id);           /// structural leave: capture + entry write
+    const literal_entry = sandbox.history.stack.find(e => e.state && e.state.tabId === literal_left.id);
+    assert_params('literal-placeholder leave: the capture prunes the quoted-away binding', literal_left.params, { y: '2' });
+    assert_eq('literal-placeholder leave: no stale param_x in the left tab\'s entry', literal_entry.url.includes('param_x'), false);
+    assert_eq('literal-placeholder leave: the surviving binding stays in the entry', literal_entry.url.includes('param_y=2'), true);
+    assert_eq('literal-placeholder leave: the entry carries the new draft', literal_entry.state.query, "SELECT '{x:Int32}', {y:Int32}");
+    release_literal_rebuild();                             /// the superseded rebuild lands and bails
+    await literal_rebuild;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    assert_params('literal-placeholder leave: the superseded rebuild leaves the pruned map', literal_left.params, { y: '2' });
+
+    /// The same lexer-aware prune guards `saveHistory`'s diverged-draft path: a completion that
+    /// wins the race against the rebuild after the draft moved the placeholder into a comment
+    /// must not pair the new draft with the stale binding, even transiently.
+    reset();
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    const in_flight_commented = await startRun('SELECT {x:Int32}');
+    const commented_rebuild = type('SELECT 1 -- {x:Int32}');   /// kicked off, deliberately not awaited yet
+    finishRun(in_flight_commented);                            /// synchronous: writes before the rebuild lands
+    assert_params('completion with commented-out placeholder: tab.params is pruned', active().params, {});
+    assert_eq('completion with commented-out placeholder: no stale param_x in the entry', curUrl().includes('param_x'), false);
+    await commented_rebuild;
+    await drain();
+    assert_eq('completion with commented-out placeholder: the entry stays clean after the rebuild lands', curUrl().includes('param_x'), false);
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

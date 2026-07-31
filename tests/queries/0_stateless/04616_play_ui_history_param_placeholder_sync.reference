@@ -83,4 +83,36 @@ param edit before rebuild: the entry carries the new draft
 param edit before rebuild: the diverged draft has no run=1
 param edit before rebuild: the landing rebuild keeps the edited binding
 param edit before rebuild: the entry stays clean after the rebuild lands
+mentions "SELECT {x:Int32}"
+mentions "SELECT { x : Int32 }"
+mentions "SELECT {/*c*/x/*c*/: Int32}"
+mentions "SELECT '{x:Int32}'"
+mentions "SELECT '{x:', {y:Int32}"
+mentions "SELECT 'it''s not {x:Int32}'"
+mentions "SELECT '\\' {x:Int32}'"
+mentions "SELECT \"{x:Int32}\""
+mentions "SELECT `{x:Int32}`"
+mentions "SELECT 1 -- {x:Int32}"
+mentions "SELECT 1 // {x:Int32}"
+mentions "# {x:Int32}"
+mentions "#!{x:Int32}"
+mentions "#{x:Int32}"
+mentions "SELECT /* {x:Int32} */ 1"
+mentions "SELECT /* /* {x:Int32} */ nested */ 1"
+mentions "SELECT $${x:Int32}$$"
+mentions "SELECT $tag${x:Int32}$tag$"
+mentions "SELECT '{x:Int32}"
+mentions "SELECT /* {x:Int32}"
+mentions "SELECT '{x:Int32}', {x:Int32}"
+mentions "-- {x:Int32}\nSELECT {x:Int32}"
+mentions "SELECT $ + {x:Int32}"
+mentions "SELECT $tag$ {x:Int32}"
+literal-placeholder leave: the capture prunes the quoted-away binding
+literal-placeholder leave: no stale param_x in the left tab's entry
+literal-placeholder leave: the surviving binding stays in the entry
+literal-placeholder leave: the entry carries the new draft
+literal-placeholder leave: the superseded rebuild leaves the pruned map
+completion with commented-out placeholder: tab.params is pruned
+completion with commented-out placeholder: no stale param_x in the entry
+completion with commented-out placeholder: the entry stays clean after the rebuild lands
 OK
