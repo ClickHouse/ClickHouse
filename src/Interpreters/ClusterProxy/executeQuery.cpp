@@ -820,9 +820,14 @@ static ASTPtr getQueryASTWithEffectiveParallelReplicasCount(const ASTPtr & query
         auto * current = nodes_to_visit.back();
         nodes_to_visit.pop_back();
 
-        if (auto * settings = current->as<ASTSetQuery>(); settings && !settings->is_standalone
-            && settings->changes.tryGet("max_parallel_replicas"))
-            settings->changes.setSetting("max_parallel_replicas", UInt64{replicas_count});
+        if (auto * settings = current->as<ASTSetQuery>(); settings && !settings->is_standalone)
+        {
+            if (const auto * requested_replicas = settings->changes.tryGet("max_parallel_replicas"))
+            {
+                settings->changes.setSetting(
+                    "max_parallel_replicas", std::min<UInt64>(requested_replicas->safeGet<UInt64>(), replicas_count));
+            }
+        }
 
         for (auto & child : current->children)
             nodes_to_visit.push_back(child.get());

@@ -46,7 +46,12 @@ void setEffectiveParallelReplicasCountInQueryTree(const QueryTreeNodePtr & query
         nodes_to_visit.pop_back();
 
         if (auto * query_node = current->as<QueryNode>())
-            query_node->setSettingChange("max_parallel_replicas", UInt64{replicas_count});
+        {
+            UInt64 effective_replicas = replicas_count;
+            if (const auto * requested_replicas = query_node->getSettingsChanges().tryGet("max_parallel_replicas"))
+                effective_replicas = std::min(effective_replicas, requested_replicas->safeGet<UInt64>());
+            query_node->setSettingChange("max_parallel_replicas", effective_replicas);
+        }
 
         for (auto & child : current->getChildren())
         {
