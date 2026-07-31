@@ -8,6 +8,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -80,7 +82,7 @@ public:
 
         /// Cast all arguments to the result type
         /// Use this columns to insert values into the result column
-        std::vector<ColumnPtr> casted_columns;
+        VectorWithMemoryTracking<ColumnPtr> casted_columns;
         casted_columns.reserve(num_columns);
         for (const auto & arg : arguments)
         {
@@ -129,7 +131,7 @@ public:
 
 REGISTER_FUNCTION(FirstNonDefault)
 {
-    FunctionDocumentation doc;
+    FunctionDocumentation doc{};
     doc.description = "Returns the first non-default value from a set of arguments";
     doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {

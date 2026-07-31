@@ -1,17 +1,15 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <rocksdb/db.h>
 #include <rocksdb/status.h>
-#include <Common/ThreadPool.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace DB
 {
-namespace fs = std::filesystem;
 
 class StorageEmbeddedRocksDB;
 class EmbeddedRocksDBBulkSink;

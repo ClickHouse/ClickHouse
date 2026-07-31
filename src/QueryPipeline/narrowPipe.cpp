@@ -12,7 +12,7 @@ namespace DB
 
 namespace
 {
-    using Distribution = std::vector<size_t>;
+    using Distribution = VectorWithMemoryTracking<size_t>;
     Distribution getDistribution(size_t from, size_t to)
     {
         Distribution distribution(from);
@@ -31,7 +31,7 @@ void narrowPipe(Pipe & pipe, size_t width)
     if (size <= width)
         return;
 
-    std::vector<std::vector<OutputPort *>> partitions(width);
+    VectorWithMemoryTracking<OutputPortRawPtrs> partitions(width);
 
     auto distribution = getDistribution(size, width);
 

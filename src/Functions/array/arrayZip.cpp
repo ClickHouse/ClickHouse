@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -124,7 +125,7 @@ private:
 
     ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count, bool has_unaligned) const
     {
-        std::vector<const ColumnArray *> array_columns(holders.size());
+        VectorWithMemoryTracking<const ColumnArray *> array_columns(holders.size());
         for (size_t i = 0; i < holders.size(); ++i)
             array_columns[i] = checkAndGetColumn<ColumnArray>(holders[i].get());
 

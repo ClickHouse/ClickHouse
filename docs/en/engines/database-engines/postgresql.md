@@ -37,7 +37,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | REAL             | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md) (see note below) |
 | SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
 | INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
 | BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
@@ -46,6 +46,10 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
+
+:::note
+PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](../../sql-reference/data-types/int-uint.md) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
+:::
 
 ## Examples of use {#examples-of-use}
 

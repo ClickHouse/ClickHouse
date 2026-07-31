@@ -13,7 +13,7 @@ namespace DB
 class OwnSplitChannelBase;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
-using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
+using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
 }
 
 namespace Poco::Util
@@ -33,6 +33,12 @@ public:
 
     DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
     void flushTextLogs();
+
+    /// Stop/restart the background logging threads. Used around remapExecutable, which rewrites the whole
+    /// code segment and requires that no other thread runs code meanwhile (the async threads poll, so they
+    /// must be joined for the duration). No-op for synchronous logging.
+    void stopAsyncLoggingThreads();
+    void startAsyncLoggingThreads();
 
     virtual ~Loggers() = default;
 

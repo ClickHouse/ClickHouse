@@ -81,7 +81,7 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(operation);
     columns[i++]->insert(static_cast<UInt8>(is_subrequest));
     columns[i++]->insert(count);
-    errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
+    errors.dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
     columns[i++]->insert(component.view());
 }
@@ -96,18 +96,20 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
 
     for (auto & [entry_key, entry_stats] : local_stats)
     {
-        AggregatedZooKeeperLogElement element{
-            .event_time = std::chrono::system_clock::to_time_t(current_time),
-            .session_id = entry_key.session_id,
-            .parent_path = entry_key.parent_path,
-            .operation = entry_key.operation,
-            .component = entry_key.component,
-            .is_subrequest = entry_key.is_subrequest,
-            .count = entry_stats.count,
-            .errors = std::move(entry_stats.errors),
-            .total_latency_microseconds = entry_stats.total_latency_microseconds,
-        };
-        add(std::move(element));
+        add([&](AggregatedZooKeeperLogElement & element)
+        {
+            element = AggregatedZooKeeperLogElement{
+                .event_time = std::chrono::system_clock::to_time_t(current_time),
+                .session_id = entry_key.session_id,
+                .parent_path = entry_key.parent_path,
+                .operation = entry_key.operation,
+                .component = entry_key.component,
+                .is_subrequest = entry_key.is_subrequest,
+                .count = entry_stats.count,
+                .errors = entry_stats.errors,
+                .total_latency_microseconds = entry_stats.total_latency_microseconds,
+            };
+        });
     }
 }
 
@@ -144,7 +146,7 @@ void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Co
 {
     ++count;
     total_latency_microseconds += latency_microseconds;
-    errors->increment(error);
+    errors.increment(error);
 }
 
 }

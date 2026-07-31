@@ -7,7 +7,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -36,22 +39,44 @@ class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static std::map<std::string, std::set<std::string>> grouped_algorithms;
+    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {
-        std::map<std::string, std::set<std::string>> algorithms_map;
+        /// The callback is invoked from OpenSSL C code (EVP_MD_do_all_sorted), so it must be
+        /// noexcept: a C++ exception (e.g. a memory limit hit while inserting) must not unwind
+        /// through the C frames. Capture it and rethrow once the C call has returned.
+        struct CallbackState
+        {
+            MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
+            std::exception_ptr exception;
+        };
+        CallbackState state;
 
         EVP_MD_do_all_sorted(
-            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg)
+            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg) noexcept
             {
-                auto * algos_map = static_cast<std::map<std::string, std::set<std::string>> *>(arg);
-                std::string primary_name = md_name;
-                (*algos_map)[primary_name].insert(primary_name);
-                if (alias)
-                    (*algos_map)[primary_name].insert(alias);
+                auto & cb_state = *static_cast<CallbackState *>(arg);
+                if (cb_state.exception)
+                    return;
+                try
+                {
+                    std::string primary_name = md_name;
+                    cb_state.algorithms_map[primary_name].insert(primary_name);
+                    if (alias)
+                        cb_state.algorithms_map[primary_name].insert(alias);
+                }
+                catch (...)
+                {
+                    cb_state.exception = std::current_exception();
+                }
             },
-            &algorithms_map);
+            &state);
+
+        if (state.exception)
+            std::rethrow_exception(state.exception);
+
+        auto & algorithms_map = state.algorithms_map;
 
         /// Filter out algorithms that cannot actually be fetched
         /// (e.g., non-approved algorithms when running in FIPS mode)
@@ -70,7 +95,7 @@ private:
         grouped_algorithms = std::move(algorithms_map);
     }
 
-    static const std::map<std::string, std::set<std::string>> & getGroupedAlgorithms()
+    static const MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> & getGroupedAlgorithms()
     {
         std::call_once(supported_algorithms_flag, [] { fetchAndGroupSupportedAlgorithms(); });
         return grouped_algorithms;
@@ -167,7 +192,7 @@ public:
     static std::string getSupportedAlgorithmsAsString(bool by_lines = false)
     {
         const auto & algorithms = getGroupedAlgorithms();
-        std::vector<std::string> formatted_algorithms;
+        VectorWithMemoryTracking<std::string> formatted_algorithms;
 
         for (const auto & [primary, aliases] : algorithms)
         {
