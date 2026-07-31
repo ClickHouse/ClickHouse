@@ -1326,7 +1326,7 @@ void StorageKeeperMap::restoreDataImpl(
         /// otherwise we can do multi requests
         else
         {
-            create_requests.push_back(zkutil::makeCreateRequest(data_path_fs / key, value, zkutil::CreateMode::Persistent));
+            create_requests.push_back(zkutil::makeCreateRequest(pathToGenericString(data_path_fs / key), value, zkutil::CreateMode::Persistent));
 
             if (create_requests.size() == max_multi_size)
             {
@@ -1365,7 +1365,7 @@ const std::string & StorageKeeperMap::dataPath() const
 
 std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
 {
-    return fs::path(zk_data_path) / key;
+    return pathToGenericString(fs::path(zk_data_path) / key);
 }
 
 UInt64 StorageKeeperMap::keysLimit() const

@@ -453,7 +453,7 @@ void DataPartStorageOnDiskPacked::moveFile(const String & from_name, const Strin
     executeBinaryWriteOperation(from_name, to_name,
         [](auto & disk, const auto & from_path, const auto & to_path)
         {
-            disk.moveFile(pathToGenericString(from_path), to_path);
+            disk.moveFile(pathToGenericString(from_path), pathToGenericString(to_path));
         });
 }
 
@@ -462,7 +462,7 @@ void DataPartStorageOnDiskPacked::replaceFile(const String & from_name, const St
     executeBinaryWriteOperation(from_name, to_name,
         [](auto & disk, const auto & from_path, const auto & to_path)
         {
-            disk.replaceFile(pathToGenericString(from_path), to_path);
+            disk.replaceFile(pathToGenericString(from_path), pathToGenericString(to_path));
         });
 }
 

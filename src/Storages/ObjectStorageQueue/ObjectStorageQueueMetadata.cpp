@@ -1248,7 +1248,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             cleanupTrackedNodes(pathToGenericString(zookeeper_path / "processed"), "processed");
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+            cleanupTrackedNodes(pathToGenericString(zookeeper_path / "failed"), "failed");
     }
 
     LOG_TRACE(log, "Node limits check finished");

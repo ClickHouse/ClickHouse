@@ -534,7 +534,7 @@ time_t DiskLocal::getLastChanged(const String & path) const
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
-    DB::createHardLink(pathToGenericString(fs::path(disk_path) / src_path), fs::path(disk_path) / dst_path);
+    DB::createHardLink(pathToGenericString(fs::path(disk_path) / src_path), pathToGenericString(fs::path(disk_path) / dst_path));
 }
 
 bool DiskLocal::isSymlink(const String & path) const
@@ -556,7 +556,7 @@ void DiskLocal::createDirectorySymlink(const String & target, const String & lin
 
 String DiskLocal::readSymlink(const fs::path & path) const
 {
-    return FS::readSymlink(fs::path(disk_path) / path);
+    return pathToGenericString(FS::readSymlink(fs::path(disk_path) / path));
 }
 
 bool DiskLocal::equivalent(const String & p1, const String & p2) const
@@ -579,7 +579,7 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 
 void DiskLocal::createFile(const String & path)
 {
-    FS::createFile(fs::path(disk_path) / path);
+    FS::createFile(pathToGenericString(fs::path(disk_path) / path));
 }
 
 void DiskLocal::setReadOnly(const String & path)

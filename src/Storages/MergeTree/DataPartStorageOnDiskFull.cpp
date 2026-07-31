@@ -184,7 +184,7 @@ void DataPartStorageOnDiskFull::replaceFile(const String & from_name, const Stri
     executeWriteOperation([&](auto & disk)
     {
         auto relative_path = fs::path(root_path) / part_dir;
-        disk.replaceFile(pathToGenericString(relative_path / from_name), relative_path / to_name);
+        disk.replaceFile(pathToGenericString(relative_path / from_name), pathToGenericString(relative_path / to_name));
     });
 }
 
@@ -211,7 +211,7 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     {
         disk.createHardLink(
             pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
-            fs::path(root_path) / part_dir / to);
+            pathToGenericString(fs::path(root_path) / part_dir / to));
     });
 }
 

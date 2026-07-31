@@ -760,7 +760,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
-    default_db_disk->moveFile(pathToGenericString(old_metadata_file_path), new_metadata_file_path);
+    default_db_disk->moveFile(pathToGenericString(old_metadata_file_path), pathToGenericString(new_metadata_file_path));
 
     String old_path_to_table_symlinks;
 

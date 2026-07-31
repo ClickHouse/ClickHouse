@@ -402,17 +402,17 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         return;
 
     if (remove_started)
-        object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+        object_storage->copyObject(StoredObject(pathToGenericString(remote_tmp_path)), StoredObject(pathToGenericString(remote_source_path)), getReadSettings(), getWriteSettings());
 
-    object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+    object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_source_path));
+    removed_objects.push_back(StoredObject(pathToGenericString(remote_source_path)));
 
     if (copy_started)
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_tmp_path)));
 }
 
 MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -436,13 +436,13 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
 
-    if (!fs_tree->existsFile(path_from))
+    if (!fs_tree->existsFile(pathToGenericString(path_from)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
-    else if (!fs_tree->existsDirectory(path_to.parent_path()))
+    else if (!fs_tree->existsDirectory(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_to.parent_path());
-    else if (!fs_tree->getDirectoryRemoteInfo(path_to.parent_path()))
+    else if (!fs_tree->getDirectoryRemoteInfo(pathToGenericString(path_to.parent_path())))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_to.parent_path());
-    else if (fs_tree->existsFile(path_to))
+    else if (fs_tree->existsFile(pathToGenericString(path_to)))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
     const auto normalized_path_from = normalizePath(path_from);

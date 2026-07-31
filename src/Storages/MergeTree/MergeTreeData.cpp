@@ -5904,7 +5904,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveDirectory(pathToGenericString(fs::path(full_path) / old_dir), fs::path(full_path) / new_dir);
+            disk->moveDirectory(pathToGenericString(fs::path(full_path) / old_dir), pathToGenericString(fs::path(full_path) / new_dir));
         }
         catch (...)
         {
@@ -5931,7 +5931,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         try
         {
             const String full_path = pathToGenericString(fs::path(storage.relative_data_path) / source_dir);
-            disk->moveFile(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
+            disk->moveFile(pathToGenericString(fs::path(full_path) / new_dir), fs::path(full_path) / old_dir);
         }
         catch (...)
         {
@@ -6100,7 +6100,7 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
 
     chassert([&]()
            {
-               String dir_name = fs::path(part->getDataPartStorage().getRelativePath()).filename();
+               String dir_name = pathToGenericString(fs::path(part->getDataPartStorage().getRelativePath()).filename());
                bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
@@ -6430,7 +6430,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         {
             String part_dir = part->getDataPartStorage().getPartDirectory();
             LOG_INFO(log, "Detaching {}", part_dir);
-            auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(pathToGenericString(fs::path(DETACHED_DIR_NAME) / part_dir));
             part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
@@ -8065,7 +8065,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             storage.backup(
                 projection_part.checksums,
                 projection_part.getFileNamesWithoutChecksums(),
-                fs::path{data_path_in_backup} / part->name,
+                pathToGenericString(fs::path{data_path_in_backup} / part->name),
                 backup_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
@@ -8194,7 +8194,7 @@ public:
             /// Attaching parts will rename them so it's expected for a temporary part directory not to exist anymore in the end.
             temp_dir_deleter->setShowWarningIfRemoved(false);
             /// The following holder is needed to prevent clearOldTemporaryDirectories() from clearing `temp_part_dir` before we attach the part.
-            auto temp_dir_holder = storage->getTemporaryPartDirectoryHolder(temp_part_dir);
+            auto temp_dir_holder = storage->getTemporaryPartDirectoryHolder(pathToGenericString(temp_part_dir));
             it = temp_part_dirs.emplace(part_name,
                                         std::make_pair(std::move(temp_dir_deleter), std::move(temp_dir_holder))).first;
         }
@@ -8266,7 +8266,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
              my_part_info = *part_info,
              restore_broken_parts_as_detached,
              restored_parts_holder]
-            { storage->restorePartFromBackup(restored_parts_holder, my_part_info, part_path_in_backup, restore_broken_parts_as_detached); });
+            { storage->restorePartFromBackup(restored_parts_holder, my_part_info, pathToGenericString(part_path_in_backup), restore_broken_parts_as_detached); });
 
         ++num_parts;
     }

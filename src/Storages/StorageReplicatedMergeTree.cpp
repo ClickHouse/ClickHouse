@@ -2222,7 +2222,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
 
     for (const String & replica : replicas)
     {
-        String current_part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name;
+        String current_part_path = pathToGenericString(fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name);
         String part_zk_str;
         if (!zookeeper->tryGet(current_part_path, part_zk_str))
         {
