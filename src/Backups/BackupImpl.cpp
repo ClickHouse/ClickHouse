@@ -808,14 +808,6 @@ void BackupImpl::checkBackupDoesntExist() const
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
-
-    /// Check that no other backup (excluding internal backups) is writing to the same destination.
-    if (!params.is_internal_backup)
-    {
-        chassert(!lock_file_name.empty());
-        if (writer->fileExists(lock_file_name))
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
-    }
 }
 
 void BackupImpl::createLockFile()
@@ -824,7 +816,7 @@ void BackupImpl::createLockFile()
     chassert(!params.is_internal_backup);
 
     chassert(uuid);
-    auto out = writer->writeFile(lock_file_name);
+    auto out = writer->writeFileIfNotExists(lock_file_name);
     writeUUIDText(*uuid, *out);
     out->finalize();
 }
