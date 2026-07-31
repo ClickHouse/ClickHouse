@@ -45,9 +45,7 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### 克隆仓库
-
+  <Step title="克隆仓库" id="clone-the-repo">
     要使用 Docker Compose 部署，请克隆 ClickStack 仓库，进入该目录并运行 `docker-compose up`：
 
     ```shell
@@ -56,9 +54,7 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### 访问 HyperDX UI
-
+  <Step title="访问 HyperDX UI" id="navigate-to-hyperdx-ui">
     访问 [http://localhost:8080](http://localhost:8080) 打开 HyperDX UI。
 
     创建用户时，请提供符合要求的用户名和密码。
@@ -76,12 +72,10 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
     有关使用其他 ClickHouse 实例的示例，请参阅[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud)。
   </Step>
 
-  <Step>
-    ### 填写连接详细信息
-
+  <Step title="填写连接详细信息" id="complete-connection-details">
     要连接到已部署的 ClickHouse 实例，只需点击 **Create** 并接受默认设置即可。
 
-    如果你想连接自己的**外部 ClickHouse 集群** (例如 ClickHouse Cloud) ，也可以手动输入连接凭据。
+    如果你想连接自己的**外部 ClickHouse 集群**，例如 ClickHouse Cloud，也可以手动输入连接凭据。
 
     如果系统提示创建数据源，请保留所有默认值，并在 `Table` 字段中填写 `otel_logs`。其余设置应会自动检测完成，然后你就可以点击 `Save New Source`。
 
