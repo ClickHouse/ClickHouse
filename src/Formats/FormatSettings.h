@@ -461,6 +461,7 @@ struct FormatSettings
         std::string google_protos_path;
         bool oneof_presence =  false;
         bool input_datetime64_legacy_seconds = false;
+        bool output_datetime64_legacy_seconds = false;
     } protobuf{};
 
     struct

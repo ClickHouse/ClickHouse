@@ -57,6 +57,7 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool defaults_for_nullable_google_wrappers,
+        bool output_datetime64_legacy_seconds,
         ProtobufWriter & writer);
 };
 

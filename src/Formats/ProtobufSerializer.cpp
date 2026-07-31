@@ -1713,9 +1713,9 @@ namespace
 
 
     /// Serializes ColumnDecimal<DateTime64> to any numeric or string field except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
-    /// Numeric fields store scaled Int64 ticks for enabling subsecond precision.
-    /// Reading defaults to ticks; enable `input_format_protobuf_datetime64_legacy_seconds` to interpret numeric fields
-    /// as whole Unix seconds (for backward compatibility, DateTime64 serialization previously discarded subsecond precision).
+    /// Numeric fields store scaled Int64 ticks by default so subsecond precision is preserved.
+    /// Enable `input_format_protobuf_datetime64_legacy_seconds` / `output_format_protobuf_datetime64_legacy_seconds`
+    /// to read / write whole Unix seconds (for backward compatibility, DateTime64 serialization previously discarded subsecond precision).
     class ProtobufSerializerDateTime64 : public ProtobufSerializerSingleValue
     {
     public:
@@ -1726,12 +1726,14 @@ namespace
             const DataTypeDateTime64 & datetime64_type_,
             const FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_,
-            bool input_datetime64_legacy_seconds_)
+            bool input_datetime64_legacy_seconds_,
+            bool output_datetime64_legacy_seconds_)
             : ProtobufSerializerSingleValue(column_name_, field_descriptor_, reader_or_writer_)
             , scale(datetime64_type_.getScale())
             , scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
             , date_lut(datetime64_type_.getTimeZone())
             , input_datetime64_legacy_seconds(input_datetime64_legacy_seconds_)
+            , output_datetime64_legacy_seconds(output_datetime64_legacy_seconds_)
         {
             setFunctions();
         }
@@ -1772,21 +1774,21 @@ namespace
             switch (field_typeid)
             {
                 case FieldTypeId::TYPE_INT32: {
-                    write_function = [this](DateTime64 value) { writeInt(castNumber<Int32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeInt(castNumber<Int32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readInt()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int32()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_SINT32: {
-                    write_function = [this](DateTime64 value) { writeSInt(castNumber<Int32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeSInt(castNumber<Int32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readSInt()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int32()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_UINT32: {
-                    write_function = [this](DateTime64 value) { writeUInt(castNumber<UInt32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeUInt(castNumber<UInt32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readUInt())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint32())); };
@@ -1794,21 +1796,21 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_INT64: {
-                    write_function = [this](DateTime64 value) { writeInt(value.value); };
+                    write_function = [this](DateTime64 value) { writeInt(numericForProtobufField(value)); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readInt()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int64()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_SINT64: {
-                    write_function = [this](DateTime64 value) { writeSInt(value.value); };
+                    write_function = [this](DateTime64 value) { writeSInt(numericForProtobufField(value)); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readSInt()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int64()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_UINT64: {
-                    write_function = [this](DateTime64 value) { writeUInt(castNumber<UInt64>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeUInt(castNumber<UInt64>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readUInt())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint64())); };
@@ -1816,7 +1818,7 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_FIXED32: {
-                    write_function = [this](DateTime64 value) { writeFixed<UInt32>(castNumber<UInt32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeFixed<UInt32>(castNumber<UInt32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<UInt32>())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint32())); };
@@ -1824,14 +1826,14 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_SFIXED32: {
-                    write_function = [this](DateTime64 value) { writeFixed<Int32>(castNumber<Int32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeFixed<Int32>(castNumber<Int32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readFixed<Int32>()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int32()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_FIXED64: {
-                    write_function = [this](DateTime64 value) { writeFixed<UInt64>(castNumber<UInt64>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeFixed<UInt64>(castNumber<UInt64>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<UInt64>())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_uint64())); };
@@ -1839,14 +1841,14 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_SFIXED64: {
-                    write_function = [this](DateTime64 value) { writeFixed<Int64>(value.value); };
+                    write_function = [this](DateTime64 value) { writeFixed<Int64>(numericForProtobufField(value)); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(readFixed<Int64>()); };
                     default_function = [this]() -> DateTime64 { return ticksFromNumericField(field_descriptor.default_value_int64()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_FLOAT: {
-                    write_function = [this](DateTime64 value) { writeFixed<Float32>(castNumber<Float32>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeFixed<Float32>(castNumber<Float32>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<Float32>())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_float())); };
@@ -1854,7 +1856,7 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_DOUBLE: {
-                    write_function = [this](DateTime64 value) { writeFixed<Float64>(castNumber<Float64>(value.value)); };
+                    write_function = [this](DateTime64 value) { writeFixed<Float64>(castNumber<Float64>(numericForProtobufField(value))); };
                     read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<Float64>())); };
                     default_function = [this]() -> DateTime64
                     { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_double())); };
@@ -1902,6 +1904,18 @@ namespace
             return DateTime64(value);
         }
 
+        DateTime64::NativeType numericForProtobufField(DateTime64 value) const
+        {
+            if (output_datetime64_legacy_seconds)
+            {
+                /// Legacy writers emitted whole Unix seconds via ProtobufSerializerDecimal / getWholePart.
+                /// Enabled by the output_format_protobuf_datetime64_legacy_seconds setting.
+                return DecimalUtils::getWholePart(value, scale);
+            }
+
+            return value.value;
+        }
+
         void dateTime64ToString(DateTime64 value, String & str) const
         {
             WriteBufferFromString buf{str};
@@ -1920,6 +1934,7 @@ namespace
         const DateTime64::NativeType scale_multiplier;
         const DateLUTImpl & date_lut;
         const bool input_datetime64_legacy_seconds;
+        const bool output_datetime64_legacy_seconds;
         std::function<void(DateTime64)> write_function;
         std::function<DateTime64()> read_function;
         std::function<DateTime64()> default_function;
@@ -3373,9 +3388,12 @@ namespace
     {
     public:
         explicit ProtobufSerializerBuilder(
-            const ProtobufReaderOrWriter & reader_or_writer_, bool input_datetime64_legacy_seconds_ = false)
+            const ProtobufReaderOrWriter & reader_or_writer_,
+            bool input_datetime64_legacy_seconds_ = false,
+            bool output_datetime64_legacy_seconds_ = false)
             : reader_or_writer(reader_or_writer_)
             , input_datetime64_legacy_seconds(input_datetime64_legacy_seconds_)
+            , output_datetime64_legacy_seconds(output_datetime64_legacy_seconds_)
         {
         }
 
@@ -4130,7 +4148,8 @@ namespace
                     assert_cast<const DataTypeDateTime64 &>(*data_type),
                     field_descriptor,
                     reader_or_writer,
-                    input_datetime64_legacy_seconds);
+                    input_datetime64_legacy_seconds,
+                    output_datetime64_legacy_seconds);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(column_name, typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(column_name, typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
@@ -4354,6 +4373,7 @@ namespace
 
         const ProtobufReaderOrWriter reader_or_writer;
         const bool input_datetime64_legacy_seconds = false;
+        const bool output_datetime64_legacy_seconds = false;
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
     };
@@ -4553,13 +4573,20 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool with_length_delimiter,
     bool with_envelope,
     bool defaults_for_nullable_google_wrappers,
+    bool output_datetime64_legacy_seconds,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(
-        column_names, data_types, missing_column_indices,
-        *descriptor.message_descriptor,
-        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false);
+    return ProtobufSerializerBuilder(writer, /* input_datetime64_legacy_seconds = */false, output_datetime64_legacy_seconds)
+        .buildMessageSerializer(
+            column_names,
+            data_types,
+            missing_column_indices,
+            *descriptor.message_descriptor,
+            with_length_delimiter,
+            with_envelope,
+            defaults_for_nullable_google_wrappers,
+            false);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence)

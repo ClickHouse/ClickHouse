@@ -3,6 +3,7 @@
 # DateTime64 Protobuf auto-schema stores scaled ticks (int64), so pre-epoch values,
 # subsecond precision, and upper bound values are preserved through serialization and deserialization.
 # Legacy whole-seconds files can still be read with input_format_protobuf_datetime64_legacy_seconds=1.
+# Legacy writers can emit whole Unix seconds with output_format_protobuf_datetime64_legacy_seconds=1
 # Calendar year 0000 (with a valid month/day) is serialized/deserialized correctly instead of being
 # defaulted to the current/previous year; 0000-00-00 maps to the Unix epoch.
 
@@ -19,10 +20,11 @@ FILE_PAST_MAX="${CLICKHOUSE_TEST_UNIQUE_NAME}_past_max.pb"
 FILE_FRAC_EPOCH="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac_epoch.pb"
 FILE_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac.pb"
 FILE_LEGACY_SECONDS="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_seconds.pb"
+FILE_LEGACY_OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_out.pb"
 FILE_YEAR_ZERO_BE="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_be.pb"
 FILE_YEAR_ZERO_BASIC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_basic.pb"
 FILE_YEAR_ZERO_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_frac.pb"
-trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_YEAR_ZERO_BE}" "${FILE_YEAR_ZERO_BASIC}" "${FILE_YEAR_ZERO_FRAC}"' EXIT
+trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_YEAR_ZERO_BE}" "${FILE_YEAR_ZERO_BASIC}" "${FILE_YEAR_ZERO_FRAC}"' EXIT
 
 echo '-- pre-epoch'
 ${CLICKHOUSE_LOCAL} --query "
@@ -85,6 +87,22 @@ echo '-- legacy read with setting restores the Unix-second instant'
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_SECONDS}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
+SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
+
+echo '-- legacy output writes whole Unix seconds (subseconds truncated)'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FILE_LEGACY_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
+SETTINGS date_time_input_format = 'best_effort', engine_file_truncate_on_insert = 1, output_format_protobuf_datetime64_legacy_seconds = 1
+FORMAT TSV
+2020-01-01 00:00:00.123+00"
+
+echo '-- legacy output read as ticks without input setting (seconds misinterpreted as ticks)'
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FILE_LEGACY_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')"
+
+echo '-- legacy output and legacy input restores the truncated Unix-second instant'
+${CLICKHOUSE_LOCAL} --query "
+SELECT *
+FROM file('${FILE_LEGACY_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
 
 echo '-- calendar year 0000 via best_effort text parse into Protobuf'

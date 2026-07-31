@@ -1666,6 +1666,12 @@ When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as 
 (for backward compatibility, previously discarded subsecond precision). When disabled (default), they are
 interpreted as scaled `DateTime64` ticks matching the column precision, which preserves subseconds.
 )", 0) \
+    DECLARE(Bool, output_format_protobuf_datetime64_legacy_seconds, false, R"(
+When enabled, numeric Protobuf fields mapped from `DateTime64` are written as whole Unix seconds
+(for backward compatibility with older ClickHouse builds and external readers, and with user-supplied
+schemas that use narrower numeric field types). When disabled (default), they are written as scaled
+`DateTime64` ticks matching the column precision, which preserves subseconds.
+)", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
