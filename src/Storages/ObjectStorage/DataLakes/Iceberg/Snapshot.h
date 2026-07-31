@@ -29,9 +29,12 @@ struct IcebergDataSnapshot
 
     std::optional<size_t> getTotalRows() const
     {
-        if (total_rows.has_value() && total_position_delete_rows.has_value())
-            return *total_rows - *total_position_delete_rows;
-        return std::nullopt;
+        if (!total_rows.has_value() || !total_position_delete_rows.has_value())
+            return std::nullopt;
+        /// Fail closed on inconsistent summary: unsigned subtract would wrap to a huge COUNT.
+        if (*total_position_delete_rows > *total_rows)
+            return std::nullopt;
+        return *total_rows - *total_position_delete_rows;
     }
 
     /// Summary `total-equality-deletes` is optional. Only trust the cheap getTotalRows() shortcut

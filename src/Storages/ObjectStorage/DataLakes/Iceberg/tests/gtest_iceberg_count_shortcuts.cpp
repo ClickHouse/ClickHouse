@@ -66,4 +66,19 @@ TEST(IcebergCountShortcuts, SnapshotShortcutRequiresExplicitZeroEqualityDeletes)
     /// coexistence before trusting this snapshot shortcut.
 }
 
+TEST(IcebergCountShortcuts, SnapshotGetTotalRowsFailsClosedWhenDeletesExceedRows)
+{
+    Iceberg::IcebergDataSnapshot snapshot;
+    snapshot.total_rows = 100;
+    snapshot.total_position_delete_rows = 150;
+    snapshot.total_equality_delete_rows = 0;
+
+    EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
+    EXPECT_FALSE(snapshot.getTotalRows().has_value());
+
+    snapshot.total_position_delete_rows = 100;
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_EQ(*snapshot.getTotalRows(), 0u);
+}
+
 #endif
