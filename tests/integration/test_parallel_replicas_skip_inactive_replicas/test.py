@@ -67,6 +67,9 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         "enable_parallel_replicas": 1,
         "cluster_for_parallel_replicas": db,
         "max_threads": 64,
+        # Keep `max_threads` deterministic on memory-limited sanitizer workers. Otherwise
+        # `getMaxThreadsForAvailableMemory` can reduce both plans to the same width.
+        "max_threads_min_free_memory_per_thread": 0,
         "merge_tree_min_rows_for_concurrent_read": 0,
         "merge_tree_min_bytes_for_concurrent_read": 0,
         "merge_tree_min_read_task_size": 1,
