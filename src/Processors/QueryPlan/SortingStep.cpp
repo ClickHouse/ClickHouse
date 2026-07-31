@@ -179,7 +179,6 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
     max_streams_per_hierarchical_merge = settings[Setting::max_streams_per_hierarchical_merge];
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -266,14 +265,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    const Settings & settings_,
+    size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(settings_)
+    , sort_settings(max_block_size_)
 {
 }
 
@@ -404,22 +403,15 @@ void SortingStep::addHierarchicalMergingSorted(
     size_t max_streams_per_layer,
     size_t max_block_size,
     UInt64 limit,
-    bool always_read_till_end,
-    bool use_average_block_sizes,
-    bool apply_virtual_row_conversions)
+    bool always_read_till_end)
 {
     size_t num_streams = pipeline.getNumStreams();
 
     if (num_streams <= 1)
         return;
 
-    /// Defensive: `SortingStep::Settings::max_streams_per_hierarchical_merge` is a plain public field, so a
-    /// caller can assign to it after construction and bypass the check in the constructors. A layer of
-    /// single-input mergers never reduces the stream count, so the loop below would not terminate.
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_layer);
-
     auto shared_header = pipeline.getSharedHeader();
-    auto make_merger = [&shared_header, &sort_desc, max_block_size, limit, always_read_till_end, use_average_block_sizes, apply_virtual_row_conversions]
+    auto make_merger = [&shared_header, &sort_desc, max_block_size, limit, always_read_till_end]
         (size_t input_streams) -> std::shared_ptr<MergingSortedTransform>
     {
         return std::make_shared<MergingSortedTransform>(
@@ -434,11 +426,11 @@ void SortingStep::addHierarchicalMergingSorted(
             always_read_till_end,
             /*out_row_sources_buf=*/nullptr,
             /*filter_column_name=*/std::nullopt,
-            use_average_block_sizes,
-            apply_virtual_row_conversions);
+            /*use_average_block_sizes=*/false,
+            /*apply_virtual_row_conversions=*/true);
     };
 
-    /// Disabled or streams count is within threshold — use single-node merging.
+    /// Disabled or stream count is within the threshold: use single-node merging.
     if (max_streams_per_layer == 0 || num_streams <= max_streams_per_layer)
     {
         pipeline.addTransform(make_merger(num_streams));
@@ -456,14 +448,14 @@ void SortingStep::addHierarchicalMergingSorted(
         size_t streams_in_layer = pipeline.getNumStreams();
         size_t groups = (streams_in_layer + max_streams_per_layer - 1) / max_streams_per_layer;
 
-        /// Last layer — single group merges all remaining streams.
+        /// Last layer: a single group merges all remaining streams.
         if (groups == 1)
         {
             pipeline.addTransform(make_merger(streams_in_layer));
             break;
         }
 
-        /// Intermediate layer — create multiple mergers.
+        /// Intermediate layer: create multiple mergers.
         size_t streams_per_group = max_streams_per_layer;
         size_t last_group_streams = streams_in_layer - (groups - 1) * streams_per_group;
 
@@ -491,7 +483,7 @@ void SortingStep::addHierarchicalMergingSorted(
     }
 }
 
-void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, bool has_global_limit)
+void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
@@ -508,32 +500,22 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             });
         }
 
-        /// A read-in-order `LIMIT` merge relies on a single `MergingSortedTransform`:
-        /// it stops as soon as it has produced `limit_` rows, and with virtual rows
-        /// (`read_in_order_use_virtual_row`) it can also skip reading parts whose smallest
-        /// key is beyond the `LIMIT` frontier. A hierarchical merge tree would defeat this,
-        /// because every intermediate merger applies its own frontier to its own group and
-        /// would eagerly read up to that many rows from each group, including groups that
-        /// never contribute to the global result. So keep a single merge node whenever the
-        /// step as a whole has a limit.
-        ///
-        /// Note this must be based on `has_global_limit`, not on whether `limit_` itself is
-        /// non-zero: for `Type::FinishSorting` with `need_finish_sorting` (the sort key has a
-        /// suffix beyond `prefix_description`), this prefix merge is deliberately called with
-        /// `limit_ = 0` because the final row order - and hence which rows are the global
-        /// top-`limit` - is only known after `finishSorting` re-sorts by the suffix. The step
-        /// still has a global limit, so it still needs the over-read protection above.
-        const size_t max_streams_per_layer = has_global_limit ? 0 : sort_settings.max_streams_per_hierarchical_merge;
-
-        addHierarchicalMergingSorted(
-            pipeline,
+        auto transform = std::make_shared<MergingSortedTransform>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
             result_sort_desc,
-            max_streams_per_layer,
             sort_settings.max_block_size,
+            /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns*/std::nullopt,
+            SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            /*use_average_block_sizes=*/false,
+            /*out_row_sources_buf=*/ nullptr,
+            /*filter_column_name=*/ std::nullopt,
+            /*use_average_block_sizes=*/ false,
             apply_virtual_row_conversions);
+
+        pipeline.addTransform(std::move(transform));
     }
     else if (apply_virtual_row_conversions)
     {
@@ -626,6 +608,8 @@ void SortingStep::fullSortStreams(
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
+    checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge);
+
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
@@ -643,10 +627,9 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
             sort_settings.max_streams_per_hierarchical_merge,
             sort_settings.max_block_size,
             limit_,
-            always_read_till_end,
-            /*use_average_block_sizes=*/false,
-            /*apply_virtual_row_conversions=*/true);
+            always_read_till_end);
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
     }
     else if (apply_virtual_row_conversions)
     {
@@ -667,7 +650,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         addPerStreamLimitByIfNeeded(pipeline, result_description);
 
-        mergingSorted(pipeline, result_description, limit, /*has_global_limit=*/limit != 0);
+        mergingSorted(pipeline, result_description, limit);
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
@@ -685,13 +668,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (!need_finish_sorting)
             addPerStreamLimitByIfNeeded(pipeline, result_description);
 
-        /// The prefix merge itself must not truncate to `limit` when `need_finish_sorting`
-        /// is set: the final row order (and hence the global top-`limit` rows) is only known
-        /// after `finishSorting` re-sorts by the suffix key. But the step as a whole still has
-        /// `limit` as its global limit, so `mergingSorted` must still know that - otherwise it
-        /// would wrongly build a hierarchical merge tree and lose the read-in-order LIMIT
-        /// over-read protection (see the comment in `mergingSorted`).
-        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit), /*has_global_limit=*/limit != 0);
+        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 

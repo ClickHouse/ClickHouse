@@ -124,11 +124,7 @@ ORDER BY postcode1, postcode2
 SETTINGS
     max_threads = 20,
     allow_asynchronous_read_from_io_pool_for_merge_tree= 1,
-    max_streams_for_merge_tree_reading= 60,
-    -- Keep a single merge node so this example stays focused on how the data is read.
-    -- By default (`max_streams_per_hierarchical_merge = 16`) the 20 sorted streams are
-    -- merged by a tree of `MergingSortedTransform` nodes instead of one 20 → 1 node.
-    max_streams_per_hierarchical_merge = 0;
+    max_streams_for_merge_tree_reading= 60;
 
 ┌─explain───────────────────────────┐
 │ (Expression)                      │
@@ -150,8 +146,7 @@ ORDER BY postcode1, postcode2
 SETTINGS
     max_threads = 20,
     allow_asynchronous_read_from_io_pool_for_merge_tree = 0,
-    max_streams_for_merge_tree_reading = 0,
-    max_streams_per_hierarchical_merge = 0;
+    max_streams_for_merge_tree_reading = 0;
 
 ┌─explain───────────────────────────┐
 │ (Expression)                      │
@@ -177,6 +172,8 @@ SETTINGS
     allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
     max_streams_for_merge_tree_reading = 60,
     optimize_read_in_order = 0,
+    -- Keep a single merge node so the displayed full-sort pipeline stays focused
+    -- on how the data is read.
     max_streams_per_hierarchical_merge = 0;
 
 ┌─explain──────────────────────────────┐
@@ -193,4 +190,3 @@ SETTINGS
 └──────────────────────────────────────┘
 
 ```
-

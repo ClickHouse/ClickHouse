@@ -1,6 +1,0 @@
--- FinishSorting, ORDER BY prefix, suffix LIMIT n: no hierarchy over 20 parts (0) --
-0
--- Same, without LIMIT: hierarchy over 20 parts (1) --
-1
--- LIMIT results are identical whether the hierarchy is enabled or disabled --
-1

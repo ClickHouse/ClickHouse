@@ -8125,14 +8125,16 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
     DECLARE(UInt64, max_streams_per_hierarchical_merge, 16, R"(
-Maximum number of input streams per `MergingSortedTransform` when using hierarchical merging. Instead of funneling all sorted streams into a single merge node, a multi-layer tree of `MergingSortedTransform` processors is built, each merging at most this many inputs. This reduces `status_mutex` contention in the pipeline executor on high-core-count systems.
+Maximum number of input streams per `MergingSortedTransform` when merging streams produced by a full sort. Instead of funneling all sorted streams into a single merge node, a multi-layer tree of `MergingSortedTransform` processors is built, each merging at most this many inputs. This reduces `status_mutex` contention in the pipeline executor on high-core-count systems. Read-in-order and merge-only sorting steps keep a single merge node.
+
+The setting is local to the pipeline where it is applied. Full sorts reconstructed from a serialized query plan use a single merge node because this setting is not serialized.
 
 Possible values:
 
-- 0 - Hierarchical merging is disabled; all sorted streams are merged by a single `MergingSortedTransform`.
+- 0 - Hierarchical merging is disabled; streams produced by a full sort are merged by a single `MergingSortedTransform`.
 - 2 or more - Maximum number of inputs per merge node.
 
-The value 1 is not allowed: a merge node with a single input would not reduce the number of streams, so no tree could be built. Attempting to build a sorting plan with this value throws `BAD_ARGUMENTS`. Note that the error is raised when the query plan is built, not when the setting is assigned, so `SET max_streams_per_hierarchical_merge = 1` itself succeeds.
+The value 1 is not allowed: a merge node with a single input would not reduce the number of streams, so no tree could be built. Attempting to build a full-sort pipeline with this value throws `BAD_ARGUMENTS`. Note that the error is raised when the query pipeline is built, not when the setting is assigned, so `SET max_streams_per_hierarchical_merge = 1` itself succeeds.
 )", 0) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.

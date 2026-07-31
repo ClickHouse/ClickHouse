@@ -1692,7 +1692,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                     child->step->getOutputHeader(),
                     info->sort_description_for_merging,
                     *max_sort_descr,
-                    sorting->getSettings(),
+                    sorting->getSettings().max_block_size,
                     0); /// TODO: support limit with ties
             }
 

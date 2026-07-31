@@ -3286,7 +3286,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
         query_plan.getCurrentHeader(),
         input_sorting_info->sort_description_for_merging,
         output_order_descr,
-        SortingStep::Settings(settings),
+        settings[Setting::max_block_size],
         limit);
 
     query_plan.addStep(std::move(finish_sorting_step));

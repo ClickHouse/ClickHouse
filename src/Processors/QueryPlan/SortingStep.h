@@ -88,7 +88,7 @@ public:
         const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        const Settings & settings_,
+        size_t max_block_size_,
         UInt64 limit_);
 
     /// MergingSorted
@@ -173,15 +173,12 @@ private:
         size_t max_streams_per_layer,
         size_t max_block_size,
         UInt64 limit,
-        bool always_read_till_end,
-        bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions = false);
+        bool always_read_till_end);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
-        UInt64 limit_,
-        bool has_global_limit);
+        UInt64 limit_);
     void finishSorting(
         QueryPipelineBuilder & pipeline,
         const SortDescription & input_sort_desc,

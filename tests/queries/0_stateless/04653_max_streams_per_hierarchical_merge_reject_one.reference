@@ -1,10 +1,8 @@
--- assignment itself is accepted, the value is only rejected when a sorting plan is built --
+-- assignment itself is accepted, the value is only rejected when a full-sort pipeline is built --
 1
 10
 -- rejected on the full sort path --
--- rejected with serialize_query_plan as well --
--- rejected on the read in order path --
 -- 0 and values >= 2 are accepted --
-200
-200
-200
+10
+10
+10
