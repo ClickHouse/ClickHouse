@@ -7,7 +7,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
