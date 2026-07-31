@@ -96,6 +96,8 @@ struct PatchPartInfoBase
     bool perform_alter_conversions = true;
     /// Effective sorting key for applying the patch without the trailing `_block_number`, `_block_offset` columns.
     std::shared_ptr<const KeyDescription> sorting_key;
+    /// Columns of the sorting key persisted in the patch part.
+    NameSet stored_sorting_key_columns;
 
     String describe() const;
 };

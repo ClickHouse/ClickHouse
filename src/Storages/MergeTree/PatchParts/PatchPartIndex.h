@@ -38,11 +38,13 @@ public:
 
     void addSourcePart(const String & name, UInt64 data_version);
 
-    /// `effective_sorting_key` is the effective sort-key prefix for `MergeOnKey` patches
+    /// `effective_sorting_key` is the effective sort-key prefix for `MergeOnKey` patches.
+    /// `stored_sorting_key_columns` are the columns of the key the patch was written with.
     PatchParts getPatchParts(
         const MergeTreePartInfo & original_part,
         const DataPartPtr & patch_part,
-        std::shared_ptr<const KeyDescription> effective_sorting_key) const;
+        std::shared_ptr<const KeyDescription> effective_sorting_key,
+        NameSet stored_sorting_key_columns) const;
 
     static PatchPartIndex build(
         const Block & block,

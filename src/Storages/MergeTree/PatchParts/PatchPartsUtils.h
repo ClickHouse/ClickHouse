@@ -34,9 +34,11 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
 /// Returns the sorting key expression list of the patch part, excluding the trailing identity columns.
 ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key);
 
-/// Builds the effective sorting key for applying a v2 patch part: the longest common prefix
-/// of the patch part's sorting key and the table's current sorting key.
-std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata);
+/// The effective sorting key for applying a v2 patch part is the longest common prefix
+/// of the patch part's sorting key and the table's current sorting key, so it is fully
+/// identified by its size. The first function returns that size, the second builds the key.
+size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata);
+std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(size_t effective_key_size, const StorageMetadataPtr & storage_metadata);
 
 const NamesAndTypesList & getPatchPartSystemColumnsV1();
 const NamesAndTypesList & getPatchPartSystemColumnsV2();
@@ -58,7 +60,6 @@ Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch);
 /// Returns the sort-key columns physically stored in the patch part (only v2 patches store them).
 /// These columns identify updated rows and are never updated themselves,
 /// so they must not be treated as updated columns.
-NameSet getSortingKeyColumnsInPatch(const PatchPartInfoForReader & patch);
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata);
 
 /// Partition id of patch part is 'patch-<hash of column names in patch part>-<original_partition_id>.

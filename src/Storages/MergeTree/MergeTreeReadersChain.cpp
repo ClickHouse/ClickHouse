@@ -720,19 +720,23 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
         const auto & patch_columns = patch.part->getColumnsDescription();
         const auto & alter_conversions = patch.part->getAlterConversions();
 
-        /// Sorting key columns are stored in MergeOnKey patches only
-        /// to identify updated rows and are never updated themselves.
-        auto sorting_key_columns = getSortingKeyColumnsInPatch(patch);
+        /// Columns of the key the patch was written with are stored in MergeOnKey patches
+        /// only to identify updated rows and are never updated themselves.
+        const auto & sorting_key_columns = patch.stored_sorting_key_columns;
         auto & columns_for_patch = res.emplace_back();
 
         for (const auto & column : block)
         {
-            if (isPatchPartSystemColumn(column.name) || sorting_key_columns.contains(column.name))
+            if (isPatchPartSystemColumn(column.name))
                 continue;
 
             String column_name_in_patch = column.name;
             if (alter_conversions && alter_conversions->isColumnRenamed(column.name))
                 column_name_in_patch = alter_conversions->getColumnOldName(column.name);
+
+            /// The persisted key columns are named as they were at the time the patch was written.
+            if (sorting_key_columns.contains(column_name_in_patch))
+                continue;
 
             if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
                 continue;

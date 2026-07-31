@@ -1661,10 +1661,12 @@ protected:
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
 
-    /// Cached effective sorting keys for applying v2 patch parts.
+    /// Cached effective sorting keys for applying v2 patch parts. An effective key is a prefix
+    /// of the table's current sorting key, so it is identified by its size. Equal effective keys
+    /// are one object: patches are grouped by pointer identity of the key when they are applied.
     /// Invalidated on ALTER: the effective key depends on the table's current sorting key.
     mutable std::mutex patch_parts_sorting_keys_mutex;
-    mutable std::unordered_map<String, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;
+    mutable std::map<size_t, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;
 
     MergeTreePartsMover parts_mover;
 

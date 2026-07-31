@@ -33,6 +33,7 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch part, got: {}", patch_part->name);
 
     std::shared_ptr<const KeyDescription> sorting_key;
+    NameSet stored_sorting_key_columns;
     const auto & patch_part_index = patch_part->getPatchPartIndex();
 
     if (patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V2)
@@ -40,9 +41,10 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
         /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
         /// with if the table's sorting key was changed by ALTER after the patch had been written.
         sorting_key = patch_part->storage.getPatchPartSortingKey(*patch_part);
+        stored_sorting_key_columns = getSortingKeyColumnsInPatch(patch_part->getMetadataSnapshot());
     }
 
-    return patch_part_index.getPatchParts(source_part, patch_part, std::move(sorting_key));
+    return patch_part_index.getPatchParts(source_part, patch_part, std::move(sorting_key), std::move(stored_sorting_key_columns));
 }
 
 static String getColumnsHash(Names column_names)
@@ -217,18 +219,19 @@ ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sortin
     return table_expr_list;
 }
 
-std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
+size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
 {
     auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
     {
         return lhs->formatWithSecretsOneLine() == rhs->formatWithSecretsOneLine();
     };
 
-    const auto & storage_sorting_key = storage_metadata->getSortingKey();
-    const auto storage_expr_list = storage_sorting_key.getOriginalExpressionList();
-    const auto patch_expr_list = getTableSortingKeyExpressionFromPatch(patch_sorting_key);
+    const auto storage_expr_list = storage_metadata->getSortingKey().getOriginalExpressionList();
+    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
+    chassert(patch_expr_list && patch_expr_list->children.size() >= 2);
 
-    const size_t patch_key_size = patch_expr_list->children.size();
+    /// Without the trailing `_block_number`, `_block_offset` columns of the patch's key.
+    const size_t patch_key_size = patch_expr_list->children.size() - 2;
     const size_t storage_key_size = storage_expr_list ? storage_expr_list->children.size() : 0;
     const size_t max_prefix_key_size = std::min(patch_key_size, storage_key_size);
 
@@ -237,13 +240,23 @@ std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescr
     while (prefix_key_size < max_prefix_key_size && ast_equals(patch_expr_list->children[prefix_key_size], storage_expr_list->children[prefix_key_size]))
         ++prefix_key_size;
 
-    if (prefix_key_size == storage_key_size)
+    return prefix_key_size;
+}
+
+std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(size_t effective_key_size, const StorageMetadataPtr & storage_metadata)
+{
+    const auto & storage_sorting_key = storage_metadata->getSortingKey();
+    const auto storage_expr_list = storage_sorting_key.getOriginalExpressionList();
+    const size_t storage_key_size = storage_expr_list ? storage_expr_list->children.size() : 0;
+    chassert(effective_key_size <= storage_key_size);
+
+    if (effective_key_size == storage_key_size)
         return std::make_shared<const KeyDescription>(storage_sorting_key);
 
     auto order_by_expression = makeASTFunction("tuple");
     order_by_expression->arguments = make_intrusive<ASTExpressionList>();
 
-    for (size_t i = 0; i < prefix_key_size; ++i)
+    for (size_t i = 0; i < effective_key_size; ++i)
         order_by_expression->arguments->children.push_back(storage_expr_list->children[i]->clone());
 
     return std::make_shared<const KeyDescription>(KeyDescription::getKeyFromAST(
@@ -392,14 +405,6 @@ static NameSet getSortingKeyColumnsImpl(const KeyDescription & sorting_key)
     }
 
     return columns;
-}
-
-NameSet getSortingKeyColumnsInPatch(const PatchPartInfoForReader & patch)
-{
-    if (!patch.sorting_key)
-        return {};
-
-    return getSortingKeyColumnsImpl(*patch.sorting_key);
 }
 
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)

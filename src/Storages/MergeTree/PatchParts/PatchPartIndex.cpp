@@ -76,7 +76,8 @@ void PatchPartIndex::buildSourcePartsByVersion()
 PatchParts PatchPartIndex::getPatchParts(
     const MergeTreePartInfo & original_part,
     const DataPartPtr & patch_part,
-    std::shared_ptr<const KeyDescription> effective_sorting_key) const
+    std::shared_ptr<const KeyDescription> effective_sorting_key,
+    NameSet stored_sorting_key_columns) const
 {
     UInt64 data_version = original_part.getDataVersion();
     auto it = source_parts_by_version.upper_bound(data_version);
@@ -115,6 +116,7 @@ PatchParts PatchPartIndex::getPatchParts(
                 .source_data_version = original_part.getDataVersion(),
                 .perform_alter_conversions = true,
                 .sorting_key = std::move(effective_sorting_key),
+                .stored_sorting_key_columns = std::move(stored_sorting_key_columns),
             });
         }
 
@@ -141,6 +143,7 @@ PatchParts PatchPartIndex::getPatchParts(
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
             .sorting_key = nullptr,
+            .stored_sorting_key_columns = {},
         });
     }
 
@@ -154,6 +157,7 @@ PatchParts PatchPartIndex::getPatchParts(
             .source_data_version = original_part.getDataVersion(),
             .perform_alter_conversions = true,
             .sorting_key = nullptr,
+            .stored_sorting_key_columns = {},
         });
     }
 

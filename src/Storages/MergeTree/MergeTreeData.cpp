@@ -11442,6 +11442,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .source_data_version = patch.source_data_version,
             .perform_alter_conversions = patch.perform_alter_conversions,
             .sorting_key = std::move(patch.sorting_key),
+            .stored_sorting_key_columns = std::move(patch.stored_sorting_key_columns),
         });
     }
 
@@ -11489,17 +11490,16 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 
 std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
 {
-    const auto & sorting_key_desc = patch_part.getPatchPartIndex().getSortingKeyDesc();
     auto patch_metadata = getPatchPartMetadata(patch_part, getContext());
 
     std::lock_guard lock(patch_parts_sorting_keys_mutex);
-    auto & sorting_key = patch_parts_sorting_keys_cache[sorting_key_desc];
+    auto main_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    size_t effective_key_size = getEffectivePatchSortingKeySize(patch_metadata.metadata->getSortingKey(), main_metadata);
+
+    auto & sorting_key = patch_parts_sorting_keys_cache[effective_key_size];
 
     if (!sorting_key)
-    {
-        auto main_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
-        sorting_key = getEffectivePatchSortingKey(patch_metadata.metadata->getSortingKey(), main_metadata);
-    }
+        sorting_key = getEffectivePatchSortingKey(effective_key_size, main_metadata);
 
     return sorting_key;
 }

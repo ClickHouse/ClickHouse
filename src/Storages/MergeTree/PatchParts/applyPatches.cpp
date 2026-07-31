@@ -799,6 +799,8 @@ void applyPatchesToBlock(
         if (patch.mode != PatchMode::MergeOnKey)
             continue;
 
+        /// MergeTreeData::getPatchPartSortingKey returns one object per
+        /// effective key, so semantically equal keys are pointer-identical here.
         auto group_it = std::ranges::find_if(merge_on_key_groups, [&](const auto & group)
         {
             return group.sorting_key == patch.sorting_key.get();
