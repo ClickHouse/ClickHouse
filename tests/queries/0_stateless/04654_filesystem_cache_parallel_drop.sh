@@ -40,7 +40,11 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$disk_name'" &
 first_drop=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$disk_name'" &
 second_drop=$!
-wait $first_drop && wait $second_drop && echo "concurrent drops OK"
+wait $first_drop
+first_drop_result=$?
+wait $second_drop
+second_drop_result=$?
+[ $first_drop_result -eq 0 ] && [ $second_drop_result -eq 0 ] && echo "concurrent drops OK"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$disk_name'"
 
