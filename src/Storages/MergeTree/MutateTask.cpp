@@ -1104,12 +1104,12 @@ static NameSet collectFilesToSkip(
 
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
-        /// The substream may live on disk under either its logical name (skp_idx_<name>) or a
-        /// hash of it when replace_long_file_name_to_hash kicks in for long / case-insensitive
-        /// names. Resolve the actual stored name against source checksums so the hardlink loop
-        /// really skips both shapes; otherwise the old per-file substream survives in the new
-        /// part without a matching checksum entry and CHECK TABLE fails.
-        for (const auto & index_substream : index->getSubstreams())
+        /// Skip every substream present in the source part (`getAllSubstreamsInPart` covers a stale
+        /// legacy file alongside the current one), resolving each against checksums via
+        /// `getStreamNameOrHash` so `replace_long_file_name_to_hash` names match too. Missing one
+        /// leaks it into the new part with no checksum entry and `CHECK TABLE` fails.
+        for (const auto & index_substream : index->getAllSubstreamsInPart(
+                 source_part->checksums, index->getFileName(), &source_part->getDataPartStorage()))
         {
             const String stream_name = index->getFileName() + index_substream.suffix;
             const String logical_data = stream_name + index_substream.extension;
@@ -1203,30 +1203,76 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
+    /// post-drop metadata, so a dropped index is absent here.
+    ///
+    /// Ownership must come from each surviving index's own `getSubstreams`, and only for the
+    /// extension that substream declares: claiming a substream or extension the type does not write
+    /// would protect, and so leak, a file of the index being dropped.
+    static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
+    static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
+
+    NameSet surviving_index_owned_files;
+    {
+        const auto & index_factory = MergeTreeIndexFactory::instance();
+        const auto & data_settings = *source_part->storage.getSettings();
+
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            auto surviving_index = index_factory.get(metadata_snapshot, index, data_settings);
+            const String index_file_name = surviving_index->getFileName();
+
+            for (const auto & substream : surviving_index->getSubstreams())
+            {
+                const String stream_name = index_file_name + substream.suffix;
+                auto protect = [&](const String & extension)
+                {
+                    auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                    if (!actual)
+                        actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
+                    if (actual)
+                        surviving_index_owned_files.insert(*actual + extension);
+                };
+
+                protect(substream.extension);
+                /// minmax changed `.idx` (v1) -> `.idx2` (v2), so an upgraded part may still carry
+                /// the legacy file for a substream that now declares `.idx2`.
+                if (substream.extension == ".idx2")
+                    protect(".idx");
+                protect(mrk_extension);
+            }
+        }
+    }
+
     /// Remove old data
     for (const auto & command : commands_for_renames)
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            static const std::array<String, 2> extensions = {".idx2", ".idx"};
-            static const std::array<String, 3> substreams = {"", ".dct", ".pst"};
-
-            for (const auto & substream : substreams)
+            /// The index type is gone from metadata by now, so enumerate every suffix any skip
+            /// index can own (positional text adds `.pos` to `.dct`/`.pst`) and both minmax extensions.
+            for (const auto & substream : owned_substream_suffixes)
             {
-                for (const auto & extension : extensions)
+                for (const auto & extension : owned_index_extensions)
                 {
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
 
-                    /// Check for both original and hashed filenames (hashed if the index name is too long)
+                    /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
+                    /// INDEX` also removes corrupted-part orphan files absent from `checksums.txt`.
+                    /// Matches real standalone files only (a `skp_idx.packed` member is left alone).
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
-                    if (actual_stream_name)
+                    if (!actual_stream_name)
+                        actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
+                    if (actual_stream_name && !surviving_index_owned_files.contains(*actual_stream_name + extension))
                     {
                         add_rename(*actual_stream_name + extension, "");
 
                         /// Also try to remove the mark file (check for both original and hashed)
                         auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
-                        if (actual_mark_name)
+                        if (!actual_mark_name)
+                            actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->getDataPartStorage());
+                        if (actual_mark_name && !surviving_index_owned_files.contains(*actual_mark_name + mrk_extension))
                             add_rename(*actual_mark_name + mrk_extension, "");
                     }
                 }
@@ -1623,7 +1669,18 @@ struct MutationContext
     /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
+    /// Skip-index files on disk but missing from `checksums.txt`, so no checksums-based resolver
+    /// sees them. Merged into `files_to_skip` so the hardlink loop drops them.
+    NameSet orphan_skip_index_files;
     ColumnsStatistics stats_to_recalc;
+    /// The statistics objects the mutation must compute from the blocks it writes. This is a
+    /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
+    /// source part only to be carried over unchanged, and they belong to columns this mutation
+    /// does not rewrite, so their state is already correct for the new part. Building them
+    /// against a block that happens to contain the column at a different type is what produced
+    /// the "Type mismatch when building statistics" logical error. `MergeTask` makes the same
+    /// distinction through `statistics_to_build_by_part`.
+    ColumnsStatistics statistics_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -1846,8 +1903,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
-        if (!ctx->all_gathered_data.statistics.empty())
-            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
+        if (!ctx->statistics_to_build.empty())
+            ctx->statistics_to_build.buildIfExists(cur_block);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -2136,6 +2193,81 @@ void PartMergerWriter::finalize()
         temporary_text_index_storage->removeRecursive();
 }
 
+/// Is `index` resolvable from `checksums.txt` (or from the packed archive) using only files it
+/// actually owns? `getAllSubstreamsInPart` probes speculative extensions, so with
+/// `escape_index_filenames` = 0 that probe can land on a sibling's file, and a sibling's file is not
+/// evidence that this index is intact.
+static bool isIndexResolvableFromOwnFiles(
+    const IMergeTreeIndex & index,
+    const MergeTreeDataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & data_settings,
+    const String & index_name)
+{
+    if (source_part->isSkipIndexInPackedArchive(index))
+        return true;
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    const auto & checksums = source_part->checksums;
+    const auto & storage = source_part->getDataPartStorage();
+
+    /// Files DECLARED by another index. A declaration is a strong ownership claim, while a
+    /// speculative legacy-extension probe is not, so only declared files disqualify evidence.
+    NameSet declared_by_another_index;
+    for (const auto & other : metadata_snapshot->getSecondaryIndices())
+    {
+        if (other.name == index_name)
+            continue;
+
+        auto other_index = index_factory.get(metadata_snapshot, other, data_settings);
+        const String other_file_name = other_index->getFileName();
+        for (const auto & substream : other_index->getSubstreams())
+        {
+            const String stream_name = other_file_name + substream.suffix;
+            if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, checksums))
+                declared_by_another_index.insert(*actual + substream.extension);
+        }
+    }
+
+    const String file_name = index.getFileName();
+    for (const auto & substream : index.getAllSubstreamsInPart(checksums, file_name, &storage))
+    {
+        const String stream_name = file_name + substream.suffix;
+        auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, checksums);
+        if (actual && !declared_by_another_index.contains(*actual + substream.extension))
+            return true;
+    }
+
+    return false;
+}
+
+/// Does the part hold a file of `index` on disk, under any substream it declares? Wider than
+/// `hasSecondaryIndex`, which probes only the base `.idx` / `.idx2`: repair must also see a part
+/// left with just its side streams. Read-time callers keep the narrower predicate.
+static bool hasAnyIndexFileOnDisk(
+    const IMergeTreeIndex & index,
+    const MergeTreeDataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & index_name,
+    const String & mrk_extension)
+{
+    if (source_part->hasSecondaryIndex(index_name, metadata_snapshot))
+        return true;
+
+    const auto & storage = source_part->getDataPartStorage();
+    const String file_name = index.getFileName();
+    for (const auto & substream : index.getSubstreams())
+    {
+        const String stream_name = file_name + substream.suffix;
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
+            return true;
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, storage))
+            return true;
+    }
+
+    return false;
+}
+
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
@@ -2245,12 +2377,21 @@ private:
             if (index_ptr->isInert())
                 continue;
 
+            /// Nothing resolvable to preserve: force a recalculate so the writer rebuilds the
+            /// index from column data, rather than dropping the orphan files and leaving it absent.
+            bool index_present_on_disk = hasAnyIndexFileOnDisk(
+                *index_ptr, ctx->source_part, ctx->metadata_snapshot, idx.name, ctx->mrk_extension);
+            bool index_resolvable_from_checksums = isIndexResolvableFromOwnFiles(
+                *index_ptr, ctx->source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), idx.name);
+            bool index_checksums_missing = index_present_on_disk && !index_resolvable_from_checksums;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
+                || index_checksums_missing;
 
             if (need_recalculate)
             {
@@ -2258,15 +2399,28 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
-                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
-                while (it != ctx->source_part->checksums.files.end())
+                /// Hardlink the source index files and copy their checksum entries explicitly (the
+                /// writer does not rewrite them, else `CHECK TABLE` fails). Walk what the source
+                /// actually holds so an upgraded legacy part keeps its data file, and
+                /// `getStreamNameOrHash` to match `replace_long_file_name_to_hash` names.
+                auto carry = [&](const String & stream_name, const String & extension)
                 {
-                    if (!startsWith(it->first, prefix))
-                        break;
+                    auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, ctx->source_part->checksums);
+                    if (!actual)
+                        return;
+                    const String file_name = *actual + extension;
+                    entries_to_hardlink.insert(file_name);
+                    ctx->all_gathered_data.checksums.addFile(file_name, ctx->source_part->checksums.files.at(file_name));
+                };
 
-                    entries_to_hardlink.insert(it->first);
-                    ++it;
+                auto index_substreams = index_ptr->getAllSubstreamsInPart(
+                    ctx->source_part->checksums, index_ptr->getFileName(), &ctx->source_part->getDataPartStorage());
+
+                for (const auto & substream : index_substreams)
+                {
+                    const String stream_name = index_ptr->getFileName() + substream.suffix;
+                    carry(stream_name, substream.extension);
+                    carry(stream_name, ctx->mrk_extension);
                 }
             }
         }
@@ -2329,6 +2483,9 @@ private:
                     auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
+
+                ctx->new_data_part->getDataPartStorage().commitTransaction();
+                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
@@ -2425,6 +2582,10 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot);
+
+        /// This task rewrites every column, so all statistics objects were created empty from the
+        /// current metadata above and all of them have to be computed.
+        ctx->statistics_to_build = ctx->all_gathered_data.statistics;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2546,6 +2707,17 @@ private:
             *ctx->source_part,
             ctx->metadata_snapshot);
 
+        /// This task rewrites only some of the columns and carries the rest over from the source
+        /// part. Only the statistics `processStatisticsChanges` has just replaced with empty
+        /// objects built from the current metadata may be computed here; every other entry is a
+        /// source-part statistics object to preserve as it is.
+        for (const auto & [stat_name, _] : ctx->stats_to_recalc)
+        {
+            auto it = ctx->all_gathered_data.statistics.find(stat_name);
+            if (it != ctx->all_gathered_data.statistics.end())
+                ctx->statistics_to_build.emplace(stat_name, it->second);
+        }
+
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
@@ -2636,6 +2808,9 @@ private:
                         hardlinked_files.insert(file_name_with_projection_prefix);
                     }
                 }
+
+                ctx->new_data_part->getDataPartStorage().commitTransaction();
+                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
@@ -2670,7 +2845,11 @@ private:
         /// at a file that doesn't exist in the new part.
         auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
-            for (const auto & index_substream : index->getSubstreams())
+            /// Strip the checksum of every substream present in the source (`getAllSubstreamsInPart`
+            /// covers a stale legacy file too); a `getSubstreams`-only walk would leave a stale
+            /// `.idx` checksum pointing at a file absent from the new part.
+            for (const auto & index_substream : index->getAllSubstreamsInPart(
+                     ctx->source_part->checksums, index->getFileName(), &ctx->source_part->getDataPartStorage()))
             {
                 String stream_name = index->getFileName() + index_substream.suffix;
 
@@ -2813,6 +2992,10 @@ private:
 
     void finalize()
     {
+        /// Files the writer produced for the mutated columns (populated below); kept out of the
+        /// stale-file removal loop even if flagged for removal.
+        NameSet written_files;
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -2821,6 +3004,11 @@ private:
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
+
+            /// Record every stream the writer just produced for the mutated columns.
+            for (const auto & [file_name, _] : changed_checksums.files)
+                written_files.insert(file_name);
+
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             /// Add checksums of projection parts that were rebuilt during this mutation.
@@ -2867,6 +3055,13 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            /// A stream the writer rewrote for the new column type must survive: stale-file
+            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
+            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
+            /// column that became Dynamic/JSON in this mutation).
+            if (written_files.contains(rename_from))
+                continue;
+
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
@@ -3223,6 +3418,52 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
     }
 
+    /// Drop the standalone orphan `skp_idx_*` files left by parts corrupted by the released #109595
+    /// bug (on disk, missing from `checksums.txt`) instead of hardlinking them forward: the
+    /// some-columns / `DROP INDEX` path cannot rebuild the index, so the index becomes absent here
+    /// (valid; `MATERIALIZE INDEX` rebuilds it). Only full (non-packed) Wide storage holds orphans.
+    if (is_full_part_storage && isWidePart(source_part))
+    {
+        for (const auto & index : indices)
+        {
+            auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+            if (index_ptr->isInert())
+                continue;
+
+            const bool present_on_disk = hasAnyIndexFileOnDisk(
+                *index_ptr, source_part, ctx->metadata_snapshot, index.name, ctx->mrk_extension);
+            if (!present_on_disk)
+                continue;
+            const bool resolvable_from_checksums = isIndexResolvableFromOwnFiles(
+                *index_ptr, source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), index.name);
+            if (resolvable_from_checksums)
+                continue;
+
+            /// Walk every declared substream, taking only the extension it declares plus minmax's
+            /// legacy `.idx` for a `.idx2` substream. A file registered in `checksums.txt` is not an
+            /// orphan: index names can share an on-disk name, and the registered owner may be an
+            /// index this same mutation drops, so it is absent from the post-drop metadata.
+            const String file_name = index_ptr->getFileName();
+            for (const auto & index_substream : index_ptr->getSubstreams())
+            {
+                const String stream_name = file_name + index_substream.suffix;
+                auto collect = [&](const String & extension)
+                {
+                    if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums))
+                        return;
+                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(
+                            stream_name, extension, source_part->getDataPartStorage()))
+                        ctx->orphan_skip_index_files.insert(*actual + extension);
+                };
+
+                collect(index_substream.extension);
+                if (index_substream.extension == ".idx2")
+                    collect(".idx");
+                collect(ctx->mrk_extension);
+            }
+        }
+    }
+
     /// The packed skip-index archive is a single file holding several indices' data. If at least
     /// one index inside the archive is being recomputed or dropped, we cannot preserve a subset
     /// of the archive by hardlinking it: the new writer must rewrite skp_idx.packed from scratch
@@ -3238,10 +3479,40 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// directly for each dropped name across the union of substream/extension patterns used by
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
-        /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
-        static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
+        static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
+
+        /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never
+        /// claims one of them. Ownership comes from each survivor's own `getSubstreams` and only for
+        /// the extension it declares; over-claiming would protect, and so leak, a dropped index's
+        /// file.
+        ///
+        /// Only an index that is itself packed can own a member of this archive, and the test has to
+        /// be on the survivor rather than on the candidate filename: in a collision the survivor's
+        /// speculative name and the dropped index's real member are the same string, so asking
+        /// whether that string is in the archive is always true exactly when it matters.
+        NameSet surviving_index_owned_files;
+        for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+        {
+            if (ctx->indices_to_drop_names.contains(index.name))
+                continue;
+
+            auto surviving_index = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+            if (!source_part->isSkipIndexInPackedArchive(*surviving_index))
+                continue;
+
+            const String surviving_file_name = surviving_index->getFileName();
+            for (const auto & substream : surviving_index->getSubstreams())
+            {
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + substream.extension);
+                /// An upgraded part may still carry minmax's legacy `.idx` for a `.idx2` substream.
+                if (substream.extension == ".idx2")
+                    surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ".idx");
+                surviving_index_owned_files.insert(surviving_file_name + substream.suffix + ctx->mrk_extension);
+            }
+        }
 
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
@@ -3251,10 +3522,14 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 for (const auto & ext : known_index_extensions)
                 {
                     const String candidate = idx_file_name + sub + ext;
+                    if (surviving_index_owned_files.contains(candidate))
+                        continue;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
                         ctx->dropped_skip_index_archive_file_names.insert(candidate);
                 }
                 const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
+                if (surviving_index_owned_files.contains(mrk_candidate))
+                    continue;
                 if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
                     ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
             }
@@ -3303,7 +3578,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
                 auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
-                for (const auto & sub : index_ptr->getSubstreams())
+                /// Probe what the source actually holds, not the writer's `getSubstreams`, so a
+                /// legacy `.idx` member is pre-loaded into the rebuilt archive.
+                for (const auto & sub : index_ptr->getAllSubstreamsInPart(
+                         source_part->checksums, file_name, &source_part->getDataPartStorage()))
                 {
                     const String data = file_name + sub.suffix + sub.extension;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
@@ -3707,6 +3985,10 @@ bool MutateTask::prepare()
             projections_to_skip,
             updated_columns_in_patches,
             ctx->packed_skip_index_archive_dirty);
+
+        /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
+        /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
+        ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,
