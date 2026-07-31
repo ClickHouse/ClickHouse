@@ -240,11 +240,11 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
     auto & [map_column_name, serialized_key] = *parsed;
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-    if (!header.has(map_keys_index_column_name))
+    if (!hasIndexColumn(map_keys_index_column_name))
         return tryResolveMapIndexInfo(map_column_name, {}, header);
 
     /// Deserialize the key from its text representation using the key type from the index header.
-    size_t keys_position = header.getPositionByName(map_keys_index_column_name);
+    size_t keys_position = getIndexColumnPosition(map_keys_index_column_name);
     const DataTypePtr & index_type = header.getByPosition(keys_position).type;
     const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
     const auto & key_type = array_type.getNestedType();
@@ -286,8 +286,8 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_, const std::unordered_map<String, String> & normalized_column_name_to_original_)
+    : WithContext(context_), header(header_), hash_functions(hash_functions_), normalized_column_name_to_original(normalized_column_name_to_original_)
 {
     if (!predicate)
     {
@@ -555,10 +555,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 {
     auto key_node_column_name = key_node.getColumnName();
 
-    if (header.has(key_node_column_name))
+    if (hasIndexColumn(key_node_column_name))
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
+        size_t position = getIndexColumnPosition(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
@@ -801,9 +801,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
-    if (header.has(key_column_name))
+    if (hasIndexColumn(key_column_name))
     {
-        size_t position = header.getPositionByName(key_column_name);
+        size_t position = getIndexColumnPosition(key_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -894,10 +894,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "mapContainsValue")
             map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
 
-        if (!header.has(map_keys_index_column_name))
+        if (!hasIndexColumn(map_keys_index_column_name))
             return false;
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
+        size_t position = getIndexColumnPosition(map_keys_index_column_name);
 
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
@@ -1060,7 +1060,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(predicate, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionBloomFilter>(predicate, context, index.sample_block, hash_functions, index.normalized_column_name_to_original);
 }
 
 static void assertIndexColumnsType(const Block & header)
