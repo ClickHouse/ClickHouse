@@ -94,11 +94,12 @@ if [ "$READY" -ne 1 ]; then
     exit 1
 fi
 
+# All the requests are bounded so a stalled connection cannot hang the test.
 # /ping served by the proxy itself.
-curl -s "http://127.0.0.1:${PROXY_PORT}/ping"
+curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/ping"
 # Static page served by the proxy itself.
-curl -s "http://127.0.0.1:${PROXY_PORT}/hello"; echo
+curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/hello"; echo
 # A query forwarded to the backend server.
-curl -s "http://127.0.0.1:${PROXY_PORT}/?query=SELECT%201"
+curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/?query=SELECT%201"
 # The status endpoint reports the pool.
-curl -s "http://127.0.0.1:${PROXY_PORT}/proxy_status" | grep -q '"ch"' && echo "status_ok" || echo "status_missing"
+curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/proxy_status" | grep -q '"ch"' && echo "status_ok" || echo "status_missing"

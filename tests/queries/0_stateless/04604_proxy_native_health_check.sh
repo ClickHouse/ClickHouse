@@ -133,12 +133,18 @@ fi
 echo "$NATIVE_OUT"
 
 # The health monitor probes the backend every interval_ms; wait until the status endpoint shows a
-# completed probe (check_latency_ms > 0) with the backend still alive for pool selection.
+# completed probe (check_latency_ms > 0) with the backend still alive for pool selection. The curl
+# is bounded so a stalled connection cannot hang the test, and an empty or truncated body (the
+# endpoint polled mid-startup) is treated as "not ready yet" without leaking a traceback to stderr.
 HEALTH=health_missing
-for _ in $(seq 1 100); do
-    if curl -s "http://127.0.0.1:${HTTP_PORT}/proxy_status" | python3 -c "
+DEADLINE=$((SECONDS + 60))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    if curl -s --max-time 2 "http://127.0.0.1:${HTTP_PORT}/proxy_status" | python3 -c "
 import json, sys
-status = json.load(sys.stdin)
+try:
+    status = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
 backends = [b for pool in status.get('pools', []) for b in pool.get('backends', [])]
 sys.exit(0 if backends and all(b['alive'] and b['check_latency_ms'] > 0 for b in backends) else 1)
 "; then HEALTH=health_ok; break; fi
