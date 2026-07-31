@@ -44,24 +44,53 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
 
     const auto & index_granularity = *info.data_part->index_granularity;
 
+    /// On reading from remote disks, splitting a range multiplies number of IO requests with high latency.
+    /// Typically ranges for remote reads are carefully prepared by the read pool (e.g. MergeTreePrefetchedReadPool).
+    /// So, we only shrink ranges from the edges, or drop them entirely, to avoid high read fragmentation.
+    const bool only_shrink_ranges = info.data_part->isStoredOnRemoteDisk();
+
     /// Same predicate as MergeTreeReaderIndex::canSkipMark, applied before the ranges become a read task.
     MarkRanges result;
     size_t dropped_marks = 0;
 
     for (const auto & range : ranges)
     {
-        for (size_t mark = range.begin; mark < range.end; ++mark)
-        {
-            if (index_read_result->canSkipMark(mark, index_granularity))
-            {
-                ++dropped_marks;
-                continue;
-            }
+        size_t begin = range.begin;
+        size_t end = range.end;
 
-            if (!result.empty() && result.back().end == mark)
-                result.back().end = mark + 1;
+        if (only_shrink_ranges)
+        {
+            while (begin < end && index_read_result->canSkipMark(begin, index_granularity))
+                ++begin;
+
+            while (begin < end && index_read_result->canSkipMark(end - 1, index_granularity))
+                --end;
+
+            dropped_marks += (range.end - range.begin) - (end - begin);
+
+            if (begin == end)
+                continue;
+
+            if (!result.empty() && result.back().end == begin)
+                result.back().end = end;
             else
-                result.emplace_back(mark, mark + 1);
+                result.emplace_back(begin, end);
+        }
+        else
+        {
+            for (size_t mark = begin; mark < end; ++mark)
+            {
+                if (index_read_result->canSkipMark(mark, index_granularity))
+                {
+                    ++dropped_marks;
+                    continue;
+                }
+
+                if (!result.empty() && result.back().end == mark)
+                    result.back().end = mark + 1;
+                else
+                    result.emplace_back(mark, mark + 1);
+            }
         }
     }
 
