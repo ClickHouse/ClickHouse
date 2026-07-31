@@ -81,6 +81,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_prepare_retry_pause[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -549,6 +550,12 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     established = false;
     sent_query = true;
+    /// Retry-commit point: the Query packet is on the wire, so under `was_cancelled_mutex` a concurrent
+    /// `finish()` can no longer abort this attempt before send. Discard deferred progress from a prior
+    /// failed attempt here — not earlier. Auxiliaries below (scalars / plan / external tables) may still
+    /// throw, but the remote query is already running; keeping old deferred progress would double-count
+    /// if this attempt is later retried after a network error.
+    deferred_progress.reset();
 
     sendScalars();
 
@@ -759,6 +766,9 @@ bool RemoteQueryExecutor::canRetryAfterNetworkError(const Exception & e) const
 
 bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
 {
+    if (!allow_query_retry)
+        return false;
+
     /// An exception received from a remote server in a packet means that the query failed there,
     /// not that the connection is broken.
     if (hasThrownException())
@@ -801,10 +811,6 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
 {
     ++network_error_retries_count;
 
-    /// The retry replays the work of the failed attempt from scratch,
-    /// so the progress of the failed attempt must not be reported.
-    deferred_progress.reset();
-
     LOG_WARNING(
         log,
         "Query failed with a network error, will retry ({}/{}): {}",
@@ -829,6 +835,7 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
         finished = false;
     }
 
+    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_prepare_retry_pause);
     sleepForMilliseconds(context->getSettingsRef()[Setting::distributed_query_retry_interval_ms].totalMilliseconds());
 }
 
@@ -1041,6 +1048,8 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
+    flushDeferredProgress();
+
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;
@@ -1058,6 +1067,11 @@ void RemoteQueryExecutor::finish()
         /// point, so only the synchronous (non-Linux) send path is affected.
         if (!sent_query)
         {
+            /// Also covers a concurrent `prepareRetryAfterNetworkError` that cleared `sent_query`
+            /// and is waiting to re-send: `tryCancel` sets `was_cancelled` so the waking `read()`
+            /// returns empty instead of calling `sendQuery` again (`sendCancel` is skipped when
+            /// `!sent_query`).
+            tryCancel("Cancelling query because finish() was called before the query was (re-)sent");
             finished = true;
         }
         else if (was_cancelled && !finished && connections)

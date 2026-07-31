@@ -13,9 +13,9 @@ cluster = ClickHouseCluster(__file__)
 
 # `stay_alive` is required on node1: every test restarts it, see `prepare_initiator`.
 node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], stay_alive=True)
-# `stay_alive` is required on node2: the test kills it and starts it again.
+# `stay_alive` is required on node2/node3: tests kill and restart them.
 node2 = cluster.add_instance("node2", stay_alive=True)
-node3 = cluster.add_instance("node3")
+node3 = cluster.add_instance("node3", stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +28,7 @@ def started_cluster():
             node.query("INSERT INTO t SELECT number FROM numbers(10)")
 
         node1.query("CREATE TABLE t_distr (x UInt64) ENGINE = Distributed('two_replicas', 'default', 't')")
+        node1.query("CREATE TABLE t_two_shards (x UInt64) ENGINE = Distributed('two_shards', 'default', 't')")
 
         yield cluster
     finally:
@@ -54,6 +55,35 @@ def wait_query_started_on(node):
             return
         time.sleep(0.1)
     raise Exception(f"The query did not start on {node.name}")
+
+
+def wait_query_finished_on(node):
+    for _ in range(100):
+        if node.query("SELECT count() FROM system.processes WHERE query LIKE '%sleepEachRow%' AND is_initial_query = 0").strip() == "0":
+            return
+        time.sleep(0.1)
+    raise Exception(f"The query did not finish on {node.name}")
+
+
+def initiator_read_rows(query_id):
+    node1.query("SYSTEM FLUSH LOGS")
+    return int(
+        node1.query(
+            f"SELECT read_rows FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' "
+            f"ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+    )
+
+
+def remote_read_rows(node, initial_query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    return int(
+        node.query(
+            f"SELECT max(read_rows) FROM system.query_log "
+            f"WHERE initial_query_id = '{initial_query_id}' AND type = 'QueryFinish' AND is_initial_query = 0"
+        ).strip()
+        or "0"
+    )
 
 
 def prepare_initiator():
@@ -115,3 +145,72 @@ def test_statistics_are_reported_once_after_a_retry(started_cluster):
     # The replica has 10 rows, and they must be counted once, not once per attempt.
     assert result["rows_before_limit_at_least"] == 10
     assert result["statistics"]["rows_read"] == 10
+
+
+def test_deferred_progress_not_lost_when_shard_cancelled_by_limit(started_cluster):
+    """`distributed_query_retries > 0` defers Progress; LIMIT must still flush it when closing a shard.
+
+    `sleepEachRow` + a small `interactive_delay` make each shard send Progress before the first Data
+    row, so the shard cancelled by LIMIT has non-empty deferred progress on the initiator.
+    """
+
+    prepare_initiator()
+
+    limit_query = (
+        "SELECT x FROM t_two_shards WHERE NOT ignore(sleepEachRow(0.3)) LIMIT 1 "
+        "SETTINGS use_hedged_requests = 0, max_threads = 2, log_queries = 1, "
+        "interactive_delay = 50000, distributed_query_retry_interval_ms = 100"
+    )
+
+    qid0 = "dq_retry_limit_progress_0"
+    qid2 = "dq_retry_limit_progress_2"
+    node1.query(limit_query + ", distributed_query_retries = 0", query_id=qid0)
+    node1.query(limit_query + ", distributed_query_retries = 2", query_id=qid2)
+
+    rows0 = initiator_read_rows(qid0)
+    rows2 = initiator_read_rows(qid2)
+    remote0 = [remote_read_rows(node2, qid0), remote_read_rows(node3, qid0)]
+    remote2 = [remote_read_rows(node2, qid2), remote_read_rows(node3, qid2)]
+
+    # Both shards must have executed and read rows; otherwise initiator equality can pass vacuously
+    # when the cancelled shard never contributed Progress in either run.
+    assert min(remote0) > 0 and min(remote2) > 0
+    assert rows0 > 0
+    assert rows2 == rows0
+
+
+def test_no_resend_after_finish_during_prepare_retry_pause(started_cluster):
+    """finish() during prepare-retry (after sent_query cleared) must not re-send; query completes
+    from the other shard while the killed shard stays down."""
+
+    prepare_initiator()
+    node1.query("SYSTEM ENABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+
+    query = (
+        "SELECT x FROM t_two_shards WHERE NOT ignore(sleepEachRow(0.3)) LIMIT 1 "
+        "SETTINGS use_hedged_requests = 0, max_threads = 2, "
+        "distributed_query_retries = 2, distributed_query_retry_interval_ms = 50"
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: node1.query(query))
+        try:
+            wait_query_started_on(node2)
+            wait_query_started_on(node3)
+            node3.stop_clickhouse(kill=True)
+            node1.query("SYSTEM WAIT FAILPOINT remote_query_executor_prepare_retry_pause PAUSE", timeout=60)
+            # While the node3 executor remains paused, node2 satisfying LIMIT closes upstream ports
+            # and `finish()` runs on the paused executor. The secondary query on node2 ending is the
+            # observable side effect of that LIMIT completion.
+            wait_query_finished_on(node2)
+            node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+            # node3 is still down: success means the paused executor did not need a successful resend.
+            assert future.result(timeout=120).strip() != ""
+            assert node1.contains_in_log("will retry (1/2)")
+        finally:
+            future.cancel()
+            try:
+                node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+            except Exception:
+                pass
+            node3.start_clickhouse()

@@ -41,6 +41,7 @@ static struct InitFiu
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    PAUSEABLE(remote_query_executor_prepare_retry_pause) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \

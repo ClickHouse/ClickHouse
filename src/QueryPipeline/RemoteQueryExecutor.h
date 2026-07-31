@@ -219,6 +219,10 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /// Opt in to network-error retries (`distributed_query_retries`). Default is off: only proven
+    /// read-only paths that can reacquire connections from `ConnectionPoolWithFailover` may enable this.
+    void enableQueryRetries() { allow_query_retry = true; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -397,6 +401,8 @@ private:
     /// How many retries after a network error were done so far, see `distributed_query_retries`.
     size_t network_error_retries_count = 0;
 
+    bool allow_query_retry = false;
+
     /** Whether a packet carrying the final statistics of the query (`Totals`, `Extremes` or
       * `ProfileInfo`) was received. Such packets are sent by the remote server in the suffix of a
       * successful query, even if it returned no rows, and they are forwarded to the initiator's
@@ -408,9 +414,10 @@ private:
 
     /** Progress received from the remote server while a retry after a network error is still
       * possible. It is deferred until a retry becomes impossible (the first data block, an
-      * exception, or the end of the stream) and dropped if the query is retried: a retry replays
-      * the same work, so reporting the progress of the failed attempt would double-count rows
-      * and bytes in the read limits and quotas on the initiator.
+      * exception, the end of the stream, or `finish()`), and dropped only when a retry is
+      * committed by a successful re-send in `sendQueryUnlocked`. Dropping it earlier would lose
+      * real work if `finish()` then prevents the resend. Reporting a failed attempt that is later
+      * replayed would double-count rows and bytes in the read limits and quotas on the initiator.
       */
     Progress deferred_progress;
 };
