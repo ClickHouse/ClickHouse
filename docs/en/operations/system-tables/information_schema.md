@@ -209,7 +209,7 @@ Columns:
   - `FOREIGN TABLE`
   - `LOCAL TEMPORARY`
   - `SYSTEM VIEW`
-- `engine` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table engine for `BASE TABLE` rows; `NULL` for views and other non-base tables, as in MySQL. Provided for MySQL compatibility.
+- `engine` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table engine name; `NULL` for `VIEW` and `SYSTEM VIEW` rows, as views have no storage engine in MySQL. Real table engines that do not store data on disk (such as `Memory`) keep their engine name even though their `table_type` is `FOREIGN TABLE`. Provided for MySQL compatibility.
 - `version` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `row_format` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of rows. NULL if it could not be determined.
