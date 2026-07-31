@@ -125,16 +125,21 @@ mkdir -p "$TEST_DIR_ABS/reenter/root/x"
 printf "row1\n" > "$TEST_DIR_ABS/reenter/root/top.txt"
 ln -s .. "$TEST_DIR_ABS/reenter/root/x/back"
 
-# The same file named twice: `dedup/root/a/back -> ..`, real file
-# `dedup/root/file.txt`. A recursive `root/**/file.txt` walk names it directly and
-# again as `root/a/back/file.txt`. Both spellings resolve to one file but their
-# lexically-normal forms differ, so a lexical deduplication key counts 2 rows.
-# Because the visited-frame set permits re-entering a directory with a different
-# remaining pattern, canonical deduplication is what stops a symlinked ancestor from
-# double-counting a file.
-mkdir -p "$TEST_DIR_ABS/dedup/root/a"
-printf "row1\n" > "$TEST_DIR_ABS/dedup/root/file.txt"
-ln -s .. "$TEST_DIR_ABS/dedup/root/a/back"
+# The same file named twice, inside a bounded finite tail: real file
+# `dedup/root/f.txt` with two symlinks `dedup/root/deep/mid/alias{A,B} -> ../..` that
+# both resolve to `dedup/root`. For `root/**/mid/*/f.txt` the `**` matches `deep`, and
+# the remaining `mid/*/f.txt` has no whole-segment `**`, so frame tracking is inactive
+# there by design and the inner `*` legitimately matches both aliases. The file is
+# therefore named as `mid/aliasA/f.txt` and `mid/aliasB/f.txt`; those two spellings
+# resolve to one file but their lexically-normal forms differ, so a lexical
+# deduplication key reports 2 rows. Deduplicating on the canonical path is what
+# collapses them. The bounded tail matters: with a pattern that still has a `**` left,
+# frame tracking would prune the second alias before it ever reached the output, so
+# such a case cannot test the deduplication key at all.
+mkdir -p "$TEST_DIR_ABS/dedup/root/deep/mid"
+printf "row1\n" > "$TEST_DIR_ABS/dedup/root/f.txt"
+ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasA"
+ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasB"
 
 # Several sibling ancestor loops under one root: `branching/root/b1..b3/up -> ../..`.
 # This is the scenario the traversal pruning itself is for, as distinct from output
@@ -161,7 +166,7 @@ done
 # combinatorially in the number of aliases. Recording every frame the walk has entered,
 # rather than only the ones still in progress, bounds this to one visit per directory
 # per remaining pattern, which is safe because a repeated frame enumerates exactly the
-# paths the first one already did. Only the six real files are reported.
+# paths the first one already did. Only the ten real files are reported.
 mkdir -p "$TEST_DIR_ABS/aliasgraph/root"
 for i in $(seq 1 10); do
     mkdir -p "$TEST_DIR_ABS/aliasgraph/root/d$i"
@@ -258,11 +263,11 @@ echo "reenter-same-dir-different-remaining-pattern"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/root/*/**/top.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/root/*/back/**/top.txt', 'TSV', 'val String')"
 
-# Canonical deduplication: must return 1, not 2. The file is named directly and
-# again through the `back -> ..` ancestor symlink; the two lexical spellings differ,
-# so only a canonical deduplication key collapses them.
+# Canonical deduplication: must return 1, not 2. Inside the bounded tail both aliases
+# legitimately reach the one real file, so it is named under two different lexical
+# paths; only a canonical deduplication key collapses them.
 echo "canonical-dedup-through-ancestor-symlink"
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/**/file.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/**/mid/*/f.txt', 'TSV', 'val String')"
 
 # Traversal pruning under several sibling ancestor loops: must return 4 and must
 # finish. Unpruned, the three `up -> ../..` links let the walk re-descend every
