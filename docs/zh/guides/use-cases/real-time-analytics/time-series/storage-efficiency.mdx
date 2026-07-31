@@ -1,0 +1,130 @@
+---
+title: '存储效率 - 时间序列'
+sidebarTitle: '存储效率'
+description: '提升时间序列存储效率'
+slug: /use-cases/time-series/storage-efficiency
+keywords: ['时间序列', '存储效率', '压缩', '数据保留', '生存时间 (TTL)', '存储优化', '磁盘使用']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在了解如何查询我们的 Wikipedia 统计数据集后，接下来我们将重点介绍如何优化其在 ClickHouse 中的存储效率。
+本节将演示一些实用技巧，帮助您在保持查询性能的同时降低存储需求。
+
+<div id="time-series-type-optimization">
+  ## 类型优化
+</div>
+
+优化存储效率的常见方法是使用合适的数据类型。
+以 `project` 和 `subproject` 列为例。这些列的类型是 String，但唯一值的数量相对较少：
+
+```sql
+SELECT
+    uniq(project),
+    uniq(subproject)
+FROM wikistat;
+```
+
+```text
+┌─uniq(project)─┬─uniq(subproject)─┐
+│          1332 │              130 │
+└───────────────┴──────────────────┘
+```
+
+这意味着我们可以使用采用字典编码的 `LowCardinality()` 数据类型。这样一来，ClickHouse 存储的是内部值 ID，而不是原始字符串值，从而节省大量空间：
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `project` LowCardinality(String),
+MODIFY COLUMN `subproject` LowCardinality(String)
+```
+
+我们还为 `hits` 列使用了 UInt64 类型。它占用 8 字节，但最大值相对较小：
+
+```sql
+SELECT max(hits)
+FROM wikistat;
+```
+
+```text
+┌─max(hits)─┐
+│    449017 │
+└───────────┘
+```
+
+鉴于该值，我们可以改用 UInt32，它只占 4 字节，且可存储的最大值约为 40 亿：
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `hits` UInt32;
+```
+
+这会使该列在内存中的大小至少减半。请注意，由于压缩，磁盘上的大小将保持不变。但也要小心：选择的数据类型不要太小！
+
+<div id="time-series-specialized-codecs">
+  ## 专用编解码器
+</div>
+
+处理顺序数据 (例如时间序列) 时，我们还可以借助特殊编解码器进一步提升存储效率。
+其基本思路是存储值与值之间的变化量，而不是值本身的绝对值；这样在处理变化缓慢的数据时，所需空间会少得多：
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `time` CODEC(Delta, ZSTD);
+```
+
+我们已对 `time` 列使用了 Delta codec，这很适合时间序列数据。
+
+合适的排序键也可以节省磁盘空间。
+由于我们通常会按路径进行过滤，因此我们会将 `path` 添加到排序键中。
+这需要重新创建表。
+
+下面我们可以看到初始表和优化后表的 `CREATE` 命令：
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+```sql
+CREATE TABLE optimized_wikistat
+(
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `project` LowCardinality(String),
+    `subproject` LowCardinality(String),
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (path, time);
+```
+
+再来看看每个表中的数据占用了多少空间：
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    count() AS parts
+FROM system.parts
+WHERE table LIKE '%wikistat%'
+GROUP BY ALL;
+```
+
+```text
+┌─table──────────────┬─uncompressed─┬─compressed─┬─parts─┐
+│ wikistat           │ 35.28 GiB    │ 12.03 GiB  │     1 │
+│ optimized_wikistat │ 30.31 GiB    │ 2.84 GiB   │     1 │
+└────────────────────┴──────────────┴────────────┴───────┘
+```
+
+优化后的表在压缩后占用的空间仅为原来的不到 1/4。

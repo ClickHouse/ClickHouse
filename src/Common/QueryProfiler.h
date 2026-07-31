@@ -2,10 +2,9 @@
 
 #include <optional>
 #include <base/types.h>
+#include <base/sanitizer_defs.h> /// THREAD_SANITIZER, used by QUERY_PROFILER_SUPPORTED below
 #include <signal.h>
 #include <time.h>
-
-#include "config.h"
 
 #include <Common/Logger.h>
 
@@ -14,6 +13,16 @@ namespace Poco
 {
     class Logger;
 }
+
+/// Whether the sampling query profiler can run in this build.
+/// It is disabled under TSan on macOS: the profiler pauses threads with signals, and a signal
+/// delivered to a thread waiting on a `pthread_rwlock` makes Darwin's implementation lose the
+/// wakeup and deadlock the process (Apple FB24027930). Other Darwin builds link the replacement
+/// in `base/darwin-compatibility`, but TSan builds cannot, because TSan interposes those same
+/// functions to track lock order.
+#if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN))
+#    define QUERY_PROFILER_SUPPORTED 1
+#endif
 
 namespace DB
 {

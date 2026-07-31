@@ -2,15 +2,18 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <map>
+#include <utility>
 
 
 namespace DB
 {
 
 class ColumnsDescription;
+class DataTypeTuple;
 
 namespace Nested
 {
@@ -55,6 +58,36 @@ namespace Nested
 
     /// Same as flatten but only for Nested column.
     Block flattenNested(const Block & block);
+
+    /// Returns the Tuple type if `type` is a Tuple that recursive flattening expands into leaf
+    /// columns (that is, a non-empty Tuple without a custom type name), and returns nullptr
+    /// otherwise. Empty tuples (`Tuple()`) and custom-named tuples (such as `Point` or a
+    /// `SimpleAggregateFunction` state) are kept as opaque leaves. This is the single predicate
+    /// that defines what flattening descends into, and flatten and reconstruct must agree on it.
+    const DataTypeTuple * tryGetFlattenableTuple(const DataTypePtr & type);
+
+    /// Recursively flatten all Tuple columns in the block.
+    /// For tuples with explicit names: t Tuple(x Int32, y String) -> t.x Int32, t.y String
+    /// For tuples without explicit names: t Tuple(Int32, String) -> t.1 Int32, t.2 String
+    /// Nested tuples are recursively flattened: t Tuple(a Int32, b Tuple(c Int64, d String))
+    ///   -> t.a Int32, t.b.c Int64, t.b.d String
+    /// If `flattened_ancestors` is not null, it is filled (aligned by position with the result)
+    /// with each leaf's tuple ancestor paths.
+    Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors = nullptr);
+
+    /// All tuples are flattened recursively, regardless of whether they have explicit names.
+    /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].
+    /// Non-tuple columns are kept as-is in the result.
+    Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns);
+
+    /// Appends to `out` the leaf names that `flattenTupleRecursive` would produce for a single
+    /// top-level column `(name, type)`.
+    void flattenTupleLeafNames(const String & name, const DataTypePtr & type, Names & out);
+
+    /// This is the inverse operation of flattenTupleColumnsRecursive.
+    /// All tuples in the header will be reconstructed, regardless of whether they have explicit names.
+    /// The header defines the expected structure (including tuple types).
+    Columns reconstructTupleColumnsRecursive(const Block & header, const Columns & flattened_columns);
 
     /// Collect Array columns in a form of `column_name.element_name` to single Nested column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);

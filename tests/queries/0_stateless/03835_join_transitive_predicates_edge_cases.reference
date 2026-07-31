@@ -69,7 +69,6 @@
 3	3	3
 4	4	4
 -- Case 13a: plan
-          Clauses: [(__lhs_const) = (__rhs_const)]
                 Clauses: [(_CAST(__table1.x, \'UInt64\'_String)) = (__table2.x)]
 -- Case 13b: same-type Strings
 0	0	0

@@ -1,5 +1,6 @@
 (ns jepsen.clickhouse.utils
-  (:require [jepsen.control.util :as cu]
+  (:require [slingshot.slingshot :refer [try+]]
+            [jepsen.control.util :as cu]
             [jepsen 
              [control :as c]
              [db :as db]]
@@ -53,8 +54,9 @@
                 (cu/wget-helper! wget-opts url))))
       (info "Binary is already downloaded"))
 
-    (c/exec :rm :-rf dest-symlink)
-    (c/exec :ln :-s dest-file dest-symlink)
+    ;; Atomic, idempotent symlink: a leftover symlink from a previous run made
+    ;; the old `rm -rf` + `ln -s` fail with "File exists" and crashed setup.
+    (c/exec :ln :-sf dest-file dest-symlink)
     dest-symlink))
 
 (defn get-clickhouse-url
@@ -121,9 +123,18 @@
 (defn kill-clickhouse!
   [node test]
   (info "Killing server on node" node)
-  (c/su
-   (cu/stop-daemon! binary-path pid-file-path)
-   (c/exec :rm :-fr (str data-dir "/status"))))
+  (try+
+    (c/su
+     (cu/stop-daemon! binary-path pid-file-path)
+     (c/exec :rm :-fr (str data-dir "/status")))
+    ;; Only tolerate stop-daemon!'s own timeout: a node made unreachable by a
+    ;; nemesis (e.g. hammer-time) makes `killall -w` hang until the 30s timeout
+    ;; throws :kill-timed-out, which must not crash teardown or the killer
+    ;; nemeses. Genuine kill failures on a reachable node (nonzero exit, bad
+    ;; pidfile, permissions) are NOT caught here and still propagate.
+    (catch [:type :jepsen.control.util/kill-timed-out] _
+      (warn "stop-daemon! timed out killing ClickHouse on node" node
+            "- continuing (node likely unreachable)"))))
 
 (defn start-clickhouse!
   [node test clickhouse-alive? & binary-args]
@@ -188,18 +199,37 @@
          ;  (collect-traces test node logs-dir))
          ;(info node "Pid files doesn't exists"))
        (kill-clickhouse! node test)
-       (if (cu/exists? coordination-data-dir)
-         (do
-           (info node "Coordination files exists, going to compress")
-           (c/cd data-dir
-                 (c/exec :tar :czf "coordination.tar.gz" "coordination"))))
-       (if (cu/exists? (str logs-dir))
-         (do
-           (info node "Logs exist, going to compress")
-           (c/cd root-folder
-                 (c/exec :tar :czf "logs.tar.gz" "logs"))) (info node "Logs are missing")))
-      (let [common-logs [(str root-folder "/logs.tar.gz") (str data-dir "/coordination.tar.gz")]
-            gdb-log (str logs-dir "/gdb.log")]
-        (if (cu/exists? (str logs-dir "/gdb.log"))
-          (conj common-logs gdb-log)
-          common-logs)))))
+       ;; Log/artifact collection is best-effort: a nemesis can leave a node
+       ;; degraded and racing teardown can delete these dirs between the
+       ;; `exists?` check and `tar` (TOCTOU). A failed collection must not crash
+       ;; the run after the verdict is already computed - warn and continue.
+       ;; Return only archives this invocation actually produced: `logs.tar.gz`
+       ;; lives at root-folder and is not removed by teardown, so on a reused
+       ;; node a stale archive from a previous run must not be attached in place
+       ;; of a skipped compression.
+       (let [coordination-ok
+             (when (cu/exists? coordination-data-dir)
+               (info node "Coordination files exists, going to compress")
+               (try
+                 (c/cd data-dir
+                       (c/exec :tar :czf "coordination.tar.gz" "coordination"))
+                 true
+                 (catch Exception e
+                   (warn "Failed to compress coordination files on node" node "-" (.getMessage e))
+                   false)))
+             logs-ok
+             (if (cu/exists? (str logs-dir))
+               (do
+                 (info node "Logs exist, going to compress")
+                 (try
+                   (c/cd root-folder
+                         (c/exec :tar :czf "logs.tar.gz" "logs"))
+                   true
+                   (catch Exception e
+                     (warn "Failed to compress logs on node" node "-" (.getMessage e))
+                     false)))
+               (do (info node "Logs are missing") false))]
+         (cond-> []
+           logs-ok (conj (str root-folder "/logs.tar.gz"))
+           coordination-ok (conj (str data-dir "/coordination.tar.gz"))
+           (cu/exists? (str logs-dir "/gdb.log")) (conj (str logs-dir "/gdb.log"))))))))
