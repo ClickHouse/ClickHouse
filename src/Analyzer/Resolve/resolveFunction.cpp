@@ -428,7 +428,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     auto inner_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
     inner_subquery->setIsSubquery(true);
     inner_subquery->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
-    inner_subquery->getJoinTree() = unique_subquery_argument;
+    inner_subquery->getJoinTreeNode() = unique_subquery_argument;
     QueryTreeNodePtr inner_argument = inner_subquery;
     resolveExpressionNode(
         inner_argument,
@@ -475,7 +475,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     equals_function->getArguments().getNodes().push_back(count_function);
     equals_function->getArguments().getNodes().push_back(uniq_exact_function);
     new_unique_subquery->getProjection().getNodes().push_back(equals_function);
-    new_unique_subquery->getJoinTree() = inner_argument;
+    new_unique_subquery->getJoinTreeNode() = inner_argument;
 
     /// WHERE isNotNull(c1) AND isNotNull(c2) AND ... — per SQL standard, NULL rows are never duplicates.
     QueryTreeNodePtr where_condition;
