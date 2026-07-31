@@ -71,8 +71,13 @@ wait $select_pid
 cat "${CLICKHOUSE_TMP}/04655_result.txt"
 rm -f "${CLICKHOUSE_TMP}/04655_result.txt"
 
-# The plan built against the replaced table must not have been stored either: the next execution has to
-# be a miss that plans the current table from scratch.
+# Re-running the *identical* query probes the cache under the same key: had the plan built against
+# the replaced table been stored, this would be a hit that executes the new table with the old
+# table's baked row policy, returning 1. It must be a miss that plans the current table from scratch.
+$CLICKHOUSE_CLIENT --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
+    --query "SELECT 'after the table was replaced:', sum(a) FROM t"
+
+# A query with a different text has its own cache key, so it must be a miss as well.
 $CLICKHOUSE_CLIENT --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
     --query "SELECT 'the next execution:', sum(a) FROM t"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
@@ -80,6 +85,11 @@ $CLICKHOUSE_CLIENT --query "
     SELECT 'hits and misses:', ProfileEvents['QueryPlanCacheHits'], ProfileEvents['QueryPlanCacheMisses']
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT \'the next execution%'
+    ORDER BY event_time_microseconds DESC LIMIT 1"
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'hits and misses of the rerun:', ProfileEvents['QueryPlanCacheHits'], ProfileEvents['QueryPlanCacheMisses']
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT \'after the table was replaced%'
     ORDER BY event_time_microseconds DESC LIMIT 1"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t"

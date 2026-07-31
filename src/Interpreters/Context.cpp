@@ -1335,6 +1335,10 @@ ContextData::ContextData(const ContextData &o) :
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
+    /// The pointer (not the contents) is copied on purpose: nested plan building (expanded view
+    /// bodies, subqueries, `InterpreterSelectQueryAnalyzer::buildContext`) happens in contexts
+    /// copied from the planning context, and all of them must record into the same collector.
+    plan_cache_storage_identities(o.plan_cache_storage_identities),
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
