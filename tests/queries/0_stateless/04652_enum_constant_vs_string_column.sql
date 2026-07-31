@@ -247,16 +247,24 @@ SELECT 'pk_fixed_string_prunes_something', (SELECT sum(toUInt64OrZero(extract(ex
 
 -- PARTITION BY: this plan emits both Min-Max and Partition sections, and both carry a Granules: line, so
 -- the same total over all sections is used here as everywhere else.
--- Both cells on this surface pin optimize_trivial_count_query off. Without the pin the old analyzer answers
--- count() from the partition predicate alone, which the analyzer declines to do, so the plan collapses to
--- ReadFromPreparedSource and prints no Indexes section at all: the granule cell then compares 0 against 0
--- and passes vacuously, and the condition cell below reads 0 for lack of any text to match.
+-- The two cells that read a plan on this surface pin optimize_trivial_count_query off. Without the pin the
+-- old analyzer answers count() from the partition predicate alone, which the analyzer declines to do, so
+-- the plan collapses to ReadFromPreparedSource and prints no Indexes section at all: the granule cell then
+-- compares 0 against 0 and passes vacuously, and the condition cell below reads 0 for lack of any text to
+-- match. The count cell further down deliberately leaves the optimization enabled, because answering
+-- count() from the partition predicate is itself a route that consumed the converted constant.
 SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
+
+-- The equality above only measures anything if the pinned plan really carries granule counts, so assert
+-- that separately: with the pin removed this reads 0 and that equality degenerates to 0 = 0.
+SELECT 'partition_key_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0)) > 0;
 
 -- This surface gets a condition text oracle rather than a selected < total companion: a declined index
 -- still lets the Min-Max section prune parts here, so a granule count companion would not cleanly fail.
@@ -267,6 +275,13 @@ SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\
     AND countIf(explain LIKE '%[\'3\', \'3\']%') = 0
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
+
+-- The two cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the
+-- default route, where count() is answered from the partition predicate alone, unmeasured. That route is a
+-- separate consumer of the converted constant and it fails in the other direction: instead of dropping the
+-- matching row it counted the rows of the '3' partition, returning 3 for a true count of 1.
+SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)'))
+    = (SELECT count() FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))

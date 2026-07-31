@@ -28,7 +28,9 @@ bloom_filter_prunes_something	1
 pk_fixed_string_prunes	1
 pk_fixed_string_prunes_something	1
 partition_key_prunes	1
+partition_key_prunes_something	1
 partition_key_condition_uses_name	1
+partition_key_count	1
 bloom_filter_fixed_string_prunes	1
 bloom_filter_fixed_string_prunes_something	1
 bloom_filter_in_prunes	1
