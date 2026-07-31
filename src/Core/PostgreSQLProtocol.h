@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
@@ -1399,7 +1400,12 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
+    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
+    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
+    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
+    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
+    // through unchanged, which is what keyword matching needs.
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1409,7 +1415,8 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            if (std::isspace(query[i]))
+            const char c = query[i];
+            if (isWhitespaceASCII(c))
             {
                 if (!prev_was_space)
                 {
@@ -1419,7 +1426,7 @@ public:
             }
             else
             {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
                 prev_was_space = false;
             }
         }
