@@ -208,17 +208,26 @@ done
         f"Install tgz over a dangling symlink in {image}": r"""#!/bin/bash -ex
 # A symlink whose target does not exist yet has to survive the installation as well: `-e`
 # follows the link, so the installer must test for the link itself before testing existence.
+# There is no destination inode to write through in this case, so the installed file has to
+# get the mode from the package - a `umask`-derived mode would install a binary
+# non-executable - and the ownership every installed file has.
 mkdir -p /etc/clickhouse-client /shared
 ln -s /shared/config.xml /etc/clickhouse-client/config.xml
 for pkg in /packages/clickhouse-client*tgz; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    # A restrictive `umask` makes a mode that comes from the installation instead of from the
+    # package visible in the assertion below.
+    umask 077
     "/$package/install/doinst.sh"
 done
 [ -L /etc/clickhouse-client/config.xml ]
 [ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
-[ -s /shared/config.xml ]""",
+[ -s /shared/config.xml ]
+[ "$(stat -c %a /shared/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /shared/config.xml)" = "root:root" ]""",
     }
     return test_install(image, tests)
 

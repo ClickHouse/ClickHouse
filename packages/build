@@ -103,10 +103,9 @@ fi
 keep_destination_inode () {
     # An existing symlink at the destination is written through, the way copying did, so that
     # an installation keeping its configs or binaries elsewhere and linking to them keeps the
-    # indirection after an upgrade. The symlink test comes before the existence test, because
-    # `-e` follows the link: a dangling symlink looks nonexistent to it, while the link still
-    # has to survive rather than be replaced by a plain file.
-    if [ -L "$1" ]; then
+    # indirection after an upgrade. A symlink with no target yet is handled separately in the
+    # loop below, because there is no inode to write through in that case.
+    if [ -L "$1" ] && [ -e "$1" ]; then
         return 0
     fi
     if [ ! -e "$1" ]; then
@@ -146,7 +145,26 @@ keep_destination_inode () {
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
-    if [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
+    if [ ! -L "$filepath" ] && [ -L "$destpath" ] && [ ! -e "$destpath" ]; then
+        # A symlink whose target does not exist yet has to survive the installation as well,
+        # but there is no destination inode to write through: a shell redirection would create
+        # the target with the `umask` of the installation and with no relation to the mode of
+        # the packaged file, which would install a binary non-executable. Rename the packaged
+        # file to where the link points instead, so that the link keeps its indirection and the
+        # installed file gets the mode, the ownership and the label every installed file has.
+        linktarget=$(readlink -- "$destpath")
+        # A relative link is resolved against the directory the link itself is in.
+        case "$linktarget" in
+            /*) ;;
+            *) linktarget="$(dirname -- "$destpath")/$linktarget" ;;
+        esac
+        mkdir -p "$(dirname -- "$linktarget")"
+        mv -f "$filepath" "$linktarget"
+        chown -h root:root "$linktarget"
+        if [ -n "$RESTORECON" ]; then
+            $RESTORECON "$linktarget"
+        fi
+    elif [ ! -L "$filepath" ] && keep_destination_inode "$destpath"; then
         # The destination keeps its inode, so its ownership, permissions, attributes and every
         # other hard link to it stay valid after the upgrade, as they did when copying.
         cat "$filepath" > "$destpath"
