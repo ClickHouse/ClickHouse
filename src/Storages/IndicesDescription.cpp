@@ -11,6 +11,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
+#include <algorithm>
+
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
@@ -37,6 +39,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
+    , normalized_column_names(other.normalized_column_names)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -77,6 +80,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     granularity = other.granularity;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
+    normalized_column_names = other.normalized_column_names;
     return *this;
 }
 
@@ -126,6 +130,52 @@ IndexDescription IndexDescription::getIndexFromAST(
 
     if (result.column_names.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
+
+    // Compute normalized column names for query-side rewrite matching.
+    // optimize_empty_string_comparisons rewrites x = '' to empty(x) and x != '' to notEmpty(x) in the query,
+    // but the index expression is not rewritten, so the column names no longer match.
+    // Compute the normalized names here so index conditions can also match against them.
+    {
+        /// Rewrites x = '' to empty(x) and x != '' to notEmpty(x), matching the query-side rewrite.
+        auto normalizeColumnExpression = [](auto & normalize_ref, ASTPtr & ast) -> void
+        {
+            for (auto & child : ast->children)
+                normalize_ref(normalize_ref, child);
+
+            const auto * function = ast->as<ASTFunction>();
+            if (!function || (function->name != "equals" && function->name != "notEquals")
+                || !function->arguments || function->arguments->children.size() != 2)
+                return;
+
+            auto is_empty_string_literal = [](const ASTPtr & node)
+            {
+                const auto * literal = node->as<ASTLiteral>();
+                return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+            };
+
+            const auto & arguments = function->arguments->children;
+            ASTPtr expression;
+
+            if (is_empty_string_literal(arguments[1]))
+                expression = arguments[0];
+            else if (is_empty_string_literal(arguments[0]))
+                expression = arguments[1];
+            else
+                return;
+
+            ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+        };
+
+        for (const auto & expr : result.expression_list_ast->children)
+        {
+            ASTPtr normalized = expr->clone();
+            normalizeColumnExpression(normalizeColumnExpression, normalized);
+            String normalized_name = normalized->getColumnName();
+            // Only add the normalized name if it differs from the original
+            if (normalized_name != expr->getColumnName())
+                result.normalized_column_names.push_back(normalized_name);
+        }
+    }
 
     if (index_type && index_type->arguments)
         result.arguments = index_type->arguments->clone();
