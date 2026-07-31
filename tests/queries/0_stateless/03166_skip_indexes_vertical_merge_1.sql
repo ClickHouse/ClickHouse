@@ -31,8 +31,9 @@ SYSTEM FLUSH LOGS text_log, query_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 WITH
     (
-        SELECT query_id FROM system.query_log where has(databases, currentDatabase()) AND has(tables, currentDatabase() || '.t_ind_merge_1')
-        AND type = 'QueryFinish' AND query LIKE '%OPTIMIZE TABLE t_ind_merge_1 FINAL%' LIMIT 1
+        SELECT query_id FROM system.query_log WHERE has(databases, currentDatabase()) AND has(tables, currentDatabase() || '.t_ind_merge_1')
+        AND type = 'QueryFinish' AND query_kind = 'Optimize' AND query LIKE '%OPTIMIZE TABLE t_ind_merge_1 FINAL%'
+        ORDER BY event_time_microseconds DESC LIMIT 1
     ) AS optimize_qid,
     extractAllGroupsVertical(message, 'containing (\\d+) columns \((\\d+) merged, (\\d+) gathered\)')[1] AS groups
 SELECT
