@@ -4,12 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The built-in `/docs` page resolves a relative documentation link that does not point to a documented
-# entity against `https://clickhouse.com/docs`. Some embedded entries use source-relative cross-section
-# links, for example `mortonEncode` links to `../data-types/int-uint.md`. Simply stripping the leading
-# `../` and appending to the docs root produced the broken `/docs/data-types/int-uint`, while the
-# working route is `/docs/sql-reference/data-types/int-uint`. `toDocsURL` therefore resolves the first
-# path segment to its canonical section route (`DOCS_SECTION_ROUTE` / `DOCS_ROUTE_ROOTS`).
+# The built-in `/docs` page retains support for legacy relative documentation links by resolving their
+# first path segment to its canonical section route (`DOCS_SECTION_ROUTE` / `DOCS_ROUTE_ROOTS`).
+# Current embedded documentation uses site-root absolute routes instead, so it does not depend on this
+# compatibility mapping.
 
 URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 
@@ -23,12 +21,15 @@ echo "$PAGE" | grep -oF 'const DOCS_SECTION_ROUTE = {' | head -n1
 echo "$PAGE" | grep -oF "'data-types': '/sql-reference/data-types'," | head -n1
 # ... and treats an already-rooted leading segment as a full route.
 echo "$PAGE" | grep -oF 'const DOCS_ROUTE_ROOTS = new Set([' | head -n1
+# The page-load compatibility assertion feeds the original relative link to `toDocsURL`.
+echo "$PAGE" | grep -oF "'../data-types/int-uint.md': 'https://clickhouse.com/docs/sql-reference/data-types/int-uint'," | head -n1
 
-# The regression target exists in the corpus: an entity whose embedded documentation links to another
-# section with a source-relative path (`../data-types/int-uint.md`). `mortonEncode` is a core function,
-# so it is present even in the minimal `Fast test` build (`ENABLE_LIBRARIES=0`).
+# `mortonEncode` is a core function, so it is present even in the minimal `Fast test` build
+# (`ENABLE_LIBRARIES=0`). Its embedded documentation uses the current site-root absolute route and no
+# longer contains the legacy `../data-types/int-uint.md` link.
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
+    SELECT
+        position(description, '/reference/data-types/int-uint') > 0
+            AND position(description, '../data-types/int-uint.md') = 0
     FROM system.documentation
-    WHERE type = 'Function' AND name = 'mortonEncode'
-      AND position(description, '../data-types/int-uint.md') > 0"
+    WHERE type = 'Function' AND name = 'mortonEncode'"
