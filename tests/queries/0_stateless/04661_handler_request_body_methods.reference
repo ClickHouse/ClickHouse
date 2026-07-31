@@ -1,0 +1,11 @@
+=== a _request_body handler with the default GET method is rejected ===
+BAD_ARGUMENTS
+=== a _request_body handler with only GET is rejected ===
+BAD_ARGUMENTS
+=== a _request_body handler with a body-carrying method is accepted and works ===
+hello
+=== ALTER cannot narrow the methods of a _request_body handler to safe ones ===
+BAD_ARGUMENTS
+=== ALTER cannot introduce _request_body into a GET-only handler ===
+narrowed to GET with a body-free query
+BAD_ARGUMENTS
