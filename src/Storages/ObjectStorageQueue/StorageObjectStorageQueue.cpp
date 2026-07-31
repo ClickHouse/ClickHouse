@@ -1393,6 +1393,13 @@ static bool requiresDetachedMV(const std::string & name)
     return name == "buckets";
 }
 
+bool StorageObjectStorageQueue::isSettingChangeableInPlace(
+    const std::string & name,
+    ObjectStorageQueueMode mode)
+{
+    return isSettingChangeable(name, mode) && !requiresDetachedMV(name);
+}
+
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
 {
     /// Remove s3queue_ prefix from setting to avoid duplicated settings,

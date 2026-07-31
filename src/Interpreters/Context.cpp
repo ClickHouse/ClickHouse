@@ -293,6 +293,8 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
+    extern const SettingsBool read_through_distributed_cache;
+    extern const SettingsBool write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -759,6 +761,8 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+
+    std::atomic_bool is_distributed_cache_server = false;
 
     /// Server listener port registry. Reads come from concurrent SQL contexts
     /// (the `getServerPort` SQL function); writes happen during server startup
@@ -6390,6 +6394,17 @@ void Context::reloadClusterConfig() const
     }
 }
 
+bool Context::isDistributedCacheServer() const
+{
+    return shared->is_distributed_cache_server.load(std::memory_order_relaxed);
+}
+
+void Context::setDistributedCacheServer()
+{
+    /// This is set only once on server startup, so atomic is ok.
+    shared->is_distributed_cache_server.store(true);
+}
+
 std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
@@ -6717,6 +6732,26 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 
     return shared->system_logs->filesystem_cache_log;
 }
+
+#if ENABLE_DISTRIBUTED_CACHE
+std::shared_ptr<DistributedCacheLog> Context::getDistributedCacheLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->distributed_cache_log;
+}
+
+std::shared_ptr<DistributedCacheServerLog> Context::getDistributedCacheServerLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->distributed_cache_server_log;
+}
+#endif
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
@@ -8383,6 +8418,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
+    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
+#if ENABLE_DISTRIBUTED_CACHE
+    res.distributed_cache_settings.load(settings_ref);
+    res.distributed_cache_settings.validate();
+#endif
+
     return res;
 }
 
@@ -8402,6 +8443,11 @@ WriteSettings Context::getWriteSettings() const
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
+
+    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
+#if ENABLE_DISTRIBUTED_CACHE
+    res.distributed_cache_settings.load(settings_ref);
+#endif
 
     return res;
 }
