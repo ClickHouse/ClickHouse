@@ -1,0 +1,333 @@
+-- Text bloom-filter skip indexes (ngrambf_v1, tokenbf_v1, sparse_grams) tokenize a string constant into a probe
+-- filter. A FixedString constant carries NUL padding in its Field, and the padding does not always survive to the
+-- comparison the executing function performs, so the probe used to be built over tokens the granule never saw and a
+-- matching granule was skipped.
+--
+-- Direction A asserts the answers are now correct; every A row is paired with an unindexed oracle table.
+-- Direction B asserts the cells that were already correct keep pruning.
+-- Direction C is an adversarial fixture where every filler shares all of the trimmed probe's n-grams, so only the
+-- granule count can tell a correct probe from an over-broad one.
+-- Direction D pins the one cell that is out of scope as unchanged rather than as correct.
+
+SET use_skip_indexes = 1;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Direction A: correctness. Needle in exactly one granule of 64.
+-- ---------------------------------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS a_str;
+DROP TABLE IF EXISTS a_str_log;
+CREATE TABLE a_str (id UInt64, v Array(String), s String,
+    INDEX idx_v v TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_str_log (id UInt64, v Array(String), s String) ENGINE = Log;
+INSERT INTO a_str SELECT number, if(number = 7, ['VALUE0'], ['FILLER' || toString(number)]),
+    if(number = 7, 'VALUE0', 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_str_log SELECT number, if(number = 7, ['VALUE0'], ['FILLER' || toString(number)]),
+    if(number = 7, 'VALUE0', 'FILLER' || toString(number)) FROM numbers(64);
+
+SELECT 'A1', count() FROM a_str_log WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A1', count() FROM a_str     WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A2', count() FROM a_str_log WHERE hasAny(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A2', count() FROM a_str     WHERE hasAny(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A3', count() FROM a_str_log WHERE hasAll(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A3', count() FROM a_str     WHERE hasAll(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A4', count() FROM a_str_log WHERE hasAll(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A4', count() FROM a_str     WHERE hasAll(v, [toFixedString('VALUE0', 10)]);
+
+SELECT 'A10', count() FROM a_str_log WHERE s = toFixedString('VALUE0', 8);
+SELECT 'A10', count() FROM a_str     WHERE s = toFixedString('VALUE0', 8);
+SELECT 'A11', count() FROM a_str_log WHERE s = toFixedString('VALUE0', 10);
+SELECT 'A11', count() FROM a_str     WHERE s = toFixedString('VALUE0', 10);
+
+-- A17/A18 must use the `NOT (s != c)` spelling: a positive `s != c` atom never prunes, so the plain form would
+-- silently assert nothing. The read path canonicalizes this to `equals`, so these are extra spellings of the
+-- `equals` arm and they must redden together with A10/A11.
+SELECT 'A17', count() FROM a_str_log WHERE NOT (s != toFixedString('VALUE0', 8));
+SELECT 'A17', count() FROM a_str     WHERE NOT (s != toFixedString('VALUE0', 8));
+SELECT 'A18', count() FROM a_str_log WHERE NOT (s != toFixedString('VALUE0', 10));
+SELECT 'A18', count() FROM a_str     WHERE NOT (s != toFixedString('VALUE0', 10));
+
+-- sparse_grams shares the same condition class and is affected identically.
+DROP TABLE IF EXISTS a_sparse;
+CREATE TABLE a_sparse (id UInt64, v Array(String),
+    INDEX idx_v v TYPE sparse_grams(3, 100, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO a_sparse SELECT number, if(number = 7, ['VALUE0'], ['FILLER' || toString(number)]) FROM numbers(64);
+SELECT 'A5', count() FROM a_str_log WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A5', count() FROM a_sparse  WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A6', count() FROM a_str_log WHERE hasAll(v, [toFixedString('VALUE0', 8)]);
+SELECT 'A6', count() FROM a_sparse  WHERE hasAll(v, [toFixedString('VALUE0', 8)]);
+
+-- FixedString(8) carriers. Values are distinct 8-byte strings so each granule holds its own value.
+DROP TABLE IF EXISTS a_fs;
+DROP TABLE IF EXISTS a_fs_log;
+CREATE TABLE a_fs (id UInt64, v Array(FixedString(8)), s FixedString(8),
+    INDEX idx_v v TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_fs_log (id UInt64, v Array(FixedString(8)), s FixedString(8)) ENGINE = Log;
+INSERT INTO a_fs SELECT number, if(number = 7, [toFixedString('VALUE0', 8)], [toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)]),
+    if(number = 7, toFixedString('VALUE0', 8), toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)) FROM numbers(64);
+INSERT INTO a_fs_log SELECT number, if(number = 7, [toFixedString('VALUE0', 8)], [toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)]),
+    if(number = 7, toFixedString('VALUE0', 8), toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)) FROM numbers(64);
+
+SELECT 'A7', count() FROM a_fs_log WHERE hasAny(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A7', count() FROM a_fs     WHERE hasAny(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A8', count() FROM a_fs_log WHERE hasAll(v, [toFixedString('VALUE0', 10)]);
+SELECT 'A8', count() FROM a_fs     WHERE hasAll(v, [toFixedString('VALUE0', 10)]);
+-- A9: `has` is correct on Array(String) and wrong on Array(FixedString) — the element type decides, not the
+-- predicate. A scalar constant makes value_data_type.isArray() false, so this lands on the scalar `has` arm.
+SELECT 'A9', count() FROM a_fs_log WHERE has(v, toFixedString('VALUE0', 10));
+SELECT 'A9', count() FROM a_fs     WHERE has(v, toFixedString('VALUE0', 10));
+
+SELECT 'A12', count() FROM a_fs_log WHERE s = toFixedString('VALUE0', 10);
+SELECT 'A12', count() FROM a_fs     WHERE s = toFixedString('VALUE0', 10);
+-- A13: the constant is a plain String, so a guard keyed only on the constant type would miss this cell.
+SELECT 'A13', count() FROM a_fs_log WHERE s = 'VALUE0\0\0\0\0';
+SELECT 'A13', count() FROM a_fs     WHERE s = 'VALUE0\0\0\0\0';
+SELECT 'A19', count() FROM a_fs_log WHERE NOT (s != toFixedString('VALUE0', 10));
+SELECT 'A19', count() FROM a_fs     WHERE NOT (s != toFixedString('VALUE0', 10));
+SELECT 'A19b', count() FROM a_fs_log WHERE NOT (s != 'VALUE0\0\0\0\0');
+SELECT 'A19b', count() FROM a_fs     WHERE NOT (s != 'VALUE0\0\0\0\0');
+
+-- LowCardinality(String): the dictionary type has no width, so the trimmed probe is the sound one.
+DROP TABLE IF EXISTS a_lc;
+DROP TABLE IF EXISTS a_lc_log;
+CREATE TABLE a_lc (id UInt64, s LowCardinality(String),
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_lc_log (id UInt64, s LowCardinality(String)) ENGINE = Log;
+INSERT INTO a_lc SELECT number, if(number = 7, 'VALUE0', 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_lc_log SELECT number, if(number = 7, 'VALUE0', 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A14', count() FROM a_lc_log WHERE s = toFixedString('VALUE0', 8);
+SELECT 'A14', count() FROM a_lc     WHERE s = toFixedString('VALUE0', 8);
+SELECT 'A15', count() FROM a_lc_log WHERE s = toFixedString('VALUE0', 10);
+SELECT 'A15', count() FROM a_lc     WHERE s = toFixedString('VALUE0', 10);
+
+-- LowCardinality(FixedString(8)): the width comes from the dictionary type, so the probe is re-encoded to 8 bytes.
+DROP TABLE IF EXISTS a_lcfs;
+DROP TABLE IF EXISTS a_lcfs_log;
+CREATE TABLE a_lcfs (id UInt64, s LowCardinality(FixedString(8)),
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_lcfs_log (id UInt64, s LowCardinality(FixedString(8))) ENGINE = Log;
+INSERT INTO a_lcfs SELECT number, if(number = 7, toFixedString('VALUE0', 8), toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)) FROM numbers(64);
+INSERT INTO a_lcfs_log SELECT number, if(number = 7, toFixedString('VALUE0', 8), toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8)) FROM numbers(64);
+SELECT 'A15b', count() FROM a_lcfs_log WHERE s = toFixedString('VALUE0', 10);
+SELECT 'A15b', count() FROM a_lcfs     WHERE s = toFixedString('VALUE0', 10);
+
+-- Map(FixedString(8), String) with a mapKeys index. A Map(String, ...) fixture would make every FixedString-constant
+-- map-key cell vacuous, because the constant could never match.
+DROP TABLE IF EXISTS a_mk;
+DROP TABLE IF EXISTS a_mk_log;
+CREATE TABLE a_mk (id UInt64, m Map(FixedString(8), String),
+    INDEX idx_k mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_mk_log (id UInt64, m Map(FixedString(8), String)) ENGINE = Log;
+INSERT INTO a_mk SELECT number, if(number = 7, map(toFixedString('VALUE0', 8), 'hit'), map(toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8), 'x')) FROM numbers(64);
+INSERT INTO a_mk_log SELECT number, if(number = 7, map(toFixedString('VALUE0', 8), 'hit'), map(toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8), 'x')) FROM numbers(64);
+
+-- A20/A21 land on the map branch (the column name is `m`, so only map_key_index resolves) and A22 on the scalar
+-- `has` arm (the column name is literally `mapKeys(m)`, so key_index matches directly). Both spellings are reached,
+-- so a test with only one covers half the class.
+SELECT 'A20', count() FROM a_mk_log WHERE mapContainsKey(m, toFixedString('VALUE0', 10));
+SELECT 'A20', count() FROM a_mk     WHERE mapContainsKey(m, toFixedString('VALUE0', 10));
+SELECT 'A21', count() FROM a_mk_log WHERE mapContains(m, toFixedString('VALUE0', 10));
+SELECT 'A21', count() FROM a_mk     WHERE mapContains(m, toFixedString('VALUE0', 10));
+SELECT 'A22', count() FROM a_mk_log WHERE has(mapKeys(m), toFixedString('VALUE0', 10));
+SELECT 'A22', count() FROM a_mk     WHERE has(mapKeys(m), toFixedString('VALUE0', 10));
+
+-- Map(String, FixedString(8)) with a mapValues index: A16 plus the mapValues redirect into the equals arm.
+DROP TABLE IF EXISTS a_mv;
+DROP TABLE IF EXISTS a_mv_log;
+CREATE TABLE a_mv (id UInt64, m Map(String, FixedString(8)),
+    INDEX idx_v mapValues(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_mv_log (id UInt64, m Map(String, FixedString(8))) ENGINE = Log;
+INSERT INTO a_mv SELECT number, if(number = 7, map('k', toFixedString('VALUE0', 8)), map('k', toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8))) FROM numbers(64);
+INSERT INTO a_mv_log SELECT number, if(number = 7, map('k', toFixedString('VALUE0', 8)), map('k', toFixedString('FILL' || leftPad(toString(number), 4, '0'), 8))) FROM numbers(64);
+SELECT 'A16', count() FROM a_mv_log WHERE mapContainsValue(m, toFixedString('VALUE0', 10));
+SELECT 'A16', count() FROM a_mv     WHERE mapContainsValue(m, toFixedString('VALUE0', 10));
+-- The mapValues redirect is a third entry point into the equals arm; there value_type does describe the compared
+-- operand, so it is re-encoded like any other FixedString-valued path.
+SELECT 'A16b', count() FROM a_mv_log WHERE m['k'] = toFixedString('VALUE0', 10);
+SELECT 'A16b', count() FROM a_mv     WHERE m['k'] = toFixedString('VALUE0', 10);
+
+-- A23: an all-NUL FixedString constant against a String index. This reaches the plain equals arm, so it is not the
+-- map default-match guard that 2026-07-29-p2-tokenbfv1ngrambfv1-map-default-mat owns.
+DROP TABLE IF EXISTS a_empty;
+DROP TABLE IF EXISTS a_empty_log;
+CREATE TABLE a_empty (id UInt64, s String,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_empty_log (id UInt64, s String) ENGINE = Log;
+INSERT INTO a_empty SELECT number, if(number = 7, '', 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_empty_log SELECT number, if(number = 7, '', 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A23', count() FROM a_empty_log WHERE s = toFixedString('', 3);
+SELECT 'A23', count() FROM a_empty     WHERE s = toFixedString('', 3);
+
+-- ---------------------------------------------------------------------------------------------------
+-- Direction B: no pruning lost. Asserted on the granule count, because a too-wide probe still answers
+-- correctly and shows up only as a full scan.
+-- ---------------------------------------------------------------------------------------------------
+
+SELECT 'B1', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE hasAny(v, ['VALUE0'])) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B2', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE hasAny(v, [toFixedString('VALUE0', 8)])) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B3', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE has(v, 'VALUE0')) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B4', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE has(v, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B5', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE s = 'VALUE0') WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B6', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE s = toFixedString('VALUE0', 8)) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B7', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_lc WHERE s = 'VALUE0') WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B8', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mk WHERE mapContainsKey(m, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B9', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE mapContainsValue(m, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+-- The reversed shape `has(<constant array>, <indexed scalar>)` shares the array arm but compares padded bytes, so
+-- its probe is left alone.
+SELECT 'B10', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE has(['VALUE0'], s)) WHERE explain ILIKE '%Granules: 1/64%';
+-- mapContainsValueLike parses LIKE wildcards out of the pattern, so it is deliberately not normalized. This row is
+-- what makes that exclusion load-bearing.
+SELECT 'B11', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE mapContainsValueLike(m, 'VALUE%')) WHERE explain ILIKE '%Granules: 1/64%';
+-- A needle that matches nothing must still prune everything away.
+SELECT 'B12', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE hasAny(v, ['NOSUCHVALUE'])) WHERE explain ILIKE '%Granules: 0/64%';
+-- Prefix fixture for the startsWith/endsWith rows: a FixedString(8) column whose every value starts with 'VALUE0',
+-- so a correct prefix probe reads all 64 granules while a padded one would prune them away.
+DROP TABLE IF EXISTS c_str_pfx;
+DROP TABLE IF EXISTS c_str_pfx_log;
+CREATE TABLE c_str_pfx (id UInt64, s FixedString(8),
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE c_str_pfx_log (id UInt64, s FixedString(8)) ENGINE = Log;
+INSERT INTO c_str_pfx SELECT number, toFixedString('VALUE0' || substring('AB', 1 + (number % 2), 1), 8) FROM numbers(64);
+INSERT INTO c_str_pfx_log SELECT number, toFixedString('VALUE0' || substring('AB', 1 + (number % 2), 1), 8) FROM numbers(64);
+
+-- tokenbf_v1 splits on non-alphanumeric bytes, so a trailing NUL never survives tokenization and the fix must be a
+-- no-op for it. This row pins that.
+DROP TABLE IF EXISTS b_token;
+CREATE TABLE b_token (id UInt64, v Array(String),
+    INDEX idx_v v TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO b_token SELECT number, if(number = 7, ['VALUE0'], ['FILLER' || toString(number)]) FROM numbers(64);
+SELECT 'B13', count() FROM a_str_log WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'B13', count() FROM b_token   WHERE hasAny(v, [toFixedString('VALUE0', 8)]);
+SELECT 'B13g', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM b_token WHERE hasAny(v, [toFixedString('VALUE0', 8)])) WHERE explain ILIKE '%Granules: 1/64%';
+-- startsWith/endsWith build a substring probe, which is already a subset of the stored token set, so they are not
+-- normalized either. Their constant is a PREFIX, not a value: padding it would append literal NULs that a longer
+-- matching value does not contain, so a shorter-than-the-column constant is the discriminating shape here. On a
+-- FixedString(8) column every row starts with 'VALUE0', so all 64 granules must be read.
+SELECT 'B14', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_fs WHERE startsWith(s, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B15', count() FROM c_str_pfx_log WHERE startsWith(s, toFixedString('VALUE0', 6));
+SELECT 'B15', count() FROM c_str_pfx     WHERE startsWith(s, toFixedString('VALUE0', 6));
+SELECT 'B15g', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM c_str_pfx WHERE startsWith(s, toFixedString('VALUE0', 6))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'B16', count() FROM c_str_pfx_log WHERE endsWith(s, toFixedString('0', 1));
+SELECT 'B16', count() FROM c_str_pfx     WHERE endsWith(s, toFixedString('0', 1));
+
+-- ---------------------------------------------------------------------------------------------------
+-- Direction C: the adversarial shared-gram fixture. Every filler shares all of the trimmed probe's 3-grams, so a
+-- probe that is merely sound rather than exact reads all 64 granules. None of these rows is visible to a
+-- correctness assertion: the answers are right under both probe forms.
+-- ---------------------------------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS c_fs;
+CREATE TABLE c_fs (id UInt64, v Array(FixedString(8)), s FixedString(8),
+    INDEX idx_v v TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO c_fs SELECT number,
+    if(number = 7, [toFixedString('VALUE0', 8)], [toFixedString('VALUE0' || substring('AB', 1 + (number % 2), 1), 8)]),
+    if(number = 7, toFixedString('VALUE0', 8), toFixedString('VALUE0' || substring('AB', 1 + (number % 2), 1), 8))
+FROM numbers(64);
+
+SELECT 'C-A7', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE hasAny(v, [toFixedString('VALUE0', 10)])) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-A8', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE hasAll(v, [toFixedString('VALUE0', 10)])) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-A9', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE has(v, toFixedString('VALUE0', 10))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-A12', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-A13', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE s = 'VALUE0\0\0\0\0') WHERE explain ILIKE '%Granules: 1/64%';
+
+-- The N3 (leave-unchanged) rows: id 7 holds a value with a REAL NUL tail, so trimming the probe would take each of
+-- these from exact pruning to a full scan.
+DROP TABLE IF EXISTS c_n3;
+CREATE TABLE c_n3 (id UInt64, v Array(String), s String,
+    INDEX idx_v v TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO c_n3 SELECT number,
+    if(number = 7, ['VALUE0\0\0'], ['VALUE0' || substring('AB', 1 + (number % 2), 1)]),
+    if(number = 7, 'VALUE0\0\0', 'VALUE0' || substring('AB', 1 + (number % 2), 1))
+FROM numbers(64);
+
+SELECT 'C-N3a', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_n3 WHERE has(v, toFixedString('VALUE0', 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-N3b', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_n3 WHERE has([toFixedString('VALUE0', 8)], s)) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'C-N3c', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_n3 WHERE s = 'VALUE0\0\0') WHERE explain ILIKE '%Granules: 1/64%';
+
+-- C-N3d: on the mapKeys redirect the constant becomes the map KEY while value_type still describes the map-value
+-- operand, so selecting the primitive from value_type would trim a key whose NUL tail is genuine data.
+DROP TABLE IF EXISTS c_n3d;
+CREATE TABLE c_n3d (id UInt64, m Map(String, FixedString(8)),
+    INDEX idx_k mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO c_n3d SELECT number,
+    if(number = 7, map('VALUE0\0\0', toFixedString('x', 8)), map('VALUE0' || substring('AB', 1 + (number % 2), 1), toFixedString('y', 8)))
+FROM numbers(64);
+SELECT 'C-N3d', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_n3d WHERE m['VALUE0\0\0'] = toFixedString('x', 8)) WHERE explain ILIKE '%Granules: 1/64%';
+
+-- C-N3e: a membership arm with a wide String needle. castColumn String->String is the identity while
+-- FixedString->String strips, so the needle keeps its NULs and cannot match anything: reading a granule here is
+-- the regression, not pruning to zero.
+SELECT 'C-N3e', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE hasAny(v, ['VALUE0\0\0\0\0'])) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'C-N3e2', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_fs WHERE has(v, 'VALUE0\0\0\0\0')) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'C-N3f', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM c_n3 WHERE NOT (s != 'VALUE0\0\0')) WHERE explain ILIKE '%Granules: 1/64%';
+
+-- On a String index the equals match set is the unbounded NUL-extension family, so there is no width to pad to and
+-- the trimmed value is the only sound probe. On this adversarial fixture every filler shares all of its grams, so
+-- reading all 64 granules is the CORRECT outcome here and not a regression: a padded probe would prune the only
+-- matching granule away, which is what the correctness row below catches. These rows exist so a later reader does
+-- not "optimize" this branch into a padded probe.
+DROP TABLE IF EXISTS c_str;
+DROP TABLE IF EXISTS c_str_log;
+CREATE TABLE c_str (id UInt64, s String,
+    INDEX idx_s s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE c_str_log (id UInt64, s String) ENGINE = Log;
+INSERT INTO c_str SELECT number, if(number = 7, 'VALUE0', 'VALUE0' || substring('AB', 1 + (number % 2), 1)) FROM numbers(64);
+INSERT INTO c_str_log SELECT number, if(number = 7, 'VALUE0', 'VALUE0' || substring('AB', 1 + (number % 2), 1)) FROM numbers(64);
+SELECT 'A24', count() FROM c_str_log WHERE s = toFixedString('VALUE0', 10);
+SELECT 'A24', count() FROM c_str     WHERE s = toFixedString('VALUE0', 10);
+-- Asserted as "the matching granule is not pruned away" rather than as a `Granules: 64/64` match: the read step
+-- prints its own `Granules: 64/64` line, so that pattern cannot distinguish the skip index keeping every granule
+-- from the skip index simply having been consulted.
+SELECT 'C-str', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM c_str WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 0/64%';
+
+-- ---------------------------------------------------------------------------------------------------
+-- Direction D: the absent-key default-match cell is a different root cause, owned by
+-- 2026-07-29-p2-tokenbfv1ngrambfv1-map-default-mat. It is wrong on master and stays wrong here, so it is pinned as
+-- UNCHANGED rather than asserted against the oracle. This row is what proves the fix leaves it alone, and what
+-- stops a later reader importing a second root cause into this change.
+-- ---------------------------------------------------------------------------------------------------
+
+SELECT 'D1', count() FROM a_mv WHERE m['absent'] = toFixedString('', 3);
+SELECT 'D2', count() FROM a_mk WHERE m[toFixedString('absent', 8)] = '';
+
+DROP TABLE a_str;
+DROP TABLE a_str_log;
+DROP TABLE a_sparse;
+DROP TABLE a_fs;
+DROP TABLE a_fs_log;
+DROP TABLE a_lc;
+DROP TABLE a_lc_log;
+DROP TABLE a_lcfs;
+DROP TABLE a_lcfs_log;
+DROP TABLE a_mk;
+DROP TABLE a_mk_log;
+DROP TABLE a_mv;
+DROP TABLE a_mv_log;
+DROP TABLE a_empty;
+DROP TABLE a_empty_log;
+DROP TABLE b_token;
+DROP TABLE c_fs;
+DROP TABLE c_n3;
+DROP TABLE c_n3d;
+DROP TABLE c_str;
+DROP TABLE c_str_log;
+DROP TABLE c_str_pfx;
+DROP TABLE c_str_pfx_log;
