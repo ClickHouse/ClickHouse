@@ -223,6 +223,8 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     {
         if (structure_state)
             callback(structure_state);
+        if (shared_variant_state)
+            callback(shared_variant_state);
         for (const auto & reader : variant_readers)
         {
             if (reader.state)
@@ -361,10 +363,12 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
             if (discr == *shared_variant_global_discr)
                 continue;
 
-            const bool can_read_variant = nested_subcolumn.empty()
-                ? areDynamicStorageTypesCompatible(variants[discr], requested_type)
-                : areDynamicSubcolumnTypesCompatibleForRead(variants[discr], requested_type);
-            if (can_read_variant)
+            /// Read compatibility is path-local for both whole-type and nested subcolumn reads:
+            /// the in-memory path (`DataTypeDynamic::getDynamicSubcolumnData`) uses the same
+            /// predicate for `d.\`Map(String, JSON)\``, so the stored-path reader must see rows
+            /// stored as `Map(String, JSON(a UInt64))` as well. Values of a compatible but not
+            /// equal variant are converted to the requested type before insertion.
+            if (areDynamicSubcolumnTypesCompatibleForRead(variants[discr], requested_type))
                 add_variant_reader(discr);
         }
 
@@ -471,10 +475,8 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                 ReadBufferFromMemory buf(value);
                 /// Reading already-stored shared-variant data: not limited by the input complexity guard.
                 auto type = decodeDataType(buf);
-                const bool can_read_shared_variant = nested_subcolumn.empty()
-                    ? areDynamicStorageTypesCompatible(type, requested_type)
-                    : areDynamicSubcolumnTypesCompatibleForRead(type, requested_type);
-                if (can_read_shared_variant)
+                /// Same path-local read compatibility as in deserializeBinaryBulkStatePrefix.
+                if (areDynamicSubcolumnTypesCompatibleForRead(type, requested_type))
                 {
                     shared_variant_result_null_map.push_back(static_cast<UInt8>(0));
                     if (!is_null_map_subcolumn)
@@ -483,7 +485,13 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, format_settings);
                         if (nested_subcolumn.empty())
                         {
-                            insertSourceValueIntoColumn(variant_column, *tmp_column, 0);
+                            /// The stored type may declare a different path set than the requested
+                            /// type (read compatibility is path-local), so its column layout can
+                            /// differ. Convert the value to the requested type before insertion.
+                            ColumnPtr value_column = std::move(tmp_column);
+                            if (!type->equals(*requested_type))
+                                value_column = castColumn({value_column, type, ""}, requested_type);
+                            insertSourceValueIntoColumn(variant_column, *value_column, 0);
                         }
                         else
                         {
@@ -563,7 +571,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     variant_reader_columns.reserve(dynamic_element_state->variant_readers.size());
     for (const auto & reader : dynamic_element_state->variant_readers)
     {
-        if (nested_subcolumn.empty() || reader.reads_nested_subcolumn_directly)
+        if (reader.reads_nested_subcolumn_directly)
         {
             variant_reader_columns.push_back(reader.column);
         }
@@ -571,17 +579,20 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         {
             auto reader_result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type);
             ColumnPtr reader_column = reader.column;
-            /// Compatibility for nested subcolumn reads is path-local, so the variant may declare
-            /// a different path set than the requested type (e.g. `JSON(a UInt64)` vs plain
-            /// `JSON`), making their subcolumns' types differ. Convert the variant column to the
-            /// requested type first, then extract the requested subcolumn from it.
+            /// Read compatibility is path-local, so the variant may declare a different path set
+            /// than the requested type (e.g. `JSON(a UInt64)` vs plain `JSON`), making their
+            /// column layouts differ. Convert the variant column to the requested type first
+            /// (and for nested subcolumn reads, then extract the requested subcolumn from it).
             auto requested_result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(requested_type);
             if (!reader_result_type->equals(*requested_result_type))
             {
                 reader_column = castColumn({reader_column, reader_result_type, ""}, requested_result_type);
                 reader_result_type = requested_result_type;
             }
-            variant_reader_columns.push_back(reader_result_type->getSubcolumn(nested_subcolumn, reader_column));
+            if (nested_subcolumn.empty())
+                variant_reader_columns.push_back(std::move(reader_column));
+            else
+                variant_reader_columns.push_back(reader_result_type->getSubcolumn(nested_subcolumn, reader_column));
         }
     }
 
