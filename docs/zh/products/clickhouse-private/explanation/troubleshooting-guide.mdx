@@ -1,0 +1,564 @@
+---
+noindex: true
+title: "故障排查指南"
+sidebarTitle: "故障排查"
+description: "本指南汇总了 ClickHouse 私网部署中的常见问题、相关症状、可能原因及排查步骤。"
+---
+
+本指南汇总了 ClickHouse 私网部署中的常见问题、相关症状、可能原因及排查步骤。每个条目均按“症状、原因、解决方法”的结构组织。
+
+***
+
+<div id="operator-issues">
+  ## Operator 相关问题
+</div>
+
+<div id="cr-changes-not-being-applied">
+  ### CR 更改未生效
+</div>
+
+**症状：** 对 ClickHouseCluster CR 所做的更改在较长时间内未被协调，也没有应用到集群中。
+
+**原因：** 常见原因通常有以下三种之一：
+
+1. operator 本身处于反复崩溃重启状态。
+2. ClickHouse 的 Pod (容器组)  (keeper 或 server) 处于反复崩溃重启状态，从而阻塞了协调。
+3. CR 上存在 `clickhouse.com/skip-reconcile` 注解，这会指示 operator 完全跳过协调。
+
+**解决方法：**
+
+1. 检查 operator 日志中是否有崩溃或错误：
+
+   ```bash
+   kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+   ```
+
+2. 检查 keeper 和 server Pod (容器组) 是否处于反复崩溃重启状态：
+
+   ```bash
+   kubectl get pods -n <namespace>
+   kubectl logs <pod-name> -n <namespace>
+   ```
+
+3. 检查 CR 上是否存在 skip-reconcile 注解：
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o yaml | grep skip-reconcile
+   ```
+
+   如果存在且已不再需要，请将其移除：
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+***
+
+<div id="how-to-drop-a-server-replica">
+  ### 如何删除服务器副本
+</div>
+
+**症状：** 你需要在不缩容 (不减少期望副本数) 的情况下，从集群中移除某个特定副本。
+
+**原因：** 某个副本处于不健康状态、卡住，或因其他原因需要手动移除。
+
+**解决方法：**
+
+1. **添加 skip-reconcile 注解**，防止 operator 干预：
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile=remove-replica
+   ```
+
+   通过检查以下日志，确认 operator 已识别到该注解：
+
+   ```text
+   Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation"
+   ```
+
+2. **从 ReplicaStateMap 中移除该副本。** 首先，查看当前映射：
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+   ```
+
+   然后编辑 status 子资源，移除目标副本对应的条目：
+
+   ```ini
+   EDITOR=vim kubectl edit clickhousecluster <cluster-name> -n <namespace> --subresource=status
+   ```
+
+3. **删除该副本的 StatefulSet：**
+
+   ```bash
+   kubectl delete sts <replica-statefulset-name> -n <namespace>
+   ```
+
+   删除 StatefulSet 后，等待 pod (容器组) 终止。
+
+4. **移除 skip-reconcile 注解：**
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+   operator 将启动一个新副本，并从 ClickHouse 中清理掉已移除的副本。
+
+5. **验证**：登录 ClickHouse 集群并确认旧副本已被移除。如果该副本持有的任何租约尚未过期，operator 将重试移除。清理应在 5 分钟内完成。
+
+***
+
+<div id="server-pod-hanging-on-termination">
+  ### Server pod (容器组) 终止时卡住
+</div>
+
+**症状：** Server Pod (容器组) 长时间处于 `Terminating` 状态：
+
+```text
+NAME                            READY   STATUS        RESTARTS   AGE
+c-navy-wl-64-server-gbwmanx-0   1/2     Terminating   0          3m25s
+c-navy-wl-64-server-pxb9mde-0   1/2     Terminating   0          3m25s
+```
+
+**原因：** 在终止前，服务器 pod (容器组) 会运行 PreStop hook，以排空连接并等待正在运行的请求完成。如果仍有长时间运行的查询或活动连接，pod (容器组) 会一直处于终止状态。
+
+**解决方法：**
+
+1. 查看 PreStop hook 日志，确认该 hook 正在等待什么：
+
+   ```bash
+   kubectl exec <pod-name> -- cat /var/log/clickhouse-server/prestop.log
+   ```
+
+2. 检查服务器日志，查看是否有表明关闭流程状态的信号接收日志消息。
+
+***
+
+<div id="multiple-clickhouseclusters-in-the-same-namespace">
+  ### 同一命名空间中的多个 ClickHouseClusters
+</div>
+
+**症状：** 出现异常的协调行为、资源被意外修改或删除，或者 operator 在不同集群状态之间来回切换。
+
+**原因：** 同一命名空间中存在多个 `ClickHouseCluster` 自定义资源。operator 假定每个命名空间中只有一个 `ClickHouseCluster`；当多个实例共享同一个命名空间时，它无法正确进行协调。
+
+**解决方法：**
+
+1. 检查该命名空间中存在多少个 `ClickHouseCluster` 资源：
+
+   ```bash
+   kubectl get clickhouseclusters -n <namespace>
+   ```
+
+2. 如果存在多个，请将额外的集群迁移到各自独立的命名空间中。每个 `ClickHouseCluster` 都必须是其所在命名空间中的唯一实例。
+
+3. `onprem-clickhouse-cluster` Helm 图表默认会创建一个 `ResourceQuota`，以防止这种情况发生。请确认该配额已创建：
+
+   ```bash
+   kubectl get resourcequota -n <namespace>
+   ```
+
+   如果缺少该配额，请确保在 Helm 配置值中将 `resourceQuota.enabled` 设置为 `true` (默认值) 。
+
+***
+
+<div id="cr-not-in-healthy-running-state">
+  ### CR 未处于健康的 Running 状态
+</div>
+
+**症状：** ClickHouseCluster CR 显示的状态不是 `Running`，或者 Pod (容器组) 在不断重启。
+
+**原因：** 多种问题都可能导致无法进入健康状态，例如反复崩溃重启的 Pod (容器组) 、资源限制、配置错误或调度失败。
+
+**解决方法：**
+
+1. 检查所有命名空间中的集群状态：
+
+   ```bash
+   kubectl get clickhouseclusters -A
+   ```
+
+2. 查看有问题的 pod (容器组) 的详细状态和事件：
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+3. 检查此前已终止容器的日志：
+
+   ```bash
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+4. 检查命名空间中的事件，以排查调度或资源问题：
+
+   ```bash
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="clickhouse-server-issues">
+  ## ClickHouse Server 故障排查
+</div>
+
+<div id="crashlooping-server-pods">
+  ### 持续崩溃重启的服务器 Pod (容器组)
+</div>
+
+**症状：** ClickHouse 服务器 Pod (容器组) 处于 `CrashLoopBackOff` 状态。
+
+**原因：** ClickHouse 服务器进程在启动时或启动后不久崩溃。可能的原因包括配置错误、数据损坏、内存压力，或者被 Kubernetes 因 OOM 而终止。
+
+**解决方法：**
+
+1. 检查 ClickHouse 服务器 Pod (容器组) 的日志，确认崩溃原因：
+
+   ```bash
+   kubectl logs <pod-name> -n <namespace>
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+2. 如果崩溃是由内存压力或 Kubernetes 发起的终止导致的，请检查 Kubernetes 事件：
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="data-losscorruption-clickhousebrokenpartdetectedonselect">
+  ### 数据丢失/损坏 (ClickHouseBrokenPartDetectedOnSelect)
+</div>
+
+**症状：** `ClickHouseBrokenPartDetectedOnSelect` 告警触发，或 SELECT 查询因 `POTENTIALLY_BROKEN_DATA_PART` 错误而失败。
+
+**原因：** SMT 数据分区片段读取时发生了不可重试的错误。在 SELECT 操作期间，如果发现某个数据分区片段已损坏，就会抛出 `POTENTIALLY_BROKEN_DATA_PART` 异常。
+
+**解决方法：**
+
+1. **检查日志**中是否存在 `POTENTIALLY_BROKEN_DATA_PART` 异常。如果日志中没有，也请检查 `system.errors`。
+
+2. **确认丢失了哪些数据分区片段。** 查询 `system.replicas` 以找出受影响的表：
+
+   ```sql
+   SELECT
+       database,
+       table,
+       lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+3. **查找与丢失数据分区片段相关的日志。** 检查 pod (容器组) 中的 `/var/log/clickhouse-server/` (归档日志可使用 `zgrep`) ，或查询 `system.text_log`：
+
+   ```sql
+   SELECT
+       hostName(),
+       event_time,
+       logger_name,
+       message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+   为 `event_time` 范围添加过滤条件，以加快查询速度。
+
+4. **了解丢失数据分区片段的历史。** 选取一个丢失的数据分区片段名称，并查找所有相关日志：
+
+   ```sql
+   SELECT
+       event_time,
+       message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%' AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+   重点关注 `Part * is lost forever` *之前* 的日志消息。该时间点之后的消息都无关紧要 (任何 “found” 的分区片段实际上都是空的替代项) 。
+
+5. **检查是否存在误报：**
+
+6. 检查该表是否配置了生存时间 (TTL)，以及丢失的数据分区片段是否本来就应该被删除。
+
+7. 检查 `system.query_log` 中的 TRUNCATE 或 DROP PARTITION 查询，看这些查询是否本应删除丢失的数据分区片段。
+
+8. **进一步调查：**
+
+9. 如果该分区片段因损坏被 detached，请查明其损坏原因。
+
+10. 如果看到 `The specified key does not exist`，请用该 blob 名称搜索所有日志，查明它是在何时以及为何被移除的。同时也要检查与 zero-copy 锁相关的日志消息。
+
+11. 联系 ClickHouse 支持团队并提供你的调查结果。
+
+***
+
+<div id="table-replicas-read-only-clickhousetablereplicasreadonly">
+  ### 表副本处于只读状态 (ClickHouseTableReplicasReadOnly)
+</div>
+
+**症状：** `ClickHouseTableReplicasReadOnly` 告警触发，或者由于表处于只读模式而导致写入失败。
+
+**原因：** 某个表处于只读模式已至少一小时。不包括 `*_broken_replicated_tables` 和 `*_broken_tables` 数据库中的表。可能是某次 `DROP` 操作异常导致，也可能是 Keeper 连接问题导致。
+
+**解决方法：**
+
+1. **检查集群中是否仍有只读表：**
+
+   ```sql
+   SELECT
+     dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+     database,
+     table,
+     hostname()
+   FROM clusterAllReplicas(default, system.replicas)
+   WHERE is_readonly = 1
+   ```
+
+2. **排查原因。** 出现只读表通常表示 `StorageSharedMergeTree::shutdown` 已执行，但存储对象仍然存活。可使用表名作为日志记录器名称来搜索文本日志。
+
+3. **尝试重启每个受影响表的副本：**
+
+   ```sql
+   SYSTEM RESTART REPLICA <database>.<table>
+   ```
+
+   可以从步骤 1 的查询结果中获取表名。有时问题很简单，重启即可解决。
+
+4. 如果问题仍然存在，请检查 Keeper 日志，确认是否存在连接或协调方面的问题。
+
+***
+
+<div id="replica-already-exists-clickhousereplicaalreadyexists">
+  ### 副本已存在 (ClickHouseReplicaAlreadyExists)
+</div>
+
+**症状：** `ClickHouseReplicaAlreadyExists` 告警触发，或因 `REPLICA_ALREADY_EXISTS` 错误而导致副本创建失败。
+
+**原因：** 无法创建复制表 (SMT 或 RMT) ，因为已有副本关联到了该 ZooKeeper 路径。这种情况通常不是由用户操作失误引起的 (现在已通过 `database_replicated_allow_explicit_uuid` 禁止显式复用 UUID) 。更可能是 Replicated database 或 Shared Catalog 中的一个 bug。
+
+**解决方法：**
+
+请联系 ClickHouse 支持团队。这很可能是一个需要工程团队进一步调查的 bug。
+
+***
+
+<div id="cannot-write-to-file-descriptor-clickhousecannotwritetofiledescriptor">
+  ### 无法写入文件描述符 (ClickHouseCannotWriteToFileDescriptor)
+</div>
+
+**症状：** `ClickHouseCannotWriteToFileDescriptor` alert 被触发，或者日志中出现 `CANNOT_WRITE_TO_FILE_DESCRIPTOR` 或 `no space left on device` 等错误。
+
+**原因：** 缓存磁盘已满。当没有足够空间容纳新的缓存条目或进行外部数据处理 (例如 external aggregation、external joins) 时，就会抛出异常。也可能是由于配置错误：在 CR config 中请求的磁盘空间大于实际创建的空间。
+
+**解决方法：**
+
+1. **先检查已知的 `partial_merge` 问题。** 当指定 `join_algorithm = 'partial_merge'` 查询设置时，跟踪缓存磁盘使用量存在一个已知缺陷。请检查当前是否使用了该设置。
+
+2. **连接到 pod (容器组) ：**
+
+   ```bash
+   kubectl exec -n <namespace> -it <pod> -- /bin/bash
+   ```
+
+3. **检查实际磁盘大小：**
+
+   ```text
+   df -h
+   ```
+
+4. **在 ClickHouse 中检查所需的缓存磁盘大小：**
+
+   ```sql
+   SELECT path, max_size FROM system.filesystem_cache_settings
+   ```
+
+   请注意，多个缓存 (例如 `s3diskWithCache`、`diskPlainRewritableForSystemTablesWithCache`) 可能共享同一个路径 (`/mnt/clickhouse-cache/sharedS3DiskCache`) 。
+
+5. **比较实际值与所需值：**
+
+6. 如果实际磁盘大小小于所需大小，则说明这是配置错误。请联系 Data Plane Operator 团队。
+
+7. 如果磁盘大小足够，则很可能是缓存磁盘使用量跟踪中的缺陷。请通过 `system.filesystem_cache` 进一步排查。
+
+***
+
+<div id="storage-and-infrastructure-issues">
+  ## 存储与基础设施问题
+</div>
+
+<div id="zone-details-could-not-be-found-for-any-pv">
+  ### 无法找到任何 PV 的可用区信息
+</div>
+
+**症状：** ClickHouse operator 日志中显示错误 `zone details couldn't be found for any PV`，且协调无法完成。
+
+**原因：** operator 预期会基于 `topology.kubernetes.io/zone` 标记，在 PersistentVolume 上自动填充具备拓扑感知的节点亲和性。通常这由支持拓扑感知的卷置备程序处理 (例如 AWS EBS) 。但是，对于某些云提供商 (例如 IBM) 或本地部署环境，该标记不会被自动填充，或者使用的是非标准标记。
+
+**解决方法：**
+
+1. **在 StorageClass 中添加 `allowedTopologies`**，以确保卷在创建时使用正确的节点亲和性：
+
+   ```yaml
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: local-nvme-sc
+   allowVolumeExpansion: true
+   parameters:
+     path: /nvme/disk
+   provisioner: rancher.io/local-path
+   reclaimPolicy: Delete
+   volumeBindingMode: WaitForFirstConsumer
+   allowedTopologies:
+     - matchLabelExpressions:
+         - key: topology.kubernetes.io/zone
+           values:
+             - <your_cluster_name>-keeper
+             - <your_host_1>
+             - <your_host_2>
+             - <your_host_3>
+         - key: directpv.min.io/zone
+           values:
+             - default
+   ```
+
+2. **如果拓扑使用的是非标准标记**，请配置 operator 的 `additionalZoneLabelRegexes` 属性。例如，使用 Helm 图表时，将 `operator.additionalZoneLabelRegexes` Helm 配置值设置为可匹配你的标记的正则表达式 (例如 `directpv.*zone`) 。
+
+***
+
+<div id="nvme-disk-questions">
+  ### NVMe 磁盘相关问题
+</div>
+
+**症状：** 不确定是否必须使用挂载 NVMe 的实例，或不清楚缓存磁盘能否改用其他存储。
+
+**原因：** NVMe 磁盘用作来自 S3 (或等效对象存储) 的数据缓存卷。Operator 会将其挂载到 ClickHouse server pod (容器组) 中，并将其配置为 S3 缓存磁盘：
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+对于 SharedMergeTree，ClickHouse 不会在本地存储数据。缓存仅用于优化查询性能。
+
+**解决方法：**
+
+也可以使用其他存储设备 (例如 AWS EBS) 来替代 NVMe。如需这样做，请调整以下内容：
+
+1. 确保磁盘已挂载到运行 ClickHouse server Kubernetes pod (容器组) 的实例上。
+2. 修改启动模板，以反映磁盘架构的变化。你仍然可以创建 RAID 磁盘并将其格式化为 ext4 或 xfs，但请使用适当的工具 (例如 `lsblk`) 列出设备。
+3. 如果磁盘未挂载到 `/nvme/disk`，请将 ClickHouseCluster Helm 图表中的 `hostPathBaseDirectory` 设置为实际挂载点。
+
+请注意，替代存储方案可能会影响查询性能。
+
+***
+
+<div id="configuration-issues">
+  ## 配置问题
+</div>
+
+<div id="loadbalancertype-field-behavior">
+  ### loadBalancerType 字段行为
+</div>
+
+**症状：** 在 ClickHouseCluster CRD 中设置 `loadBalancerType` 字段时，不会在 Service 上创建负载均衡器注解。
+
+**原因：** `loadBalancerType` 字段不会为 ClickHouse 集群的 Service 添加负载均衡器注解。ClickHouse Operator 不支持为 ClickHouse 集群创建负载均衡器。此字段仅在 ClickHouse Cloud 中有用途，在该环境下它用于帮助为 Cloud SQL 控制台创建用户。
+
+**解决方法：**
+
+除非您运行在 ClickHouse Cloud 中，否则无需采取任何操作。如果您需要为 ClickHouse 集群配置负载均衡器，请在 ClickHouseCluster CRD 之外，使用标准的 Kubernetes Service 注解 和相关配置单独进行设置。
+
+***
+
+<div id="diagnostic-commands-quick-reference">
+  ## 诊断命令速查
+</div>
+
+<div id="cluster-status">
+  ### 集群状态
+</div>
+
+```bash
+kubectl get clickhouseclusters -A
+```
+
+<div id="operator-logs">
+  ### Operator 日志
+</div>
+
+```bash
+kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+```
+
+<div id="pod-events-and-details">
+  ### pod (容器组) 事件和详情
+</div>
+
+```bash
+kubectl describe pod <pod-name> -n <namespace>
+kubectl get events -n <namespace>
+```
+
+<div id="previous-container-logs-after-a-crash">
+  ### 容器此前的日志 (崩溃后)
+</div>
+
+```bash
+kubectl logs -p <pod-name> -n <namespace>
+```
+
+<div id="replica-state-map">
+  ### 副本状态映射
+</div>
+
+```bash
+kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+```
+
+<div id="replication-queue-size-per-table-sql">
+  ### 各表复制队列大小 (SQL)
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```
+
+使用 `system.replicas` 的另一种方法：
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table-sql">
+  ### 每个表的复制队列中最早的条目 (SQL)
+</div>
+
+如果最早的条目已超过 1 天，则触发告警。
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```

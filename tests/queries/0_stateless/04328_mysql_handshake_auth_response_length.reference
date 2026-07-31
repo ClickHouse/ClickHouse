@@ -1,0 +1,3 @@
+auth_response length 128 read correctly
+auth_response length 200 read correctly
+auth_response length 255 read correctly

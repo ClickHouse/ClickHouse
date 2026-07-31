@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Range.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -38,7 +39,7 @@ struct PlainRanges
     static bool compareByLeftBound(const Range & lhs, const Range & rhs);
     static bool compareByRightBound(const Range & lhs, const Range & rhs);
 
-    static std::vector<Ranges> invert(const Ranges & to_invert_ranges);
+    static VectorWithMemoryTracking<Ranges> invert(const Ranges & to_invert_ranges);
 
     static PlainRanges makeBlank() { return PlainRanges({}); }
     static PlainRanges makeUniverse() { return PlainRanges({Range::createWholeUniverseWithoutNull()}); }

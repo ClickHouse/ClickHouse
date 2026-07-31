@@ -1,12 +1,12 @@
 #pragma once
 
-#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <memory>
 #include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/InlineVector.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -74,7 +74,7 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
   */
 struct Expected
 {
-    absl::InlinedVector<const char *, 7> variants;
+    InlineVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
 
     bool enable_highlighting = false;
@@ -134,6 +134,18 @@ public:
         {
         }
 
+        /// Construct a new Pos over different Tokens, inheriting depth/backtrack
+        /// counters and limits from an existing Pos. Use this when re-tokenizing
+        /// a sub-expression so that the overall recursion depth is preserved.
+        Pos(Tokens & tokens_, const Pos & inherit_from)
+            : TokenIterator(tokens_)
+            , depth(inherit_from.depth)
+            , max_depth(inherit_from.max_depth)
+            , backtracks(inherit_from.backtracks)
+            , max_backtracks(inherit_from.max_backtracks)
+        {
+        }
+
         ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
@@ -148,7 +160,7 @@ public:
               * The frequency is arbitrary, but not too large, not too small,
               * and a power of two to simplify the division.
               */
-#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG) || defined(OS_DARWIN)
+#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG)
             static constexpr uint32_t check_frequency = 128;
 #else
             static constexpr uint32_t check_frequency = 8192;

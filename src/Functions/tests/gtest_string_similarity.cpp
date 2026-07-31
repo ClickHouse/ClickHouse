@@ -36,14 +36,14 @@ UInt32 myersDistance(const SymbolT<is_utf8> * haystack, size_t haystack_size, co
         haystack, static_cast<UInt32>(haystack_size), needle, static_cast<UInt32>(needle_size));
 }
 
-std::vector<UInt32> toUTF8CodePoints(std::u8string_view s)
+static VectorWithMemoryTracking<UInt32> toUTF8CodePoints(std::u8string_view s)
 {
-    std::vector<UInt32> out;
+    VectorWithMemoryTracking<UInt32> out;
     parseUTF8String(reinterpret_cast<const char *>(s.data()), s.size(), [&](UInt32 cp) { out.push_back(cp); });
     return out;
 }
 
-void runTest(std::string_view a, std::string_view b)
+static void runTest(std::string_view a, std::string_view b)
 {
     if (a.empty() || b.empty())
         return;
@@ -59,7 +59,7 @@ void runTest(std::string_view a, std::string_view b)
     ASSERT_EQ(expected, actual) << "haystack: [" << haystack << "]\n" << "needle: [" << needle << "]";
 }
 
-void runTestUTF8(std::u8string_view a_raw, std::u8string_view b_raw)
+static void runTestUTF8(std::u8string_view a_raw, std::u8string_view b_raw)
 {
     auto a = toUTF8CodePoints(a_raw);
     auto b = toUTF8CodePoints(b_raw);
@@ -186,12 +186,12 @@ TEST_P(EditDistanceParamTest, EditDistanceMultiBlockUtf8)
     const size_t b_len = GetParam();
     const size_t a_len = b_len + 30;
 
-    std::vector<UInt32> long_a_codepoints;
+    VectorWithMemoryTracking<UInt32> long_a_codepoints;
     long_a_codepoints.reserve(a_len);
     for (size_t i = 0; i < a_len; ++i)
         long_a_codepoints.push_back(U'Ł');
 
-    std::vector<UInt32> long_b_codepoints;
+    VectorWithMemoryTracking<UInt32> long_b_codepoints;
     long_b_codepoints.reserve(b_len);
     for (size_t i = 0; i < b_len; ++i)
         long_b_codepoints.push_back(U'漢');
@@ -230,20 +230,20 @@ TEST_P(EditDistanceParamTest, EditDistanceMultiBlockUtf8)
 
 
     {
-        const std::vector<UInt32> base_codepoints = []
+        const VectorWithMemoryTracking<UInt32> base_codepoints = []
         {
-            std::vector<UInt32> result;
+            VectorWithMemoryTracking<UInt32> result;
             std::u8string base = u8"ŻółćĄĆĘŁŃÓŚŹ😀🐍漢字";
             parseUTF8String(reinterpret_cast<const char *>(base.data()), base.size(), [&](UInt32 cp) { result.push_back(cp); });
             return result;
         }();
 
-        std::vector<UInt32> s1_codepoints;
+        VectorWithMemoryTracking<UInt32> s1_codepoints;
         while (s1_codepoints.size() < b_len)
             s1_codepoints.insert(s1_codepoints.end(), base_codepoints.begin(), base_codepoints.end());
         s1_codepoints.resize(b_len, U' ');
 
-        std::vector<UInt32> s2_codepoints = s1_codepoints;
+        VectorWithMemoryTracking<UInt32> s2_codepoints = s1_codepoints;
 
         if (b_len > 10)
             s2_codepoints[10] = 0x0179; // Ź
@@ -264,8 +264,8 @@ TEST_P(EditDistanceParamTest, EditDistanceMultiBlockUtf8)
         ASSERT_EQ(expected, actual);
     }
     {
-        std::vector<UInt32> s1(b_len, U'漢');
-        std::vector<UInt32> s2(b_len, U'😀');
+        VectorWithMemoryTracking<UInt32> s1(b_len, U'漢');
+        VectorWithMemoryTracking<UInt32> s2(b_len, U'😀');
 
         if (b_len > 0)
         {
@@ -287,7 +287,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(1, 2, 63, 64, 65, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095, 4096, 4097, 8191, 8192, 8193));
 
 
-std::string toHex(const UInt8 * data, size_t size)
+static std::string toHex(const UInt8 * data, size_t size)
 {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
@@ -296,7 +296,7 @@ std::string toHex(const UInt8 * data, size_t size)
     return oss.str();
 }
 
-std::string toHex(const UInt32 * data, size_t size)
+static std::string toHex(const UInt32 * data, size_t size)
 {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
@@ -319,8 +319,8 @@ TEST(StringSimilarity, EditDistanceStressAscii)
         size_t len_a = len_dist(rng);
         size_t len_b = len_dist(rng);
 
-        std::vector<UInt8> a(len_a);
-        std::vector<UInt8> b(len_b);
+        VectorWithMemoryTracking<UInt8> a(len_a);
+        VectorWithMemoryTracking<UInt8> b(len_b);
 
         for (auto & c : a)
             c = static_cast<UInt8>(char_dist(rng));
@@ -366,8 +366,8 @@ TEST(StringSimilarity, EditDistanceStressUtf8)
         size_t len_a = len_dist(rng);
         size_t len_b = len_dist(rng);
 
-        std::vector<UInt32> a(len_a);
-        std::vector<UInt32> b(len_b);
+        VectorWithMemoryTracking<UInt32> a(len_a);
+        VectorWithMemoryTracking<UInt32> b(len_b);
 
         for (auto & cp : a)
             cp = randomCodePoint();

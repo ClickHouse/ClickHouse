@@ -8,8 +8,6 @@ title: 'GenerateRandom table engine'
 doc_type: 'reference'
 ---
 
-# GenerateRandom table engine
-
 The GenerateRandom table engine produces random data for given table schema.
 
 Usage examples:
