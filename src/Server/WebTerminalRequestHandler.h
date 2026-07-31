@@ -19,7 +19,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    IServer & server;
+    [[maybe_unused]] IServer & server;
 
     /// Serve the static HTML page for the web terminal UI.
     void serveHTML(HTTPServerRequest & request, HTTPServerResponse & response);

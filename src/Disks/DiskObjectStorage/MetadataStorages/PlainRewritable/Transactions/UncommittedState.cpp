@@ -62,9 +62,9 @@ public:
             {
                 if (resolved == move->to)
                     resolved = pathToGenericString(move->from);
-                else if (resolved.starts_with(move->to.native() + '/'))
-                    resolved = move->from.native() + resolved.substr(move->to.native().size());
-                else if (resolved == move->from.native() || resolved.starts_with(move->from.native() + '/'))
+                else if (resolved.starts_with(pathToGenericString(move->to) + '/'))
+                    resolved = pathToGenericString(move->from) + resolved.substr(pathToGenericString(move->to).size());
+                else if (resolved == pathToGenericString(move->from) || resolved.starts_with(pathToGenericString(move->from) + '/'))
                     return std::nullopt;
             }
             else
