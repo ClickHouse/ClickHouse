@@ -1045,6 +1045,154 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(result)
 
 
+RESUBSCRIBE_LOG_LINE = "A subscription was closed by the NATS server, resubscribing"
+
+
+def _setup_restart_table(subject, consumer_name):
+    asyncio.run(add_durable_consumer(cluster, "test_stream", consumer_name))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = '{consumer_name}',
+                     nats_subjects = '{subject}',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """.format(subject=subject, consumer_name=consumer_name)
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+
+def _publish_and_expect(subject, keys, total_expected):
+    """Publish `keys` and wait until the view holds `total_expected` distinct keys."""
+    messages = [json.dumps({"key": key, "value": key}) for key in keys]
+    asyncio.run(publish_messages(cluster, "test_stream", subject, messages))
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 60,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, "consumption did not resume, view holds {} of {} keys".format(
+        result, total_expected)
+
+
+def _restart_nats(nats_cluster, probe_key, total_expected):
+    # Confirm the subscription is actually live, then restart the broker. Returns the new expected
+    # key count, including the probe message.
+    #
+    # This fix recovers a subscription that the NATS client has closed, which happens when the
+    # server answers our outstanding pull request while shutting down. A broker that has just come
+    # back can still refuse a pull request while it restores its streams, so recovery can fire more
+    # than once, several seconds after the connection is back. If a restart lands within
+    # milliseconds of one of those fresh subscriptions, the server goes down before that request is
+    # parked, never answers it, and the client is left holding a subscription it has no status for -
+    # the residual this fix deliberately does not cover (a hard kill or a network partition has the
+    # same shape). Consuming a message proves a pull request is parked server side, which is exactly
+    # the precondition the fix needs, so probing here keeps each restart in the window under test.
+    # This changes WHEN the broker is restarted, not what is asserted.
+    total_expected += 1
+    _publish_and_expect("test_subject", [probe_key], total_expected)
+
+    nats_helpers.kill_nats(nats_cluster)
+    time.sleep(4)
+    nats_helpers.revive_nats(nats_cluster)
+
+    return total_expected
+
+
+def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
+    # An asynchronous JetStream pull request is renewed only when a message is delivered, and a
+    # reconnect resends the `SUB` line but not the outstanding request, so a broker restart with
+    # nothing in flight used to leave the table subscribed and permanently silent. Draining the
+    # backlog first is what puts the pull chain in that idle state deterministically.
+    _setup_restart_table("test_subject", "test_consumer")
+
+    total_expected = 10
+    _publish_and_expect("test_subject", range(0, 10), total_expected)
+
+    total_expected = _restart_nats(nats_cluster, 90, total_expected)
+
+    total_expected += 10
+    _publish_and_expect("test_subject", range(100, 110), total_expected)
+
+
+def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):
+    # A one-shot recovery would pass the single-restart test above, so require it to work twice.
+    _setup_restart_table("test_subject", "test_consumer")
+
+    total_expected = 10
+    _publish_and_expect("test_subject", range(0, 10), total_expected)
+
+    for round_index in range(2):
+        first_key = 100 + round_index * 100
+        total_expected = _restart_nats(nats_cluster, first_key - 10, total_expected)
+
+        total_expected += 10
+        _publish_and_expect("test_subject", range(first_key, first_key + 10), total_expected)
+
+
+def test_nats_jet_stream_does_not_resubscribe_while_healthy(nats_cluster):
+    # The recovery keys on a subscription the client has closed, so a healthy consumer must never
+    # trigger it: an ordinary reconnect does not close a subscription, and firing per streaming
+    # cycle would tear down and rebuild the subscription every few hundred milliseconds.
+    _setup_restart_table("test_subject", "test_consumer")
+
+    seen_before = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+
+    for round_index in range(3):
+        first_key = round_index * 10
+        _publish_and_expect("test_subject", range(first_key, first_key + 10), first_key + 10)
+
+    time.sleep(5)
+
+    # `count_in_recent_log` counts within a fixed tail of the log, so a busy instance can push
+    # older matches out of the window and the count can legitimately go DOWN. Only growth means a
+    # resubscribe happened, so assert the direction rather than equality.
+    seen_after = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+    assert seen_after <= seen_before, "resubscribed {} times without a broker restart".format(
+        seen_after - seen_before)
+
+
+def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
+    # After recovering, the table must stop resubscribing. A detector that keeps reporting a dead
+    # subscription would fire on every streaming cycle instead, so bound the count over a quiet
+    # period rather than only checking that consumption resumed.
+    _setup_restart_table("test_subject", "test_consumer")
+
+    total_expected = 10
+    _publish_and_expect("test_subject", range(0, 10), total_expected)
+
+    total_expected = _restart_nats(nats_cluster, 90, total_expected)
+
+    total_expected += 10
+    _publish_and_expect("test_subject", range(100, 110), total_expected)
+
+    # A closure queued while the broker was still coming up can arrive shortly after consuming
+    # resumed, so let that pass before measuring. What is asserted is that recovery then STAYS
+    # quiet: a detector that keeps reporting a dead subscription fires on every streaming cycle and
+    # so keeps adding lines here.
+    time.sleep(5)
+
+    settled_at = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+    time.sleep(10)
+    settled_after = nats_helpers.count_in_recent_log(instance, RESUBSCRIBE_LOG_LINE)
+
+    # The streaming task reschedules about twice a second, so a detector stuck reporting a dead
+    # subscription would add tens of lines over this window. The count is taken within a fixed tail
+    # of the log, so it can also go down as older matches scroll out; only growth is a failure.
+    assert settled_after <= settled_at, "kept resubscribing after recovery: {} more lines".format(
+        settled_after - settled_at)
+
+
 def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
