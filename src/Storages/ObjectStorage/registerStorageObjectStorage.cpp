@@ -19,6 +19,7 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
+#include <string_view>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -2459,6 +2461,26 @@ The `DeltaLake` table engine and table function support data caching, the same a
 #endif
 
 #if USE_LANCE
+static ObjectStorageType getLanceDiskObjectStorageType(const DiskPtr & disk, std::string_view engine_name)
+{
+    try
+    {
+        return disk->getObjectStorage()->getType();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported disk type for {}: {}",
+                engine_name,
+                disk->getDataSourceDescription().toString());
+
+        throw;
+    }
+}
+
+void registerStorageLance(StorageFactory & factory);
 void registerStorageLance(StorageFactory & factory)
 {
 #if USE_AWS_S3
@@ -2475,13 +2497,14 @@ void registerStorageLance(StorageFactory & factory)
             if (!disk_name.empty())
             {
                 auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
+                const auto object_storage_type = getLanceDiskObjectStorageType(disk, LanceS3Definition::storage_engine_name);
+                switch (object_storage_type)
                 {
                     case ObjectStorageType::S3:
                         configuration = std::make_shared<StorageS3LanceConfiguration>(storage_settings);
                         break;
                     default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceS3Definition::storage_engine_name, object_storage_type);
                 }
             }
             else
@@ -2510,13 +2533,14 @@ void registerStorageLance(StorageFactory & factory)
             if (!disk_name.empty())
             {
                 auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
+                const auto object_storage_type = getLanceDiskObjectStorageType(disk, LanceLocalDefinition::storage_engine_name);
+                switch (object_storage_type)
                 {
                     case ObjectStorageType::Local:
                         configuration = std::make_shared<StorageLocalLanceConfiguration>(storage_settings);
                         break;
                     default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceLocalDefinition::storage_engine_name, object_storage_type);
                 }
             }
             else

@@ -1,4 +1,5 @@
 #include <string_view>
+#include <type_traits>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -43,6 +44,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -72,7 +74,46 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
             if (!disk_name.empty())
             {
                 auto disk = context->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
+                const auto object_storage_type = [&]()
+                {
+                    try
+                    {
+                        return disk->getObjectStorage()->getType();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Unsupported disk type for {}: {}",
+                                Definition::name,
+                                disk->getDataSourceDescription().toString());
+
+                        throw;
+                    }
+                }();
+#if USE_AWS_S3 && USE_LANCE
+                if constexpr (std::is_same_v<Configuration, StorageS3LanceConfiguration>)
+                {
+                    if (Definition::object_storage_type != "s3" || object_storage_type != ObjectStorageType::S3)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+
+                    configuration = std::make_shared<StorageS3LanceConfiguration>(settings);
+                }
+                else
+#endif
+#if USE_LANCE
+                if constexpr (std::is_same_v<Configuration, StorageLocalLanceConfiguration>)
+                {
+                    if (Definition::object_storage_type != "local" || object_storage_type != ObjectStorageType::Local)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+
+                    configuration = std::make_shared<StorageLocalLanceConfiguration>(settings);
+                }
+                else
+#endif
+                {
+                switch (object_storage_type)
                 {
 #if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
@@ -121,7 +162,8 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     break;
 #endif
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+                }
                 }
             }
             else
@@ -2487,6 +2529,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #endif
 
 #if USE_LANCE
+void registerTableFunctionLance(TableFunctionFactory & factory);
 void registerTableFunctionLance(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3

@@ -4,19 +4,20 @@ use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::Stream;
 use futures::StreamExt;
-use futures::TryStreamExt;
+use lance::dataset::builder::DatasetBuilder;
+use lance::dataset::ReadParams;
+use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
-use object_store::path::Path as ObjectStorePath;
-use object_store::ObjectStore;
+use object_store::DynObjectStore;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr;
-use tempfile::TempDir;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
+use url::Url;
 
 #[repr(C)]
 pub struct ch_lance_error {
@@ -65,7 +66,6 @@ pub struct ch_lance_scan_options {
 pub struct ch_lance_dataset {
     runtime: Runtime,
     dataset: Dataset,
-    _s3_cache: Option<TempDir>,
 }
 
 #[repr(C)]
@@ -122,7 +122,6 @@ struct DatasetOpenOptions {
 
 struct OpenedDataset {
     dataset: Dataset,
-    s3_cache: Option<TempDir>,
 }
 
 unsafe fn apply_dataset_options(
@@ -178,10 +177,36 @@ unsafe fn apply_dataset_options(
     })
 }
 
+async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
+    if let Some(storage_options) = options.storage_options {
+        let object_store = build_s3_store(&options.uri, &storage_options)?;
+        let location = Url::parse(&options.uri).map_err(|err| err.to_string())?;
+        #[allow(deprecated)]
+        let store_options = ObjectStoreParams {
+            object_store: Some((object_store, location)),
+            ..Default::default()
+        };
+        let dataset = DatasetBuilder::from_uri(&options.uri)
+            .with_read_params(ReadParams {
+                store_options: Some(store_options),
+                ..Default::default()
+            })
+            .load()
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset { dataset })
+    } else {
+        let dataset = Dataset::open(&options.uri)
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset { dataset })
+    }
+}
+
 fn build_s3_store(
     uri: &str,
     storage_options: &HashMap<String, String>,
-) -> Result<object_store::aws::AmazonS3, String> {
+) -> Result<Arc<DynObjectStore>, String> {
     let mut builder = if storage_options
         .get("aws_use_environment_credentials")
         .is_some_and(|value| value == "true")
@@ -196,81 +221,10 @@ fn build_s3_store(
             builder = builder.with_config(config_key, value);
         }
     }
-    builder.build().map_err(|err| err.to_string())
-}
-
-async fn download_s3_dataset(
-    uri: &str,
-    storage_options: &HashMap<String, String>,
-) -> Result<TempDir, String> {
-    let url = url::Url::parse(uri).map_err(|err| err.to_string())?;
-    let prefix = url.path().trim_start_matches('/').trim_end_matches('/');
-    if prefix.is_empty() {
-        return Err("Lance S3 dataset path must not be empty".to_string());
-    }
-
-    let store = build_s3_store(uri, storage_options)?;
-    let cache_dir = tempfile::Builder::new()
-        .prefix("ch_lance_s3_")
-        .tempdir()
-        .map_err(|err| err.to_string())?;
-    let prefix_path = ObjectStorePath::from(prefix);
-    let objects = store
-        .list(Some(&prefix_path))
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    for object in objects {
-        let object_path = object.location.to_string();
-        let relative_path = object_path
-            .strip_prefix(prefix)
-            .unwrap_or(&object_path)
-            .trim_start_matches('/');
-        if relative_path.is_empty() {
-            continue;
-        }
-
-        let local_path: PathBuf = cache_dir.path().join(relative_path);
-        if let Some(parent) = local_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        let bytes = store
-            .get(&object.location)
-            .await
-            .map_err(|err| err.to_string())?
-            .bytes()
-            .await
-            .map_err(|err| err.to_string())?;
-        tokio::fs::write(&local_path, bytes)
-            .await
-            .map_err(|err| err.to_string())?;
-    }
-
-    Ok(cache_dir)
-}
-
-async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
-    if let Some(storage_options) = options.storage_options {
-        let cache_dir = download_s3_dataset(&options.uri, &storage_options).await?;
-        let dataset = Dataset::open(cache_dir.path().to_string_lossy().as_ref())
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset {
-            dataset,
-            s3_cache: Some(cache_dir),
-        })
-    } else {
-        let dataset = Dataset::open(&options.uri)
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset {
-            dataset,
-            s3_cache: None,
-        })
-    }
+    builder
+        .build()
+        .map(|store| Arc::new(store) as Arc<DynObjectStore>)
+        .map_err(|err| err.to_string())
 }
 
 fn projection_from_ffi(list: &ch_lance_string_list) -> Result<Vec<String>, String> {
@@ -414,7 +368,6 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
         Ok(opened) => Box::into_raw(Box::new(ch_lance_dataset {
             runtime,
             dataset: opened.dataset,
-            _s3_cache: opened.s3_cache,
         })),
         Err(err) => {
             set_error(error, &err.to_string());
@@ -525,6 +478,56 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_count_rows(
+    dataset: *mut ch_lance_dataset,
+    snapshot_id: u64,
+    predicate: *const c_char,
+    rows: *mut u64,
+    has_value: *mut bool,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if dataset.is_null() || rows.is_null() || has_value.is_null() {
+        set_error(error, "Lance dataset, rows, or has_value pointer is null");
+        return false;
+    }
+
+    let predicate = match cstr_to_string(predicate) {
+        Ok(predicate) => predicate,
+        Err(message) => {
+            set_error(error, &message);
+            return false;
+        }
+    };
+
+    let dataset = &mut *dataset;
+    let count_result = dataset.runtime.block_on(async {
+        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
+            dataset.dataset.clone()
+        } else {
+            dataset.dataset.checkout_version(snapshot_id).await?
+        };
+        if predicate.is_empty() {
+            dataset.count_rows(None).await
+        } else {
+            dataset.count_rows(Some(predicate)).await
+        }
+    });
+
+    match count_result {
+        Ok(count) => {
+            *rows = count as u64;
+            *has_value = true;
+            true
+        }
+        Err(err) => {
+            set_error(error, &err.to_string());
+            false
+        }
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_total_bytes(
     _dataset: *mut ch_lance_dataset,
     _bytes: *mut u64,
@@ -532,6 +535,9 @@ pub unsafe extern "C" fn ch_lance_total_bytes(
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
+    // Lance 2.0.1 does not expose a stable current-snapshot physical byte size
+    // through this API. Do not guess from storage listings because that would
+    // mix versions and hide object-store errors.
     if !has_value.is_null() {
         *has_value = false;
     }
@@ -670,7 +676,10 @@ mod tests {
     use super::*;
     use arrow_array::ffi::from_ffi;
     use arrow_array::ffi::FFI_ArrowArray;
-    use arrow_array::{make_array, Int32Array, RecordBatch, RecordBatchIterator};
+    use arrow_array::{
+        make_array, Date32Array, Float64Array, Int32Array, RecordBatch, RecordBatchIterator,
+        StringArray, TimestampMillisecondArray,
+    };
     use arrow_schema::{DataType, Field, Schema};
     use std::ptr::addr_of_mut;
     use std::sync::Arc;
@@ -712,6 +721,108 @@ mod tests {
             .block_on(Dataset::write(reader, dir.path().to_str().unwrap(), None))
             .unwrap();
         dir
+    }
+
+    fn make_pushdown_batch() -> RecordBatch {
+        RecordBatch::try_from_iter(vec![
+            (
+                "id",
+                Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])) as arrow_array::ArrayRef,
+            ),
+            (
+                "name",
+                Arc::new(StringArray::from(vec!["a", "quote'd", "x", "b", "x"]))
+                    as arrow_array::ArrayRef,
+            ),
+            (
+                "score",
+                Arc::new(Float64Array::from(vec![
+                    Some(1.0),
+                    None,
+                    Some(3.0),
+                    Some(4.0),
+                    None,
+                ])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_date",
+                Arc::new(Date32Array::from(vec![19723, 19724, 19725, 19726, 19727]))
+                    as arrow_array::ArrayRef,
+            ),
+            (
+                "event_time",
+                Arc::new(TimestampMillisecondArray::from(vec![
+                    1_704_067_200_000,
+                    1_704_164_645_123,
+                    1_704_240_000_000,
+                    1_704_326_400_000,
+                    1_704_412_800_000,
+                ])) as arrow_array::ArrayRef,
+            ),
+        ])
+        .unwrap()
+    }
+
+    fn write_pushdown_dataset() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let batch = make_pushdown_batch();
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(reader, dir.path().to_str().unwrap(), None))
+            .unwrap();
+        dir
+    }
+
+    fn scan_row_count(
+        dataset: *mut ch_lance_dataset,
+        snapshot_id: u64,
+        projection: &[CString],
+        predicate: &CString,
+        error: *mut ch_lance_error,
+    ) -> usize {
+        let projection_ptrs = projection
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
+        let scan_options = ch_lance_scan_options {
+            snapshot_id,
+            projection: ch_lance_string_list {
+                values: projection_ptrs.as_ptr(),
+                size: projection_ptrs.len(),
+            },
+            predicate: predicate.as_ptr(),
+            need_only_count: false,
+            max_block_size: 1024,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
+        assert!(!scan.is_null());
+
+        let mut rows = 0;
+        loop {
+            let mut array = FFI_ArrowArray::empty();
+            let mut schema = FFI_ArrowSchema::empty();
+            let mut has_batch = false;
+            assert!(unsafe {
+                ch_lance_next_batch(
+                    scan,
+                    addr_of_mut!(array),
+                    addr_of_mut!(schema),
+                    addr_of_mut!(has_batch),
+                    error,
+                )
+            });
+            if !has_batch {
+                break;
+            }
+            let struct_data = unsafe { from_ffi(array, &schema) }.unwrap();
+            rows += StructArray::from(make_array(struct_data).to_data()).len();
+        }
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+        rows
     }
 
     #[test]
@@ -859,6 +970,165 @@ mod tests {
 
         unsafe {
             ch_lance_free_dataset(latest_dataset);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_scan_accepts_pushdown_predicates() {
+        let dir = write_pushdown_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let projection = [CString::new("id").unwrap()];
+        for (predicate, expected_rows) in [
+            ("id = 1 OR id = 3", 2),
+            ("id IN (1, 3, 5)", 3),
+            ("score IS NULL", 2),
+            ("event_date = DATE '2024-01-02'", 1),
+            ("event_time >= TIMESTAMP '2024-01-02 03:04:05.123'", 4),
+        ] {
+            let predicate = CString::new(predicate).unwrap();
+            assert_eq!(
+                scan_row_count(
+                    dataset,
+                    snapshot.snapshot_id,
+                    &projection,
+                    &predicate,
+                    addr_of_mut!(error),
+                ),
+                expected_rows
+            );
+        }
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_count_rows_uses_predicate_and_snapshot() {
+        let dir = write_pushdown_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let predicate = CString::new("id = 1 OR id = 3").unwrap();
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(unsafe {
+            ch_lance_count_rows(
+                dataset,
+                snapshot.snapshot_id,
+                predicate.as_ptr(),
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 2);
+
+        let append_batch = RecordBatch::try_from_iter(vec![
+            (
+                "id",
+                Arc::new(Int32Array::from(vec![1])) as arrow_array::ArrayRef,
+            ),
+            (
+                "name",
+                Arc::new(StringArray::from(vec!["new"])) as arrow_array::ArrayRef,
+            ),
+            (
+                "score",
+                Arc::new(Float64Array::from(vec![Some(9.0)])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_date",
+                Arc::new(Date32Array::from(vec![19728])) as arrow_array::ArrayRef,
+            ),
+            (
+                "event_time",
+                Arc::new(TimestampMillisecondArray::from(vec![1_704_499_200_000]))
+                    as arrow_array::ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let schema = append_batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(append_batch)].into_iter(), schema);
+        Runtime::new().unwrap().block_on(async {
+            let mut dataset = Dataset::open(dir.path().to_str().unwrap()).await.unwrap();
+            dataset.append(reader, None).await.unwrap();
+        });
+
+        rows = 0;
+        has_value = false;
+        assert!(unsafe {
+            ch_lance_count_rows(
+                dataset,
+                snapshot.snapshot_id,
+                predicate.as_ptr(),
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 2);
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_total_bytes_reports_unavailable() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut bytes = 123;
+        let mut has_value = true;
+        assert!(unsafe {
+            ch_lance_total_bytes(
+                dataset,
+                addr_of_mut!(bytes),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_value);
+
+        unsafe {
             ch_lance_free_dataset(dataset);
         }
     }

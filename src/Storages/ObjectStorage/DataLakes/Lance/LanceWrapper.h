@@ -84,6 +84,7 @@ public:
     SnapshotInfo currentSnapshot() const;
     NamesAndTypesList tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const;
     std::optional<size_t> totalRows(const TableStateSnapshot & snapshot) const;
+    std::optional<size_t> countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const;
     std::optional<size_t> totalBytes() const;
     Scan planScan(const ScanDescription & scan_description) const;
 

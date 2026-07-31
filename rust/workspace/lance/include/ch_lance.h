@@ -63,6 +63,7 @@ void ch_lance_free_dataset(ch_lance_dataset * dataset);
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
 bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t snapshot_id, struct ArrowSchema * schema, ch_lance_error * error);
 bool ch_lance_total_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, uint64_t * rows, bool * has_value, ch_lance_error * error);
+bool ch_lance_count_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, const char * predicate, uint64_t * rows, bool * has_value, ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
