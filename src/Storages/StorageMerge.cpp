@@ -372,6 +372,18 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// The filter is re-derived against every child, so a subcolumn rides its origin column
+    /// only if all of them resolve it.
+    bool include_subcolumns = true;
+    forEachTable([&](const StoragePtr & table)
+    {
+        include_subcolumns = include_subcolumns && table->supportedPrewhereColumnsIncludeSubcolumns();
+    });
+    return include_subcolumns;
+}
+
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,

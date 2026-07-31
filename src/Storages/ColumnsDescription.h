@@ -340,9 +340,11 @@ void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList &
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, const NameSet & insert_time_default_columns = {});
 
 /// Whether a PREWHERE contract (`IStorage::supportedPrewhereColumns`, a set of top-level names)
-/// admits `column_name`: directly, or as a subcolumn riding its origin column - a read of
-/// `json.a` is delegated exactly like a read of `json`, and subcolumn sets (JSON paths) are
-/// open-ended, so the contract can only ever enumerate origins.
-bool prewhereSupportedColumnsContain(const NameSet & supported_columns, const ColumnsDescription & columns, const String & column_name);
+/// admits `column_name`: directly, or - when `include_subcolumns` is set
+/// (`IStorage::supportedPrewhereColumnsIncludeSubcolumns`) - as a subcolumn riding its origin
+/// column: a read of `json.a` is delegated exactly like a read of `json`, and subcolumn sets
+/// (JSON paths) are open-ended, so the contract can only ever enumerate origins.
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
 }

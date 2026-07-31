@@ -905,6 +905,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     estimator,
                     queried_columns,
                     supported_prewhere_columns,
+                    storage->supportedPrewhereColumnsIncludeSubcolumns(),
                     log};
 
                 where_optimizer.optimize(current_info, context);
@@ -2493,9 +2494,10 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
     if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
     {
         const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
         for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
         {
-            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
                 return false;
         }
     }
@@ -2658,10 +2660,11 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();
         const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
 
         for (const auto & column_name : required_columns_from_prewhere)
         {
-            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }

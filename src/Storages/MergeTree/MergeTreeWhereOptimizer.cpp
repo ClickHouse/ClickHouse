@@ -90,11 +90,13 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
+    bool supported_columns_include_subcolumns_,
     LoggerPtr log_)
     : estimator(estimator_)
     , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
+    , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
     , sorting_key_names{NameSet(
           storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
@@ -699,7 +701,7 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     /// The contract lists top-level names; a subcolumn is admitted through its origin column.
     const auto & columns_description = storage_metadata->getColumns();
     for (const auto & column : columns)
-        if (!prewhereSupportedColumnsContain(*supported_columns, columns_description, column))
+        if (!prewhereSupportedColumnsContain(*supported_columns, supported_columns_include_subcolumns, columns_description, column))
             return false;
 
     return true;

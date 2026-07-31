@@ -985,6 +985,13 @@ std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+bool StorageBuffer::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
 bool StorageBuffer::canMoveConditionsToPrewhere() const
 {
     if (auto destination = getDestinationTable())

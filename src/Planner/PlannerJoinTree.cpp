@@ -1736,9 +1736,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
                         {
                             const auto & table_columns = storage_snapshot->metadata->getColumns();
+                            const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
                             for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
                             {
-                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, table_columns, column_name))
+                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
                                 {
                                     can_push_down_filter = false;
                                     break;

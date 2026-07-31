@@ -1112,6 +1112,13 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+bool StorageMaterializedView::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory)
 {
