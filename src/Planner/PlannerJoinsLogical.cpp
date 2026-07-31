@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -52,8 +51,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinOperator.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 
@@ -68,7 +65,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
@@ -130,8 +126,8 @@ struct JoinOperatorBuildContext
         const PlannerContextPtr & planner_context_)
         : join_node(join_node_)
         , planner_context(planner_context_)
-        , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpression()))
-        , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpression()))
+        , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped()))
+        , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped()))
         , left_header(left_header_)
         , right_header(right_header_)
         , expression_actions(*left_header, *right_header)
@@ -542,10 +538,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     }
     else if (join_expression_constant.has_value())
     {
-        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
-        bool join_expression_value = join_expression_constant.value();
+        const bool join_expression_value = *join_expression_constant;
         if (!join_expression_value)
         {
             auto actions_dag = build_context.expression_actions.getActionsDAG();
@@ -571,8 +564,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         SortingStep::Settings(settings));
 
     bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
-    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression(), display_internal_aliases);
-    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression(), display_internal_aliases);
+    auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpressionNode(), display_internal_aliases);
+    auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpressionNode(), display_internal_aliases);
     join_step->setInputLabels(std::move(left_table_label), std::move(right_table_label));
 
     {

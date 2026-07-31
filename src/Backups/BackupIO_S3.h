@@ -64,9 +64,18 @@ public:
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
 
+    /// Overridden to use the native ranged server-side copy (copyS3FileRange) instead of buffers.
+    void copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                             bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                             WriteMode write_mode) override;
+
     std::map<String, String> getSerializedSettings() const override;
 
 private:
+    void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
+                        bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                        WriteMode write_mode);
+
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
