@@ -21,12 +21,11 @@ The XGBoost integration is experimental. Enable it with the `allow_experimental_
 ```sql
 SET allow_experimental_xgboost = 1;
 ```
+
+`predictXGBoost` is the only way to predict with such a dictionary, so with the setting off an already created dictionary cannot be used either.
 :::
 
-You query the dictionary in one of two ways:
-
-- [`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) takes the features as individual arguments and returns the prediction, accepts additional [prediction parameters] (#prediction-parameters).
-- A plain [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) for the target attribute predicts too, taking the feature vector as the key (see [Notes](#notes)). This method doesn't accept additional prediction parameters, if those are necessary please use `predictXGBoost`.
+[`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error (see [Notes](#notes)).
 
 ## Quickstart {#quickstart}
 
@@ -77,12 +76,6 @@ SELECT predictXGBoost('model', 1.0, 2.0) AS prediction;
 
 The ground truth is `2*1 + 3*2 = 8`, so the model's prediction is close.
 
-The same result via `dictGet`, passing the feature vector as the key:
-
-```sql
-SELECT dictGet('model', 'y', (1.0, 2.0)) AS prediction;
-```
-
 ## How it works {#how-it-works}
 
 **Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, all rows are streamed into XGBoost and the model is trained once. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
@@ -113,7 +106,7 @@ An `XGBOOST` dictionary has a fixed shape:
 
 A column that does not match these requirements is rejected when the dictionary loads, not when you create it.
 
-The target must be floating-point because a prediction is a floating-point value and `dictGet` returns the declared attribute type: an integer target would truncate every prediction — a probability of `0.73` read back as `0` — and disagree with `predictXGBoost`, which returns a `Float64`. This does not prevent binary classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
+The target must be floating-point because a prediction is a floating-point value: `predictXGBoost` returns a `Float64`, and an integer target column would describe the model as predicting whole numbers — a probability of `0.73` declared as a `UInt8`. This does not prevent binary classification: the labels in the source table may be integers, you simply declare the target column as `Float32` or `Float64` in the dictionary and the source values are converted on load.
 
 ## Layout parameters {#layout-parameters}
 
@@ -188,7 +181,7 @@ The parameter names map to the prediction parameters of XGBoost's `XGBoosterPred
 
 ## Notes {#notes}
 
-- **Computational dictionary semantics.** This is a *computational* dictionary: `dictGet(dict, '<target>', (feature_1, ...))` predicts for the given feature vector (the key is the input to predict, not a stored key), and `dictHas` always returns `1`. The dictionary cannot be read back as a table with `SELECT * FROM dict`.
+- **Computational dictionary semantics.** This is a *computational* dictionary: it holds a trained model, not rows, and `predictXGBoost` is the only way to query it. The generic dictionary interface is not supported and reports an error: `dictGet` (there is no stored attribute to look up — the "key" is a feature vector to predict from), `dictHas` (no keys are stored), `SELECT * FROM dict` and joining the dictionary as a table. Because `predictXGBoost` is the only entry point, the `allow_experimental_xgboost` setting is in charge of every prediction.
 - **Numeric columns only.** Every feature (key) column must be a native numeric type and the target attribute must be `Float32` or `Float64`. Values are read as floats during training and prediction.
-- **`system.dictionaries` reports no stored items.** The dictionary trains a model instead of storing rows, so `element_count` is `0`, as it is for a `direct` dictionary, and `bytes_allocated` is `0` too: the trained model belongs to XGBoost, which does not report how much memory it holds. `query_count` and `found_rate` count predictions, including those made through `predictXGBoost`.
+- **`system.dictionaries` reports no stored items.** The dictionary trains a model instead of storing rows, so `element_count` is `0`, as it is for a `direct` dictionary, and `bytes_allocated` is `0` too: the trained model belongs to XGBoost, which does not report how much memory it holds. `query_count` and `found_rate` count the rows predicted through `predictXGBoost`.
 - **Feature order matters.** `predictXGBoost` binds its positional feature arguments to the key columns in declaration order, and the number of feature arguments must match the number of key columns.

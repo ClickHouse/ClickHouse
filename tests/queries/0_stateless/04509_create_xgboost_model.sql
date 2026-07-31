@@ -65,9 +65,15 @@ LIFETIME(0);
 SELECT sum(isFinite(predictXGBoost('model_04509_xgb', x1, x2))) FROM inference_04509;
 SELECT any(toTypeName(predictXGBoost('model_04509_xgb', x1, x2))) FROM inference_04509;
 
--- `dictGet` reaches the same model and must agree with `predictXGBoost` on every row.
-SELECT sum(isFinite(dictGet('model_04509_xgb', 'y', (x1, x2)))) FROM inference_04509;
-SELECT sum(predictXGBoost('model_04509_xgb', x1, x2) = dictGet('model_04509_xgb', 'y', (x1, x2))) FROM inference_04509;
+-- The dictionary holds a model, not rows, so the generic dictionary interface is unsupported: predictXGBoost
+-- is the only way to query it.
+SELECT 'Error: the generic dictionary interface is not supported';
+SELECT dictGet('model_04509_xgb', 'y', (1.0, 2.0)); -- { serverError UNSUPPORTED_METHOD }
+SELECT dictGetFloat64('model_04509_xgb', 'y', (1.0, 2.0)); -- { serverError UNSUPPORTED_METHOD }
+SELECT dictGetOrDefault('model_04509_xgb', 'y', (1.0, 2.0), 0.0); -- { serverError UNSUPPORTED_METHOD }
+SELECT dictHas('model_04509_xgb', (1.0, 2.0)); -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM model_04509_xgb; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM dictionary('model_04509_xgb'); -- { serverError UNSUPPORTED_METHOD }
 
 SELECT 'Positive: default hyperparameters (empty layout)';
 
@@ -179,8 +185,8 @@ DROP DICTIONARY model_04509_bad;
 
 SELECT 'Negative: an integer target attribute (rejected at first use)';
 
--- A prediction is a floating-point value and `dictGet` returns the declared attribute type, so an integer
--- target would truncate every prediction and disagree with predictXGBoost.
+-- A prediction is a floating-point value, so an integer target column would misdescribe what the model
+-- predicts.
 SELECT 'Error: only Float32 and Float64 are accepted as the target';
 CREATE DICTIONARY model_04509_bad (x1 Float64, x2 Float64, y UInt8 DEFAULT 0)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
@@ -188,14 +194,15 @@ LAYOUT(XGBOOST()) LIFETIME(0);
 SELECT predictXGBoost('model_04509_bad', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_04509_bad;
 
-SELECT 'Positive: a Float32 target agrees with predictXGBoost';
+SELECT 'Positive: a Float32 target is accepted';
 
--- XGBoost computes in single precision, so narrowing the Float64 prediction to a Float32 target is lossless
--- and dictGet still matches predictXGBoost on every row.
+-- XGBoost computes in single precision, so a Float32 target describes the model exactly; the prediction is a
+-- Float64 either way.
 CREATE DICTIONARY model_04509_f32 (x1 Float64, x2 Float64, y Float32)
 PRIMARY KEY (x1, x2) SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 10)) LIFETIME(0);
-SELECT sum(predictXGBoost('model_04509_f32', x1, x2) = dictGet('model_04509_f32', 'y', (x1, x2))) FROM inference_04509;
+SELECT sum(isFinite(predictXGBoost('model_04509_f32', x1, x2))) FROM inference_04509;
+SELECT any(toTypeName(predictXGBoost('model_04509_f32', x1, x2))) FROM inference_04509;
 DROP DICTIONARY model_04509_f32;
 
 SELECT 'Negative: non-numeric structure (rejected at first use)';
@@ -222,9 +229,9 @@ DROP DICTIONARY model_04509_bad;
 SELECT 'Train on demand with SYSTEM RELOAD DICTIONARY';
 
 -- By default the model is trained lazily, on first use. SYSTEM RELOAD DICTIONARY trains it synchronously
--- on demand instead: after the reload the dictionary is LOADED before any predictXGBoost / dictGet uses
--- it, and a bad configuration is rejected at the reload (which rethrows the training/config error) rather
--- than on first use.
+-- on demand instead: after the reload the dictionary is LOADED before any predictXGBoost call uses it, and
+-- a bad configuration is rejected at the reload (which rethrows the training/config error) rather than on
+-- first use.
 
 CREATE DICTIONARY model_04509_eager (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2)
@@ -232,7 +239,7 @@ SOURCE(CLICKHOUSE(TABLE 'training_04509'))
 LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 10))
 LIFETIME(0);
 
--- Trained by the reload: the dictionary is LOADED before any predictXGBoost / dictGet uses it.
+-- Trained by the reload: the dictionary is LOADED before any predictXGBoost call uses it.
 SYSTEM RELOAD DICTIONARY model_04509_eager;
 SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = 'model_04509_eager';
 SELECT isFinite(predictXGBoost('model_04509_eager', 1.0, 2.0));

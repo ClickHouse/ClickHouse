@@ -4,6 +4,9 @@
 -- The XGBoost integration (the XGBOOST dictionary layout and the predictXGBoost function) is experimental
 -- and gated behind the `allow_experimental_xgboost` setting. With the setting off (the default) both the
 -- CREATE DICTIONARY and the function must be rejected.
+--
+-- predictXGBoost is the only way to predict with an XGBOOST dictionary - the generic dictionary interface is
+-- unsupported for it - so gating the function leaves no way to reach the model while the setting is off.
 
 DROP DICTIONARY IF EXISTS model_04603_xgb;
 DROP TABLE IF EXISTS training_04603;
@@ -31,10 +34,13 @@ LIFETIME(0);
 
 SELECT isFinite(predictXGBoost('model_04603_xgb', 1.0, 2.0));
 
--- Turning the setting back off must reject predictXGBoost even against an already-created dictionary.
+-- Turning the setting back off must reject predictXGBoost even against an already-created dictionary, and
+-- the model must not be reachable through the generic dictionary functions either.
 SET allow_experimental_xgboost = 0;
 
 SELECT predictXGBoost('model_04603_xgb', 1.0, 2.0); -- { serverError SUPPORT_IS_DISABLED }
+SELECT dictGet('model_04603_xgb', 'y', (1.0, 2.0)); -- { serverError UNSUPPORTED_METHOD }
+SELECT dictHas('model_04603_xgb', (1.0, 2.0)); -- { serverError UNSUPPORTED_METHOD }
 
 DROP DICTIONARY model_04603_xgb;
 DROP TABLE training_04603;

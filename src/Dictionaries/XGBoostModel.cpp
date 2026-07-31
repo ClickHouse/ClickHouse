@@ -228,8 +228,8 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
         for (uint64_t i = 0; i < out_dim; ++i)
             out_len *= out_shape[i];
 
-        /// One prediction per input row is the only shape a dictionary can serve: `predictXGBoost` and
-        /// `dictGet` both return a single `Float64` per row.
+        /// One prediction per input row is the only shape a dictionary can serve: `predictXGBoost` returns a
+        /// single `Float64` per row.
         if (out_len != rows)
             throw Exception(
                 ErrorCodes::XGBOOST_ERROR,

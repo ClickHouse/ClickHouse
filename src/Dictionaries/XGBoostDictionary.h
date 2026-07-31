@@ -22,8 +22,9 @@ namespace DB
 /// single attribute is the training target (`Float32` or `Float64`).
 /// The source supplies the training rows as `(feature_1, ..., feature_k, target)`.
 ///
-/// A `dictGet` call for the target attribute runs inference for the given feature vector. The dedicated
-/// `predictXGBoost` function exposes the same model with the features passed as individual arguments.
+/// The `predictXGBoost` function is the only way to query the model: it takes the features as individual
+/// arguments. The dictionary holds a model rather than rows, so the generic dictionary interface is not
+/// supported - `getColumn` (`dictGet`), `hasKeys` (`dictHas`) and `read` all throw.
 class XGBoostDictionary final : public IDictionary
 {
 public:
@@ -48,10 +49,6 @@ public:
     size_t getBytesAllocated() const override { return 0; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
-
-    /// Records `count` predicted rows from the dedicated `predictXGBoost` function, which bypasses `getColumn`
-    /// but should still be reflected in the dictionary query statistics.
-    void incrementQueryCount(size_t count) const { query_count.fetch_add(count, std::memory_order_relaxed); }
 
     /// Every feature vector is predictable, so the found rate is one once any query has run.
     double getFoundRate() const override { return query_count.load(std::memory_order_relaxed) == 0 ? 0.0 : 1.0; }
@@ -78,6 +75,7 @@ public:
         return std::make_shared<XGBoostDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration);
     }
 
+    /// Unsupported: a model has no attributes to look up. Throws, pointing at `predictXGBoost`.
     ColumnPtr getColumn(
         const std::string & attribute_name,
         const DataTypePtr & attribute_type,
@@ -85,8 +83,10 @@ public:
         const DataTypes & key_types,
         DefaultOrFilter default_or_filter) const override;
 
+    /// Unsupported: a model stores no keys. Throws.
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
+    /// Unsupported: a model is not a table of rows. Throws.
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     /// Names of the feature columns in training order (the key columns, in declaration order). Used by
@@ -94,7 +94,8 @@ public:
     const VectorWithMemoryTracking<String> & getFeatureNames() const;
 
     /// Runs inference on a block whose columns are the features (named as in `getFeatureNames`), returning a
-    /// Float64 column of predictions with one element per row.
+    /// Float64 column of predictions with one element per row. Counts the predicted rows in the dictionary
+    /// query statistics, as this is the only way the model is queried.
     ColumnPtr predict(const Block & features, const PredictParameters & params) const;
 
 private:

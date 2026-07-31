@@ -2,13 +2,11 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/XGBoostModel.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/logger_useful.h>
@@ -83,63 +81,34 @@ const VectorWithMemoryTracking<String> & XGBoostDictionary::getFeatureNames() co
 
 ColumnPtr XGBoostDictionary::predict(const Block & features, const PredictParameters & params) const
 {
+    query_count.fetch_add(features.rows(), std::memory_order_relaxed);
+
     return model->predict(features, params);
 }
 
 
 ColumnPtr XGBoostDictionary::getColumn(
-    const std::string & attribute_name,
-    const DataTypePtr & attribute_type,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    DefaultOrFilter default_or_filter) const
+    const std::string &,
+    const DataTypePtr &,
+    const Columns &,
+    const DataTypes &,
+    DefaultOrFilter) const
 {
-    /// Only the target attribute is computable (it is the prediction). The features are the key, not an
-    /// attribute, so there is nothing else to query.
-    if (attribute_name != configuration.target_name)
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "XGBoost dictionary only supports querying the target attribute '{}' (the prediction), got '{}'",
-            configuration.target_name,
-            attribute_name);
-
-    dict_struct.validateKeyTypes(key_types);
-
-    const auto & feature_names = getFeatureNames();
-    const size_t rows = key_columns.empty() ? 0 : key_columns.front()->size();
-
-    /// The predicted value is always available, so mark every row as resolved for the short-circuit path.
-    if (std::holds_alternative<RefFilter>(default_or_filter))
-        std::get<RefFilter>(default_or_filter).get().assign(rows, static_cast<UInt8>(0));
-
-    /// Bind each key column to the corresponding feature name (both are in declaration order).
-    Block features;
-    for (size_t i = 0; i < feature_names.size(); ++i)
-        features.insert({key_columns[i], (*dict_struct.key)[i].type, feature_names[i]});
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-
-    ColumnPtr predictions = predict(features, {});
-
-    /// `dictGet` must return the declared attribute type; predictions are Float64, so cast to it. The target
-    /// is required to be `Float32` or `Float64` (see `registerDictionaryXGBoost`), and XGBoost computes in
-    /// single precision, so this cast is lossless and `dictGet` agrees with `predictXGBoost` exactly.
-    return castColumn({predictions, std::make_shared<DataTypeFloat64>(), ""}, attribute_type);
+    /// The dictionary holds a trained model, not rows: there is no attribute to look up, and the "key" is a
+    /// feature vector to predict from rather than a stored key. `predictXGBoost` is the only way to query it,
+    /// which also keeps the experimental `allow_experimental_xgboost` setting in charge of every prediction.
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "An XGBoost dictionary does not support `dictGet`. Use function `predictXGBoost('{}', feature_1, ...)` to predict",
+        getFullName());
 }
 
 
-ColumnUInt8::Ptr XGBoostDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr XGBoostDictionary::hasKeys(const Columns &, const DataTypes &) const
 {
-    dict_struct.validateKeyTypes(key_types);
-
-    /// Any feature vector can be predicted, so every key is considered present.
-    const size_t rows = key_columns.front()->size();
-    auto result = ColumnUInt8::create(rows);
-    result->getData().assign(rows, static_cast<UInt8>(1));
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-
-    return result;
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "An XGBoost dictionary does not support `dictHas`: it stores no keys, it predicts from a feature vector");
 }
 
 
@@ -236,9 +205,10 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         /* has_layout_complex= */ false,
         Documentation{
             .description = "A computational dictionary that trains an immutable XGBoost model at load time from a source table of "
-                           "`(features..., target)` rows, then predicts the target for a feature vector through `dictGet` or the "
+                           "`(features..., target)` rows, then predicts the target for a feature vector through the "
                            "`predictXGBoost` function. The feature columns are the key (any native numeric type) and the single "
-                           "attribute is the target (`Float32` or `Float64`)."
+                           "attribute is the target (`Float32` or `Float64`). The dictionary holds a model instead of rows, so "
+                           "`dictGet`, `dictHas` and reading it as a table are not supported."
 #if !USE_XGBOOST
                            " Currently unavailable, because this ClickHouse build does not include XGBoost support."
 #endif

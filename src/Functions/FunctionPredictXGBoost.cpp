@@ -53,8 +53,8 @@ namespace
 /// Features are passed as individual columns, positionally: argument i (after the dictionary name) is bound
 /// to the model's i-th feature (the i-th key column, in declaration order). The optional trailing `params`
 /// is a constant `Map(String, <numeric>)` of XGBoost prediction parameters (for example
-/// `map('type', 0, 'iteration_end', 0)`), forwarded to the XGBoost prediction call. This is the same model
-/// that `dictGet(dictionary_name, target, (feature1, ...))` reaches.
+/// `map('type', 0, 'iteration_end', 0)`), forwarded to the XGBoost prediction call. This function is the only
+/// way to query the model: an XGBoost dictionary does not support the generic dictionary interface.
 class FunctionPredictXGBoost final : public IFunction
 {
 public:
@@ -132,7 +132,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
@@ -174,13 +174,7 @@ public:
             block.insert({arg.column->convertToFullColumnIfConst(), arg.type, feature_names[c]});
         }
 
-        auto result = xgb_dict->predict(block, params);
-
-        /// This bypasses `getColumn`, so record the predicted rows to keep the dictionary query statistics
-        /// consistent with the equivalent `dictGet` path.
-        xgb_dict->incrementQueryCount(input_rows_count);
-
-        return result;
+        return xgb_dict->predict(block, params);
     }
 
 private:
@@ -251,8 +245,8 @@ REGISTER_FUNCTION(PredictXGBoost)
         .description = "Predicts a numeric target for a feature vector using an "
                        "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary: "
                        "predictXGBoost(dictionary_name, feature1, feature2, ...[, params]). Features are passed positionally "
-                       "in the dictionary's key order. Returns the same value as "
-                       "`dictGet(dictionary_name, target, (feature1, feature2, ...))`.",
+                       "in the dictionary's key order. This is the only way to query such a dictionary: it holds a trained "
+                       "model instead of rows, so `dictGet` and `dictHas` are not supported for it.",
         .syntax = "predictXGBoost(dictionary_name, feature1[, feature2, ...][, params])",
         .arguments
         = {{"dictionary_name",

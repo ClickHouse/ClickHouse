@@ -84,8 +84,8 @@ private:
     /// Vector of labels.
     VectorWithMemoryTracking<float> labels;
 
-    /// A trained model is shared through the dictionary, so concurrent predictXGBoost / dictGet queries
-    /// would otherwise race inside XGBoosterPredict, which writes into a prediction buffer owned by the booster.
+    /// A trained model is shared through the dictionary, so concurrent predictXGBoost queries would otherwise
+    /// race inside XGBoosterPredict, which writes into a prediction buffer owned by the booster.
     std::mutex predict_mutex;
 };
 
