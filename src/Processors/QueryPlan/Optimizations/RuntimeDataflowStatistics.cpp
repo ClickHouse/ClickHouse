@@ -113,21 +113,6 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-/// Uncompressed size of a column for the purpose of the estimate. `byteSize` of a `ColumnAggregateFunction`
-/// counts the state pointers plus the arena the column owns, and a column of states assembled by
-/// `AggregatingInOrderTransform` (see `addArenasToAggregateColumns`) does not own the arena its states live in,
-/// so `byteSize` degenerates to one pointer per row there. Size such a column from its serialized states
-/// instead - only the states, which is what `SerializationAggregateFunction` puts on the wire and what
-/// `Aggregator::estimateSizeOfCompressedState` measures - sampling as many of them as that function does per
-/// bucket, so that both producers of the `AggregationState` statistic measure the same thing.
-static size_t estimateUncompressedColumnSize(const IColumn & column)
-{
-    static constexpr size_t max_states_to_serialize = 100;
-    if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
-        return aggregate_column->sampledSerializedStateBytes(max_states_to_serialize);
-    return column.byteSize();
-}
-
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -141,13 +126,45 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
 {
     Stopwatch watch;
 
-    size_t block_bytes = 0;
+    const bool sample_block = shouldSampleBlock(statistics, num_rows);
+
+    /// The uncompressed size of a column for the purpose of the estimate. `byteSize` of a
+    /// `ColumnAggregateFunction` counts the state pointers plus the arena the column owns, and a column of
+    /// states assembled by `AggregatingInOrderTransform` (see `addArenasToAggregateColumns`) does not own
+    /// the arena its states live in, so `byteSize` degenerates to one pointer per row there. Size such
+    /// columns from their serialized states instead - only the states, which is what
+    /// `SerializationAggregateFunction` puts on the wire and what `Aggregator::estimateSizeOfCompressedState`
+    /// measures - sampling as many of them as that function does per bucket, so that both producers of the
+    /// `AggregationState` statistic measure the same thing. Serializing states is not cheap, and when
+    /// `aggregation_in_order_max_block_bytes` splits large states into many small blocks, doing it per block
+    /// would serialize every state of every block; so only the sampled blocks serialize, and the rest are
+    /// extrapolated from the per-row figure the sampled blocks give, like the compression ratio is.
+    size_t plain_bytes = 0;
+    bool has_aggregate_states = false;
     for (const auto & col : cols)
-        block_bytes += estimateUncompressedColumnSize(*col.column);
+    {
+        if (typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
+            has_aggregate_states = true;
+        else
+            plain_bytes += col.column->byteSize();
+    }
+
+    /// Until the first sampled block lands there is no per-row figure to extrapolate from, so blocks
+    /// racing with the first sampled one serialize their states too and count as extra samples.
+    const bool serialize_states = has_aggregate_states
+        && (sample_block || statistics.serialized_state_rows.load(std::memory_order_relaxed) == 0);
+    size_t serialized_state_bytes = 0;
+    if (serialize_states)
+    {
+        static constexpr size_t max_states_to_serialize = 100;
+        for (const auto & col : cols)
+            if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
+                serialized_state_bytes += aggregate_column->sampledSerializedStateBytes(max_states_to_serialize);
+    }
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    if (shouldSampleBlock(statistics, num_rows))
+    if (sample_block)
     {
         for (const auto & col : cols)
         {
@@ -158,6 +175,21 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     }
 
     std::lock_guard lock(statistics.mutex);
+    size_t block_bytes = plain_bytes;
+    if (serialize_states)
+    {
+        statistics.serialized_state_bytes += serialized_state_bytes;
+        statistics.serialized_state_rows += num_rows;
+        block_bytes += serialized_state_bytes;
+    }
+    else if (has_aggregate_states)
+    {
+        /// Every block of one statistics stream has the same layout, so the block's rows are a sound base
+        /// for the per-row figure even when the block holds several aggregate-state columns.
+        block_bytes += static_cast<size_t>(
+            static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(num_rows)
+            / static_cast<double>(statistics.serialized_state_rows.load(std::memory_order_relaxed)));
+    }
     statistics.bytes += block_bytes;
     if (compressed_bytes)
     {
