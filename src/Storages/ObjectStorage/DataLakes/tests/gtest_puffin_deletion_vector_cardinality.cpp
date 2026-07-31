@@ -26,7 +26,6 @@ constexpr UInt8 two_position_dv_blob[] = {
     0x10, 0x00, 0x00, 0x00, 0x02, 0x00, 0x05, 0x00, 0x2C, 0xDB, 0x9F, 0xC1,
 };
 
-constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr Int64 large_declared_length = 64 * 1024 * 1024;
 
 }

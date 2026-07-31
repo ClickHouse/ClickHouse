@@ -44,9 +44,6 @@ struct ScopedPuffinFileReadProfileEvent
 };
 
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
-/// Matches Iceberg DeleteLoader / Puffin format absolute blob-size ceiling.
-constexpr size_t PUFFIN_DV_MAX_BLOB_SIZE = 2ULL * 1024 * 1024 * 1024;
-constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
 
@@ -223,6 +220,27 @@ void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
 }
 
+void validateDeletionVectorEnvelope(const UInt8 * header, Int64 length)
+{
+    const UInt32 combined_length = readBigEndianUInt32(header);
+    if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+
+    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    UInt64 expected_blob_size = 0;
+    if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    if (static_cast<UInt64>(length) != expected_blob_size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector blob size {} does not match combined length {}",
+            length,
+            combined_length);
+}
+
 std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes, std::optional<UInt64> expected_cardinality)
 {
     if (expected_cardinality.has_value() && *expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
@@ -276,24 +294,7 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
 
     UInt8 header[8];
     file.readStrict(reinterpret_cast<char *>(header), sizeof(header));
-
-    const UInt32 combined_length = readBigEndianUInt32(header);
-    if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
-
-    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
-
-    UInt64 expected_blob_size = 0;
-    if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
-
-    if (static_cast<UInt64>(length) != expected_blob_size)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector blob size {} does not match combined length {}",
-            length,
-            combined_length);
+    validateDeletionVectorEnvelope(header, length);
 
     String blob_data(static_cast<size_t>(length), '\0');
     std::memcpy(blob_data.data(), header, sizeof(header));
