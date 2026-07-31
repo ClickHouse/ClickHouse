@@ -21,32 +21,39 @@ namespace Mongo
 
 bool MongoIdentityFunction::parseImpl(ASTPtr & node)
 {
-    if (data.IsInt())
+    /// Scalar comparisons must cover every type the insert path can create a column
+    /// from: bool, int, long, double, and String.
+    Field scalar_value;
+    if (data.IsBool())
+        scalar_value = Field(data.GetBool());
+    else if (data.IsInt())
+        scalar_value = Field(data.GetInt());
+    else if (data.IsInt64())
+        scalar_value = Field(data.GetInt64());
+    else if (data.IsNumber())
+        scalar_value = Field(data.GetDouble());
+    else if (data.IsString())
+        scalar_value = Field(data.GetString());
+    else if (data.IsObject())
     {
-        auto identifier = make_intrusive<ASTIdentifier>(edge_name);
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt()));
-        auto where_condition = makeASTFunction("equals", identifier, literal);
-        node = where_condition;
-        return true;
-    }
-    if (data.IsString())
-    {
-        auto identifier = make_intrusive<ASTIdentifier>(edge_name);
-        auto literal = make_intrusive<ASTLiteral>(Field(data.GetString()));
-        auto where_condition = makeASTFunction("equals", identifier, literal);
-        node = where_condition;
-        return true;
-    }
-    if (data.IsObject())
-    {
-        auto parser = createInversedParser(std::move(data), metadata, edge_name);
-        if (!parser->parseImpl(node))
-        {
+        /// An operator object supports exactly one known operator; anything else (an empty
+        /// object, several operators at once, or an unknown operator such as `$in`) is
+        /// rejected here instead of silently dropping conditions or dereferencing a null
+        /// parser below.
+        if (data.MemberCount() != 1)
             return false;
-        }
-        return true;
+        auto parser = createInversedParser(std::move(data), metadata, edge_name);
+        if (!parser)
+            return false;
+        return parser->parseImpl(node);
     }
-    return false;
+    else
+        return false;
+
+    auto identifier = make_intrusive<ASTIdentifier>(edge_name);
+    auto literal = make_intrusive<ASTLiteral>(std::move(scalar_value));
+    node = makeASTFunction("equals", identifier, literal);
+    return true;
 }
 
 bool MongoLiteralFunction::parseImpl(ASTPtr & node)
@@ -159,9 +166,21 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
 
 bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
 {
+    if (data.IsBool())
+    {
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetBool()));
+        node = literal;
+        return true;
+    }
     if (data.IsInt())
     {
         auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt()));
+        node = literal;
+        return true;
+    }
+    if (data.IsInt64())
+    {
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetInt64()));
         node = literal;
         return true;
     }

@@ -1,6 +1,5 @@
 #include <Parsers/Mongo/Utils.h>
 
-#include <algorithm>
 #include <optional>
 #include <string>
 
@@ -54,12 +53,103 @@ findField(const rapidjson::Value & value, const std::string & key, rapidjson::Do
     return std::nullopt;
 }
 
+namespace
+{
+
+/** Converts Mongo shell style single quoted string literals into JSON double quoted ones,
+  * respecting string boundaries: apostrophes inside double quoted strings are preserved
+  * (`{"name": "O'Reilly"}` stays intact), double quotes inside single quoted strings are
+  * escaped, and backslash escape sequences are honored in both kinds of strings.
+  */
+std::string normalizeQuotes(const std::string & input)
+{
+    enum class State
+    {
+        Outside,
+        InsideDoubleQuoted,
+        InsideSingleQuoted,
+    };
+
+    std::string result;
+    result.reserve(input.size());
+    State state = State::Outside;
+
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        const char c = input[i];
+        switch (state)
+        {
+            case State::Outside:
+            {
+                if (c == '"')
+                {
+                    state = State::InsideDoubleQuoted;
+                    result.push_back(c);
+                }
+                else if (c == '\'')
+                {
+                    state = State::InsideSingleQuoted;
+                    result.push_back('"');
+                }
+                else
+                    result.push_back(c);
+                break;
+            }
+            case State::InsideDoubleQuoted:
+            {
+                if (c == '\\' && i + 1 < input.size())
+                {
+                    result.push_back(c);
+                    result.push_back(input[++i]);
+                }
+                else
+                {
+                    if (c == '"')
+                        state = State::Outside;
+                    result.push_back(c);
+                }
+                break;
+            }
+            case State::InsideSingleQuoted:
+            {
+                if (c == '\\' && i + 1 < input.size())
+                {
+                    const char next = input[++i];
+                    /// `\'` is an escaped apostrophe in a single quoted string; JSON needs it bare.
+                    if (next == '\'')
+                        result.push_back('\'');
+                    else
+                    {
+                        result.push_back('\\');
+                        result.push_back(next);
+                    }
+                }
+                else if (c == '\'')
+                {
+                    state = State::Outside;
+                    result.push_back('"');
+                }
+                else if (c == '"')
+                    result.append("\\\"");
+                else
+                    result.push_back(c);
+                break;
+            }
+        }
+    }
+
+    /// An unterminated string literal is left as-is; the JSON parser below reports it.
+    return result;
+}
+
+}
+
 rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array)
 {
     std::string input(begin, end);
     if (wrap_into_array)
         input = "[" + input + "]";
-    std::replace(input.begin(), input.end(), '\'', '"');
+    input = normalizeQuotes(input);
 
     rapidjson::Document document;
 
