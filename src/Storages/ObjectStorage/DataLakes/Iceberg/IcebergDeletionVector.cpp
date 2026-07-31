@@ -37,6 +37,43 @@ extern const SettingsBool use_puffin_files_cache;
 namespace DB::Iceberg
 {
 
+void validateDeletionVectorPositionsAgainstDataFile(
+    std::span<const UInt64> deleted_positions,
+    UInt64 expected_cardinality,
+    Int64 data_file_record_count)
+{
+    if (data_file_record_count < 0)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Data file record_count {} must be non-negative",
+            data_file_record_count);
+    }
+
+    const UInt64 data_file_rows = static_cast<UInt64>(data_file_record_count);
+
+    if (expected_cardinality > data_file_rows)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Deletion vector cardinality {} exceeds data file record_count {}",
+            expected_cardinality,
+            data_file_record_count);
+    }
+
+    for (UInt64 position : deleted_positions)
+    {
+        if (position >= data_file_rows)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Deletion vector position {} is out of range for data file record_count {}",
+                position,
+                data_file_record_count);
+        }
+    }
+}
+
 namespace
 {
 
@@ -47,6 +84,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     Int64 content_size_in_bytes,
     const IcebergPathFromMetadata & expected_data_file,
     UInt64 expected_cardinality,
+    Int64 data_file_record_count,
     ContextPtr context,
     LoggerPtr log,
     bool disable_filesystem_cache)
@@ -77,6 +115,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     auto deleted_positions = readDeletionVectorFromPuffin(
         *read_buffer, content_offset, content_size_in_bytes, expected_cardinality);
 
+    validateDeletionVectorPositionsAgainstDataFile(deleted_positions, expected_cardinality, data_file_record_count);
+
     if (deleted_positions.empty())
         return nullptr;
 
@@ -104,6 +144,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     const IcebergPathFromMetadata & expected_data_file,
     const std::optional<IcebergPathFromMetadata> & referenced_data_file,
     Int64 expected_cardinality,
+    Int64 data_file_record_count,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -124,7 +165,25 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             expected_cardinality);
     }
 
+    if (data_file_record_count < 0)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Data file record_count {} must be non-negative",
+            data_file_record_count);
+    }
+
     const UInt64 expected_cardinality_u64 = static_cast<UInt64>(expected_cardinality);
+
+    /// Fail closed before I/O when declared DV cardinality cannot fit in the data file.
+    if (expected_cardinality_u64 > static_cast<UInt64>(data_file_record_count))
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Deletion vector cardinality {} exceeds data file record_count {}",
+            expected_cardinality,
+            data_file_record_count);
+    }
 
     const bool use_cache = context->getSettingsRef()[Setting::use_puffin_files_cache];
     if (!use_cache)
@@ -137,6 +196,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             content_size_in_bytes,
             expected_data_file,
             expected_cardinality_u64,
+            data_file_record_count,
             context,
             log,
             false);
@@ -163,6 +223,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             content_size_in_bytes,
             expected_data_file,
             expected_cardinality_u64,
+            data_file_record_count,
             context,
             log,
             false);
@@ -178,6 +239,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             content_size_in_bytes,
             expected_data_file,
             expected_cardinality_u64,
+            data_file_record_count,
             context,
             log,
             true);

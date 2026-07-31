@@ -407,6 +407,14 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
             Iceberg::requireParquetDataFileForRowDeletes(object_info->info.file_format, "Deletion vectors");
 
+            if (!object_info->info.record_count.has_value())
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Data file '{}' is missing record_count required to validate deletion vector positions",
+                    data_file_path);
+            }
+
             const auto & parsed_entry = deletion_vector->parsed_entry;
             auto excluded_rows = Iceberg::loadDeletionVector(
                 object_storage,
@@ -416,6 +424,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 data_file_path,
                 referenced_data_file,
                 parsed_entry->record_count,
+                *object_info->info.record_count,
                 local_context,
                 logger);
 
