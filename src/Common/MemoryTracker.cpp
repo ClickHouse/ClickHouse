@@ -334,6 +334,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     {
         if (memoryTrackerCanThrow(level, true) && enforce_memory_limit)
         {
+            /// Revert eagerly: concurrent threads must not observe the rejected charge
+            /// while the exception below is being constructed.
             rollback_allocation = false;
             rollbackAllocation(size);
 
@@ -434,6 +436,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
+                /// Revert eagerly: concurrent threads must not observe the rejected charge
+                /// while the exception below is being constructed.
                 rollback_allocation = false;
                 rollbackAllocation(size);
 
