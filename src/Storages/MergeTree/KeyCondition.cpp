@@ -2740,10 +2740,11 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
 /// though they all share the `Types::Decimal64` tag and DO match at runtime
 /// (`has([tuple(CAST('…00.123' AS DateTime64(3)))], tuple(CAST('…00.123' AS DateTime64(6))))` is 1):
 /// there the preparation cast silently TRUNCATES rather than nulling
-/// (`accurateCastOrNull(DateTime64(6) '…00.123456', 'DateTime64(3)')` = `…00.123`), which is this
-/// PR's own bug class. They keep going through the `equals` branch, which already answers them
-/// correctly - it compares a decimal's scale, so `Decimal(10, 2)` vs `Decimal(18, 2)` is admitted
-/// (runtime 1) and `Decimal(10, 2)` vs `Decimal(20, 2)` declines (runtime 0).
+/// (`accurateCastOrNull(DateTime64(6) '…00.123456', 'DateTime64(3)')` = `…00.123`), which is the
+/// unsound conversion this check exists to reject. They keep going through the `equals` branch, which
+/// already answers them correctly - it compares a decimal's scale, so `Decimal(10, 2)` vs
+/// `Decimal(18, 2)` is admitted (runtime 1) and `Decimal(10, 2)` vs `Decimal(20, 2)` declines
+/// (runtime 0).
 static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, const IDataType & right)
 {
     const WhichDataType left_which(left);

@@ -768,7 +768,11 @@ CREATE TABLE ctp (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) PARTITI
 CREATE TABLE ctpo (a UInt32, b UInt32) ENGINE = Memory;
 INSERT INTO ctp VALUES (1, 1); INSERT INTO ctp VALUES (2, 2);
 INSERT INTO ctpo VALUES (1, 1), (2, 2);
-SELECT 'CTP plain key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctp WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%element set%';
+-- Assert the partition reduction, not just the atom's presence: a relaxed atom is still installed
+-- (still prints `element set`) but sets `can_be_false = true` before the negation, so `NOT has` stops
+-- pruning while the answer stays correct. Only the part count separates exact from relaxed here.
+-- `Parts:` is format-independent, so the `explain_query_plan_default` pin at the top suffices.
+SELECT 'CTP plain key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ctp WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%Parts: 1/2%';
 SELECT 'CTP plain key NOT has',
     (SELECT count() FROM ctp WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) = (SELECT count() FROM ctpo WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b)));
 DROP TABLE ctp; DROP TABLE ctpo;
