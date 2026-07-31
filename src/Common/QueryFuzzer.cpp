@@ -3969,7 +3969,7 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
     /// In oracle mode, never remove the topmost query's WHERE/HAVING — both are
     /// needed for TLP partitioning and TLP HAVING tests. Sub-query WHERE/HAVING
     /// are fine to drop: the oracle only checks the outermost query shape.
-    const bool topmost = current_ast_depth <= 1;
+    const bool topmost = current_select_nesting <= 1;
     const bool block_remove_for_oracle = oracle_mode && topmost
         && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING);
     if (fuzz_rand() % 50 == 0 && !block_remove_for_oracle)
@@ -5337,7 +5337,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 if (fuzz_rand() % 20 == 0)
                 {
-                    /// Add or remove a single aggregate combinator suffix
+                    /// Add or remove a single aggregate combinator suffix.
+                    /// Deliberately a subset of `aggregate_combinator_suffixes`
+                    /// (QueryFuzzer.h): each entry here has matching
+                    /// argument-fixup logic below (`If` appends a condition,
+                    /// `ArgMin`/`ArgMax` a key, `Tuple` wraps arguments), and
+                    /// combinators without such logic would only produce
+                    /// unresolvable names.
                     static const Strings combinators
                         = {"If", "Array", "State", "SimpleState", "Merge", "ForEach", "ArgMin", "ArgMax", "Map", "Tuple"};
                     const String & combo = combinators[fuzz_rand() % combinators.size()];
@@ -5537,6 +5543,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
+        /// Track SELECT-query nesting (1 = the outermost SELECT). The raw
+        /// `current_ast_depth` cannot identify the outer query: a plain SELECT
+        /// parses as `ASTSelectWithUnionQuery` -> `ASTExpressionList` ->
+        /// `ASTSelectQuery`, so the real top-level SELECT already sits at AST
+        /// depth 3. The oracle-mode guards below must fire exactly for the
+        /// outermost SELECT (preserve its WHERE / HAVING / shape), so they key
+        /// off this counter instead of the AST depth. The increment spans the
+        /// recursive `fuzz(select->children)` at the end of this branch, so
+        /// subqueries see a nesting level greater than 1.
+        ScopedIncrement select_nesting_increment(current_select_nesting);
+
         fuzzColumnLikeExpressionList(select->select().get());
 
         if (fuzz_rand() % 50 == 0)
@@ -5701,7 +5718,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
-        else if ((!oracle_mode || current_ast_depth > 1) && fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_select_nesting > 1) && fuzz_rand() % 50 == 0)
         {
             /// Adding a random GROUP BY to the topmost query changes the
             /// SELECT-list shape under the oracle's feet, so the oracle's
@@ -5736,7 +5753,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
             }
-            else if (!select->prewhere().get() && (!oracle_mode || current_ast_depth > 1))
+            else if (!select->prewhere().get() && (!oracle_mode || current_select_nesting > 1))
             {
                 /// In oracle mode, don't create PREWHERE on the topmost query at
                 /// all: `isSafeForOracle` rejects PREWHERE (its interaction with
@@ -5756,7 +5773,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if (fuzz_rand() % ((oracle_mode && current_ast_depth <= 1) ? 10 : 50) == 0)
+        else if (fuzz_rand() % ((oracle_mode && current_select_nesting <= 1) ? 10 : 50) == 0)
         {
             /// In oracle mode, add a WHERE to the topmost query much more
             /// eagerly: every TLP oracle and Identity WHERE require one, and
@@ -5783,7 +5800,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if ((!oracle_mode || current_ast_depth > 1) && fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_select_nesting > 1) && fuzz_rand() % 50 == 0)
         {
             /// Same rationale as above: no topmost PREWHERE in oracle mode.
             addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
@@ -5827,7 +5844,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// tests) carry LIMIT on most SELECTs and a topmost LIMIT excludes
             /// every oracle except Subquery wrap, so shedding it re-opens the
             /// query for the whole suite.
-            if (fuzz_rand() % ((oracle_mode && current_ast_depth <= 1) ? 10 : 50) == 0)
+            if (fuzz_rand() % ((oracle_mode && current_select_nesting <= 1) ? 10 : 50) == 0)
             {
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
@@ -7739,6 +7756,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
+    current_select_nesting = 0;
     iteration_count = 0;
     debug_visited_nodes.clear();
     debug_top_ast = &ast;
