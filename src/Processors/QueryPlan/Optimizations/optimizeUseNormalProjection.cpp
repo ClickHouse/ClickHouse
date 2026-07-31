@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
@@ -36,6 +37,11 @@ namespace Setting
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
 
 }
@@ -340,6 +346,15 @@ std::optional<String> optimizeUseNormalProjections(
 
     if (!canUseProjectionForReadingStep(reading))
         return {};
+
+    /// Test hook: make a parallel-replicas follower skip the projection short-circuit (see the same
+    /// failpoint in optimizeUseAggregateProjections). Gated on the follower predicate so it never
+    /// affects the initiator's plan.
+    fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
+    {
+        if (reading->isParallelReplicasLocalPlanForFollower())
+            return {};
+    });
 
     auto iter = stack.rbegin();
     while (std::next(iter) != stack.rend())
@@ -697,6 +712,9 @@ std::optional<String> optimizeUseNormalProjections(
     bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
+    /// True when the projection read is replaced by a prepared source that does not announce the
+    /// base-table stream itself. See the announcement call below.
+    bool projection_replaced_with_prepared_source = false;
     if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
@@ -714,10 +732,16 @@ std::optional<String> optimizeUseNormalProjections(
                 });
         }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_replaced_with_prepared_source = true;
     }
 
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
+
+    /// `reading` is detached below without running initializePipeline(), so announce its empty read
+    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
+    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
