@@ -1847,16 +1847,21 @@ Chunk StorageFileSource::generate()
             /// determined that some row groups in this exact file version contain no matching rows,
             /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
             /// the object-storage read path (`StorageObjectStorageSource`). The file version token
-            /// (`current_file_cache_version`, part of `object_with_metadata`) is folded into the cache
+            /// (`current_file_cache_version`) is folded into the cache
             /// key so an in-place rewrite yields a cache miss rather than stale results; the cache is
             /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
             /// formats miss. A source assigned one bucket of a parallel single-file split
             /// (`file_bucket_info` is set) also bypasses the cache and reads exactly its planned
-            /// assignment, matching the object-storage path.
+            /// assignment, matching the object-storage path. The gate repeats the "real local
+            /// file" preconditions instead of reusing `object_with_metadata`: that optional is
+            /// additionally gated on `use_parquet_metadata_cache`, and disabling the format
+            /// metadata cache must not disable the (independent) query condition cache, whose
+            /// write path below has no such dependency either.
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
-            if (object_with_metadata.has_value() && current_file_version_settled
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
+                && current_file_cache_version.has_value() && current_file_version_settled
                 && format_filter_info && format_filter_info->condition_hash
                 && !file_bucket_info)
                 query_condition_cache = getContext()->getQueryConditionCache();
