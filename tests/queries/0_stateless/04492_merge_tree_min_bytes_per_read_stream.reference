@@ -1,5 +1,7 @@
 -- cap reduces streams for a narrow column --
 1
+-- reader-side virtual columns do not disable the cap --
+1
 -- cap never produces zero streams --
 1
 -- a narrow pipeline is never capped --

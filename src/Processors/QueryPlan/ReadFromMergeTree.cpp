@@ -1239,7 +1239,10 @@ Pipe ReadFromMergeTree::readByLayers(
 /// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
 /// expressions and aggregation.
 static std::optional<size_t> estimateReadBytes(
-    const RangesInDataParts & parts_with_ranges, const Names & column_names, const Settings & settings)
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const VirtualColumnsDescription & virtuals,
+    const Settings & settings)
 {
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
 
@@ -1269,7 +1272,11 @@ static std::optional<size_t> estimateReadBytes(
             /// Defaults and mutation steps can make the reader fetch other physical columns. The
             /// dependency set is built later for each read task, so do not cap when it is unknown here.
             if (!col)
+            {
+                if (virtuals.tryGet(col_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader))
+                    continue;
                 return std::nullopt;
+            }
 
             /// Per-column sizes are stored for the whole part. Scaling a variable-width column by
             /// selected rows can underestimate arbitrarily when large values are concentrated in the
@@ -1394,10 +1401,11 @@ static void capStreamsByReadBytes(
     size_t & num_streams,
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
+    const VirtualColumnsDescription & virtuals,
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, settings);
+    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, virtuals, settings);
     if (!estimated_read_bytes)
         return;
 
@@ -1455,7 +1463,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         if (!is_parallel_reading_from_replicas
             && !isQueryWithFinal()
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
-            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, log);
+            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, storage_snapshot->metadata->virtuals, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;

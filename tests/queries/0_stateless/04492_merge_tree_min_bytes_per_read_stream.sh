@@ -29,9 +29,12 @@ stream_count() {
 ON=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
 OFF=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 0")
 SMALL=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS max_threads = 4")
+WITH_VIRTUAL=$(stream_count "SELECT sum(w), any(_part) FROM t_narrow SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
 
 echo "-- cap reduces streams for a narrow column --"
 [ "$ON" -lt "$OFF" ] && echo 1 || echo 0
+echo "-- reader-side virtual columns do not disable the cap --"
+[ "$WITH_VIRTUAL" -lt "$OFF" ] && echo 1 || echo 0
 echo "-- cap never produces zero streams --"
 [ "$ON" -ge 1 ] && echo 1 || echo 0
 # A narrow pipeline is left alone entirely: the per-stream overhead the cap removes only dominates
