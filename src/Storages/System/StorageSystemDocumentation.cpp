@@ -456,7 +456,7 @@ bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alia
     /// "Obsolete setting", "Old setting which popped up here being renamed", "Made this setting adjustable on a
     /// per-query level", "became the Beta tier feature", "was moved to Beta", "is now Beta".
     static const re2::RE2 concerns_an_existing_setting(
-        R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the )?\w+ tier|moved to beta|is now beta)");
+        R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the\s)?\w+ tier|moved to beta|is now beta)");
 
     if (re2::RE2::PartialMatch(reason, adds_an_alias))
         return documenting_an_alias;
