@@ -24,7 +24,7 @@
     Prewhere info
       Prewhere filter
       Prewhere filter column: greaterOrEquals(a, 0)
-  Filter column: and(less(multiply(2, b), 100), indexHint(less(i, 100))) (removed)
+  Filter column: and(indexHint(less(i, 100)), less(multiply(2, b), 100)) (removed)
     Prewhere info
       Prewhere filter
       Prewhere filter column: less(multiply(2, b), 100)

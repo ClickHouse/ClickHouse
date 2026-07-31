@@ -78,6 +78,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
+        KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)

@@ -14,8 +14,7 @@ PartitionPruner::PartitionPruner(
     , partition_condition(
           filter_dag,
           context,
-          partition_key.column_names,
-          partition_key.expression,
+          partition_key,
           true /* single_point */,
           skip_analysis)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
