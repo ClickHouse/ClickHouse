@@ -1,12 +1,8 @@
 #include <Parsers/IAST.h>
 
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -375,40 +371,6 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
-void IAST::writeJSON(WriteBuffer &) const
-{
-    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
-    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
-    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
-    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
-    /// read back. Reject such queries here instead of emitting lossy JSON.
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
-        getID());
-}
-
-void IAST::readJSON(const Poco::JSON::Object & json)
-{
-    /// Default: read children from the "children" array.
-    if (json.has("children"))
-    {
-        auto arr = json.getArray("children");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        children.reserve(arr->size());
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto child_obj = arr->getObject(i);
-            if (!child_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
-            children.push_back(IAST::createFromJSON(*child_obj));
-        }
-    }
-
-    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
-    /// in their own readJSON overrides, so we don't handle them here.
-}
-
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
 /// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
 /// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
@@ -461,18 +423,6 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
     /// is the canonical form (the alias-deferral branch above explicitly skips `ASTSubquery` so
     /// the outer parens are emitted here instead), so we only suppress when the alias is empty.
     if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
-        return false;
-
-    /// In function-call form (`allow_operators = false`, set by `EXPLAIN SYNTAX`), an operator
-    /// AST is rendered as `funcname(arg1, arg2, ...)` — the function call's own `(...)` parens
-    /// already group the expression. Emitting the `parenthesized` flag's outer parens on top
-    /// produces redundant grouping like `(multiply(a, b))` at the top level of e.g. a `GROUP BY`
-    /// item or a subquery argument. This mirrors the per-argument suppression done inside
-    /// `ASTFunction::formatImplWithoutAlias` (where each function-call argument carries
-    /// `wrapped_in_parens = true`), extending it to the call sites where the `ASTFunction` is not
-    /// itself a function-call argument. The normal formatting path (`allow_operators = true`)
-    /// is unchanged so non-`EXPLAIN SYNTAX` callers still round-trip the user's parens.
-    if (!frame.allow_operators && dynamic_cast<const ASTFunction *>(&node))
         return false;
 
     frame.need_parens = false;

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -18,7 +17,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -46,7 +44,6 @@ void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UIn
 
 UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageSystemDetachedParts::calculateTotalSizeOnDisk");
     UInt64 total_size = 0;
     try
     {
@@ -90,7 +87,7 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource final : public ISource
+class DetachedPartsSource : public ISource
 {
 public:
     DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
@@ -116,7 +113,6 @@ protected:
 
     Chunk generate() override
     {
-        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generate");
         MutableColumns new_columns = getPort().getHeader().cloneEmptyColumns();
         chassert(!new_columns.empty());
 
@@ -389,6 +385,3 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }

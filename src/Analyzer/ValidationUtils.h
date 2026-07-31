@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
@@ -41,8 +40,6 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
 void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
     std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
-
-void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquery_depth, size_t max_subquery_depth);
 
 /**
   * Validate that correlated subqueries do not present in the context of distributed query.

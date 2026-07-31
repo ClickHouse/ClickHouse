@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>

@@ -25,7 +25,6 @@ protected:
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
     /// TODO: replace isSuitableForShortCircuitArgumentsExecution with a dedicated canThrow interface on functions.
@@ -82,11 +81,6 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
-    ComparisonOrderDomain getComparisonOrderDomain() const override
-    {
-        return function->getComparisonOrderDomain(arguments);
-    }
-
     bool isDeterministic() const override { return function->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
@@ -96,8 +90,6 @@ public:
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
-
-    bool isNameInsensitive() const override { return function->isNameInsensitive(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
@@ -121,7 +113,7 @@ private:
 
 /// Following class implement IFunctionOverloadResolver via IFunction.
 
-class FunctionToOverloadResolverAdaptor final : public IFunctionOverloadResolver
+class FunctionToOverloadResolverAdaptor : public IFunctionOverloadResolver
 {
 public:
     explicit FunctionToOverloadResolverAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
@@ -156,7 +148,6 @@ public:
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
     bool useDefaultImplementationForDynamic() const override { return function->useDefaultImplementationForDynamic(); }
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return function->getReturnTypeForDefaultImplementationForDynamic(); }
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override { return function->getReturnTypeForDefaultImplementationForDynamic(arguments); }
     bool useDefaultImplementationForVariant() const override { return function->useDefaultImplementationForVariant(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override

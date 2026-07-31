@@ -1,5 +1,4 @@
 import copy
-import re
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -8,133 +7,14 @@ from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
-_SETTINGS_HISTORY_ENTRY_RE = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
-_SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"[\d.]+"')
-_SETTINGS_HISTORY_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-_SETTINGS_HISTORY_NAMESPACES = {
-    "settings_changes_history": "Session",
-    "merge_tree_settings_changes_history": "MergeTree",
-}
-
-
-def _settings_history_entry_signature(entry_body):
-    """The entry with its trailing reason string stripped, so a value change is distinguished
-    from a reason-only edit: `{"s", false, true, "..."}` differs but `{"s", false, false, "a"}`
-    and `{"s", false, false, "b"}` share a signature."""
-    return re.sub(r',\s*"(?:[^"\\]|\\.)*"\s*\},?\s*$', "", entry_body).strip()
-
-
-def parse_settings_history_changes(patch, file_lines):
-    """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
-    at HEAD, return a list of {"namespace", "name"} for settings whose value changed or that
-    were newly added. Reason-only edits (added entry whose value-signature was also removed)
-    are ignored. The namespace comes from the block that physically contains each added line
-    (new-file line number), not from global name presence - names can exist in both histories."""
-    added = []  # (new_line_number, name, signature)
-    removed_signatures = set()
-    new_lineno = None
-    for line in patch.splitlines():
-        hunk = _SETTINGS_HISTORY_HUNK_RE.match(line)
-        if hunk:
-            new_lineno = int(hunk.group(1))
-            continue
-        if new_lineno is None:
-            continue
-        if line.startswith("+") and not line.startswith("+++"):
-            m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
-            if m:
-                added.append(
-                    (new_lineno, m.group(1), _settings_history_entry_signature(line[1:]))
-                )
-            new_lineno += 1
-        elif line.startswith("-") and not line.startswith("---"):
-            m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
-            if m:
-                removed_signatures.add(_settings_history_entry_signature(line[1:]))
-            # A removed line does not advance the new-file line counter.
-        else:
-            new_lineno += 1
-
-    result = []
-    seen = set()
-    for lineno, name, signature in added:
-        if signature in removed_signatures:
-            continue  # reason-only edit of an existing entry
-        namespace = None
-        for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
-            mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
-            if mb:
-                namespace = _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1))
-                break
-        if namespace and (namespace, name) not in seen:
-            seen.add((namespace, name))
-            result.append({"namespace": namespace, "name": name})
-    return result
-
-
 if __name__ == "__main__":
     info = Info()
 
     # store changed files
-    # Fail-close for PR and merge-queue runs: the merge-queue flaky check
-    # selects tests from this list, so an empty fallback would silently skip
-    # it. Do not fail for master/release CI workflows.
     changed_files = (
-        GH.get_changed_files(strict=bool(info.pr_number) or info.is_merge_queue_event)
-        or []
-    )
+        GH.get_changed_files(strict=info.pr_number) or []
+    )  # do not fail for master/release CI workflow
     info.store_kv_data("changed_files", changed_files)
-
-    # For the settings-history style check (check_style.py): when
-    # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
-    # names of the setting entries this change ADDS so the style check can verify each is
-    # recorded under the current version block. Only the setting names are stored (never the
-    # raw diff) to keep the pipeline `data` output small and free of user-authored free text
-    # (see the note further below about the GH Actions runner dropping outputs that match a
-    # secret pattern). Best-effort: a failure here must not break the hook that stores
-    # changed_files; the style check simply skips when nothing is stored.
-    settings_history_file = "src/Core/SettingsChangesHistory.cpp"
-    if (
-        info.pr_number or info.is_merge_queue_event
-    ) and settings_history_file in changed_files:
-        # Fail-close: when this file changed, the settings-history style check MUST be able to
-        # validate it. If the diff cannot be fetched, record the error so the style check fails
-        # rather than silently passing. Do not raise here: that would break the changed_files
-        # storage other merge-queue jobs depend on; the error is surfaced by the style check.
-        try:
-            # CI containers have no .git history, so fetch the file's patch via the GitHub
-            # API rather than `git diff`. In a merge-queue run PR_NUMBER is 0; the queue
-            # entry is built for exactly one PR, so use its linked PR number (same as
-            # GH.get_changed_files).
-            pr_number = info.pr_number
-            if pr_number <= 0 and info.is_merge_queue_event:
-                pr_number = info.linked_pr_number
-            if pr_number <= 0:
-                raise RuntimeError(
-                    "could not resolve the PR number for the settings-history diff"
-                )
-            # `.patch` is the unified diff for just this file (hunks only, no file header).
-            patch = Shell.get_output(
-                f"gh api repos/{info.repo_name}/pulls/{pr_number}/files --paginate "
-                f"--jq '.[] | select(.filename == \"{settings_history_file}\") | .patch'",
-                verbose=True,
-            )
-            if patch.strip() in ("", "null"):
-                # The file is in changed_files but no usable patch came back. GitHub omits the
-                # per-file patch for very large diffs; the `.patch` field is then null, which
-                # `jq -r` prints as the literal string "null". We cannot determine the changed
-                # settings, so fail closed instead of assuming there is nothing to check.
-                raise RuntimeError(
-                    f"no patch returned for changed file {settings_history_file} "
-                    "(GitHub omits the patch for very large diffs)"
-                )
-            with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
-                file_lines = f.read().splitlines()
-            changed_settings = parse_settings_history_changes(patch, file_lines)
-            info.store_kv_data("settings_history_changed_settings", changed_settings)
-            print(f"Stored settings-history changed settings: {changed_settings}")
-        except Exception as e:
-            print(f"WARNING: failed to compute settings-history changed settings: {e}")
 
     # hack to get build digest
     some_build_job = copy.deepcopy(JobConfigs.build_jobs[0])
@@ -143,32 +23,15 @@ if __name__ == "__main__":
     digest = Digest().calc_job_digest(some_build_job, {}, {}).split("-")[0]
     info.store_kv_data("build_digest", digest)
 
-    # store recent master commits (used by bugfix validation to find builds, and by perf tests).
-    # Store unconditionally: synced PRs in the private repo run the same bugfix validation
-    # jobs, and both this query and the build artifacts in `find_master_builds` use the
-    # public upstream namespace regardless of the repo the workflow runs in.
-    raw = Shell.get_output(
-        "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
-        verbose=True,
-    )
-    master_commits = raw.splitlines()
-    info.store_kv_data("master_commits", master_commits)
-
     if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store previous commits for perf tests
-        commits = list(master_commits)
+        raw = Shell.get_output(
+            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={info.git_branch}&per_page=30' -q '.[].sha' | head -n30",
+            verbose=True,
+        )
+        commits = raw.splitlines()
 
-        # Drop commits newer than the one under test (they may have been pushed
-        # after this run was triggered) so that commits[0] is the current commit.
         while commits and commits[0] != info.sha:
-            commits.pop(0)
-
-        # Drop the current commit itself so the performance test compares against
-        # the previous commit on master (commit-to-commit). Otherwise the job picks
-        # the current commit's own build as the baseline and compares it against
-        # itself, so a red status could never point at the commit that introduced
-        # a regression.
-        if commits and commits[0] == info.sha:
             commits.pop(0)
 
         info.store_kv_data("master_track_commits_sha", commits)
@@ -197,11 +60,7 @@ if __name__ == "__main__":
             master_parent_commits = [
                 s.strip()
                 for s in Shell.get_output(
-                    # 100 commits gives enough range to find 5-6 recent master coverage
-                # .info files even when coverage runs are sparse (only some master
-                # commits publish coverage). 30 was too few — the 6th baseline could
-                # be 80+ commits back with a meaningfully different test set.
-                f"git rev-list --first-parent --max-count=100 {master_parent}", verbose=True
+                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
                 ).splitlines()
                 if s.strip()
             ]
@@ -215,25 +74,18 @@ if __name__ == "__main__":
                 "WARNING: Could not find master parent commit (HEAD^1), skipping perf test commit storage"
             )
 
-        # Record which integration test files changed so a downstream job can
-        # find the changed test cases (TODO). Store only the file paths, never
-        # the raw `git diff` output: that diff is user-authored free text and
-        # ends up serialized into the initial `Config Workflow` job's `data`
-        # output (see Runner.run). The GitHub Actions runner scans job outputs
-        # with built-in secret patterns and silently drops the whole output on
-        # a match (e.g. a test fixture containing `Authorization: Bearer ...`),
-        # which makes every downstream job skip. A consumer can recompute the
-        # diff for these paths on demand.
-        changed_integration_tests = [
-            file
-            for file in changed_files
-            if file.startswith("tests/integration/test") and file.endswith(".py")
-        ]
-        info.store_kv_data("changed_integration_tests", changed_integration_tests)
+        file_diff = {}
+        for file in changed_files:
+            if file.startswith("tests/integration/test") and file.endswith(".py"):
+                file_diff[file] = Shell.get_output(
+                    f"git diff $(git merge-base master HEAD)..HEAD -- {file}",
+                    verbose=True,
+                )
+        info.store_kv_data("file_diff", file_diff)
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later
-        release_branch_base_sha = CHVersion.get_release_version().githash
+        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
         print(f"Release branch base sha: {release_branch_base_sha}")
         assert release_branch_base_sha
         release_branch_base_sha_with_predecessors = [
