@@ -1160,6 +1160,16 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+
+:::note Legacy `toTime`
+Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
+time component. That function is still available under the name [`toTimeWithFixedDate`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate).
+
+Setting [`use_legacy_to_time`](/operations/settings/settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
+function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
+While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
+The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
+:::
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
@@ -1201,7 +1211,7 @@ SELECT toTime(toDateTime(52225, 'UTC'))
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTime = {25, 5};
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
@@ -2392,7 +2402,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {25, 5};
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, {}, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
@@ -3629,7 +3639,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {25, 5};
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, {}, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
