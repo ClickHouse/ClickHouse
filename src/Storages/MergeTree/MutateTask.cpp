@@ -123,6 +123,11 @@ enum class ExecuteTTLType : uint8_t
 namespace MutationHelpers
 {
 
+/// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
+/// later by the mutation and is therefore not yet present in the part. It is not a real stream and
+/// must never be resolved against the source part's checksums (a part may happen to contain a real
+/// column whose name collides with this sentinel).
+static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -145,6 +150,36 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
+    }
+
+    return false;
+}
+
+/// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
+/// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
+/// the variant element streams, ...) are not recorded anywhere we can enumerate without a
+/// deserialization state. State-less `serialization->enumerateStreams` stops after `dynamic_structure`
+/// for such a column (see `getStreamCounts`), so a partial mutation cannot account for all of its
+/// streams and could leave one neither rewritten nor hardlinked into the new part. To stay safe we
+/// rewrite the whole part in that case (the resulting part gets a `columns_substreams.txt`, so later
+/// mutations can take the partial path again). The file is also discarded when found corrupted, which
+/// lands here too.
+///
+/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
+/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
+/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
+/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
+/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
+static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
+{
+    if (!isWidePart(data_part))
+        return false;
+
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
+    for (const auto & column : data_part->getColumns())
+    {
+        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
+            return true;
     }
 
     return false;
@@ -208,7 +243,8 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -828,7 +864,7 @@ getColumnsForNewDataPart(
             if (fill_columns_substreams)
             {
                 new_columns_substreams.addColumn(it->name);
-                new_columns_substreams.addSubstreamToLastColumn("dummy");
+                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
             }
 
             ++it;
@@ -986,9 +1022,31 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
     {
+        /// When columns_substreams.txt is available, prefer its recorded substreams over
+        /// enumerateStreams. The file is the ground truth of what streams exist on disk, and
+        /// for columns with a data-dependent dynamic structure (Dynamic, JSON) a state-less
+        /// enumerateStreams is incomplete: it stops after `dynamic_structure` and never reports
+        /// data-dependent substreams like `variant_discr`.
+        const auto * recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
+
+        /// A not-yet-written column in a new part carries only a single placeholder substream
+        /// (see getColumnsForNewDataPart). It has no real streams on disk yet, so we fall back
+        /// to enumerateStreams to preserve correct shared-stream accounting for regular columns
+        /// (e.g. Nested array sizes).
+        if (recorded_substreams && !(recorded_substreams->size() == 1 && (*recorded_substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+        {
+            for (const auto & substream : *recorded_substreams)
+            {
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                    ++stream_counts[*stream_name];
+            }
+            continue;
+        }
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -1427,7 +1485,7 @@ static void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
+    new_data_part->setMinMaxIndex(source_part->getMinMaxIndex());
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1453,6 +1511,21 @@ static void finalizeMutatedPart(
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
+
+    /// This hardlink / mutate-some-columns path assembles the checksums and index granularity in the
+    /// default arenas (the full-rewrite path re-homes them in `MergedBlockOutputStream::finalizePartAsync`).
+    /// Re-home the finished part-lifetime maps into the dedicated arena. The primary index set above is
+    /// already routed by `setIndex`; the minmax index by `setMinMaxIndex`.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        reallocateByCopy(new_data_part->checksums);
+        /// TTL-recalculating mutations rebuild `ttl_infos` during execution (in the default arenas),
+        /// so re-home the final maps here, mirroring `MergedBlockOutputStream::finalizePartAsync`.
+        reallocateByCopy(new_data_part->ttl_infos);
+        if (new_data_part->index_granularity)
+            new_data_part->index_granularity = new_data_part->index_granularity->clone();
+    }
 }
 
 }
@@ -2106,6 +2179,25 @@ private:
         /// inherit data for every contained index, including ones we're about to drop or that
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
+        const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
+        auto is_in_packed_archive = [&](const IMergeTreeIndex & index)
+        {
+            if (!source_disk_storage)
+                return false;
+            /// Match the partial-mutation detector: enumerate the index's substreams (text
+            /// indices have .dct/.pst suffixes alongside the base; bloom-family and minmax
+            /// just have the base substream). Probing only ".idx" / ".idx2" misses the side
+            /// streams and would treat a mixed-layout text index as not in the archive,
+            /// losing its packed side streams during a full rewrite.
+            const String file_name = index.getFileName();
+            for (const auto & sub : index.getSubstreams())
+            {
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
+                    return true;
+            }
+            return false;
+        };
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -2117,18 +2209,12 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
-            /// aggregate them and there is nothing to hardlink.
-            if (index_ptr->isInert())
-                continue;
-
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+                || is_in_packed_archive(*index_ptr);
 
             if (need_recalculate)
             {
@@ -2712,22 +2798,6 @@ private:
                     projection_part->checksums.getTotalChecksumUInt128());
             }
 
-            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
-            /// Such an entry points at a directory missing from the new part, so the projection
-            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
-            /// An inherited entry is an orphan when both hold:
-            ///   1. the directory was not hardlinked into the new part, and
-            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
-            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
-            /// one above operate on disjoint sets and never fight over the same checksum entry.
-            for (const auto & projection : ctx->metadata_snapshot->getProjections())
-            {
-                const auto projection_file = projection.getDirectoryName();
-                if (ctx->files_to_skip.contains(projection_file)
-                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
-                    ctx->new_data_part->checksums.files.erase(projection_file);
-            }
-
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -3070,12 +3140,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
-            /// otherwise the mutation loops forever failing to build the index.
-            if (index_ptr->isInert())
-                continue;
-
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
             else
@@ -3097,6 +3161,19 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
     /// new index that isn't packed) leaves the archive untouched.
     const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+
+    auto index_is_in_archive = [&](const IMergeTreeIndex & idx) -> bool
+    {
+        if (!source_disk_storage)
+            return false;
+        const auto file_name = idx.getFileName();
+        for (const auto & sub : idx.getSubstreams())
+        {
+            if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
+                return true;
+        }
+        return false;
+    };
 
     if (source_disk_storage)
     {
@@ -3146,7 +3223,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
+                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
 
         if (archive_dirty)
         {
@@ -3228,11 +3305,7 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
-#if CLICKHOUSE_CLOUD
-        , nullptr
-#endif
-    );
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -3420,11 +3493,15 @@ bool MutateTask::prepare()
         }
     }
 
-    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
-    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for the
+    /// mutated part's lifetime, so create it in the dedicated arena. `build()` re-enters the arena for
+    /// the part object; the mutation planning below (column transforms, projection/statistics
+    /// collections, file lists, task construction) is transient and stays on the default per-CPU arenas.
+    VolumePtr single_disk_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    }
     ctx->disk = single_disk_volume->getDisk();
 
     std::string prefix;
@@ -3457,6 +3534,11 @@ bool MutateTask::prepare()
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
+    /// Re-home the part-lifetime metadata assigned above (partition, ttl_infos) into the dedicated
+    /// arena; `setColumns` / `setColumnsSubstreams` already self-scope. Everything below is transient
+    /// mutation planning and deliberately stays on the default per-CPU arenas.
+    ctx->new_data_part->moveMetadataToDedicatedArena();
+
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
@@ -3486,6 +3568,7 @@ bool MutateTask::prepare()
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
     if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
         || !isWidePart(ctx->source_part)
         || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))

@@ -563,13 +563,10 @@ class QBitType : public SQLType
 public:
     std::unique_ptr<SQLType> subtype;
     const uint32_t dimension;
-    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
-    const uint32_t stride;
 
-    QBitType(std::unique_ptr<SQLType> s, const uint32_t d, const uint32_t st)
+    QBitType(std::unique_ptr<SQLType> s, const uint32_t d)
         : subtype(std::move(s))
         , dimension(d)
-        , stride(st)
     {
     }
 

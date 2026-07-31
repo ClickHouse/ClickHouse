@@ -73,12 +73,6 @@ struct TopKFilterInfo
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
     TopKThresholdTrackerPtr threshold_tracker;
-
-    /// Deterministic hash over the parameters that describe the TopK filter at planning time:
-    /// `(column_name, type_name, limit_n, direction, num_sort_columns)`. Used as part of the
-    /// query condition cache key so that QCC entries written under a TopK plan are partitioned
-    /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
-    UInt64 condition_hash = 0;
 };
 
 struct LazyMaterializingRows;
@@ -286,7 +280,7 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(ConditionTemplate<KeyCondition>::Ptr key_condition_)
+        explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
@@ -294,12 +288,12 @@ public:
             , use_skip_indexes_on_data_read(false)
         {}
 
-        ConditionTemplate<KeyCondition>::Ptr key_condition;
-        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template; /// skeleton of the key condition without resolved columns
-        ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
-        ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
-        ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
+        KeyCondition key_condition;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
+        std::optional<KeyCondition> minmax_idx_condition;
+        std::optional<KeyCondition> part_offset_condition;
+        std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
@@ -336,6 +330,7 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -415,7 +410,6 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
-    const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -506,10 +500,7 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit,
-        /// Index of this split when reading in-order with parallel replicas; nullopt means
-        /// a single pool reads the whole table (no splitting).
-        std::optional<size_t> split_index = std::nullopt);
+        UInt64 limit);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
@@ -566,7 +557,6 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;

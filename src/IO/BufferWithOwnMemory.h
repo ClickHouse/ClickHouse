@@ -3,11 +3,19 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
+#include <Common/ProfileEvents.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event IOBufferAllocs;
+    extern const Event IOBufferAllocBytes;
+}
 
 
 namespace DB
@@ -69,7 +77,36 @@ struct Memory : boost::noncopyable, Allocator
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
-    void resize(size_t new_size, bool deallocate_if_empty = false);
+    void resize(size_t new_size, bool deallocate_if_empty = false)
+    {
+        if (!m_data)
+        {
+            alloc(new_size);
+            return;
+        }
+
+        if (new_size == 0 && deallocate_if_empty)
+        {
+            dealloc();
+            m_size = m_capacity = 0;
+            return;
+        }
+
+        if (new_size <= m_capacity - pad_right)
+        {
+            m_size = new_size;
+            return;
+        }
+
+        size_t new_capacity = withPadding(new_size);
+
+        size_t diff = new_capacity - m_capacity;
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
+
+        m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
+        m_capacity = new_capacity;
+        m_size = new_size;
+    }
 
 private:
     static size_t withPadding(size_t value)
@@ -82,7 +119,23 @@ private:
         return res;
     }
 
-    void alloc(size_t new_size);
+    void alloc(size_t new_size)
+    {
+        if (!new_size)
+        {
+            m_data = nullptr;
+            return;
+        }
+
+        size_t new_capacity = withPadding(new_size);
+
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
+
+        m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
+        m_capacity = new_capacity;
+        m_size = new_size;
+    }
 
     void dealloc()
     {

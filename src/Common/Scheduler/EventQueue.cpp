@@ -134,7 +134,7 @@ EventQueue::TimePoint EventQueue::now()
 {
     auto result = manual_time.load();
     if (likely(result == TimePoint()))
-        return Clock::now();
+        return std::chrono::system_clock::now();
     return result;
 }
 

@@ -1,13 +1,7 @@
 #pragma once
-
-#include <DataTypes/IDataType.h>
-
-#include <Parsers/IAST_fwd.h>
-
-#include <Storages/KeyDescription.h>
-#include <Storages/MergeTree/MergeTreePartition.h>
-
 #include <Core/Types.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -44,12 +38,6 @@ struct PartitionIdColumn
 {
     static const String name;
     static const DataTypePtr type;
-};
-
-struct PartitionValueColumn
-{
-    static const String name;
-    static DataTypePtr type(const KeyDescription * partition_key);
 };
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);

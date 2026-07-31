@@ -6,6 +6,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Core/ServerSettings.h>
 
 
 namespace CurrentMetrics
@@ -15,6 +16,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
+}
 
 namespace ErrorCodes
 {
@@ -30,7 +36,7 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
 
     current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, query.collection_name);
 
-    UInt64 limit = getContext()->getGlobalContext()->getMaxNamedCollectionNumToThrow();
+    UInt64 limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_named_collection_num_to_throw];
     UInt64 count = CurrentMetrics::get(CurrentMetrics::NamedCollection);
     if (limit > 0 && count >= limit)
         throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
