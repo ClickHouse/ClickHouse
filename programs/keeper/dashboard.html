@@ -1729,7 +1729,30 @@
 
             if (matches.length === 0) return;
             if (matches.length === 1) {
-                input.value = cmdPart + escapedPathPrefix + matches[0];
+                /// Same contract as keeper-client: when the unique match has children,
+                /// append '/' so the next Tab descends into that segment instead of
+                /// re-querying the same parent with the node name as a child prefix.
+                let completed = cmdPart + escapedPathPrefix + matches[0];
+                const matchedName = raw_matches[0];
+                const nodePath = parentDir === "/"
+                    ? `/${matchedName}`
+                    : `${parentDir}/${matchedName}`;
+                try {
+                    const childUrl = new URL(window.location);
+                    childUrl.pathname = `/api/v1/storage${nodePath}`;
+                    childUrl.search = "?children=true";
+                    const childRes = await fetch(childUrl.toString());
+                    if (input.value !== requestValue || cli_cwd !== requestCwd)
+                        return;
+                    if (childRes.ok) {
+                        const childData = await childRes.json();
+                        if (input.value !== requestValue || cli_cwd !== requestCwd)
+                            return;
+                        if ((childData.child_node_names || []).length > 0)
+                            completed += "/";
+                    }
+                } catch (e) { /* ignore probe errors — leave without trailing '/' */ }
+                input.value = completed;
                 return;
             }
 
@@ -1849,6 +1872,16 @@
                 if (event.key === "n" || event.key === "N") {
                     event.preventDefault();
                     appendToOutput("n\n");
+                    last_listed_completion_signature = null;
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                /// Enter only dismisses the prompt — never fall through to executeCommand,
+                /// or a mutating line like `rm /partial` would run from a y/n question.
+                if (event.code === "Enter") {
+                    event.preventDefault();
+                    appendToOutput("\n");
                     last_listed_completion_signature = null;
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
