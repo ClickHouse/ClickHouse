@@ -1,3 +1,4 @@
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
 #include <unordered_set>
@@ -279,13 +280,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
+        /// The parser accepts `SETTINGS name` without a value for any setting - it does not know the
+        /// settings schema - so the shorthand has to be rejected here, against the schema, before
+        /// `limit` and `offset` are dropped below. For a nested subquery this is the first place the
+        /// inner `SETTINGS` clause is seen with the schema at hand, and the two are dropped without
+        /// being read, so without this a valueless `SETTINGS limit` would be silently accepted.
+        updated_context->getSettingsRef().checkShorthandChanges(set_query.changes);
+
         /// `limit` / `offset` settings are materialized earlier by wrapping the query — including
         /// subqueries that carry the setting in their own `SETTINGS` clause — as a derived table with an
         /// outer `LIMIT` / `OFFSET` (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`
-        /// in `executeQuery` for directly executed queries; the `StorageView` constructor for a stored
-        /// view's inner query, which bypasses `executeQuery`). By the time the query tree is built the
-        /// settings are therefore already consumed; drop any that remain so they are not re-applied to
-        /// this (sub)query's context — the query tree's `LIMIT` / `OFFSET` come from the SQL clauses below.
+        /// in `executeQuery` for directly executed queries; `wrapNestedConstructionSettings` again in
+        /// `TableFunctionEval` for a generated query that bypasses `executeQuery`). By the time the query
+        /// tree is built the settings are therefore already consumed; drop any that remain so they are not
+        /// re-applied to this (sub)query's context — the query tree's `LIMIT` / `OFFSET` come from the SQL
+        /// clauses below.
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
@@ -322,7 +331,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto current_context = current_query_tree->getContext();
 
-    current_query_tree->getJoinTree() = buildJoinTree(is_subquery, select_query_typed, current_context);
+    current_query_tree->getJoinTreeNode() = buildJoinTree(is_subquery, select_query_typed, current_context);
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -622,7 +631,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
 
-            auto lambda_arguments_nodes = std::make_shared<ListNode>();
             Names lambda_arguments;
             NameSet lambda_arguments_set;
 
@@ -656,10 +664,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 }
             }
 
+            auto lambda_arguments_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_arguments));
+
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments_node), std::move(lambda_expression_node), function->isOperator());
         }
         else
         {
@@ -899,7 +909,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
+                std::optional<StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -915,10 +925,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression.stream_settings)
                 {
-                    stream_settings = TableExpressionModifiers::StreamSettings{};
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    if (ast_stream_settings.settings.cursor_tree.has_value())
-                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
+                    stream_settings = StreamSettings{};
+                    stream_settings->cursor = ast_stream_settings.cursor;
+                    stream_settings->watermark = ast_stream_settings.watermark;
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
@@ -945,7 +955,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 auto & subquery_expression = table_expression.subquery->as<ASTSubquery &>();
                 const auto & select_with_union_query = subquery_expression.children[0];
 
-                auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
+                /// Views store CTE references in FROM as subqueries with cte_name set (ApplyWithSubqueryVisitor).
+                /// Propagate it so qualified identifiers like `cte_name.column` still bind, as they do when
+                /// a CTE reference is resolved from the WITH section directly.
+                auto node = buildSelectWithUnionExpression(
+                    select_with_union_query,
+                    true /*is_subquery*/,
+                    CommonTableExpressionData{.cte_name = subquery_expression.cte_name},
+                    select_query.aliases(),
+                    context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
@@ -1179,7 +1197,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
         }
         else if (auto * except_transformer = child->as<ASTColumnsExceptTransformer>())
         {
-            auto matcher = except_transformer->getMatcher();
+            auto matcher = getColumnsExceptMatcher(*except_transformer);
             if (matcher)
             {
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(matcher)));
