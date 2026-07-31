@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTDropHandlerQuery.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -150,7 +149,10 @@ bool methodsOverlap(const std::vector<String> & a, const std::vector<String> & b
     return false;
 }
 
-/// Whether two exact/prefix URL patterns can match a common path.
+/// Whether two exact/prefix URL patterns can match a common path. Prefixes match on a path-segment
+/// boundary (see `SQLDefinedHandler::urlPrefixMatches`), so the overlap check uses the same rule:
+/// a prefix overlaps an exact URL iff it matches that URL, and two prefixes overlap iff one base path
+/// matches the other (then every path under the longer base is matched by both).
 bool urlsOverlap(const SQLDefinedHandler & a, const SQLDefinedHandler & b)
 {
     using T = SQLDefinedHandler::URLMatchType;
@@ -165,10 +167,11 @@ bool urlsOverlap(const SQLDefinedHandler & a, const SQLDefinedHandler & b)
     if (!a_prefix && !b_prefix)
         return a.url == b.url;                               /// exact vs exact
     if (a_prefix && b_prefix)
-        return startsWith(a.url, b.url) || startsWith(b.url, a.url);  /// prefix vs prefix
+        return SQLDefinedHandler::urlPrefixMatches(a.url, b.url)
+            || SQLDefinedHandler::urlPrefixMatches(b.url, a.url);  /// prefix vs prefix
     if (a_prefix)
-        return startsWith(b.url, a.url);                     /// prefix a vs exact b
-    return startsWith(a.url, b.url);                         /// exact a vs prefix b
+        return SQLDefinedHandler::urlPrefixMatches(a.url, b.url);  /// prefix a vs exact b
+    return SQLDefinedHandler::urlPrefixMatches(b.url, a.url);      /// exact a vs prefix b
 }
 
 }

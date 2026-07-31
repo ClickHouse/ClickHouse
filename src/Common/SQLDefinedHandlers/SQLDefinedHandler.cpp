@@ -1,12 +1,17 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 
-#include <Common/StringUtils.h>
-
 #include <algorithm>
 
 
 namespace DB
 {
+
+bool SQLDefinedHandler::urlPrefixMatches(std::string_view prefix, std::string_view path)
+{
+    if (prefix.ends_with('/'))
+        prefix.remove_suffix(1);
+    return path.starts_with(prefix) && (path.size() == prefix.size() || path[prefix.size()] == '/');
+}
 
 bool SQLDefinedHandler::matchesURL(const String & path) const
 {
@@ -15,7 +20,7 @@ bool SQLDefinedHandler::matchesURL(const String & path) const
         case URLMatchType::Exact:
             return path == url;
         case URLMatchType::Prefix:
-            return startsWith(path, url);
+            return urlPrefixMatches(url, path);
         case URLMatchType::Regexp:
             return url_regex && re2::RE2::FullMatch(re2::StringPiece(path.data(), path.size()), *url_regex);
     }

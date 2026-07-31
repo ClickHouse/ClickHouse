@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 
@@ -61,6 +62,13 @@ struct SQLDefinedHandler
 
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
     bool matchesURL(const String & path) const;
+
+    /// Whether `path` matches the base path `prefix` on a path-segment boundary: the base path itself or
+    /// anything below it after a '/'. E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write",
+    /// but not "/api/v1beta". A trailing '/' in `prefix` is ignored, so "/api/v1/" and "/api/v1" behave
+    /// the same. These are the semantics of the configuration-defined `url_prefix` rule
+    /// (see `HTTPHandlerRequestFilter`), which `URL PREFIX` handlers mirror.
+    static bool urlPrefixMatches(std::string_view prefix, std::string_view path);
 
     /// Returns true if the given HTTP method (uppercase) is allowed by this handler.
     bool matchesMethod(const String & method) const;
