@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/OverlappingPartCovering.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -245,6 +246,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace FailPoints
@@ -3353,7 +3355,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -6806,9 +6809,9 @@ void StorageReplicatedMergeTree::alter(
     KeyDescription old_sorting_key = future_metadata.sorting_key;
 
     removeImplicitStatistics(future_metadata.columns);
-    commands.apply(future_metadata, query_context);
-
     auto old_settings = getSettings();
+    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
@@ -7026,7 +7029,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context);
+            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
 
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
@@ -9281,7 +9284,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             if (replace)
             {
@@ -9572,7 +9576,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
-                .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
+                .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
+                .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,
@@ -11378,6 +11383,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction, /*rename_in_transaction=*/ true);
+        new_data_part->getDataPartStorage().commitTransaction();
         transaction.renameParts();
 
         if (!replaced_parts.empty())
