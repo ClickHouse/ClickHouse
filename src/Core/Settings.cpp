@@ -9169,6 +9169,16 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void Settings::checkShorthandChange(const SettingChange & change) const
+{
+    impl->checkShorthandChange(change);
+}
+
+void Settings::checkShorthandChanges(const SettingsChanges & changes) const
+{
+    impl->checkShorthandChanges(changes);
+}
+
 VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<std::string_view> setting_names;
