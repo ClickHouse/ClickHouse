@@ -7,6 +7,3 @@
 # (no query reaches the server), while the identical test with the same numpy/scipy/pandas versions
 # passes in ~3s locally. Looks like a runner-specific hang in the scipy import. Needs further investigation.
 02294_anova_cmp
-
-# Flaky on CI (stuck timeout)
-04319_skip_unavailable_shards_mode_table_missing
