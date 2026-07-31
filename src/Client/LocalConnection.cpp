@@ -459,6 +459,16 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     if (block.empty())
     {
+        const auto * insert_query = state->parsed_query ? state->parsed_query->as<ASTInsertQuery>() : nullptr;
+
+        /// Only `INSERT ... RETURNING` needs the pipeline finished (and swapped for the RETURNING `SELECT`)
+        /// right here, at the end of data. For a plain INSERT keep the pushing executor alive until
+        /// `finishQuery`: the final flush of profile events in `poll` only fires while an executor exists,
+        /// so resetting it here would drop the last ProfileEvents packet (e.g. `InsertedRows` in
+        /// `clickhouse-local --print-profile-events`).
+        if (!insert_query || !insert_query->returning_select)
+            return;
+
         if (state->pushing_async_executor)
         {
             state->pushing_async_executor->finish();
@@ -470,7 +480,6 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
             state->pushing_executor.reset();
         }
 
-        if (const auto * insert_query = state->parsed_query ? state->parsed_query->as<ASTInsertQuery>() : nullptr)
         {
             /// Building the RETURNING `SELECT` after the push can throw (unknown identifier, rejected `SETTINGS`,
             /// ...) once the INSERT has already finished. Route such failures through the exception path so the
