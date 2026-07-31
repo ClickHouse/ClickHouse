@@ -538,9 +538,16 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
 
         auto key_type = key_node.getDAGNode()->result_type;
 
-        /// Check safety: if key type is non-Nullable and the set contains the default value,
-        /// we cannot skip granules where the path is absent.
-        if (!canContainNull(*key_type))
+        /// Check safety: in a granule where the path is absent the key evaluates to the default
+        /// value of its type, so we cannot skip such a granule when the set matches that value.
+        if (canContainNull(*key_type))
+        {
+            /// The default is `NULL`, and `NULL IN (NULL, ...)` is false unless `transform_null_in`
+            /// is enabled. `hasNull` accounts for that setting, returning false when it is disabled.
+            if (prepared_set->hasNull())
+                return false;
+        }
+        else
         {
             auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};
