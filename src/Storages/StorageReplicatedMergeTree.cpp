@@ -6078,6 +6078,17 @@ void StorageReplicatedMergeTree::partialShutdown()
 
 void StorageReplicatedMergeTree::shutdown(bool)
 {
+    /// Serialize concurrent calls entirely, including the choice of the branch below. The lock must be
+    /// taken *before* consulting `shutdown_called`: otherwise two first-time callers would split into the
+    /// full-shutdown and `already_called` paths before either takes the lock, and the `already_called`
+    /// cleanup could then win the lock and tear down the interserver parts exchange endpoint (via
+    /// `partialShutdown` and the endpoint reset below) while the full shutdown still relies on it for
+    /// `waitForUniquePartsToBeFetchedByOtherReplicas`. The lock also protects the non-atomic members both
+    /// branches touch (`session_expired_callback_handler`, `replica_is_active_node`) from the failure path
+    /// of `startupImpl` racing with the first shutdown. Holding it across the full shutdown is safe: the
+    /// threads the full shutdown joins (the attach and restarting threads) never call `shutdown` themselves.
+    std::lock_guard shutdown_guard{shutdown_mutex};
+
     /// Publish the shutdown intent *before* deactivating the periodic tasks below. This, together with
     /// the matching re-check at the end of `startup()`, closes a `startup()`/`shutdown()` race (e.g. when a
     /// table is detached while its async startup is still in flight): whatever the interleaving, the tasks
@@ -6086,19 +6097,13 @@ void StorageReplicatedMergeTree::shutdown(bool)
     const bool already_called = shutdown_called.exchange(true);
 
     /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
-    /// `shutdown(false)` would early-return and leave `refreshStatistics` running concurrently with
-    /// `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation is idempotent.
+    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
+    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
+    /// is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
-
-    /// Serialize the rest with an in-flight first shutdown: the `already_called` cleanup below can be
-    /// reached from the failure path of `startupImpl` while the first (full) shutdown is still running in
-    /// another thread, and some of the members it touches (`session_expired_callback_handler`,
-    /// `replica_is_active_node`) are not atomic. Whichever call comes second waits here and then finds
-    /// only idempotent no-ops left to do.
-    std::lock_guard shutdown_guard{shutdown_mutex};
 
     if (already_called)
     {
