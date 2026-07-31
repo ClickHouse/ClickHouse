@@ -154,7 +154,7 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        WriteOrigin write_origin);
+        bool try_adaptive_codec);
 
     MergeTreeData & data;
     LoggerPtr log;

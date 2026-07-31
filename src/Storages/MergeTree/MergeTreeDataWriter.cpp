@@ -1030,8 +1030,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        WriteOrigin::Insert,
-        /*is_explicit_recompression=*/ false);
+        /*try_adaptive_codec=*/ false);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1114,7 +1113,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    WriteOrigin write_origin)
+    bool try_adaptive_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1251,8 +1250,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        write_origin,
-        /*is_explicit_recompression=*/ false);
+        try_adaptive_codec);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1295,7 +1293,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
             projection,
             std::move(indices),
             merge_is_needed,
-            WriteOrigin::Insert);
+            /*try_adaptive_codec=*/ false);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1328,7 +1326,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/true,
-        WriteOrigin::MergeOrMutation);
+        /*try_adaptive_codec=*/ true);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;
