@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <vector>
+#include <unordered_map>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
@@ -64,8 +65,9 @@ struct IndexDescription
     /// the query optimizer applies (e.g. `optimize_empty_string_comparisons` rewrites `x = ''` to `empty(x)`).
     /// Skip index conditions match the query expression to the index expression by column name, so after the
     /// query-side rewrite the two names no longer compare equal and the index is silently skipped.
-    /// This field stores the rewritten names so that each index condition can also match against them.
-    Names normalized_column_names;
+    /// This field stores the rewritten names (key) mapped to the original column name (value),
+    /// so that each index condition can also match against them and find the correct column position.
+    std::unordered_map<String, String> normalized_column_name_to_original;
 
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(
