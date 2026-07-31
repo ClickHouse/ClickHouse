@@ -149,9 +149,10 @@ lcfs3 has FS3	1
 SELECT 'lcfs3 hasAny FS3', (SELECT count() FROM o_lcfs3 WHERE hasAny(v,[toFixedString('V0',3)])) = (SELECT count() FROM k_lcfs3 WHERE hasAny(v,[toFixedString('V0',3)]));
 lcfs3 hasAny FS3	1
 -- `LowCardinality(Nullable(...))` is the one element type carrying both wrappers, so
--- `getPrimitiveType` strips both and the raw type is neither `String` nor bare `LowCardinality`:
--- it takes the Direct mode. `bloom_filter` accepts it because the array's data column is a
--- `ColumnLowCardinality`, not a `ColumnNullable`, and two existing tests already index this type.
+-- `getPrimitiveType` strips both. The mode is per-PREDICATE, not per-type: `has`/`indexOf` see the raw
+-- `LowCardinality` and take the Direct mode, while `hasAny`/`hasAll` route through the batched helper,
+-- whose two hops are always Supertype. `bloom_filter` accepts this type because the array's data column
+-- is a `ColumnLowCardinality`, not a `ColumnNullable`, and two existing tests already index it.
 SELECT 'lcnstr has FS3', (SELECT count() FROM o_lcnstr WHERE has(v,toFixedString('V0',3))) = (SELECT count() FROM k_lcnstr WHERE has(v,toFixedString('V0',3)));
 lcnstr has FS3	1
 SELECT 'lcnstr indexOf FS3', (SELECT count() FROM o_lcnstr WHERE indexOf(v,toFixedString('V0',3)) = 1) = (SELECT count() FROM k_lcnstr WHERE indexOf(v,toFixedString('V0',3)) = 1);
@@ -289,10 +290,12 @@ SELECT 'prune lcnstr hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT c
 prune lcnstr hasAny FS3	1
 SELECT 'prune lcnstr has FS3 is 7', (SELECT groupArray(id) FROM (SELECT id FROM p_lcnstr WHERE has(v,toFixedString('V0',3)) ORDER BY id)) = [7];
 prune lcnstr has FS3 is 7	1
--- The unrepresentable-constant query must still PLAN, so analysis has to swallow the failed cast
--- rather than propagate it. This reads the plan rather than the answer, which is what makes it fail
--- loudly if the scalar coercion ever rethrows.
-SELECT 'decline fs3 has unrepresentable FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE has(v,toFixedString('WXYZ',5))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) = toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+-- Two properties in one cell. The query must still PLAN, so analysis has to swallow the failed cast
+-- rather than propagate it: a rethrow errors the whole statement. And the `idx` block must be ABSENT,
+-- so the decline is real rather than a successful prune of a value the function can never match. The
+-- `Name:` line is emitted only for a named index, and the always-present `PrimaryKey` entry carries no
+-- name, so a granule-count predicate cannot stand in for this.
+SELECT 'decline fs3 has unrepresentable FS5', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE has(v,toFixedString('WXYZ',5)));
 decline fs3 has unrepresentable FS5	1
 -- `LowCardinality(FixedString(N))` is the one element type where the two coercion modes could differ,
 -- and the whole case for coercing rather than declining is that pruning survives. The four cells
@@ -373,6 +376,12 @@ SELECT 'prune fs3m hasAny ids are 5 7 11', (SELECT groupArray(id) FROM (SELECT i
 prune fs3m hasAny ids are 5 7 11	1
 SELECT 'prune fs3m hasAll ids are 7', (SELECT groupArray(id) FROM (SELECT id FROM p_fs3m WHERE hasAll(v,[toFixedString('V0',5),toFixedString('V0A',5)]) ORDER BY id)) = [7];
 prune fs3m hasAll ids are 7	1
+-- One unrepresentable element declines the WHOLE predicate, so the index must not be applied even
+-- though the other element is representable and present in the data. The result cell above cannot see
+-- this: hashing only the valid `V0` and dropping `WXYZ` selects exactly the rows `hasAny` returns, so
+-- the answer stays right while the contract is broken. Only the plan shows it.
+SELECT 'decline fs3m hasAny later unrepresentable', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3m WHERE hasAny(v,[toFixedString('V0',5),toFixedString('WXYZ',5)]));
+decline fs3m hasAny later unrepresentable	1
 DROP TABLE o_str;
 DROP TABLE k_str;
 DROP TABLE o_fs3;
