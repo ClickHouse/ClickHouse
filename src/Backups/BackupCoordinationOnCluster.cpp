@@ -776,12 +776,12 @@ BackupFileInfos BackupCoordinationOnCluster::getFileInfos() const
     return file_infos->getFileInfos(current_host);
 }
 
-BackupFileInfos BackupCoordinationOnCluster::getFileInfosForAllHosts() const
+void BackupCoordinationOnCluster::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
 {
-    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getFileInfosForAllHosts");
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::forEachFileInfoForAllHosts");
     std::lock_guard lock{file_infos_mutex};
     prepareFileInfos();
-    return file_infos->getFileInfosForAllHosts();
+    file_infos->forEachFileInfoForAllHosts(callback);
 }
 
 void BackupCoordinationOnCluster::prepareFileInfos() const
