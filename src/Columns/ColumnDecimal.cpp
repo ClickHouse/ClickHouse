@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/transformEndianness.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -697,6 +698,36 @@ template <is_decimal T>
 bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
 {
     return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
+{
+    using Native = T::NativeType;
+    if constexpr (!std::is_same_v<T, Time64> && (std::is_integral_v<Native> || is_big_int_v<Native>))
+    {
+        Native value = data[n].value;
+        transformEndianness<std::endian::big>(value);
+        char * bytes = reinterpret_cast<char *>(&value);
+        bytes[0] ^= 0x80;
+        out.append(reinterpret_cast<const char *>(&value), sizeof(Native));
+    }
+    else
+    {
+        IColumn::serializeAsComparable(n, out);
+    }
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 template class ColumnDecimal<Decimal32>;
