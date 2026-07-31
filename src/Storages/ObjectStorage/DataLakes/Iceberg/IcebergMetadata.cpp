@@ -755,7 +755,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             filename_generator, metadata_info.path, parent_snapshot_id,
             /* added_files */ 0, /* added_records */ 0, /* added_files_size */ 0,
             /* num_partitions */ 0, /* added_delete_files */ 0, /* num_deleted_rows */ 0,
-            std::nullopt, std::nullopt, /*is_truncate=*/true);
+            std::nullopt, std::nullopt, MetadataGenerator::SnapshotOperation::Delete);
 
         auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
 

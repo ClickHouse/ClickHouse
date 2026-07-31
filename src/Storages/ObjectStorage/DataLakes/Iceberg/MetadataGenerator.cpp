@@ -176,7 +176,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
-    bool is_truncate)
+    SnapshotOperation operation)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -220,40 +220,37 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    if (is_truncate)
+    /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
+    /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly,
+    /// and TRUNCATE passes `Delete`.
+    const char * operation_name = Iceberg::f_append;
+    if (operation == SnapshotOperation::Replace)
+        operation_name = Iceberg::f_replace;
+    else if (operation == SnapshotOperation::Delete)
+        operation_name = Iceberg::f_delete;
+    else if (num_deleted_rows != 0)
+        operation_name = Iceberg::f_overwrite;
+    summary->set(Iceberg::f_operation, operation_name);
+    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+    summary->set(Iceberg::f_added_records, std::to_string(added_records));
+    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    if (num_deleted_rows != 0)
     {
-        summary->set(Iceberg::f_operation, Iceberg::f_delete);
-        if (!parent_snapshot)
-        {
-            summary->set(Iceberg::f_deleted_records, std::to_string(0));
-            summary->set(Iceberg::f_deleted_data_files, std::to_string(0));
-        }
-        else
-        {
-            if (auto prev_total_records = readParentTotal(parent_snapshot, Iceberg::f_total_records))
-                summary->set(Iceberg::f_deleted_records, std::to_string(*prev_total_records));
-            if (auto prev_total_data_files = readParentTotal(parent_snapshot, Iceberg::f_total_data_files))
-                summary->set(Iceberg::f_deleted_data_files, std::to_string(*prev_total_data_files));
-        }
-    }
-    else
-    {
-        summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
-        summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-        summary->set(Iceberg::f_added_records, std::to_string(added_records));
-        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
-        if (num_deleted_rows != 0)
-        {
-            summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
-            summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
-            summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
-        }
+        summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
+        summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
+        summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
     }
 
-    if (is_truncate)
+    if (operation == SnapshotOperation::Delete)
     {
-        /// Truncate removes all data, so every table-wide total resets to 0.
+        /// TRUNCATE drops every row the parent held, so report what was removed and reset all
+        /// table-wide totals to 0. `readParentTotal` already yields nullopt when there is no parent
+        /// or the parent omits the counter, and 0 is the correct answer in both cases.
+        const auto deleted_records = readParentTotal(parent_snapshot, Iceberg::f_total_records).value_or(0);
+        const auto deleted_data_files = readParentTotal(parent_snapshot, Iceberg::f_total_data_files).value_or(0);
+        summary->set(Iceberg::f_deleted_records, std::to_string(deleted_records));
+        summary->set(Iceberg::f_deleted_data_files, std::to_string(deleted_data_files));
         for (const auto * field : {
                  Iceberg::f_total_records,
                  Iceberg::f_total_files_size,
