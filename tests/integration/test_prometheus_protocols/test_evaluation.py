@@ -888,6 +888,15 @@ def test_function_absent():
         [["[('job','api')]", "1970-01-01 00:02:20.000", 1]],
     )
 
+    # Prometheus treats an exact matcher with an empty value as label absence,
+    # so the synthetic series does not contain job="".
+    do_query_test(
+        'absent(nonexistent_metric_name{job=""})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
     # Offset modifiers still leave a selector simple enough for label inference.
     do_query_test(
         'absent(nonexistent_metric_name{job="api"} offset 5m)',

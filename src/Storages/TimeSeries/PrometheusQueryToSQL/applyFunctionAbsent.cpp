@@ -58,6 +58,8 @@ ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
                 if (!matcher.label_value.empty())
                     labels[matcher.label_name] = matcher.label_value;
                 else
+                    /// Prometheus treats an empty label value as a missing label:
+                    /// labels.Builder::Set(name, "") deletes that label.
                     labels.erase(matcher.label_name);
             }
             else

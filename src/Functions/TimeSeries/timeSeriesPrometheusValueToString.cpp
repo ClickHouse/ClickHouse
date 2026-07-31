@@ -79,7 +79,7 @@ private:
         if (!values)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column.getName(), name);
 
-        std::array<char, max_formatted_size> formatted;
+        std::array<char, max_formatted_size> formatted{};
         for (const auto value : values->getData())
         {
             const size_t length = format(static_cast<Float64>(value), formatted.data());
@@ -108,7 +108,7 @@ private:
         }
 
         using Converter = double_conversion::DoubleToStringConverter;
-        std::array<char, Converter::kBase10MaximalLength + 1> digits;
+        std::array<char, Converter::kBase10MaximalLength + 1> digits{};
         bool negative = false;
         int digits_length = 0;
         int decimal_point = 0;
