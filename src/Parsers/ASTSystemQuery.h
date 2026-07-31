@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+
+namespace Poco::JSON { class Object; }
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 #include <base/EnumReflection.h>
@@ -153,6 +155,16 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        STOP_ALL_BACKGROUND,
+        START_ALL_BACKGROUND,
+        PAUSE_ALL_BACKGROUND,
+        CANCEL_ALL_BACKGROUND,
+        REFRESH_ALL_BACKGROUND,
+        STOP,
+        START,
+        PAUSE,
+        CANCEL,
+        REFRESH,
         END
     };
 
@@ -244,6 +256,8 @@ public:
     ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

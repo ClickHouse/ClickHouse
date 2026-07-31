@@ -17,6 +17,9 @@ struct StreamSettings
     /// Check if setting is enabled, otherwise use common `max_block_size` setting.
     size_t max_read_mysql_row_nums;
     size_t max_read_mysql_bytes_size;
+    /// Bounds the element counts (points, rings, polygons) accepted while parsing WKB spatial
+    /// values read from MySQL, mirroring the `max_wkb_geometry_elements` query setting.
+    UInt32 max_wkb_geometry_elements;
     bool auto_close;
     bool fetch_by_name;
     size_t default_num_tries_on_connection_loss;
