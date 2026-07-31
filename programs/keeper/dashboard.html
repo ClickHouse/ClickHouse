@@ -1490,11 +1490,22 @@
         return pos >= 0 ? endpoint.slice(0, pos) : endpoint;
     }
 
+    /// Format a host for embedding into a URL: IPv6 literals must be bracketed,
+    /// and a zone id ("fe80::1%eth0") must have its "%" percent-encoded.
+    function hostForUrl(host) {
+        if (host && host.indexOf(":") >= 0 && host.charAt(0) !== "[")
+            return `[${host.replace(/%/g, "%25")}]`;
+        return host;
+    }
+
     function hostsLikelySame(a, b) {
         if (!a || !b)
             return false;
         const norm = (h) => {
-            const lower = h.toLowerCase();
+            /// window.location.hostname keeps IPv6 literals bracketed; endpointHost strips them.
+            let lower = h.toLowerCase();
+            if (lower.charAt(0) === "[" && lower.charAt(lower.length - 1) === "]")
+                lower = lower.slice(1, -1);
             if (lower === "localhost" || lower === "127.0.0.1" || lower === "::1")
                 return "loopback";
             return lower;
@@ -1538,7 +1549,7 @@
             return null;
         const port = resolveMemberHttpPort(leader, cluster || last_cluster_json);
         const port_part = port ? `:${port}` : "";
-        const url = new URL(`${window.location.protocol}//${host}${port_part}/dashboard`);
+        const url = new URL(`${window.location.protocol}//${hostForUrl(host)}${port_part}/dashboard`);
         url.searchParams.set("tab", "cluster");
         return url.toString();
     }
@@ -1790,7 +1801,8 @@
             if (leader && m.last_log_index !== null && m.last_log_index !== undefined
                 && leader.last_log_index !== null && leader.last_log_index !== undefined)
             {
-                lag = String(Number(leader.last_log_index) - Number(m.last_log_index));
+                /// Log indices travel as strings because UInt64 does not fit into a JSON number.
+                lag = String(BigInt(leader.last_log_index) - BigInt(m.last_log_index));
             }
             tr.innerHTML =
                 `<td>${m.server_id}${m.is_self ? " *" : ""}</td>` +
