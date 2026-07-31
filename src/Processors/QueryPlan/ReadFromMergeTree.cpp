@@ -1241,10 +1241,11 @@ Pipe ReadFromMergeTree::readByLayers(
 static std::optional<size_t> estimateReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
-    const VirtualColumnsDescription & virtuals,
+    const StorageSnapshotPtr & storage_snapshot,
     const Settings & settings)
 {
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+    const auto & virtuals = storage_snapshot->metadata->virtuals;
 
     size_t total_bytes = 0;
 
@@ -1285,6 +1286,23 @@ static std::optional<size_t> estimateReadBytes(
                 return std::nullopt;
 
             requested_names_by_column[col->getNameInStorage()].emplace(col_name);
+        }
+
+        /// Virtual-only reads inject the smallest physical column to determine the number of rows.
+        if (requested_names_by_column.empty())
+        {
+            auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+            NamesAndTypesList available_columns;
+            for (const auto & column : data_part.getColumns())
+                if (storage_snapshot->tryGetColumn(options, column.name))
+                    available_columns.push_back(column);
+
+            if (available_columns.empty())
+                available_columns = data_part.getColumns();
+
+            const auto physical_name = data_part.getColumnNameWithMinimumCompressedSize(available_columns);
+            requested_names_by_column[physical_name].emplace(physical_name);
         }
 
         size_t part_bytes = 0;
@@ -1401,11 +1419,11 @@ static void capStreamsByReadBytes(
     size_t & num_streams,
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
-    const VirtualColumnsDescription & virtuals,
+    const StorageSnapshotPtr & storage_snapshot,
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, virtuals, settings);
+    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, settings);
     if (!estimated_read_bytes)
         return;
 
@@ -1463,7 +1481,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         if (!is_parallel_reading_from_replicas
             && !isQueryWithFinal()
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
-            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, storage_snapshot->metadata->virtuals, settings, log);
+            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, storage_snapshot, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
