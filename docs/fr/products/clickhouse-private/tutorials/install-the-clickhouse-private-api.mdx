@@ -25,9 +25,7 @@ Avant de commencer, assurez-vous de disposer des éléments suivants :
 ***
 
 <Steps>
-  <Step>
-    ## Étape 1 : Copier les images de conteneur
-
+  <Step title="Étape 1 : Copier les images de conteneur" id="step-1-copy-container-images">
     Utilisez skopeo pour copier l&#39;image de la Private API et le chart Helm vers votre ECR.
 
     ```ini
@@ -53,9 +51,7 @@ Avant de commencer, assurez-vous de disposer des éléments suivants :
     ***
   </Step>
 
-  <Step>
-    ## Étape 2 : Installer via Helm
-
+  <Step title="Étape 2 : Installer via Helm" id="step-2-install-via-helm">
     La Private API est installée dans un espace de noms dédié.
 
     ```text
@@ -80,9 +76,7 @@ Avant de commencer, assurez-vous de disposer des éléments suivants :
     ***
   </Step>
 
-  <Step>
-    ## Étape 3 : Configurer l&#39;authentification
-
+  <Step title="Étape 3 : Configurer l'authentification" id="step-3-configure-authentication">
     Par défaut, l&#39;authentification HTTP Basic est désactivée. Pour les environnements de production, activez-la en définissant les valeurs Helm suivantes :
 
     * `api.basicAuth.enabled=true`
@@ -94,9 +88,7 @@ Avant de commencer, assurez-vous de disposer des éléments suivants :
     ***
   </Step>
 
-  <Step>
-    ## Étape 4 : Vérifier l&#39;installation
-
+  <Step title="Étape 4 : Vérifier l'installation" id="step-4-verify-installation">
     ### Vérifier le pod
 
     ```bash
