@@ -807,6 +807,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                     auto inputs_matches = matchTrees(inputs_dag.getOutputs(), *dag.dag, false /* check_monotonicity */);
 
                     MergeTreeData::AggColumnToPhysicalName agg_col_to_physical_name;
+                    agg_col_to_physical_name.reserve(aggregates.size());
                     bool all_args_resolved = true;
                     for (const auto & agg : aggregates)
                     {
@@ -827,7 +828,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                             all_args_resolved = false;
                             break;
                         }
-                        agg_col_to_physical_name[agg.column_name] = match_it->second.node->result_name;
+                        agg_col_to_physical_name.push_back(match_it->second.node->result_name);
                     }
 
                     if (all_args_resolved)

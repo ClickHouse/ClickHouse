@@ -556,8 +556,9 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override;
 
-    /// Mapping from aggregate result column_name to physical (bare) column name in the table
-    using AggColumnToPhysicalName = std::unordered_map<String, String>;
+    /// Physical column name per aggregate, indexed by position in AggregateDescriptions.
+    /// Position is used as identity because output column names are not unique.
+    using AggColumnToPhysicalName = std::vector<String>;
 
     /// Mapping from query GROUP BY key name to partition key index
     using GroupByKeyToPartitionIdx = std::vector<std::pair<String, size_t>>;

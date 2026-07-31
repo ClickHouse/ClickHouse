@@ -47,3 +47,13 @@ ReadFromPreparedSource (_column_statistics_aggregation)
 1	50	50
 2	150	150
 3	25	25
+ReadFromPreparedSource (_column_statistics_aggregation)
+2	2
+ReadFromPreparedSource (_column_statistics_aggregation)
+2	10
+ReadFromPreparedSource (_column_statistics_aggregation)
+2	400	2
+ReadFromPreparedSource (_column_statistics_aggregation)
+1	5	2
+2	15	4
+3	2	3

@@ -128,4 +128,26 @@ SELECT min(a), min(a), max(a) FROM test_col_stats_agg;
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, min(value), min(value) FROM test_col_stats_agg GROUP BY p ORDER BY p) WHERE explain LIKE '%ReadFromPreparedSource%';
 SELECT p, min(value), min(value) FROM test_col_stats_agg GROUP BY p ORDER BY p;
 
+-- ==================================================
+-- Duplicate aliases on different source columns
+-- ==================================================
+
+-- Different source columns with different aliases: each output must keep its
+-- own value (regression: previously the per-position keying was missing,
+-- causing aggregates on different columns to collide).
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(a) AS x, min(b) AS y FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(a) AS x, min(b) AS y FROM test_col_stats_agg;
+
+-- Different columns, mixed min/max
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(a) AS x, max(b) AS y FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(a) AS x, max(b) AS y FROM test_col_stats_agg;
+
+-- Three aggregates on three different columns
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT min(a) AS x, max(value) AS y, min(b) AS z FROM test_col_stats_agg) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT min(a) AS x, max(value) AS y, min(b) AS z FROM test_col_stats_agg;
+
+-- Different columns with GROUP BY partition key
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, min(a) AS x, min(b) AS y FROM test_col_stats_agg GROUP BY p ORDER BY p) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT p, min(a) AS x, min(b) AS y FROM test_col_stats_agg GROUP BY p ORDER BY p;
+
 DROP TABLE test_col_stats_agg;

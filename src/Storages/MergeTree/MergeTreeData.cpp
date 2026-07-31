@@ -10367,15 +10367,15 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
     }
 
     /// Check all aggregate argument columns exist and have a supported type.
-    for (const auto & agg_desc : aggregate_descriptions)
+    for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
     {
-        auto name_it = agg_col_to_physical_name.find(agg_desc.column_name);
-        if (name_it == agg_col_to_physical_name.end())
+        const auto & agg_desc = aggregate_descriptions[i];
+        if (i >= agg_col_to_physical_name.size())
         {
             LOG_TRACE(log, "Column statistics aggregation: aggregate column '{}' has no physical name mapping", agg_desc.column_name);
             return {};
         }
-        const String & physical_name = name_it->second;
+        const String & physical_name = agg_col_to_physical_name[i];
         if (!columns_desc.has(physical_name))
         {
             LOG_TRACE(log, "Column statistics aggregation: column '{}' not found in schema", physical_name);
@@ -10423,7 +10423,7 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
 
     /// Aggregate per-partition min/max values using column statistics from each part
     /// Key: partition_id (or empty string if no GROUP BY)
-    std::unordered_map<String, std::pair<Row, std::unordered_map<String, std::pair<Field, Field>>>> partition_minmax;
+    std::unordered_map<String, std::pair<Row, std::vector<std::pair<Field, Field>>>> partition_minmax;
 
     /// Lambda to detect NaN field values (StatisticsBasic::build can produce NaN
     /// bounds for parts whose column is entirely NaN, and NaN comparisons break
@@ -10467,10 +10467,13 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
         auto & [partition_values, col_minmax] = partition_minmax[agg_key];
         if (has_group_by && partition_values.empty())
             partition_values = part->partition.value;
+        if (col_minmax.empty())
+            col_minmax.resize(agg_columns.size());
 
-        for (const auto & agg_col : agg_columns)
+        for (size_t agg_idx = 0; agg_idx < agg_columns.size(); ++agg_idx)
         {
-            const String & arg_col_name = agg_col_to_physical_name.at(agg_col.col_name);
+            const auto & agg_col = agg_columns[agg_idx];
+            const String & arg_col_name = agg_col_to_physical_name.at(agg_idx);
 
             /// Statistics are stored in the domain of the part's physical column type.
             /// A part with a different type (unfinished MODIFY COLUMN, converted at read
@@ -10505,7 +10508,7 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
                 return {};
             }
 
-            auto & [cur_min, cur_max] = col_minmax[agg_col.col_name];
+            auto & [cur_min, cur_max] = col_minmax[agg_idx];
             if (cur_min.isNull() || accurateLess(part_min, cur_min))
                 cur_min = part_min;
             if (cur_max.isNull() || accurateLess(cur_max, part_max))
@@ -10533,15 +10536,15 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
             }
         }
 
-        for (auto & agg_col : agg_columns)
+        for (size_t agg_idx = 0; agg_idx < agg_columns.size(); ++agg_idx)
         {
-            auto minmax_it = col_minmax.find(agg_col.col_name);
-            if (minmax_it == col_minmax.end())
+            auto & agg_col = agg_columns[agg_idx];
+            if (agg_idx >= col_minmax.size())
             {
                 LOG_TRACE(log, "Column statistics aggregation: no min/max for column '{}' in partition, falling back", agg_col.col_name);
                 return {};
             }
-            const Field & value = agg_col.is_min ? minmax_it->second.first : minmax_it->second.second;
+            const Field & value = agg_col.is_min ? col_minmax[agg_idx].first : col_minmax[agg_idx].second;
             if (value.isNull() || value.isPositiveInfinity() || isNanField(value))
             {
                 LOG_TRACE(log, "Column statistics aggregation: NULL/infinity/NaN bound for column '{}', falling back", agg_col.col_name);
