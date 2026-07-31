@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
@@ -71,6 +72,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
+    , settings(settings_)
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
     , max_unexpected_write_error_retries(write_settings_.is_initial_access_check ? settings_->max_unexpected_write_error_retries * 3 : settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
@@ -505,6 +507,18 @@ void WriteBufferFromAzureBlobStorage::detachBuffer()
 
 void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage::PartData && part_data)
 {
+    if (block_ids.size() >= settings->max_blocks_in_multipart_upload)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The number of blocks exceeded max_blocks_in_multipart_upload = {} while writing {} bytes to Azure Blob Storage. "
+            "Check min_upload_part_size = {}, max_upload_part_size = {}, upload_part_size_multiply_factor = {}, "
+            "upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
+            settings->max_blocks_in_multipart_upload, count(), settings->min_upload_part_size, settings->max_upload_part_size,
+            settings->upload_part_size_multiply_factor, settings->upload_part_size_multiply_parts_count_threshold,
+            settings->max_single_part_upload_size);
+    }
+
     const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
     auto worker_data = std::make_shared<std::tuple<std::string, WriteBufferFromAzureBlobStorage::PartData>>(block_id, std::move(part_data));
 

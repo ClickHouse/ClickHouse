@@ -1952,3 +1952,41 @@ def test_reject_zero_min_upload_part_size(cluster):
     assert "azure_min_upload_part_size" in error, error
 
     azure_query(node, "DROP TABLE test_reject_zero_min_upload")
+
+
+def test_max_blocks_in_multipart_upload_is_enforced(cluster):
+    # azure_max_blocks_in_multipart_upload must be honored by the blob multipart writer:
+    # a write that needs more blocks than allowed fails instead of silently exceeding the limit.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_max_blocks_enforced (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_max_blocks_enforced.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
+        settings={
+            "azure_max_blocks_in_multipart_upload": 2,
+            "azure_strict_upload_part_size": 100,
+            "azure_max_single_part_upload_size": 100,
+        },
+    )
+    assert "INVALID_CONFIG_PARAMETER" in error, error
+    assert "max_blocks_in_multipart_upload" in error, error
+
+    # The same write succeeds when the limit accommodates the number of blocks.
+    azure_query(
+        node,
+        "INSERT INTO test_max_blocks_enforced SELECT number, repeat('a', 100) FROM numbers(100)",
+        settings={
+            "azure_strict_upload_part_size": 100,
+            "azure_max_single_part_upload_size": 100,
+        },
+    )
+    assert (
+        azure_query(node, "SELECT count() FROM test_max_blocks_enforced").strip()
+        == "100"
+    )
+
+    azure_query(node, "DROP TABLE test_max_blocks_enforced")
