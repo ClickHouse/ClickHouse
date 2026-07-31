@@ -154,9 +154,9 @@ def test_detach_database_still_reports_keeper_error(started_cluster):
 
 def test_drop_database_still_reports_non_hardware_keeper_error(started_cluster):
     # Must-not-regress: the best-effort handling is narrowed to HARDWARE Keeper errors, which are
-    # transient and release the ephemeral node when the session expires anyway. A user-class error
-    # (here ZBADVERSION) means a real inconsistency rather than a lost connection, so it must still
-    # fail the DROP instead of being swallowed.
+    # transient and release the ephemeral node when the session expires anyway. ZBADVERSION is
+    # injected because it is a user-class (non-hardware) error, so it must still fail the DROP
+    # instead of being swallowed.
     db = "rdb_drop_nonretryable"
     _create_replicated_database(db)
 
@@ -244,13 +244,26 @@ def test_restore_database_replica_after_failed_shutdown(started_cluster):
     node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
     try:
         error = node.query_and_get_error(f"SYSTEM RESTORE DATABASE REPLICA {db}")
+        assert INJECTED in error, (
+            f"The restore did not reach the injected removal: {error}"
+        )
+        before = int(node.count_in_log(INJECTED))
+
+        # The failpoint is deliberately still armed. reinitializeDDLWorker throws before it can
+        # reset ddl_worker, so this second restore shuts the same stale worker down again. It can
+        # only succeed if the failed shutdown released its holders, because otherwise the removal
+        # is re-entered and throws again.
+        zk.delete(_replica_path(db), recursive=True)
+        node.query(f"SYSTEM RESTORE DATABASE REPLICA {db}")
+        # Exact equality, never before + N: count_in_log counts log lines, and an unhandled throw
+        # on the restore path emits two of them (executeQuery and TCPHandler).
+        assert int(node.count_in_log(INJECTED)) == before, (
+            "The second restore re-entered the eager removal: the failed shutdown did not "
+            "release its holders."
+        )
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
-    assert INJECTED in error, f"The restore did not reach the injected removal: {error}"
 
-    # A second, unarmed restore must succeed and leave the database usable.
-    zk.delete(_replica_path(db), recursive=True)
-    node.query(f"SYSTEM RESTORE DATABASE REPLICA {db}")
     node.query(f"CREATE TABLE {db}.t2 (a UInt64) ENGINE = MergeTree ORDER BY a")
     assert node.query(f"SELECT count() FROM {db}.t2").strip() == "0"
 
