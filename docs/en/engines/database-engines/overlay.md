@@ -139,7 +139,10 @@ table. This applies to both reads and `INSERT`s:
   `CREATE TABLE ... AS` (including `CLONE AS`) a facade name copies the schema of the
   underlying source table and requires `SHOW COLUMNS` on both the `Overlay` and the source
   table, and `CREATE MATERIALIZED VIEW ... TO` a facade target funnels writes into the source
-  table and requires the `SELECT` and `INSERT` privileges on both.
+  table and requires the `SELECT` and `INSERT` privileges on both;
+* a parameterized view called through the facade (`SELECT ... FROM overlay_db.v(param = ...)`)
+  runs the underlying source view and requires `SELECT` on both the `Overlay` and the source
+  view, and `DESCRIBE` of such a call requires `SHOW COLUMNS` on both.
 
 Row policies follow the same rule: reading a table through the facade applies the `SELECT` row
 policies of **both** the `Overlay` and the underlying source table (a row is returned only if it

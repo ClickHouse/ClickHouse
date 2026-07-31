@@ -182,19 +182,11 @@ namespace
 /// When `written_id` names a read-only `Overlay` facade and the storage actually belongs to a
 /// different table, return that underlying source id so access can be required on it as well as on
 /// the facade. Restricting this to `Overlay` keeps unrelated cases where the written and resolved
-/// ids can differ (temporary tables, a concurrent rename) unaffected.
+/// ids can differ (temporary tables, a concurrent rename) unaffected. A parameterized view
+/// reached through a facade is recognized by the source id carried on the synthesized storage.
 std::optional<StorageID> overlaySourceIdToAlsoCheck(const StorageID & written_id, const StoragePtr & storage)
 {
-    if (!storage)
-        return {};
-    auto source_id = storage->getStorageID();
-    if (!source_id.hasDatabase()
-        || (source_id.database_name == written_id.database_name && source_id.table_name == written_id.table_name))
-        return {};
-    const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_id.database_name);
-    if (written_db && written_db->isReadOnly() && typeid_cast<const DatabaseOverlay *>(written_db.get()))
-        return source_id;
-    return {};
+    return DatabaseOverlay::getSourceTableIdForReadonlyFacade(written_id, storage);
 }
 
 /// Check if current user has privileges to SELECT columns from table
@@ -409,13 +401,20 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     /// When the table is reached through a read-only `Overlay` facade, access requires a grant on
-    /// the facade as well as on the source, so the facade's row policies must apply too. Combine
-    /// the facade's SELECT policies with the source's (a row must pass both).
-    if (overlaySourceIdToAlsoCheck(as_written_id, storage))
+    /// the facade as well as on the source, so both names' row policies must apply. Combine the
+    /// facade's SELECT policies with the source's (a row must pass both). For a plain table the
+    /// storage id above is the source and the facade name is combined here; for a parameterized
+    /// view the synthesized storage keeps the facade name, so the source id (carried on the
+    /// storage) is combined instead.
+    if (auto source_id = overlaySourceIdToAlsoCheck(as_written_id, storage))
     {
-        auto facade_filter = query_context->getRowPolicyFilter(
-            as_written_id.getDatabaseName(), as_written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
+        const auto & other_id
+            = (source_id->database_name == storage_id.database_name && source_id->table_name == storage_id.table_name)
+            ? as_written_id
+            : *source_id;
+        auto other_filter = query_context->getRowPolicyFilter(
+            other_id.getDatabaseName(), other_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(row_policy_filter, other_filter);
     }
 
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())

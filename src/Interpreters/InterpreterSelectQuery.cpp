@@ -806,6 +806,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto facade_filter = context->getRowPolicyFilter(written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
             row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
         }
+        /// A parameterized view reached through a facade: the synthesized storage keeps the
+        /// facade name (the filter above is the facade's), and carries the id of the underlying
+        /// source view, whose row policies must apply too.
+        else if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, storage))
+        {
+            auto source_filter = context->getRowPolicyFilter(source_id->getDatabaseName(), source_id->getTableName(), RowPolicyFilterType::SELECT_FILTER);
+            row_policy_filter = combineRowPolicyFilters(row_policy_filter, source_filter);
+        }
 
         if (row_policy_filter && context->hasQueryContext())
         {

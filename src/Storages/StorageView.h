@@ -26,6 +26,15 @@ public:
     bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
+    /// A parameterized view reached through a read-only `Overlay` facade is re-wrapped into a
+    /// synthesized `StorageView` whose own id is the facade name as written in the query, so the
+    /// id of the underlying source view is recorded here. Access checks and row policies must
+    /// apply to both names (the facade must not widen access), and unlike a plain table reached
+    /// through a facade, the storage id alone cannot reveal the source.
+    /// See `DatabaseOverlay::getSourceTableIdForReadonlyFacade`.
+    void setOverlaySourceTableId(const StorageID & source_id) { overlay_source_table_id = source_id; }
+    const std::optional<StorageID> & getOverlaySourceTableId() const { return overlay_source_table_id; }
+
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -63,6 +72,7 @@ public:
 
 protected:
     bool is_parameterized_view;
+    std::optional<StorageID> overlay_source_table_id;
 };
 
 }

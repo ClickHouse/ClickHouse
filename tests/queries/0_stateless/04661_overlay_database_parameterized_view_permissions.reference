@@ -1,0 +1,43 @@
+=== enable_analyzer = 0 ===
+facade-only user: the view is indistinguishable from a missing one
+UNKNOWN_FUNCTION
+UNKNOWN_FUNCTION
+source-only user: denied on the facade side
+ACCESS_DENIED
+UNKNOWN_FUNCTION
+user with SHOW TABLES only on the source: sees the view, cannot read it
+ACCESS_DENIED
+UNKNOWN_FUNCTION
+dual-grant user: reads through the facade, the parameter applies
+2	b
+150	big
+dual-grant user: DESCRIBE through the facade
+id	UInt32
+s	String
+=== enable_analyzer = 1 ===
+facade-only user: the view is indistinguishable from a missing one
+UNKNOWN_FUNCTION
+UNKNOWN_FUNCTION
+source-only user: denied on the facade side
+ACCESS_DENIED
+UNKNOWN_FUNCTION
+user with SHOW TABLES only on the source: sees the view, cannot read it
+ACCESS_DENIED
+UNKNOWN_FUNCTION
+dual-grant user: reads through the facade, the parameter applies
+2	b
+150	big
+dual-grant user: DESCRIBE through the facade
+id	UInt32
+s	String
+=== row policies of the source view and of the facade are combined ===
+-- direct source read applies the source policy only (analyzer = 0)
+1	a
+2	b
+-- the facade combines both policies (analyzer = 0)
+2	b
+-- direct source read applies the source policy only (analyzer = 1)
+1	a
+2	b
+-- the facade combines both policies (analyzer = 1)
+2	b

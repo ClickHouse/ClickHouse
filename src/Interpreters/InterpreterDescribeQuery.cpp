@@ -185,15 +185,39 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     /// access-check exception.
     {
         auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
-        StoragePtr table;
+
+        /// The written name can resolve to a parameterized view through a read-only `Overlay`
+        /// facade. The lookup below would load the underlying source view before any source-side
+        /// grant is proven, so a fail-closed visibility precheck runs first: without
+        /// `SHOW_COLUMNS` on the source name the branch is skipped and the name falls through to
+        /// the `UNKNOWN_FUNCTION` branch, exactly as for a missing name — a denied name, a
+        /// missing name, and a hidden broken source stay indistinguishable.
+        bool source_visible = true;
         if (!table_name.empty())
+            if (const auto * facade
+                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database_name).get()))
+                source_visible = facade->isSourceTableVisibleNoLoad(table_name, current_context, AccessType::SHOW_COLUMNS);
+
+        StoragePtr table;
+        if (!table_name.empty() && source_visible)
             table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, current_context);
 
-        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted) must also fall
-        /// through to the `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak
-        /// the existence of the view.
+        /// Re-verify against the loaded storage: the name could have started resolving to a
+        /// (different) source between the metadata-only check above and the lookup. Through a
+        /// facade the described columns are those of the underlying source view, so
+        /// `SHOW_COLUMNS` is required on the source name too — the facade must not widen access.
+        bool source_show_columns_granted = true;
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, table))
+            source_show_columns_granted
+                = current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_id->database_name, source_id->table_name);
+
+        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted, on the
+        /// facade name or on the underlying source name) must also fall through to the
+        /// `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak the
+        /// existence of the view.
         if (auto * storage_view = table ? table->as<StorageView>() : nullptr;
             storage_view && storage_view->isParameterizedView()
+            && source_show_columns_granted
             && current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
         {
             auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
