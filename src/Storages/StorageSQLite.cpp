@@ -28,6 +28,11 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_QUERY;
+}
+
 namespace
 {
 
@@ -69,10 +74,29 @@ bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
         if (!columns.has(generated.name))
             continue;
 
-        /// Only re-classify a plain ordinary column. Respect an explicit `DEFAULT`/`MATERIALIZED`/`ALIAS`
-        /// expression the user may have declared.
         const auto & existing = columns.get(generated.name);
-        if (existing.default_desc.kind != ColumnDefaultKind::Default || existing.default_desc.expression)
+
+        /// A `DEFAULT` or `MATERIALIZED` expression makes the column part of the block that reaches
+        /// `SQLiteSink`, which writes it through - and SQLite rejects any write to a generated column with
+        /// `cannot INSERT into generated column`. Remote generated-ness wins over the local declaration, but
+        /// silently dropping the user's expression would be surprising, so reject the mismatch outright.
+        if ((existing.default_desc.kind == ColumnDefaultKind::Default
+             || existing.default_desc.kind == ColumnDefaultKind::Materialized)
+            && existing.default_desc.expression)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Column `{}` of the SQLite table `{}` is a generated column (`GENERATED ALWAYS AS`), which SQLite "
+                "does not allow to be written, so it cannot be declared with a `{}` expression: the value computed "
+                "by ClickHouse would be sent in the `INSERT` and rejected by SQLite. Declare it as an ordinary "
+                "column - the storage classifies it as `MATERIALIZED` on its own and reads the value that SQLite "
+                "generates",
+                generated.name,
+                table_name,
+                toString(existing.default_desc.kind));
+
+        /// Only re-classify a plain ordinary column. An `ALIAS`/`EPHEMERAL` column is neither stored nor sent
+        /// to the sink, so such a declaration stays a purely local matter.
+        if (existing.default_desc.kind != ColumnDefaultKind::Default)
             continue;
 
         columns.modify(generated.name, [](ColumnDescription & column)
