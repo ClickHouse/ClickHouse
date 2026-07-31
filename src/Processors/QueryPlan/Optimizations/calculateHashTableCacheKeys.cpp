@@ -4,6 +4,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -37,10 +38,13 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
     {
         /// The storage id is empty when reading from a table function. Use the remote query itself as
         /// a stable source identity, so that different table functions with the same plan shape do not
-        /// collide in `HashTablesStatistics`.
+        /// collide in `HashTablesStatistics`. The query alone is not enough: a table function may
+        /// resolve names against the current database implicitly (e.g. the one-argument
+        /// `merge('regexp')`), so mix in the current database as well.
         const auto tree_hash = source.getQueryAST()->getTreeHash(/*ignore_aliases=*/ false);
         hash.update(tree_hash.low64);
         hash.update(tree_hash.high64);
+        hash.update(source.getContext()->getCurrentDatabase());
     }
     return hash.get64();
 }
@@ -64,7 +68,12 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     if (const auto & table_expression = read.getQueryInfo().table_expression)
     {
         if (table_expression->as<TableFunctionNode>())
+        {
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
+            /// A table function may resolve names against the current database implicitly
+            /// (e.g. the one-argument `merge('regexp')`), which its subtree does not capture.
+            hash.update(read.getContext()->getCurrentDatabase());
+        }
     }
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
