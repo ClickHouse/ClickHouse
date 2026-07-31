@@ -201,9 +201,14 @@ TEST(MaskConnectionStringKey, MasksAtLeastAsMuchAsTheRegularExpression)
 
 TEST(MaskURIUserInfo, MasksTheUserInfo)
 {
-    std::string url = "https://AKIA123:se+cr/et@bucket.s3.amazonaws.com/key";
+    std::string url = "https://AKIA123:se+cret@bucket.s3.amazonaws.com/key";
     EXPECT_TRUE(maskURIUserInfo(url));
     EXPECT_EQ(url, "https://[HIDDEN]@bucket.s3.amazonaws.com/key");
+
+    /// `[^/?#]+` cannot cross a slash, so a slash in the password hides the at sign from the
+    /// expression, and nothing is masked (the regular expression it replaced behaved the same).
+    std::string slash_in_password = "https://user:se/cret@host/key";
+    EXPECT_FALSE(maskURIUserInfo(slash_in_password));
 
     /// The greedy `[^/?#]+` runs to the last at sign before the path.
     std::string with_at_in_password = "s3://user:p@ss@host/bucket";
