@@ -454,24 +454,27 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
         return;
     }
 
-    if (useLegacyTextArrayParsing(function, settings))
-    {
-        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
-        return;
-    }
-
-    /// Backward compatibility: released read the whole quoted token as a string and parsed its content with
-    /// the argument type's `deserializeTextCSV`, so `INSERT ... VALUES ('\\N')` built a null state for a
-    /// single `Nullable` argument. `SerializationNullable::deserializeTextQuoted` does not recognize the CSV
-    /// null representation: it would store the literal `\\N` for a string-like nested type and throw for a
-    /// numeric one, so route quoted tokens of a single `Nullable` argument through the same helper the
-    /// whole-text path uses. The native unquoted `NULL` keyword is unaffected: it does not start with a
-    /// quote and stays on the unified path below.
-    if (useLegacyNullableValueParsing(function, settings) && !istr.eof() && *istr.position() == '\'')
+    /// Backward compatibility: the released implementation always read the whole quoted token as a string
+    /// and parsed its content, so every `Quoted` caller accepted a quoted payload: `'[1, 2]'` in `array`
+    /// mode and `'42'` or `'\\N'` in `value` mode. `VALUES` masks a failure here with its expression
+    /// fallback, but the other callers - `CustomSeparated` with `format_custom_escaping_rule = 'Quoted'`,
+    /// `MySQLDump` - do not. So unwrap the token and parse the payload with the whole-text path, which is
+    /// the unified equivalent of the released per-value parse and also keeps the CSV null representation
+    /// working for a single `Nullable` argument (`SerializationNullable::deserializeTextQuoted` does not
+    /// recognize it). Native unquoted forms, e.g. `[1, 2]` in `array` mode or the `NULL` keyword, do not
+    /// start with a quote and fall through to the branches below.
+    if (!istr.eof() && *istr.position() == '\'')
     {
         String s;
         readQuotedStringWithSQLStyle(s, istr);
-        deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
+        ReadBufferFromString str_buf(s);
+        deserializeWholeText(column, str_buf, settings);
+        return;
+    }
+
+    if (useLegacyTextArrayParsing(function, settings))
+    {
+        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
         return;
     }
 
