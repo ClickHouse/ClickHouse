@@ -33,7 +33,7 @@ namespace
     template <is_decimal T>
     T getFromInt(Int64 int_value, UInt32 scale)
     {
-        T result;
+        T result{};
         if (common::mulOverflow(int_value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
         {
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
@@ -46,6 +46,14 @@ namespace
     template <is_decimal T>
     T getFromFloat(Float64 float_value, UInt32 scale)
     {
+        /// A non-finite value bypasses the range check below (every comparison with NaN is false),
+        /// so the final static_cast<NativeType>(NaN) would be undefined behavior. Reject it up front.
+        if (!std::isfinite(float_value))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} to {}: the value is not finite",
+                            float_value, getTypeName<T>());
+        }
         Float64 scaled_value = float_value * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(scale));
         if ((scaled_value > static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
@@ -134,7 +142,7 @@ namespace
             }
         }
 
-        T result;
+        T result{};
         if (common::mulOverflow(intervals, unit_multiplier, result.value)
             || common::mulOverflow(result.value, scale_multiplier, result.value))
         {
@@ -150,9 +158,9 @@ namespace
     template <is_decimal T>
     T parseFromString(std::string_view str, UInt32 scale)
     {
-        T result;
+        T result{};
         String error_message;
-        size_t error_pos;
+        size_t error_pos = 0;
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {

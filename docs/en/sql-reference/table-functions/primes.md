@@ -7,8 +7,6 @@ description: 'Returns a table with a single `prime` column that contains prime n
 doc_type: 'reference'
 ---
 
-# primes Table Function
-
 - `primes()` – Returns an infinite table with a single `prime` column (UInt64) that contains prime numbers in ascending order, starting from 2. Use `LIMIT` (and optionally `OFFSET`) to restrict the number of rows.
 
 - `primes(N)` – Returns a table with the single `prime` column (UInt64) that contains the first `N` prime numbers, starting from 2.

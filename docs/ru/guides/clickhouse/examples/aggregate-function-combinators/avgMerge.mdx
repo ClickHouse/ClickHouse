@@ -1,0 +1,32 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMerge'
+title: 'avgMerge'
+description: 'Пример использования комбинатора avgMerge'
+keywords: ['avg', 'merge', 'комбинатор', 'примеры', 'avgMerge']
+sidebarTitle: 'avgMerge'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`Merge`](/ru/reference/functions/aggregate-functions/combinators#-state)
+можно применять к функции [`avg`](/ru/reference/functions/aggregate-functions/avg),
+чтобы получить итоговый результат, объединяя частичные состояния агрегатных функций.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Комбинатор `Merge` тесно связан с комбинатором `State`. См.
+[&quot;пример использования avgState&quot;](/ru/guides/clickhouse/examples/aggregate-function-combinators/avgState#example-usage)
+, где приведён пример с `avgMerge` и `avgState`.
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`avg`](/ru/reference/functions/aggregate-functions/avg)
+* [`Merge`](/ru/reference/functions/aggregate-functions/combinators#-merge)
+* [`MergeState`](/ru/reference/functions/aggregate-functions/combinators#-mergestate)
