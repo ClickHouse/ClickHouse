@@ -131,50 +131,30 @@ private:
     std::vector<std::weak_ptr<IProcessor>> source_history;
 };
 
-}
-
-/// A source with FAN_OUT output ports. Every prepare() finishes all of its outputs at once,
-/// so a single prepare pushes FAN_OUT direct-edges (source -> consumer) into updateNode's local
-/// `updated_edges` work-list in one sweep. That is the ingredient the bug needs: several edges
-/// belonging to ONE node queued together, so removing that node leaves the not-yet-drained ones
-/// dangling.
-class MultiOutputFinishingSource final : public IProcessor
+class FinishingSource final : public IProcessor
 {
 public:
-    static constexpr size_t fan_out = 8;
-
-    explicit MultiOutputFinishingSource(SharedHeader header_)
+    FinishingSource(SharedHeader header_, size_t fan_out)
         : IProcessor({}, OutputPorts(fan_out, header_))
     {
     }
 
-    String getName() const override { return "MultiOutputFinishingSource"; }
+    String getName() const override { return "FinishingSource"; }
 
     Status prepare() override
     {
-        /// Finish every output in this single prepare. The graph then queues one direct-edge per
-        /// output into updateNode's `updated_edges` in the same sweep.
         for (auto & output : outputs)
             output.finish();
+
         return Status::Finished;
     }
 };
 
-/// Reproduces the heap-use-after-free in ExecutingGraph::updateNode (STID 2837-40ba).
-///
-/// updateNode keeps a LOCAL work-list of Edge* (`updated_edges`), drained only after the
-/// processor work-list empties. The source above finishes all FAN_OUT outputs in one prepare, so
-/// FAN_OUT direct-edges (source -> this coordinator) are pushed into `updated_edges` together.
-/// Draining the FIRST of those edges prepares the coordinator, which returns UpdatePipeline and
-/// removes the source: `removeNode` destroys the source's own edge list, freeing every one of
-/// those FAN_OUT edges. The FAN_OUT-1 edges still queued in `updated_edges` are now dangling, and
-/// the next pop dereferences `edge->to` -> use-after-free. The fix scrubs the freed edges from the
-/// work-list right after updatePipeline, so the stale pointers are never dereferenced.
 class MultiInputRemovingCoordinator final : public IProcessor
 {
 public:
     explicit MultiInputRemovingCoordinator(SharedHeader header_)
-        : IProcessor({}, {Block(*header_)})   /// starts as a source (no inputs); inputs added at runtime
+        : IProcessor({}, {Block(*header_)})
         , header(std::move(header_))
     {
     }
@@ -183,37 +163,13 @@ public:
 
     Status prepare() override
     {
-        auto & output = outputs.front();
-
-        if (output.isFinished())
-        {
-            for (auto & input : inputs)
-                if (input.isConnected())
-                    input.close();
+        if (outputs.front().isFinished())
             return Status::Finished;
-        }
 
-        /// Source not attached yet -> ask for a pipeline update to add it.
         if (!source_added)
             return Status::UpdatePipeline;
 
-        if (source_removed)
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        /// The source finished (all inputs finished). Its FAN_OUT direct-edges are now queued in
-        /// updateNode's local work-list. Remove the source now so those queued edges dangle.
-        bool all_finished = true;
-        for (auto & input : inputs)
-        {
-            input.setNeeded();
-            if (!input.isFinished())
-                all_finished = false;
-        }
-
-        if (all_finished)
+        if (std::ranges::all_of(inputs, [](const auto & input) { return input.isFinished(); }))
             return Status::UpdatePipeline;
 
         return Status::NeedData;
@@ -225,13 +181,11 @@ public:
 
         if (!source_added)
         {
-            /// Attach one multi-output source: source output i -> a fresh input i of this coordinator.
-            source = std::make_shared<MultiOutputFinishingSource>(header);
-            auto output_it = source->getOutputs().begin();
-            for (size_t i = 0; i < MultiOutputFinishingSource::fan_out; ++i, ++output_it)
+            source = std::make_shared<FinishingSource>(header, 8);
+            for (auto & output : source->getOutputs())
             {
                 auto & input = inputs.emplace_back(*header, this);
-                connect(*output_it, input);
+                connect(output, input);
                 input.setNeeded();
             }
             update.to_add.push_back(source);
@@ -239,18 +193,11 @@ public:
             return update;
         }
 
-        /// Source finished -> remove it. Disconnect every fan-out output from our inputs first, so
-        /// `to_remove` holds a processor already detached from us (the IProcessor::updatePipeline
-        /// contract: returned processors must be disconnected, see MergeTreeCommitOrderSequentialSource).
-        /// Disconnecting only severs the port linkage; removeNode still destroys the source node's
-        /// own graph Edge objects, freeing all FAN_OUT of them at once -- which is what leaves the
-        /// stale Edge* dangling in updateNode's work-list and reproduces the use-after-free.
         for (auto & input : inputs)
             disconnect(input.getOutputPort(), input);
 
         update.to_remove.push_back(source);
         source.reset();
-        source_removed = true;
         outputs.front().finish();
         return update;
     }
@@ -259,8 +206,9 @@ private:
     const SharedHeader header;
     ProcessorPtr source;
     bool source_added = false;
-    bool source_removed = false;
 };
+
+}
 
 TEST(Processors, PortDisconnect)
 {
@@ -338,31 +286,6 @@ TEST(Processors, UpdatePipeline)
     EXPECT_EQ(coordinator->getOutputs().size(), 1u);
 }
 
-/// Regression test for the heap-use-after-free in ExecutingGraph::updateNode (STID 2837-40ba):
-/// a stale Edge* to a removed source is left in updateNode's local work-list and dereferenced.
-/// Without the fix this crashes under ASAN; with the fix it drains cleanly.
-TEST(Processors, UpdatePipelineFanInRemovalNoUseAfterFree)
-{
-    auto header = makeHeader();
-
-    auto coordinator = std::make_shared<MultiInputRemovingCoordinator>(header);
-    Pipe pipe(coordinator);
-
-    QueryPipeline pipeline(std::move(pipe));
-    {
-        PullingPipelineExecutor executor(pipeline);
-
-        Chunk chunk;
-        /// Drain to completion. The point is that execution finishes without an ASAN report;
-        /// the exact number/content of chunks is not what we assert here.
-        while (executor.pull(chunk))
-        {
-        }
-    }
-
-    SUCCEED();
-}
-
 TEST(Processors, UpdatePipelineMultipleCoordinatorsMultithreaded)
 {
     constexpr size_t num_streams = 16;
@@ -424,4 +347,26 @@ TEST(Processors, UpdatePipelineMultipleCoordinatorsMultithreaded)
     /// Print statistics
     for (size_t i = 0; i < coordinators.size(); ++i)
         std::cout << "Coordinator #" << i << " Created Sources: " << coordinators.at(i)->totalSourcesCreated() << std::endl;
+}
+
+TEST(Processors, UpdatePipelineFanInRemovalNoUseAfterFree)
+{
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<MultiInputRemovingCoordinator>(header);
+    Pipe pipe(coordinator);
+
+    QueryPipeline pipeline(std::move(pipe));
+    {
+        PullingPipelineExecutor executor(pipeline);
+
+        Chunk chunk;
+        /// Drain to completion. The point is that execution finishes without an ASAN report;
+        /// the exact number/content of chunks is not what we assert here.
+        while (executor.pull(chunk))
+        {
+        }
+    }
+
+    SUCCEED();
 }
