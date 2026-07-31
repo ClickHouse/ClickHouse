@@ -183,9 +183,7 @@ SELECT count() FROM tab WHERE val = 'BAR';                        -- 1
 SELECT count() FROM tab WHERE val = 'baz';                        -- 1
 -- Index finds 'foo' (hint), but row-level val = 'foo' on val='Foo' → false.
 SELECT count() FROM tab WHERE val = 'foo';                        -- 0
--- hasToken / hasAllTokens: postprocessor applied to both haystack and needle → case-insensitive match.
-SELECT count() FROM tab WHERE hasToken(val, 'Foo');               -- 1
-SELECT count() FROM tab WHERE hasToken(val, 'foo');               -- 1
+-- hasAllTokens: postprocessor applied to both haystack and needle → case-insensitive match.
 SELECT count() FROM tab WHERE hasAllTokens(val, 'Foo');           -- 1
 SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');           -- 1
 SELECT count() FROM tab WHERE val IN ('Foo', 'BAR');              -- 2

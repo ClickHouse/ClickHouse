@@ -68,9 +68,10 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsMaxThreads max_insert_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
@@ -531,6 +532,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     pipeline.setMaxThreads(max_threads);
+    // Cap to 1 when parallel_view_processing=0. Pipe::max_parallel_streams is a watermark that
+    // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
+    pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
@@ -540,7 +544,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
-static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, ContextPtr & select_context)
+static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
 {
     const Settings & settings = select_context->getSettingsRef();
 
@@ -570,9 +574,9 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = getMaxThreadsForAvailableMemory(
-            std::max<UInt64>(1, settings[Setting::max_insert_threads]),
-            settings[Setting::max_insert_threads_min_free_memory_per_thread]);
+        /// Use the effective value computed in the constructor: it is already capped by `max_threads`
+        /// and reduced according to the available memory, while the raw setting is not.
+        new_settings[Setting::max_threads] = effective_max_insert_threads;
 
         if (prefer_large_blocks)
         {
@@ -615,7 +619,7 @@ static bool queryHasOrderByAll(const ASTPtr & select)
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
-    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
+    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
     QueryPipelineBuilder pipeline = [&]()
     {
@@ -649,7 +653,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
-    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
+    applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
     auto [pipeline_builder, parallel_replicas_info]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
@@ -839,7 +843,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
     // does not translate into reserved-but-unused slots.
-    pipeline.setNumThreads(max_threads);
+    // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
+    const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
+    pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
@@ -1040,7 +1046,11 @@ BlockIO InterpreterInsertQuery::execute()
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
-    if (!query.table_function)
+    /// `skip_target_insert_access_check` is set only for the internal populate of `CREATE TABLE ... AS
+    /// SELECT` into a temporary `_tmp_replace_*` table; the final-name `INSERT` privilege is verified up
+    /// front by the caller, so re-authorizing `INSERT` on the meaningless temporary name would be a
+    /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
+    if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
     if (!allow_materialized)

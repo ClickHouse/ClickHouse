@@ -27,7 +27,7 @@ ClickPipes에서 복제에 사용할 Neon Postgres를 설정하는 방법을 안
    CREATE USER clickpipes_user PASSWORD 'some-password';
    ```
 
-2. 앞 단계에서 생성한 사용자에게 스키마(schema) 수준의 읽기 전용 권한을 부여합니다. 아래 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제하려는 테이블이 들어 있는 각 스키마마다 이 명령을 반복하십시오:
+2. 앞 단계에서 생성한 사용자에게 스키마(schema) 수준의 읽기 전용 권한을 부여합니다. 아래 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제하려는 테이블이 포함된 각 스키마에 대해 이 명령을 반복하십시오:
 
    ```sql
    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
@@ -41,10 +41,10 @@ ClickPipes에서 복제에 사용할 Neon Postgres를 설정하는 방법을 안
    ALTER USER clickpipes_user WITH REPLICATION;
    ```
 
-4. 복제하려는 테이블을 포함하는 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)을 생성합니다. 성능 오버헤드를 줄이기 위해 publication에는 필요한 테이블만 포함할 것을 강력히 권장합니다.
+4. 복제하려는 테이블을 포함하는 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)을 생성합니다. 성능 오버헤드를 피하기 위해 publication에는 필요한 테이블만 포함할 것을 강력히 권장합니다.
 
 <Warning>
-  publication에 포함되는 모든 테이블은 **기본 키(primary key)** 가 정의되어 있거나, **replica identity** 가 `FULL`로 설정되어 있어야 합니다. 범위 지정 방법은 [Postgres FAQ](/ko/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)를 참조하십시오.
+  publication에 포함되는 모든 테이블은 **기본 키(primary key)** 가 정의되어 있거나, **replica identity** 가 `FULL`로 설정되어 있어야 합니다. 범위 지정에 대한 안내는 [Postgres FAQs](/ko/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)를 참조하십시오.
 </Warning>
 
 * 특정 테이블에 대한 publication을 생성하려면:
@@ -59,7 +59,7 @@ ClickPipes에서 복제에 사용할 Neon Postgres를 설정하는 방법을 안
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 의도가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로의 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <div id="enable-logical-replication">
   ## 논리적 복제 활성화
@@ -77,9 +77,9 @@ Neon에서는 UI를 통해 논리적 복제를 활성화할 수 있습니다. Cl
 Neon Postgres 인스턴스에서 아래 설정을 확인하겠습니다:
 
 ```sql
-SHOW wal_level; -- logical이어야 합니다
-SHOW max_wal_senders; -- 10이어야 합니다
-SHOW max_replication_slots; -- 10이어야 합니다
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">
