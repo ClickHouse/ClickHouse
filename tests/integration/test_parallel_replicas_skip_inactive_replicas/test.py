@@ -90,6 +90,13 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         # The inactive replica is still part of the cluster definition.
         assert node1.query(f"SELECT count() FROM system.clusters WHERE cluster = '{db}'") == "3\n"
 
+        coordinator_count_2_before = int(
+            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=2")
+        )
+        coordinator_count_3_before = int(
+            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=3")
+        )
+
         # Run a query with parallel replicas over the database cluster, requesting more replicas than are
         # online so that the coordinator is sized by what is actually available. Use a data-reading query
         # (not a trivial `count()`, which `optimize_trivial_count_query` answers from metadata and thus never
@@ -111,11 +118,11 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         assert two_replica_streams > three_replica_streams
 
         # The coordinator must be created for the 2 active replicas, not the 3 registered ones.
-        assert node1.contains_in_log(
-            "Creating parallel replicas coordinator with replicas_count=2"
-        )
-        assert not node1.contains_in_log(
-            "Creating parallel replicas coordinator with replicas_count=3"
-        )
+        assert int(
+            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=2")
+        ) > coordinator_count_2_before
+        assert int(
+            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=3")
+        ) == coordinator_count_3_before
     finally:
         node3.start_clickhouse()
