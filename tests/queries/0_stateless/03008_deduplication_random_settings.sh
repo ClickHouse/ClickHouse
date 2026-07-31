@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-async-insert
-# Tag long -- runs right at the 180s flaky-check limit, and a change to
-# 03008_deduplication.python pulls this test into the flaky check.
+# Tags: no-flaky-check, no-async-insert
+# Tag no-flaky-check -- a change to 03008_deduplication.python pulls this test into the
+# flaky check (the .python data-file owner fallback maps it to all seven 03008 tests), and
+# it runs close to the 180s flaky-check limit there. Its six sibling drivers are tagged the
+# same way.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
