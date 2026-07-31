@@ -154,8 +154,12 @@ protected:
     bool log_to_console = false;
 
     /// A thread that acts on HUP and USR1 signal (close logs).
+#if !defined(OS_WINDOWS)
+    /// `SignalListener` is declared only where signals are: it is the thread that drains the
+    /// handler's self-pipe. A `unique_ptr` to it needs the complete type at the destructor.
     Poco::Thread signal_listener_thread;
     std::unique_ptr<SignalListener> signal_listener;
+#endif
 
     DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 

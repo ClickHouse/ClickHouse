@@ -1320,7 +1320,7 @@ void StorageKeeperMap::restoreDataImpl(
                 with_retries->renewZooKeeper(zk);
                 if (auto res = zk->tryCreate(pathToGenericString(data_path_fs / key), value, zkutil::CreateMode::Persistent);
                     res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
-                    throw zkutil::KeeperException::fromPath(res, data_path_fs / key);
+                    throw zkutil::KeeperException::fromPath(res, pathToGenericString(data_path_fs / key));
             });
         }
         /// otherwise we can do multi requests

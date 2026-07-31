@@ -2253,7 +2253,7 @@ CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr
     std::vector<zkutil::ZooKeeper::FutureGetChildren> futures;
     futures.reserve(partition_ids.size());
     for (const auto & partition_id : partition_ids)
-        futures.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition_id));
+        futures.push_back(zookeeper->asyncGetChildren(pathToGenericString(fs::path(zookeeper_path) / "block_numbers" / partition_id)));
 
     std::map<String, std::set<Int64>> committing_block_numbers;
     for (size_t i = 0; i < partition_ids.size(); ++i)
@@ -2262,7 +2262,7 @@ CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr
         auto response = futures[i].get();
 
         if (response.error != Coordination::Error::ZOK)
-            throw Coordination::Exception::fromPath(response.error, fs::path(zookeeper_path) / "block_numbers" / partition_id);
+            throw Coordination::Exception::fromPath(response.error, pathToGenericString(fs::path(zookeeper_path) / "block_numbers" / partition_id));
 
         auto & set = committing_block_numbers[partition_id];
         for (const String & entry : response.names)

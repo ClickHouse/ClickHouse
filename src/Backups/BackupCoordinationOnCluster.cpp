@@ -722,7 +722,7 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
         keeper_map_table_infos.reserve(tables.size());
 
         for (auto & table : tables)
-            table = tables_path / table;
+            table = pathToGenericString(tables_path / table);
 
         auto tables_info = zk->get(tables);
         for (size_t i = 0; i < tables_info.size(); ++i)

@@ -171,6 +171,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -445,8 +446,14 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILE_CACHE);
             LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
+#if defined(OS_WINDOWS)
+            /// Windows has no `sync`: there is no call that flushes every filesystem, only
+            /// `FlushFileBuffers` per handle. `SYSTEM SYNC FILE CACHE` has nothing to ask for here.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM SYNC FILE CACHE is not implemented on Windows");
+#else
             sync();
             break;
+#endif
         }
         case Type::CLEAR_DNS_CACHE:
         {

@@ -366,7 +366,7 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    renameNoReplace(pathToGenericString(fs::path(disk_path) / from_path), fs::path(disk_path) / to_path);
+    renameNoReplace(pathToGenericString(fs::path(disk_path) / from_path), pathToGenericString(fs::path(disk_path) / to_path));
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)

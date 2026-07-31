@@ -2136,12 +2136,16 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     {
         struct stat st = disk->stat(unused_dir);
 
+        /// Windows has no uid: `_stat` reports `st_uid` as 0 for everything, and ownership there is
+        /// an ACL rather than a number to compare, so there is nothing to check.
+#if !defined(OS_WINDOWS)
         if (st.st_uid != geteuid())
         {
             /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
             LOG_WARNING(log, "Found directory {} with unexpected owner (uid={}) on disk {}", unused_dir, st.st_uid, disk_name);
             return false;
         }
+#endif
 
         time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
         time_t current_time = time(nullptr);

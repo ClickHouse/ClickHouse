@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ctime>
+#include <cstdlib>
 
 /// `CLOCK_MONOTONIC_COARSE` is a Linux extension: same epoch as `CLOCK_MONOTONIC` but read
 /// straight from the last timer tick, so it is cheaper and only millisecond-accurate. Where it
@@ -14,6 +15,15 @@
 #endif
 
 #if defined(OS_WINDOWS)
+/// `setenv` for the one variable this codebase sets, `TZ`. The Windows CRT spells it `_putenv_s`,
+/// which always overwrites - so this only accepts the `overwrite = 1` that every caller passes.
+inline int setenv(const char * name, const char * value, int overwrite)
+{
+    if (!overwrite)
+        return 0;
+    return ::_putenv_s(name, value);
+}
+
 /// `localtime_r` is the reentrant `localtime`. The Windows CRT spells it `localtime_s`, with the
 /// arguments the other way round and an `errno_t` return instead of a pointer.
 inline std::tm * localtime_r(const std::time_t * time, std::tm * result)

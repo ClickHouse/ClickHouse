@@ -541,11 +541,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fs_tree->removeFile(pathToGenericString(path_to));
         fs_tree->recordFile(pathToGenericString(path_to), file_from_remote_info.value());
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
     }
     else
     {
-        fs_tree->recordFile(path_to, file_from_remote_info.value());
+        fs_tree->recordFile(pathToGenericString(path_to), file_from_remote_info.value());
     }
 
     {
@@ -554,8 +554,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         });
 
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from),
-            /*object_to=*/StoredObject(tmp_remote_path_from),
+            /*object_from=*/StoredObject(pathToGenericString(remote_path_from)),
+            /*object_to=*/StoredObject(pathToGenericString(tmp_remote_path_from)),
             read_settings,
             write_settings);
         moved_existing_source_file = true;
@@ -566,12 +566,12 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
-        object_storage->removeObjectIfExists(StoredObject(remote_path_from));
+            /*object_from=*/StoredObject(pathToGenericString(remote_path_from)), /*object_to=*/StoredObject(pathToGenericString(remote_path_to)), read_settings, write_settings);
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_from)));
         moved_file = true;
     }
 
-    fs_tree->removeFile(path_from);
+    fs_tree->removeFile(pathToGenericString(path_from));
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
@@ -588,41 +588,41 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             replaceable,
             path_from);
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_path_to)));
     }
 
     if (moved_existing_source_file)
     {
         object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_from),
-            /*object_to=*/StoredObject(remote_path_from),
+            /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_from)),
+            /*object_to=*/StoredObject(pathToGenericString(remote_path_from)),
             read_settings,
             write_settings);
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
     }
 
     if (moved_existing_target_file)
     {
         object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_to),
-            /*object_to=*/StoredObject(remote_path_to),
+            /*object_from=*/StoredObject(pathToGenericString(tmp_remote_path_to)),
+            /*object_to=*/StoredObject(pathToGenericString(remote_path_to)),
             read_settings,
             write_settings);
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
     }
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 {
-    removed_objects.push_back(StoredObject(remote_path_from));
+    removed_objects.push_back(StoredObject(pathToGenericString(remote_path_from)));
 
     if (moved_existing_source_file)
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_from)));
 
     if (moved_existing_target_file)
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        object_storage->removeObjectIfExists(StoredObject(pathToGenericString(tmp_remote_path_to)));
 }
 
 MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
@@ -650,16 +650,16 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
     /// Unfortunately we are able to create merge tree unlinked from database directory.
     /// In this case during the dropAllData method removeRecursive can be called pointing to the root folder.
     /// I don't know what to do in this case, so right now it is a no-op.
-    if (normalizePath(path).empty())
+    if (normalizePath(pathToGenericString(path)).empty())
         return;
 
-    if (fs_tree->existsDirectory(path))
+    if (fs_tree->existsDirectory(pathToGenericString(path)))
     {
         move_tried = true;
         move_to_tmp_op->execute();
 
-        subtree_remote_info = fs_tree->getSubtreeRemoteInfo(tmp_path);
-        fs_tree->removeDirectory(tmp_path);
+        subtree_remote_info = fs_tree->getSubtreeRemoteInfo(pathToGenericString(tmp_path));
+        fs_tree->removeDirectory(pathToGenericString(tmp_path));
     }
 }
 

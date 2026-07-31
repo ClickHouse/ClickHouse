@@ -1,5 +1,6 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <base/time.h>
 #include <base/pathToString.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
@@ -144,9 +145,11 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
+#if !defined(OS_WINDOWS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {

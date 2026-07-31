@@ -848,7 +848,7 @@ void DataPartStorageOnDiskBase::remove(
 
         try
         {
-            disk->moveDirectory(pathToGenericString(from), to);
+            disk->moveDirectory(pathToGenericString(from), pathToGenericString(to));
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
             /// The part is being removed anyway, so the path doesn't need to be updated.
@@ -867,7 +867,7 @@ void DataPartStorageOnDiskBase::remove(
             if (e.code() == std::errc::no_such_file_or_directory)
             {
                 LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
-                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, pathToGenericString(from)));
                 return;
             }
             throw;
@@ -900,7 +900,7 @@ void DataPartStorageOnDiskBase::remove(
             std::move(files_not_to_remove_for_projection),
         };
 
-        clearDirectory(fs::path(to) / proj_dir_name, proj_description, projection.checksums, is_temp, log);
+        clearDirectory(pathToGenericString(fs::path(to) / proj_dir_name), proj_description, projection.checksums, is_temp, log);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -912,7 +912,7 @@ void DataPartStorageOnDiskBase::remove(
         if (endsWith(name, proj_suffix) && !projection_directories.contains(name))
         {
             static constexpr auto checksums_name = "checksums.txt";
-            auto projection_storage = create(volume, to, name, /*initialize=*/ true);
+            auto projection_storage = create(volume, pathToGenericString(to), name, /*initialize=*/ true);
 
             /// If we have a directory with suffix '.proj' it is likely a projection.
             /// Try to load checksums for it (to avoid recursive removing fallback).
@@ -924,7 +924,7 @@ void DataPartStorageOnDiskBase::remove(
                     auto in = projection_storage->readFile(checksums_name, {}, {});
                     tmp_checksums.read(*in);
 
-                    clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
+                    clearDirectory(pathToGenericString(fs::path(to) / name), *can_remove_description, tmp_checksums, is_temp, log);
                 }
                 catch (...)
                 {
@@ -934,7 +934,7 @@ void DataPartStorageOnDiskBase::remove(
         }
     }
 
-    clearDirectory(to, *can_remove_description, checksums, is_temp, log);
+    clearDirectory(pathToGenericString(to), *can_remove_description, checksums, is_temp, log);
 }
 
 void DataPartStorageOnDiskBase::clearDirectory(
@@ -951,13 +951,13 @@ void DataPartStorageOnDiskBase::clearDirectory(
     /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool incomplete_temporary_part = is_temp && (!disk->existsFile(fs::path(dir) / "checksums.txt") || !disk->existsFile(fs::path(dir) / "columns.txt"));
+    bool incomplete_temporary_part = is_temp && (!disk->existsFile(pathToGenericString(fs::path(dir) / "checksums.txt")) || !disk->existsFile(pathToGenericString(fs::path(dir) / "columns.txt")));
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
         try
         {
-            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+            disk->removeSharedRecursive(pathToGenericString(fs::path(dir) / ""), !can_remove_shared_data, names_not_to_remove);
         }
         catch (const fs::filesystem_error & e)
         {
@@ -1004,7 +1004,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
         try
         {
-            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+            disk->removeSharedRecursive(pathToGenericString(fs::path(dir) / ""), !can_remove_shared_data, names_not_to_remove);
         }
         catch (const fs::filesystem_error & e)
         {
@@ -1060,27 +1060,27 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
 {
-    return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
+    return volume->getDisk()->getDirectorySyncGuard(pathToGenericString(fs::path(root_path) / part_dir));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / txn_file_name, 256, mode);
+    return volume->getDisk()->writeFile(pathToGenericString(fs::path(root_path) / part_dir / txn_file_name), 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()
 {
-    executeWriteOperation([&](auto & disk) { disk.removeRecursive(fs::path(root_path) / part_dir); });
+    executeWriteOperation([&](auto & disk) { disk.removeRecursive(pathToGenericString(fs::path(root_path) / part_dir)); });
 }
 
 void DataPartStorageOnDiskBase::removeSharedRecursive(bool keep_in_remote_fs)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(fs::path(root_path) / part_dir, keep_in_remote_fs, {}); });
+    executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(pathToGenericString(fs::path(root_path) / part_dir), keep_in_remote_fs, {}); });
 }
 
 void DataPartStorageOnDiskBase::createDirectories()
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectories(fs::path(root_path) / part_dir); });
+    executeWriteOperation([&](auto & disk) { disk.createDirectories(pathToGenericString(fs::path(root_path) / part_dir)); });
 }
 
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
@@ -1130,7 +1130,7 @@ void DataPartStorageOnDiskBase::prepareRead(
         /// underlying disk and wraps the result with ReadBufferFromFileView at the right offset.
         /// The archive's current location is captured here, so the reader holds no path of its own.
         auto disk = volume->getDisk();
-        String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+        String archive_path = pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME));
         ReadPipeline::BufferCreator creator =
             [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
             {
@@ -1150,7 +1150,7 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     if (auto reader = getArchiveReaderForFile(name))
         return reader->readFile(
             volume->getDisk(),
-            fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+            pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME)),
             name, settings, read_hint);
     return readFileIfExistsImpl(name, settings, read_hint);
 }
@@ -1163,7 +1163,7 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
 
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
 
-    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+    const String packed_path = pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME));
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
     {

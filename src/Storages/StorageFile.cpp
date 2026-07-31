@@ -583,6 +583,12 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
 #if defined(OS_DARWIN)
     const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
     const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#elif defined(OS_WINDOWS)
+    /// The Windows CRT's `_stat` carries whole seconds only. NTFS itself keeps 100-nanosecond
+    /// resolution, but reading it needs `GetFileInformationByHandle` rather than `stat`, and this
+    /// value only feeds a cache key.
+    const auto mtim_sec = file_stat.st_mtime;
+    const auto mtim_nsec = 0;
 #else
     const auto mtim_sec = file_stat.st_mtim.tv_sec;
     const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
@@ -1729,6 +1735,8 @@ Chunk StorageFileSource::generate()
                 /// rather than risking stale results.
 #if defined(OS_DARWIN)
                 const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#elif defined(OS_WINDOWS)
+                const auto mtim_sec = file_stat.st_mtime;
 #else
                 const auto mtim_sec = file_stat.st_mtim.tv_sec;
 #endif

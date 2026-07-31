@@ -8326,7 +8326,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             continue;
         }
 
-        size_t file_size = backup->copyFileToDisk(pathToGenericString(part_path_in_backup_fs / filename), disk, temp_part_dir / filename, WriteMode::Rewrite);
+        size_t file_size = backup->copyFileToDisk(pathToGenericString(part_path_in_backup_fs / filename), disk, pathToGenericString(temp_part_dir / filename), WriteMode::Rewrite);
         reservation->update(reservation->getSize() - file_size);
     }
 
@@ -9249,7 +9249,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             {
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
                 part_info.disk->moveDirectory(pathToGenericString(fs::path(relative_data_path) / source_dir / part_info.dir_name),
-                    fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
+                    pathToGenericString(fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name)));
             }
         }
 
@@ -9280,7 +9280,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
             if (containing_part != part_info.dir_name)
                 part_info.disk->moveDirectory(pathToGenericString(fs::path(relative_data_path) / source_dir / part_info.dir_name),
-                    fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
+                    pathToGenericString(fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name)));
             else
                 renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
@@ -10606,7 +10606,7 @@ bool MergeTreeData::canUseAdaptiveGranularity() const
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return fs::path(disk->getPath()) / relative_data_path;
+    return pathToGenericString(fs::path(disk->getPath()) / relative_data_path);
 }
 
 
@@ -10615,7 +10615,7 @@ DiskPtr MergeTreeData::tryGetDiskForDetachedPart(const String & part_name) const
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
+        if (disk->existsDirectory(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name)))
             return disk;
 
     return nullptr;
@@ -10730,10 +10730,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 {
     auto settings = getSettings();
 
-    String clickhouse_path = fs::canonical(local_context->getPath());
-    String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
+    String clickhouse_path = pathToGenericString(fs::canonical(local_context->getPath()));
+    String default_shadow_path = pathToGenericString(fs::path(clickhouse_path) / "shadow/");
     fs::create_directories(default_shadow_path);
-    auto increment = Increment(fs::path(default_shadow_path) / "increment.txt").get(true);
+    auto increment = Increment(pathToGenericString(fs::path(default_shadow_path) / "increment.txt")).get(true);
 
     const String shadow_path = "shadow/";
 
@@ -10755,7 +10755,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FREEZE PARTITION queries are disabled.");
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
-    String backup_path = fs::path(shadow_path) / backup_name / "";
+    String backup_path = pathToGenericString(fs::path(shadow_path) / backup_name / "");
 
 
     ThreadPool pool(
@@ -10783,7 +10783,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
                 auto data_part_storage = part->getDataPartStoragePtr();
-                String backup_part_path = fs::path(backup_path) / relative_data_path;
+                String backup_part_path = pathToGenericString(fs::path(backup_path) / relative_data_path);
 
                 scope_guard src_flushed_tmp_dir_lock;
                 MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
@@ -10792,7 +10792,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 {
                     // Store metadata for replicated table.
                     // Do nothing for non-replicated.
-                    createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
+                    createAndStoreFreezeMetadata(disk, part, pathToGenericString(fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory()));
                 };
 
                 IDataPartStorage::ClonePartParams params
@@ -12124,10 +12124,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     /// concurrent operation owns this name, so an existing directory can only be such a leftover and is
     /// safe to remove. Remove it BEFORE constructing the storage, so packed storage does not seed its
     /// archive reader or snapshot the mark layout (index_granularity_info) from the stale contents.
-    if (empty_part_disk->existsDirectory(relative_empty_part_dir))
+    if (empty_part_disk->existsDirectory(pathToGenericString(relative_empty_part_dir)))
     {
         LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(empty_part_disk->getPath()) / relative_empty_part_dir).string());
-        empty_part_disk->removeRecursive(relative_empty_part_dir);
+        empty_part_disk->removeRecursive(pathToGenericString(relative_empty_part_dir));
     }
 
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
@@ -12274,8 +12274,8 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         if (disk && !disk->isBroken() && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
-            disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-            auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+            disk->createDirectories(pathToGenericString(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME));
+            auto buf = disk->writeFile(pathToGenericString(format_version_path), 16, WriteMode::Rewrite, getContext()->getWriteSettings());
             writeIntText(format_version.toUnderType(), *buf);
             buf->finalize();
             if (getContext()->getSettingsRef()[Setting::fsync_metadata])

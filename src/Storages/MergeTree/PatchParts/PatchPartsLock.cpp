@@ -70,7 +70,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         }
 
         if (code != Coordination::Error::ZNODEEXISTS)
-            throw zkutil::KeeperException::fromPath(code, lock_path);
+            throw zkutil::KeeperException::fromPath(code, pathToGenericString(lock_path));
 
         if (zookeeper->exists(pathToGenericString(lock_path), nullptr, lock_event))
             lock_event->tryWait(lock_acquire_timeout);
@@ -106,7 +106,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         multiget_paths.reserve(in_progress_ids.size());
 
         for (const auto & id : in_progress_ids)
-            multiget_paths.push_back(in_progress_path / id);
+            multiget_paths.push_back(pathToGenericString(in_progress_path / id));
 
         auto contents = zookeeper->tryGet(multiget_paths);
         bool has_dependency_in_progress = false;

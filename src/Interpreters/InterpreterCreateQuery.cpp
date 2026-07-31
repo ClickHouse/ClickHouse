@@ -1808,7 +1808,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(pathToGenericString(data_path), user_files))
+            if (!startsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
 
@@ -1818,7 +1818,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(pathToGenericString(data_path), user_files))
+            if (!startsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
         }
@@ -2183,7 +2183,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
-            renameNoReplace(pathToGenericString(full_data_path), trash_path);
+            renameNoReplace(pathToGenericString(full_data_path), pathToGenericString(trash_path));
         }
         else
         {

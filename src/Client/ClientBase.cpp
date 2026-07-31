@@ -1934,10 +1934,13 @@ void ClientBase::resetOutput()
         if (!cancelled)
             pager_cmd->wait();
 
+#if !defined(OS_WINDOWS)
+        /// Neither signal exists on Windows, so neither was ignored on the way in.
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+#endif
 
         setupSignalHandler();
     }

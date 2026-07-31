@@ -328,7 +328,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         zookeeper_name_,
         pathToGenericString(/* processing_node_path */zk_path_ / "processing" / getNodeName(path_)),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
-        /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
+        pathToGenericString(/* failed_node_path */zk_path_ / "failed" / getNodeName(path_)),
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
