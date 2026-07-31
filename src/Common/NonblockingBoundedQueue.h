@@ -90,10 +90,10 @@ public:
     /// here does not work: the reported access happens in the element type's move assignment,
     /// which is a separate function that stays instrumented.
     ///
-    /// The suppression lists only `tryPush`, because it names the only concurrent writer of a slot
-    /// payload for those queues: `tryPop` writes too (it moves out of `slot.value`), but each of
-    /// those queues has a single consumer thread, so two pops never overlap. Giving either of them
-    /// a second consumer makes a pop/pop report possible and requires a matching entry there.
+    /// The suppression lists only `tryPush`. `tryPop` writes the payload too (it moves out of
+    /// `slot.value`), but the `dequeue_pos` CAS gives one consumer sole ownership of a slot before
+    /// the move-out, so two pops never touch one payload concurrently, whatever the consumer count.
+    /// A `tryPop` entry would be dead, and would also hide heap-use-after-free through that frame.
     bool tryPush(T & value)
     {
         chassert(mask);
