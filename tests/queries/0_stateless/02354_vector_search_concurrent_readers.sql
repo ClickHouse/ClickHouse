@@ -3,7 +3,8 @@
 -- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
 -- read layer uses a different pool, so the concurrency this test pins would not exist.
 
-DROP TABLE IF EXISTS vs_concurrent;
+-- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
+DROP TABLE IF EXISTS vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE vs_concurrent
 (
@@ -37,9 +38,13 @@ WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
 --   merge_tree_min_rows_for_concurrent_read = 1  one part must be split across read tasks, so that
 --   merge_tree_min_bytes_for_concurrent_read = 1  several readers are created for it. The minimum
 --                                                task size is the larger of the two thresholds
---                                                divided by the respective granularity, so both
---                                                must be lowered: at the defaults the bytes arm
---                                                alone asks for more marks than the part has
+--                                                divided by the respective granularity. The rows arm
+--                                                is the binding one here: at its default it asks for
+--                                                1280 marks against a 157 mark part, so the part is
+--                                                read by a single stream. The bytes arm is set
+--                                                alongside it for symmetry; with the byte
+--                                                granularity pinned above it asks for 24 marks,
+--                                                which this part already satisfies
 --   max_threads = 4                              the number of concurrent readers
 --   use_concurrency_control = 0                  the executor downscales worker threads when CPU
 --                                                slots are scarce, which would leave the read
@@ -140,25 +145,32 @@ SYSTEM FLUSH LOGS query_log;
 -- EXPLAIN PIPELINE above shows how wide the plan is, not how many threads ran. This reads the three
 -- executed queries instead: each used several threads and a real index search rather than a brute
 -- force scan. Counting to 3 also catches a query whose row is missing altogether.
--- The window is the newest three matching rows rather than the whole 600 second span, because the
--- test runner re-runs a whole test on retry without recreating a fixed --database, so an earlier
--- attempt's three rows would otherwise be counted too (02346_text_index_direct_read.sql uses the same
--- ORDER BY event_time_microseconds DESC LIMIT n idiom). is_internal = 0 is the established idiom for
--- excluding server-issued queries (01702_system_query_log.sql,
+-- The window has to hold exactly this attempt's rows: the test runner re-runs a whole test on retry
+-- and does not recreate a fixed --database, so an earlier attempt's rows are still visible. Counting
+-- them too would over-count, and taking only the newest three would under-count just as badly, by
+-- padding a missing row with a healthy one from the earlier attempt. So the window starts at this
+-- attempt's own CREATE TABLE, of which there is exactly one and it precedes every measured query.
+-- The log_comment values are listed exactly rather than matched by prefix, so that a future test
+-- whose file name starts with this one's cannot enter the window either. is_internal = 0 is the
+-- established idiom for excluding server-issued queries (01702_system_query_log.sql,
 -- 03148_query_log_used_dictionaries.sql).
 SELECT 'threads_and_index',
        countIf(length(thread_ids) > 1) = 3,
        countIf(ProfileEvents['USearchSearchCount'] > 0) = 3
-FROM (
-    SELECT thread_ids, ProfileEvents
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND current_database = currentDatabase() AND type = 'QueryFinish'
-      AND is_internal = 0
-      AND log_comment LIKE '02354_vector_search_concurrent_readers\_%'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 3
-);
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase() AND type = 'QueryFinish'
+  AND is_internal = 0
+  AND log_comment IN ('02354_vector_search_concurrent_readers_r0',
+                      '02354_vector_search_concurrent_readers_r1',
+                      '02354_vector_search_concurrent_readers_filtered')
+  AND event_time_microseconds > (
+      SELECT max(event_time_microseconds)
+      FROM system.query_log
+      WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND type = 'QueryFinish' AND query_kind = 'Create'
+        AND has(tables, currentDatabase() || '.vs_concurrent')
+  );
 
 SELECT 'concurrent_readers_rescoring', sumIf(
     toUInt64OrDefault(extract(explain, '× (\d+)'), toUInt64(1)),
@@ -234,4 +246,4 @@ SELECT 'diff_filtered', (
     )
 );
 
-DROP TABLE vs_concurrent;
+DROP TABLE vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
