@@ -252,17 +252,46 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     /// For each rendered column: the index of the group (top-level column) it belongs to.
     std::vector<size_t> column_to_group;
-    /// Per group (top-level column): display name, first rendered column, number of rendered columns.
+    /// Per group (top-level column): display name, first rendered column, number of rendered columns,
+    /// and whether the group originated from a tuple (a one-element tuple is still a group of one
+    /// subcolumn and must keep both the top-level name and the element-name row).
     Strings group_names;
     std::vector<size_t> group_first_column;
     std::vector<size_t> group_num_columns;
+    std::vector<UInt8> group_is_tuple;
+
+    /// Returns the `Tuple` type whose elements should be displayed as subcolumns for a column of the
+    /// given type (unwrapping `Nullable`), or `nullptr` if the column keeps the single-cell rendering.
+    auto displayable_tuple = [](const DataTypePtr & type) -> const DataTypeTuple *
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+
+        /// An empty tuple has no subcolumns to display (and the width math below assumes at least one).
+        if (!tuple_type || tuple_type->getElements().empty())
+            return nullptr;
+
+        /// For `Nullable(Tuple(...))`, every extracted element subcolumn must be able to represent the
+        /// rows where the whole tuple is NULL (an element type that cannot be wrapped in `Nullable`,
+        /// such as a nested tuple, is extracted as-is and would show default values in NULL rows).
+        if (type->isNullable())
+        {
+            for (const auto & element_name : tuple_type->getElementNames())
+            {
+                auto subcolumn_type = type->tryGetSubcolumnType(element_name);
+                if (!subcolumn_type || !canContainNull(*subcolumn_type))
+                    return nullptr;
+            }
+        }
+
+        return tuple_type;
+    };
 
     bool has_subcolumns = false;
     if (format_settings.pretty.display_tuples_as_subcolumns)
     {
         for (size_t i = 0; i < original_num_columns; ++i)
         {
-            if (typeid_cast<const DataTypeTuple *>(original_header->getByPosition(i).type.get()))
+            if (displayable_tuple(original_header->getByPosition(i).type))
             {
                 has_subcolumns = true;
                 break;
@@ -275,21 +304,24 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         for (size_t i = 0; i < original_num_columns; ++i)
         {
             const auto & elem = original_header->getByPosition(i);
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(elem.type.get());
+            const auto * tuple_type = displayable_tuple(elem.type);
 
             size_t first = expanded_columns.size();
             if (tuple_type)
             {
-                const auto & element_types = tuple_type->getElements();
+                /// The subcolumns are extracted through the API of the outer type, so that for
+                /// `Nullable(Tuple(...))` the elements come out wrapped in `Nullable` with the parent
+                /// null map applied, and the rows where the whole tuple is NULL display as NULL.
                 const auto & element_names = tuple_type->getElementNames();
-                for (size_t k = 0; k < element_types.size(); ++k)
+                for (const auto & element_name : element_names)
                 {
-                    expanded_columns.push_back(tuple_type->getSubcolumn(element_names[k], original_columns[i]));
-                    expanded_serializations.push_back(tuple_type->getSubcolumnSerialization(element_names[k], serializations[i]));
-                    expanded_header_columns.emplace_back(nullptr, element_types[k], element_names[k]);
+                    expanded_columns.push_back(elem.type->getSubcolumn(element_name, original_columns[i]));
+                    expanded_serializations.push_back(elem.type->getSubcolumnSerialization(element_name, serializations[i]));
+                    expanded_header_columns.emplace_back(nullptr, elem.type->getSubcolumnType(element_name), element_name);
                     column_to_group.push_back(group_names.size());
                 }
-                group_num_columns.push_back(element_types.size());
+                group_num_columns.push_back(element_names.size());
+                group_is_tuple.push_back(true);
             }
             else
             {
@@ -298,6 +330,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 expanded_header_columns.emplace_back(nullptr, elem.type, elem.name);
                 column_to_group.push_back(group_names.size());
                 group_num_columns.push_back(1);
+                group_is_tuple.push_back(false);
             }
             group_names.push_back(elem.name);
             group_first_column.push_back(first);
@@ -341,7 +374,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             size_t first = group_first_column[g];
             size_t count = group_num_columns[g];
 
-            if (count == 1)
+            if (!group_is_tuple[g])
             {
                 group_display_names[g] = names[first];
                 group_name_widths[g] = name_widths[first];
@@ -655,7 +688,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             }
 
             /// Tuple names are left-aligned; a single non-tuple column keeps its own alignment.
-            bool align_right = group_num_columns[g] == 1
+            bool align_right = !group_is_tuple[g]
                 && header.getByPosition(group_first_column[g]).type->shouldAlignRightInPrettyFormats();
 
             auto write_value = [&]
@@ -733,7 +766,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     writePaddingSpaces(3);
             }
 
-            bool single = group_num_columns[column_to_group[i]] == 1;
+            bool single = !group_is_tuple[column_to_group[i]];
             size_t name_width = single ? 0 : name_widths[i];
             bool align_right = !single && header.getByPosition(i).type->shouldAlignRightInPrettyFormats();
 
