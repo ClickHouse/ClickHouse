@@ -20,6 +20,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -360,7 +361,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
             default_db_disk,
-            pathToGenericString(/*file_path=*/metadata_tmp_file_path),
+            /*file_path=*/pathToGenericString(metadata_tmp_file_path),
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     }
@@ -1808,7 +1809,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
+            if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
 
@@ -1818,7 +1819,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
+            if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
         }

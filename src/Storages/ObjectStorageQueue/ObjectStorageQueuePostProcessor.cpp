@@ -1,5 +1,6 @@
 #include <base/pathToString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
@@ -29,6 +30,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_delete[];
+}
+
 #if USE_AWS_S3
 
 namespace S3AuthSetting
@@ -54,6 +60,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -84,19 +91,22 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         try
         {
             doWithRetries([&]{
+                fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
+                });
                 object_storage->removeObjectsIfExist(objects);
             });
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
         catch (...)
         {
             LOG_WARNING(
                 log,
-                "Failed to tag all {} objects with exception: {}",
+                "Failed to remove all {} objects with exception: {}",
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
@@ -126,6 +136,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             doWithRetries([&]{
                 object_storage->tagObjects(objects, tag_key, tag_value);
             });
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
         catch (...)
         {
@@ -136,7 +147,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
 #else
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -359,7 +369,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             src_client,
                             /*src_bucket=*/ src_bucket,
                             /*src_key=*/ object_from.remote_path,
-                            /*src_offset=*/ 0,
                             /*src_size=*/ object_size,
                             /*dest_s3_client=*/ dst_client,
                             /*dest_bucket=*/ dst_uri.bucket,

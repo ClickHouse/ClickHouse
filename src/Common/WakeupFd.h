@@ -6,8 +6,23 @@
 #include <Common/PipeFDs.h>
 #endif
 
+#include <base/defines.h>
+
+#if defined(DEBUG_OR_SANITIZER_BUILD) && !defined(OS_WINDOWS)
+#include <base/types.h>
+#endif
+
 namespace DB
 {
+
+#if defined(DEBUG_OR_SANITIZER_BUILD) && !defined(OS_WINDOWS)
+/// dev:ino of a descriptor, i.e. which file it actually refers to.
+struct FdIdentity
+{
+    UInt64 dev = 0;
+    UInt64 ino = 0;
+};
+#endif
 
 /// Portable async wakeup primitive. Designed for use with IProcessor::schedule().
 ///
@@ -39,11 +54,29 @@ public:
 private:
 #if defined(OS_WINDOWS)
     /// Owned, unlike the `Socket` handles passed around elsewhere: these two exist only for this
-    /// object and are closed with it.
+    /// object and are closed with it. There is no counterpart to the identity check below - a
+    /// socket handle is not a descriptor number that unrelated code can close and have recycled.
     Socket read_end;
     Socket write_end;
 #else
     PipeFDs pipe;
+
+/// If unrelated code closes our fd number (a stale-fd double close), the number gets silently
+/// recycled and a blocking read()/write() on it wedges the caller forever (seen as an hour-long
+/// streaming-source hang in stress tests). Compare the ends against their identity at construction
+/// to catch it, in the builds where aborting on it is what we want.
+
+    enum class PipeEnd
+    {
+        Read,
+        Write,
+    };
+    void validate(PipeEnd end) const;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    FdIdentity read_end_identity;
+    FdIdentity write_end_identity;
+#endif
 #endif
 };
 

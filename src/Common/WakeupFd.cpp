@@ -1,18 +1,13 @@
 #include <Common/WakeupFd.h>
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/NetException.h>
 
 #if defined(OS_WINDOWS)
+
 #include <Poco/UnWindows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#else
-#include <unistd.h>
-
-#include <cerrno>
-#endif
 
 namespace DB
 {
@@ -24,14 +19,12 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
-#if defined(OS_WINDOWS)
-
 namespace
 {
 
 /// Two connected loopback TCP sockets, standing in for a pipe. `socketpair` does not exist on
-/// Windows and `AF_UNIX` sockets, though they exist on Windows 10 and later, do not support
-/// `SOCK_STREAM` pairs without a filesystem path; a loopback connection is what libuv, Asio and
+/// Windows, and `AF_UNIX` sockets - which do exist on Windows 10 and later - cannot be made into a
+/// `SOCK_STREAM` pair without a filesystem path; a loopback connection is what libuv, Asio and
 /// CPython all fall back to.
 void createLoopbackPair(Socket::Handle & read_end, Socket::Handle & write_end)
 {
@@ -158,13 +151,49 @@ void WakeupFd::drain() const
     }
 }
 
+}
+
 #else
 
-WakeupFd::WakeupFd()
+#include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/WakeupFd.h>
+
+#include <cerrno>
+#include <unistd.h>
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
+namespace DB
 {
-    /// PipeFDs constructor already opens the pipe with CLOEXEC; flip both ends to non-blocking.
-    pipe.setNonBlockingReadWrite();
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    extern const int CANNOT_FSTAT;
+    extern const int LOGICAL_ERROR;
+#endif
 }
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+namespace
+{
+
+FdIdentity getIdentity(int fd)
+{
+    struct stat st{};
+    if (0 != fstat(fd, &st))
+        throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat wakeup pipe");
+    return {static_cast<UInt64>(st.st_dev), static_cast<UInt64>(st.st_ino)};
+}
+
+}
+#endif
 
 WakeupFd::~WakeupFd() = default;
 
@@ -173,8 +202,66 @@ int WakeupFd::fd() const
     return pipe.fds_rw[0];
 }
 
+WakeupFd::WakeupFd()
+{
+    /// PipeFDs constructor already opens the pipe with CLOEXEC; flip both ends to non-blocking.
+    pipe.setNonBlockingReadWrite();
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    read_end_identity = getIdentity(pipe.fds_rw[0]);
+    write_end_identity = getIdentity(pipe.fds_rw[1]);
+#endif
+}
+
+
+void WakeupFd::validate(PipeEnd end [[maybe_unused]]) const
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    const bool is_read = end == PipeEnd::Read;
+    const char * side = is_read ? "read" : "write";
+    int fd = is_read ? pipe.fds_rw[0] : pipe.fds_rw[1];
+    const FdIdentity & expected = is_read ? read_end_identity : write_end_identity;
+
+    int flags = fcntl(fd, F_GETFL);
+    if (flags == -1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Wakeup pipe {} end (fd {}) is invalid ({}); the fd was probably closed by unrelated code",
+            side,
+            fd,
+            errnoToString());
+
+    if (!(flags & O_NONBLOCK))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Wakeup pipe {} end (fd {}) lost O_NONBLOCK (flags {:#x}); the fd was probably tampered with by unrelated code",
+            side,
+            fd,
+            flags);
+
+    struct stat st{};
+    if (0 != fstat(fd, &st))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fstat wakeup pipe {} end (fd {}): {}", side, fd, errnoToString());
+
+    if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != expected.dev || static_cast<UInt64>(st.st_ino) != expected.ino)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Wakeup pipe {} end (fd {}) refers to another file (mode {:#o}, dev:ino {}:{}, expected {}:{}); "
+            "the fd was probably closed and recycled by unrelated code",
+            side,
+            fd,
+            st.st_mode,
+            static_cast<UInt64>(st.st_dev),
+            static_cast<UInt64>(st.st_ino),
+            expected.dev,
+            expected.ino);
+#endif
+}
+
 void WakeupFd::notify() const
 {
+    validate(PipeEnd::Write);
+
     const char byte = '\0';
     while (true)
     {
@@ -191,6 +278,8 @@ void WakeupFd::notify() const
 
 void WakeupFd::drain() const
 {
+    validate(PipeEnd::Read);
+
     char buf[PIPE_BUF];
     while (true)
     {
@@ -207,6 +296,6 @@ void WakeupFd::drain() const
     }
 }
 
-#endif
-
 }
+
+#endif
