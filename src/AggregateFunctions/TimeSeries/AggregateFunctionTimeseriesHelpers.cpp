@@ -6,6 +6,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesToGridSparse.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesCreation.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
@@ -14,6 +15,7 @@
 #include <Core/Field.h>
 
 #include <string_view>
+
 
 namespace DB
 {
@@ -28,7 +30,7 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
     auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
 
@@ -71,7 +73,7 @@ static Decimal64 normalizeParameter(const std::string & function_name, const std
     }
 }
 
-static UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -115,7 +117,7 @@ static UInt64 extractIntParameter(const std::string & function_name, const std::
     }
 }
 
-static Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -158,107 +160,11 @@ static Float64 extractFloatParameter(const std::string & function_name, const st
 }
 
 /// Validates that the aggregate function got exactly the expected number of parameters.
-static void assertParametersCount(const std::string & name, const Array & parameters, size_t required, std::string_view parameter_names)
+void assertTimeseriesParametersCount(const std::string & name, const Array & parameters, size_t required, std::string_view parameter_names)
 {
     if (parameters.size() != required)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} requires {} parameters: {}", name, required, parameter_names);
-}
-
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
-}
-
-namespace
-{
-
-/// With the timestamp, interval and value types resolved, parse the grid parameters and build the function via
-/// the factory. The factory receives the parsed values and is the only place that knows the concrete function.
-template <
-    typename TimestampType,
-    typename IntervalType,
-    typename ValueType,
-    typename MakeFunction
->
-AggregateFunctionPtr createWithTypes(const std::string & name, const Array & parameters, UInt32 target_scale, MakeFunction && make_function)
-{
-    if constexpr (std::is_same_v<TimestampType, DateTime64>)
-    {
-        /// Convert start, end, step and staleness parameters to the scale of the timestamp column
-        DateTime64 start_timestamp = normalizeParameter(name, "start", parameters[0], target_scale);
-        DateTime64 end_timestamp = normalizeParameter(name, "end", parameters[1], target_scale);
-        DateTime64 step = normalizeParameter(name, "step", parameters[2], target_scale);
-        DateTime64 window = normalizeParameter(name, "window", parameters[3], target_scale);
-        return make_function.template operator()<TimestampType, IntervalType, ValueType>(start_timestamp, end_timestamp, step, window, target_scale);
-    }
-    else
-    {
-        UInt64 start_timestamp = extractIntParameter(name, "start", parameters[0]);
-        UInt64 end_timestamp = extractIntParameter(name, "end", parameters[1]);
-        Int64 step = extractIntParameter(name, "step", parameters[2]);
-        Int64 window = extractIntParameter(name, "window", parameters[3]);
-        return make_function.template operator()<TimestampType, IntervalType, ValueType>(
-            static_cast<TimestampType>(start_timestamp), static_cast<TimestampType>(end_timestamp),
-            static_cast<IntervalType>(step), static_cast<IntervalType>(window), target_scale);
-    }
-}
-
-/// Resolves the timestamp and interval types from the first (timestamp) argument, then delegates to createWithTypes.
-template <
-    typename ValueType,
-    typename MakeFunction
->
-AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters, bool array_arguments, MakeFunction && make_function)
-{
-    const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
-
-    if (isDateTime64(timestamp_type))
-    {
-        auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
-        return createWithTypes<DateTime64, Int64, ValueType>(name, parameters, timestamp_decimal->getScale(), make_function);
-    }
-    else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
-    {
-        return createWithTypes<UInt32, Int32, ValueType>(name, parameters, 0, make_function);
-    }
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
-                    timestamp_type->getName(), name);
-}
-
-/// Entry point shared by every timeSeries*ToGrid function: validates the arguments, resolves the value type, and
-/// builds the function through the given factory (a generic lambda templated on timestamp, interval and value types).
-template <typename MakeFunction>
-AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings, MakeFunction && make_function)
-{
-    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
-            name);
-
-    assertBinary(name, argument_types);
-
-    if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
-
-    const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
-    const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
-
-    if (value_type->getTypeId() == TypeIndex::Float64)
-        return createWithValueType<Float64>(name, argument_types, parameters, array_arguments, make_function);
-    else if (value_type->getTypeId() == TypeIndex::Float32)
-        return createWithValueType<Float32>(name, argument_types, parameters, array_arguments, make_function);
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
-}
-
 }
 
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
@@ -342,7 +248,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
     factory.registerFunction("timeSeriesRateToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -431,7 +337,7 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
     factory.registerFunction("timeSeriesIncreaseToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -520,7 +426,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     factory.registerFunction("timeSeriesDeltaToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -608,7 +514,7 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
     factory.registerFunction("timeSeriesInstantRateToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesInstantRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -697,7 +603,7 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
     factory.registerFunction("timeSeriesInstantDeltaToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesInstantDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -784,7 +690,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     factory.registerFunction("timeSeriesDerivToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesDerivToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -873,7 +779,7 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
     factory.registerFunction("timeSeriesPredictLinearToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, predict_offset");
+            assertTimeseriesParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, predict_offset");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 const Float64 predict_offset = extractFloatParameter(name, "predict_offset", parameters[4]) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(scale));
@@ -961,7 +867,7 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
     factory.registerFunction("timeSeriesChangesToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesChangesToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -1047,7 +953,7 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
     factory.registerFunction("timeSeriesResetsToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesResetsToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -1136,7 +1042,7 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
             auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesToGridSparse<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
@@ -1145,6 +1051,8 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
         },
         documentation_timeSeriesResampleToGridWithStaleness});
     factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
+
+    registerAggregateFunctionTimeseriesOverTimeGrid(factory);
 }
 
 }

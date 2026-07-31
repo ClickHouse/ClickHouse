@@ -1,6 +1,7 @@
 #include <Storages/StoragePrometheusQuery.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>

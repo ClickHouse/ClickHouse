@@ -17,6 +17,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
