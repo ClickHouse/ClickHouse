@@ -54,7 +54,7 @@ export const quickStartsData = [
   {
     "id": "create-your-first-service-on-cloud",
     "title": "أنشئ أول خدمة Cloud لك وحمّل بيانات تجريبية",
-    "description": "أنشئ خدمة ClickHouse Cloud، واستكشف SQL Console، وحمّل مجموعة بيانات تجريبية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.",
+    "description": "أنشئ خدمة ClickHouse Cloud، واستكشف وحدة تحكم SQL، وحمّل مجموعة بيانات نموذجية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.",
     "href": "/ar/get-started/quickstarts/create-your-first-service-on-cloud",
     "useCases": [
       "all"
@@ -109,20 +109,6 @@ export const quickStartsData = [
     ],
     "products": [
       "cloud"
-    ]
-  },
-  {
-    "id": "tutorial",
-    "title": "الدليل التعليمي المتقدم",
-    "description": "تعرّف على كيفية إدخال البيانات والاستعلام عنها في ClickHouse باستخدام مجموعة بيانات نموذجية لسيارات الأجرة في مدينة نيويورك.",
-    "href": "/ar/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
     ]
   },
   {

@@ -28,9 +28,7 @@ Neste guia, você aprenderá a criar um agente de IA com [Upsonic](https://githu
 Você pode executar as etapas a seguir tanto no REPL do Python quanto em um script.
 
 <Steps>
-  <Step>
-    ## Instale as bibliotecas
-
+  <Step title="Instale as bibliotecas" id="install-libraries">
     Instale a biblioteca mcp-agent executando os comandos a seguir:
 
     ```python
@@ -40,9 +38,7 @@ Você pode executar as etapas a seguir tanto no REPL do Python quanto em um scri
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciais
-
+  <Step title="Configurar credenciais" id="setup-credentials">
     Em seguida, você precisará informar sua API key da OpenAI:
 
     ```python
@@ -67,9 +63,7 @@ Você pode executar as etapas a seguir tanto no REPL do Python quanto em um scri
     ```
   </Step>
 
-  <Step>
-    ## Inicializar o MCP Server e o agente Upsonic
-
+  <Step title="Inicializar o MCP Server e o agente Upsonic" id="initialize-mcp-and-agent">
     Agora configure o ClickHouse MCP server para apontar para o playground do ClickHouse SQL,
     inicialize o agente e faça uma pergunta:
 
@@ -107,7 +101,7 @@ Você pode executar as etapas a seguir tanto no REPL do Python quanto em um scri
         tools=[DatabaseMCP]
     )
 
-    # Executar o fluxo de trabalho
+    # Execute the workflow
     workflow_result = database_agent.do(task)
     print("\nMulti-MCP Workflow Result:")
     print(workflow_result)
@@ -258,66 +252,66 @@ Você pode executar as etapas a seguir tanto no REPL do Python quanto em um scri
     £362,283 and a median price of £281,000. The data appears to include only months Jan–Aug 2025 (so 2025 is incomplete). There are extreme
     outliers (min £100, max £127,700,000) that skew the mean.
 
-    O que calculei (como)
-    Executei agregações nas tabelas uk.price-paid no ClickHouse:
-    - resumo geral de 2025 (contagem, média, mediana, mínimo, máximo) de uk.uk_price_paid_simple_partitioned
-    - detalhamento mensal de 2025 (transações, média, mediana)
-    - principais cidades em 2025 por preço médio (cidades com >= 50 transações)
-    - comparação anual: 2024 vs 2025 (contagem, média, mediana)
-    - detalhamento por tipo de imóvel em 2025 (contagens, média, mediana) usando uk.uk_price_paid
+    What I computed (how)
+    I ran aggregations on the uk.price-paid tables in ClickHouse:
+    - overall 2025 summary (count, mean, median, min, max) from uk.uk_price_paid_simple_partitioned
+    - monthly breakdown for 2025 (transactions, mean, median)
+    - top towns in 2025 by average price (towns with >= 50 transactions)
+    - year comparison: 2024 vs 2025 (count, mean, median)
+    - breakdown by property type for 2025 (counts, avg, median) using uk.uk_price_paid
 
-    Números-chave (do conjunto de dados)
-    - Geral 2025 (transações registradas): transações = 376.633; preço médio = £362.282,66; mediana de preço = £281.000; mín = £100; máx =
-    £127.700.000.
-    - Por mês (2025): (mês, transações, preço médio, mediana de preço)
-      - Jan: 53.927, média £386.053, mediana £285.000
-      - Fev: 58.740, média £371.803, mediana £285.000
-      - Mar: 95.274, média £377.200, mediana £315.000
-      - Abr: 24.987, média £331.692, mediana £235.000
-      - Mai: 39.013, média £342.380, mediana £255.000
-      - Jun: 41.446, média £334.667, mediana £268.500
-      - Jul: 44.431, média £348.293, mediana £277.500
-      - Ago: 18.815, média £364.653, mediana £292.999
-      (Apenas os meses 1–8 estão presentes no conjunto de dados.)
-    - Principais cidades por preço médio (2025, cidades com ≥50 transações)
-      - TRING: 126 transações, média £1.973.274
-      - BUCKHURST HILL: 98 transações, média £1.441.331
-      - ASCOT: 175 transações, média £1.300.748
-      - RADLETT: 69 transações, média £1.160.217
-      - COBHAM: 115 transações, média £1.035.192
-      - EAST MOLESEY, BEACONSFIELD, ESHER, CHALFONT ST GILES, THAMES DITTON também estão no top 10 (todas cidades de alto padrão para pendulares/abastadas).
-    - Comparação anual (2024 vs 2025 conforme registrado)
-      - 2024: 859.960 transações, média £390.879, mediana £280.000
-      - 2025: 376.633 transações, média £362.283, mediana £281.000
-      (Os números de 2025 são muito menores porque o conjunto de dados inclui apenas parte do ano.)
-    - Por tipo de imóvel (2025)
-      - isolado: 85.362 transações, média £495.714, mediana £415.000
-      - geminado: 107.580 transações, média £319.922, mediana £270.000
-      - apartamento: 62.975 transações, média £298.529, mediana £227.000
-      - em fila: 112.832 transações, média £286.616, mediana £227.000
-      - outro: 7.884 transações, média £1.087.765 (mediana £315.000) — observação: efeito de grupo pequeno e valores discrepantes
+    Key numbers (from the dataset)
+    - Overall 2025 (recorded transactions): transactions = 376,633; mean price = £362,282.66; median price = £281,000; min = £100; max =
+    £127,700,000.
+    - By month (2025): (month, transactions, mean price, median price)
+      - Jan: 53,927, mean £386,053, median £285,000
+      - Feb: 58,740, mean £371,803, median £285,000
+      - Mar: 95,274, mean £377,200, median £315,000
+      - Apr: 24,987, mean £331,692, median £235,000
+      - May: 39,013, mean £342,380, median £255,000
+      - Jun: 41,446, mean £334,667, median £268,500
+      - Jul: 44,431, mean £348,293, median £277,500
+      - Aug: 18,815, mean £364,653, median £292,999
+      (Only months 1–8 are present in the dataset.)
+    - Top towns by average price (2025, towns with ≥50 transactions)
+      - TRING: 126 txns, avg £1,973,274
+      - BUCKHURST HILL: 98 txns, avg £1,441,331
+      - ASCOT: 175 txns, avg £1,300,748
+      - RADLETT: 69 txns, avg £1,160,217
+      - COBHAM: 115 txns, avg £1,035,192
+      - EAST MOLESEY, BEACONSFIELD, ESHER, CHALFONT ST GILES, THAMES DITTON are also in the top 10 (all high-average commuter/affluent towns).
+    - Year comparison (2024 vs 2025 as recorded)
+      - 2024: 859,960 transactions, mean £390,879, median £280,000
+      - 2025: 376,633 transactions, mean £362,283, median £281,000
+      (2025 counts are much lower because the dataset only includes part of the year.)
+    - By property type (2025)
+      - detached: 85,362 txns, avg £495,714, median £415,000
+      - semi-detached: 107,580 txns, avg £319,922, median £270,000
+      - flat: 62,975 txns, avg £298,529, median £227,000
+      - terraced: 112,832 txns, avg £286,616, median £227,000
+      - other: 7,884 txns, avg £1,087,765 (median £315,000) — note small-group and outlier effect
 
-    Ressalvas importantes e notas sobre qualidade dos dados
-    - O conjunto de dados parece incompleto para 2025 (apenas os meses de jan–ago estão presentes). Quaisquer totais de "2025" não são valores anuais completos.
-    - Existem grandes valores discrepantes (ex.: máx £127,7M e mín £100). Estes provavelmente incluem erros de entrada de dados ou registros não padronizados e inflacionam a
-    média. A mediana geralmente é uma medida mais robusta aqui.
-    - As médias do tipo de imóvel "outro" são instáveis devido a contagens baixas/heterogêneas e valores discrepantes.
-    - Não filtrei por is_new, duration ou outros metadados; esses filtros podem alterar os resultados (por exemplo, excluindo imóveis novos ou
-    arrendamentos).
-    - As tabelas são registros de transações no estilo Price Paid (vendas registradas) — elas não representam diretamente preços pedidos ou avaliações.
+    Important caveats and data quality notes
+    - The dataset appears partial for 2025 (only months Jan–Aug present). Any “2025” totals are not full-year figures.
+    - Large outliers exist (e.g., max £127.7M, and min £100). These likely include data-entry errors or non-standard records and inflate the
+    mean. Median is often a more robust measure here.
+    - “other” property-type averages are unstable due to low/heterogeneous counts and outliers.
+    - I did not filter by is_new, duration, or other metadata; those filters can change results (for example excluding new-builds or
+    leaseholds).
+    - The tables are Price Paid-style transaction records (recorded sales) — they do not directly represent asking prices or valuations.
 
-    Próximos passos sugeridos (posso executá-los)
-    - Remover valores discrepantes óbvios (ex.: preços < £10k ou > £10M) e recalcular médias/medianas.
-    - Produzir resumos e mapas regionais / por condado / por área de código postal.
-    - Calcular mediana mês a mês ou média móvel de 3 meses para mostrar a tendência ao longo de 2025.
-    - Produzir taxas de crescimento ano a ano (YoY) por mês (ex.: mar 2025 vs mar 2024).
-    - Previsão para o ano completo de 2025 usando extrapolação simples ou modelagem de séries temporais (mas melhor após decidir como lidar com
-    meses ausentes/valores discrepantes).
+    Suggested next steps (I can run these)
+    - Clean out obvious outliers (e.g., prices < £10k or > £10M) and recompute averages/medians.
+    - Produce regional / county / postcode-area summaries and maps.
+    - Compute month-on-month or rolling 3-month median to show trend through 2025.
+    - Produce year-on-year (YoY) growth rates by month (e.g., Mar 2025 vs Mar 2024).
+    - Forecast for full 2025 using simple extrapolation or time-series modelling (but better after deciding how to handle missing
+    months/outliers).
 
-    Se desejar, posso:
-    - Reexecutar as mesmas agregações após remover valores discrepantes extremos e mostrar os resultados limpos.
-    - Produzir crescimento mensal YoY e gráficos (posso retornar agregados em CSV ou JSON que você pode usar para criar gráficos).
-    O que você gostaria que eu fizesse a seguir?
+    If you want, I can:
+    - Re-run the same aggregations after removing extreme outliers and show cleaned results.
+    - Produce YoY monthly growth and charts (I can return CSV or JSON aggregates you can chart).
+    Which would you like me to do next?
     [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_aggregator.database-anayst - Last aggregator closing, shutting down all persistent
     connections...
     [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_connection_manager - Disconnecting all persistent server connections...
