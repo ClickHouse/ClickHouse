@@ -821,12 +821,25 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONObjectEachRow' \
     | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'
 
-# `GeoJSON` forces named tuples in the `properties` object to be written as objects, regardless of
+# `GeoJSON` forces named tuples to be written as objects only when a lone object-like `properties`
+# column is emitted directly as the `properties` object; ordinary property columns follow
 # `output_format_json_named_tuples_as_objects`.
-echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element'
+echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in a direct properties column'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=0" \
+    -d 'SELECT (0, 0)::Point AS g, CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS properties FORMAT GeoJSON' \
+    | grep -o -m1 'is not compatible with the output format GeoJSON'
+
+echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an object'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=1" \
     -d 'SELECT (0, 0)::Point AS g, CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT GeoJSON' \
     | grep -o -m1 'is not compatible with the output format GeoJSON'
+
+# With `output_format_json_named_tuples_as_objects = 0` an ordinary property column serializes a named
+# `Tuple` as an array, so no element names reach the payload and the text framing stays available.
+echo '--- JSONEachPacketString accepts GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an array'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=0" \
+    -d 'SELECT (0, 0)::Point AS g, CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT GeoJSON' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'GeoJSON array-mode tuple property accepted: OK'
 
 # The `JSON` escaping rule of `CustomSeparated` serializes the values via the same JSON path, and the
 # format installs no UTF-8 validating buffer at all.

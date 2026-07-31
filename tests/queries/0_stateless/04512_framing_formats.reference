@@ -295,7 +295,11 @@ JSONStringsEachRow accepted: OK
 is not compatible with the output format JSONCompactColumns
 --- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 named Tuple element
 is not compatible with the output format JSONObjectEachRow
---- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in a direct properties column
 is not compatible with the output format GeoJSON
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an object
+is not compatible with the output format GeoJSON
+--- JSONEachPacketString accepts GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an array
+GeoJSON array-mode tuple property accepted: OK
 --- JSONEachPacketString is rejected for CustomSeparated with the JSON escaping rule and a non-UTF-8 named Tuple element
 is not compatible with the output format CustomSeparated
