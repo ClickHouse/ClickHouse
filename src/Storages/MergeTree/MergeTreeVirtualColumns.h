@@ -61,9 +61,4 @@ struct PartitionValueColumn
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
 
-/// True for the virtual columns whose value comes from the query plan (`ReadFromMergeTree` fills
-/// them into `shared_virtual_fields`) rather than from the part reader, so they cannot be
-/// materialized while reading a single part outside a `SELECT` plan.
-bool isQueryPlanOnlyVirtualColumn(const String & column_name);
-
 }
