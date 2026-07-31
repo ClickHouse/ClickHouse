@@ -23,6 +23,11 @@ SELECT accurateCastOrNull(1e30, 'Date32');
 SELECT accurateCast(nan, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT accurateCast(1e30, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 
+-- Non-integral floating-point values are not representable and are rejected too.
+SELECT accurateCastOrNull(toFloat64(1704067200.5), 'Date32');
+SELECT accurateCastOrNull(materialize(toFloat64(1704067200.5)), 'Date32');
+SELECT accurateCast(toFloat64(1704067200.5), 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
+
 -- Values below the first representable day number.
 SELECT accurateCastOrNull(toInt32(-25568), 'Date32');
 SELECT accurateCastOrNull(toInt64(-10413792000), 'Date32');
@@ -35,7 +40,7 @@ SELECT accurateCast(toInt32(-25568), 'Date32'); -- { serverError CANNOT_CONVERT_
 SELECT accurateCast(toInt32(-25567), 'Date32'), accurateCastOrNull(toInt32(-25567), 'Date32');
 SELECT accurateCast(toInt64(10413791999), 'Date32'), accurateCastOrNull(toInt64(10413791999), 'Date32');
 SELECT accurateCast(toUInt32(0), 'Date32'), accurateCastOrNull(toInt32(19723), 'Date32');
-SELECT accurateCast(materialize(toInt64(1704067200)), 'Date32'), accurateCastOrNull(materialize(toFloat64(1704067200.5)), 'Date32');
+SELECT accurateCast(materialize(toInt64(1704067200)), 'Date32'), accurateCastOrNull(materialize(toFloat64(1704067200)), 'Date32');
 
 -- The ordinary conversion still saturates, and it is unaffected by the accurate-cast check.
 SELECT toDate32(toUInt64(18446744073709551615), 'UTC'), toDate32(toInt32(-25568)), toDate32(toInt64(10413792000), 'UTC');

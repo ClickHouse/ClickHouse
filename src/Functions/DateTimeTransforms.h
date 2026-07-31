@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
@@ -2679,9 +2680,12 @@ struct Transformer
                         {
                             /// `Float64` represents every `BFloat16` and `Float32` value and `MAX_TIME_TIMESTAMP`
                             /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
                             const Float64 value = static_cast<Float64>(vec_from[i]);
                             is_valid_input = value >= -static_cast<Float64>(MAX_TIME_TIMESTAMP)
-                                && value <= static_cast<Float64>(MAX_TIME_TIMESTAMP);
+                                && value <= static_cast<Float64>(MAX_TIME_TIMESTAMP)
+                                && value == std::trunc(value);
                         }
                         else if constexpr (is_signed_v<FromValueType>)
                             is_valid_input = vec_from[i] >= -MAX_TIME_TIMESTAMP && vec_from[i] <= MAX_TIME_TIMESTAMP;
@@ -2699,9 +2703,12 @@ struct Transformer
                         {
                             /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
                             /// Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
                             const Float64 value = static_cast<Float64>(vec_from[i]);
                             is_valid_input = value >= static_cast<Float64>(lower_bound)
-                                && value <= static_cast<Float64>(MAX_DATE32_TIMESTAMP);
+                                && value <= static_cast<Float64>(MAX_DATE32_TIMESTAMP)
+                                && value == std::trunc(value);
                         }
                         else if constexpr (is_signed_v<FromValueType>)
                             is_valid_input = vec_from[i] >= lower_bound && vec_from[i] <= MAX_DATE32_TIMESTAMP;
@@ -2710,11 +2717,18 @@ struct Transformer
                     }
                     else
                     {
-                        using UpperBoundType = std::conditional_t<
-                            std::is_floating_point_v<FromValueType>,
-                            FromValueType,
-                            Int64>;
-                        is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<UpperBoundType>(0xFFFFFFFFL);
+                        if constexpr (is_floating_point<FromValueType>)
+                        {
+                            /// `Float64` represents every `BFloat16` and `Float32` value and the upper bound
+                            /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
+                            const Float64 value = static_cast<Float64>(vec_from[i]);
+                            is_valid_input = value >= 0 && value <= static_cast<Float64>(0xFFFFFFFFL)
+                                && value == std::trunc(value);
+                        }
+                        else
+                            is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<Int64>(0xFFFFFFFFL);
                     }
                     if (!is_valid_input)
                     {

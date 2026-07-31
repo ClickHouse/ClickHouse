@@ -29,13 +29,16 @@ SELECT accurateCastOrNull(toFloat64(4000000), 'Time');
 SELECT accurateCastOrNull(toUInt64(9223372036854775808), 'Time');
 SELECT accurateCastOrNull(nan, 'Time');
 SELECT accurateCastOrNull(CAST('inf' AS Float32), 'Time');
+SELECT accurateCastOrNull(toFloat64(-1.5), 'Time');
+SELECT accurateCastOrNull(toFloat32(1.5), 'Time');
 SELECT accurateCast(toUInt32(4000000), 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT accurateCast(toInt32(-4000000), 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(toFloat64(-1.5), 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- ... and keeps the negative and out-of-`DateTime`-range values that it can represent.
 SELECT accurateCast(toInt32(-1), 'Time'), accurateCastOrNull(toInt32(-1), 'Time');
 SELECT accurateCast(materialize(toInt32(-3599999)), 'Time'), accurateCastOrNull(materialize(toInt32(-3599999)), 'Time');
-SELECT accurateCast(toUInt32(3599999), 'Time'), accurateCastOrNull(toFloat64(-1.5), 'Time');
+SELECT accurateCast(toUInt32(3599999), 'Time'), accurateCastOrNull(toFloat64(-2), 'Time');
 
 -- `Date32` follows the same contract as `Date`: a `UInt64` value above `Int64::max` wraps to a negative
 -- `time_t`, which would escape the clamp, so it has to saturate to the upper boundary of the type.
