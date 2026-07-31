@@ -1,5 +1,13 @@
 #pragma once
 
+/// The sampling query profiler arms a POSIX timer that raises `SIGPROF` on a thread and walks
+/// that thread's stack from the signal context. Windows has neither the signal nor the
+/// context; the equivalent would be a timer thread plus `SuspendThread`/`GetThreadContext`,
+/// which is a different design rather than a port. See
+/// docs/en/development/build-cross-windows.md.
+#if !defined(OS_WINDOWS)
+
+
 #include <optional>
 #include <base/types.h>
 #include <signal.h>
@@ -95,3 +103,5 @@ public:
 };
 
 }
+
+#endif

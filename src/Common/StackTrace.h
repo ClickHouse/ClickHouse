@@ -100,10 +100,15 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
 std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
-#endif
 std::string getSignalCodeDescription(int sig, int si_code);
+#endif
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler
+/// The recovery path for a fault taken *while* unwinding: the signal handler
+/// `siglongjmp`s back here. Both halves are POSIX-signal machinery, and their only users -
+/// `QueryProfiler` and `SignalHandlers` - are not built on Windows either.
+#if !defined(OS_WINDOWS)
 extern thread_local bool asynchronous_stack_unwinding;
 extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+#endif

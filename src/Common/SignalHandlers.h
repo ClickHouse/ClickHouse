@@ -1,4 +1,10 @@
 #pragma once
+
+/// Fault and termination handling built on `sigaction`. Windows reports faults through
+/// Structured Exception Handling instead - `AddVectoredExceptionHandler` and friends - which
+/// is a different mechanism, not a renamed one.
+#if !defined(OS_WINDOWS)
+
 #include <csignal>
 
 #include <base/defines.h>
@@ -148,3 +154,5 @@ struct HandledSignals
 
     static HandledSignals & instance();
 };
+
+#endif

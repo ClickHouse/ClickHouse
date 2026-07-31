@@ -1,3 +1,8 @@
+/// A POSIX pipe with the fault handling around it. Not built on Windows: its users here -
+/// `TraceSender`, `SignalHandlers` and `ShellCommand` - are not built either, and a Windows
+/// pipe is not pollable alongside sockets, so a port would want a socket pair instead.
+#if !defined(OS_WINDOWS)
+
 #include <Common/PipeFDs.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -137,3 +142,5 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
 }
 
 }
+
+#endif

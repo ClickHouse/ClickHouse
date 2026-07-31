@@ -1,4 +1,10 @@
 #pragma once
+
+/// Injects scheduling noise by interposing pthread primitives and delivering signals, to shake
+/// out races in testing. Both halves are POSIX-specific, and this is a test aid rather than
+/// something the client needs.
+#if !defined(OS_WINDOWS)
+
 #include <cstdint>
 #include <atomic>
 #include <base/defines.h>
@@ -82,3 +88,5 @@ private:
 };
 
 }
+
+#endif

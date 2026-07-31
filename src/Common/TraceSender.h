@@ -1,5 +1,10 @@
 #pragma once
 
+/// Ships stack traces from the signal handler to the trace log over a pipe. Follows
+/// `QueryProfiler` and `SignalHandlers`, which are what feed it.
+#if !defined(OS_WINDOWS)
+
+
 #include <atomic>
 
 #include <Common/PipeFDs.h>
@@ -71,3 +76,5 @@ private:
 };
 
 }
+
+#endif
