@@ -42,7 +42,12 @@ SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) 
 SELECT (1, 1) IN (if(number = 0, (1, 1), (2, 2)), (3, 3)) FROM numbers(2);
 SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
 SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
-SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number;
+SELECT number, [number, number + 1] AS arr, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM numbers(3) ORDER BY number;
+-- The old analyzer resolves `x IN ident` as `x IN (SELECT * FROM ident)` unless `ident` is an alias of
+-- the same `SELECT` (`MarkTableIdentifiersVisitor`, which runs before source columns are collected).
+-- A bare column of the `FROM` subquery on the right of `IN` therefore still names a table there and the
+-- row-wise rewrite is never reached, while the new analyzer resolves the same shape as a column.
+SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number; -- { serverError UNKNOWN_TABLE }
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
 SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
