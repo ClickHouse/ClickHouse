@@ -16,11 +16,12 @@ public:
         SharedHeader sample_block_,
         ContextPtr context,
         const String & format,
-        const String & compression_method);
+        const String & compression_method,
+        bool use_conditional_write = false);
 
     ~StorageObjectStorageSink() override;
 
-    String getName() const override { return "StorageObjectStorageSink"; }
+    String GetName() const override { return "StorageObjectStorageSink"; }
 
     void consume(Chunk & chunk) override;
 
