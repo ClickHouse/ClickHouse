@@ -293,6 +293,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
+        /// The parser accepts `SETTINGS name` without a value for any setting - it does not know the
+        /// settings schema - so the shorthand has to be rejected here, against the schema, before
+        /// `limit` and `offset` are peeled out and read as UInt64. For a nested subquery this is the
+        /// first place the inner `SETTINGS` clause is seen, so nothing has checked it yet.
+        updated_context->getSettingsRef().checkShorthandChanges(set_query.changes);
+
         /// Remove expression settings limit and offset
         if (auto * limit_field = set_query.changes.tryGet("limit"))
         {
