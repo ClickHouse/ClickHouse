@@ -440,7 +440,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
 
         /// Verify offsets that were read as absolute values. The other branch accumulates sizes, so it
         /// is monotonic by construction. Only the values appended by this call are new: everything below
-        /// prev_size was verified by the previous call, and starting one element earlier keeps the
+        /// `prev_size` was verified by the previous call, and starting one element earlier keeps the
         /// comparison across the range boundary.
         if (!settings.position_independent_encoding)
         {

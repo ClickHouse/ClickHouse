@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
 namespace
 {
 
-/// Absolute offsets, the encoding used by skip index granules (position_independent_encoding = false).
+/// Absolute offsets, the encoding used by skip index granules (`position_independent_encoding = false`).
 String absoluteOffsets(const std::vector<UInt64> & offsets)
 {
     WriteBufferFromOwnString out;
@@ -26,7 +26,7 @@ String absoluteOffsets(const std::vector<UInt64> & offsets)
     return out.str();
 }
 
-/// Read `limit` offsets into `offsets_column`, the way MergeTreeIndexGranuleSet::deserializeBinary does.
+/// Read `limit` offsets into `offsets_column`, the way `MergeTreeIndexGranuleSet::deserializeBinary` does.
 void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit)
 {
     ReadBufferFromString in(data);
@@ -48,8 +48,8 @@ const ColumnArray::Offsets & offsetValues(const ColumnPtr & column)
 
 }
 
-/// Decreasing absolute offsets make offsetAt(i) exceed offsets[i], so consumers that read the nested
-/// column at [offsetAt(i), offsets[i]) index it out of bounds. Reject them where they are read.
+/// Decreasing absolute offsets make `offsetAt` exceed the row's own offset, so consumers that read the
+/// nested column over that range index it out of bounds. Reject them where they are read.
 TEST(SerializationArrayOffsets, RejectsDecreasingAbsoluteOffsets)
 {
     auto offsets_column = emptyOffsets();
@@ -111,9 +111,9 @@ TEST(SerializationArrayOffsets, SizesEncodingIsMonotonicByConstruction)
     ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{2, 3, 6}));
 }
 
-/// Each call verifies only what it appended, so repeated reads into one accumulating column stay linear
-/// in the total number of offsets rather than rescanning everything already verified.
-TEST(SerializationArrayOffsets, ScanIsBoundedToTheNewlyReadRange)
+/// Repeated reads into one accumulating column keep appending, so a column filled over many calls ends
+/// up with every offset that was read and stays accepted throughout.
+TEST(SerializationArrayOffsets, AccumulatesAcrossManyReads)
 {
     auto offsets_column = emptyOffsets();
     UInt64 offset = 0;
