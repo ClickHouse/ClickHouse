@@ -298,13 +298,11 @@ def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
         "# READ-ONLY SUGGESTION -- review every line before running; this tool does not execute it.",
         "# Move the intersecting parts aside so the table can load, WITHOUT losing them.",
         "# The server must not have these tables loaded while you move files (they are the",
-        "# tables that failed to attach). After moving, reload them (DETACH/ATTACH DATABASE",
-        "# or a restart), then ATTACH PART each moved part to bring its rows back with a",
-        "# fresh block number, then reconcile duplicates in the overlapping ranges.",
+        "# tables that failed to attach). After moving, reload the tables, then re-attach each",
+        "# moved part to bring its rows back and reconcile duplicates in the overlapping ranges.",
         "set -eu",
     ]
-    reattach: List[str] = []
-    any_cmd = False
+    any_line = False
     for table, parts in sorted(tables.items()):
         per_partition = classify(parts)
         header_done = False
@@ -318,6 +316,7 @@ def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
                 if not header_done:
                     lines.append(f"\n# table: {table}")
                     header_done = True
+                any_line = True
                 if p.path:
                     table_dir = os.path.dirname(p.path.rstrip("/"))
                     detached_dir = os.path.join(table_dir, "detached")
@@ -325,16 +324,11 @@ def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
                     lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name})")
                     lines.append(f"mkdir -p {_sh_quote(detached_dir)}")
                     lines.append(f"mv -- {_sh_quote(p.path)} {_sh_quote(dest)}")
-                    any_cmd = True
                 else:
                     lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name}) "
                                  f"-- path unknown; feed the part's full path to get an mv command")
-                reattach.append(f"#   ALTER TABLE <db>.<table> ATTACH PART '{p.name}';")
 
-    if reattach:
-        lines.append("\n# After the tables are reloaded, bring the moved parts back:")
-        lines.extend(reattach)
-    if not any_cmd and not reattach:
+    if not any_line:
         lines.append("\n# No intersecting parts to detach.")
     return lines
 

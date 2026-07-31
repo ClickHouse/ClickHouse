@@ -189,11 +189,11 @@ class TestEmitDetachCommands(unittest.TestCase):
 /var/lib/clickhouse/store/b11/b11e7407/20260722_2313_113249_107
 """
         script = "\n".join(m.emit_detach_commands(feed(text)))
-        # keep the higher-level _190, detach the _107 with a concrete mv
-        self.assertIn("mv -- ", script)
+        # keep the higher-level _190, detach the _107 with a single concrete mv
+        self.assertEqual(script.count("mv -- "), 1)
         self.assertIn("/var/lib/clickhouse/store/b11/b11e7407/detached/20260722_2313_113249_107", script)
-        self.assertNotIn("20260722_98_20874_190'", script.split("# After")[0].replace("mkdir", ""))
-        self.assertIn("ATTACH PART '20260722_2313_113249_107'", script)
+        # the tool does not emit ATTACH PART commands
+        self.assertNotIn("ATTACH PART", script)
 
     def test_bare_names_emit_placeholder(self):
         text = "20260722_98_20874_190\n20260722_2313_113249_107\n"
