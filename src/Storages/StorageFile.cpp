@@ -315,14 +315,19 @@ void listFilesWithRegexpMatchingImpl(
     /// re-enters the root, so the visited-path count grows exponentially until the kernel symlink
     /// limit stops it, which deduplication cannot prevent because it filters results.
     std::optional<std::string> active_frame_to_erase;
-    if (patternHasGlobstarSegment(for_match))
+    if (patternHasGlobstarSegment(suffix_with_globs))
     {
         std::error_code prefix_canon_ec;
         const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
         if (prefix_canon_ec)
             return; /// Dangling/inaccessible: mirror the pre-existing `it.increment(ec)` skip semantics.
+        /// Key on `suffix_with_globs` rather than `for_match`: `for_match` still carries the
+        /// literal prefix that `prefix_without_globs` has already consumed, so the same walk
+        /// state would get different keys depending on how much literal text the caller passed
+        /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
+        /// ancestor subtree would be rescanned once per loop instead of being pruned.
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
-        auto frame_key = prefix_canonical.string() + '\0' + for_match;
+        auto frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
         if (!active_frames_on_stack.insert(frame_key).second)
             return; /// Same directory AND same remaining pattern already in progress: real cycle.
         active_frame_to_erase = std::move(frame_key);
