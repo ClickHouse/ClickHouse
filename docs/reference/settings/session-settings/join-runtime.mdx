@@ -72,6 +72,16 @@ Maximum number of elements in runtime filter that are stored as is in a set, whe
 
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 
+## join_runtime_filter_min_probe_rows {#join_runtime_filter_min_probe_rows}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1000"},{"label": "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."}]}]}/>
+
+If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
+
 ## join_runtime_filter_pass_ratio_threshold_for_disabling {#join_runtime_filter_pass_ratio_threshold_for_disabling}
 
 <ExperimentalBadge/>
