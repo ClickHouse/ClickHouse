@@ -65,7 +65,7 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA_ARGS || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression
@@ -374,7 +374,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
+    auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped());
 
     for (auto & table_expression_node : table_expressions_nodes)
     {
