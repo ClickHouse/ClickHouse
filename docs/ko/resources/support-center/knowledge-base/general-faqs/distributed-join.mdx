@@ -1,0 +1,21 @@
+---
+title: 'ClickHouse는 분산 JOIN을 지원합니까?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse는 분산 JOIN을 지원합니다'
+doc_type: 'reference'
+keywords: ['분산', '조인']
+---
+
+예, ClickHouse는 클러스터에서 분산 조인을 지원합니다.
+
+데이터가 클러스터 내에서 동일한 위치에 함께 배치된 경우(예: 사용자 식별자를 기준으로 조인을 수행하고, 이 식별자가 세그먼트 분할 키이기도 한 경우), ClickHouse는 네트워크상에서 데이터를 이동하지 않고 조인을 수행할 수 있는 방법을 제공합니다.
+
+데이터가 동일한 위치에 배치되어 있지 않은 경우, ClickHouse는 브로드캐스트 조인을 허용합니다. 이 경우 조인되는 데이터의 일부가 클러스터의 여러 노드에 분산됩니다.
+
+2025년 기준으로 ClickHouse는 셔플 조인을 수행하지 않습니다. 즉, 조인의 어느 한쪽도 조인 키에 따라 클러스터 네트워크 전반에 걸쳐 재분배되지 않습니다.
+
+<Tip>
+  ClickHouse의 조인에 대한 일반적인 정보는 [&quot;JOIN 절&quot;](/ko/reference/statements/select/join#supported-types-of-join) 페이지를 참조하십시오.
+</Tip>

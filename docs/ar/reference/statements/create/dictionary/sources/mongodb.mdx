@@ -1,0 +1,78 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mongodb
+title: 'مصدر قاموس MongoDB'
+sidebarTitle: 'MongoDB'
+description: 'قم بتهيئة MongoDB كمصدر للقاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MONGODB(
+        host 'localhost'
+        port 27017
+        user ''
+        password ''
+        db 'test'
+        collection 'dictionary_source'
+        options 'ssl=true'
+    ))
+    ```
+
+    أو باستخدام URI:
+
+    ```sql
+    SOURCE(MONGODB(
+        uri 'mongodb://localhost:27017/clickhouse'
+        collection 'dictionary_source'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعدادات">
+    ```xml
+    <source>
+        <mongodb>
+            <host>localhost</host>
+            <port>27017</port>
+            <user></user>
+            <password></password>
+            <db>test</db>
+            <collection>dictionary_source</collection>
+            <options>ssl=true</options>
+        </mongodb>
+    </source>
+    ```
+
+    أو باستخدام URI:
+
+    ```xml
+    <source>
+        <mongodb>
+            <uri>mongodb://localhost:27017/test?ssl=true</uri>
+            <collection>dictionary_source</collection>
+        </mongodb>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعدادات:
+
+| الإعداد      | الوصف                                                              |
+| ------------ | ------------------------------------------------------------------ |
+| `host`       | مضيف MongoDB.                                                      |
+| `port`       | المنفذ على خادم MongoDB.                                           |
+| `user`       | اسم مستخدم MongoDB.                                                |
+| `password`   | كلمة مرور مستخدم MongoDB.                                          |
+| `db`         | اسم قاعدة البيانات.                                                |
+| `collection` | اسم المجموعة.                                                      |
+| `options`    | خيارات سلسلة اتصال MongoDB. هذا الحقل اختياري.                     |
+| `uri`        | URI المستخدم لإنشاء الاتصال (كبديل عن حقول host/port/db المنفصلة). |
+
+[مزيد من المعلومات حول المحرك](/ar/reference/engines/table-engines/integrations/mongodb)

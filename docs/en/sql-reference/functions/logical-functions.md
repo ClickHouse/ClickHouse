@@ -6,8 +6,6 @@ title: 'Logical functions'
 doc_type: 'reference'
 ---
 
-# Logical functions
-
 The functions below perform logical operations on arguments of arbitrary numeric types.
 They return either `0` or `1` as [`UInt8`](../data-types/int-uint.md) or in some cases `NULL`.
 

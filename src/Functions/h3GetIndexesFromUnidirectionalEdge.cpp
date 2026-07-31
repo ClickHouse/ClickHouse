@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetIndexesFromUnidirectionalEdge : public IFunction
+class FunctionH3GetIndexesFromUnidirectionalEdge final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetIndexesFromUnidirectionalEdge";
