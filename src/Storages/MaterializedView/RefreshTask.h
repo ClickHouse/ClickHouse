@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <IO/Progress.h>
+#include <Interpreters/QuerySlot.h>
 
 #include <random>
 
@@ -34,6 +35,7 @@ enum class RefreshState
     Scheduled,
     WaitingForDependencies,
     MissingDependencies,
+    WaitingForResource,
     Running,
     RunningOnAnotherReplica,
 };
@@ -275,6 +277,8 @@ private:
             None,
             /// doScheduling() decided to run a refresh, executeRefresh() didn't start yet.
             Requested,
+            /// Waiting for the workload resource scheduler to grant a query slot.
+            WaitingForResource,
             /// executeRefresh() is in progress.
             Running,
             /// executeRefresh() completed, doScheduling() didn't propagate the result to zookeeper yet.
@@ -295,6 +299,14 @@ private:
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
+
+        /// Workload admission is requested asynchronously before dispatching RefreshExec, so a
+        /// refresh waiting for a query slot does not occupy a BackgroundSchedulePool worker.
+        ContextMutablePtr refresh_context;
+        QuerySlotPtr query_slot;
+        std::exception_ptr admission_exception;
+        String log_comment;
+        String workload;
 
         State state = State::None;
         /// Contains information about the completed refresh, and znode version number at the start
@@ -398,6 +410,9 @@ private:
     std::optional<UUID> executeRefreshUnlocked(
         int32_t root_znode_version,
         std::vector<StorageID> deps,
+        ContextMutablePtr refresh_context,
+        QuerySlotPtr query_slot,
+        std::exception_ptr admission_exception,
         const String & log_comment,
         const String & workload,
         String & out_error_message);

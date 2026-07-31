@@ -33,6 +33,7 @@ def start_cluster():
 def clear_workloads_and_resources():
     node.query(
         """
+        drop table if exists rmv_workload_cancel;
         drop table if exists rmv_workload;
         drop table if exists rmv_default;
         drop workload if exists production;
@@ -237,7 +238,7 @@ def test_refreshable_mv_workload() -> None:
         node.query("system wait view rmv_default")
         assert node.query("select count() from rmv_default") == "1\n"
 
-        # A refresh with an RMV workload waits for a slot in that workload.
+        # A refresh with an RMV workload waits asynchronously for a slot.
         node.query("system refresh view rmv_workload")
         deadline = time.monotonic() + 10
         status = ""
@@ -245,17 +246,79 @@ def test_refreshable_mv_workload() -> None:
             status = node.query(
                 "select status from system.view_refreshes where view='rmv_workload'"
             ).strip()
-            if status == "Running":
+            if status == "WaitingForResource":
                 break
             time.sleep(0.1)
-        assert status == "Running"
+        assert status == "WaitingForResource"
         assert inflight_queries("all") == 1
         assert node.query("select count() from rmv_workload") == "0\n"
+        assert (
+            node.query(
+                """
+                select count()
+                from system.background_schedule_pool
+                where pool = 'schedule'
+                    and table = 'rmv_workload'
+                    and log_name = 'RefreshExec'
+                    and executing
+                """
+            )
+            == "0\n"
+        )
     finally:
         blocker.stop()
 
     node.query("system wait view rmv_workload")
     assert node.query("select count() from rmv_workload") == "1\n"
+
+
+def test_refreshable_mv_workload_wait_can_be_stopped() -> None:
+    node.query(
+        """
+        create resource query (query);
+        create workload all settings max_concurrent_queries=1;
+        create materialized view rmv_workload_cancel
+            refresh every 1 year settings workload='all'
+            (x UInt64) engine Memory
+            empty
+            as select number as x from numbers(1);
+        """
+    )
+
+    blocker = QueryPool(1, "all")
+    blocker.start()
+    ensure_workload_concurrency("all", 1)
+
+    try:
+        node.query("system refresh view rmv_workload_cancel")
+
+        deadline = time.monotonic() + 10
+        status = ""
+        while time.monotonic() < deadline:
+            status = node.query(
+                "select status from system.view_refreshes "
+                "where view='rmv_workload_cancel'"
+            ).strip()
+            if status == "WaitingForResource":
+                break
+            time.sleep(0.1)
+        assert status == "WaitingForResource"
+
+        # STOP cancels the pending scheduler request without waiting for a slot.
+        node.query("system stop view rmv_workload_cancel")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            status = node.query(
+                "select status from system.view_refreshes "
+                "where view='rmv_workload_cancel'"
+            ).strip()
+            if status == "Disabled":
+                break
+            time.sleep(0.1)
+        assert status == "Disabled"
+        assert node.query("select count() from rmv_workload_cancel") == "0\n"
+    finally:
+        blocker.stop()
 
 
 def test_max_waiting_queries_reached() -> None:

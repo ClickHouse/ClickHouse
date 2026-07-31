@@ -117,7 +117,8 @@ ProcessList::EntryPtr ProcessList::insert(
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
     bool is_internal,
-    bool force_workload)
+    bool force_query_slot,
+    QuerySlotPtr preacquired_query_slot)
 {
     EntryPtr res;
 
@@ -128,7 +129,7 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
-    bool use_workload = !is_unlimited_query || force_workload;
+    bool use_query_slot = !is_unlimited_query || force_query_slot;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -140,29 +141,41 @@ ProcessList::EntryPtr ProcessList::insert(
     // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
     // and memory reservations together as a single allocation. Splitting their admission across the
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
-    QuerySlotPtr query_slot;
+    QuerySlotPtr query_slot = std::move(preacquired_query_slot);
+    if (query_slot)
+        query_slot->wait();
+
     MemoryReservationPtr memory_reservation;
-    if (use_workload)
+    if (use_query_slot || !is_unlimited_query)
     {
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
-        String query_resource_name = workload_entity_storage->getQueryResourceName();
-        if (!query_resource_name.empty())
+
+        if (use_query_slot)
         {
-            if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
-        }
-        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
-        if (!memory_reservation_resource_name.empty())
-        {
-            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
+            String query_resource_name = workload_entity_storage->getQueryResourceName();
+            if (!query_resource_name.empty() && !query_slot)
             {
-                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
-                if (!link.allocation_queue)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
-                        memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
+                    query_slot = std::make_unique<QuerySlot>(link);
+            }
+        }
+
+        if (!is_unlimited_query)
+        {
+            String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
+            if (!memory_reservation_resource_name.empty())
+            {
+                if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
+                {
+                    // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
+                    if (!link.allocation_queue)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
+                            memory_reservation_resource_name);
+                    memory_reservation = std::make_unique<MemoryReservation>(
+                        link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                }
             }
         }
     }
