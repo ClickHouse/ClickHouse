@@ -39,6 +39,10 @@ Ensure your VPC has working DNS resolution and doesn't block, interfere with, or
 <Step title="Configure your AWS account" id="configure-aws-account">
 The initial BYOC setup creates a privileged IAM role (`ClickHouseManagementRole`) that enables BYOC controllers from ClickHouse Cloud to manage your infrastructure. This can be performed using either a [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) or a Terraform module (see below).
 
+<Warning>
+**The IAM role name is a hard requirement.** The role must be named exactly `ClickHouseManagementRole` — no prefixes, suffixes, or renaming to satisfy an organizational naming convention. The name is hard-coded in ClickHouse's automation and identical for every customer, so a renamed role applies successfully but provisioning then fails because ClickHouse cannot assume the expected role. More generally, do not change anything in the provided template or module without ClickHouse's explicit approval; supported customizations are exposed as parameters.
+</Warning>
+
 When deploying for a `BYO-VPC` setup, set the `IncludeVPCWritePermissions` parameter to `false` to ensure ClickHouse Cloud doesn't receive permissions to modify your customer-managed VPC.
 
 <Note>
@@ -58,6 +62,10 @@ module "clickhouse_onboarding" {
 ```
 
 Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
+
+<Note>
+**External ID.** For `external_id` (or the `ExternalId` CloudFormation parameter), use the value shown in the ClickHouse Cloud onboarding flow. Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, leave the CloudFormation parameter at its default, or ask your ClickHouse contact for the value to use with Terraform. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
+</Note>
 
 <Note>
 The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
