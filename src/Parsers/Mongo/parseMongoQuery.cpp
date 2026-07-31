@@ -91,10 +91,12 @@ ASTPtr parseMongoQuery(
     size_t max_parser_backtracks,
     const std::string & database)
 {
+    /// The wire protocol handlers format the returned AST unconditionally, so a failed
+    /// parse must throw here - a returned nullptr would be dereferenced. The exception
+    /// becomes a controlled error reply to the Mongo client.
     if (begin == end)
-    {
-        return nullptr;
-    }
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Empty Mongo query");
+
     Expected expected;
     ASTPtr res;
     Tokens token_subquery(begin, end, max_query_size, true);
@@ -105,10 +107,8 @@ ASTPtr parseMongoQuery(
     dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
     IParser::Pos token_iterator(token_subquery, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
     const bool parse_res = parser.parse(token_iterator, res, expected);
-    if (!parse_res)
-    {
-        return nullptr;
-    }
+    if (!parse_res || !res)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the Mongo query");
     return res;
 }
 
