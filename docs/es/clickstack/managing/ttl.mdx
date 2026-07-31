@@ -28,7 +28,7 @@ Como se muestra en el ejemplo anterior, el particionado se especifica en una tab
 
 <Image img="/images/use-cases/observability/observability-14.webp" alt="Particiones" size="lg" />
 
-El esquema de la tabla también incluye `TTL toDateTime(Timestamp) + ${TABLES_TTL}` y la configuración `ttl_only_drop_parts = 1`. La primera cláusula garantiza que los datos se eliminen una vez superado el TTL configurado (3 días de forma predeterminada). La configuración `ttl_only_drop_parts = 1` hace que solo caduquen las partes de datos en las que todos los datos han expirado (en lugar de intentar eliminar filas de forma parcial). Como el particionado garantiza que los datos de días distintos nunca se fusionen, los datos pueden eliminarse de forma eficiente.
+El esquema de la tabla también incluye `TTL toDateTime(Timestamp) + ${TABLES_TTL}` y la configuración `ttl_only_drop_parts = 1`. La primera cláusula garantiza que los datos se eliminen una vez superado el TTL configurado (3 días de forma predeterminada). La configuración `ttl_only_drop_parts = 1` hace que solo caduquen las partes de datos en las que todos los datos han expirado (en lugar de intentar eliminar filas de forma parcial). Como el particionado garantiza que los datos de días distintos nunca se &quot;fusionen&quot;, los datos pueden eliminarse de forma eficiente.
 
 <Warning>
   **`ttl_only_drop_parts`**
