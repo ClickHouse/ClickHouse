@@ -1,7 +1,7 @@
-2
-0
-0
+active_on_fly_data_mutations (merges stopped)	2
+active_on_fly_data_mutations	0
+mutations	0
 1	100
 2	200
-1
-0
+active_on_fly_data_mutations (before kill)	1
+active_on_fly_data_mutations (after kill)	0

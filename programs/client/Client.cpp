@@ -1,7 +1,11 @@
 #include <Client.h>
+#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -10,9 +14,12 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -119,7 +126,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
+    chassert(have_error == (client_exception || server_exception));
 }
 
 
@@ -342,6 +349,16 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <warnings/> unless --no-warnings is specified
     if (!config().has("no-warnings") && !config().getBool("warnings", true))
         config().setBool("no-warnings", true);
+
+    /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
+    /// corresponding dashed CLI option is specified. Shared with `clickhouse-local`.
+    remapClientConfigurationAliases();
+
+    /// The config file is loaded after the command line is processed, so the option parser
+    /// never sees values that come only from the file. Validate them now, before any query
+    /// can start: a config typo must not fail open (e.g. run a mutating query and only then
+    /// throw from a lazy read at the use site).
+    validateClientConfiguration();
 }
 
 
@@ -476,7 +493,12 @@ catch (...)
 #if USE_JWT_CPP && USE_SSL
 void Client::login()
 {
-    std::string host = hosts_and_ports.front().host;
+    /// `hosts_and_ports` is filled from explicit --host arguments only; the default host is added
+    /// later, in `connect`. A host given via config, --connection or the environment is still
+    /// sitting in the configuration at this point.
+    std::string host = hosts_and_ports.empty()
+        ? getClientConfiguration().getString("host", "localhost")
+        : hosts_and_ports.front().host;
     std::string auth_url = getClientConfiguration().getString("oauth-url", "");
     std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
     std::string audience = getClientConfiguration().getString("oauth-audience", "");
@@ -512,6 +534,13 @@ void Client::connect()
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
+
+    /// Capture the client local time zone before the branch below may switch the process default
+    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
+    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
+    if (client_local_timezone.empty())
+        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
 
     if (hosts_and_ports.empty())
     {
@@ -589,7 +618,7 @@ void Client::connect()
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
     if (load_suggestions)
     {
-        suggestion_limit = config().getInt("suggestion_limit");
+        suggestion_limit = config().getInt("suggestion_limit", 10000);
     }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
@@ -723,8 +752,45 @@ void Client::printChangedSettings() const
 }
 
 
+String Client::getHelpHeader() const
+{
+    return fmt::format(
+        "Usage: {0} [--query <query>]\n"
+        "{0} is a client application that is used to connect to ClickHouse.\n\n"
+        "It can run queries as a command line tool if you pass queries as an argument\n"
+        "or as an interactive client.\n"
+        "Queries can run one at a time, or in a multiquery mode.\n"
+        "To change settings you may use SET statements and SETTINGS clause\n"
+        "in queries or set them for a session with corresponding arguments.\n"
+        "'{0}' command will try to connect to clickhouse-server running\n"
+        "on the same server. If you have credentials set up, pass them with\n"
+        "--user <username> --password <password> or with --ask-password argument\n"
+        "that will open command prompt.\n\n"
+        "Connect to tcp native port (9000) without encryption:\n"
+        "    {0} --host clickhouse.example.com --password mysecretpassword\n"
+        "Connect to secure endpoint:\n"
+        "    {0} --secure --host clickhouse.example.com --password mysecretpassword\n",
+        app_name);
+}
+
+
+String Client::getHelpFooter() const
+{
+    return fmt::format(
+        "Note: if clickhouse is installed, you can use 'clickhouse-client' invocation with a dash.\n\n"
+        "Example printing current longest running query on a server:\n"
+        "    {0} --query \\\n"
+        "        'SELECT * FROM system.processes ORDER BY elapsed LIMIT 1 FORMAT Vertical'\n"
+        "Example creating table and inserting data:\n"
+        "    {0} --multiquery --query \\\n"
+        "        'CREATE TABLE t (a Int) ENGINE = Memory; INSERT INTO t VALUES (1), (2), (3)'\n",
+        app_name);
+}
+
+
 void Client::printHelpMessage(const OptionsDescription & options_description)
 {
+    output_stream << getHelpHeader() << "\n";
     if (options_description.main_description.has_value())
         output_stream << options_description.main_description.value() << "\n";
     if (options_description.external_description.has_value())
@@ -733,6 +799,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
+    output_stream << getHelpFooter() << "\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -803,6 +870,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
         ("structure", po::value<std::string>(), "structure")
+        ("scalar", "Send as Scalar packet (not Data)")
         ("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
@@ -836,8 +904,9 @@ void Client::processOptions(
 
         try
         {
-            external_tables.emplace_back(external_options);
-            if (external_tables.back().file == "-")
+            auto & external_data = external_options.contains("scalar") ? external_scalars : external_tables;
+            external_data.emplace_back(external_options);
+            if (external_data.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
@@ -1010,7 +1079,7 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && config().has("queries-file"))
+    if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1021,20 +1090,21 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }
     else
     {
-        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1053,8 +1123,9 @@ void Client::processConfig()
     }
 
     pager = config().getString("pager", "");
-    enable_highlight = config().getBool("highlight", true);
+    enable_highlight = ConfigHelper::getBool(config(), "highlight", true);
     multiline = config().has("multiline");
+    rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
     inline_insert_data = config().getBool("inline-insert-data", false);
@@ -1204,6 +1275,11 @@ void Client::readArguments(
             else
                 break;
         }
+        /// Options with no value
+        else if (in_external_group && (arg == "--scalar"))
+        {
+            external_tables_arguments.back().emplace_back(arg);
+        }
         else
         {
             in_external_group = false;
@@ -1306,7 +1382,7 @@ void Client::readArguments(
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
-                common_arguments.emplace_back(arg);
+                common_arguments.emplace_back(arg); /// anything else, eg --hilite
         }
     }
     if (!prev_host_arg.empty())
@@ -1318,8 +1394,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

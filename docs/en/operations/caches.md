@@ -8,8 +8,6 @@ keywords: ['cache']
 doc_type: 'reference'
 ---
 
-# Cache types
-
 When performing queries, ClickHouse uses different caches to speed up queries
 and reduce the need to read from or write to disk.
 

@@ -1,0 +1,30 @@
+http://base.invalid/def/data.csv
+http://base.invalid/test/data.csv
+http://other.invalid/test/data.csv
+http://other.invalid/absolute.csv
+http://base.invalid/data.csv
+http://base.invalid/def/data.csv
+http://base.invalid/test
+http://other.invalid/other.csv
+http://base.invalid/def/data.csv
+http://base.invalid/def/data.csv
+http://base.invalid/other/file.csv
+http://base.invalid/data.csv
+http://base.invalid/dir/file.csv?x=1
+http://base.invalid/dir/file.csv
+http://base.invalid/dir/file.csv?token=abc
+http://base.invalid/dir/data.csv?next=http://other.invalid/a
+http://base.invalid/a.csv
+http://base.invalid/dir/a.csv
+http://base.invalid/a/a.csv
+http://base.invalid/a.csv?foo=bar
+http://base.invalid/dir/data.csv
+http://base.invalid/dir/file.csv?token=abc
+URL('http://base.invalid/dir/persist.csv'
+http://base.invalid/b.csv
+http://other.invalid/b.csv
+url = 'http://base.invalid/dir/persist.csv'
+0
+0
+0
+must contain a scheme

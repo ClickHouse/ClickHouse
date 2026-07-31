@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -35,7 +36,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource : public ISource
+class MergeTreeTextIndexSource final : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -66,6 +67,8 @@ protected:
     Chunk generate() override
     {
         using enum PostingsSerialization::Flags;
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeTextIndexSource::generate");
 
         size_t total_rows = 0;
         size_t num_columns = header->columns();
@@ -101,12 +104,12 @@ protected:
                 else if (column_name == "part_name")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, current_part_name);
-                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "dictionary_compression")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, static_cast<Int8>(dict_block->tokens_format));
-                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "num_posting_blocks")
                 {
@@ -221,7 +224,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
+                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
 
                 if (sparse_index.empty())
                     continue;
@@ -256,7 +259,8 @@ private:
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.tokens, string_type, "token"}};
+        /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
+        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -344,7 +348,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Build a KeyCondition for the `token` column to skip dictionary blocks
         /// whose token range does not match the filter.
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context, /* boolean_context */ true);
 
         auto token_column = ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "token");
         auto key_expr = std::make_shared<ExpressionActions>(ActionsDAG({token_column}));

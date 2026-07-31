@@ -1,0 +1,683 @@
+---
+description: 'Ingérer et interroger des données au format Tab Separated Value en 5 étapes'
+sidebarTitle: 'Données de plaintes du NYPD'
+slug: /getting-started/example-datasets/nypd_complaint_data
+title: 'Données de plaintes du NYPD'
+doc_type: 'guide'
+keywords: ['jeu de données d’exemple', 'nypd', 'données sur la criminalité', 'données d’exemple', 'données publiques']
+---
+
+Les fichiers Tab Separated Value, ou TSV, sont courants et peuvent inclure des en-têtes de colonnes sur la première ligne du fichier. ClickHouse peut ingérer des fichiers TSV, et peut aussi interroger des fichiers TSV sans les ingérer. Ce guide couvre ces deux cas. Si vous devez interroger ou ingérer des fichiers CSV, les mêmes techniques s’appliquent ; remplacez simplement `TSV` par `CSV` dans vos arguments de format.
+
+En suivant ce guide, vous allez :
+
+* **Examiner** : interroger la structure et le contenu du fichier TSV.
+* **Déterminer le schéma ClickHouse cible** : choisir les types de données appropriés et faire correspondre les données existantes à ces types.
+* **Créer une table ClickHouse**.
+* **Prétraiter et transmettre en flux** les données vers ClickHouse.
+* **Exécuter quelques requêtes** dans ClickHouse.
+
+Le jeu de données utilisé dans ce guide provient de l’équipe NYC Open Data et contient des données sur « tous les crimes, délits et contraventions valides signalés au New York City Police Department (NYPD) ». Au moment de la rédaction, le fichier de données pèse 166 Mo, mais il est mis à jour régulièrement.
+
+**Source** : [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
+**Conditions d’utilisation** : https://www1.nyc.gov/home/terms-of-use.page
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Téléchargez le jeu de données en vous rendant sur la page [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), en cliquant sur le bouton Export, puis en choisissant **TSV for Excel**.
+* Installez [ClickHouse server et le client](/fr/get-started/setup/install)
+
+<div id="a-note-about-the-commands-described-in-this-guide">
+  ### Remarque sur les commandes décrites dans ce guide
+</div>
+
+Ce guide contient deux types de commandes :
+
+* Certaines commandes servent à interroger les fichiers TSV ; elles s’exécutent dans le terminal.
+* Les autres servent à interroger ClickHouse et s’exécutent dans `clickhouse-client` ou dans l’UI Play.
+
+<Note>
+  Les exemples de ce guide supposent que vous avez enregistré le fichier TSV sous `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv` ; adaptez les commandes si nécessaire.
+</Note>
+
+<div id="familiarize-yourself-with-the-tsv-file">
+  ## Familiarisez-vous avec le fichier TSV
+</div>
+
+Avant de commencer à travailler avec la base de données ClickHouse, prenez connaissance des données.
+
+<div id="look-at-the-fields-in-the-source-tsv-file">
+  ### Examinez les champs du fichier TSV source
+</div>
+
+Voici un exemple de commande pour interroger un fichier TSV, mais ne l’exécutez pas encore.
+
+```sh title="Query"
+clickhouse-local --query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+Exemple de réponse
+
+```response
+CMPLNT_NUM                  Nullable(Float64)
+ADDR_PCT_CD                 Nullable(Float64)
+BORO_NM                     Nullable(String)
+CMPLNT_FR_DT                Nullable(String)
+CMPLNT_FR_TM                Nullable(String)
+```
+
+<Tip>
+  La plupart du temps, la commande ci-dessus vous indiquera quels champs des données d’entrée sont numériques, lesquels sont des chaînes de caractères et lesquels sont des tuples. Ce n’est toutefois pas toujours le cas. Comme ClickHouse est couramment utilisé avec des jeux de données contenant des milliards d’enregistrements, un nombre de lignes à examiner par défaut (100) est défini pour [inférer le schéma](/fr/guides/clickhouse/data-formats/json/inference), afin d’éviter d’analyser des milliards de lignes pour l’inférer. La réponse ci-dessous peut ne pas correspondre à ce que vous voyez, car le jeu de données est mis à jour plusieurs fois par an. En consultant le dictionnaire de données, vous pouvez voir que CMPLNT&#95;NUM est défini comme du texte, et non comme une valeur numérique. En remplaçant la valeur par défaut de 100 lignes pour l’inférence par le paramètre `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
+  vous obtiendrez une meilleure idée du contenu.
+
+  Remarque : à partir de la version 22.5, la valeur par défaut est désormais de 25 000 lignes pour l’inférence du schéma. Ne modifiez donc ce paramètre que si vous utilisez une version antérieure ou si vous avez besoin d’échantillonner plus de 25 000 lignes.
+</Tip>
+
+Exécutez cette commande dans votre terminal. Vous utiliserez `clickhouse-local` pour interroger les données du fichier TSV que vous avez téléchargé.
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+```response title="Response"
+CMPLNT_NUM        Nullable(String)
+ADDR_PCT_CD       Nullable(Float64)
+BORO_NM           Nullable(String)
+CMPLNT_FR_DT      Nullable(String)
+CMPLNT_FR_TM      Nullable(String)
+CMPLNT_TO_DT      Nullable(String)
+CMPLNT_TO_TM      Nullable(String)
+CRM_ATPT_CPTD_CD  Nullable(String)
+HADEVELOPT        Nullable(String)
+HOUSING_PSA       Nullable(Float64)
+JURISDICTION_CODE Nullable(Float64)
+JURIS_DESC        Nullable(String)
+KY_CD             Nullable(Float64)
+LAW_CAT_CD        Nullable(String)
+LOC_OF_OCCUR_DESC Nullable(String)
+OFNS_DESC         Nullable(String)
+PARKS_NM          Nullable(String)
+PATROL_BORO       Nullable(String)
+PD_CD             Nullable(Float64)
+PD_DESC           Nullable(String)
+PREM_TYP_DESC     Nullable(String)
+RPT_DT            Nullable(String)
+STATION_NAME      Nullable(String)
+SUSP_AGE_GROUP    Nullable(String)
+SUSP_RACE         Nullable(String)
+SUSP_SEX          Nullable(String)
+TRANSIT_DISTRICT  Nullable(Float64)
+VIC_AGE_GROUP     Nullable(String)
+VIC_RACE          Nullable(String)
+VIC_SEX           Nullable(String)
+X_COORD_CD        Nullable(Float64)
+Y_COORD_CD        Nullable(Float64)
+Latitude          Nullable(Float64)
+Longitude         Nullable(Float64)
+Lat_Lon           Tuple(Nullable(Float64), Nullable(Float64))
+New Georeferenced Column Nullable(String)
+```
+
+À ce stade, vous devez vérifier que les colonnes du fichier TSV correspondent aux noms et aux types indiqués dans la section **Colonnes de ce jeu de données** de la [page du jeu de données](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243).  Les types de données ne sont pas très précis : tous les champs numériques sont en `Nullable(Float64)` et tous les autres champs en `Nullable(String)`.  Lorsque vous créez une table ClickHouse pour stocker les données, vous pouvez définir des types plus appropriés et plus performants.
+
+<div id="determine-the-proper-schema">
+  ### Déterminer le schéma approprié
+</div>
+
+Pour déterminer quels types doivent être utilisés pour les champs, il faut savoir à quoi ressemblent les données. Par exemple, le champ `JURISDICTION_CODE` est numérique : doit-il être de type `UInt8` ou `Enum`, ou bien `Float64` convient-il ?
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select JURISDICTION_CODE, count() FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ GROUP BY JURISDICTION_CODE
+ ORDER BY JURISDICTION_CODE
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─JURISDICTION_CODE─┬─count()─┐
+│                 0 │  188875 │
+│                 1 │    4799 │
+│                 2 │   13833 │
+│                 3 │     656 │
+│                 4 │      51 │
+│                 6 │       5 │
+│                 7 │       2 │
+│                 9 │      13 │
+│                11 │      14 │
+│                12 │       5 │
+│                13 │       2 │
+│                14 │      70 │
+│                15 │      20 │
+│                72 │     159 │
+│                87 │       9 │
+│                88 │      75 │
+│                97 │     405 │
+└───────────────────┴─────────┘
+```
+
+La réponse à la requête montre que `JURISDICTION_CODE` tient bien dans un `UInt8`.
+
+De même, examinez certains champs `String` et voyez s&#39;ils conviendraient mieux comme champs `DateTime` ou [`LowCardinality(String)`](/fr/reference/data-types/lowcardinality).
+
+Par exemple, le champ `PARKS_NM` est décrit comme &quot;Nom du parc, de l&#39;aire de jeux ou de l&#39;espace vert de NYC où l&#39;événement s&#39;est produit, le cas échéant (les parcs d&#39;État ne sont pas inclus)&quot;. Les noms des parcs de New York peuvent être de bons candidats pour un `LowCardinality(String)` :
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select count(distinct PARKS_NM) FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─uniqExact(PARKS_NM)─┐
+│                 319 │
+└─────────────────────┘
+```
+
+Examinez quelques noms de parcs :
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select distinct PARKS_NM FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ LIMIT 10
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─PARKS_NM───────────────────┐
+│ (null)                     │
+│ ASSER LEVY PARK            │
+│ JAMES J WALKER PARK        │
+│ BELT PARKWAY/SHORE PARKWAY │
+│ PROSPECT PARK              │
+│ MONTEFIORE SQUARE          │
+│ SUTTON PLACE PARK          │
+│ JOYCE KILMER PARK          │
+│ ALLEY ATHLETIC PLAYGROUND  │
+│ ASTORIA PARK               │
+└────────────────────────────┘
+```
+
+Le jeu de données utilisé au moment de la rédaction ne comporte que quelques centaines de parcs et d&#39;aires de jeux distincts dans la colonne `PARK_NM`.  Ce nombre reste faible au regard de la recommandation [LowCardinality](/fr/reference/data-types/lowcardinality#description), qui préconise de rester en dessous de 10 000 chaînes distinctes dans un champ `LowCardinality(String)`.
+
+<div id="datetime-fields">
+  ### Champs DateTime
+</div>
+
+D’après la section **Columns in this Dataset** de la [page web du jeu de données](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), il existe des champs de date et d’heure pour le début et la fin de l’événement signalé. L’examen des valeurs minimale et maximale de `CMPLNT_FR_DT` et `CMPLT_TO_DT` permet de déterminer si ces champs sont toujours renseignés ou non :
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_DT), max(CMPLNT_FR_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_DT)─┬─max(CMPLNT_FR_DT)─┐
+│ 01/01/1973        │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_DT), max(CMPLNT_TO_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_DT)─┬─max(CMPLNT_TO_DT)─┐
+│                   │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_TM), max(CMPLNT_FR_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_TM)─┬─max(CMPLNT_FR_TM)─┐
+│ 00:00:00          │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_TM), max(CMPLNT_TO_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_TM)─┬─max(CMPLNT_TO_TM)─┐
+│ (null)            │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+<div id="make-a-plan">
+  ## Établir un plan
+</div>
+
+D’après l’analyse ci-dessus :
+
+* `JURISDICTION_CODE` doit être converti en `UInt8`.
+* `PARKS_NM` doit être converti en `LowCardinality(String)`
+* `CMPLNT_FR_DT` et `CMPLNT_FR_TM` sont toujours renseignés (éventuellement avec une heure par défaut de `00:00:00`)
+* `CMPLNT_TO_DT` et `CMPLNT_TO_TM` peuvent être vides
+* Dans les données source, les dates et les heures sont stockées dans des champs distincts
+* Les dates sont au format `mm/dd/yyyy`
+* Les heures sont au format `hh:mm:ss`
+* Les dates et les heures peuvent être concaténées en types DateTime
+* Certaines dates sont antérieures au 1er janvier 1970, ce qui signifie qu’il nous faut un DateTime sur 64 bits
+
+<Note>
+  Il reste de nombreuses autres modifications à apporter aux types, et elles peuvent toutes être déterminées en suivant les mêmes étapes d’analyse. Examinez le nombre de chaînes distinctes dans un champ, les valeurs minimales et maximales des données numériques, puis prenez vos décisions. Le schéma de table présenté plus loin dans le guide contient de nombreuses chaînes à faible cardinalité et des champs d’entiers non signés, et très peu de nombres à virgule flottante.
+</Note>
+
+<div id="concatenate-the-date-and-time-fields">
+  ## Concaténer les champs de date et d’heure
+</div>
+
+Pour concaténer les champs de date et d’heure `CMPLNT_FR_DT` et `CMPLNT_FR_TM` en une seule `String` pouvant être convertie en `DateTime`, sélectionnez les deux champs reliés par l’opérateur de concaténation : `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`. Les champs `CMPLNT_TO_DT` et `CMPLNT_TO_TM` sont traités de la même manière.
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM AS complaint_begin FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+LIMIT 10
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─complaint_begin─────┐
+│ 07/29/2010 00:01:00 │
+│ 12/01/2011 12:00:00 │
+│ 04/01/2017 15:00:00 │
+│ 03/26/2018 17:20:00 │
+│ 01/01/2019 00:00:00 │
+│ 06/14/2019 00:00:00 │
+│ 11/29/2021 20:00:00 │
+│ 12/04/2021 00:35:00 │
+│ 12/05/2021 12:50:00 │
+│ 12/07/2021 20:30:00 │
+└─────────────────────┘
+```
+
+<div id="convert-the-date-and-time-string-to-a-datetime64-type">
+  ## Convertir la chaîne de date et d’heure en type DateTime64
+</div>
+
+Plus tôt dans ce guide, nous avons constaté que le fichier TSV contient des dates antérieures au 1er janvier 1970, ce qui signifie que nous devons utiliser un type DateTime64 pour ces dates. Les dates doivent également être converties du format `MM/DD/YYYY` au format `YYYY/MM/DD`. Ces deux opérations peuvent être effectuées avec [`parseDateTime64BestEffort()`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort).
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+      (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+select parseDateTime64BestEffort(CMPLNT_START) AS complaint_begin,
+       parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end
+FROM file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ORDER BY complaint_begin ASC
+LIMIT 25
+FORMAT PrettyCompact"
+```
+
+Les lignes 2 et 3 ci-dessus contiennent la concaténation de l’étape précédente, et les lignes 4 et 5 ci-dessus convertissent les chaînes en `DateTime64`. Comme l’heure de fin de la réclamation n’est pas garantie, `parseDateTime64BestEffortOrNull` est utilisé.
+
+```response title="Response"
+┌─────────complaint_begin─┬───────────complaint_end─┐
+│ 1925-01-01 10:00:00.000 │ 2021-02-12 09:30:00.000 │
+│ 1925-01-01 11:37:00.000 │ 2022-01-16 11:49:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2021-12-31 00:00:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2022-02-02 22:00:00.000 │
+│ 1925-01-01 19:00:00.000 │ 2022-04-14 05:00:00.000 │
+│ 1955-09-01 19:55:00.000 │ 2022-08-01 00:45:00.000 │
+│ 1972-03-17 11:40:00.000 │ 2022-03-17 11:43:00.000 │
+│ 1972-05-23 22:00:00.000 │ 2022-05-24 09:00:00.000 │
+│ 1972-05-30 23:37:00.000 │ 2022-05-30 23:50:00.000 │
+│ 1972-07-04 02:17:00.000 │                    ᴺᵁᴸᴸ │
+│ 1973-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1975-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1976-11-05 00:01:00.000 │ 1988-10-05 23:59:00.000 │
+│ 1977-01-01 00:00:00.000 │ 1977-01-01 23:59:00.000 │
+│ 1977-12-20 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-01-01 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-08-14 00:00:00.000 │ 1987-08-13 23:59:00.000 │
+│ 1983-01-07 00:00:00.000 │ 1990-01-06 00:00:00.000 │
+│ 1984-01-01 00:01:00.000 │ 1984-12-31 23:59:00.000 │
+│ 1985-01-01 12:00:00.000 │ 1987-12-31 15:00:00.000 │
+│ 1985-01-11 09:00:00.000 │ 1985-12-31 12:00:00.000 │
+│ 1986-03-16 00:05:00.000 │ 2022-03-16 00:45:00.000 │
+│ 1987-01-07 00:00:00.000 │ 1987-01-09 00:00:00.000 │
+│ 1988-04-03 18:30:00.000 │ 2022-08-03 09:45:00.000 │
+│ 1988-07-29 12:00:00.000 │ 1990-07-27 22:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+<Note>
+  Les dates affichées ci-dessus comme `1925` proviennent d’erreurs dans les données.  Plusieurs enregistrements des données d’origine comportent des dates des années `1019` à `1022`, alors qu’il devrait s’agir de `2019` à `2022`.  Elles sont stockées sous la forme du 1er janvier 1925, car il s’agit de la date la plus ancienne prise en charge par un DateTime 64 bits.
+</Note>
+
+<div id="create-a-table">
+  ## Créer une table
+</div>
+
+Les décisions prises ci-dessus concernant les types de données utilisés pour les colonnes se reflètent dans le schéma de la table
+ci-dessous. Nous devons également définir les clauses `ORDER BY` et `PRIMARY KEY` à utiliser pour la table. Au moins une
+des clauses `ORDER BY` ou `PRIMARY KEY` doit être spécifiée. Voici quelques recommandations pour choisir les
+colonnes à inclure dans `ORDER BY`. Vous trouverez plus d’informations dans la section *Étapes suivantes* à la fin
+de ce document.
+
+<div id="order-by-and-primary-key-clauses">
+  ### clauses `ORDER BY` et `PRIMARY KEY`
+</div>
+
+* Le tuple `ORDER BY` doit inclure les champs utilisés dans les filtres de requête
+* Pour maximiser la compression sur disque, le tuple `ORDER BY` doit être ordonné par cardinalité croissante
+* S&#39;il existe, le tuple `PRIMARY KEY` doit être un sous-ensemble du tuple `ORDER BY`
+* Si seul `ORDER BY` est spécifié, le même tuple sera alors utilisé comme `PRIMARY KEY`
+* L&#39;index de clé primaire est créé à l&#39;aide du tuple `PRIMARY KEY` s&#39;il est spécifié, sinon du tuple `ORDER BY`
+* L&#39;index `PRIMARY KEY` est conservé en mémoire principale
+
+En examinant le jeu de données et les questions auxquelles son interrogation pourrait répondre, nous pourrions
+décider de nous intéresser aux types de crimes signalés au fil du temps dans les cinq boroughs de
+New York City. Ces champs pourraient alors être inclus dans `ORDER BY` :
+
+| Colonne       | Description (du dictionnaire de données)                     |
+| ------------- | ------------------------------------------------------------ |
+| OFNS&#95;DESC | Description de l&#39;infraction correspondant au code de clé |
+| RPT&#95;DT    | Date à laquelle l&#39;événement a été signalé à la police    |
+| BORO&#95;NM   | Nom du borough dans lequel l&#39;incident s&#39;est produit  |
+
+Interrogation du fichier TSV pour obtenir la cardinalité des trois colonnes candidates :
+
+```bash title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select formatReadableQuantity(uniq(OFNS_DESC)) as cardinality_OFNS_DESC,
+        formatReadableQuantity(uniq(RPT_DT)) as cardinality_RPT_DT,
+        formatReadableQuantity(uniq(BORO_NM)) as cardinality_BORO_NM
+  FROM
+  file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+  FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─cardinality_OFNS_DESC─┬─cardinality_RPT_DT─┬─cardinality_BORO_NM─┐
+│ 60.00                 │ 306.00             │ 6.00                │
+└───────────────────────┴────────────────────┴─────────────────────┘
+```
+
+En triant par cardinalité, le `ORDER BY` devient :
+
+```sql
+ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
+```
+
+<Note>
+  Le tableau ci-dessous utilisera des noms de colonnes plus lisibles ; les noms ci-dessus seront associés à
+
+  ```sql
+  ORDER BY ( borough, offense_description, date_reported )
+  ```
+</Note>
+
+En combinant les modifications apportées aux types de données et au tuple `ORDER BY`, on obtient cette structure de table :
+
+```sql
+CREATE TABLE NYPD_Complaint (
+    complaint_number     String,
+    precinct             UInt8,
+    borough              LowCardinality(String),
+    complaint_begin      DateTime64(0,'America/New_York'),
+    complaint_end        DateTime64(0,'America/New_York'),
+    was_crime_completed  String,
+    housing_authority    String,
+    housing_level_code   UInt32,
+    jurisdiction_code    UInt8,
+    jurisdiction         LowCardinality(String),
+    offense_code         UInt8,
+    offense_level        LowCardinality(String),
+    location_descriptor  LowCardinality(String),
+    offense_description  LowCardinality(String),
+    park_name            LowCardinality(String),
+    patrol_borough       LowCardinality(String),
+    PD_CD                UInt16,
+    PD_DESC              String,
+    location_type        LowCardinality(String),
+    date_reported        Date,
+    transit_station      LowCardinality(String),
+    suspect_age_group    LowCardinality(String),
+    suspect_race         LowCardinality(String),
+    suspect_sex          LowCardinality(String),
+    transit_district     UInt8,
+    victim_age_group     LowCardinality(String),
+    victim_race          LowCardinality(String),
+    victim_sex           LowCardinality(String),
+    NY_x_coordinate      UInt32,
+    NY_y_coordinate      UInt32,
+    Latitude             Float64,
+    Longitude            Float64
+) ENGINE = MergeTree
+  ORDER BY ( borough, offense_description, date_reported )
+```
+
+<div id="finding-the-primary-key-of-a-table">
+  ### Trouver la clé primaire d’une table
+</div>
+
+La base de données ClickHouse `system`, plus précisément `system.table`, contient toutes les informations sur la table que vous
+venez de créer. Cette requête affiche l’`ORDER BY` (clé de tri) et la `PRIMARY KEY` :
+
+```sql
+SELECT
+    partition_key,
+    sorting_key,
+    primary_key,
+    table
+FROM system.tables
+WHERE table = 'NYPD_Complaint'
+FORMAT Vertical
+```
+
+Réponse
+
+```response
+Query id: 6a5b10bf-9333-4090-b36e-c7f08b1d9e01
+
+Row 1:
+──────
+partition_key:
+sorting_key:   borough, offense_description, date_reported
+primary_key:   borough, offense_description, date_reported
+table:         NYPD_Complaint
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<div id="preprocess-import-data">
+  ## Prétraiter et importer des données
+</div>
+
+Nous utiliserons l’outil `clickhouse-local` pour prétraiter les données et `clickhouse-client` pour les importer.
+
+<div id="clickhouse-local-arguments-used">
+  ### Arguments utilisés par `clickhouse-local`
+</div>
+
+<Tip>
+  `table='input'` figure parmi les arguments de clickhouse-local ci-dessous. clickhouse-local prend les données fournies en entrée (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) et les insère dans une table. Par défaut, cette table s&#39;appelle `table`. Dans ce guide, le nom de la table est défini sur `input` afin de rendre le flux de données plus clair. Le dernier argument de clickhouse-local est une requête qui lit les données de la table (`FROM input`), puis les transmet à `clickhouse-client` pour alimenter la table `NYPD_Complaint`.
+</Tip>
+
+```sql
+cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
+  | clickhouse-local --table='input' --input-format='TSVWithNames' \
+  --input_format_max_rows_to_read_for_schema_inference=2000 \
+  --query "
+    WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+     (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+    SELECT
+      CMPLNT_NUM                                  AS complaint_number,
+      ADDR_PCT_CD                                 AS precinct,
+      BORO_NM                                     AS borough,
+      parseDateTime64BestEffort(CMPLNT_START)     AS complaint_begin,
+      parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end,
+      CRM_ATPT_CPTD_CD                            AS was_crime_completed,
+      HADEVELOPT                                  AS housing_authority_development,
+      HOUSING_PSA                                 AS housing_level_code,
+      JURISDICTION_CODE                           AS jurisdiction_code,
+      JURIS_DESC                                  AS jurisdiction,
+      KY_CD                                       AS offense_code,
+      LAW_CAT_CD                                  AS offense_level,
+      LOC_OF_OCCUR_DESC                           AS location_descriptor,
+      OFNS_DESC                                   AS offense_description,
+      PARKS_NM                                    AS park_name,
+      PATROL_BORO                                 AS patrol_borough,
+      PD_CD,
+      PD_DESC,
+      PREM_TYP_DESC                               AS location_type,
+      toDate(parseDateTimeBestEffort(RPT_DT))     AS date_reported,
+      STATION_NAME                                AS transit_station,
+      SUSP_AGE_GROUP                              AS suspect_age_group,
+      SUSP_RACE                                   AS suspect_race,
+      SUSP_SEX                                    AS suspect_sex,
+      TRANSIT_DISTRICT                            AS transit_district,
+      VIC_AGE_GROUP                               AS victim_age_group,
+      VIC_RACE                                    AS victim_race,
+      VIC_SEX                                     AS victim_sex,
+      X_COORD_CD                                  AS NY_x_coordinate,
+      Y_COORD_CD                                  AS NY_y_coordinate,
+      Latitude,
+      Longitude
+    FROM input" \
+  | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
+```
+
+<div id="validate-data">
+  ## Vérifiez les données
+</div>
+
+<Note>
+  Le jeu de données est mis à jour une ou plusieurs fois par an ; vos décomptes peuvent donc ne pas correspondre à ceux indiqués dans ce document.
+</Note>
+
+```sql title="Query"
+SELECT count()
+FROM NYPD_Complaint
+```
+
+```text title="Response"
+┌─count()─┐
+│  208993 │
+└─────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+La taille du jeu de données dans ClickHouse ne représente que 12 % de celle du fichier TSV d’origine ; comparez la taille du fichier TSV d’origine à celle de la table :
+
+```sql title="Query"
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
+WHERE name = 'NYPD_Complaint'
+```
+
+```text title="Response"
+┌─formatReadableSize(total_bytes)─┐
+│ 8.63 MiB                        │
+└─────────────────────────────────┘
+```
+
+<div id="run-queries">
+  ## Exécutez quelques requêtes
+</div>
+
+<div id="query-1-compare-the-number-of-complaints-by-month">
+  ### Requête 1. Comparer le nombre de plaintes par mois
+</div>
+
+```sql title="Query"
+SELECT
+    dateName('month', date_reported) AS month,
+    count() AS complaints,
+    bar(complaints, 0, 50000, 80)
+FROM NYPD_Complaint
+GROUP BY month
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
+
+┌─month─────┬─complaints─┬─bar(count(), 0, 50000, 80)───────────────────────────────┐
+│ March     │      34536 │ ███████████████████████████████████████████████████████▎ │
+│ May       │      34250 │ ██████████████████████████████████████████████████████▋  │
+│ April     │      32541 │ ████████████████████████████████████████████████████     │
+│ January   │      30806 │ █████████████████████████████████████████████████▎       │
+│ February  │      28118 │ ████████████████████████████████████████████▊            │
+│ November  │       7474 │ ███████████▊                                             │
+│ December  │       7223 │ ███████████▌                                             │
+│ October   │       7070 │ ███████████▎                                             │
+│ September │       6910 │ ███████████                                              │
+│ August    │       6801 │ ██████████▊                                              │
+│ June      │       6779 │ ██████████▋                                              │
+│ July      │       6485 │ ██████████▍                                              │
+└───────────┴────────────┴──────────────────────────────────────────────────────────┘
+
+12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
+```
+
+<div id="query-2-compare-total-number-of-complaints-by-borough">
+  ### Requête 2. Comparer le nombre total de plaintes par borough
+</div>
+
+```sql title="Query"
+SELECT
+    borough,
+    count() AS complaints,
+    bar(complaints, 0, 125000, 60)
+FROM NYPD_Complaint
+GROUP BY borough
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
+
+┌─borough───────┬─complaints─┬─bar(count(), 0, 125000, 60)──┐
+│ BROOKLYN      │      57947 │ ███████████████████████████▋ │
+│ MANHATTAN     │      53025 │ █████████████████████████▍   │
+│ QUEENS        │      44875 │ █████████████████████▌       │
+│ BRONX         │      44260 │ █████████████████████▏       │
+│ STATEN ISLAND │       8503 │ ████                         │
+│ (null)        │        383 │ ▏                            │
+└───────────────┴────────────┴──────────────────────────────┘
+
+6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
+```
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+[Une introduction pratique aux index primaires clairsemés dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) présente les différences entre l’indexation dans ClickHouse et celle des bases de données relationnelles traditionnelles, explique comment ClickHouse construit et utilise un index primaire clairsemé, et décrit les bonnes pratiques en matière d’indexation.
