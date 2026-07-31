@@ -418,7 +418,7 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
     int primary_key = 0;
     int autoincrement = 0;
     Stopwatch watch;
-    int status;
+    int status = SQLITE_OK;
     while (true)
     {
         status = sqlite3_table_column_metadata(
