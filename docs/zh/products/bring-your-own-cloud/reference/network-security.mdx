@@ -15,12 +15,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse Cloud 控制平面会维护多种类型的连接，以运行和支持您的 BYOC 部署：
 
-| 目的                            | 连接类型                         | 说明                                                                             |
-| ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------ |
-| **日常运维 — Kubernetes API 服务器** | 通过 IP 过滤的公网 (默认) 或 Tailscale | 管理服务通过公网与 EKS API 服务器通信，并受 IP 允许列表限制。初始部署完成后，您也可以选择切换到 Tailscale 以实现私有访问。      |
-| **日常运维 — AWS API**            | ClickHouse VPC → AWS         | 管理服务从 ClickHouse Cloud 自有的 VPC 调用 AWS API (例如 EKS、EC2)。这不涉及您的 VPC 或 Tailscale。 |
-| **故障排查 — ClickHouse 服务**      | Tailscale                    | ClickHouse 工程师通过 Tailscale 访问 ClickHouse 服务 (例如系统表) 进行诊断。                      |
-| **故障排查 — Kubernetes API 服务器** | Tailscale                    | ClickHouse 工程师通过 Tailscale 访问 EKS API 服务器以进行集群诊断。                              |
+| 目的                            | 连接类型                                                    | 说明                                                                                                |
+| ----------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **日常运维 — Kubernetes API 服务器** | 通过 IP 过滤的公网 (默认)，或通过 Tailscale 或 AWS VPC Lattice 实现私有访问 | 管理服务通过公网与 EKS API 服务器通信，并受 IP 允许列表限制。初始部署完成后，您也可以选择切换到通过 Tailscale 或在 AWS 上通过 VPC Lattice 实现私有访问。 |
+| **日常运维 — AWS API**            | ClickHouse VPC → AWS                                    | 管理服务从 ClickHouse Cloud 自有的 VPC 调用 AWS API (例如 EKS、EC2)。这不涉及您的 VPC 或 Tailscale。                    |
+| **故障排查 — ClickHouse 服务**      | Tailscale                                               | ClickHouse 工程师通过 Tailscale 访问 ClickHouse 服务 (例如系统表) 进行诊断。                                         |
+| **故障排查 — Kubernetes API 服务器** | Tailscale                                               | ClickHouse 工程师通过 Tailscale 访问 EKS API 服务器以进行集群诊断。                                                 |
 
 下一节将介绍 **Tailscale** 私有网络如何用于故障排查以及可选的管理访问。
 
@@ -110,7 +110,7 @@ Tailscale 建立连接的过程如下：
 **可选的专用终结点配置**：
 
 * 您可以将 EKS API 服务器配置为仅使用专用终结点
-* 在这种情况下，管理服务将通过 Tailscale 访问 API 服务器 (类似于人工进行的故障排查访问)
+* 在这种情况下，管理服务将通过 Tailscale 访问 API 服务器 (类似于人工进行的故障排查访问) ，或者在 AWS 上通过 VPC Lattice 访问 (参见 [Kubernetes API Private Connection](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
 * 同时会保留公网访问，作为紧急调查和支持需求的备用机制
 
 <div id="tailscale-traffic-flow">

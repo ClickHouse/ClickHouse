@@ -35,8 +35,8 @@ requêtes en créant une réorganisation des données selon les attributs pertin
   ## Comment fonctionnent les projections ?
 </div>
 
-En pratique, une projection peut être considérée comme une table cachée
-supplémentaire associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
+En pratique, une projection peut être considérée comme une table supplémentaire (masquée)
+associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
 index primaire différent de celui de la table d’origine, et elle peut
 pré-calculer automatiquement et de manière incrémentielle des agrégats. Par conséquent, l’utilisation des projections
 offre deux « leviers d’optimisation » pour accélérer l’exécution des requêtes :
@@ -699,6 +699,6 @@ ce qui améliore les performances tout en maintenant un faible surcoût de stock
   ## Contenu connexe
 </div>
 
-* [Introduction pratique aux index primaires dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [Une introduction pratique aux index primaires dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Vues matérialisées](/fr/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/fr/reference/statements/alter/projection)

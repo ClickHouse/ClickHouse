@@ -154,19 +154,19 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
   ```
 </RunnableCode>
 
-このクエリは、上記の例のテーブルに対して実行され、テーブルのパーティションキーに使われているカラム (`date`) と、テーブルの主キーに使われているカラム (`town`) の両方でフィルタリングすることで、2020 年 12 月にロンドンで売却されたすべての不動産の最高価格を[算出](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)します (`date` は主キーの一部ではありません) 。
+このクエリは、上記の例のテーブルに対して実行され、テーブルのパーティションキーに使われているカラム (`date`) と、テーブルの主キーに使われているカラム (`town`) の両方でフィルタリングすることで、2020 年 12 月にロンドンで売却されたすべての不動産の最高価格を[算出](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)します (`date` は主キーの一部ではありません)。
 
-ClickHouse はこのクエリを処理する際、無関係なデータを評価しないように、一連の pruning 手法を適用します。
+ClickHouse はこのクエリを処理する際、無関係なデータを評価しないよう、一連のプルーニング手法を適用します。
 
 <Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="パーツマージ 2" />
 
 <br />
 
-① **パーティションプルーニング**: テーブルのパーティションキーに使われているカラムに対するクエリの filter に論理的に一致しないパーティション全体 (パーツの集合) を除外するために、[MinMax indexes](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) が使用されます。
+① **パーティションプルーニング**: テーブルのパーティションキーに使われているカラムに対するクエリのフィルタに論理的に一致しないパーティション全体 (パーツの集合) を除外するために、[MinMax indexes](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) が使用されます。
 
-② **Granule pruning**: 手順 ① の後に残った data parts に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリの filter に論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行の block) を除外します。
+② **Granule pruning**: 手順 ① の後に残った data parts に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリのフィルタに論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行の block) を除外します。
 
-これらのデータ pruning のステップは、上記のクエリ例について、[EXPLAIN](/ja/reference/statements/explain) 句を使って物理的なクエリ実行計画を[確認](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)することで観察できます。
+これらのデータプルーニングのステップは、上記のクエリ例について、[EXPLAIN](/ja/reference/statements/explain) 句を使って物理的なクエリ実行計画を[確認](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)することで観察できます。
 
 ```sql style="fontSize:13px"
 EXPLAIN indexes = 1

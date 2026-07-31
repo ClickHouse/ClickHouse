@@ -6,11 +6,19 @@
       "mdx": true
     },
     "mintlify": {
-      "inferTitleFromFilename": true
+      "inferTitleFromFilename": true,
+      "openapi": {
+        "files": [
+          "./_specs/cloud-openapi.json"
+        ]
+      }
     },
     "jsonSchema": {
       "./docs.json": {
         "preset": "mintlify-hide-default"
+      },
+      "./_specs/cloud-openapi.json": {
+        "preset": "openapi"
       }
     },
     "docsUrlPattern": "/[locale]",
@@ -26,11 +34,18 @@
   "files": {
     "json": {
       "include": [
-        "./docs.json"
+        "./docs.json",
+        "./_specs/cloud-openapi.json"
       ],
       "exclude": [
         "./_specs/**",
         "./products/cloud/api-reference/navigation.json"
+      ],
+      "transform": [
+        {
+          "match": "^_specs/cloud-openapi.json$",
+          "replace": "{locale}/_specs/cloud-openapi.json"
+        }
       ]
     },
     "js": {
