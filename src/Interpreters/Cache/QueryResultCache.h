@@ -286,6 +286,14 @@ private:
 
     mutable std::mutex mutex;
 
+    /// Serializes every operation on the on-disk tier: the `disk_cache` membership changes that run `DiskEntry`
+    /// deleters (`removeRecursive` of an entry directory) and the reads/writes of the entry files themselves
+    /// (`writeDisk`, `readFromDisk`, disk clears in `clear`, `dumpDiskCache`). Deliberately separate from `mutex`
+    /// so that the hot in-memory read path (`readFromMemory`, which clones and possibly decompresses a whole
+    /// entry) never waits for disk I/O of unrelated queries. Lock order: `mutex` may be taken before `disk_mutex`
+    /// (see `clear`); never take `mutex` while holding `disk_mutex`.
+    mutable std::mutex disk_mutex;
+
     /// query --> query execution count
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
@@ -383,8 +391,7 @@ private:
         const Cache::Key & key,
         bool enable_reads_from_query_cache_disk,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota,
-        const std::lock_guard<std::mutex> &);
+        size_t max_query_result_cache_entries_quota);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes);
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;

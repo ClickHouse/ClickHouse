@@ -1099,8 +1099,7 @@ QueryResultCacheReader::QueryResultCacheReader(
     const Cache::Key & key,
     bool enable_reads_from_query_cache_disk,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota,
-    const std::lock_guard<std::mutex> &)
+    size_t max_query_result_cache_entries_quota)
 {
     auto entry = cache_->readFromMemory(key);
 
@@ -1301,14 +1300,17 @@ QueryResultCacheReader QueryResultCache::createReader(
     size_t max_query_result_cache_size_in_bytes_quota,
     size_t max_query_result_cache_entries_quota)
 {
-    std::lock_guard lock(mutex);
+    /// Deliberately no lock here. `memory_cache` is internally synchronized and a published `Entry` is
+    /// immutable, so pure memory hits - including the clone/decompression of the whole entry in
+    /// `readFromMemory` - run concurrently with each other and with everything else. Only the on-disk
+    /// lookup needs serialization with the other on-disk operations, and `readFromDisk` takes `disk_mutex`
+    /// itself. Otherwise a single large memory hit or a slow disk hit would block unrelated cached reads.
     return QueryResultCacheReader(
         shared_from_this(),
         key,
         enable_reads_from_query_cache_disk,
         max_query_result_cache_size_in_bytes_quota,
-        max_query_result_cache_entries_quota,
-        lock);
+        max_query_result_cache_entries_quota);
 }
 
 QueryResultCacheWriter QueryResultCache::createWriter(
@@ -1374,16 +1376,15 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     if (!disk || disk->isBroken())
         return;
 
-    /// Serialize all disk publishing under the cache `mutex`. Reads also hold this mutex
-    /// (`QueryResultCacheReader` is constructed with it held, so `readFromDisk` runs under it), and the only
-    /// other places that touch the on-disk tree (`reset`, `updateConfiguration`, `dump`, `loadEntrysFromDisk`)
-    /// hold it too. Without this lock two `QueryResultCacheWriter`s for the same key (each holds only its own
-    /// writer mutex) could both pass the memory-only `isStale` check and then write the same `entry_path`
-    /// concurrently: one truncating/writing `results.bin` while the other's `disk_cache.remove`/`set` runs a
-    /// `DiskEntry` deleter that `removeRecursive`s the same directory, publishing an entry that points at
-    /// missing or mixed files. Holding the mutex makes `remove` + file write + `set` atomic per key and ensures
-    /// every `removeRecursive` of an `entry_path` happens while no reader or writer is touching that path.
-    std::lock_guard lock(mutex);
+    /// Serialize all disk publishing under `disk_mutex`. Reads hold it too (`readFromDisk`), and so do the
+    /// other places that touch the on-disk tree (the disk clears in `clear`, `dumpDiskCache`). Without this
+    /// lock two `QueryResultCacheWriter`s for the same key (each holds only its own writer mutex) could both
+    /// pass the memory-only `isStale` check and then write the same `entry_path` concurrently: one
+    /// truncating/writing `results.bin` while the other's `disk_cache.remove`/`set` runs a `DiskEntry` deleter
+    /// that `removeRecursive`s the same directory, publishing an entry that points at missing or mixed files.
+    /// Holding the mutex makes `remove` + file write + `set` atomic per key and ensures every
+    /// `removeRecursive` of an `entry_path` happens while no reader or writer is touching that path.
+    std::lock_guard lock(disk_mutex);
 
     /// Remove any existing entry under this key first. Otherwise, when we later call
     /// `disk_cache.set(key, ...)`, the old `DiskEntry`'s deleter would run after the new
@@ -1521,6 +1522,11 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
 {
     if (!disk)
         return std::nullopt;
+
+    /// Serialize with the other on-disk operations (`writeDisk`, the disk clears in `clear`): the entry files
+    /// read by `deserializeEntry` below must not be `removeRecursive`d from under us. Taken here, not by the
+    /// caller, so that memory-only lookups never contend on it.
+    std::lock_guard lock(disk_mutex);
 
     auto disk_entry = disk_cache.getWithKey(key);
     if (!disk_entry.has_value())
@@ -2015,14 +2021,16 @@ void QueryResultCache::clear(const std::optional<String> & type, const std::opti
         }
     };
 
-    /// Hold the cache `mutex` across the whole clear. Clearing/removing a disk entry runs its `DiskEntry`
-    /// deleter, which `removeRecursive`s the entry directory; `readFromDisk` and `writeDisk` run under the same
-    /// `mutex` and rely on that removal being serialized with them. Without this lock
-    /// `SYSTEM DROP QUERY CACHE TYPE 'Disk'` (or `... TAG ...`) could delete files while `readFromDisk` is
-    /// deserializing them, or run between a writer's `createDirectories` and `disk_cache.set`. It also closes a
-    /// contract gap: a writer that already entered `writeDisk` holds the `mutex`, so the drop waits for it and
-    /// then removes the freshly published entry, leaving the disk cache actually empty after the drop returns.
+    /// Hold `disk_mutex` across the whole clear (and `mutex` for `times_executed`; lock order: `mutex` first).
+    /// Clearing/removing a disk entry runs its `DiskEntry` deleter, which `removeRecursive`s the entry
+    /// directory; `readFromDisk` and `writeDisk` run under the same `disk_mutex` and rely on that removal being
+    /// serialized with them. Without this lock `SYSTEM DROP QUERY CACHE TYPE 'Disk'` (or `... TAG ...`) could
+    /// delete files while `readFromDisk` is deserializing them, or run between a writer's `createDirectories`
+    /// and `disk_cache.set`. It also closes a contract gap: a writer that already entered `writeDisk` holds
+    /// `disk_mutex`, so the drop waits for it and then removes the freshly published entry, leaving the disk
+    /// cache actually empty after the drop returns.
     std::lock_guard lock(mutex);
+    std::lock_guard disk_lock(disk_mutex);
 
     if (type)
     {
@@ -2082,10 +2090,10 @@ std::vector<QueryResultCache::DiskCache::KeyMapped> QueryResultCache::dumpDiskCa
     /// Returning those owning pointers would let `system.query_cache` keep a removed entry alive past a
     /// concurrent `writeDisk`, which does `disk_cache.remove(key)` and then rewrites the *same* `entry_path`:
     /// once the dump is destroyed, the stale deleter would `removeRecursive` the freshly rewritten files while
-    /// `disk_cache` still advertises the entry. Take the cache mutex (as every other on-disk operation does)
+    /// `disk_cache` still advertises the entry. Take `disk_mutex` (as every other on-disk operation does)
     /// and return non-owning value snapshots - a plain copy of `DiskEntry`, which holds only `bytes_on_disk`
     /// and uses the default deleter - so a system-table dump can never delete a cache entry's files.
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(disk_mutex);
     std::vector<DiskCache::KeyMapped> snapshot;
     for (const auto & [key, disk_entry] : disk_cache.dump())
         snapshot.push_back({key, std::make_shared<DiskEntry>(*disk_entry)});
