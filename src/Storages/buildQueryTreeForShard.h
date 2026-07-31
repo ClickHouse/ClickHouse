@@ -25,6 +25,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
+/// Finalize `__aliasMarker` nodes immediately before distributed SQL serialization:
+/// materialize each marker's `ColumnNode` `arg2` to a `String` constant `__tableN.col` so
+/// the receiver can read it as a stable action node name. Lambda bodies are skipped
+/// (marker's column there is a per-row lambda variable, not a transport-boundary
+/// column). User-written markers with arbitrary arg2 pass through unchanged.
+void finalizeAliasMarkersForDistributedSerialization(QueryTreeNodePtr & node, const ContextPtr & context);
+
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its
   * `ALIAS` columns inlined into their defining expressions. If several projection (or sort/group/...) items expand to the
   * same expression, the shard's `ActionsDAG` deduplicates them into a single output column, so the shard header can have
