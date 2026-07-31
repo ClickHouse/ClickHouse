@@ -66,6 +66,7 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsString workload;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -1231,12 +1232,13 @@ void RefreshTask::executeRefresh()
     }
 
     std::vector<StorageID> deps = set_handle.getDependencies();
+    String workload = refresh_settings[RefreshSetting::workload];
 
     lock.unlock();
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, workload, error_message);
     }
     catch (...)
     {
@@ -1278,7 +1280,12 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(
+    int32_t root_znode_version,
+    std::vector<StorageID> deps,
+    const String & log_comment,
+    const String & workload,
+    String & out_error_message)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1317,7 +1324,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             QueryScope query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, table_to_drop);
+            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, workload, table_to_drop);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
@@ -1326,7 +1333,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
             process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
+                query_for_logging,
+                normalized_query_hash,
+                refresh_query.get(),
+                refresh_context,
+                Stopwatch{CLOCK_MONOTONIC}.getStart(),
+                internal,
+                !workload.empty());
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account

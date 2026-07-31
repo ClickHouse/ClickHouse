@@ -33,6 +33,8 @@ def start_cluster():
 def clear_workloads_and_resources():
     node.query(
         """
+        drop table if exists rmv_workload;
+        drop table if exists rmv_default;
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists main;
@@ -203,6 +205,57 @@ def test_max_concurrent_queries() -> None:
     production.stop()
     development.stop()
     admin.stop()
+
+
+def test_refreshable_mv_workload() -> None:
+    node.query(
+        """
+        create resource query (query);
+        create workload all settings max_concurrent_queries=1;
+        create materialized view rmv_default
+            refresh every 1 year
+            (x UInt64) engine Memory
+            empty
+            as select number as x from numbers(1);
+        create materialized view rmv_workload
+            refresh every 1 year settings workload='all'
+            (x UInt64) engine Memory
+            empty
+            as select number as x from numbers(1);
+        """
+    )
+
+    assert "SETTINGS workload = \'all\'" in node.query("show create table rmv_workload")
+
+    blocker = QueryPool(1, "all")
+    blocker.start()
+    ensure_workload_concurrency("all", 1)
+
+    try:
+        # Internal refresh queries bypass workload query slots by default.
+        node.query("system refresh view rmv_default")
+        node.query("system wait view rmv_default")
+        assert node.query("select count() from rmv_default") == "1\n"
+
+        # A refresh with an RMV workload waits for a slot in that workload.
+        node.query("system refresh view rmv_workload")
+        deadline = time.monotonic() + 10
+        status = ""
+        while time.monotonic() < deadline:
+            status = node.query(
+                "select status from system.view_refreshes where view='rmv_workload'"
+            ).strip()
+            if status == "Running":
+                break
+            time.sleep(0.1)
+        assert status == "Running"
+        assert inflight_queries("all") == 1
+        assert node.query("select count() from rmv_workload") == "0\n"
+    finally:
+        blocker.stop()
+
+    node.query("system wait view rmv_workload")
+    assert node.query("select count() from rmv_workload") == "1\n"
 
 
 def test_max_waiting_queries_reached() -> None:

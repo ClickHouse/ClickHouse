@@ -116,7 +116,8 @@ ProcessList::EntryPtr ProcessList::insert(
     const IAST * ast,
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
-    bool is_internal)
+    bool is_internal,
+    bool force_workload)
 {
     EntryPtr res;
 
@@ -127,6 +128,7 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
+    bool use_workload = !is_unlimited_query || force_workload;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -140,7 +142,7 @@ ProcessList::EntryPtr ProcessList::insert(
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
-    if (!is_unlimited_query)
+    if (use_workload)
     {
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();

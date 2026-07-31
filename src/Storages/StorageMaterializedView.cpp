@@ -637,7 +637,11 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 }
 
 std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
+StorageMaterializedView::prepareRefresh(
+    bool append,
+    ContextMutablePtr refresh_context,
+    const String & workload,
+    std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
@@ -645,6 +649,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);
     auto select_query = view_metadata->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
+    if (!workload.empty())
+        refresh_context->setSetting("workload", workload);
 
     if (!append)
     {

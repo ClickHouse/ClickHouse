@@ -385,6 +385,17 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `workload` - Workload used by refresh queries. When non-empty, the refresh acquires query slots and memory reservations from this workload in addition to using it for CPU and I/O resource scheduling. Default: empty.
+
+For example, the following view runs refreshes in the `rmv` workload:
+
+```sql
+CREATE MATERIALIZED VIEW rmv
+REFRESH EVERY 1 MINUTE SETTINGS workload = 'rmv'
+TO target
+AS SELECT *
+FROM source;
+```
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
