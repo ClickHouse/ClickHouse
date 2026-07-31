@@ -18,7 +18,12 @@ include (cmake/compiler_rt_link.cmake)
 # registry (`advapi32`), the user's profile directory (`shell32`, `ole32`), symbol
 # lookup for stack traces (`dbghelp`), process memory statistics (`psapi`), the system CSPRNG
 # (`bcrypt`) and the local network interfaces (`iphlpapi`, for `isLocalAddress`).
-set (DEFAULT_LIBS "${DEFAULT_LIBS} -lmingw32 -lmingwex -lmsvcrt -lwinpthread")
+#
+# `winpthread` is linked statically - `-Bstatic` picks `libwinpthread.a` over the import library
+# for `libwinpthread-1.dll` - so that the binary is a single file with nothing to install beside
+# it. No define is needed for the headers: mingw-w64's `WINPTHREAD_API` is empty by default and
+# auto-imports if it does turn out to be a DLL.
+set (DEFAULT_LIBS "${DEFAULT_LIBS} -lmingw32 -lmingwex -lmsvcrt -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic")
 set (DEFAULT_LIBS "${DEFAULT_LIBS} -lws2_32 -liphlpapi -lkernel32 -ladvapi32 -lshell32 -lole32 -luserenv -ldbghelp -lpsapi -lbcrypt -luser32 -lntdll")
 
 # Windows takes the default thread stack size from the PE header instead of from a
@@ -35,8 +40,10 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
+# `winpthread` is already in `DEFAULT_LIBS` above, and statically. Naming it here as well would
+# put a bare `-lwinpthread` on the link line outside the `-Bstatic` bracket, which resolves to the
+# import library and pulls the DLL dependency back in.
 add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES winpthread)
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
