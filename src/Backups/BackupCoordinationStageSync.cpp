@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <Backups/BackupCoordinationStageSync.h>
 
@@ -250,7 +251,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency()
 
     /// The local concurrency check should be done here after BackupCoordinationStageSync::checkConcurrency() checked that
     /// there are no 'alive' nodes corresponding to other backups or restores.
-    local_concurrency_check.emplace(is_restore, /* on_cluster = */ true, zookeeper_path, allow_concurrency, concurrency_counters);
+    local_concurrency_check.emplace(is_restore, /* on_cluster = */ true, pathToGenericString(zookeeper_path), allow_concurrency, concurrency_counters);
 }
 
 
@@ -540,7 +541,7 @@ void BackupCoordinationStageSync::watchingThread()
         if (should_stop())
             return;
 
-        zk_nodes_changed->tryWait(sync_period_ms.count());
+        zk_nodes_changed->tryWait(toPocoMilliseconds(sync_period_ms.count()));
     }
 }
 

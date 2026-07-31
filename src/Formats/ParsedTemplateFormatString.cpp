@@ -70,7 +70,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     else
                         throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
                                            ": Expected '{' or '$' after '$'" +
-                                           ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
+                                           ", got \"" + std::string(pos, std::min<ptrdiff_t>(end - pos, 16)) + "\"", columnsCount());
                 }
                 break;
 
@@ -89,7 +89,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                 else
                     throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
                                        ": Expected ':' or '}' after column name \"" + column_names.back() + "\"" +
-                                       ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
+                                       ", got \"" + std::string(pos, std::min<ptrdiff_t>(end - pos, 16)) + "\"", columnsCount());
 
                 token_begin = pos + 1;
                 column_idx.reset();

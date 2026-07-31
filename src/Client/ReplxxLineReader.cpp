@@ -188,14 +188,23 @@ public:
     explicit TemporaryFile(const char * pattern)
         : path(pattern)
     {
+#if defined(OS_WINDOWS)
+        /// The Windows CRT has neither `mkstemp` nor `mkstemps`; `_mktemp_s` only produces a name.
+        /// Only the features that hand the buffer to another program need a temporary file, and
+        /// those cannot start one on Windows anyway - see `executeCommand`.
+        throw std::runtime_error("Creating a temporary file for an external editor is not implemented on Windows");
+#else
         size_t dot_pos = path.rfind('.');
         if (dot_pos != std::string::npos)
             fd = ::mkstemps(path.data(), static_cast<int>(path.size() - dot_pos));
         else
             fd = ::mkstemp(path.data());
+#endif
 
+#if !defined(OS_WINDOWS)
         if (-1 == fd)
             throw std::runtime_error(fmt::format("Cannot create temporary file {}: {}", path, errnoToString()));
+#endif
     }
     ~TemporaryFile()
     {

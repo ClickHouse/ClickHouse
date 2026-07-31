@@ -515,7 +515,7 @@ void FileCache::initialize()
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+            status_file = make_unique<StatusFile>(pathToGenericString(fs::path(getBasePath()) / "status"), StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {

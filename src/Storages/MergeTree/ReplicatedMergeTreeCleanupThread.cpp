@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>

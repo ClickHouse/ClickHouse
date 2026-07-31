@@ -134,7 +134,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         if (has_dependency_in_progress)
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Columns required for lightweight update are being updated by another query, will try one more time");
-            in_progress_event->tryWait(lock_acquire_timeout);
+            in_progress_event->tryWait(toPocoMilliseconds(lock_acquire_timeout));
             continue;
         }
 
@@ -148,7 +148,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         if (code == Coordination::Error::ZBADVERSION)
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Lightweight update has been committed by another replica, will try one more time");
-            in_progress_event->tryWait(lock_acquire_timeout);
+            in_progress_event->tryWait(toPocoMilliseconds(lock_acquire_timeout));
             continue;
         }
 

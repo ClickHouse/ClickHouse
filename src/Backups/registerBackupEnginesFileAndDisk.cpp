@@ -71,7 +71,7 @@ namespace
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' to backup must be inside the specified disk '{}'",
-                            quoteString(path.c_str()), quoteString(disk_name));
+                            quoteString(pathToGenericString(path)), quoteString(disk_name));
     }
 
     /// Checks that a path specified as parameters of File() is valid.
@@ -109,7 +109,7 @@ namespace
             if (!config.has(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
-                                quoteString(path.c_str()));
+                                quoteString(pathToGenericString(path)));
         }
     }
 

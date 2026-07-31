@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <atomic>
 #include <Core/ServerUUID.h>
 #include <IO/ReadBufferFromString.h>
