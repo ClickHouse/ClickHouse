@@ -1996,6 +1996,13 @@ void StorageMergeTree::loadMutations(bool reloading)
     /// the heartbeat task, which cannot renew the lease meanwhile, so the lease can expire
     /// mid-reload and the remaining shared writes must then fail closed.
 
+    /// On a takeover reload the scan below must be reconciling, not merely additive: an entry
+    /// this node loaded as a follower may have been killed (or cleaned up as finished) by the
+    /// previous leader, so its `mutation_*.txt` is gone from shared storage while the stale
+    /// in-memory entry would keep feeding `selectPartsToMutate` after failover. Collect the
+    /// versions actually present on disk and prune the rest after the scan.
+    std::unordered_set<UInt64> mutation_versions_on_disk;
+
     for (const auto & disk : getDisks())
     {
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -2004,6 +2011,9 @@ void StorageMergeTree::loadMutations(bool reloading)
             {
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
+
+                if (reloading)
+                    mutation_versions_on_disk.insert(block_number);
 
                 /// On a leadership-takeover reload, entries created by the previous leader while
                 /// this node was a follower are already in memory. Don't re-emplace or re-count
@@ -2061,6 +2071,39 @@ void StorageMergeTree::loadMutations(bool reloading)
                 if (mayMutateSharedStorage())
                     disk->removeFile(it->path());
             }
+        }
+    }
+
+    if (reloading)
+    {
+        /// Prune in-memory entries whose file is no longer on shared storage: the previous
+        /// leader killed the mutation (or removed a finished one via `clearOldMutations`)
+        /// while this node was a follower and could not observe the deletion. Without this,
+        /// the new leader would resurrect a killed mutation from stale in-memory state.
+        /// Background mutations are still gated at this point (writes are enabled only after
+        /// the takeover completes), so no pruned entry can be mid-execution on this node.
+        bool pruned = false;
+        for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end();)
+        {
+            if (!mutation_versions_on_disk.contains(it->first))
+            {
+                LOG_INFO(log, "Mutation {} is no longer present on shared storage "
+                    "(killed or cleaned up by the previous leader); removing its in-memory entry", it->second.file_name);
+                if (!it->second.is_done)
+                    decrementMutationsCounters(mutation_counters, *it->second.commands);
+                it = current_mutations_by_version.erase(it);
+                pruned = true;
+            }
+            else
+                ++it;
+        }
+
+        if (pruned)
+        {
+            /// Wake up `waitForMutation` waiters so they observe the entry's disappearance
+            /// (the same way `killMutation` notifies them after removing an entry).
+            std::lock_guard wait_lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
         }
     }
 
