@@ -3,6 +3,10 @@
 -- `offset` out of a query's `SETTINGS` clause and turns them into expression nodes, reading them as
 -- numbers directly, so that path has to reject the shorthand against the schema first. For a nested
 -- subquery it is the only place the inner `SETTINGS` clause is seen at all.
+--
+-- The old analyzer applies `limit`/`offset` from a subquery's `SETTINGS` differently, so pin the
+-- analyzer whose peel path this test covers.
+SET enable_analyzer = 1;
 
 SELECT '-- The shorthand is rejected for the `limit` setting of a top-level query';
 SELECT 1 SETTINGS limit; -- { error TYPE_MISMATCH }
