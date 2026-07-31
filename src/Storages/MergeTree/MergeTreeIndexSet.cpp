@@ -388,9 +388,9 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    for (const auto & name : index_description.normalized_column_names)
-        if (!key_columns.contains(name))
-            key_columns.insert(name);
+    for (const auto & [normalized_name, _] : index_description.normalized_column_name_to_original)
+        if (!key_columns.contains(normalized_name))
+            key_columns.insert(normalized_name);
 
     if (!filter_dag.predicate)
         return;
