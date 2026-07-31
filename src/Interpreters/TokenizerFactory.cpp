@@ -2,6 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
+#if USE_MECAB
+#include <Interpreters/JapaneseTokenizer.h>
+#endif
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -281,6 +284,16 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+#if USE_MECAB
+    auto japanese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, JapaneseTokenizer::getExternalName());
+        return std::make_unique<JapaneseTokenizer>();
+    };
+
+    factory.registerTokenizer(JapaneseTokenizer::getName(), ITokenizer::Type::Japanese, japanese_creator);
+#endif
 }
 
 }
