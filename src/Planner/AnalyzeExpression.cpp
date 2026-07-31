@@ -130,7 +130,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     auto expression_list = buildQueryTree(expr_list_ast, execution_context);
 
     query_node->getProjectionNode() = expression_list;
-    query_node->getJoinTree() = fake_table_expression;
+    query_node->getJoinTreeNode() = fake_table_expression;
 
     QueryTreeNodePtr query_tree = query_node;
     analyzer.resolve(query_tree, nullptr, execution_context);
