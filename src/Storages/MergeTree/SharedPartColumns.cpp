@@ -93,6 +93,12 @@ void sweepExpiredEntries(Cache & cache, size_t & size_after_sweep, AggregatedMet
     size_after_sweep = eraseExpiredEntries(cache, metric);
 }
 
+/// Hard cap for `release_sweep_threshold` (see `onPartRelease`). Without it, a table that once grows a huge
+/// number of distinct cache entries and is only drained afterwards (no more insertions to trigger
+/// `sweepExpiredEntries`) would set the threshold to that peak size, so the much smaller number of remaining
+/// releases would never reach it again and expired entries would stay resident until the table is dropped.
+constexpr UInt64 max_release_sweep_threshold = 65536;
+
 }
 
 SharedPartColumns::SharedPartColumns(
@@ -502,9 +508,10 @@ void SharedPartColumns::onPartRelease() const
 {
     /// A part just returned its bundle reference, so interned pieces may have expired. Sweep once
     /// enough releases accumulated to amortize the cost: the threshold tracks the number of live
-    /// entries after the last sweep, so a mass eviction pays O(entries) of sweeping per O(entries)
-    /// of releases and a quiescent table reclaims its dead entries after a bounded number of part
-    /// removals instead of holding them until the next insertion.
+    /// entries after the last sweep (capped by `max_release_sweep_threshold`), so a mass eviction
+    /// pays O(entries) of sweeping per O(entries) of releases, up to the cap, and a quiescent table
+    /// reclaims its dead entries after a bounded number of part removals instead of holding them
+    /// until the next insertion.
     if (releases_since_sweep.fetch_add(1, std::memory_order_relaxed) + 1 < release_sweep_threshold.load(std::memory_order_relaxed))
         return;
 
@@ -529,7 +536,7 @@ void SharedPartColumns::onPartRelease() const
         substream_entries_size_after_sweep = substream_entries_cache.size();
     }
 
-    release_sweep_threshold.store(std::max<UInt64>(64, live_entries), std::memory_order_relaxed);
+    release_sweep_threshold.store(std::min(max_release_sweep_threshold, std::max<UInt64>(64, live_entries)), std::memory_order_relaxed);
 }
 
 const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
