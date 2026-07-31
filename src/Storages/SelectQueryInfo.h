@@ -135,10 +135,16 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    QueryTreeNodePtr table_expression;
+    TableExpressionNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    /// Value of the `analyzer_compatibility_apply_final_to_all_joined_tables` setting.
+    /// When true, `isFinal` falls back to the query-level FINAL (the left-most table's modifier)
+    /// for table expressions without their own modifiers, restoring the pre-26.6 behavior
+    /// where FINAL on one table of a JOIN leaked onto the other joined tables.
+    bool apply_query_level_final_if_no_modifiers = false;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 

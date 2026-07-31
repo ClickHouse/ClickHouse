@@ -30,6 +30,7 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -439,7 +440,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
-    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -861,6 +861,21 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
+    if (!PerCPU::haveRSeq())
+        server.context()->addOrUpdateWarningMessage(
+            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
+            PreformattedMessage::create(
+                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
+                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
+                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
+                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
+                "making these counters more expensive and slightly degrading performance. "
+                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
+                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
+                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
+                "other libraries, such as musl, do not register it); "
+                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
+
     try
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
@@ -876,7 +891,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).contains("[always]"))
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -1284,6 +1299,14 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently). The async
+        /// logging threads poll rather than block, so join them for the duration and restart afterwards.
+        stopAsyncLoggingThreads();
+        /// Restart the async logging threads even if remapExecutable throws. Otherwise the logger would stay
+        /// stopped, and the exception unwinding through Server::main would be logged into a queue that no
+        /// consumer thread is draining, silently losing the startup exception and any queued diagnostics.
+        SCOPE_EXIT_SAFE(startAsyncLoggingThreads());
         size_t size = remapExecutable();
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
     }
@@ -2062,13 +2085,6 @@ try
             ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
-    }
-
-    {
-        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
-            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
-        global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {

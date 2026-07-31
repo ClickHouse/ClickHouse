@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/ar/reference/statements/alter/delete)                         |
 | [UPDATE](/ar/reference/statements/alter/update)                         |
 | [ORDER BY](/ar/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/ar/reference/statements/alter/sample-by)                   |
 | [INDEX](/ar/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/ar/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/ar/reference/statements/alter/constraint)                 |
 | [TTL](/ar/reference/statements/alter/ttl)                               |
 | [STATISTICS](/ar/reference/statements/alter/statistics)                 |
+| [SETTING](/ar/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/ar/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/ar/reference/statements/alter/apply-patches)           |
 
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/ar/reference/statements/alter/role)                         |
 | [QUOTA](/ar/reference/statements/alter/quota)                       |
 | [ROW POLICY](/ar/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/ar/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ar/reference/statements/alter/settings-profile) |
 
-| Statement                                                              | Description                                                                                    |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/ar/reference/statements/alter/comment)  | يضيف تعليقات إلى الجدول أو يعدّلها أو يزيلها، سواء كانت مُعيَّنة مسبقًا أم لا.                 |
-| [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection) | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
+| Statement                                                                         | Description                                                                                    |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ar/reference/statements/alter/comment)             | يضيف تعليقات إلى الجدول أو يعدّلها أو يزيلها، سواء أكانت مُعيَّنة مسبقًا أم لا.                |
+| [ALTER DATABASE ... MODIFY COMMENT](/ar/reference/statements/alter/database-comment) | يضيف تعليقات إلى قاعدة البيانات أو يعدّلها أو يزيلها، سواء أكانت مُعيَّنة مسبقًا أم لا.        |
+| [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection)            | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
 
 <div id="mutations">
   ## عمليات التعديل

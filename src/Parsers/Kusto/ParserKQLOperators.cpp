@@ -375,12 +375,12 @@ String KQLOperators::genHaystackOpExpr(
         }
         else if (ch_op == "startsWith" || ch_op == "not startsWith")
         {
-            bool negated = ch_op.find("not") != String::npos;
+            bool negated = ch_op.contains("not");
             new_expr = fmt::format("toBool({}startsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
         }
         else if (ch_op == "endsWith" || ch_op == "not endsWith")
         {
-            bool negated = ch_op.find("not") != String::npos;
+            bool negated = ch_op.contains("not");
             new_expr = fmt::format("toBool({}endsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
         }
         else if (ch_op == "match")

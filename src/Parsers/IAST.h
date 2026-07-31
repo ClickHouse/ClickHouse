@@ -15,6 +15,8 @@
 
 class SipHash;
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -157,6 +159,27 @@ public:
 
     void dumpTree(WriteBuffer & ostr, size_t indent = 0) const;
     std::string dumpTree(size_t indent = 0) const;
+
+    /** Serialize the AST node and its subtree to JSON.
+      * The default implementation writes: {"type":"<type>", "children":[...]}
+      * Subclasses override to include their specific properties.
+      */
+    virtual void writeJSON(WriteBuffer & out) const;
+
+    /** Deserialize the AST node from a JSON object.
+      * Called by the factory after creating the correct node type.
+      * The default implementation reads the "children" array.
+      * Subclasses override to read their specific properties (symmetric with writeJSON).
+      */
+    virtual void readJSON(const Poco::JSON::Object & json);
+
+    /** Factory: deserialize an AST tree from a JSON string with depth/element limits enforced during construction.
+      * This is the only public string entry point: callers MUST go through it so the thread-local depth/element
+      * limits are always set before parsing (the limit-less internal worker is private below). */
+    static ASTPtr createFromJSON(const String & json, size_t max_depth, size_t max_elements);
+
+    /** Factory: deserialize an AST node from a parsed JSON object. */
+    static ASTPtr createFromJSON(const Poco::JSON::Object & json);
 
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.
@@ -482,6 +505,13 @@ protected:
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
+
+    /** Internal worker: parse a JSON string into an AST using the *currently set* thread-local
+      * depth/element limits. It does NOT set those limits itself, so it must only be reached through
+      * the public `createFromJSON(json, max_depth, max_elements)` overload (which sets them first).
+      * Keeping it private prevents an external caller from deserializing untrusted JSON with no
+      * depth/element protection. */
+    static ASTPtr createFromJSON(const String & json);
 
     friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
     friend void intrusive_ptr_release(const IAST * p) noexcept;
