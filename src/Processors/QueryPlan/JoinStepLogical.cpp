@@ -286,9 +286,12 @@ static std::string_view joinTypePretty(const JoinOperator & join_operator)
 
 String JoinStepLogical::getReadableRelationName() const
 {
-    if (left_table_label.empty() || right_table_label.empty())
+    if (left_relation.name.empty() || right_relation.name.empty())
         return "";
-    return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
+    String right_name = right_relation.displayName();
+    if (right_relation.composite)
+        right_name = fmt::format("({})", right_name);
+    return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -299,7 +302,10 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
     if (!readable_relation_name.empty())
         description.emplace_back("Join", std::move(readable_relation_name));
 
-    description.emplace_back("ResultRows", result_rows_estimation ? toString(result_rows_estimation.value()) : "unknown");
+    if (imprecise_estimate)
+        description.emplace_back("ResultRows", result_rows_estimation ? fmt::format("~~{}", result_rows_estimation.value()) : "unknown");
+    else
+        description.emplace_back("ResultRows", result_rows_estimation ? toString(result_rows_estimation.value()) : "unknown");
 
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
@@ -1325,16 +1331,17 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
+    /// We expect dag inputs to be a subset of child step header columns.
+    /// If a child step returns duplicate columns, or both children's headers carry the same name,
+    /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
+    /// The queue is consumed across children, so it must not be rebuilt per child.
+    const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
+    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
+    for (const auto * node : dag_inputs)
+        name_to_nodes[node->result_name].push_back(node);
+
     for (const auto * child : children)
     {
-        /// We expect dag inputs to be a subset of child step header columns.
-        /// If column child step returns duplicate columns
-        /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
-        const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
-        std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
-        for (const auto * node : dag_inputs)
-            name_to_nodes[node->result_name].push_back(node);
-
         for (const auto & column : *child->step->getOutputHeader())
         {
             auto input_it = name_to_nodes.find(column.name);
@@ -1475,8 +1482,8 @@ void JoinStepLogical::buildPhysicalJoin(
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
-        if (join_step->right_rows_estimation)
-            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
+        if (join_step->right_relation.estimated_rows)
+            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
         if (hash_table_key_hash)
         {
@@ -1783,12 +1790,11 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->result_rows_estimation = result_rows_estimation;
-    result_step->left_rows_estimation = left_rows_estimation;
-    result_step->right_rows_estimation = right_rows_estimation;
+    result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
-    result_step->left_table_label = left_table_label;
-    result_step->right_table_label = right_table_label;
+    result_step->left_relation = left_relation;
+    result_step->right_relation = right_relation;
     result_step->dummy_stats = dummy_stats;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
 
@@ -1806,9 +1812,9 @@ void JoinStepLogical::addConditions(ActionsDAG actions_dag)
 std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
-        return left_rows_estimation;
+        return left_relation.estimated_rows;
     else
-        return right_rows_estimation;
+        return right_relation.estimated_rows;
 }
 
 void registerJoinStep(QueryPlanStepRegistry & registry);

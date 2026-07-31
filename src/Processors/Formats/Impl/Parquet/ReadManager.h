@@ -116,6 +116,15 @@ private:
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
+    /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
+    /// reader's memory high watermark minus what the `BloomFilterBlocksOrDictionary` stage already holds
+    /// (the decoded dictionaries and value sets other row groups are holding right now, plus this batch's
+    /// in-flight `diff`). Both the decoded dictionaries (`Reader::decodeDictionaryPage`) and the value
+    /// sets built while evaluating a row-group filter (`Reader::hashDictionaryValues`) reserve through it,
+    /// charging the shared stage counter directly, so the pruning memory stays within the watermark
+    /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
+    /// `Reader::applyBloomAndDictionaryFilters`).
+    PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
