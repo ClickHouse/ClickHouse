@@ -1,6 +1,8 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 #include <Core/SortCursor.h>
+#include <cstring>
+#include <Common/NaNUtils.h>
 
 namespace DB
 {
@@ -129,9 +131,30 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
                 i,
                 sorted_column.getFamilyName());
 
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
-        if (res != 0)
-            return false;
+        /// For float columns, use bitwise comparison (via getFloat64 + memcmp) to
+        /// distinguish -0.0 from 0.0, consistent with the hash-based DISTINCT
+        /// variant and GROUP BY.
+        const char * family_name = sorted_column.getFamilyName();
+        if (family_name == "Float64" || family_name == "Float32")
+        {
+            const Float64 prev = prev_chunk_latest_key[i]->getFloat64(0);
+            const Float64 curr = sorted_column.getFloat64(row_pos);
+            /// Both NaN: equal (consistent with compareAt NaN handling).
+            if (isNaN(prev) && isNaN(curr))
+                continue;
+            /// One NaN, one not: not equal.
+            if (isNaN(prev) || isNaN(curr))
+                return false;
+            /// Bitwise comparison: memcmp on the float64 representation.
+            if (memcmp(&prev, &curr, sizeof(prev)) != 0)
+                return false;
+        }
+        else
+        {
+            const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
+            if (res != 0)
+                return false;
+        }
     }
     return true;
 }
