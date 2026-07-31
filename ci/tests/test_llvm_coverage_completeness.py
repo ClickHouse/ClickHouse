@@ -22,12 +22,15 @@ otherwise the job reports SKIPPED with a reason and stays green.
 Every row drives the production module, never a copy of its logic.
 """
 
+import ast
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -716,10 +719,93 @@ def test_the_sidecar_rides_on_the_existing_artifact_so_no_new_name_is_introduced
     assert any(p.endswith(completeness.SIDECAR_BASENAME) for p in paths)
 
 
-def test_job_treats_an_absent_info_as_incomplete_rather_than_comparing_nothing():
-    src = open(_JOB, encoding="utf-8").read()
-    assert 'if not Path(f"{TEMP_DIR}/llvm_coverage.info").exists():' in src
-    assert "nothing to compare" in src
+def _drive_diff_gate(info_present, tmpdir, job_path=None):
+    """Drive the real diff-gate ordering out of the job source.
+
+    Returns (script_invocations, diff_res, measurement_comparable). The statement
+    ORDER is the property under test - whether the absent-.info verdict is reached
+    before or after the differential script runs - so the real statements are
+    executed in their real order rather than a copy of the logic. Only the leaf
+    calls that need a workspace (from_commands_run) are stubbed, and that stub
+    reproduces the script's own precondition: it exits non-zero when
+    llvm_coverage.info is absent (measured separately).
+    """
+    src = open(job_path or _JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    block = [
+        s
+        for s in main_if.body
+        if isinstance(s, ast.If) and ast.unparse(s.test) == "not is_master_branch"
+    ][0]
+    keep = []
+    for st in block.body:
+        keep.append(st)
+        txt = ast.get_source_segment(src, st) or ""
+        if txt.startswith("if not _measurement_comparable:"):
+            break
+    mod = ast.Module(body=keep, type_ignores=[])
+    ast.fix_missing_locations(mod)
+    code = compile(mod, job_path or _JOB, "exec")
+
+    if info_present:
+        with open(os.path.join(tmpdir, "llvm_coverage.info"), "w") as f:
+            f.write("TN:\nend_of_record\n")
+
+    invocations = []
+
+    def _from_commands_run(name, command, **kwargs):
+        invocations.append(command)
+        ok = os.path.exists(os.path.join(tmpdir, "llvm_coverage.info"))
+        return Result.create_from(name=name, status=ok)
+
+    class _ResultShim:
+        Status = Result.Status
+        create_from = staticmethod(Result.create_from)
+        from_commands_run = staticmethod(_from_commands_run)
+
+    ns = {
+        "Path": pathlib.Path,
+        "TEMP_DIR": tmpdir,
+        "Result": _ResultShim,
+        "completeness": completeness,
+        "_sidecar": {
+            "complete": True,
+            "missing": [],
+            "names": [],
+            "manifest_fp": "fp",
+        },
+        "_measurement_comparable": True,
+        "_incomparable_reason": "",
+    }
+    exec(code, ns)
+    return invocations, ns.get("diff_res"), ns.get("_measurement_comparable")
+
+
+def test_absent_info_skips_the_diff_script_and_keeps_the_job_green():
+    # The differential script's own precondition exits 1 when llvm_coverage.info
+    # is absent, which is exactly the state a failed aggregate merge leaves. If
+    # the script is invoked anyway the sub-result is FAIL and its output directory
+    # is missing, so the SKIPPED override that reads _measurement_comparable is
+    # never reached and the job reddens on a run it promised to report as SKIPPED.
+    with tempfile.TemporaryDirectory() as d:
+        invocations, diff_res, comparable = _drive_diff_gate(False, d)
+    assert invocations == [], f"differential script was invoked: {invocations}"
+    assert diff_res.status == Result.Status.SKIPPED, diff_res.status
+    assert comparable is False
+    # The assertion that actually pins the invariant: the composite job result.
+    parent = Result.create_from(name="LLVM Coverage", results=[diff_res])
+    assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+def test_a_present_info_still_runs_the_diff_script():
+    # Reverse direction. Without this the guard above could be widened to always
+    # skip and every other cell would still pass.
+    with tempfile.TemporaryDirectory() as d:
+        invocations, diff_res, _ = _drive_diff_gate(True, d)
+    assert len(invocations) == 1, f"expected one invocation, got {invocations}"
+    assert "generate_diff_coverage_report.sh" in " ".join(invocations[0])
+    assert diff_res.status != Result.Status.SKIPPED
 
 
 # --------------------------------------------------------------------------
@@ -801,6 +887,118 @@ def test_every_producer_reads_provides_as_a_dict_key():
         src = open(path, encoding="utf-8").read()
         assert '["provides"]' in src, path
         assert ".job_config.provides" not in src, path
+
+
+def _drive_ut_naming(provides, profraw_files, tmpdir, job_path=None):
+    """Execute the real coverage bookkeeping of unit_tests_job.py.
+
+    Returns the derived `merged_file`, or None when the job never derives one.
+    The statements are taken from the job source and run in their real order, so
+    the nesting under the `.profraw` guard is exercised rather than described.
+    from_gtest_run/complete_job are dropped because they need a built gtest
+    binary; everything the naming path touches is real.
+    """
+    src = open(job_path or _UT_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    keep = []
+    for st in main_if.body:
+        txt = ast.get_source_segment(src, st) or ""
+        if txt.startswith(
+            (
+                "R = Result.from_gtest_run",
+                "R.complete_job",
+                "parser",
+                "args =",
+                "os.environ",
+                "job_name =",
+                'if "asan"',
+                "profraw_files",
+            )
+        ):
+            continue
+        keep.append(st)
+    mod = ast.Module(body=keep, type_ignores=[])
+    ast.fix_missing_locations(mod)
+    code = compile(mod, job_path or _UT_JOB, "exec")
+
+    class _Info:
+        job_config = {"provides": provides}
+
+    ns = {
+        "os": os,
+        "Info": lambda: _Info(),
+        "Shell": types.SimpleNamespace(
+            get_output=lambda *a, **k: "", check=lambda *a, **k: False
+        ),
+        "profraw_files": list(profraw_files),
+    }
+    cwd = os.getcwd()
+    try:
+        os.chdir(tmpdir)
+        exec(code, ns)
+    finally:
+        os.chdir(cwd)
+    return ns.get("merged_file")
+
+
+def test_unit_test_job_names_no_profile_when_there_is_no_coverage_to_name():
+    # The six sanitizer Unit tests ParamSets declare no artifact and emit no
+    # .profraw. The naming asserts sit between from_gtest_run() and
+    # complete_job(), so raising here does not merely mis-report - it loses the
+    # gtest result entirely.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_ut_naming([], [], d)
+    assert got is None
+
+
+def test_unit_test_job_still_names_the_profile_after_its_own_artifact():
+    # Reverse direction: the one instrumented ParamSet must keep deriving exactly
+    # the name the consumer side expects, so moving the block cannot silently stop
+    # naming the profile at all.
+    name = "LLVM_COVERAGE_FILE"
+    with tempfile.TemporaryDirectory() as d:
+        raw = os.path.join(d, "one.profraw")
+        with open(raw, "w") as f:
+            f.write("data")
+        got = _drive_ut_naming([name], [raw], d)
+    assert got == f"./{name}.profdata"
+    assert os.path.basename(got) == completeness.profile_basename(name)
+
+
+def test_unit_test_job_naming_is_nested_under_the_profraw_guard():
+    # Structural companion to the two cells above: catches a re-hoist to the
+    # top level of __main__, where the asserts run unconditionally.
+    src = open(_UT_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    assert not [
+        s for s in main_if.body if isinstance(s, ast.Assert)
+    ], "coverage asserts must not be direct children of __main__"
+    guards = [
+        s
+        for s in main_if.body
+        if isinstance(s, ast.If) and ast.unparse(s.test) == "profraw_files"
+    ]
+    assert guards, "expected an `if profraw_files:` guard"
+    nested = [n for g in guards for n in ast.walk(g) if isinstance(n, ast.Assert)]
+    assert (
+        len(nested) == 2
+    ), f"expected both asserts inside the guard, got {len(nested)}"
+
+
+def test_the_six_non_coverage_unit_test_jobs_declare_no_artifact():
+    # The premise behind the cells above, read off the real job configs rather
+    # than assumed: only the instrumented ParamSet provides an artifact.
+    sys.path.insert(0, _REPO_ROOT)
+    from ci.defs.job_configs import JobConfigs
+
+    plain = list(JobConfigs.unittest_jobs)
+    assert len(plain) == 6, [j.name for j in plain]
+    assert all(j.provides == [] for j in plain), [(j.name, j.provides) for j in plain]
+    coverage = list(JobConfigs.unittest_llvm_coverage_job)
+    assert len(coverage) == 1, [j.name for j in coverage]
+    assert coverage[0].provides == ["LLVM_COVERAGE_FILE"], coverage[0].provides
 
 
 def test_local_runs_get_a_job_config_too():

@@ -33,34 +33,38 @@ if __name__ == "__main__":
     )
     profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
-    # Name the profile after this job's own coverage artifact, so the aggregation
-    # can tell which shards arrived from the filenames alone. JOB_CONFIG has been
-    # through dump()/get() by the time a job body runs, so it is a plain dict
-    # here and attribute access on it raises AttributeError.
-    _job_config = Info().job_config
-    assert (
-        _job_config is not None
-    ), "JOB_CONFIG is not set, cannot derive the coverage profile name"
-    _provides = _job_config["provides"]
-    assert (
-        isinstance(_provides, list)
-        and len(_provides) == 1
-        and isinstance(_provides[0], str)
-        and _provides[0]
-    ), f"expected exactly one provided artifact name, got {_provides!r}"
-    merged_file = f"./{_provides[0]}.profdata"
-
-    # Drop any pre-existing profile at our target name before deciding whether to
-    # merge at all. llvm-profdata truncates its -o target in place instead of
-    # replacing it, so a failed merge would otherwise leave an older valid
-    # profile for the uploader to publish as this shard's contribution. On CI the
-    # pre-run `git clean` already removes it; this covers a bare local run, where
-    # that clean is skipped.
-    if os.path.exists(merged_file):
-        print(f"Removing pre-existing {merged_file}")
-        os.unlink(merged_file)
-
+    # All of the coverage bookkeeping below stays inside this guard. Only the one
+    # instrumented job declares a coverage artifact; the six sanitizer jobs emit no
+    # .profraw and declare none, and deriving a name there would assert between
+    # from_gtest_run() above and complete_job() below, losing the gtest result.
     if profraw_files:
+        # Name the profile after this job's own coverage artifact, so the aggregation
+        # can tell which shards arrived from the filenames alone. JOB_CONFIG has been
+        # through dump()/get() by the time a job body runs, so it is a plain dict
+        # here and attribute access on it raises AttributeError.
+        _job_config = Info().job_config
+        assert (
+            _job_config is not None
+        ), "JOB_CONFIG is not set, cannot derive the coverage profile name"
+        _provides = _job_config["provides"]
+        assert (
+            isinstance(_provides, list)
+            and len(_provides) == 1
+            and isinstance(_provides[0], str)
+            and _provides[0]
+        ), f"expected exactly one provided artifact name, got {_provides!r}"
+        merged_file = f"./{_provides[0]}.profdata"
+
+        # Drop any pre-existing profile at our target name before deciding whether to
+        # merge at all. llvm-profdata truncates its -o target in place instead of
+        # replacing it, so a failed merge would otherwise leave an older valid
+        # profile for the uploader to publish as this shard's contribution. On CI the
+        # pre-run `git clean` already removes it; this covers a bare local run, where
+        # that clean is skipped.
+        if os.path.exists(merged_file):
+            print(f"Removing pre-existing {merged_file}")
+            os.unlink(merged_file)
+
         # A zero-length .profraw is silently ignored by llvm-profdata at every
         # --failure-mode, so it would drop one process's coverage with no signal
         # at all. Treat it as an incomplete shard and publish no profile.

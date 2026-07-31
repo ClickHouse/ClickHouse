@@ -285,11 +285,6 @@ if __name__ == "__main__":
     _incomparable_reason = ""
 
     if not is_master_branch:
-        diff_res = Result.from_commands_run(
-            name="Generate LLVM Coverage Diff Report",
-            command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
-        )
-
         # Both sides must be complete measurements of the same artifact manifest
         # before any number derived from them may be published. Computed here, ahead
         # of every consumer of those numbers.
@@ -302,12 +297,29 @@ if __name__ == "__main__":
             if _selected_base_file.exists()
             else ""
         )
-        if not Path(f"{TEMP_DIR}/llvm_coverage.info").exists():
+        # This test comes before the differential script runs, not after: that
+        # script's own precondition exits 1 when llvm_coverage.info is absent, and
+        # a non-zero command turns the sub-result FAIL. Its output directory is
+        # then missing too, so the SKIPPED override further down is never reached
+        # and the whole job reddens - exactly the outcome a failed aggregate merge
+        # is meant to report as SKIPPED.
+        _have_own_info = Path(f"{TEMP_DIR}/llvm_coverage.info").exists()
+        if not _have_own_info:
             _measurement_comparable = False
             _incomparable_reason = (
                 "this run published no coverage data, so there is nothing to compare"
             )
+            diff_res = Result.create_from(
+                name="Generate LLVM Coverage Diff Report",
+                status=Result.Status.SKIPPED,
+                info=f"Coverage comparison skipped: {_incomparable_reason}",
+            )
+            diff_res.set_comment(f"Coverage comparison skipped: {_incomparable_reason}")
         else:
+            diff_res = Result.from_commands_run(
+                name="Generate LLVM Coverage Diff Report",
+                command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
+            )
             _measurement_comparable, _incomparable_reason = completeness.comparable(
                 _sidecar,
                 _baseline_sidecar,
