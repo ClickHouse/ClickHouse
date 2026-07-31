@@ -198,7 +198,9 @@ namespace
 
 KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    Names combined_names = index.column_names;
+    combined_names.insert(combined_names.end(), index.normalized_column_names.begin(), index.normalized_column_names.end());
+    return KeyCondition{filter_dag, context, combined_names, index.expression};
 }
 
 }
