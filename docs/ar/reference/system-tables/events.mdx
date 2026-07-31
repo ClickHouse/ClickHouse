@@ -158,6 +158,12 @@ SELECT * FROM system.events LIMIT 5
 
 إجمالي الوقت المستغرق أثناء تجميع الأعمدة المُفرَزة
 
+<div id="aggregationconvertedtotwolevel">
+  ### تحويل التجميع إلى مستويين
+</div>
+
+عدد المرات التي جرى فيها أثناء وقت التشغيل تحويل جدول تجزئة التجميع أحادي المستوى إلى جدول ثنائي المستوى.
+
 <div id="aggregationhashtablesinitializedastwolevel">
   ### AggregationHashTablesInitializedAsTwoLevel
 </div>
@@ -900,7 +906,7 @@ SELECT * FROM system.events LIMIT 5
   ### ConcurrencyControlQueriesDelayed
 </div>
 
-إجمالي عدد تخصيصات فتحات CPU (الاستعلامات) التي اضطرت إلى انتظار توسيع عدد الفتحات
+عدد الاستعلامات التي تأخرت بسبب الضغط على سعة فتحات CPU. مؤشر على التزاحم — لا يشمل فترات انتظار التوسيع المؤجل على خادم لا يوجد عليه تنازع.
 
 <div id="concurrencycontrolslotsacquired">
   ### ConcurrencyControlSlotsAcquired
@@ -918,7 +924,7 @@ SELECT * FROM system.events LIMIT 5
   ### ConcurrencyControlSlotsDelayed
 </div>
 
-عدد فتحات CPU التي لم تُخصَّص مبدئيًا واضطرت إلى انتظار توفر فتحة CPU شاغرة
+عدد فتحات CPU التي لم تُمنَح عند التخصيص بسبب ضغط السعة. لا يشمل الفتحات المؤجَّلة بسبب التخصيص الكسول.
 
 <div id="concurrencycontrolslotsgranted">
   ### ConcurrencyControlSlotsGranted
@@ -2287,6 +2293,24 @@ SELECT * FROM system.events LIMIT 5
 
 عدد النُسخ المتماثلة (تُحتسب النسخة المتماثلة المحلية مرة واحدة) التي جرت جدولة تحليل الفهرس الموزع لها
 
+<div id="distributedplanhostsused">
+  ### DistributedPlanHostsUsed
+</div>
+
+عدد المضيفين الفريدين الذين أُسنِدت إليهم مهمة واحدة على الأقل عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan.
+
+<div id="distributedplanlocalexecution">
+  ### DistributedPlanLocalExecution
+</div>
+
+تُضبط على 1 عند تنفيذ استعلام `make_distributed_plan` داخل العملية نفسها عبر المنفّذ المحلي (`distributed_plan_execute_locally`) بدلًا من إرساله إلى العاملين البعيدين.
+
+<div id="distributedplanremotetasks">
+  ### DistributedPlanRemoteTasks
+</div>
+
+عدد المهام التي أُرسلت إلى العمّال البعيدين عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan. وتشير القيمة غير الصفرية إلى أن الاستعلام نُفِّذ فعليًا بشكل موزّع.
+
 <div id="distributedrejectedinserts">
   ### DistributedRejectedInserts
 </div>
@@ -2743,6 +2767,12 @@ SELECT * FROM system.events LIMIT 5
 
 عدد محاولات حجز المساحة في ذاكرة التخزين المؤقت للملفات التي باءت بالفشل.
 
+<div id="filesystemcachefreespacekeepingthreaderrors">
+  ### FilesystemCacheFreeSpaceKeepingThreadErrors
+</div>
+
+عدد الاستثناءات التي التقطتها مهمة الحفاظ على المساحة الحرة التي تعمل في الخلفية (أثناء التجميع أو الإزالة أو الإنهاء)
+
 <div id="filesystemcachefreespacekeepingthreadrun">
   ### FilesystemCacheFreeSpaceKeepingThreadRun
 </div>
@@ -3119,7 +3149,7 @@ SELECT * FROM system.events LIMIT 5
   ### IcebergMetadataUpdateMicroseconds
 </div>
 
-إجمالي الوقت المستغرَق في التهيئة المتزامنة لمكرِّرات بيانات Iceberg.
+إجمالي الوقت المستغرَق في تحديث البيانات الوصفية لتخزين Iceberg استنادًا إلى الحالة (`buildStorageMetadataFromState`).
 
 <div id="icebergminmaxindexprunedfiles">
   ### IcebergMinMaxIndexPrunedFiles
@@ -3865,6 +3895,18 @@ SELECT * FROM system.events LIMIT 5
 
 الوقت المستغرَق في انتظار الحصول على القفل المشترك لوحدة تخزين Keeper
 
+<div id="keeperttlremoverequestsdropped">
+  ### KeeperTTLRemoveRequestsDropped
+</div>
+
+عدد طلبات حذف TTL التي أُسقِطت بسبب امتلاء queue
+
+<div id="keeperttlremoverequestsenqueued">
+  ### KeeperTTLRemoveRequestsEnqueued
+</div>
+
+عدد طلبات حذف TTL التي أُدرجت بنجاح في قائمة الانتظار
+
 <div id="keepertotalelapsedmicroseconds">
   ### KeeperTotalElapsedMicroseconds
 </div>
@@ -4170,6 +4212,42 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 إجمالي الوقت المُستغرَق في انتظار تحرير الذاكرة داخل OvercommitTracker.
+
+<div id="memoryreservationadmitmicroseconds">
+  ### MemoryReservationAdmitMicroseconds
+</div>
+
+إجمالي الوقت الذي قضاه الاستعلام في انتظار الموافقة على الحجز الأولي للذاكرة
+
+<div id="memoryreservationdecreases">
+  ### MemoryReservationDecreases
+</div>
+
+إجمالي عدد طلبات خفض حجز الذاكرة التي تمت الموافقة عليها
+
+<div id="memoryreservationfailed">
+  ### MemoryReservationFailed
+</div>
+
+إجمالي عدد عمليات حجز الذاكرة التي فشلت
+
+<div id="memoryreservationincreasemicroseconds">
+  ### MemoryReservationIncreaseMicroseconds
+</div>
+
+إجمالي الوقت الذي قضاه الاستعلام في انتظار الموافقة على زيادة حجز الذاكرة
+
+<div id="memoryreservationincreases">
+  ### MemoryReservationIncreases
+</div>
+
+إجمالي عدد طلبات زيادة حجز الذاكرة المعتمدة
+
+<div id="memoryreservationkilled">
+  ### MemoryReservationKilled
+</div>
+
+إجمالي عدد إشارات إنهاء حجز الذاكرة
 
 <div id="memoryworkerrun">
   ### MemoryWorkerRun
@@ -5491,18 +5569,6 @@ SELECT * FROM system.events LIMIT 5
 
 عدد دورات الساعة الخاص بالمهمة قيد التشغيل
 
-<div id="polygonsaddedtopool">
-  ### PolygonsAddedToPool
-</div>
-
-أُضيف مضلع إلى الذاكرة المؤقتة (pool) الخاصة بالدالة &#39;pointInPolygon&#39;.
-
-<div id="polygonsinpoolallocatedbytes">
-  ### PolygonsInPoolAllocatedBytes
-</div>
-
-عدد البايتات الخاصة بالمضلعات المُضافة إلى ذاكرة التخزين المؤقت (pool) للدالة &#39;pointInPolygon&#39;.
-
 <div id="preferredwarmedunmergedparts">
   ### PreferredWarmedUnmergedParts
 </div>
@@ -5532,6 +5598,12 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 عدد الاستعلامات التي يجري تفسيرها وقد تُنفَّذ. ولا يشمل الاستعلامات التي تعذّر تحليلها أو التي رُفضت بسبب حدود حجم AST أو حدود الحصص أو القيود المفروضة على عدد الاستعلامات قيد التشغيل بالتزامن. وقد يشمل استعلامات داخلية يبدأها ClickHouse نفسه. ولا يحتسب الاستعلامات الفرعية.
+
+<div id="queryanalysismicroseconds">
+  ### QueryAnalysisMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في إنشاء شجرة الاستعلام وتشغيل مراحل المُحلِّل (لفضّ المعرّفات والأنواع والتعبيرات).
 
 <div id="querybackupthrottlerbytes">
   ### QueryBackupThrottlerBytes
@@ -5634,6 +5706,24 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 عدد مرات تجاوز حد الذاكرة للاستعلام.
+
+<div id="queryparsemicroseconds">
+  ### QueryParseMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في تحليل نص الاستعلام إلى AST.
+
+<div id="querypipelinebuildmicroseconds">
+  ### QueryPipelineBuildMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في إنشاء QueryPipeline انطلاقًا من QueryPlan المُحسَّنة.
+
+<div id="queryplanbuildmicroseconds">
+  ### QueryPlanBuildMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في بناء QueryPlan من شجرة الاستعلام المُحلَّلة.
 
 <div id="queryplanoptimizemicroseconds">
   ### QueryPlanOptimizeMicroseconds
@@ -6883,6 +6973,12 @@ SELECT * FROM system.events LIMIT 5
 
 عدد استجابات HTTP التي أُرسلت لتأكيد الأجزاء المتقادمة
 
+<div id="sharedmergetreepartitionoperationretries">
+  ### SharedMergeTreePartitionOperationRetries
+</div>
+
+عدد المرات التي اضطرت فيها عملية على مستوى القسم (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) إلى إعادة محاولة عملية الكتابة المتعددة في Keeper بسبب تغيير متزامن
+
 <div id="sharedmergetreepartskillermicroseconds">
   ### SharedMergeTreePartsKillerMicroseconds
 </div>
@@ -7369,6 +7465,18 @@ SELECT * FROM system.events LIMIT 5
 
 عدد المقاطع التي تم تخطيها لأن نطاق الإخراج كان قد حُسم بالفعل (كلها آحاد في OR، وكلها أصفار في AND) في وضع قائمة الترحيلات الكسول.
 
+<div id="textindexphrasematchmicroseconds">
+  ### TextIndexPhraseMatchMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في تقاطع مطابقة العبارات من نوع roaringish.
+
+<div id="textindexpositionsdecodemicroseconds">
+  ### TextIndexPositionsDecodeMicroseconds
+</div>
+
+إجمالي الوقت المستغرَق في فك ترميز قوائم مواضع الفهرس النصي (`.pos`) للبحث عن العبارات.
+
 <div id="textindexpostingscachehits">
   ### TextIndexPostingsCacheHits
 </div>
@@ -7584,6 +7692,18 @@ SELECT * FROM system.events LIMIT 5
 </div>
 
 عدد البايتات التي طُردت من الذاكرة المؤقتة غير المضغوطة.
+
+<div id="uniquekeybitmaploadmicroseconds">
+  ### UniqueKeyBitmapLoadMicroseconds
+</div>
+
+الوقت المستغرق في قراءة الملفات الجانبية لـ delete-bitmap الخاصة بـ UNIQUE KEY وفك تسلسلها عند حدوث إخفاق في DeleteBitmapCache.
+
+<div id="uniquekeybitmapupdates">
+  ### UniqueKeyBitmapUpdates
+</div>
+
+عدد الملفات الجانبية الخاصة بـ delete-bitmap التي تمت كتابتها في UNIQUE KEY (ملف واحد لكل supersession / عملية commit لـ DELETE).
 
 <div id="uniquekeyindexcachehits">
   ### مرات العثور في ذاكرة التخزين المؤقتة لفهرس UniqueKeyIndex
