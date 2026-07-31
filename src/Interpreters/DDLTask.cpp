@@ -456,7 +456,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
             return false;
         }
 
-        size_t finished_nodes_count = zookeeper->getChildren(fs::path(entry_path) / "finished").size();
+        size_t finished_nodes_count = zookeeper->getChildren(pathToGenericString(fs::path(entry_path) / "finished")).size();
         if (entry.hosts.size() == finished_nodes_count)
         {
             LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because the number of finished nodes ({}) "

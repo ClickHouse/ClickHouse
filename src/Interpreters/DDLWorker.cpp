@@ -259,7 +259,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         LOG_ERROR(log, "Cannot parse DDL task {}: {}. Will try to send error status: {}", entry_name, reason, status.message);
         createStatusDirs(entry_path, zookeeper);
-        zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_id, status.serializeText(), zkutil::CreateMode::Persistent);
+        zookeeper->tryCreate(pathToGenericString(fs::path(entry_path) / "finished" / host_id), status.serializeText(), zkutil::CreateMode::Persistent);
     };
 
     auto add_to_skip_set = [&]()
@@ -358,7 +358,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 chassert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
-                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
+                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(pathToGenericString(fs::path(task->entry_path) / "active")));
                 ++task_it;
             }
             else if (task->was_executed)
@@ -473,7 +473,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             /// Return true if entry should be scheduled.
             /// There is a minor race condition: initAndCheckTask(...) may return not null
             /// if someone is deleting outdated entry right now (including finished/ nodes), so we also check active/ status dir.
-            bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
+            bool maybe_concurrently_deleting = task && !zookeeper->exists(pathToGenericString(fs::path(task->entry_path) / "active"));
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
         if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
@@ -1056,7 +1056,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             /// but node_path/finished already exists, it will detect concurrent deletion and back off.
             /// This also handles the rare case when the initiator lost connection after enqueueing the entry
             /// and never created status dirs (node_path/finished didn't exist).
-            zookeeper->tryCreate(fs::path(node_path) / "finished", {}, zkutil::CreateMode::Persistent);
+            zookeeper->tryCreate(pathToGenericString(fs::path(node_path) / "finished"), {}, zkutil::CreateMode::Persistent);
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
@@ -1114,7 +1114,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     /// Failed on attempt to create node_path/active because it exists, so node_path/finished must exist too
     bool both_already_exists = responses.size() == 2 && responses[0]->error == Coordination::Error::ZNODEEXISTS
                                                      && responses[1]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY;
-    chassert(!both_already_exists || (zookeeper->exists(fs::path(node_path) / "active") && zookeeper->exists(fs::path(node_path) / "finished")));
+    chassert(!both_already_exists || (zookeeper->exists(pathToGenericString(fs::path(node_path) / "active")) && zookeeper->exists(pathToGenericString(fs::path(node_path) / "finished"))));
 
     /// Failed on attempt to create node_path/finished, but node_path/active does not exist
     bool is_currently_deleting = responses.size() == 2 && responses[0]->error == Coordination::Error::ZOK

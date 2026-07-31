@@ -99,8 +99,8 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
     /// All domains have the same certificate
     std::string domain = domains.front();
 
-    zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key", pkey);
-    zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate", certificate);
+    zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key"), pkey);
+    zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate"), certificate);
 
     if (pkey.empty() || certificate.empty())
     {
@@ -207,8 +207,8 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             std::string private_key;
             std::string pem_certificate;
 
-            zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key", private_key);
-            zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate", pem_certificate);
+            zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key"), private_key);
+            zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate"), pem_certificate);
 
             if (private_key.empty() || pem_certificate.empty())
             {
@@ -244,7 +244,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         }
 
         auto active_order_path = fs::path(zookeeper_path) / acme_hostname / "active_order";
-        if ((!lock || !lock->isLocked()) && zk->exists(active_order_path))
+        if ((!lock || !lock->isLocked()) && zk->exists(pathToGenericString(active_order_path)))
         {
             LOG_DEBUG(
                 log,
@@ -436,7 +436,7 @@ void Client::refreshKeyTask()
         auto context = Context::getGlobalContextInstance();
         auto zk = context->getZooKeeper();
 
-        zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+        zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key);
         if (private_key.empty())
         {
             LOG_INFO(log, "Generating new RSA private key for ACME account");
@@ -444,12 +444,12 @@ void Client::refreshKeyTask()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            auto code = zk->tryCreate(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key, zkutil::CreateMode::Persistent);
+            auto code = zk->tryCreate(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key, zkutil::CreateMode::Persistent);
             if (code == Coordination::Error::ZNODEEXISTS)
             {
                 /// Another node has already created the key, use it instead.
                 private_key.clear();
-                zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+                zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key);
             }
         }
     }
@@ -516,7 +516,7 @@ std::string Client::requestChallenge(const std::string & uri)
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    auto active_challenges = zk->getChildren(fs::path(zookeeper_path) / acme_hostname / "challenges");
+    auto active_challenges = zk->getChildren(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "challenges"));
 
     if (active_challenges.empty())
     {

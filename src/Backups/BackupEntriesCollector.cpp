@@ -213,7 +213,7 @@ void BackupEntriesCollector::calculateRootPathInBackup()
             = BackupSettings::Util::findShardNumAndReplicaNum(backup_settings.cluster_host_ids, backup_settings.host_id);
         root_path_in_backup = root_path_in_backup / fs::path{"shards"} / std::to_string(shard_num) / "replicas" / std::to_string(replica_num);
     }
-    LOG_TRACE(log, "Will use path in backup: {}", doubleQuoteString(String{root_path_in_backup}));
+    LOG_TRACE(log, "Will use path in backup: {}", doubleQuoteString(String{pathToGenericString(root_path_in_backup)}));
 }
 
 /// Finds databases and tables which we will put to the backup.
@@ -496,7 +496,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
         database_info.create_database_query = create_database_query;
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
-        database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
+        database_info.metadata_path_in_backup = pathToGenericString(root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql"));
     }
 
     if (table_name)
@@ -566,7 +566,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
-            res_table_info.metadata_path_in_backup = metadata_path_in_backup;
+            res_table_info.metadata_path_in_backup = pathToGenericString(metadata_path_in_backup);
             res_table_info.data_path_in_backup = data_path_in_backup;
 
             /// Record REPLACE targets of refreshable materialized views from the create query, not

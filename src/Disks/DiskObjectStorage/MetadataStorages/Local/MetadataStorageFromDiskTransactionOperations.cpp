@@ -231,7 +231,7 @@ void CreateDirectoryRecursiveOperation::execute()
     fs::path p(path);
     while (!disk.existsFileOrDirectory(pathToGenericString(p)))
     {
-        paths_created.push_back(p);
+        paths_created.push_back(pathToGenericString(p));
         if (!p.has_parent_path())
             break;
 
@@ -290,7 +290,7 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     }
 
     if (ref_count == 0)
-        if (!should_remove_objects || should_remove_objects(fs::relative(leaf, path)))
+        if (!should_remove_objects || should_remove_objects(pathToGenericString(fs::relative(leaf, path))))
             removed_objects.append_range(object_metadata->objects);
 }
 

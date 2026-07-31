@@ -71,7 +71,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         const auto & file_id = file_parts[0];
         const auto timestamp = parse<UInt64>(file_parts[2]);
 
-        auto & file_info = files[partition][file_id];
+        auto & file_info = files[pathToGenericString(partition)][file_id];
         if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
         {
             file_info.key = key;

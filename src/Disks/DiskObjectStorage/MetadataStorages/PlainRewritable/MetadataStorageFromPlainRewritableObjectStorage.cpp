@@ -257,7 +257,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    , storage_path_full(pathToGenericString(fs::path(object_storage->getRootPrefix()) / storage_path_prefix))
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -331,7 +331,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainRewritableObjectStorage::iterateDir
     auto paths = listDirectory(path);
 
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
-    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
+    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = pathToGenericString(fs::path(path) / child); });
     std::vector<fs::path> fs_paths(paths.begin(), paths.end());
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
 }

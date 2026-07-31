@@ -81,7 +81,7 @@ void BackupImpl(
                 dst_disk,
                 transaction,
                 source,
-                destination,
+                pathToGenericString(destination),
                 read_settings,
                 write_settings,
                 make_source_readonly,

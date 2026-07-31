@@ -462,7 +462,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(pathToGenericString(fs::path(configuration->getNamespace()) / key));
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -545,7 +545,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto reading_path = configuration->getPathForRead().path;
 
             if (!full_path.starts_with(reading_path))
-                full_path = fs::path(reading_path) / object_info->getPath();
+                full_path = pathToGenericString(fs::path(reading_path) / object_info->getPath());
 
             auto object_metadata = object_info->getObjectMetadata();
 

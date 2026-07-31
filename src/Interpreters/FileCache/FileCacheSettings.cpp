@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 
 #include <Core/BaseSettings.h>
@@ -190,7 +191,7 @@ void FileCacheSettings::loadFromConfig(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
             is_path_relative_in_config = true;
-            (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
+            (*this)[FileCacheSetting::path] = pathToGenericString(fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value);
         }
     }
     else
@@ -218,7 +219,7 @@ void FileCacheSettings::loadFromCollection(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
         is_path_relative_in_config = true;
-        (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
+        (*this)[FileCacheSetting::path] = pathToGenericString(fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value);
     }
 
     validate();

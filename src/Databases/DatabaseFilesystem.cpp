@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
@@ -47,10 +48,10 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
 
     if (fs::path(path).is_relative())
     {
-        path = user_files_path / path;
+        path = pathToGenericString(user_files_path / path);
     }
 
-    path = fs::absolute(path).lexically_normal();
+    path = pathToGenericString(fs::absolute(path).lexically_normal());
 
     if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
     {

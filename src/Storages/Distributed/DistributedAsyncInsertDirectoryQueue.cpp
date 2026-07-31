@@ -128,9 +128,9 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , pool(std::move(pool_))
     , disk(disk_)
     , relative_path(relative_path_)
-    , path(fs::path(disk->getPath()) / relative_path / "")
-    , broken_relative_path(fs::path(relative_path) / "broken")
-    , broken_path(fs::path(path) / "broken" / "")
+    , path(pathToGenericString(fs::path(disk->getPath()) / relative_path / ""))
+    , broken_relative_path(pathToGenericString(fs::path(relative_path) / "broken"))
+    , broken_path(pathToGenericString(fs::path(path) / "broken" / ""))
     , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
     , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
     , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
@@ -364,7 +364,7 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             const auto & base_name = file_path.stem().string();
-            if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(base_name))
+            if (!it->is_directory() && startsWith(pathToGenericString(fs::path(file_path).extension()), ".bin") && parse<UInt64>(base_name))
             {
                 if (!pending_files.push(fs::absolute(file_path).string()))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
@@ -394,7 +394,7 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         for (fs::directory_iterator it{broken_path}; it != end; ++it)
         {
             const auto & file_path = it->path();
-            if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            if (!it->is_directory() && startsWith(pathToGenericString(fs::path(file_path).extension()), ".bin") && parse<UInt64>(pathToGenericString(file_path.stem())))
             {
                 broken_bytes_count += fs::file_size(file_path);
                 broken_files++;
@@ -756,7 +756,7 @@ void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_re
     {
         std::lock_guard status_lock(status_mutex);
         relative_path = new_relative_path;
-        path = fs::path(disk->getPath()) / relative_path / "";
+        path = pathToGenericString(fs::path(disk->getPath()) / relative_path / "");
     }
     current_batch_file_path = path + "current_batch.txt";
 

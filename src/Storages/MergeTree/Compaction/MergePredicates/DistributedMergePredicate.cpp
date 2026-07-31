@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -22,7 +23,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     Strings partitions;
     if (!partition_ids_hint)
     {
-        partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+        partitions = zookeeper->getChildren(pathToGenericString(fs::path(zookeeper_path) / "block_numbers"));
     }
     else
     {
@@ -43,7 +44,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     std::vector<std::string> paths;
     paths.reserve(partitions.size());
     for (const String & partition : partitions)
-        paths.push_back(fs::path(zookeeper_path) / "block_numbers" / partition);
+        paths.push_back(pathToGenericString(fs::path(zookeeper_path) / "block_numbers" / partition));
 
     auto locks_children = zookeeper->tryGetChildren(paths);
 
@@ -74,7 +75,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 
             block_partitions.push_back(partitions[i]);
             block_numbers.push_back(block_number);
-            block_data_paths.push_back(fs::path(paths[i]) / entry);
+            block_data_paths.push_back(pathToGenericString(fs::path(paths[i]) / entry));
         }
     }
 

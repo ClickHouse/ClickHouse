@@ -279,7 +279,7 @@ void AccessRestorerFromBackup::loadFromBackup()
         {
             if (!filename.starts_with("access") || !filename.ends_with(".txt"))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
-                                String{data_path_in_backup_fs / filename});
+                                String{pathToGenericString(data_path_in_backup_fs / filename)});
         }
 
         for (const String & filename : filenames)

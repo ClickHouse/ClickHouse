@@ -216,7 +216,7 @@ void BackupMetadataFinder::findRootPathsInBackup()
         boost::algorithm::join(
             root_paths_in_backup
                 | boost::adaptors::transformed(
-                    [](const std::filesystem::path & path) -> String { return doubleQuoteString(String{path}); }),
+                    [](const std::filesystem::path & path) -> String { return doubleQuoteString(String{pathToGenericString(path)}); }),
             ", "));
 }
 
@@ -250,7 +250,7 @@ void BackupMetadataFinder::findTableInBackupImpl(
                 / (escapeForFileName(table_name_in_backup.table) + ".sql");
         }
 
-        if (backup->fileExists(try_metadata_path))
+        if (backup->fileExists(pathToGenericString(try_metadata_path)))
         {
             metadata_path = try_metadata_path;
             root_path_in_use = root_path_in_backup;
@@ -279,7 +279,7 @@ void BackupMetadataFinder::findTableInBackupImpl(
     if (skip_if_inner_table && BackupUtils::isInnerTable(table_name))
         return;
 
-    auto read_buffer = backup->readFile(*metadata_path);
+    auto read_buffer = backup->readFile(pathToGenericString(*metadata_path));
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
@@ -316,7 +316,7 @@ void BackupMetadataFinder::findTableInBackupImpl(
     res_table_info.is_predefined_table = is_predefined_table;
     res_table_info.has_data = table_has_data;
     res_table_info.data_path_in_backup = data_path_in_backup;
-    res_table_info.metadata_path_in_backup = *metadata_path;
+    res_table_info.metadata_path_in_backup = pathToGenericString(*metadata_path);
 
     tables_dependencies.addDependencies(table_name, table_dependencies.dependencies);
 
@@ -355,7 +355,7 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
             try_tables_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(database_name_in_backup);
         }
 
-        if (!metadata_path && !try_metadata_path.empty() && backup->fileExists(try_metadata_path))
+        if (!metadata_path && !try_metadata_path.empty() && backup->fileExists(pathToGenericString(try_metadata_path)))
             metadata_path = try_metadata_path;
 
         Strings file_names = backup->listFiles(pathToGenericString(try_tables_metadata_path), /*recursive*/ false);
@@ -373,7 +373,7 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
 
     if (metadata_path)
     {
-        auto read_buffer = backup->readFile(*metadata_path);
+        auto read_buffer = backup->readFile(pathToGenericString(*metadata_path));
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -403,7 +403,7 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
         database_info.create_database_query = create_database_query;
         database_info.create_database_query_str = create_database_query_str;
         database_info.is_predefined_database = is_predefined_database;
-        database_info.metadata_path_in_backup = *metadata_path;
+        database_info.metadata_path_in_backup = pathToGenericString(*metadata_path);
     }
 
     for (const String & table_name_in_backup : table_names_in_backup)

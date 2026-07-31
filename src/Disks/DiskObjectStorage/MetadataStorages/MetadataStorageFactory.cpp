@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/assert_cast.h>
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
@@ -127,7 +128,7 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         checkSingleLocation(cluster);
 
         auto metadata_path = config.getString(config_prefix + ".metadata_path",
-                                              fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
+                                              pathToGenericString(fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / ""));
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
         fs::create_directories(metadata_path);

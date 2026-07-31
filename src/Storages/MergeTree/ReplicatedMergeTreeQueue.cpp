@@ -217,7 +217,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         {  /// Mutation pointer is a part of "state" and must be updated with state mutex
             std::lock_guard lock(state_mutex);
-            zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+            zookeeper->tryGet(pathToGenericString(fs::path(replica_path) / "mutation_pointer"), mutation_pointer);
         }
     }
 
@@ -836,12 +836,12 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
     if (pull_log_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
 
-    String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
+    String index_str = zookeeper->get(pathToGenericString(fs::path(replica_path) / "log_pointer"));
     UInt64 index = 0;
 
     /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
     Coordination::Stat stat;
-    zookeeper->get(fs::path(zookeeper_path) / "log", &stat);
+    zookeeper->get(pathToGenericString(fs::path(zookeeper_path) / "log"), &stat);
 
     Strings log_entries = zookeeper->getChildrenWatch(
         pathToGenericString(fs::path(zookeeper_path) / "log"),
@@ -2248,7 +2248,7 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
 CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
 {
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeQueue::buildPromoters");
-    const Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+    const Strings partition_ids = zookeeper->getChildren(pathToGenericString(fs::path(zookeeper_path) / "block_numbers"));
 
     std::vector<zkutil::ZooKeeper::FutureGetChildren> futures;
     futures.reserve(partition_ids.size());

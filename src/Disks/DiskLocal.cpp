@@ -366,7 +366,7 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    renameNoReplace(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    renameNoReplace(pathToGenericString(fs::path(disk_path) / from_path), fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
@@ -462,7 +462,7 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 std::vector<String> DiskLocal::getBlobPath(const String & path) const
 {
     auto fs_path = fs::path(disk_path) / path;
-    return {fs_path};
+    return {pathToGenericString(fs_path)};
 }
 
 void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
@@ -475,7 +475,7 @@ void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
@@ -484,7 +484,7 @@ void DiskLocal::removeFileIfExists(const String & path)
     if (0 != unlink(fs_path.c_str()))
     {
         if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
     }
 }
 
@@ -492,7 +492,7 @@ void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeDirectoryIfExists(const String & path)
@@ -502,7 +502,7 @@ void DiskLocal::removeDirectoryIfExists(const String & path)
         return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeRecursive(const String & path)

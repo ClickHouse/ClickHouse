@@ -301,12 +301,12 @@ void listFilesWithRegexpMatchingImpl(
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
+                listFilesWithRegexpMatchingImpl(pathToGenericString(fs::path(full_path).append(it->path().string()) / ""),
                                                 descent_pattern,
                                                 total_bytes_to_read, result, matched_paths, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
+                listFilesWithRegexpMatchingImpl(pathToGenericString(fs::path(full_path) / ""), suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, matched_paths, false, depth + 1);
         }
     }
@@ -425,7 +425,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pathToGenericString(pattern / fs::path("*")), total_bytes_to_read);
             can_be_directory = false;
         }
     }
@@ -437,7 +437,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
 
     for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+        checkCreationIsAllowed(context, pathToGenericString(user_files_absolute_path), path, can_be_directory);
 
     return paths;
 }
@@ -1530,7 +1530,7 @@ void StorageFileSource::beforeDestroy()
                 file_path = file_path.lexically_normal();
 
                 // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
+                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), pathToGenericString(file_path), true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))

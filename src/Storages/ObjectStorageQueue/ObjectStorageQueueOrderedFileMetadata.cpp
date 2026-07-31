@@ -326,7 +326,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
-        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
+        pathToGenericString(/* processing_node_path */zk_path_ / "processing" / getNodeName(path_)),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
@@ -335,7 +335,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         use_persistent_processing_nodes_,
         log_)
     , buckets_num(buckets_num_)
-    , zk_path(zk_path_)
+    , zk_path(pathToGenericString(zk_path_))
     , bucket_info(bucket_info_)
     , partitioning_mode(partitioning_mode_)
     , parser(parser_)
@@ -523,7 +523,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByPartition(
 
     Strings partition_processed_paths;
     for (const auto & partition : partitions)
-        partition_processed_paths.push_back(std::filesystem::path(processed_node_path_) / partition);
+        partition_processed_paths.push_back(pathToGenericString(std::filesystem::path(processed_node_path_) / partition));
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
 
@@ -594,7 +594,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the request.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.
-        if (zk_retry.isRetry() && zk_client->tryGet(bucket_lock_path, data))
+        if (zk_retry.isRetry() && zk_client->tryGet(pathToGenericString(bucket_lock_path), data))
         {
             chassert(!data.empty());
             if (data == processor_info)
@@ -604,7 +604,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
                 return;
             }
         }
-        code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
+        code = zk_client->tryCreate(pathToGenericString(bucket_lock_path), processor_info, zkutil::CreateMode::Persistent);
     });
 
     if (code == Coordination::Error::ZOK)
@@ -1061,7 +1061,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 }
             }
         }
-        failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
+        failed_paths.push_back(pathToGenericString(zk_path_ / "failed" / getNodeName(path)));
         check_paths_indexes.push_back(i);
     }
 

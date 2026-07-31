@@ -108,7 +108,7 @@ public:
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
             {
-                elements.push_back(it->path());
+                elements.push_back(pathToGenericString(it->path()));
             }
             else
             {
@@ -204,7 +204,7 @@ private:
         {
             const auto & current_path = it->path();
             if (current_path.extension() == ".tmp")
-                files_to_remove.push_back(current_path);
+                files_to_remove.push_back(pathToGenericString(current_path));
         }
         for (const auto & file : files_to_remove)
             fs::remove(file);
@@ -536,7 +536,7 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(unescapeForFileName(std::filesystem::path(path).stem()));
+        collections.push_back(unescapeForFileName(pathToGenericString(std::filesystem::path(path).stem())));
     return collections;
 }
 
@@ -582,7 +582,7 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
     {
         const auto path = config.getString(
             named_collections_storage_config_path + ".path",
-            std::filesystem::path(context_->getPath()) / "named_collections");
+            pathToGenericString(std::filesystem::path(context_->getPath()) / "named_collections"));
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using local storage for named collections at path: {}", path);

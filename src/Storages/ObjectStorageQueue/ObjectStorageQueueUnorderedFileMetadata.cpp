@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -24,7 +25,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
-        /* processing_node_path */zk_path / "processing" / getNodeName(path_),
+        pathToGenericString(/* processing_node_path */zk_path / "processing" / getNodeName(path_)),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
         /* failed_node_path */zk_path / "failed" / getNodeName(path_),
         file_status_,
@@ -140,8 +141,8 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     for (const auto & path : paths)
     {
         const auto node_name = getNodeName(path);
-        check_paths.push_back(zk_path_ / "processed" / node_name);
-        check_paths.push_back(zk_path_ / "failed" / node_name);
+        check_paths.push_back(pathToGenericString(zk_path_ / "processed" / node_name));
+        check_paths.push_back(pathToGenericString(zk_path_ / "failed" / node_name));
     }
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;

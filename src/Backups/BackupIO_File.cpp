@@ -37,7 +37,7 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
 {
-    return createReadBufferFromFileBase(root_path / file_name, read_settings);
+    return createReadBufferFromFileBase(pathToGenericString(root_path / file_name), read_settings);
 }
 
 void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -95,7 +95,7 @@ UInt64 BackupWriterFile::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterFile::readFile(const String & file_name, size_t expected_file_size)
 {
-    return createReadBufferFromFileBase(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
+    return createReadBufferFromFileBase(pathToGenericString(root_path / file_name), read_settings.adjustBufferSize(expected_file_size));
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_name)

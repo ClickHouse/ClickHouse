@@ -109,7 +109,7 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
 {
     for (const auto & file : files)
     {
-        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(pathToGenericString(fs::path(file.path).filename()));
         if (file.if_exists)
             removeSharedFileIfExists(file.path, keep_file);
         else
@@ -168,7 +168,7 @@ static void asyncCopy(
         /// Calling asyncCopy recursively is fine here. Each call will capture by reference what were already references
         /// dest is an exception, but it's passed as value, not reference
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
+            asyncCopy(from_disk, it->path(), to_disk, pathToGenericString(dest / it->name()), runner, read_settings, write_settings, cancellation_hook);
     }
 }
 

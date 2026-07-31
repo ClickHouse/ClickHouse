@@ -61,7 +61,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     {
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
         LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", i, lock_path.string());
-        auto code = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
+        auto code = zookeeper->tryCreate(pathToGenericString(lock_path), "", zkutil::CreateMode::Ephemeral);
 
         if (code == Coordination::Error::ZOK)
         {
@@ -72,7 +72,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         if (code != Coordination::Error::ZNODEEXISTS)
             throw zkutil::KeeperException::fromPath(code, lock_path);
 
-        if (zookeeper->exists(lock_path, nullptr, lock_event))
+        if (zookeeper->exists(pathToGenericString(lock_path), nullptr, lock_event))
             lock_event->tryWait(lock_acquire_timeout);
     }
 
@@ -100,7 +100,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
         LOG_TRACE(getLogger("getLockForAutoMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, in_progress_path.string());
 
-        auto in_progress_ids = zookeeper->getChildren(in_progress_path, &parent_stat, in_progress_event);
+        auto in_progress_ids = zookeeper->getChildren(pathToGenericString(in_progress_path), &parent_stat, in_progress_event);
 
         Names multiget_paths;
         multiget_paths.reserve(in_progress_ids.size());

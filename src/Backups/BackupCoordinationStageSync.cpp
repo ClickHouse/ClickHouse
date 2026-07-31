@@ -125,16 +125,16 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     // all_hosts.size() is added to max_attempts_after_bad_version since each host change the num_hosts node once, and it's a valid case
     , max_attempts_after_bad_version(with_retries.getKeeperSettings().max_attempts_after_bad_version + all_hosts.size())
     , zookeeper_path(zookeeper_path_)
-    , root_zookeeper_path(zookeeper_path.parent_path().parent_path())
-    , operation_zookeeper_path(zookeeper_path.parent_path())
-    , operation_node_name(zookeeper_path.parent_path().filename())
-    , start_node_path(zookeeper_path / ("started|" + current_host))
-    , finish_node_path(zookeeper_path / ("finished|" + current_host))
-    , initiator_start_node_path(zookeeper_path / ("started|" + String{kInitiator}))
-    , num_hosts_node_path(zookeeper_path / "num_hosts")
-    , error_node_path(zookeeper_path / "error")
-    , alive_node_path(zookeeper_path / ("alive|" + current_host))
-    , alive_tracker_node_path(fs::path{root_zookeeper_path} / "alive_tracker")
+    , root_zookeeper_path(pathToGenericString(zookeeper_path.parent_path().parent_path()))
+    , operation_zookeeper_path(pathToGenericString(zookeeper_path.parent_path()))
+    , operation_node_name(pathToGenericString(zookeeper_path.parent_path().filename()))
+    , start_node_path(pathToGenericString(zookeeper_path / ("started|" + current_host)))
+    , finish_node_path(pathToGenericString(zookeeper_path / ("finished|" + current_host)))
+    , initiator_start_node_path(pathToGenericString(zookeeper_path / ("started|" + String{kInitiator})))
+    , num_hosts_node_path(pathToGenericString(zookeeper_path / "num_hosts"))
+    , error_node_path(pathToGenericString(zookeeper_path / "error"))
+    , alive_node_path(pathToGenericString(zookeeper_path / ("alive|" + current_host)))
+    , alive_tracker_node_path(pathToGenericString(fs::path{root_zookeeper_path} / "alive_tracker"))
     , zk_nodes_changed(std::make_shared<Poco::Event>())
 {
     initializeState();
@@ -313,7 +313,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
         }
 
         size_t zookeeper_path_pos = static_cast<size_t>(-1);
-        if (!zookeeper->exists(zookeeper_path))
+        if (!zookeeper->exists(pathToGenericString(zookeeper_path)))
         {
             zookeeper_path_pos = requests.size();
             requests.emplace_back(zkutil::makeCreateRequest(pathToGenericString(zookeeper_path), "", zkutil::CreateMode::Persistent));
@@ -411,7 +411,7 @@ void BackupCoordinationStageSync::checkConcurrency(Coordination::ZooKeeperWithFa
         if (found_operation.starts_with(is_restore ? "restore-" : "backup-") && (found_operation != operation_node_name))
         {
             Strings stages;
-            code = zookeeper->tryGetChildren(fs::path{root_zookeeper_path} / found_operation / "stage", stages);
+            code = zookeeper->tryGetChildren(pathToGenericString(fs::path{root_zookeeper_path} / found_operation / "stage"), stages);
 
             if (!((code == Coordination::Error::ZOK) || (code == Coordination::Error::ZNONODE)))
                 throw zkutil::KeeperException::fromPath(code, pathToGenericString(fs::path{root_zookeeper_path} / found_operation / "stage"));
@@ -639,7 +639,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
             {
                 if (!host_info->started)
                 {
-                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
+                    host_info->version = parseStartNode(zookeeper->get(pathToGenericString(zookeeper_path / zk_node)), host);
                     host_info->started = true;
                 }
             }
@@ -684,7 +684,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
                 String stage = host_and_stage.substr(separator_pos + 1);
                 if (auto * host_info = get_host_info(host))
                 {
-                    String result = zookeeper->get(fs::path{zookeeper_path} / zk_node);
+                    String result = zookeeper->get(pathToGenericString(fs::path{zookeeper_path} / zk_node));
                     host_info->stages[stage] = std::move(result);
 
                     /// That old version didn't create the 'finish' node so we consider that a host finished its work
@@ -1105,7 +1105,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
 
         /// Read the "finish" nodes related to the current host and other hosts and update the current state.
         /// We need to that here because after calling function finish() we usually call function allHostsFinished().
-        if (std::erase_if(unfinished_hosts, [&](const String & host) { return zookeeper->exists(zookeeper_path / ("finished|" + host)); }))
+        if (std::erase_if(unfinished_hosts, [&](const String & host) { return zookeeper->exists(pathToGenericString(zookeeper_path / ("finished|" + host))); }))
         {
             std::lock_guard lock{mutex};
             for (auto & [host, host_info] : state.hosts)

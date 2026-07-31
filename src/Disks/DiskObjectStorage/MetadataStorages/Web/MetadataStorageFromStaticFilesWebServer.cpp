@@ -101,7 +101,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     assertExists(path);
 
     auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string()));
+    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(pathToGenericString(fs_path.stem())) + fs_path.extension().string()));
     remote_path = remote_path.substr(object_storage.getBaseURL().size());
 
     auto file_info = getFileInfo(path);
@@ -111,7 +111,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
 std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorageObjectsIfExist(const std::string & path) const
 {
     auto fs_path = fs::path(object_storage.getBaseURL()) / path;
-    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string()));
+    std::string remote_path = pathToGenericString(fs_path.parent_path() / (escapeForFileName(pathToGenericString(fs_path.stem())) + fs_path.extension().string()));
     remote_path = remote_path.substr(object_storage.getBaseURL().size());
 
     if (auto file_info = tryGetFileInfo(path))

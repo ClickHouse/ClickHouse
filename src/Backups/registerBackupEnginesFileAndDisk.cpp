@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupIO_Disk.h>
@@ -144,9 +145,9 @@ namespace
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected backup engine '{}'", engine_name);
 
-        if (hasRegisteredArchiveFileExtension(location.path))
+        if (hasRegisteredArchiveFileExtension(pathToGenericString(location.path)))
         {
-            location.archive_name = location.path.filename();
+            location.archive_name = pathToGenericString(location.path.filename());
             location.path = location.path.parent_path();
         }
         return location;

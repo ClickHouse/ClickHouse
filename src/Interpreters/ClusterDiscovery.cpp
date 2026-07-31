@@ -314,7 +314,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
     }
     else
-        nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
+        nodes = zk->getChildren(pathToGenericString(getShardsListPath(zk_root)), &stat);
 
     if (version)
         *version = stat.cversion;
@@ -329,7 +329,7 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
     for (const auto & node_uuid : node_uuids)
     {
         String payload;
-        bool ok = zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload) &&
+        bool ok = zk->tryGet(pathToGenericString(getShardsListPath(zk_root) / node_uuid), payload) &&
                   NodeInfo::parse(payload, result[node_uuid]);
         if (!ok)
         {

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
@@ -81,7 +82,7 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     for (const auto & host : hosts_to_wait)
     {
         hosts_array.push_back(host);
-        paths.push_back(fs::path(replicas_path) / host / "active");
+        paths.push_back(pathToGenericString(fs::path(replicas_path) / host / "active"));
     }
 
     NameSet offline;
@@ -143,7 +144,7 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     bool finished_exists = false;
 
     auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
-    retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(status_path, status_data); });
+    retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(pathToGenericString(status_path), status_data); });
     if (node_exists)
         *node_exists = finished_exists;
     /// tryDeserializeText is atomic: a present-but-corrupt payload leaves the (-1) sentinel intact, so a

@@ -248,19 +248,19 @@ public:
                 {
                     int32_t version = -1;
                     if (strict)
-                        version = versions.at(key);
+                        version = versions.at(pathToGenericString(key));
 
-                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
+                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[pathToGenericString(key)], version));
                 }
                 else
                 {
                     if (!strict && results[i].error == Coordination::Error::ZOK)
                     {
-                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[pathToGenericString(key)], -1));
                     }
                     else
                     {
-                        requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
+                        requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[pathToGenericString(key)], zkutil::CreateMode::Persistent));
                         ++new_keys_num;
                     }
                 }
@@ -406,18 +406,18 @@ StorageKeeperMap::StorageKeeperMap(
     auto zk_root_path_fs = fs::path(path_prefix) / std::string_view{zk_root_path}.substr(1);
     zk_root_path = zk_root_path_fs.generic_string();
 
-    zk_data_path = zk_root_path_fs / "data";
+    zk_data_path = pathToGenericString(zk_root_path_fs / "data");
 
     auto metadata_path_fs = zk_root_path_fs / "metadata";
-    zk_metadata_path = metadata_path_fs;
-    zk_tables_path = metadata_path_fs / "tables";
+    zk_metadata_path = pathToGenericString(metadata_path_fs);
+    zk_tables_path = pathToGenericString(metadata_path_fs / "tables");
 
     table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
-    zk_table_path = fs::path(zk_tables_path) / table_unique_id;
+    zk_table_path = pathToGenericString(fs::path(zk_tables_path) / table_unique_id);
 
-    zk_dropped_path = metadata_path_fs / "dropped";
-    zk_dropped_lock_path = fs::path(zk_dropped_path) / "lock";
-    zk_dropped_lock_version_path = metadata_path_fs / "drop_lock_version";
+    zk_dropped_path = pathToGenericString(metadata_path_fs / "dropped");
+    zk_dropped_lock_path = pathToGenericString(fs::path(zk_dropped_path) / "lock");
+    zk_dropped_lock_version_path = pathToGenericString(metadata_path_fs / "drop_lock_version");
 
     if (attach)
     {
@@ -882,7 +882,7 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger)
 {
     auto zk_root_path_fs = fs::path(path_prefix_) / std::string_view{zk_root_path_}.substr(1);
-    zk_root_path_ = zk_root_path_fs;
+    zk_root_path_ = pathToGenericString(zk_root_path_fs);
 
     String zk_data_path_to_remove = pathToGenericString(zk_root_path_fs / "data");
 
@@ -1095,7 +1095,7 @@ public:
         , tmp_data(tmp_data_)
         , with_retries(std::move(with_retries_))
     {
-        file_path = fs::path(data_path_in_backup) / backup_data_filename;
+        file_path = pathToGenericString(fs::path(data_path_in_backup) / backup_data_filename);
     }
 
 private:
@@ -1121,7 +1121,7 @@ private:
             [&, &zk = holder.faulty_zookeeper]()
             {
                 with_retries->renewZooKeeper(zk);
-                data_children = zk->getChildren(data_zookeeper_path);
+                data_children = zk->getChildren(pathToGenericString(data_zookeeper_path));
             });
         }
 
@@ -1131,7 +1131,7 @@ private:
             keys_full_path.reserve(keys.size());
 
             for (const auto & key : keys)
-                keys_full_path.push_back(data_zookeeper_path / key);
+                keys_full_path.push_back(pathToGenericString(data_zookeeper_path / key));
 
             zkutil::ZooKeeper::MultiTryGetResponse data;
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
@@ -1318,7 +1318,7 @@ void StorageKeeperMap::restoreDataImpl(
             [&, &zk = holder.faulty_zookeeper]()
             {
                 with_retries->renewZooKeeper(zk);
-                if (auto res = zk->tryCreate(data_path_fs / key, value, zkutil::CreateMode::Persistent);
+                if (auto res = zk->tryCreate(pathToGenericString(data_path_fs / key), value, zkutil::CreateMode::Persistent);
                     res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
                     throw zkutil::KeeperException::fromPath(res, data_path_fs / key);
             });

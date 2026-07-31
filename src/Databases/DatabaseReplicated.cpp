@@ -215,7 +215,7 @@ DatabaseReplicated::DatabaseReplicated(
     , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , shard_name(shard_name_)
     , replica_name(replica_name_)
-    , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
+    , replica_path(pathToGenericString(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name)))
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
 {
@@ -272,7 +272,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
         std::vector<std::string> paths;
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
-        paths.push_back(fs::path(replica_path) / "log_ptr");
+        paths.push_back(pathToGenericString(fs::path(replica_path) / "log_ptr"));
 
         auto get_result = zookeeper->tryGet(paths);
         chassert(get_result.size() == paths.size());
@@ -291,7 +291,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
 
         paths.clear();
 
-        const Strings all_replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+        const Strings all_replicas = zookeeper->getChildren(pathToGenericString(fs::path(zookeeper_path) / "replicas"));
         response.total_replicas = static_cast<UInt32>(all_replicas.size());
     }
     catch (const Coordination::Exception &)
@@ -773,7 +773,7 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
     auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
     auto error_code = current_zookeeper->trySet(pathToGenericString(db_name_path), getDatabaseName());
     if (error_code == Coordination::Error::ZNONODE)
-        current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
+        current_zookeeper->tryCreate(pathToGenericString(db_name_path), getDatabaseName(), zkutil::CreateMode::Persistent);
 
     is_readonly = false;
 }
@@ -880,7 +880,7 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     while (true)
     {
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
-        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
+        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(pathToGenericString(fs::path(zookeeper_path) / "max_log_ptr")));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
@@ -1905,7 +1905,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     if (first_entry_to_mark_finished)
     {
         /// Skip non-existing entries that were removed a long time ago (if the replica was offline for a long time)
-        Strings all_nodes = current_zookeeper->getChildren(fs::path(zookeeper_path) / "log");
+        Strings all_nodes = current_zookeeper->getChildren(pathToGenericString(fs::path(zookeeper_path) / "log"));
         std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
         auto oldest_node = std::min_element(all_nodes.begin(), all_nodes.end());
         if (oldest_node != all_nodes.end())
@@ -1925,8 +1925,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
 
             auto status = ExecutionStatus(0).serializeText();
-            auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
-            auto res_synced = current_zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
+            auto res_finished = current_zookeeper->tryCreate(pathToGenericString(finished), status, zkutil::CreateMode::Persistent);
+            auto res_synced = current_zookeeper->tryCreate(pathToGenericString(synced), status, zkutil::CreateMode::Persistent);
             if (res_finished == Coordination::Error::ZOK && res_synced == Coordination::Error::ZOK)
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
             else

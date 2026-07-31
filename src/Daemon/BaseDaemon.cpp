@@ -1,5 +1,6 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <base/pathToString.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -98,7 +99,7 @@ static std::string createDirectory(const std::string & file)
     if (path.empty())
         return "";
     fs::create_directories(path);
-    return path;
+    return pathToGenericString(path);
 }
 
 
@@ -127,14 +128,14 @@ void BaseDaemon::loadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+    ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
     config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
 }
 
 
 BaseDaemon::BaseDaemon()
-    : original_working_directory(fs::current_path())
+    : original_working_directory(pathToGenericString(fs::current_path()))
 {
 }
 
@@ -266,7 +267,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = fs::path(config().getString("application.path")).replace_filename("");
+        std::string path = pathToGenericString(fs::path(config().getString("application.path")).replace_filename(""));
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -346,7 +347,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = fs::path(log_path).replace_filename("");
+        log_path = pathToGenericString(fs::path(log_path).replace_filename(""));
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,

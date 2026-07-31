@@ -582,7 +582,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
     const auto & settings = getContext()->getSettingsRef();
     {
         auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, metadata_file_path, true);
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, pathToGenericString(metadata_file_path), true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -831,7 +831,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.table && create.uuid != UUIDHelpers::Nil)
     {
-        String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
+        String table_name = unescapeForFileName(pathToGenericString(fs::path(metadata_file_path).stem()));
 
         if (create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
@@ -937,7 +937,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
-        /*file_path=*/metadata_tmp_file_path,
+        pathToGenericString(/*file_path=*/metadata_tmp_file_path),
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 

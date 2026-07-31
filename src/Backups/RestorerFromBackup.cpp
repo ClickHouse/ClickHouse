@@ -968,7 +968,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
-        data_path_in_backup = table_info.data_path_in_backup;
+        data_path_in_backup = pathToGenericString(table_info.data_path_in_backup);
         partitions = table_info.partitions;
     }
 

@@ -557,7 +557,7 @@ namespace
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
+                    file_checker.update(pathToGenericString(std::filesystem::path{file_paths[i]}.filename()), backup_entries[i].second->getSize());
                 }
 
                 WriteBufferFromOwnString write_buffer;

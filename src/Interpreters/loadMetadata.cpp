@@ -116,7 +116,7 @@ static void loadDatabase(
     if (default_db_disk->existsFile(pathToGenericString(metadata_file_path)))
     {
         /// There is .sql file with database creation statement.
-        database_attach_query = readMetadataFile(default_db_disk, metadata_file_path);
+        database_attach_query = readMetadataFile(default_db_disk, pathToGenericString(metadata_file_path));
     }
     else
     {
@@ -127,7 +127,7 @@ static void loadDatabase(
 
     try
     {
-        executeCreateQuery(database_attach_query, context, database, metadata_file_path, /* create */ true, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, pathToGenericString(metadata_file_path), /* create */ true, force_restore_data);
     }
     catch (Exception & e)
     {

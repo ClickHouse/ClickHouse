@@ -586,7 +586,7 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
             String target_data_path = pathToGenericString(fs::path{data_path_in_backup} / kind_str);
             /// Support legacy backups where the samples folder was named "data" instead of "samples".
             if (target_kind == ViewTarget::Samples && !restorer.getBackup()->hasFiles(target_data_path))
-                target_data_path = fs::path{data_path_in_backup} / "data";
+                target_data_path = pathToGenericString(fs::path{data_path_in_backup} / "data");
             table->restoreDataFromBackup(restorer, target_data_path, {});
         }
     }

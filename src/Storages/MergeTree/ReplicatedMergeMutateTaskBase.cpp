@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -250,7 +251,7 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
         existing_part = storage.getActiveContainingPart(entry.new_part_name);
 
     /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-    if (existing_part && storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
+    if (existing_part && storage.getZooKeeper()->exists(pathToGenericString(fs::path(storage.replica_path) / "parts" / existing_part->name)))
     {
         LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 

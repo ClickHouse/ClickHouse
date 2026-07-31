@@ -521,14 +521,14 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             UInt32 current_format_version{0};
             readIntText(current_format_version, *buf);
             if (!buf->eof())
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, pathToGenericString(format_version_path)));
 
             if (!read_format_version.has_value())
                 read_format_version = current_format_version;
             else if (*read_format_version != current_format_version)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Version file on {} contains version {} expected version is {}.",
-                                fullPath(disk, format_version_path), current_format_version, *read_format_version);
+                                fullPath(disk, pathToGenericString(format_version_path)), current_format_version, *read_format_version);
         }
     }
 
@@ -3709,7 +3709,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     if (allowRemoveStaleMovingParts())
     {
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(pathToGenericString(fs::path(relative_data_path) / "moving"), custom_directories_lifetime_seconds, {""});
     }
 
     return cleared_count;
@@ -5931,7 +5931,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         try
         {
             const String full_path = pathToGenericString(fs::path(storage.relative_data_path) / source_dir);
-            disk->moveFile(pathToGenericString(fs::path(full_path) / new_dir), fs::path(full_path) / old_dir);
+            disk->moveFile(pathToGenericString(fs::path(full_path) / new_dir), pathToGenericString(fs::path(full_path) / old_dir));
         }
         catch (...)
         {
@@ -8253,7 +8253,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
         if (!part_info)
         {
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not a part's name",
-                            String{data_path_in_backup_fs / part_name});
+                            String{pathToGenericString(data_path_in_backup_fs / part_name)});
         }
 
         if (partition_ids && !partition_ids->contains(part_info->getPartitionId()))
@@ -8286,7 +8286,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     UInt64 total_size_of_part = 0;
     fs::path part_path_in_backup_fs = part_path_in_backup;
     for (const String & filename : filenames)
-        total_size_of_part += backup->getFileSize(part_path_in_backup_fs / filename);
+        total_size_of_part += backup->getFileSize(pathToGenericString(part_path_in_backup_fs / filename));
 
     std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
 
@@ -8301,7 +8301,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     std::unordered_set<String> subdirs;
 
     /// Copy files from the backup to the directory `tmp_part_dir`.
-    disk->createDirectories(temp_part_dir);
+    disk->createDirectories(pathToGenericString(temp_part_dir));
 
     for (const String & filename : filenames)
     {
@@ -8311,7 +8311,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         {
             String subdir = filename.substr(0, separator_pos);
             if (subdirs.emplace(subdir).second)
-                disk->createDirectories(temp_part_dir / subdir);
+                disk->createDirectories(pathToGenericString(temp_part_dir / subdir));
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
@@ -8322,15 +8322,15 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             || filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
         {
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
-            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(part_path_in_backup_fs / filename));
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(pathToGenericString(part_path_in_backup_fs / filename)));
             continue;
         }
 
-        size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
+        size_t file_size = backup->copyFileToDisk(pathToGenericString(part_path_in_backup_fs / filename), disk, temp_part_dir / filename, WriteMode::Rewrite);
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, pathToGenericString(temp_part_dir), detach_if_broken))
         restored_parts_holder->addPart(part);
     else
         restored_parts_holder->increaseNumBrokenParts();
@@ -8349,8 +8349,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     }
     fs::path full_part_dir{temp_part_dir};
-    String parent_part_dir = full_part_dir.parent_path();
-    String part_dir_name = full_part_dir.filename();
+    String parent_part_dir = pathToGenericString(full_part_dir.parent_path());
+    String part_dir_name = pathToGenericString(full_part_dir.filename());
 
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
@@ -8993,7 +8993,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
-        String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+        String detached_path = pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME);
 
         /// Note: we don't care about TOCTOU issue here.
         if (disk->existsDirectory(detached_path))
@@ -9050,7 +9050,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
-        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
+        bool keep_shared = removeDetachedPart(disk, pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / ""), old_dir);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
         old_dir.clear();
     }
@@ -9199,7 +9199,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         validateDetachedPartName(part_name);
         validateDetachedPartName(part_directory);
 
-        if (temporary_parts.contains(source_dir / part_directory))
+        if (temporary_parts.contains(pathToGenericString(source_dir / part_directory)))
         {
             LOG_WARNING(log, "Will not try to attach part {} (from directory {}) because its directory is temporary, "
                              "probably it's being detached right now", part_name, part_directory);
@@ -9248,7 +9248,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
             {
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                part_info.disk->moveDirectory(pathToGenericString(fs::path(relative_data_path) / source_dir / part_info.dir_name),
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
         }
@@ -9279,7 +9279,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             LOG_DEBUG(log, "Found containing part {} for part {}", containing_part, part_info.dir_name);
 
             if (containing_part != part_info.dir_name)
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                part_info.disk->moveDirectory(pathToGenericString(fs::path(relative_data_path) / source_dir / part_info.dir_name),
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             else
                 renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
@@ -9302,8 +9302,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
         /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
         /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        disk->removeFileIfExists(pathToGenericString(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME));
+        disk->removeFileIfExists(pathToGenericString(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME));
 
         /// The per-part `SingleDiskVolume` lives for the part's lifetime, so create it in the dedicated
         /// arena; `build()` and `loadPartAndFixMetadataImpl` below run outside it (the metadata load's
@@ -9313,7 +9313,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         }
-        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings())
+        auto part = getDataPartBuilder(part_name, single_disk_volume, pathToGenericString(source_dir / new_dir), getReadSettings())
             .withPartFormatFromDisk()
             .build();
 
@@ -10478,10 +10478,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     auto reclaim_stale_destination = [&](const DiskPtr & dst_disk)
     {
         auto relative_dst_dir = fs::path(relative_data_path) / tmp_dst_part_name;
-        if (dst_disk->existsDirectory(relative_dst_dir))
+        if (dst_disk->existsDirectory(pathToGenericString(relative_dst_dir)))
         {
             LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(dst_disk->getPath()) / relative_dst_dir).string());
-            dst_disk->removeRecursive(relative_dst_dir);
+            dst_disk->removeRecursive(pathToGenericString(relative_dst_dir));
         }
     };
 
@@ -10536,7 +10536,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     LOG_DEBUG(log, "Clone{} part {} to {}{}",
               src_flushed_tmp_part ? " flushed" : "",
               src_part_storage->getFullPath(),
-              std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
+              pathToGenericString(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
     auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings())
@@ -10572,11 +10572,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
             {
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                if (!params.files_to_copy_instead_of_hardlinks.contains(pathToGenericString(file_name_with_projection_prefix))
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
                 {
-                    params.hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
+                    params.hardlinked_files->hardlinks_from_source_part.insert(pathToGenericString(file_name_with_projection_prefix));
                 }
             }
         }

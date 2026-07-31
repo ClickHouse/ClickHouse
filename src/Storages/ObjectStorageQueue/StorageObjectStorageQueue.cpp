@@ -1866,7 +1866,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         if (database_uuid == UUIDHelpers::Nil)
             database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
 
-        result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
+        result_zk_path = pathToGenericString(fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid));
     }
 
     if (context_ && result_zk_path.find('{') != String::npos)

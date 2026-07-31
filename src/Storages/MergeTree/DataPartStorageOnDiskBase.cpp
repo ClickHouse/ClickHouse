@@ -248,14 +248,14 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
 
     UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSizeOnDiskImpl(disk, fs::path(from) / file);
+        res += calculateTotalSizeOnDiskImpl(disk, pathToGenericString(fs::path(from) / file));
 
     return res;
 }
 
 UInt64 DataPartStorageOnDiskBase::calculateTotalSizeOnDisk() const
 {
-    return calculateTotalSizeOnDiskImpl(volume->getDisk(), fs::path(root_path) / part_dir);
+    return calculateTotalSizeOnDiskImpl(volume->getDisk(), pathToGenericString(fs::path(root_path) / part_dir));
 }
 
 std::string DataPartStorageOnDiskBase::getDiskName() const
@@ -376,7 +376,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
     for (const auto & name : actual_file_names)
     {
         auto & file_desc = description.files[name];
-        const auto & metadata_str = serialized_metadata.at(relative_path / name);
+        const auto & metadata_str = serialized_metadata.at(pathToGenericString(relative_path / name));
 
         file_desc.file_size = metadata_str.size();
         file_desc.input_buffer_getter = [metadata_str]
@@ -518,7 +518,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         disk,
         disk,
         getRelativePath(),
-        fs::path(to) / dir_path,
+        pathToGenericString(fs::path(to) / dir_path),
         read_settings,
         write_settings,
         params.make_source_readonly,
@@ -588,7 +588,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         src_disk,
         dst_disk,
         getRelativePath(),
-        fs::path(to) / dir_path,
+        pathToGenericString(fs::path(to) / dir_path),
         read_settings,
         write_settings,
         params.make_source_readonly,
@@ -796,24 +796,24 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{pathToGenericString(part_dir_without_slash.filename())});
         }
         else
         {
-            part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+            part_dir_without_slash = ("delete_tmp_" + std::string{pathToGenericString(part_dir_without_slash.filename())});
         }
 
         to = fs::path(root_path) / part_dir_without_slash;
 
-        if (disk->existsDirectory(to))
+        if (disk->existsDirectory(pathToGenericString(to)))
         {
             LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. "
-                        "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
+                        "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, pathToGenericString(to)));
             try
             {
                 can_remove_description.emplace(can_remove_callback());
                 disk->removeSharedRecursive(
-                    fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
+                    pathToGenericString(fs::path(to) / ""), !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
             }
             catch (const fs::filesystem_error & e)
             {
@@ -827,14 +827,14 @@ void DataPartStorageOnDiskBase::remove(
             catch (...)
             {
                 LOG_ERROR(
-                    log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+                    log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, pathToGenericString(to)), getCurrentExceptionMessage(false));
                 throw;
             }
         }
 
-        if (!disk->existsDirectory(from))
+        if (!disk->existsDirectory(pathToGenericString(from)))
         {
-            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, pathToGenericString(from)));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
@@ -848,7 +848,7 @@ void DataPartStorageOnDiskBase::remove(
 
         try
         {
-            disk->moveDirectory(from, to);
+            disk->moveDirectory(pathToGenericString(from), to);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
             /// The part is being removed anyway, so the path doesn't need to be updated.
@@ -857,7 +857,7 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, pathToGenericString(from)));
                 return;
             }
             throw;

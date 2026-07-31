@@ -627,7 +627,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(pathToGenericString(data_path_in_backup_fs / data_file_name), std::move(backup_entry));
     }
 
     /// index.mrk
@@ -639,18 +639,18 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(pathToGenericString(data_path_in_backup_fs / index_file_name), std::move(backup_entry));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
+        pathToGenericString(data_path_in_backup_fs / fileName(files_info_path)), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / "columns.txt",
+        pathToGenericString(data_path_in_backup_fs / "columns.txt"),
         std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
@@ -658,7 +658,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & block : indices.blocks)
         num_rows += block.num_rows;
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / "count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+        pathToGenericString(data_path_in_backup_fs / "count.txt"), std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
 }
 
 void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)

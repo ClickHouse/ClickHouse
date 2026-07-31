@@ -1951,7 +1951,7 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
 
         String db_name = sub_path.filename().string();
         if (sub_path.extension() == ".sql")
-            db_name = sub_path.stem();
+            db_name = pathToGenericString(sub_path.stem());
 
         auto buf = default_db_disk->readFile(pathToGenericString(sub_path), getContext()->getReadSettings());
         std::string query;

@@ -64,12 +64,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, pathToGenericString(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, pathToGenericString(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
 }
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
@@ -296,7 +296,7 @@ std::vector<std::string> DataPartStorageOnDiskPacked::getRemotePaths(const std::
     std::string file_path = getRelativeDataPath();
 
     if (isWrittenSeparately(file_name))
-        file_path = fs::path(root_path) / part_dir / file_name;
+        file_path = pathToGenericString(fs::path(root_path) / part_dir / file_name);
 
     auto objects = volume->getDisk()->getStorageObjects(file_path);
 
@@ -619,7 +619,7 @@ bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) 
     auto path = fs::path(file_name);
     return path.extension() == ".proj"
         || path.extension() == ".tmp_proj"
-        || (path.extension() == ".tmp" && files_written_separately.contains(path.stem()));
+        || (path.extension() == ".tmp" && files_written_separately.contains(pathToGenericString(path.stem())));
 }
 
 bool DataPartStorageOnDiskPacked::anyArchivedFileRequestedForCopy(const NameSet & files_to_copy_instead_of_hardlinks) const

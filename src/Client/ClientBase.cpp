@@ -4334,7 +4334,7 @@ void ClientBase::runInteractive()
             }
         }
 
-        actual_history_file_path = history_file;
+        actual_history_file_path = pathToGenericString(history_file);
     }
 
     auto options = ReplxxLineReader::Options

@@ -306,7 +306,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     auto zookeeper = storage.getZooKeeper();
 
     String quorum_str;
-    if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
+    if (zookeeper->tryGet(pathToGenericString(fs::path(storage.zookeeper_path) / "quorum" / "status"), quorum_str))
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
@@ -324,7 +324,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     {
         for (auto & part_name : part_names)
         {
-            if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
+            if (zookeeper->tryGet(pathToGenericString(fs::path(parallel_quorum_parts_path) / part_name), quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.contains(storage.replica_name)
@@ -361,7 +361,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     catch (const Coordination::Exception & e)
     {
         String existing_replica_host;
-        zookeeper->tryGet(fs::path(storage.replica_path) / "host", existing_replica_host);
+        zookeeper->tryGet(pathToGenericString(fs::path(storage.replica_path) / "host"), existing_replica_host);
 
         if (existing_replica_host.empty())
             existing_replica_host = "without host node";
@@ -474,7 +474,7 @@ Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zku
             return metadata_version;
 
         Coordination::Stat table_stat;
-        zookeeper->get(fs::path(zookeeper_path) / "metadata", &table_stat);
+        zookeeper->get(pathToGenericString(fs::path(zookeeper_path) / "metadata"), &table_stat);
         if (table_stat.version == 0)
             return metadata_version;
 

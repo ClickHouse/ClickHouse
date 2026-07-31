@@ -392,7 +392,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
 
         const auto & path = directory_entry.path();
         UUID id;
-        if (!tryParseUUID(path.stem(), id))
+        if (!tryParseUUID(pathToGenericString(path.stem()), id))
             continue; /// Not an access-entity file (e.g. `users.list`, `need_rebuild_lists.mark`).
 
         if (path.extension() == ".tmp")

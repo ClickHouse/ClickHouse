@@ -76,7 +76,7 @@ DatabaseAtomic::DatabaseAtomic(
     : DatabaseOrdinary(
         name_,
         metadata_path_,
-        DatabaseCatalog::getStoreDirPath() / "",
+        pathToGenericString(DatabaseCatalog::getStoreDirPath() / ""),
         logger_name,
         context_,
         database_metadata_disk_settings_)
@@ -787,7 +787,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
 
         path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name);
-        old_path_to_table_symlinks = path_to_table_symlinks;
+        old_path_to_table_symlinks = pathToGenericString(path_to_table_symlinks);
         path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
     }
 

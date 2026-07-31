@@ -92,7 +92,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          DatabaseCatalog::getDataDirPath(name_) / "",
+          pathToGenericString(DatabaseCatalog::getDataDirPath(name_) / ""),
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)

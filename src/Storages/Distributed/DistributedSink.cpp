@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
@@ -1000,7 +1001,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(fs::path(disk_path) / (data_path + *it));
+        const std::string path(pathToGenericString(fs::path(disk_path) / (data_path + *it)));
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();

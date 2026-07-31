@@ -255,7 +255,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!default_db_disk->existsFile(pathToGenericString(metadata_file_path)))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, metadata_file_path);
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, pathToGenericString(metadata_file_path));
         create = ast->as<ASTCreateQuery &>();
         if (create.table || !create.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
@@ -360,7 +360,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
             default_db_disk,
-            /*file_path=*/metadata_tmp_file_path,
+            pathToGenericString(/*file_path=*/metadata_tmp_file_path),
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     }
@@ -1808,17 +1808,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!startsWith(pathToGenericString(data_path), user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
 
             /// Data path must be relative to root_path
-            create.attach_from_path = fs::relative(data_path, root_path) / "";
+            create.attach_from_path = pathToGenericString(fs::relative(data_path, root_path) / "");
         }
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!startsWith(pathToGenericString(data_path), user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
         }
@@ -2183,7 +2183,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
+            renameNoReplace(pathToGenericString(full_data_path), trash_path);
         }
         else
         {

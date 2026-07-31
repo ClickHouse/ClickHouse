@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -60,7 +61,7 @@ try
 {
     auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
-    std::vector<String> paths = zookeeper->getChildren(path);
+    std::vector<String> paths = zookeeper->getChildren(pathToGenericString(path));
     std::unordered_set<String> set;
     for (String & p : paths)
     {
