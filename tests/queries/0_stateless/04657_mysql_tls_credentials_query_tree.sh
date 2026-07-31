@@ -15,7 +15,9 @@ SECRET="SECRET_THAT_MUST_NOT_LEAK"
 explain() {
     echo "--- $1"
     local dump
-    dump=$($CLICKHOUSE_CLIENT --query "EXPLAIN QUERY TREE run_passes = 0 $2")
+    # `EXPLAIN QUERY TREE` exists only in the analyzer, so pin the setting: the test also runs in the
+    # old-analyzer configuration.
+    dump=$($CLICKHOUSE_CLIENT --enable_analyzer=1 --query "EXPLAIN QUERY TREE run_passes = 0 $2")
     if echo "$dump" | grep -q "$SECRET"; then
         echo "FAIL: secret leaked in the query tree"
     else
