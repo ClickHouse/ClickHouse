@@ -19,6 +19,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -29,6 +30,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/QueryFuzzer.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Poco/String.h>
@@ -40,6 +42,7 @@
 namespace ProfileEvents
 {
 extern const Event ASTFuzzerOracleChecks;
+extern const Event ASTFuzzerOracleTLPAggregateChecks;
 extern const Event ASTFuzzerOracleMismatches;
 }
 
@@ -194,14 +197,9 @@ const std::unordered_set<String> non_deterministic_functions_lower = []
     return result;
 }();
 
-/// Aggregate-function combinator suffixes ClickHouse recognises (see
-/// `AggregateFunctionCombinatorFactory`). Combinator spelling is case-sensitive
-/// in ClickHouse (`sumIf` is valid, `sumif` is not), so these stay PascalCase.
-const std::vector<String> combinator_suffixes = {
-    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
-    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-};
+/// Aggregate-function combinator suffixes — shared with the fuzzer, see
+/// `aggregate_combinator_suffixes` in `QueryFuzzer.h`.
+const Strings & combinator_suffixes = aggregate_combinator_suffixes;
 
 /// Strip the LONGEST matching combinator suffix from `name`, returning false
 /// when nothing matched. Longest-match (rather than first-in-list) is what
@@ -301,7 +299,11 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         /// parameterized grid; the result depends on grid parameters and
         /// point ordering, so the metamorphic State/Merge and DQP rewrites
         /// legitimately diverge. Whole family gated by prefix (it is growing).
-        if (func->name.starts_with("timeSeries") || stripped.starts_with("timeSeries"))
+        /// Aggregate names resolve case-insensitively, so compare lowercased —
+        /// `TIMESERIES...` must not slip past the gate.
+        const String name_lower = Poco::toLower(func->name);
+        const String stripped_lower = Poco::toLower(stripped);
+        if (name_lower.starts_with("timeseries") || stripped_lower.starts_with("timeseries"))
             return true;
 
         /// Comparator-based array sorts are not stable on ties: with a
@@ -309,9 +311,11 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         /// relative order of tied elements is implementation-defined and can
         /// differ between plans, so the produced array *content* differs. The
         /// single-argument forms sort by value and stay deterministic.
+        /// Compared lowercased for the same reason as above; over-matching an
+        /// unresolvable spelling merely skips one more query, which is safe.
         static const std::unordered_set<String> lambda_sort_functions = {
-            "arraySort", "arrayReverseSort", "arrayPartialSort", "arrayPartialReverseSort"};
-        if (lambda_sort_functions.contains(func->name)
+            "arraysort", "arrayreversesort", "arraypartialsort", "arraypartialreversesort"};
+        if (lambda_sort_functions.contains(name_lower)
             && func->arguments && func->arguments->children.size() >= 2)
             return true;
 
@@ -396,7 +400,12 @@ bool hasArrayJoinFunction(const ASTPtr & ast)
         return false;
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (func->name == "arrayJoin")
+        /// `unnest` is registered as a case-insensitive alias of `arrayJoin`,
+        /// and the parser preserves the caller's spelling, so match both names
+        /// lowercased. Over-matching a spelling that would not resolve merely
+        /// skips one more query, which is the safe direction for this gate.
+        const String name_lower = Poco::toLower(func->name);
+        if (name_lower == "arrayjoin" || name_lower == "unnest")
             return true;
     }
     for (const auto & child : ast->children)
@@ -577,6 +586,46 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
     return false;
 }
 
+/// Settings whose uniform removal from both sides of an oracle comparison
+/// cannot change the produced rows — they only bound resources or control
+/// logging. `stripOrderAndLimit` deletes the top-level inline `SETTINGS`
+/// clause from every clone it prepares, so a query is only comparable when
+/// everything that clause carries is in this allowlist: a semantically
+/// significant setting (`join_use_nulls`, `apply_mutations_on_fly`,
+/// `optimize_*`, `final`, ...) would make the oracle validate a different
+/// query than the one that actually succeeded. Anything not explicitly listed
+/// here (and not already rejected by `truncating_settings`) causes the whole
+/// query to be skipped — fail closed, since new settings appear all the time.
+const std::unordered_set<String> strippable_resource_settings = {
+    "max_memory_usage", "max_memory_usage_for_user", "max_untracked_memory",
+    "max_bytes_before_external_group_by", "max_bytes_before_external_sort",
+    "max_bytes_ratio_before_external_group_by", "max_bytes_ratio_before_external_sort",
+    "max_threads", "max_insert_threads", "max_final_threads", "max_block_size",
+    "max_query_size", "max_ast_depth", "max_ast_elements", "max_expanded_ast_elements",
+    "max_parser_depth", "max_parser_backtracks", "max_execution_speed",
+    "log_comment", "log_queries", "log_query_threads", "log_processors_profiles",
+    "send_logs_level", "priority", "os_thread_priority",
+};
+
+/// True if any inline `SETTINGS` clause (top level or nested) carries a
+/// setting outside `strippable_resource_settings`. Checked recursively for
+/// symmetry with `hasTruncatingInlineSettings`: nested clauses are never
+/// stripped, but proving a nested semantic setting harmless would require
+/// per-oracle reasoning, so skip conservatively.
+bool hasNonStrippableInlineSettings(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+        for (const auto & change : set_query->changes)
+            if (!strippable_resource_settings.contains(change.name))
+                return true;
+    for (const auto & child : ast->children)
+        if (hasNonStrippableInlineSettings(child))
+            return true;
+    return false;
+}
+
 /// True if `clause` defines an alias that is referenced anywhere else in the
 /// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
 /// that removes or replaces such a clause (TLP's reference query drops WHERE
@@ -703,6 +752,21 @@ bool hasAsofJoinAnywhere(const ASTPtr & ast)
 /// an intermediate `SELECT *`, or pushed into individual branches before the
 /// type unification. The oracle's reference-vs-rewrite comparison cannot
 /// distinguish those alternative semantics from real correctness bugs.
+bool subtreeContainsSetOperation(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * union_query = ast->as<ASTSelectWithUnionQuery>())
+        if (union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
+            return true;
+    if (ast->as<ASTSelectIntersectExceptQuery>())
+        return true;
+    for (const auto & child : ast->children)
+        if (subtreeContainsSetOperation(child))
+            return true;
+    return false;
+}
+
 bool fromContainsUnionSubquery(const ASTSelectQuery & select)
 {
     ASTPtr tables = select.tables();
@@ -716,16 +780,14 @@ bool fromContainsUnionSubquery(const ASTSelectQuery & select)
         const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
         if (!table_expr || !table_expr->subquery)
             continue;
-        /// table_expr->subquery is an ASTSubquery whose child is the SELECT
-        /// (often wrapped in an ASTSelectWithUnionQuery).
-        for (const auto & sub_child : table_expr->subquery->children)
-        {
-            if (const auto * union_query = sub_child->as<ASTSelectWithUnionQuery>())
-            {
-                if (union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
-                    return true;
-            }
-        }
+        /// Search the whole subquery subtree, not just the immediate child:
+        /// the union can hide one or more wrapper levels down, e.g.
+        /// `FROM (SELECT * FROM (SELECT 1 AS x UNION ALL SELECT '1' AS x))`
+        /// has the same `Variant(...)` / pushdown ambiguity as a direct union.
+        /// INTERSECT / EXCEPT parse into `ASTSelectIntersectExceptQuery` (not a
+        /// multi-child union list), so they are matched as their own node kind.
+        if (subtreeContainsSetOperation(table_expr->subquery))
+            return true;
     }
     return false;
 }
@@ -743,23 +805,33 @@ bool fromContainsUnionSubquery(const ASTSelectQuery & select)
 /// (`system.events`, `system.metrics`, ...) that drift between the reference
 /// and rewrite executions — a false mismatch (observed: a CTE
 /// `WITH x AS (SELECT ... FROM system.events ...)`).
-bool referencesSystemDatabaseAnywhere(const ASTPtr & ast)
+/// An unqualified table name (`FROM processes`) resolves against the session's
+/// current database, so `current_database` must be supplied by the caller —
+/// after `USE system`, bare `FROM processes` reads `system.processes` and must
+/// be rejected just like the qualified spelling.
+bool referencesSystemDatabaseAnywhere(const ASTPtr & ast, const String & current_database)
 {
     if (!ast)
         return false;
     if (const auto * table_id = ast->as<ASTTableIdentifier>())
     {
-        const String db = table_id->getDatabaseName();
+        String db = table_id->getDatabaseName();
+        if (db.empty())
+            db = current_database;
         if (db == "system" || db == "INFORMATION_SCHEMA" || db == "information_schema")
             return true;
     }
     for (const auto & child : ast->children)
-        if (referencesSystemDatabaseAnywhere(child))
+        if (referencesSystemDatabaseAnywhere(child, current_database))
             return true;
     return false;
 }
 
-bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
+/// `current_database` resolves unqualified table names, same as in
+/// `referencesSystemDatabaseAnywhere` above. It defaults to empty at the
+/// `isSafeForOracle` call site, which has no context — the recursive
+/// context-aware check in `QueryOracleChecker::check` covers that case.
+bool referencesNonDeterministicDatabase(const ASTSelectQuery & select, const String & current_database = {})
 {
     ASTPtr tables = select.tables();
     if (!tables)
@@ -782,6 +854,8 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
             continue;
 
         String database = table_id->getDatabaseName();
+        if (database.empty())
+            database = current_database;
         if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
             return true;
     }
@@ -985,6 +1059,46 @@ void QueryOracleChecker::stripOrderAndLimit(ASTSelectQuery & select)
     select.order_by_all = false;
     select.limit_with_ties = false;
     select.limit_by_all = false;
+}
+
+
+std::pair<ASTPtr, ASTPtr> QueryOracleChecker::buildTLPReferenceAndPartitions(
+    const ASTSelectQuery & select,
+    ASTSelectQuery::Expression clause,
+    const ASTPtr & predicate,
+    SelectUnionMode union_mode,
+    const std::function<void(const ASTPtr &)> & transform)
+{
+    /// Strip (and transform) once on a shared base, then derive the reference
+    /// and every partition from it, so all four queries are adjusted identically.
+    auto base_ast = select.clone();
+    stripOrderAndLimit(base_ast->as<ASTSelectQuery &>());
+    if (transform)
+        transform(base_ast);
+
+    auto ref_ast = base_ast->clone();
+    ref_ast->as<ASTSelectQuery &>().setExpression(clause, {});
+
+    auto make_partition = [&](ASTPtr partition_predicate)
+    {
+        auto clone_ast = base_ast->clone();
+        if (partition_predicate)
+            clone_ast->as<ASTSelectQuery &>().setExpression(clause, std::move(partition_predicate));
+        return clone_ast;
+    };
+
+    auto list = make_intrusive<ASTExpressionList>();
+    list->children.push_back(make_partition(nullptr)); /// The original predicate, kept as-is.
+    list->children.push_back(make_partition(makeASTFunction("not", predicate->clone())));
+    list->children.push_back(make_partition(makeASTFunction("isNull", predicate->clone())));
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = union_mode;
+    union_query->is_normalized = true;
+    union_query->list_of_selects = list;
+    union_query->children.push_back(list);
+
+    return {std::move(ref_ast), ASTPtr(std::move(union_query))};
 }
 
 
@@ -1216,48 +1330,15 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     ASTPtr predicate = select.where()->clone();
 
-    /// Build reference query: original query without WHERE (and without ORDER BY/LIMIT).
-    /// JOINs, GROUP BY, and other clauses are preserved.
-    auto ref_ast = select.clone();
-    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
-    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
-    stripOrderAndLimit(ref_select);
+    /// Reference: the original query without WHERE (and without ORDER BY/LIMIT);
+    /// JOINs, GROUP BY, and other clauses are preserved. Partitioned: the
+    /// UNION ALL of `WHERE p` / `WHERE NOT p` / `WHERE isNull(p)`.
+    auto [ref_ast, union_ast] = buildTLPReferenceAndPartitions(
+        select, ASTSelectQuery::Expression::WHERE, predicate, SelectUnionMode::UNION_ALL);
 
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
-
-    /// Build 3 partitioned queries.
-    /// Clone 1: WHERE p
-    auto clone1_ast = select.clone();
-    auto & clone1 = clone1_ast->as<ASTSelectQuery &>();
-    stripOrderAndLimit(clone1);
-
-    /// Clone 2: WHERE NOT(p)
-    auto clone2_ast = select.clone();
-    auto & clone2 = clone2_ast->as<ASTSelectQuery &>();
-    clone2.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
-    stripOrderAndLimit(clone2);
-
-    /// Clone 3: WHERE isNull(p)
-    auto clone3_ast = select.clone();
-    auto & clone3 = clone3_ast->as<ASTSelectQuery &>();
-    clone3.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
-    stripOrderAndLimit(clone3);
-
-    /// Build UNION ALL of the three.
-    auto list = make_intrusive<ASTExpressionList>();
-    list->children.push_back(clone1_ast);
-    list->children.push_back(clone2_ast);
-    list->children.push_back(clone3_ast);
-
-    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    union_query->union_mode = SelectUnionMode::UNION_ALL;
-    union_query->is_normalized = true;
-    union_query->list_of_selects = list;
-    union_query->children.push_back(list);
-
-    ASTPtr union_ast = union_query;
     String union_sql = formatAST(union_ast);
     if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1459,40 +1540,14 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     ASTPtr predicate = select.where()->clone();
 
-    /// Reference: remove WHERE, keep DISTINCT.
-    auto ref_ast = select.clone();
-    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
-    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
-    stripOrderAndLimit(ref_select);
+    /// Reference: remove WHERE, keep DISTINCT. Partitioned: UNION DISTINCT
+    /// (not UNION ALL) of the three partitions, to deduplicate across them.
+    auto [ref_ast, union_ast] = buildTLPReferenceAndPartitions(
+        select, ASTSelectQuery::Expression::WHERE, predicate, SelectUnionMode::UNION_DISTINCT);
+
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
-
-    /// Build 3 partitioned queries — each keeps DISTINCT.
-    auto clone1_ast = select.clone();
-    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
-
-    auto clone2_ast = select.clone();
-    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
-    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
-
-    auto clone3_ast = select.clone();
-    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
-    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
-
-    /// Use UNION DISTINCT (not UNION ALL) to deduplicate across partitions.
-    auto list = make_intrusive<ASTExpressionList>();
-    list->children.push_back(clone1_ast);
-    list->children.push_back(clone2_ast);
-    list->children.push_back(clone3_ast);
-
-    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    union_query->union_mode = SelectUnionMode::UNION_DISTINCT;
-    union_query->is_normalized = true;
-    union_query->list_of_selects = list;
-    union_query->children.push_back(list);
-
-    ASTPtr union_ast = union_query;
     String union_sql = formatAST(union_ast);
     if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1565,43 +1620,15 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     ASTPtr predicate = select.where()->clone();
 
-    /// Reference: remove WHERE, keep GROUP BY.
-    auto ref_ast = select.clone();
-    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
-    ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
-    stripOrderAndLimit(ref_select);
-    append_group_keys(ref_ast);
+    /// Reference: remove WHERE, keep GROUP BY. The `append_group_keys`
+    /// transform runs once on the shared base, so the reference and all
+    /// three partitions get the group keys appended identically.
+    auto [ref_ast, union_ast] = buildTLPReferenceAndPartitions(
+        select, ASTSelectQuery::Expression::WHERE, predicate, SelectUnionMode::UNION_ALL, append_group_keys);
+
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
-
-    /// Build 3 partitioned queries — each keeps GROUP BY.
-    auto clone1_ast = select.clone();
-    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
-    append_group_keys(clone1_ast);
-
-    auto clone2_ast = select.clone();
-    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
-    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
-    append_group_keys(clone2_ast);
-
-    auto clone3_ast = select.clone();
-    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
-    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
-    append_group_keys(clone3_ast);
-
-    auto list = make_intrusive<ASTExpressionList>();
-    list->children.push_back(clone1_ast);
-    list->children.push_back(clone2_ast);
-    list->children.push_back(clone3_ast);
-
-    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    union_query->union_mode = SelectUnionMode::UNION_ALL;
-    union_query->is_normalized = true;
-    union_query->list_of_selects = list;
-    union_query->children.push_back(list);
-
-    ASTPtr union_ast = union_query;
     String union_sql = formatAST(union_ast);
     if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1657,38 +1684,13 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     ASTPtr having_pred = select.having()->clone();
 
     /// Reference: remove HAVING, keep GROUP BY and everything else.
-    auto ref_ast = select.clone();
-    auto & ref_select = ref_ast->as<ASTSelectQuery &>();
-    ref_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-    stripOrderAndLimit(ref_select);
+    /// Partitioned: partition on HAVING instead of WHERE.
+    auto [ref_ast, union_ast] = buildTLPReferenceAndPartitions(
+        select, ASTSelectQuery::Expression::HAVING, having_pred, SelectUnionMode::UNION_ALL);
+
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
-
-    /// Build 3 partitioned queries — partition on HAVING.
-    auto clone1_ast = select.clone();
-    stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
-
-    auto clone2_ast = select.clone();
-    clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::HAVING, makeASTFunction("not", having_pred->clone()));
-    stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
-
-    auto clone3_ast = select.clone();
-    clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::HAVING, makeASTFunction("isNull", having_pred->clone()));
-    stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
-
-    auto list = make_intrusive<ASTExpressionList>();
-    list->children.push_back(clone1_ast);
-    list->children.push_back(clone2_ast);
-    list->children.push_back(clone3_ast);
-
-    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    union_query->union_mode = SelectUnionMode::UNION_ALL;
-    union_query->is_normalized = true;
-    union_query->list_of_selects = list;
-    union_query->children.push_back(list);
-
-    ASTPtr union_ast = union_query;
     String union_sql = formatAST(union_ast);
     if (union_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1974,7 +1976,11 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
             /// directly from `IAST` and cannot take an alias (`IAST::setAlias`
             /// throws `LOGICAL_ERROR`), and it could not be referenced by a stable
             /// alias from the outer query anyway. Skip the oracle for such queries.
-            if (!group_expr->as<ASTWithAlias>())
+            /// `dynamic_cast`, not `as<...>`: `ASTWithAlias` is a base class and
+            /// `IAST::as` is an exact-typeid cast, so `as<ASTWithAlias>()` is false
+            /// for every concrete node — it silently disabled this oracle for ALL
+            /// grouped queries (caught by 04658_ast_fuzzer_oracle_tlp_aggregate_counter).
+            if (!dynamic_cast<const ASTWithAlias *>(group_expr.get()))
                 return false;
             String g_alias = fmt::format("_g_{}", g_idx++);
             group_key_alias[group_expr->getTreeHash(/*ignore_aliases=*/true).low64] = g_alias;
@@ -2086,6 +2092,10 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         return false;
 
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
+    /// Dedicated counter so a test can prove this specific oracle path ran —
+    /// with `ast_fuzzer_runs > 0` the mutated query may lose the aggregate
+    /// shape, so a plain "query succeeded" assertion proves nothing.
+    ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleTLPAggregateChecks);
 
     LOG_TRACE(logger, "TLP Aggregate oracle: reference query: {}", ref_sql);
     LOG_TRACE(logger, "TLP Aggregate oracle: metamorphic query: {}", metamorphic_sql);
@@ -2277,8 +2287,14 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (select.prewhere())
         return false;
 
-    /// Skip if query has LIMIT without ORDER BY (non-deterministic row selection).
-    if (select.limitLength() && !select.orderBy())
+    /// Skip any query with LIMIT / LIMIT BY / OFFSET. The reference clone is
+    /// passed through `stripOrderAndLimit` below, so admitting these shapes
+    /// would compare the *unbounded* query instead of the top-N / per-key /
+    /// offset query that actually succeeded — hiding wrong-result bugs in
+    /// LIMIT handling and, worse, comparing different semantics than the seed.
+    /// Even LIMIT with ORDER BY is unsafe: on non-unique sort keys the engine
+    /// may legitimately pick different rows among ties on each side.
+    if (select.limitLength() || select.limitBy() || select.limitOffset())
         return false;
 
     /// Skip WITH TOTALS / ROLLUP / CUBE / GROUPING SETS — the wrapping changes
@@ -2395,6 +2411,17 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
+    /// The oracles delete the top-level inline `SETTINGS` clause from their
+    /// clones (see `stripOrderAndLimit`), which is only sound when every
+    /// setting it carries is result-invariant. A semantic setting like
+    /// `join_use_nulls` or `apply_mutations_on_fly` would make the oracle
+    /// validate a different query than the one that actually succeeded.
+    if (hasNonStrippableInlineSettings(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: query carries inline settings that cannot be stripped safely");
+        return false;
+    }
+
     /// An explicit `FORMAT ...` / `INTO OUTFILE` survives on the fuzzed AST
     /// (the fuzzer preserves `ASTQueryWithOutput::format_ast`), and
     /// `executeAndCollectSortedRows` relies on the default `TabSeparated` to
@@ -2469,7 +2496,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// always shows drift in `processes`, `merges`, `metric_log`, etc.
     /// Reject the whole query at the gate to avoid spurious mismatches in
     /// every oracle.
-    if (referencesNonDeterministicDatabase(*select) || referencesSystemDatabaseAnywhere(query_ast))
+    if (referencesNonDeterministicDatabase(*select, context->getCurrentDatabase())
+        || referencesSystemDatabaseAnywhere(query_ast, context->getCurrentDatabase()))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from system database");
         return false;

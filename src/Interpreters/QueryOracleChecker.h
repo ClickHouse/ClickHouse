@@ -3,10 +3,12 @@
 #include <Core/Field.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -92,6 +94,19 @@ private:
 
     /// Strip ORDER BY, LIMIT, LIMIT BY, SETTINGS, INTERPOLATE from a cloned ASTSelectQuery.
     static void stripOrderAndLimit(ASTSelectQuery & select);
+
+    /// Build the two sides of a TLP comparison from `select`: the reference
+    /// (the query without `clause`) and the partitioned UNION of three clones
+    /// whose `clause` is the original `predicate`, `NOT predicate`, and
+    /// `isNull(predicate)`. `stripOrderAndLimit` is applied once to a shared
+    /// base clone, and `transform` (when set) post-processes that base so the
+    /// reference and every partition are adjusted identically.
+    static std::pair<ASTPtr, ASTPtr> buildTLPReferenceAndPartitions(
+        const ASTSelectQuery & select,
+        ASTSelectQuery::Expression clause,
+        const ASTPtr & predicate,
+        SelectUnionMode union_mode,
+        const std::function<void(const ASTPtr &)> & transform = {});
 
     /// Format an AST to a one-line SQL string.
     static String formatAST(const ASTPtr & ast);
