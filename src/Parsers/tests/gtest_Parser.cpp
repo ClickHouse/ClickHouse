@@ -1,6 +1,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
@@ -164,6 +165,52 @@ TEST(ParserInsertQuery, ReturningTrailingSettingsChildOrderIsCanonical)
         ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
         ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
         EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
+/// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
+/// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
+/// that flag over, otherwise `clone()->format()` diverges from `format()`. Assert on the formatted
+/// string rather than `getTreeHash`, because the tree hash does not include the flag.
+TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
+{
+    const std::vector<String> queries = {
+        "CREATE INDEX i ON t ((a())) TYPE a GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b) -> a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a + b) * a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t (a, b) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((1, 2)) TYPE minmax GRANULARITY 1",
+        "CREATE HYPOTHETICAL INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must format identically to the original (this is what the distributed-DDL clone
+        /// path relies on). The tree hash omits the flag, so compare the rendered text.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->formatWithSecretsOneLine(), cloned->formatWithSecretsOneLine()) << "clone of: " << query;
+
+        /// And the original must survive a format+reparse+format round trip, and the reparsed AST
+        /// must be identical to the original. The AST-equality check is what catches the tuple
+        /// literal `(1, 2)`: without the extra wrapper the string round-trips but the reparse
+        /// rebuilds it as a `tuple(...)` function, so `executeQueryImpl`'s tree-hash comparison
+        /// (which runs before the string comparison) still trips `Inconsistent AST formatting`.
+        String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparse_parser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparse_parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "AST roundtrip of: " << query;
     }
 }
 
@@ -560,8 +607,52 @@ INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
         {
             "RENAME TABLE eligible_test TO eligible_test2",
             "RENAME TABLE eligible_test TO eligible_test2"
+        },
+        {
+            "RENAME DATABASE db1 TO db2",
+            "RENAME DATABASE db1 TO db2"
+        },
+        {
+            "RENAME DATABASE IF EXISTS db1 TO db2",
+            "RENAME DATABASE IF EXISTS db1 TO db2"
         }
 })));
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+/// Regression test for the UBSan "member call on null pointer of type DB::IAST" at
+/// ASTRenameQuery::formatQueryImpl (RENAME DATABASE branch). A RENAME DATABASE node always
+/// carries both database identifiers when produced by the parser, but a directly-constructed
+/// or fuzzer-mutated AST can leave from.database / to.database null. Formatting such a node
+/// must trip the chassert guarding the invariant, not dereference null.
+///
+/// The round-trip cases above cannot catch this: they only exercise the parse -> format path
+/// and pass even if the chassert is removed. Each death test matches the specific chassert
+/// message, so removing the guard (which would leave a raw null dereference with a different
+/// death signature) makes the test fail -- giving the fix real regression coverage.
+static ASTPtr makeRenameDatabaseAST(bool from_null, bool to_null)
+{
+    ASTRenameQuery::Element element;
+    element.from.database = from_null ? nullptr : make_intrusive<ASTIdentifier>("db1");
+    element.to.database = to_null ? nullptr : make_intrusive<ASTIdentifier>("db2");
+    auto query = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(element)});
+    query->database = true;
+    return query;
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullFromDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/true, /*to_null=*/false);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).from.database");
+}
+
+TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    ASTPtr ast = makeRenameDatabaseAST(/*from_null=*/false, /*to_null=*/true);
+    EXPECT_DEATH(ast->formatWithSecretsOneLine(), "elements.at\\(0\\).to.database");
+}
+#endif
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;

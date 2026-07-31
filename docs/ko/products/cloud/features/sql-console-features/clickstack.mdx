@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'ClickStack'
+slug: /cloud/manage/clickstack
+title: 'ClickStack'
+description: 'ClickStack UI를 제공합니다. ClickHouse와 OpenTelemetry(OTel)를 기반으로 구축된 프로덕션 환경용 관측성 플랫폼으로, 로그, 트레이스, 메트릭, 세션을 하나의 고성능 확장형 솔루션으로 통합합니다.'
+doc_type: 'guide'
+keywords: ['hyperdx', '관측성', '통합', '클라우드 기능', '모니터링', 'clickstack']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[**Managed ClickStack**](/ko/clickstack/overview)는 오픈 소스 [ClickStack](/ko/clickstack/overview) 관측성 플랫폼을 ClickHouse Cloud에서 완전 관리형으로 제공합니다. ClickHouse와 OpenTelemetry(OTel)를 기반으로 하며, 로그, 트레이스, 메트릭, 세션 데이터를 하나의 고성능 솔루션으로 통합합니다. 복잡한 시스템의 모니터링과 디버깅을 위해 설계된 Managed ClickStack은 개발자와 SRE가 도구를 오가거나 timestamps 또는 correlation ID를 사용해 데이터를 수동으로 맞춰 볼 필요 없이 문제를 종단 간으로 추적할 수 있게 합니다.
+
+관리형 서비스인 Managed ClickStack은 ClickStack UI가 ClickHouse Cloud 콘솔에 직접 통합된 오픈 소스 프로젝트를 제공하며, 네이티브 역할 기반 접근 제어(RBAC)와 AI 노트북, 엔터프라이즈급 알림 등의 추가 기능도 포함합니다. 관리할 infrastructure가 없고 별도로 구성할 인증도 없습니다.
+
+ClickStack UI(HyperDX)는 관측성 데이터를 탐색하고 시각화하도록 설계된 전용 프런트엔드로, Lucene 스타일과 SQL 쿼리를 모두 지원하며, 대화형 대시보드, 알림, 트레이스 탐색 등을 ClickHouse를 백엔드로 최적화해 제공합니다.
+
+Managed ClickStack은 한 번의 클릭으로 시작해 데이터에 연결할 수 있으며, ClickHouse Cloud 인증 시스템에 완전히 통합되어 관측성 인사이트에 매끄럽고 안전하게 액세스할 수 있습니다.
+
+<div id="main-concepts">
+  ## 배포
+</div>
+
+서비스를 선택하면 왼쪽 기본 탐색 메뉴에서 ClickStack을 찾을 수 있습니다.
+
+<Image img="/images/use-cases/observability/clickstack-cloud.webp" alt="ClickHouse Cloud의 관리형 ClickStack" size="lg" />
+
+ClickHouse Cloud에서 ClickStack을 시작하려면 전용 [시작하기 가이드](/ko/clickstack/deployment/managed)를 참조하는 것이 좋습니다.
+
+ClickStack에 대한 자세한 내용은 [전체 문서](/ko/clickstack/overview)를 참조하십시오.

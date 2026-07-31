@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+個々のテーブルの整合性ではなく、データベース全体の健全性を確認するには、[`CHECK DATABASE`](/ja/reference/statements/check-database) クエリを使用します。これは主に [`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) エンジンを使用するデータベース向けで、外部カタログに到達可能かどうかを検証します。
+
 <div id="if-the-data-is-corrupted">
   ## データが破損している場合
 </div>

@@ -60,6 +60,7 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_backup_keeper_session_expired_always) \
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
@@ -75,6 +76,7 @@ static struct InitFiu
     ONCE(object_storage_queue_fail_commit_after_success) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
+    ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -85,6 +87,9 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_cancel_query_in_response_wait) \
+    REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
+    REGULAR(distributed_cache_simulate_undrained_leftovers) \
+    REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
@@ -99,6 +104,7 @@ static struct InitFiu
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
+    REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
@@ -119,15 +125,19 @@ static struct InitFiu
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -140,6 +150,13 @@ static struct InitFiu
     REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
     ONCE(delta_kernel_force_stale_token_error) \
     REGULAR(object_storage_force_refresh_callback_success) \
+    REGULAR(refresh_mv_skip_attach_feature_flag_check) \
+    REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
+    REGULAR(refresh_mv_force_coordination_version_conflict) \
+    REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE(refresh_mv_pause_before_exchange) \
+    PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
+    REGULAR(refresh_mv_skip_execution) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
@@ -179,8 +196,10 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
@@ -229,6 +248,7 @@ static struct InitFiu
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
+    REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
@@ -250,7 +270,13 @@ static struct InitFiu
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
-    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
 
 namespace FailPoints
 {
