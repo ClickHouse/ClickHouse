@@ -220,6 +220,48 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
+/** The last value that filling can generate under the given TO bound, or nullopt when even the value right before
+  * TO is not known to be usable.
+  *
+  * Filling starts at FROM and advances by STEP while it stays strictly before TO, so with a FROM and a plain
+  * numeric step the last generated value is known up front and can be far below TO: `WITH FILL FROM 0 TO 257 STEP 3`
+  * stops at 255. Without FROM the sequence is anchored at a data value, and an INTERVAL step is not a constant
+  * number of the column type units, so in those cases nothing better than the value right before TO can be assumed.
+  */
+static std::optional<Int64> lastValueAdmittedByFillTo(const FillColumnDescription & descr, int direction)
+{
+    /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are filled
+    /// through their own type, so their bounds have already been accepted by the representability check.
+    if (descr.fill_to.getType() != Field::Types::Int64)
+        return {};
+
+    const Int64 to = descr.fill_to.safeGet<Int64>();
+
+    if (!descr.step_kind
+        && descr.fill_from.getType() == Field::Types::Int64
+        && descr.fill_step.getType() == Field::Types::Int64)
+    {
+        const Int64 from = descr.fill_from.safeGet<Int64>();
+        const Int64 step = descr.fill_step.safeGet<Int64>();
+
+        /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
+        /// already checked when the fill description is built.
+        const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
+        if (span <= 0)
+            return from; /// TO admits no filled value at all
+
+        const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
+        /// The result lies between FROM and TO, so it fits into Int64.
+        return static_cast<Int64>(from + jumps * step);
+    }
+
+    Int64 last_admitted_value = 0;
+    if (common::subOverflow(to, static_cast<Int64>(direction), last_admitted_value))
+        return {};
+
+    return last_admitted_value;
+}
+
 /** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
   * type - while the generated values are written into a column of the column's own type, which truncates whatever
   * does not fit its range. A truncated value wraps around, so the generated sequence stops being monotonic, while
@@ -251,18 +293,14 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
             applyVisitor(FieldVisitorToString(), descr.fill_from),
             type->getName());
 
-    /// TO is an exclusive bound, so it is enough that the last value it admits is representable: for example,
-    /// `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, all of which fit.
+    /// TO is an exclusive bound, so it is enough that the last value filling can generate under it is
+    /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
+    /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
-        /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are
-        /// filled through their own type, so the check above has already accepted their bounds.
-        Int64 last_admitted_value = 0;
-        const bool admits_a_representable_value = descr.fill_to.getType() == Field::Types::Int64
-            && !common::subOverflow(descr.fill_to.safeGet<Int64>(), static_cast<Int64>(direction), last_admitted_value)
-            && is_representable(Field(last_admitted_value));
+        const auto last_admitted_value = lastValueAdmittedByFillTo(descr, direction);
 
-        if (!admits_a_representable_value)
+        if (!last_admitted_value || !is_representable(Field(*last_admitted_value)))
             throw Exception(
                 ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value {} is out of range of the ORDER BY column type {}",

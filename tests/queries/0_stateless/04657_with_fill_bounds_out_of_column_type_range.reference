@@ -3,6 +3,10 @@ the exclusive TO bound may be one step outside of the range
 256	0	255
 129	-128	0
 1	5	5
+a TO bound out of range is fine when STEP stops before it
+87	0	255
+87	-128	127
+[5,250]
 in-range filling is unchanged
 [1,2,3,4,5,6,7,8,9]
 [-1,-2,-3,-4,-5,-6,-7]
