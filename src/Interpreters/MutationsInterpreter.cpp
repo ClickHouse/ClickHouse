@@ -198,6 +198,16 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+/// A skip index / projection expression may read a subcolumn (e.g. `t.a`), while an ALTER tracks
+/// the whole column it is stored in (e.g. `t`). Resolve a required column name to that storage
+/// column so a change to the parent is recognized as affecting the subcolumn. Falls back to the
+/// original name when it cannot be resolved.
+String getColumnNameInStorage(const String & column_name, const ColumnsDescription & columns)
+{
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    return column ? column->getNameInStorage() : column_name;
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -1305,10 +1315,22 @@ void MutationsInterpreter::prepare(bool dry_run)
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
+                    /// A required column may be a subcolumn of the altered column (e.g. index on `t.a`
+                    /// while `ALTER ... MODIFY COLUMN t ...`). Resolve each name to the column it is
+                    /// stored in and compare that, instead of matching the raw names, otherwise a
+                    /// subcolumn index/projection would be left stale on wide parts.
+                    auto depends_on_altered_column = [&](const Names & required_columns)
+                    {
+                        return std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & required)
+                        {
+                            return getColumnNameInStorage(required, columns_desc) == command.column_name;
+                        });
+                    };
+
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
                         const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        if (depends_on_altered_column(pk_columns))
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);
@@ -1319,7 +1341,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
                         const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
+                        if (depends_on_altered_column(index_cols))
                         {
                             switch (index_mode)
                             {
