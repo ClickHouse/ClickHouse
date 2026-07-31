@@ -2926,7 +2926,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
+        /// Consult/skip side of the query-condition cache. Disabled for UK reads (see above) and for a
+        /// read whose step turned the cache off (`allow_query_condition_cache`): that flag means this
+        /// read neither consults nor populates the cache, so it must also not skip granules based on
+        /// entries written by other queries.
+        if (!table_has_unique_key && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t

@@ -36,8 +36,10 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 -- Query-tree based parallel replicas: this is the mechanism that runs the pre-plan estimate.
 SET parallel_replicas_plan_based = 0;
 SET automatic_parallel_replicas_mode = 0;
--- Any positive value enables the estimate; 1 keeps all replicas in use for a 1M-row table.
-SET parallel_replicas_min_number_of_rows_per_replica = 1;
+-- Any positive value enables the estimate. A value above the table size makes the estimate conclude
+-- that one replica is enough, so the queries below execute locally: what is asserted is then the cache
+-- interaction of the estimate itself, not of reads on the follower replicas.
+SET parallel_replicas_min_number_of_rows_per_replica = 100000000;
 
 DROP TABLE IF EXISTS tab;
 
@@ -78,9 +80,11 @@ SELECT count() FROM system.query_condition_cache;
 SELECT '--- A TopK read sized by the pre-plan estimate must not reuse a plain entry';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
--- Prime an entry with a plain (non-TopK) read of the same predicate.
+-- Prime an entry with a plain (non-TopK) read of the same predicate. Its own hit count is not asserted:
+-- a plain query under this estimate analyzes the read twice (once for the estimate, once after
+-- `optimizePrimaryKeyConditionAndLimit` re-applies the filters), so it reuses what it just wrote.
 SELECT count() FROM tab WHERE v2 = 10000 FORMAT Null SETTINGS log_comment = '04661_plain_prime';
--- The plain read reuses its own entry: positive control that the entry exists and is matchable.
+-- The plain read reuses the entry: positive control that it exists and is matchable.
 SELECT count() FROM tab WHERE v2 = 10000 FORMAT Null SETTINGS log_comment = '04661_plain_reuse';
 -- The TopK read must not consult that entry, neither in the estimate nor in the executed read.
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null
@@ -88,7 +92,7 @@ SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null
 
 SYSTEM FLUSH LOGS query_log;
 
--- Column: (any QCC hit). Expected: TopK reads = 0, plain-prime = 0, plain-reuse = 1.
+-- Column: (any QCC hit). Expected: TopK reads = 0, plain-reuse = 1.
 SELECT
     log_comment,
     ProfileEvents['QueryConditionCacheHits'] > 0
@@ -96,7 +100,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND log_comment IN ('04661_topk_estimate_write', '04661_plain_prime', '04661_plain_reuse', '04661_topk_estimate_after_prime')
+    AND log_comment IN ('04661_topk_estimate_write', '04661_plain_reuse', '04661_topk_estimate_after_prime')
 ORDER BY event_time_microseconds;
 
 DROP TABLE tab;
