@@ -485,8 +485,8 @@ void StorageMergeTree::alter(
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
 
-    auto auto_statistics_config = getNewImplicitStatisticsConfig(new_metadata, *old_storage_settings);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_config);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
@@ -496,7 +496,10 @@ void StorageMergeTree::alter(
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        if (auto_statistics_config.changed)
+        if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
         }
 

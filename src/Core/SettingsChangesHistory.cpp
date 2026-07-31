@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"exclude_materialize_statistics_on_insert", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"},
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
@@ -1331,6 +1332,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"exclude_materialize_statistics_on_merge", "", "", "New setting. Excludes provided columns from statistics materialization during merges"},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });
@@ -1343,8 +1345,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_virtual_parts_partition_atomic_discovery", false, true, "New setting"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
             {"auto_statistics_types", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"},
-            {"auto_statistics_columns", "", "", "New setting. Allowlist of columns for automatic statistics; empty means all suitable columns"},
-            {"auto_statistics_exclude_columns", "", "", "New setting. Denylist of columns to skip for automatic statistics; takes precedence over auto_statistics_columns"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},

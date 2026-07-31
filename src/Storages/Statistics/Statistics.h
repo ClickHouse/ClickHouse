@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct Settings;
+
 constexpr std::string_view STATS_FILE_PREFIX = "statistics_";
 constexpr std::string_view STATS_FILE_SUFFIX = ".stats";
 
@@ -221,19 +223,15 @@ private:
 };
 
 void removeImplicitStatistics(ColumnsDescription & columns);
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
-/// Configuration for attaching implicit column statistics (`auto_statistics_types` and optional
-/// include/exclude column lists). Empty `include_columns` means all suitable columns; a column in
-/// `exclude_columns` is always skipped. Explicit per-column `STATISTICS(...)` is unaffected.
-struct ImplicitStatisticsConfig
-{
-    String types;
-    String include_columns;
-    String exclude_columns;
-    bool changed = false;
-};
-
-void addImplicitStatistics(ColumnsDescription & columns, const ImplicitStatisticsConfig & config);
-
+/// Create statistics objects for materialization during INSERT or merge, optionally excluding
+/// columns named in `exclude_columns_string` (comma-delimited identifiers / string literals).
+/// Returns an empty map when `materialize_statistics` is false.
+ColumnsStatistics collectStatisticsToMaterialize(
+    const ColumnsDescription & columns,
+    bool materialize_statistics,
+    const String & exclude_columns_string,
+    const Settings & settings);
 
 }

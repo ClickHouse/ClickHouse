@@ -1057,7 +1057,7 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
-    ImplicitStatisticsConfig getNewImplicitStatisticsConfig(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.

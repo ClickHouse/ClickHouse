@@ -1958,7 +1958,42 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, false, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS.
+
+See also [exclude_materialize_statistics_on_insert](#exclude_materialize_statistics_on_insert).
+)", 0) \
+    DECLARE(String, exclude_materialize_statistics_on_insert, "", R"(
+Excludes specified columns from having statistics built and stored during INSERTs. The excluded columns' statistics will still be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_statistics_on_merge) or by an explicit
+[MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md) query.
+
+Has no effect if [materialize_statistics_on_insert](#materialize_statistics_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS auto_statistics_types = 'basic';
+
+SET materialize_statistics_on_insert = 1;
+SET exclude_materialize_statistics_on_insert = 'b'; -- statistics for `b` will not be updated upon insert
+--SET exclude_materialize_statistics_on_insert = 'b, c'; -- neither column would get statistics on insert
+
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100); -- only `a` (and possibly `c`) get statistics
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100, 100)
+SETTINGS exclude_materialize_statistics_on_insert = 'c';
+
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- this query can be used to explicitly materialize statistics
+
+SET exclude_materialize_statistics_on_insert = DEFAULT; -- reset setting to default
+```
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.

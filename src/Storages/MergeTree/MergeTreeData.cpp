@@ -341,8 +341,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
-    extern const MergeTreeSettingsString auto_statistics_columns;
-    extern const MergeTreeSettingsString auto_statistics_exclude_columns;
     extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -5054,8 +5052,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    auto auto_statistics_config = getNewImplicitStatisticsConfig(new_metadata, *settings_from_storage);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_config);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -5863,29 +5861,17 @@ void MergeTreeData::changeSettings(
     }
 }
 
-ImplicitStatisticsConfig MergeTreeData::getNewImplicitStatisticsConfig(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
+std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
 {
-    ImplicitStatisticsConfig config;
-
     if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
-        return config;
+        return {"", false};
 
     Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
-    Field new_include_columns = new_metadata.getSettingChange("auto_statistics_columns");
-    Field new_exclude_columns = new_metadata.getSettingChange("auto_statistics_exclude_columns");
 
-    config.changed = !new_statistics_types.isNull() || !new_include_columns.isNull() || !new_exclude_columns.isNull();
-    config.types = new_statistics_types.isNull()
-        ? old_settings[MergeTreeSetting::auto_statistics_types]
-        : new_statistics_types.safeGet<String>();
-    config.include_columns = new_include_columns.isNull()
-        ? old_settings[MergeTreeSetting::auto_statistics_columns]
-        : new_include_columns.safeGet<String>();
-    config.exclude_columns = new_exclude_columns.isNull()
-        ? old_settings[MergeTreeSetting::auto_statistics_exclude_columns]
-        : new_exclude_columns.safeGet<String>();
+    if (new_statistics_types.isNull())
+        return std::make_pair(old_settings[MergeTreeSetting::auto_statistics_types], false);
 
-    return config;
+    return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

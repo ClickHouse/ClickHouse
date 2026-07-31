@@ -1821,11 +1821,11 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
-    /// Implicit statistics (auto_statistics_types / column lists) are not serialized to ZooKeeper,
+    /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
     /// so we need to re-add them after loading metadata from ZK.
     auto settings = getSettings();
-    auto auto_statistics_config = getNewImplicitStatisticsConfig(new_metadata, *settings);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_config);
+    auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
+    addImplicitStatistics(new_metadata.columns, auto_stats_types);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
@@ -6811,8 +6811,8 @@ void StorageReplicatedMergeTree::alter(
     auto old_settings = getSettings();
   
     commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
-    auto auto_statistics_config = getNewImplicitStatisticsConfig(future_metadata, *old_settings);
-    addImplicitStatistics(future_metadata.columns, auto_statistics_config);
+    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
     /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
     /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
@@ -6833,7 +6833,10 @@ void StorageReplicatedMergeTree::alter(
         merge_strategy_picker.refreshState();
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        if (auto_statistics_config.changed)
+        if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
 

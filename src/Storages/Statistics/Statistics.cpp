@@ -27,7 +27,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
 #include "config.h" /// USE_DATASKETCHES
@@ -878,31 +877,18 @@ void removeImplicitStatistics(ColumnsDescription & columns)
 }
 
 
-void addImplicitStatistics(ColumnsDescription & columns, const ImplicitStatisticsConfig & config)
+void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
 {
-    if (config.types.empty())
+    if (statistics_types_str.empty())
         return;
 
-    auto stats_ast_map = parseColumnStatisticsFromString(config.types);
+    auto stats_ast_map = parseColumnStatisticsFromString(statistics_types_str);
     const auto & factory = MergeTreeStatisticsFactory::instance();
-
-    const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
-    std::unordered_set<String> include_columns;
-    std::unordered_set<String> exclude_columns;
-    if (!config.include_columns.empty())
-        include_columns = parseIdentifiersOrStringLiteralsToSet(config.include_columns, settings);
-    if (!config.exclude_columns.empty())
-        exclude_columns = parseIdentifiersOrStringLiteralsToSet(config.exclude_columns, settings);
 
     for (const auto & column : columns)
     {
         auto default_kind = column.default_desc.kind;
         if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
-            continue;
-
-        if (!include_columns.empty() && !include_columns.contains(column.name))
-            continue;
-        if (exclude_columns.contains(column.name))
             continue;
 
         ColumnStatisticsDescription stats_desc;
@@ -918,6 +904,35 @@ void addImplicitStatistics(ColumnsDescription & columns, const ImplicitStatistic
             });
         }
     }
+}
+
+ColumnsStatistics collectStatisticsToMaterialize(
+    const ColumnsDescription & columns,
+    bool materialize_statistics,
+    const String & exclude_columns_string,
+    const Settings & settings)
+{
+    ColumnsStatistics statistics;
+    if (!materialize_statistics)
+        return statistics;
+
+    std::unordered_set<String> exclude_column_names;
+    if (!exclude_columns_string.empty())
+        exclude_column_names = parseIdentifiersOrStringLiteralsToSet(exclude_columns_string, settings);
+
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+    for (const auto & column : columns)
+    {
+        if (column.statistics.empty())
+            continue;
+
+        if (exclude_column_names.contains(column.name))
+            continue;
+
+        statistics.emplace(column.name, factory.get(column));
+    }
+
+    return statistics;
 }
 
 }

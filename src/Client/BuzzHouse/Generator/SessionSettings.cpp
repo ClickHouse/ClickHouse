@@ -869,6 +869,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"except_default_mode", setSetting},
     {"exclude_materialize_skip_indexes_on_insert",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
+    {"exclude_materialize_statistics_on_insert",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"c0", "c1", "c2"}); }, {}, false)},
     {"explain_query_plan_default",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
