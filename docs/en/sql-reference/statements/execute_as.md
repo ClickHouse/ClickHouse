@@ -7,6 +7,10 @@ title: 'EXECUTE AS Statement'
 doc_type: 'reference'
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge />
+
 # EXECUTE AS Statement
 
 Allows to execute queries on behalf of a different user.

@@ -74,12 +74,20 @@ public:
         trim_backward_slashes(table_location);
 
         /// Normalize: non-URI table_location should start with '/'
-        if (!table_location.empty() && table_location.find("://") == String::npos && table_location[0] != '/')
+        if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    {
+        if (storage_path.size() > table_root.size()
+            && storage_path.starts_with(table_root))
+            return IcebergPathFromMetadata::deserialize(table_location + storage_path.substr(table_root.size()));
+        return IcebergPathFromMetadata::deserialize(table_location + storage_path);
+    }
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.

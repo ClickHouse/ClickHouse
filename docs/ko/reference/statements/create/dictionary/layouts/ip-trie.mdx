@@ -1,0 +1,122 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ip-trie
+title: 'ip_trie 딕셔너리 레이아웃'
+sidebarTitle: 'ip_trie'
+description: '빠른 IP 주소 프리픽스 조회를 위해 딕셔너리를 trie로 저장합니다.'
+doc_type: '참고'
+---
+
+`ip_trie` 딕셔너리는 네트워크 프리픽스를 기준으로 IP 주소를 조회할 수 있도록 설계되었습니다.
+이 딕셔너리는 CIDR 표기법으로 IP 범위를 저장하며, 지정된 IP가 어떤 프리픽스(예: 서브넷 또는 ASN 범위)에 속하는지 빠르게 판별할 수 있습니다. 따라서 지리적 위치 확인이나 네트워크 분류와 같은 IP 기반 검색에 적합합니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="ip_trie 딕셔너리를 사용한 IP 기반 검색" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+**예시**
+
+ClickHouse에 IP 프리픽스와 매핑 정보가 포함된 테이블이 있다고 가정하겠습니다:
+
+```sql
+CREATE TABLE my_ip_addresses (
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
+```
+
+```sql
+INSERT INTO my_ip_addresses VALUES
+    ('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
+
+이 테이블에 대해 `ip_trie` 딕셔너리를 정의해 보겠습니다. `ip_trie` 레이아웃은 복합 키를 필요로 합니다.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY my_ip_trie_dictionary (
+        prefix String,
+        asn UInt32,
+        cca2 String DEFAULT '??'
+    )
+    PRIMARY KEY prefix
+    SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+    LAYOUT(IP_TRIE)
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>prefix</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        <attribute>
+                <name>asn</name>
+                <type>UInt32</type>
+                <null_value />
+        </attribute>
+        <attribute>
+                <name>cca2</name>
+                <type>String</type>
+                <null_value>??</null_value>
+        </attribute>
+        ...
+    </structure>
+    <layout>
+        <ip_trie>
+            <!-- 키 속성 `prefix`는 dictGetString을 통해 가져올 수 있습니다. -->
+            <!-- 이 옵션은 메모리 사용량을 늘립니다. -->
+            <access_to_key_from_attributes>true</access_to_key_from_attributes>
+        </ip_trie>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+키에는 허용된 IP 프리픽스를 포함하는 `String` 타입의 속성이 하나만 있어야 합니다. 다른 타입은 아직 지원되지 않습니다.
+
+구문은 다음과 같습니다.
+
+```sql
+dictGetT('dict_name', 'attr_name', ip)
+```
+
+이 함수는 IPv4에는 `UInt32`를, IPv6에는 `FixedString(16)`를 받습니다. 예시는 다음과 같습니다:
+
+```sql
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
+```
+
+다른 타입은 아직 지원되지 않습니다. 이 함수는 이 IP 주소에 해당하는 프리픽스의 속성을 반환합니다. 겹치는 프리픽스가 있으면 가장 구체적인 프리픽스가 반환됩니다.
+
+데이터는 RAM에 모두 들어가야 합니다.

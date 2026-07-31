@@ -1,0 +1,177 @@
+---
+description: 'DROP SQL 문에 대한 문서'
+sidebarTitle: 'DROP'
+slug: /sql-reference/statements/drop
+title: 'DROP SQL 문'
+doc_type: 'reference'
+---
+
+기존 엔터티를 삭제합니다. `IF EXISTS` 절을 지정하면 엔터티가 존재하지 않더라도 이 쿼리는 오류를 반환하지 않습니다. `SYNC` 수정자를 지정하면 엔터티가 즉시 삭제됩니다.
+
+<div id="drop-database">
+  ## DROP DATABASE
+</div>
+
+`db` 데이터베이스 내의 모든 테이블을 삭제한 후, `db` 데이터베이스 자체도 삭제합니다.
+
+구문:
+
+```sql
+DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
+```
+
+<div id="drop-table">
+  ## DROP TABLE
+</div>
+
+하나 이상의 테이블을 삭제합니다.
+
+<Tip>
+  테이블 삭제를 취소하려면 [UNDROP TABLE](/ko/reference/statements/undrop)을 참조하십시오.
+</Tip>
+
+구문:
+
+```sql
+DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
+```
+
+제한 사항:
+
+* `IF EMPTY` 절이 지정되면, server는 쿼리를 받은 레플리카에서만 테이블이 비어 있는지 확인합니다.
+* 여러 테이블을 한 번에 삭제하는 작업은 원자적 작업이 아닙니다. 즉, 하나의 테이블 삭제에 실패하면 이후 테이블은 삭제되지 않습니다.
+
+<div id="drop-dictionary">
+  ## DROP DICTIONARY
+</div>
+
+딕셔너리를 삭제합니다.
+
+구문:
+
+```sql
+DROP DICTIONARY [IF EXISTS] [db.]name [SYNC]
+```
+
+<div id="drop-user">
+  ## DROP USER
+</div>
+
+사용자를 삭제합니다.
+
+구문:
+
+```sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-role">
+  ## DROP ROLE
+</div>
+
+역할을 삭제합니다. 삭제된 역할은 할당되어 있던 모든 엔터티에서 해제됩니다.
+
+구문:
+
+```sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-row-policy">
+  ## ROW POLICY 삭제
+</div>
+
+ROW POLICY를 삭제합니다. 삭제된 ROW POLICY는 할당된 모든 엔터티에서 해제됩니다.
+
+구문:
+
+```sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-masking-policy">
+  ## DROP MASKING POLICY
+</div>
+
+마스킹 정책을 삭제합니다.
+
+구문:
+
+```sql
+DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-quota">
+  ## DROP QUOTA
+</div>
+
+QUOTA를 삭제합니다. 삭제된 QUOTA는 할당된 모든 엔터티에서 해제됩니다.
+
+구문:
+
+```sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-settings-profile">
+  ## DROP SETTINGS PROFILE
+</div>
+
+설정 프로필을 삭제합니다. 삭제된 설정 프로필은 할당된 모든 엔터티에서 해제됩니다.
+
+구문:
+
+```sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+<div id="drop-view">
+  ## DROP VIEW
+</div>
+
+뷰를 삭제합니다. 뷰는 `DROP TABLE` 명령으로도 삭제할 수 있지만, `DROP VIEW`는 `[db.]name`이 뷰인지 확인한 후 삭제합니다.
+
+구문:
+
+```sql
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<div id="drop-function">
+  ## DROP FUNCTION
+</div>
+
+[CREATE FUNCTION](/ko/reference/statements/create/function)으로 생성된 사용자 정의 함수를 삭제합니다.
+시스템 함수는 삭제할 수 없습니다.
+
+**구문**
+
+```sql
+DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
+```
+
+**예시**
+
+```sql
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+DROP FUNCTION linear_equation;
+```
+
+<div id="drop-named-collection">
+  ## DROP NAMED COLLECTION
+</div>
+
+명명된 컬렉션을 삭제합니다.
+
+**구문**
+
+```sql
+DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
+```
+
+**예시**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+DROP NAMED COLLECTION foobar;
+```
