@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
@@ -21,11 +22,11 @@ protected:
     const DataTypes & data_types;
     const Serializations & serializations;
 
-    std::vector<String> serialized = std::vector<String>(columns.size());
+    VectorWithMemoryTracking<String> serialized = VectorWithMemoryTracking<String>(columns.size());
 
     // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
     size_t null_bitmap_size = (columns.size() + 7 + 2) / 8;
-    std::vector<char> null_bitmap = std::vector<char>(null_bitmap_size, static_cast<char>(0));
+    VectorWithMemoryTracking<char> null_bitmap = VectorWithMemoryTracking<char>(null_bitmap_size, static_cast<char>(0));
 
     size_t payload_size = 0;
 

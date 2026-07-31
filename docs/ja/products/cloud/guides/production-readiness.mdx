@@ -1,0 +1,242 @@
+---
+slug: /cloud/guides/production-readiness
+sidebarTitle: '本番運用準備'
+title: 'ClickHouse Cloud 本番運用準備ガイド'
+description: 'クイックスタートからエンタープライズ対応の ClickHouse Cloud デプロイメントへ移行する組織向けガイド'
+keywords: ['本番運用準備', 'エンタープライズ', 'saml', 'sso', 'terraform', '監視', 'バックアップ', '災害復旧']
+doc_type: 'guide'
+---
+
+クイックスタートガイドを完了し、データが流れているアクティブなサービスを利用している組織向け
+
+<Info>
+  **要点**
+
+  このガイドは、クイックスタートからエンタープライズ対応の ClickHouse Cloud デプロイメントへ移行するのに役立ちます。次の方法を学べます。
+
+  * 安全にテストできるように、dev/staging/production の各環境を分離して構築する
+  * ID プロバイダーと SAML/SSO 認証を統合する
+  * Terraform または Cloud API を使ってデプロイメントを自動化する
+  * 監視をアラート基盤 (Prometheus、PagerDuty) と連携する
+  * バックアップ手順を検証し、災害復旧プロセスを文書化する
+</Info>
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+ClickHouse Cloud は、すでにビジネスワークロード向けに問題なく稼働しています。次のステップは、コンプライアンス監査、未検証のクエリによる本番インシデント、あるいは社内システムとのインテグレーションに関する IT 要件などをきっかけに、デプロイメントをエンタープライズの本番基準を満たせるレベルまで成熟させることです。
+
+ClickHouse Cloud のマネージドプラットフォームは、インフラストラクチャの運用、自動スケーリング、システムメンテナンスを担います。エンタープライズの本番運用に向けた準備では、認証システム、監視インフラストラクチャ、自動化ツール、事業継続プロセスを通じて、ClickHouse Cloud をより広範な IT 環境に接続する必要があります。
+
+エンタープライズの本番運用に向けて求められる責任:
+
+* 本番デプロイメントの前に安全にテストできるよう、環境を分離して整備する
+* 既存の ID プロバイダーおよびアクセス管理システムと統合する
+* 監視とアラートを運用インフラストラクチャに接続する
+* 一貫した管理のために Infrastructure as Code のプラクティスを導入する
+* バックアップの検証と災害復旧の手順を確立する
+* コスト管理と請求のインテグレーションを設定する
+
+このガイドでは、これらの各領域を順に説明し、稼働中の ClickHouse Cloud デプロイメントをエンタープライズ対応のシステムへ移行できるよう支援します。
+
+<div id="environment-strategy">
+  ## 環境戦略
+</div>
+
+本番ワークロードに影響が及ぶ前に変更を安全にテストできるよう、環境を分離して確立してください。本番インシデントの多くは、未検証のクエリや設定変更を本番システムに直接デプロイしたことが原因です。
+
+<Note>
+  **ClickHouse Cloud では、各環境はそれぞれ独立したサービスです。** 組織内で本番、ステージング、開発用に個別のサービスをプロビジョニングし、それぞれが独自のコンピュートリソース、ストレージ、エンドポイントを持つようにします。
+</Note>
+
+**環境構成**: 本番 (稼働中のワークロード) 、ステージング (本番相当の検証) 、開発 (個人またはチームでの実験) の各環境を維持します。
+
+**テスト**: クエリは本番へデプロイする前にステージングでテストしてください。小規模なデータセットでは動作するクエリでも、本番規模ではメモリ不足、過剰な CPU 使用、実行速度の低下を引き起こすことがよくあります。ユーザー権限、クォータ、サービス設定を含む設定変更もステージングで検証してください。本番環境で設定ミスが見つかると、即座に運用インシデントにつながります。
+
+**サイジング**: ステージングサービスは、本番負荷の特性に近い規模になるようサイジングしてください。インフラストラクチャが本番より大幅に小さいと、リソース競合やスケーリングの問題が表面化しない可能性があります。定期的なデータ更新や合成データの生成によって、本番を代表するデータセットを使用してください。ステージング環境の適切なサイジング方法やサービスの適切なスケーリング方法については、[Sizing and hardware recommendations](/ja/guides/oss/best-practices/sizing-and-hardware-recommendations) と [Scaling in ClickHouse Cloud](/ja/products/cloud/features/autoscaling/overview) のドキュメントを参照してください。これらの資料には、メモリ、CPU、ストレージのサイジングに関する実践的な指針に加え、垂直・水平スケーリングの選択肢の詳細も記載されており、ステージング環境を本番ワークロードに合わせるのに役立ちます。
+
+<div id="private-networking">
+  ## プライベート ネットワーキング
+</div>
+
+ClickHouse Cloud の[プライベート ネットワーキング](/ja/products/cloud/guides/security/connectivity/private-networking/index)を使用すると、ClickHouse のサービスをクラウドの仮想ネットワークに直接接続でき、データがパブリック インターネットを経由しないようにできます。これは、厳格なセキュリティ要件やコンプライアンス要件がある組織、またはプライベート サブネットでアプリケーションを実行している組織にとって不可欠です。
+
+ClickHouse Cloud は、以下の方式でプライベート ネットワーキングをサポートしています。
+
+* [AWS PrivateLink](/ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink): VPC と ClickHouse Cloud 間で、トラフィックをパブリック インターネットに公開することなく安全に接続できます。クロスリージョン接続をサポートしており、Scale および Enterprise プランで利用できます。Setup では、プライベートリンクの エンドポイント を作成し、これを ClickHouse Cloud の 組織 と service の許可リストに追加します。詳細と手順については、こちらのドキュメントを参照してください。
+* [GCP Private Service Connect](/ja/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect) (PSC): Google Cloud の VPC から ClickHouse Cloud へのプライベート アクセスを可能にします。AWS と同様に、Scale および Enterprise プランで利用でき、service の endpoints と許可リストを明示的に設定する必要があります。詳細は、こちらを参照してください。
+* [Azure Private Link](/ja/products/cloud/guides/security/connectivity/private-networking/azure-privatelink): Azure VNet と ClickHouse Cloud 間のプライベート接続を提供し、クロスリージョン接続をサポートします。Setup では、connection alias を取得し、プライベート エンドポイントを作成したうえで、許可リストを更新します。詳細は、こちらを参照してください。
+
+さらに技術的な詳細や段階的なセットアップ手順が必要な場合は、各プロバイダー のリンク先ドキュメントに包括的なガイドがあります。
+
+<div id="enterprise-authentication">
+  ## エンタープライズ認証とユーザー管理
+</div>
+
+コンソールでのユーザー管理からエンタープライズ認証インテグレーションへ移行することは、本番運用に向けた準備に不可欠です。
+
+<div id="sso-authentication">
+  ### SSO とソーシャル認証
+</div>
+
+[SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup): Enterprise ティア の ClickHouse Cloud は、Okta、Azure Active Directory、Google Workspace などのアイデンティティ プロバイダーとの SAML インテグレーションをサポートしています。SAML の設定には ClickHouse Support との調整が必要で、IdP メタデータの提供と属性マッピングの設定を行います。
+
+[Social SSO](/ja/products/cloud/guides/security/cloud-access-management/manage-my-account): ClickHouse Cloud は、SAML SSO と同等に安全な代替手段として、ソーシャル認証プロバイダー (Google、Microsoft、GitHub) にも対応しています。Social SSO では、既存の SAML インフラストラクチャがない組織でも、エンタープライズ向けのセキュリティ基準を維持しながら、より短時間でセットアップできます。
+
+<Info>
+  **重要な制限事項**
+
+  SAML または Social SSO で認証されたユーザーには、デフォルトで &quot;Member&quot; ロールが割り当てられます。追加のロールは、初回ログイン後に管理者が手動で付与する必要があります。グループからロールへのマッピングとロールの自動割り当ては、現時点ではサポートされていません。
+</Info>
+
+<div id="access-control-design">
+  ### アクセス制御の設計
+</div>
+
+ClickHouse Cloud では、組織レベルのロール (Admin、Developer、Billing、Member) と、サービス/データベースレベルのロール (Service Admin、Read Only、SQL Console ロール) を使用します。最小権限の原則に基づき、職務ごとにロールを設計してください。
+
+* **アプリケーションユーザー**: 特定のデータベースやテーブルにアクセスできるサービスアカウント
+* **アナリストユーザー**: 整備済みのデータセットやレポート用ビューへの読み取り専用アクセス
+* **管理者ユーザー**: すべての管理権限
+
+クォータ、各種制限、設定プロファイルを設定し、ユーザーやロールごとのリソース使用量を管理します。個々のクエリがシステム性能に影響を与えないよう、メモリ制限と実行時間制限を設定してください。監査ログ、セッションログ、クエリログを通じてリソース使用量を監視し、頻繁に制限に達しているユーザーやアプリケーションを特定します。ClickHouse Cloud の監査機能を使って、定期的にアクセス権レビューを実施してください。
+
+<div id="user-lifecycle-management">
+  ### ユーザーライフサイクル管理の制限事項
+</div>
+
+ClickHouse Cloud は、Okta をサポートする [SCIM provisioning](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) をプライベートプレビューで提供しています。SCIM ではユーザーとグループのライフサイクル管理が自動化されるため、IdP で割り当てや割り当て解除を行うと、ユーザーは自動的に作成または削除されます。SCIM を使用していない場合、IdP から削除しただけでは不十分で、ClickHouse Cloud コンソール からもユーザーを手動で削除する必要があります。その場合は、手動でのユーザー管理プロセスを考慮してください。
+
+[クラウドアクセス管理](/ja/products/cloud/guides/security/cloud-access-management/index) と [SAML SSO の設定](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) について詳しくは、こちらをご覧ください。
+
+<div id="infrastructure-as-code">
+  ## Infrastructure as Code と自動化
+</div>
+
+Infrastructure as Code の実践と API の自動化を通じて ClickHouse Cloud を管理することで、デプロイメント構成の一貫性を保ち、バージョン管理と再現性を確保できます。
+
+<div id="terraform-provider">
+  ### Terraform プロバイダー
+</div>
+
+ClickHouse Cloud コンソールで作成した API キーを使用して、ClickHouse Terraform プロバイダーを設定します。
+
+```terraform
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "clickhouse" {
+  environment     = "production"
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+Terraform プロバイダーは、サービスのプロビジョニング、IP Access List、ユーザー管理をサポートしています。プロバイダーでカバーされていない機能については、コンソールで管理するか、ClickHouse Support にお問い合わせください。
+
+サービス設定やネットワークアクセス制御を含む詳しい例については、[Cloud API の使用方法を示す Terraform の例](/ja/resources/support-center/knowledge-base/integrations/terraform-example)を参照してください。
+
+<div id="cloud-api-integration">
+  ### Cloud API インテグレーション
+</div>
+
+既存の自動化フレームワークを使用している組織では、Cloud APIを介してClickHouse Cloudの管理機能を直接統合できます。APIにより、サービスのライフサイクル管理、ユーザー管理、バックアップ操作、監視データの取得をプログラムから行えます。
+
+一般的なAPIインテグレーションのパターン:
+
+* 社内のチケット管理システムと統合されたカスタムのProvisioningワークフロー
+* アプリケーションのデプロイメントスケジュールに基づく自動的なスケーリング調整
+* コンプライアンスワークフロー向けの、プログラムによるバックアップの検証とレポート作成
+* 既存のインフラストラクチャ管理プラットフォームとのインテグレーション
+
+APIの認証には、Terraformと同じトークンベースの方式を使用します。完全なAPI リファレンスとインテグレーション例については、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview)のドキュメントを参照してください。
+
+<div id="monitoring-integration">
+  ## 監視と運用のインテグレーション
+</div>
+
+ClickHouse Cloud を既存の監視インフラストラクチャに接続することで、状況を可視化し、問題を早期に検知できます。
+
+<div id="built-in-monitoring">
+  ### 組み込みの監視
+</div>
+
+ClickHouse Cloud には、1 秒あたりのクエリ数、メモリ使用量、CPU 使用率、ストレージ使用率などのリアルタイムのメトリクスを確認できる高度なダッシュボードが用意されています。Cloud Console の 監視 → 高度なダッシュボード からアクセスできます。特定のワークロードパターンやチームのリソース消費に合わせたカスタムダッシュボードも作成できます。
+
+<Info>
+  **本番環境でよくあるギャップ**
+
+  エンタープライズ向けインシデント管理システムとのプロアクティブなアラート連携や、コスト監視の自動化が不足しがちです。組み込みダッシュボードで可視化はできますが、自動アラートを実現するには外部インテグレーションが必要です。
+</Info>
+
+<div id="production-alerting">
+  ### 本番環境でのアラート設定
+</div>
+
+**組み込み機能**: ClickHouse Cloud では、請求イベント、スケーリングイベント、サービスの健全性に関する通知を、メール、UI、Slack を通じて提供します。配信チャネルと通知の重大度は、コンソールの通知設定で構成できます。
+
+**Enterprise インテグレーション**: 高度なアラート機能 (PagerDuty、カスタム webhook) には、Prometheus エンドポイントを使用して、メトリクスを既存の監視インフラストラクチャにエクスポートします。
+
+```yaml
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+```
+
+Prometheus/Grafana の詳細な設定や高度なアラート設定を含む包括的なセットアップについては、[ClickHouse Cloud オブザーバビリティガイド](/ja/guides/use-cases/observability/cloud-monitoring#prometheus)を参照してください。
+
+<div id="business-continuity">
+  ## 事業継続性とサポートインテグレーション
+</div>
+
+バックアップ検証の手順とサポートインテグレーションを整備することで、ClickHouse Cloud デプロイメントはインシデント発生時にも復旧でき、必要なときにサポートを受けられるようになります。
+
+<div id="backup-strategy">
+  ### バックアップ戦略の評価
+</div>
+
+ClickHouse Cloud では、保持期間を設定できる自動バックアップを利用できます。現在のバックアップ設定が、コンプライアンス要件と復旧要件を満たしているか評価してください。バックアップの保存先や暗号化に関して特定のコンプライアンス要件がある場合は、ClickHouse Cloud を構成して、お客様自身の Cloud ストレージバケット (BYOB) にバックアップを保存できます。BYOB の設定については ClickHouse Support にお問い合わせください。
+
+<div id="validate-test-recovery">
+  ### 復旧手順の検証とテスト
+</div>
+
+ほとんどの組織は、実際に復旧が必要になって初めてバックアップの欠落に気づきます。インシデントが発生する前にバックアップの完全性を確認し、復旧手順をテストできるよう、定期的な検証サイクルを確立してください。非本番環境で定期的にテスト復元を実施し、所要時間の見積もりを含む復旧手順を段階ごとに文書化し、復元したデータの完全性とアプリケーションの動作を確認し、さまざまな障害シナリオ (サービスの削除、データ破損、リージョン障害) で復旧手順をテストしてください。オンコール対応チームが参照できる、最新の復旧ランブックを維持してください。
+
+重要な本番サービスについては、少なくとも四半期に一度はバックアップの復元をテストしてください。厳格なコンプライアンス要件がある組織では、毎月、あるいは毎週の検証サイクルが必要になる場合があります。
+
+<div id="disaster-recovery-planning">
+  ### 災害復旧計画
+</div>
+
+現在のバックアップ構成が業務要件を満たしていることを確認するため、目標復旧時間 (RTO) と目標復旧時点 (RPO) を文書化してください。バックアップ復元の定期的なテスト計画を策定し、復旧手順書を常に最新の状態に保ってください。
+
+**クロスリージョンのバックアップストレージ**: 地理的な災害復旧要件がある組織では、ClickHouse Cloud を構成して、別リージョンにある顧客所有のストレージバケットへバックアップをエクスポートできます。これによりリージョン障害に対する保護が可能になりますが、復元は手動で実施する必要があります。クロスリージョンのバックアップエクスポートを実装するには、ClickHouse Support にお問い合わせください。今後のプラットフォーム リリースでは、自動化されたマルチリージョン レプリケーション機能が提供される予定です。
+
+<div id="production-support">
+  ### 本番環境のサポート連携
+</div>
+
+現在のサポートティアにおけるSLAの内容とエスカレーション手順を把握してください。どのタイミングでClickHouse Supportに連絡するかを定めた社内ランブックを作成し、これらの手順を既存のインシデント管理プロセスに組み込んでください。
+
+詳細は、[ClickHouse Cloudのバックアップと復旧](/ja/products/cloud/guides/backups/review-and-restore-backups)および[サポートサービス](/ja/resources/about/support)を参照してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+このガイドで紹介したインテグレーションと手順を実装したら、[Cloud resource tour](/ja/products/cloud/getting-started/resource-tour) を参照し、[監視](/ja/products/cloud/getting-started/resource-tour#monitoring)、[セキュリティ](/ja/products/cloud/getting-started/resource-tour#security)、[コスト最適化](/ja/products/cloud/getting-started/resource-tour#cost-optimization) に関するガイドを確認してください。
+
+現在の [サービスティアの制限](/ja/products/cloud/features/cloud-tiers) が本番環境での運用に影響している場合は、[プライベートネットワーキング](/ja/products/cloud/guides/security/connectivity/private-networking/index)、[TDE/CMEK](/ja/products/cloud/guides/security/cmek) (顧客管理暗号鍵による透過的データ暗号化) 、[高度なバックアップオプション](/ja/products/cloud/guides/backups/configurable-backups) など、より高度な機能を利用するためのアップグレードを検討してください。

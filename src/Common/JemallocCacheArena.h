@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 
 namespace DB::JemallocCacheArena
 {

@@ -1,0 +1,41 @@
+---
+title: '监控 ClickHouse Cloud 部署'
+slug: /cloud/monitoring
+description: 'ClickHouse Cloud 监控与可观测性能力概览'
+keywords: ['cloud', '监控', '可观测性', '指标']
+sidebarTitle: '概览'
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+本指南为企业团队介绍 ClickHouse Cloud 生产环境部署的监控与可观测性能力。企业客户经常会询问有哪些开箱即用的监控功能、如何与现有可观测性技术栈集成 (包括 Datadog 和 AWS CloudWatch 等工具) ，以及 ClickHouse Cloud 的监控能力与 self-hosted 部署相比有何差异。
+
+用户可通过以下方式监控其 ClickHouse 部署：
+
+| 部分                                                                                     | 描述                                                | 会唤醒空闲服务吗？ | 所需设置            |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------- | --------- | --------------- |
+| [Cloud Console 仪表盘](/zh/products/cloud/features/monitoring/cloud-console)          | 使用内置仪表盘进行日常监控，涵盖服务健康状态、资源利用率和查询性能                 | 否         | 无               |
+| [Notifications](/zh/products/cloud/features/monitoring/notifications)                     | 针对扩缩容事件、错误、变更和计费的告警                               | 否         | 无 (可自定义)        |
+| [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus)                  | 将指标导出到 Grafana、Datadog 或其他兼容 Prometheus 的工具       | 否         | API key + 抓取器配置 |
+| [System table queries](/zh/products/cloud/features/monitoring/system-tables)              | 通过直接对 `system` 表执行 SQL 查询进行深度调试和自定义分析             | 是         | SQL 查询          |
+| [Community and partner integrations](/zh/products/cloud/features/monitoring/integrations) | Datadog agent 集成、社区监控工具以及 Billing &amp; Usage API | 视情况而定     | 取决于具体工具         |
+| [Advanced dashboard reference](/zh/products/cloud/features/monitoring/advanced-dashboard) | 对各高级仪表板可视化的详细参考说明，包括故障排查示例                        | 否         | 无               |
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+打开 ClickHouse Cloud 控制台，切换到 **Monitoring** 选项卡。这篇[博客](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)总结了入门时常见的一些注意事项。
+
+对于大多数用户来说，[Cloud Console 仪表盘](/zh/products/cloud/features/monitoring/cloud-console)无需任何配置，就足以监控服务健康状况、资源利用率和查询性能。如果您需要集成外部监控栈，请从 [Prometheus 兼容的指标端点](/zh/products/cloud/features/monitoring/prometheus)开始。
+
+<div id="system-impact">
+  ## 系统影响考量
+</div>
+
+上述方法要么依赖 Prometheus 端点，要么由 ClickHouse Cloud 管理，或者直接[查询系统表](/zh/products/cloud/features/monitoring/system-tables)。其中最后一种方式需要直接查询生产 ClickHouse 服务，这会给被观测系统增加查询负载，并使 ClickHouse Cloud 实例无法进入[空闲状态](/zh/products/cloud/features/autoscaling/overview)，从而可能影响成本。此外，如果生产系统发生故障，由于两者相互耦合，监控也可能受到影响。
+
+直接查询系统表非常适合深入查看内部信息和进行调试，但不太适合实时生产监控。[Cloud Console 仪表盘](/zh/products/cloud/features/monitoring/cloud-console)和 [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus) 都使用预先抓取的指标，不会唤醒空闲服务，因此更适合持续性的生产监控。请在详细的系统分析能力与运维开销之间权衡这些取舍。
