@@ -286,13 +286,23 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     const auto & column_defaults = info.columns_description.getDefaults();
     NameSet names_in_default_expressions;
     std::vector<String> names_to_visit;
-    for (const auto & column : info.source_header)
+    auto seed_defaulted_column = [&](const String & name)
     {
-        if (!column_defaults.contains(column.name))
-            continue;
-        names_in_default_expressions.insert(column.name);
-        names_to_visit.push_back(column.name);
-    }
+        if (column_defaults.contains(name) && names_in_default_expressions.insert(name).second)
+            names_to_visit.push_back(name);
+    };
+    for (const auto & column : info.source_header)
+        seed_defaulted_column(column.name);
+    /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
+    /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
+    /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
+    /// pins the inputs of its expression to the main branch just like a visible column.
+    if (info.row_level_filter)
+        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
+            seed_defaulted_column(column.name);
+    if (info.prewhere_info)
+        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
+            seed_defaulted_column(column.name);
     while (!names_to_visit.empty())
     {
         const String name = names_to_visit.back();
