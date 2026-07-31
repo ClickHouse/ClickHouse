@@ -67,11 +67,14 @@ DROP TABLE IF EXISTS u_04327;
 CREATE TABLE u_04327 (id UInt32, w Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO u_04327 SELECT number, number * 3 FROM numbers(4);
 
--- Parallel replicas are pinned off because make_distributed_plan rejects them outright
--- (SUPPORT_IS_DISABLED) and the test runner randomizes them on.
+-- make_distributed_plan rejects two things this shape would otherwise hit, both with
+-- SUPPORT_IS_DISABLED, so both are pinned: parallel replicas, which the test runner randomizes on,
+-- and a non-zero max_rows_to_group_by, which arrives from the ambient limits profile rather than
+-- from randomization (tests/config/users.d/limits.yaml sets 10G and install.sh links it for every
+-- lane, so --no-random-settings does not help).
 SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_force_shuffle_aggregation = 1,
-         enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+         enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0;
 
 SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id;
 
@@ -82,7 +85,7 @@ SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_
 SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
     EXPLAIN SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_force_shuffle_aggregation = 1,
-             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0);
+             enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0);
 
 SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
     EXPLAIN SELECT id, count() FROM t_04327 WHERE id >= (SELECT max(w) FROM u_04327 WHERE u_04327.id = t_04327.id) GROUP BY id ORDER BY id);
