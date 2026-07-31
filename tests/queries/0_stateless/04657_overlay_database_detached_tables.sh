@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# A read-only `Overlay` facade has no detached tables of its own, and a whole-server scan of the
-# detached tables must not fail because a facade is present: `system.detached_tables` opens the
-# detached-table iterator of every database, and `IDatabase` answers `NOT_IMPLEMENTED` by default.
+# A read-only `Overlay` facade has no detached tables of its own, and a scan of the detached
+# tables must not fail because a facade is present: `system.detached_tables` opens the
+# detached-table iterator of every scanned database, and `IDatabase` answers `NOT_IMPLEMENTED` by
+# default. The scan is restricted to the databases of this test because the same default makes an
+# unrestricted scan fail on unrelated databases of concurrently running tests (e.g. a `Filesystem`
+# database) — pre-existing behavior that is not specific to `Overlay`.
 # A table detached in a source database is also not reported under the facade: `ATTACH` and `DETACH`
 # through the facade are rejected, so a detached name is not part of the facade's namespace.
 
@@ -23,8 +26,8 @@ DETACH TABLE ${DB_SRC}.gone PERMANENTLY;
 
 CREATE DATABASE ${DB_OVL} ENGINE = Overlay('${DB_SRC}');
 
-SELECT 'an unfiltered scan of the detached tables works with a facade present';
-SELECT count() >= 1 FROM system.detached_tables;
+SELECT 'a scan of the detached tables works with a facade present';
+SELECT count() >= 1 FROM system.detached_tables WHERE database IN ('${DB_SRC}', '${DB_OVL}');
 
 SELECT 'the detached table of the source is reported for the source only';
 SELECT if(database = '${DB_SRC}', 'source', 'facade') AS which, table

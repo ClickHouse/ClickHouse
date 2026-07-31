@@ -1,4 +1,4 @@
-an unfiltered scan of the detached tables works with a facade present
+a scan of the detached tables works with a facade present
 1
 the detached table of the source is reported for the source only
 source	gone
