@@ -402,7 +402,9 @@ void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
             const auto * group = state.findGroup(match->column_source.get(), match->column_node->getColumnName(), match->subcolumn_path);
             if (group && group->applied)
             {
-                node = std::make_shared<ColumnNode>(NameAndTypePair{group->new_column_name, group->subcolumn_type}, group->source);
+                node = std::make_shared<ColumnNode>(
+                    NameAndTypePair{group->new_column_name, group->subcolumn_type},
+                    std::static_pointer_cast<ITableExpressionNode>(group->source));
                 return;
             }
         }
