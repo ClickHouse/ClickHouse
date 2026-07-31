@@ -1,13 +1,10 @@
 #pragma once
 
-<<<<<<< HEAD
 #include "config.h"
 
 #if USE_AVRO
 
-=======
 #include <optional>
->>>>>>> e7bb1535551 (Merge pull request #1662 from Altinity/feature/antalya-26.3/pr-1432)
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
