@@ -66,6 +66,11 @@ SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWi
 -- function-form identity, `q_p_a.N` after a prefixed identity.
 SELECT * APPLY identity APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
 SELECT * APPLY (identity, 'p_') APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+-- A prefix names only the columns of its own transformer chain: a second matcher in the same
+-- SELECT keeps the plain column names. Baseline for the analyzer cases below.
+SELECT * APPLY (toString, 'f_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'p_'), * FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (a AS a), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 
 -- New (default) analyzer: the APPLY name prefix must be applied consistently with the
 -- old analyzer (it used to be silently dropped). https://github.com/ClickHouse/ClickHouse/pull/109223
@@ -136,5 +141,44 @@ SELECT * APPLY (identity, 'p_') APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) 
 -- a chained transformer observes it (`toString(p_a)`). This overwrites (not just emplaces)
 -- both node_to_projection_name and the resolved-expression cache.
 SELECT * APPLY (x -> x, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+
+-- ...but that name must stay inside its own transformer chain. Matched column nodes are shared
+-- with every other expression in the query (one node per column), so carrying the prefixed name
+-- on the matched node itself used to leak it into a later bare matcher, which then reported
+-- `p_a` for a plain `*`. The old analyzer names the second matcher `a` (its rewrite prints
+-- `SELECT x AS p_a, a`), so both orders must give the same names.
+SELECT * APPLY (x -> x, 'p_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT *, * APPLY (x -> x, 'p_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- Values were never affected, only the names; check them alongside a two-column expansion.
+SELECT * APPLY (x -> x, 'p_'), * FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+SELECT *, * APPLY (x -> x, 'p_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+-- A qualified matcher and a COLUMNS matcher expand through the same shared nodes.
+SELECT t.* APPLY (x -> x, 'p_'), t.* FROM (SELECT 1 AS a) AS t FORMAT TSVWithNames;
+SELECT COLUMNS('a') APPLY (x -> x, 'p_'), COLUMNS('a') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- In-chain visibility is preserved while the leak is not: `toString(p_a)` for the chained
+-- transformer, plain `a` for the following matcher.
+SELECT * APPLY (x -> x, 'p_') APPLY toString, * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- An identity lambda chained after another prefixed transformer already owns a private node;
+-- its accumulated name (`q_p_a`) must not change.
+SELECT * APPLY (toString, 'p_') APPLY (x -> x, 'q_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- A lambda naming another column redirects every matched column onto that one column's node,
+-- so the prefixed name legitimately repeats within the transformer's own expansion while the
+-- trailing matcher still reports plain names. The old analyzer prints the same rewrite
+-- (`SELECT x AS p_a, x AS p_a, a, b`).
+SELECT * APPLY (x -> a) APPLY (x -> x, 'p_'), * FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+-- `ORDER BY ALL` rejects a projection literally named `all`, reading the same resolved-name
+-- cache, so the prefixed name must still reach the output column.
+SELECT * APPLY (x -> x, 'p_') FROM (SELECT 1 AS all) ORDER BY ALL FORMAT TSVWithNames;
+-- Unprefixed identity, non-identity, untuple and REPLACE never carried the leak: an unprefixed
+-- chain names the node after its own expression, and the other three build a fresh node.
+SELECT * APPLY (x -> x), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> x) APPLY toString, * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (toString, 'f_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'p_'), * FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (a AS a), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- An aliased reference and a second prefixed matcher were already unaffected (an alias wins over
+-- the cached name, and each chain accumulates its own prefix); keep them as controls.
+SELECT * APPLY (x -> x, 'p_'), a AS z FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> x, 'p_'), * APPLY (x -> x, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 -- The prefix survives an EXPLAIN QUERY TREE round-trip (toAST reconstructs it).
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a)) WHERE explain ILIKE '%f_a%';

@@ -2729,18 +2729,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 const bool node_pointer_reused = node.get() == input_node_before_transformer;
                 if (node_pointer_reused)
                 {
+                    /// A prefixed name belongs to this transformer chain alone, but the reused node
+                    /// is the canonical column node shared with every other expression in the query
+                    /// (getMatchedColumnNodesWithNames hands out one node per column, uncloned), so
+                    /// publish it on a private copy: a later bare matcher must still see `a`.
+                    const bool node_is_private_copy = execute_apply_transformer && !apply_column_name_prefix.empty();
+                    if (node_is_private_copy)
+                        node = node->clone();
+
                     /// Reused node: the legacy AST path has no equivalent (an identity lambda
                     /// cannot be expressed there), so we carry the accumulated (prefixed) name.
-                    /// Overwrite, not emplace: the node is already in the map, so a chained
+                    /// Overwrite, not emplace: the node may already be in the map, so a chained
                     /// transformer must observe the updated name (`APPLY (identity, 'p_') APPLY toString`
                     /// -> `toString(p_a)`).
                     node_to_projection_name.insert_or_assign(node, result_projection_names.back());
-                    /// The reused node is also cached in resolved_expressions with its pre-prefix
-                    /// name; resolveExpressionNode reads that cache before node_to_projection_name,
-                    /// so refresh it too when the entry already exists.
+                    /// resolveExpressionNode reads resolved_expressions before node_to_projection_name,
+                    /// so the name must reach that cache too. A private copy has no entry yet.
                     if (execute_apply_transformer)
                     {
-                        if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
+                        if (node_is_private_copy)
+                            resolved_expressions.emplace(node, ProjectionNames{result_projection_names.back()});
+                        else if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
                             resolved_it->second = {result_projection_names.back()};
                     }
                 }
