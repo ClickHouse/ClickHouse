@@ -37,10 +37,10 @@ TEST(AsyncInsertKey, SettingsChanges)
 
     auto kind = AsynchronousInsertQueueDataKind::Parsed;
 
-    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, 0, settings1, kind);
-    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, 0, settings2, kind);
-    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, 0, settings3, kind);
-    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, 0, settings4, kind);
+    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, settings1, kind);
+    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, settings2, kind);
+    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, settings3, kind);
+    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, settings4, kind);
 
     EXPECT_EQ(key1, key2);
     EXPECT_NE(key1, key3);
@@ -62,7 +62,7 @@ TEST(AsyncInsertKey, IdentityHashIsNotAmbiguous)
     auto make_key = [&](const String & current_user, const String & initial_user, const String & authenticated_user)
     {
         return AsynchronousInsertQueue::InsertQuery(
-            query, {}, {}, current_user, initial_user, authenticated_user, 0, settings, kind);
+            query, {}, {}, current_user, initial_user, authenticated_user, settings, kind);
     };
 
     /// The three identity fields are variable-length strings folded into the queue key hash,
@@ -92,42 +92,4 @@ TEST(AsyncInsertKey, IdentityHashIsNotAmbiguous)
     auto key_h = make_key("bob", "bob", "bob");
     EXPECT_NE(key_g.hash, key_h.hash);
     EXPECT_NE(key_g, key_h);
-}
-
-TEST(AsyncInsertKey, ClientProtocolVersion)
-{
-    auto parse = [](const String & query_str)
-    {
-        ParserInsertQuery parser(query_str.data() + query_str.size(), false);
-        return parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    };
-
-    Settings settings;
-    settings.set("async_insert", 1);
-
-    using Kind = AsynchronousInsertQueueDataKind;
-    auto make_key = [&](const ASTPtr & query, UInt64 version, Kind kind)
-    {
-        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, {}, {}, version, settings, kind);
-    };
-
-    ASTPtr native = parse("INSERT INTO test FORMAT Native");
-    ASTPtr values = parse("INSERT INTO test (a, b, c) VALUES (1, 2, 3)");
-
-    /// The protocol version is part of the batching key for every input format and data kind:
-    /// the flush restores one version onto the shared context, governing both the reparse of a
-    /// revision-sensitive input body and the revision of any revision-sensitive server-side output
-    /// (e.g. INSERT INTO FUNCTION file(..., 'Native')). Entries written at different revisions must
-    /// never be coalesced, and identical entries at the same revision still batch.
-    for (const auto & [query, kind] : std::vector<std::pair<ASTPtr, Kind>>{
-             {native, Kind::Parsed}, {values, Kind::Parsed}, {native, Kind::Preprocessed}, {values, Kind::Preprocessed}})
-    {
-        auto old_rev = make_key(query, 0, kind);
-        auto new_rev = make_key(query, 54489, kind);
-        EXPECT_NE(old_rev.hash, new_rev.hash);
-        EXPECT_NE(old_rev, new_rev);
-        EXPECT_EQ(new_rev, make_key(query, 54489, kind));
-        /// The real version is stored on the key and restored on the flush context.
-        EXPECT_EQ(new_rev.client_protocol_version, 54489u);
-    }
 }

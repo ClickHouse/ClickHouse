@@ -94,7 +94,6 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -122,7 +121,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
-    UInt64 client_protocol_version_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
@@ -132,7 +130,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
-    , client_protocol_version(client_protocol_version_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -157,13 +154,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field.size());
         siphash.update(identity_field);
     }
-
-    /// The protocol version is part of the batching key. It governs how a revision-sensitive
-    /// input body is reparsed and the revision of any revision-sensitive server-side output the
-    /// flush produces, and the flush restores a single version onto the shared context, so entries
-    /// written at different revisions must not be coalesced into one batch (regardless of the input
-    /// format or data kind).
-    siphash.update(client_protocol_version);
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -192,7 +182,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
-    client_protocol_version = other.client_protocol_version;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -211,7 +200,6 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
-        client_protocol_version = other.client_protocol_version;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -478,7 +466,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
+        auto read_buf = getReadBufferFromASTInsertQuery(query);
 
         LimitReadBuffer limit_buf(
             *read_buf,
@@ -567,7 +555,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
-        query_context->getClientProtocolVersion(),
         settings,
         data_kind};
     InsertDataPtr data_to_process;
@@ -951,7 +938,7 @@ try
         elem.flush_time_microseconds = timeInMicroseconds(flush_time);
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add([&](AsynchronousInsertLogElement & element) { element = elem; });
+        log.add(std::move(elem));
     }
 }
 catch (...)
@@ -1025,10 +1012,6 @@ try
     insert_context->setAuthenticatedUserName(key.authenticated_user);
 
     insert_context->setSettings(*key.settings);
-
-    /// Revision-dependent data formats (Native) must be parsed at the protocol version the
-    /// client wrote them at; it lives on the Context, not in the settings.
-    insert_context->setClientProtocolVersion(key.client_protocol_version);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
     insert_context->setCurrentQueryId(""); // "" means generate a new query id
@@ -1109,13 +1092,12 @@ try
 
     auto add_entry_to_asynchronous_insert_log = [&, query_by_format = NameToNameMap{}](
         const InsertData::EntryPtr & entry,
-        const String & exception,
+        const String & parsing_exception,
         size_t num_rows,
-        size_t num_bytes,
-        bool is_flush_error = false) mutable
+        size_t num_bytes) mutable
     {
         /// Track per-entry stats for reporting back to clients on success.
-        if (exception.empty())
+        if (parsing_exception.empty())
             per_entry_progress_results[entry.get()] = ResultProgress{num_rows, num_bytes};
 
         if (!async_insert_log)
@@ -1130,7 +1112,7 @@ try
         elem.query_id = entry->query_id;
         elem.bytes = num_bytes;
         elem.rows = num_rows;
-        elem.exception = exception;
+        elem.exception = parsing_exception;
         elem.data_kind = entry->chunk.getDataKind();
         elem.timeout_milliseconds = data->timeout_ms.count();
         elem.flush_query_id = insert_query_id;
@@ -1152,15 +1134,13 @@ try
         else
             elem.query_for_logging = get_query_by_format(entry->format);
 
-        if (is_flush_error)
-        {
-            /// Per-entry conversion failure at flush: log immediately as `FlushError` with a real `flush_time`.
-            appendElementsToLogSafe(*async_insert_log, {std::move(elem)}, std::chrono::system_clock::now(), exception);
-        }
-        else if (!elem.exception.empty())
+        /// If there was a parsing error,
+        /// the entry won't be flushed anyway,
+        /// so add the log element immediately.
+        if (!elem.exception.empty())
         {
             elem.status = AsynchronousInsertLogElement::ParsingError;
-            async_insert_log->add([&](AsynchronousInsertLogElement & element) { element = elem; });
+            async_insert_log->add(std::move(elem));
         }
         else
         {
@@ -1209,7 +1189,7 @@ try
         if (async_insert_log)
         {
             for (const auto & entry : data->entries)
-                add_entry_to_asynchronous_insert_log(entry, /*exception=*/ "", /*num_rows=*/ 0, entry->chunk.byteSize());
+                add_entry_to_asynchronous_insert_log(entry, /*parsing_exception=*/ "", /*num_rows=*/ 0, entry->chunk.byteSize());
 
             auto exception = getCurrentExceptionMessage(false);
             auto flush_time = std::chrono::system_clock::now();
@@ -1348,8 +1328,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform),
-        [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
+        std::move(adding_defaults_transform));
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
@@ -1407,27 +1386,13 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         Block block_to_insert = *block;
         if (block_to_insert.rows() == 0)
         {
-            add_to_async_insert_log(entry, /*exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
             entry->resetChunk();
             continue;
         }
 
-        try
-        {
-            if (!isCompatibleHeader(block_to_insert, header))
-                convertBlockToHeader(block_to_insert, header, context_);
-        }
-        catch (...)
-        {
-            /// Per-entry isolation: log as `FlushError` (not `ParsingError`) with a real
-            /// `flush_time`, via the `is_flush_error` path in `add_to_async_insert_log`.
-            const auto exception_msg = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
-            LOG_ERROR(logger, "Failed conversion for insert query id {}. {}", entry->query_id, exception_msg);
-            add_to_async_insert_log(entry, exception_msg, /*num_rows=*/ 0, block->bytes(), /*is_flush_error=*/ true);
-            entry->finish(std::current_exception());
-            entry->resetChunk();
-            continue;
-        }
+        if (!isCompatibleHeader(block_to_insert, header))
+            convertBlockToHeader(block_to_insert, header, context_);
 
         auto columns = block_to_insert.getColumns();
         for (size_t i = 0, s = columns.size(); i < s; ++i)
@@ -1437,7 +1402,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         deduplication_info->setUserToken(entry->async_dedup_token, block_to_insert.rows());
 
-        add_to_async_insert_log(entry, /*exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+        add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
         entry->resetChunk();
     }
 

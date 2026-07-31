@@ -95,13 +95,6 @@ public:
         String current_user;
         String initial_user;
         String authenticated_user;
-        /// Protocol revision of the client connection for revision-dependent data formats.
-        /// Restored verbatim on the flush context, so both the reparse of a Native/Buffers input
-        /// body and the revision of any revision-sensitive server-side output the flush produces
-        /// (e.g. INSERT INTO FUNCTION file(..., 'Native')) match the synchronous path. A single
-        /// flush restores one version onto the shared context, so this is part of the batching key:
-        /// entries written at different revisions are never coalesced.
-        UInt64 client_protocol_version = 0;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -114,7 +107,6 @@ public:
             const String & current_user_,
             const String & initial_user_,
             const String & authenticated_user_,
-            UInt64 client_protocol_version_,
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_);
 
@@ -124,7 +116,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, client_protocol_version, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
