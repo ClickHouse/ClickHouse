@@ -2996,6 +2996,97 @@ def test_set_binary_operators():
     )
 
 
+def test_binary_operators_on_vectors_without_tags():
+    # Operations on instant vectors without any tags used to fail with
+    # "Argument #1 of function timeSeriesGroupToTags has wrong type UInt8, it must be UInt64"
+    # because the group #0 constant was generated as a UInt8 literal.
+    do_query_test(
+        "vector(1) + vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "3"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 3]],
+    )
+
+    do_query_test(
+        "vector(1) and vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        "vector(1) or vector(2)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        "vector(1) unless vector(2)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "sum(vector(5)) + on() sum(vector(7))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "12"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 12]],
+    )
+
+    do_query_test(
+        "hour(vector(time())) + minute(vector(time()))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "3"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 3]],
+    )
+
+    do_query_test(
+        "topk(1, vector(1))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "1"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    do_query_test(
+        'label_replace(vector(1), "a", "b", "", "")',
+        180,
+        '{"resultType": "vector", "result": [{"metric": {"a": "b"}, "value": [180, "1"]}]}',
+        [["[('a','b')]", "1970-01-01 00:03:00.000", 1]],
+    )
+
+    # Range queries evaluate time-dependent tag-less vectors as scalar grids,
+    # exercising the StoreMethod::SCALAR_GRID conversion paths.
+    do_range_query_test(
+        "vector(time()) + vector(1)",
+        150,
+        180,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "151"], [160, "161"], [170, "171"], [180, "181"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',151),('1970-01-01 00:02:40.000',161),('1970-01-01 00:02:50.000',171),('1970-01-01 00:03:00.000',181)]",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        'label_replace(vector(time()), "a", "b", "", "")',
+        150,
+        180,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"a": "b"}, "values": [[150, "150"], [160, "160"], [170, "170"], [180, "180"]]}]}',
+        [
+            [
+                "[('a','b')]",
+                "[('1970-01-01 00:02:30.000',150),('1970-01-01 00:02:40.000',160),('1970-01-01 00:02:50.000',170),('1970-01-01 00:03:00.000',180)]",
+            ]
+        ],
+    )
+
+
 def test_aggregation_operators():
     do_query_test(
         "sum(bar)",
