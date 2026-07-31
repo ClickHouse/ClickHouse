@@ -3009,7 +3009,13 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
-        case TypeIndex::Map: return std::make_shared<DataTypeMap>(getRandomType(), getRandomType());
+        case TypeIndex::Map: {
+            auto key_type = getRandomType();
+            /// `DataTypeMap`'s constructor rejects a `Nullable`/`LowCardinality(Nullable)` key.
+            if (!DataTypeMap::isValidKeyType(key_type))
+                key_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeMap>(key_type, getRandomType());
+        }
         case TypeIndex::LowCardinality: {
             auto inner = getRandomType();
             if (!inner->canBeInsideLowCardinality())
@@ -3887,6 +3893,13 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     {
         if (func->name == op && func->arguments)
         {
+            /// A degenerate call such as `and()` has nothing to flatten, so it contributes one
+            /// opaque leaf instead of nothing, keeping the extraction non-empty
+            if (func->arguments->children.empty())
+            {
+                predicates.emplace_back(node);
+                return;
+            }
             /// Recursively extract predicates from children
             for (const auto & entry : func->arguments->children)
             {
@@ -3912,11 +3925,14 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
     {
         if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
+            /// Nothing to permute in a degenerate call such as `and()`
+            if (!func->arguments || func->arguments->children.empty())
+                return tryNegateNextPredicate(predicate, negProb);
+
             ASTs predicates;
 
             /// Extract all predicates under the current logical operator
             extractPredicates(predicate, predicates, func->name, negProb);
-            chassert(!predicates.empty());
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
             for (auto & entry : predicates)
