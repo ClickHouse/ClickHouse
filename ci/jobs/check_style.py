@@ -203,6 +203,17 @@ def check_functional_test_cases(files):
                     f"event_date should be filtered using >=yesterday() in {test_case} (to avoid flakiness)"
                 )
 
+            if "0_stateless" in test_case:
+                name = os.path.basename(test_case)
+                has_streaming_queries_in_name = "_streaming_queries_" in name
+                has_streaming_in_content = re.search(r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b", file_content) or "streaming.lib" in file_content
+
+                if has_streaming_in_content and not has_streaming_queries_in_name:
+                    errors.append(f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name")
+
+                if has_streaming_queries_in_name and not has_streaming_in_content:
+                    errors.append(f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib")
+
         except Exception as e:
             errors.append(f"Error checking {test_case}: {e}")
 
