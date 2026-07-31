@@ -956,6 +956,7 @@ def _drive_diff_gate(
     sidecar_override=None,
     diff_inputs=True,
     pr_number=4242,
+    script_fails=False,
 ):
     """Drive the real diff-gate out of the job source.
 
@@ -1026,6 +1027,17 @@ def _drive_diff_gate(
             _write_baseline_outputs(
                 tmpdir, names, complete=baseline_complete, diff_inputs=diff_inputs
             )
+        # script_fails reproduces a LATER failure of the differential script: it
+        # has already written the baseline sidecar and the selected-base marker
+        # (its wget at :64 and its echo at :100) and only then hits `exit 1` on an
+        # empty GitHub compare, or a set -euo pipefail failure of a gh api call,
+        # of either lcov --extract, or of genhtml. Writing those outputs FIRST is
+        # exactly what makes the mixed "the tool broke AND we cannot judge" state
+        # real, so the write above is deliberately not skipped. The existing
+        # os.path.exists(info_path) term is kept so the absent-.info precondition
+        # cell is unaffected.
+        if script_fails:
+            ok = False
         return Result.create_from(name=name, status=ok)
 
     class _ResultShim:
@@ -1297,6 +1309,61 @@ def test_baseline_incomplete_with_no_coverable_changes_still_abstains():
     # did not judge, it does not fail the PR author for a tool problem.
     parent = Result.create_from(name="LLVM Coverage", results=got.results)
     assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+def test_a_failing_differential_script_stays_red_even_when_incomparable():
+    # "The tool broke" and "we cannot judge" genuinely CO-OCCUR, and this is the
+    # cell where the abstention must lose. generate_diff_coverage_report.sh writes
+    # base_llvm_coverage.meta.json (:64) and selected_base_commit.txt (:100)
+    # BEFORE several of its own failure paths - `exit 1` on an empty GitHub
+    # compare (:138), and under set -euo pipefail any failure of the two gh api
+    # calls (:125-131), of either lcov --extract (:156, :161) or of genhtml
+    # (:203). In every one of those the report directory is absent, so _diff_ran
+    # is False; and the baseline side is incomparable for EVERY baseline
+    # published before this change, because those commits carry no sidecar. Old
+    # baseline plus a late script failure is therefore the ordinary post-merge
+    # run, not a corner.
+    #
+    # The asymmetry that makes this reachable at all: the two sibling abstentions
+    # (the current-side short-circuit and Print Uncovered Code) CONSTRUCT a fresh
+    # Result via create_from, so they cannot destroy a status. This one MUTATES a
+    # result that from_commands_run may already have set to FAIL, and SKIPPED is
+    # inside is_ok() - so an unguarded set_status turns a real tooling failure
+    # green. A failed REPORT must stay RED: merge_llvm_coverage.sh:50-52 says so
+    # verbatim, echoed at llvm_coverage_job.py:216-218.
+    #
+    # Do not delete this as redundant with the sibling SKIPPED cells: all five of
+    # those reach the block with diff_res in SKIPPED or OK, so none of them can
+    # observe the overwrite.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(
+            True, d, baseline_complete=False, diff_inputs=False, script_fails=True
+        )
+    # The abstention branch really was entered - without this the cell could pass
+    # for the trivial reason that comparability never came into question.
+    assert got.comparable is False
+    assert "baseline measurement is incomplete" in got.reason, got.reason
+    # The property under test: the script's own FAIL survives the abstention.
+    assert got.diff_res.status == Result.Status.FAIL, got.diff_res.status
+    # The assertion that actually pins the invariant, mirroring how the sibling
+    # cells assert the composite IS ok.
+    assert not Result.create_from(
+        name="LLVM Coverage", results=got.results
+    ).is_ok(), "a failed differential script must not leave the job green"
+    # ...and the ABSTENTION's own print must not have run, so a future refactor
+    # cannot satisfy the status assertion while still telling the PR author in the
+    # log that the gate merely abstained.
+    #
+    # Counted rather than asserted absent, because the identical sentence has a
+    # SECOND and older producer: llvm_coverage_job.py:355-356 prints it once for
+    # every incomparable run, which is what production's own comment at :434-436
+    # means by "the reason was already printed above". So one occurrence is the
+    # pre-existing report of the cause and is expected here; two would mean the
+    # abstention block itself also ran. Measured across three arms: this one
+    # prints it ONCE, while the two arms whose script SUCCEEDS print it TWICE, so
+    # the count is discriminating.
+    _skips = [line for line in got.printed if "Coverage comparison skipped" in line]
+    assert len(_skips) == 1, _skips
 
 
 _NO_CPP = "No C/C++ source files changed"

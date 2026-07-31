@@ -65,11 +65,17 @@ def _gate_snippet() -> str:
         and ast.unparse(n.test) == "coverage_degraded(_drop)"
         and "diff_res.set_failed()" in ast.unparse(n)
     ]
+    # Matched on the SKIPPED body plus a test that CONTAINS the comparability
+    # negation rather than equals it: the abstention is also guarded on
+    # diff_res.is_ok(), because it MUTATES a result that may already carry the
+    # differential script's own FAIL. An exact-unparse match here stopped finding
+    # the node the moment that second term was added, and this helper's own
+    # self-assert below then fired loudly.
     abstain = [
         n
         for n in ast.walk(tree)
         if isinstance(n, ast.If)
-        and ast.unparse(n.test) == "not _measurement_comparable"
+        and "not _measurement_comparable" in ast.unparse(n.test)
         and "diff_res.set_status(Result.Status.SKIPPED)" in ast.unparse(n)
     ]
     # The guard that keeps a fabricated drop from being computed for two
@@ -110,6 +116,16 @@ class _ResultStub:
     def set_status(self, status):
         self.status = status
         return self
+
+    def is_ok(self):
+        # The abstention is guarded on this as well as on comparability, because
+        # it mutates a result that may already carry the differential script's
+        # FAIL. Delegating to the REAL predicate keeps that semantics from
+        # drifting: a status of None means from_commands_run has not been
+        # modelled here (these tests drive the tolerance verdict, where the
+        # script succeeded), so it reports ok, which is the state that lets the
+        # abstention run.
+        return self.status is None or Result.is_ok(self)
 
 
 def _run_gate(
@@ -165,7 +181,7 @@ def test_gate_snippet_is_the_real_verdict_block():
     tree = ast.parse(src)
     assert [ast.unparse(n.test) for n in tree.body] == [
         "_measurement_comparable",
-        "not _measurement_comparable",
+        "not _measurement_comparable and diff_res.is_ok()",
     ], f"snippet no longer reproduces the two guarded statements: {ast.unparse(tree)}"
     assert "diff_res.set_status(Result.Status.SKIPPED)" in src
     # ...and it must NOT be nested inside the comparable branch, or a

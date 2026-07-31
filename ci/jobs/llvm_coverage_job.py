@@ -439,12 +439,21 @@ if __name__ == "__main__":
         # Deliberately NOT an arm of the _diff_ran chain above: _diff_ran is False
         # for three different reasons and only one of them (nothing coverable
         # changed on a comparable run) licenses an OK, so reaching the abstention
-        # through it left a green sub-result on a run that did not judge. Placing
-        # it after the whole construct also keeps the verdict arm from being
-        # clobbered. SKIPPED counts as OK, so the job stays green while stating
-        # that it did not judge; reddening would turn a tool problem the PR author
-        # cannot act on into a blocking failure.
-        if not _measurement_comparable:
+        # through it left a green sub-result on a run that did not judge.
+        #
+        # Guarded on is_ok() as well, because this MUTATES a result rather than
+        # constructing one, unlike the two sibling abstentions above: on this path
+        # diff_res is what from_commands_run returned for the differential script,
+        # so it is already FAIL when that script exited non-zero. The script writes
+        # its baseline sidecar and selected-base marker before several later
+        # failure paths, so "the tool broke" and "we cannot judge" genuinely
+        # co-occur - and a failed REPORT must stay RED, per the contract this job
+        # states above. Only a result that is not already a failure may be
+        # downgraded; SKIPPED then counts as OK, so the job stays green while
+        # stating that it did not judge, and reddening a run that merely could not
+        # be compared would turn a tool problem the PR author cannot act on into a
+        # blocking failure.
+        if not _measurement_comparable and diff_res.is_ok():
             _skip_msg = f"Coverage comparison skipped: {_incomparable_reason}"
             print(_skip_msg)
             diff_res.info = _skip_msg
