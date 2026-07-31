@@ -7,6 +7,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
@@ -49,6 +50,7 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -136,6 +138,13 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
+                /// A masked secret must be named by its placeholder, never by its value or source expression,
+                /// identically on initiator and secondary servers so distributed headers still match.
+                if (constant_node.isMasked())
+                {
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    break;
+                }
                 /* To ensure that headers match during distributed query we need to simulate action node naming on
                 * secondary servers. If we don't do that headers will mismatch due to constant folding.
                 *
@@ -348,15 +357,15 @@ public:
                 WriteBufferFromOwnString buffer;
 
                 const auto & lambda_node = node->as<LambdaNode &>();
-                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+                const auto & lambda_argument_names = lambda_node.getArguments().getNames();
+                const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
 
-                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+                size_t lambda_arguments_nodes_size = lambda_argument_names.size();
                 for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
                 {
-                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
-                    buffer << calculateActionNodeName(lambda_argument_node);
+                    buffer << lambda_argument_names[i];
                     buffer << ' ';
-                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
+                    buffer << lambda_argument_types[i]->getName();
 
                     if (i + 1 != lambda_arguments_nodes_size)
                         buffer << ", ";
@@ -517,7 +526,7 @@ public:
         return scope_node;
     }
 
-    [[maybe_unused]] bool containsNode(const std::string & node_name)
+    bool containsNode(const std::string & node_name)
     {
         return node_name_to_node.contains(node_name);
     }
@@ -615,7 +624,7 @@ public:
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic)
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -630,7 +639,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -827,11 +836,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
 
         auto column_source = column_node.getColumnSourceOrNull();
-        if (column_source &&
-            column_source->getNodeType() == QueryTreeNodeType::LAMBDA &&
-            actions_stack[i].getScopeNode().get() == column_source.get())
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
         {
-            return {column_node_name, Levels(i)};
+            /// Lambda argument columns are sourced from the lambda's arguments node,
+            /// while the scope node on the actions stack is the owning lambda itself.
+            const auto & scope_node = actions_stack[i].getScopeNode();
+            if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA &&
+                &scope_node->as<LambdaNode &>().getArguments() == column_source.get())
+            {
+                return {column_node_name, Levels(i)};
+            }
         }
 
         /// When a table column's name collides with a lambda argument name (possible
@@ -849,7 +863,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
         {
             const auto & lambda_node = scope->as<LambdaNode &>();
-            const auto & arg_names = lambda_node.getArgumentNames();
+            const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
                 const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
@@ -881,7 +895,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                     if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
                         const auto & outer_lambda = outer_scope->as<LambdaNode &>();
-                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        const auto & outer_arg_names = outer_lambda.getArguments().getNames();
                         outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
                     }
 
@@ -929,6 +943,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
+        /// A masked secret must be named by its placeholder, never by its value or source expression,
+        /// identically on initiator and secondary servers so distributed headers still match.
+        if (constant_node.isMasked())
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.
          *
@@ -973,7 +992,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }();
 
     actions_stack[0].addConstantIfNecessary(
-        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic());
+        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
+        /* is_masked_secret= */ constant_node.isMasked());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)
@@ -995,17 +1015,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             "Lambda {} is not resolved during query analysis",
             lambda_node.formatASTForErrorMessage());
 
-    auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
-    size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+    const auto & lambda_argument_names = lambda_node.getArguments().getNames();
+    const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
+    size_t lambda_arguments_nodes_size = lambda_argument_names.size();
 
     NamesAndTypesList lambda_arguments_names_and_types;
 
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
-    {
-        const auto & lambda_argument_name = lambda_node.getArgumentNames().at(i);
-        auto lambda_argument_type = lambda_arguments_nodes[i]->getResultType();
-        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
-    }
+        lambda_arguments_names_and_types.emplace_back(lambda_argument_names[i], lambda_argument_types[i]);
 
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
@@ -1021,8 +1038,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
-
-    const auto & lambda_argument_names = lambda_node.getArgumentNames();
 
     for (const auto & required_column_name : required_column_names)
     {
@@ -1188,6 +1203,33 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return { function_node_name, Levels(exists_function_level) };
 }
 
+/// A secret function argument can be a constant that the planner folds in from a column or subquery
+/// after the query-tree masking ran, so it is not flagged as a secret in the tree (e.g. the key of
+/// `encrypt(..., k)` where `k` is `'secret' AS k` in a subquery). Flag such constant argument nodes so
+/// plan dumps render them as `[HIDDEN]`. The finder runs only when secrets are hidden (the caller
+/// gates on the setting).
+void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    if (!secret_arguments.hasSecrets())
+        return;
+
+    auto mark = [&](size_t index)
+    {
+        /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
+        /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
+        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
+            const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
+    };
+
+    for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count; ++i)
+        mark(i);
+    for (const auto & [index, _] : secret_arguments.masked_arguments)
+        mark(index);
+    for (const auto & [index, _] : secret_arguments.replaced_arguments)
+        mark(index);
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
@@ -1197,12 +1239,22 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (function_node.getFunctionName() == "exists")
         return visitExistsFunction(node);
 
+    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    /// Fast path for the no-lambda case: when there is a single actions scope, an expression that
+    /// has already been built can be reused as-is instead of re-traversing it. With the analyzer,
+    /// WITH-aliases are shared by pointer in the query tree (a DAG), so without this we would
+    /// re-visit shared subtrees once per reference, which is exponential for deeply nested aliases.
+    /// Keying on the action node name also reuses identical repeated subexpressions that are not
+    /// aliased. Lambda scopes (actions_stack.size() > 1) are intentionally excluded, because the
+    /// captured Levels must be recomputed per scope.
+    if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
+        return {function_node_name, Levels(0)};
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
     if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
-
-    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
      * If we have already visited some expression, we don't need to revisit it or its arguments again.
@@ -1271,6 +1323,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t level = levels.max();
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
+
+    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")
     {

@@ -21,6 +21,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
+#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -348,6 +349,20 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             input_header.getPositionByName(column.column_name));
     }
 
+    // We only need to materialize (remove Const/LowCardinality/Sparse from) the columns we actually
+    // read while computing the window functions: the PARTITION BY and ORDER BY keys and the function
+    // arguments. Everything else is passed through to the output untouched.
+    should_materialize.assign(input_header.columns(), 0);
+    for (const auto index : partition_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto index : order_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto & workspace : workspaces)
+        for (auto argument_column_indice : workspace.argument_column_indices)
+            should_materialize[argument_column_indice] = 1;
+
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
     if (window_description.frame.type == WindowFrame::FrameType::RANGE
@@ -369,7 +384,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.begin_offset = convertFieldToTypeOrThrow(
                 window_description.frame.begin_offset,
-                *entry.type);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
             if (accurateLess(window_description.frame.begin_offset, Field(0)))
             {
@@ -383,7 +398,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.end_offset = convertFieldToTypeOrThrow(
                 window_description.frame.end_offset,
-                *entry.type);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
             if (accurateLess(window_description.frame.end_offset, Field(0)))
             {
@@ -504,7 +519,10 @@ void WindowTransform::advancePartitionEnd()
     chassert(prev_frame_start < partition_end || partition_start == partition_end);
     chassert(first_block_number <= prev_frame_start.block);
     const auto block_rows = blockRowsNumber(partition_end);
-    for (; partition_end.row < block_rows; ++partition_end.row)
+
+    // First, check whether the first unprocessed row already belongs to the next partition, by
+    // comparing it against the reference row (prev_frame_start, which may live in another block, so
+    // we can't fold it into the equal-range scan below).
     {
         size_t i = 0;
         for (; i < partition_by_columns; ++i)
@@ -529,8 +547,21 @@ void WindowTransform::advancePartitionEnd()
         }
     }
 
-    // Went until the end of block, go to the next.
-    chassert(partition_end.row == block_rows);
+    // partition_end.row matches the reference on all PARTITION BY keys, so the partition extends over
+    // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
+    // run's end within this block with a fast equal-range scan.
+    const size_t partition_end_row = getEqualRangeEndAssumeSorted(
+        inputAt(partition_end), partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
+
+    if (partition_end_row < block_rows)
+    {
+        // Found the partition boundary inside this block.
+        partition_end.row = partition_end_row;
+        partition_ended = true;
+        return;
+    }
+
+    // The partition runs to the end of this block, go to the next.
     ++partition_end.block;
     partition_end.row = 0;
 
@@ -831,10 +862,56 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Equality would mean "no data to process", for which we checked above.
     chassert(frame_end.row < rows_end);
 
-    // Advance frame_end while it is still peers with the current row.
-    for (; frame_end.row < rows_end; ++frame_end.row)
+    // Advance frame_end to the end of the current row's peer group.
+    if (window_description.frame.type != WindowFrame::FrameType::ROWS)
     {
-        if (!arePeers(current_row, frame_end))
+        // RANGE/GROUPS: peers are the rows whose ORDER BY values equal current_row's (or all rows if
+        // there is no ORDER BY). The input is sorted by ORDER BY within the partition, so we find the
+        // peer group's end with a fast equal-range scan.
+        // First check whether frame_end is still a peer of current_row -- the reference (current_row)
+        // may be in a different block, so we compare against it directly.
+        const size_t order_by_columns = order_by_indices.size();
+        size_t i = 0;
+        for (; i < order_by_columns; ++i)
+        {
+            const auto * reference_column = inputAt(current_row)[order_by_indices[i]].get();
+            const auto * compared_column = inputAt(frame_end)[order_by_indices[i]].get();
+            if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
+            {
+                break;
+            }
+        }
+
+        if (i < order_by_columns)
+        {
+            // frame_end is already past the current row's peer group.
+            frame_ended = true;
+            return;
+        }
+
+        // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
+        // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
+        // so the scan will just return the end of the block.
+        const UInt64 peer_group_end_row
+            = getEqualRangeEndAssumeSorted(inputAt(frame_end), order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+
+        if (peer_group_end_row < rows_end)
+        {
+            frame_end.row = peer_group_end_row;
+            frame_ended = true;
+            return;
+        }
+        frame_end.row = rows_end;
+    }
+    else
+    {
+        // ROWS frame: a row is only its own peer, so the peer group is just current_row, and
+        // frame_end sits at current_row on entry -- advancing it one row reaches the peer group's
+        // end.
+        if (frame_end == current_row)
+            ++frame_end.row;
+
+        if (frame_end.row < rows_end)
         {
             frame_ended = true;
             return;
@@ -1067,6 +1144,11 @@ void WindowTransform::writeOutCurrentRow()
     chassert(current_row < partition_end);
     chassert(current_row.block >= first_block_number);
 
+    // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
+    // row of the partition, so there's no previous row in this partition (and thus no previous frame)
+    // to compare against.
+    const bool frame_unchanged = current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
+
     const auto & block = blockAt(current_row);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
@@ -1075,36 +1157,50 @@ void WindowTransform::writeOutCurrentRow()
         if (ws.window_function_impl)
         {
             ws.window_function_impl->windowInsertResultInto(this, wi);
+            continue;
+        }
+
+        IColumn * result_column = block.output_columns[wi].get();
+        const auto * a = ws.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+        // FIXME does it also allocate the result on the arena?
+        // We'll have to pass it out with blocks then...
+
+        if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
+        {
+            // Same frame as the previous row -> same result. When that row is in this same block its
+            // result is already in result_column one position back, so copy it instead of
+            // re-finalizing. We copy the column into itself with insertRangeFrom (not insertFrom):
+            // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
+            // self-safe even if the append reallocates and even for nested columns (Array, Variant,
+            // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
+            chassert(result_column->size() == current_row.row);
+            result_column->insertRangeFrom(*result_column, current_row.row - 1, 1);
+        }
+        else if (ws.is_aggregate_function_state)
+        {
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            a->insertMergeResultInto(buf, *result_column, arena.get());
         }
         else
         {
-            IColumn * result_column = block.output_columns[wi].get();
-            const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
-            // FIXME does it also allocate the result on the arena?
-            // We'll have to pass it out with blocks then...
-
-            if (ws.is_aggregate_function_state)
-            {
-                /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-                /// correctly if result contains AggregateFunction's states
-                a->insertMergeResultInto(buf, *result_column, arena.get());
-            }
-            else
-            {
-                a->insertResultInto(buf, *result_column, arena.get());
-            }
+            a->insertResultInto(buf, *result_column, arena.get());
         }
     }
 }
 
-static void assertSameColumns(const Columns & left_all,
-    const Columns & right_all)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 
     for (size_t i = 0; i < left_all.size(); ++i)
     {
+        // Only the materialized columns are guaranteed to match the (materialized) header structure;
+        // the pass-through columns are left in their original representation.
+        if (!columns_to_check[i])
+            continue;
+
         const auto * left_column = left_all[i].get();
         const auto * right_column = right_all[i].get();
 
@@ -1166,11 +1262,15 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Aggregator does.
         // Likewise, aggregate functions can't work with LowCardinality,
         // so we have to materialize them too.
-        // Just materialize everything.
+        // We only materialize the columns we actually read: the PARTITION BY / ORDER BY keys and
+        // the function arguments. The other columns are emitted to the output as-is from original_input_columns to
+        // avoid paying unnecessary Const/LowCardinality/Sparse cost.
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
-        for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        for (size_t i = 0; i < columns.size(); ++i)
+            if (should_materialize[i])
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1186,7 +1286,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // As a debugging aid, assert that all chunks have the same C++ type of
         // columns, that also matches the input header, because we often have to
         // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns);
+        assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
     }
 
     // Start the calculations. First, advance the partition end.
@@ -2296,6 +2396,13 @@ struct CumeDistState
 {
     RowNumber start_row;
     UInt64 current_partition_rows = 0;
+
+    // The peer-group-end row number is identical for every row in a peer group, so we compute it
+    // once (by scanning forward to the last peer) when entering a new peer group and reuse it for
+    // the rest of the group. Without this the per-row scan is O(k^2) for a peer group of size k.
+    // 0 for not cached is safe because the first row in a partition is always peer group 1.
+    UInt64 cached_peer_group_number = 0;
+    UInt64 cached_peer_group_end_row_number = 0;
 };
 }
 
@@ -2338,9 +2445,10 @@ public:
         {
             state.current_partition_rows = 0;
             state.start_row = transform->current_row;
+            state.cached_peer_group_number = 0;
         }
 
-        insertPeerGroupEndRowNumberIntoColumn(transform, function_index);
+        insertPeerGroupEndRowNumberIntoColumn(transform, function_index, state);
         state.current_partition_rows++;
 
         if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
@@ -2387,24 +2495,32 @@ public:
         return getState(workspace);
     }
 
-    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index) const
+    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index, CumeDistState & state) const
     {
-        // Calculate the peer group end row number by finding the last row in the current peer group
-        UInt64 peer_group_end_row_number = transform->current_row_number;
-        RowNumber check_row = transform->current_row;
-
-        // Advance through all rows that are peers with the current row
-        while (true)
+        // The peer-group-end row number is the same for every row in a peer group. Recompute it (by
+        // scanning forward to the last peer) only when we enter a new peer group; otherwise reuse the
+        // cached value. This turns the per-peer-group cost from O(k^2) into O(k).
+        if (state.cached_peer_group_number != transform->peer_group_number)
         {
-            RowNumber next = transform->nextRowNumber(check_row);
-            if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
-                break;
-            check_row = next;
-            peer_group_end_row_number++;
+            UInt64 peer_group_end_row_number = transform->current_row_number;
+            RowNumber check_row = transform->current_row;
+
+            // Advance through all rows that are peers with the current row
+            while (true)
+            {
+                RowNumber next = transform->nextRowNumber(check_row);
+                if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
+                    break;
+                check_row = next;
+                peer_group_end_row_number++;
+            }
+
+            state.cached_peer_group_number = transform->peer_group_number;
+            state.cached_peer_group_end_row_number = peer_group_end_row_number;
         }
 
         auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
-        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(peer_group_end_row_number));
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(state.cached_peer_group_end_row_number));
     }
 };
 
@@ -2828,7 +2944,70 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                     name, argument_types.size());
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
+The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
+
+The [dense_rank](/reference/functions/window-functions/dense_rank) function provides the same behaviour but without gaps in ranking.
+
+**Syntax**
+
+```sql
+rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition, including gaps. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       rank() OVER (ORDER BY salary DESC) AS rank
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─rank─┐
+1. │ Gary Chen       │ 195000 │    1 │
+2. │ Robert George   │ 195000 │    1 │
+3. │ Charles Juarez  │ 190000 │    3 │
+4. │ Douglas Benson  │ 150000 │    4 │
+5. │ Michael Stanley │ 150000 │    4 │
+6. │ Scott Harrison  │ 150000 │    4 │
+7. │ James Henderson │ 140000 │    7 │
+   └─────────────────┴────────┴──────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("denseRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -2842,7 +3021,71 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                     name, argument_types.size());
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
+
+The [rank](/reference/functions/window-functions/rank) function provides the same behaviour, but with gaps in ranking.
+
+**Syntax**
+
+Alias: `denseRank` (case-sensitive)
+
+```sql
+dense_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition, without gaps in ranking. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─dense_rank─┐
+1. │ Gary Chen       │ 195000 │          1 │
+2. │ Robert George   │ 195000 │          1 │
+3. │ Charles Juarez  │ 190000 │          2 │
+4. │ Michael Stanley │ 150000 │          3 │
+5. │ Douglas Benson  │ 150000 │          3 │
+6. │ Scott Harrison  │ 150000 │          3 │
+7. │ James Henderson │ 140000 │          4 │
+   └─────────────────┴────────┴────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2851,7 +3094,67 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+returns the relative rank (i.e. percentile) of rows within a window partition.
+
+**Syntax**
+
+Alias: `percentRank` (case-sensitive)
+
+```sql
+percent_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
+FROM salaries;
+```
+
+```response title="Response"
+
+   ┌─player──────────┬─salary─┬───────percent_rank─┐
+1. │ Gary Chen       │ 195000 │                  0 │
+2. │ Robert George   │ 195000 │                  0 │
+3. │ Charles Juarez  │ 190000 │ 0.3333333333333333 │
+4. │ Michael Stanley │ 150000 │                0.5 │
+5. │ Scott Harrison  │ 150000 │                0.5 │
+6. │ Douglas Benson  │ 150000 │                0.5 │
+7. │ James Henderson │ 140000 │                  1 │
+   └─────────────────┴────────┴────────────────────┘
+
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2860,56 +3163,588 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionCumeDist>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Computes the cumulative distribution of a value within a group of values, i.e., the percentage of rows with values less than or equal to the current row's value. Can be used to determine relative standing of a value within a partition.
+
+**Syntax**
+
+```sql
+cume_dist ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- The relative rank of the current row. The return type is Float64 in the range [0, 1]. [Float64](/reference/data-types/float).
+
+**Example**
+
+The following example calculates the cumulative distribution of salaries within a team:
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       cume_dist() OVER (ORDER BY salary DESC) AS cume_dist
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬───────────cume_dist─┐
+1. │ Robert George   │ 195000 │  0.2857142857142857 │
+2. │ Gary Chen       │ 195000 │  0.2857142857142857 │
+3. │ Charles Juarez  │ 190000 │ 0.42857142857142855 │
+4. │ Douglas Benson  │ 150000 │  0.8571428571428571 │
+5. │ Michael Stanley │ 150000 │  0.8571428571428571 │
+6. │ Scott Harrison  │ 150000 │  0.8571428571428571 │
+7. │ James Henderson │ 140000 │                   1 │
+   └─────────────────┴────────┴─────────────────────┘
+```
+
+**Implementation Details**
+
+The `cume_dist()` function calculates the relative position using the following formula:
+
+```text
+cume_dist = (number of rows ≤ current row value) / (total number of rows in partition)
+```
+
+Rows with equal values (peers) receive the same cumulative distribution value, which corresponds to the highest position of the peer group.
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Numbers the current row within its partition starting from 1.
+
+**Syntax**
+
+```sql
+row_number (column_name)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary, 
+       row_number() OVER (ORDER BY salary DESC) AS row_number
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─row_number─┐
+1. │ Gary Chen       │ 195000 │          1 │
+2. │ Robert George   │ 195000 │          2 │
+3. │ Charles Juarez  │ 190000 │          3 │
+4. │ Scott Harrison  │ 150000 │          4 │
+5. │ Michael Stanley │ 150000 │          5 │
+   └─────────────────┴────────┴────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Divides the ordered rows within a partition into a specified number of buckets (groups) of as equal a size as possible, and returns the bucket number that the current row belongs to. Buckets are numbered starting from 1. For each partition, the rows are assigned to buckets in order: if the number of rows is not divisible by the number of buckets, the earlier buckets receive one more row than the later ones.
+
+**Syntax**
+
+```sql
+ntile (buckets)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The argument `buckets` must be a constant positive integer.
+
+An `ORDER BY` clause is required. The window frame must be the whole partition (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), which is also the default frame used when none is specified explicitly.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- The bucket number of the current row within its partition. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example divides the players into four buckets ordered by descending salary.
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       ntile(4) OVER (ORDER BY salary DESC, player ASC) AS bucket
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─bucket─┐
+1. │ Gary Chen       │ 195000 │      1 │
+2. │ Robert George   │ 195000 │      1 │
+3. │ Charles Juarez  │ 190000 │      2 │
+4. │ Douglas Benson  │ 150000 │      2 │
+5. │ Michael Stanley │ 150000 │      3 │
+6. │ Scott Harrison  │ 150000 │      3 │
+7. │ James Henderson │ 140000 │      4 │
+   └─────────────────┴────────┴────────┘
+```
+
+Here there are seven rows and four buckets, so the first three buckets contain two rows each and the last bucket contains a single row.
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+**Syntax**
+
+```sql
+nth_value (x, offset)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — nth row to evaluate current row against.
+
+**Returned value**
+
+- The first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+**Example**
+
+In this example the `nth-value` function is used to find the third-highest salary from a fictional dataset of salaries of Premier League football players.
+
+```sql title="Query"
+DROP TABLE IF EXISTS salaries;
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─third_highest_salary─┐
+1. │ Gary Chen       │ 195000 │                      │
+2. │ Robert George   │ 195000 │                      │
+3. │ Charles Juarez  │ 190000 │ Charles Juarez       │
+4. │ Scott Harrison  │ 180000 │ Charles Juarez       │
+5. │ Douglas Benson  │ 150000 │ Charles Juarez       │
+6. │ James Henderson │ 140000 │ Charles Juarez       │
+7. │ Michael Stanley │ 100000 │ Charles Juarez       │
+   └─────────────────┴────────┴──────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+
+<Warning>
+`lagInFrame` behavior differs from the standard SQL `lag` window function.
+Clickhouse window function `lagInFrame` respects the window frame.
+To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+</Warning>
+
+**Syntax**
+
+```sql
+lagInFrame(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+
+**Example**
+
+This example looks at historical data for a specific stock and uses the `lagInFrame` function to calculate a day-to-day delta and percentage change in the closing price of the stock.
+
+```sql title="Query"
+CREATE TABLE stock_prices
+(
+    `date`   Date,
+    `open`   Float32, -- opening price
+    `high`   Float32, -- daily high
+    `low`    Float32, -- daily low
+    `close`  Float32, -- closing price
+    `volume` UInt32   -- trade volume
+)
+Engine = Memory;
+
+INSERT INTO stock_prices FORMAT Values
+    ('2024-06-03', 113.62, 115.00, 112.00, 115.00, 438392000),
+    ('2024-06-04', 115.72, 116.60, 114.04, 116.44, 403324000),
+    ('2024-06-05', 118.37, 122.45, 117.47, 122.44, 528402000),
+    ('2024-06-06', 124.05, 125.59, 118.32, 121.00, 664696000),
+    ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
+```
+
+```sql title="Query"
+SELECT
+    date,
+    close,
+    lagInFrame(close, 1, close) OVER (ORDER BY date ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+     ) AS previous_day_close,
+    COALESCE(ROUND(close - previous_day_close, 2)) AS delta,
+    COALESCE(ROUND((delta / previous_day_close) * 100, 2)) AS percent_change
+FROM stock_prices
+ORDER BY date DESC
+```
+
+```response title="Response"
+   ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
+1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
+2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │
+3. │ 2024-06-05 │ 122.44 │             116.44 │     6 │           5.15 │
+4. │ 2024-06-04 │ 116.44 │                115 │  1.44 │           1.25 │
+5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
+   └────────────┴────────┴────────────────────┴───────┴────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<false>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+
+**Syntax**
+
+```sql
+lag(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+
+**Example**
+
+This example looks at historical data for a specific stock and uses the `lag` function to calculate a day-to-day delta and percentage change in the closing price of the stock.
+
+```sql title="Query"
+CREATE TABLE stock_prices
+(
+    `date`   Date,
+    `open`   Float32, -- opening price
+    `high`   Float32, -- daily high
+    `low`    Float32, -- daily low
+    `close`  Float32, -- closing price
+    `volume` UInt32   -- trade volume
+)
+Engine = Memory;
+
+INSERT INTO stock_prices FORMAT Values
+    ('2024-06-03', 113.62, 115.00, 112.00, 115.00, 438392000),
+    ('2024-06-04', 115.72, 116.60, 114.04, 116.44, 403324000),
+    ('2024-06-05', 118.37, 122.45, 117.47, 122.44, 528402000),
+    ('2024-06-06', 124.05, 125.59, 118.32, 121.00, 664696000),
+    ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
+```
+
+```sql title="Query"
+SELECT
+    date,
+    close,
+    lag(close, 1, close) OVER (ORDER BY date ASC) AS previous_day_close,
+    COALESCE(ROUND(close - previous_day_close, 2)) AS delta,
+    COALESCE(ROUND((delta / previous_day_close) * 100, 2)) AS percent_change
+FROM stock_prices
+ORDER BY date DESC
+```
+
+```response title="Response"
+   ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
+1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
+2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │
+3. │ 2024-06-05 │ 122.44 │             116.44 │     6 │           5.15 │
+4. │ 2024-06-04 │ 116.44 │                115 │  1.44 │           1.25 │
+5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
+   └────────────┴────────┴────────────────────┴───────┴────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+<Warning>
+`leadInFrame` behavior differs from the standard SQL `lead` window function.
+Clickhouse window function `leadInFrame` respects the window frame.
+To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+</Warning>
+
+**Syntax**
+
+```sql
+leadInFrame(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+**Example**
+
+This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `leadInFrame` function to return a list of successive winners in the physics category.
+
+```sql title="Query"
+CREATE OR REPLACE VIEW nobel_prize_laureates
+AS SELECT *
+FROM file('nobel_laureates_data.csv');
+```
+
+```sql title="Query"
+SELECT
+    fullName,
+    leadInFrame(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS year,
+    category,
+    motivation
+FROM nobel_prize_laureates
+WHERE category = 'physics'
+ORDER BY year DESC
+LIMIT 9
+```
+
+```response title="Response"
+   ┌─fullName─────────┬─year─┬─category─┬─motivation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ Anne L Huillier  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+2. │ Pierre Agostini  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+3. │ Ferenc Krausz    │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+4. │ Alain Aspect     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+5. │ Anton Zeilinger  │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+6. │ John Clauser     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+7. │ Giorgio Parisi   │ 2021 │ physics  │ for the discovery of the interplay of disorder and fluctuations in physical systems from atomic to planetary scales                │
+8. │ Klaus Hasselmann │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+   └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<true>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
+This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+
+**Syntax**
+
+```sql
+lead(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+**Example**
+
+This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `lead` function to return a list of successive winners in the physics category.
+
+```sql title="Query"
+CREATE OR REPLACE VIEW nobel_prize_laureates
+AS SELECT *
+FROM file('nobel_laureates_data.csv');
+```
+
+```sql title="Query"
+SELECT
+    fullName,
+    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS year,
+    category,
+    motivation
+FROM nobel_prize_laureates
+WHERE category = 'physics'
+ORDER BY year DESC
+LIMIT 9
+```
+
+```response title="Query"
+   ┌─fullName─────────┬─year─┬─category─┬─motivation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ Anne L Huillier  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+2. │ Pierre Agostini  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+3. │ Ferenc Krausz    │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+4. │ Alain Aspect     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+5. │ Anton Zeilinger  │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+6. │ John Clauser     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+7. │ Giorgio Parisi   │ 2021 │ physics  │ for the discovery of the interplay of disorder and fluctuations in physical systems from atomic to planetary scales                │
+8. │ Klaus Hasselmann │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+   └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
@@ -3299,6 +4134,88 @@ FROM
         {
             return std::make_shared<WindowFunctionNonNegativeDerivative>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Computes the non-negative derivative of `metric_column` with respect to `timestamp_column`.
+This is a ClickHouse-specific window function, not part of standard SQL.
+
+For each row, the derivative is computed against the *previous row in the window's evaluation order*, which is determined by the window's `ORDER BY` clause - not by `timestamp_column`.
+The `timestamp_column` argument is read only to measure the elapsed time between the current row and that previous row; it does not order the rows itself.
+
+<Warning>
+`nonNegativeDerivative` does not order rows by `timestamp_column`; the window's `ORDER BY` does.
+For the formula below to apply, `timestamp_column` must be strictly increasing in the window's evaluation order, so you should normally order the window by `timestamp_column` ascending (for example `... OVER (ORDER BY ts ASC)` together with `nonNegativeDerivative(metric, ts)`).
+Whenever the elapsed time between the current row and the previous row is non-positive - which happens with `ORDER BY timestamp_column DESC` or with duplicate (equal) timestamps - the function returns `0` for that row instead of following the formula.
+</Warning>
+
+The result is the rate of change of the metric per `INTERVAL`, with any negative value clamped to `0`.
+This is useful for monotonically increasing metrics, such as counters, where a decrease usually indicates a reset rather than a real negative rate.
+
+**Syntax**
+
+```sql
+nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Arguments**
+
+- `metric_column` — The column whose derivative is computed. [(U)Int*](/reference/data-types/int-uint) or [Float*](/reference/data-types/float).
+- `timestamp_column` — The column used to measure the elapsed time between the current row and the previous row in the window order. It does not order the rows; the window's `ORDER BY` does, and should normally use this same column. [DateTime](/reference/data-types/datetime) or [DateTime64](/reference/data-types/datetime64).
+- `INTERVAL X UNITS` — Optional. The time unit the result is scaled to. Defaults to `INTERVAL 1 SECOND`. Only fixed-length units are supported (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`); variable-length units (`MONTH`, `QUARTER`, `YEAR`) raise an exception.
+
+**Returned value**
+
+For each row, the value is computed as:
+
+- `0` for the first row;
+- `0` for any row whose elapsed time since the previous row is non-positive (that is, $\text{timestamp}_i - \text{timestamp}_{i-1} \le 0$, as happens with descending order or duplicate timestamps); and
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$ otherwise.
+
+If the computed value would be negative, it is clamped to `0`. The return type is [Float64](/reference/data-types/float).
+
+**Example**
+
+The following example computes the per-second rate of change of a sensor reading.
+Note that the third row drops from `110` to `105`, so its derivative is clamped to `0`.
+
+```sql title="Query"
+CREATE TABLE sensor_readings
+(
+    `sensor_id` UInt32,
+    `ts`        DateTime,
+    `reading`   Float64
+)
+ENGINE = Memory;
+
+INSERT INTO sensor_readings VALUES
+    (1, '2024-01-01 00:00:00', 100),
+    (1, '2024-01-01 00:00:10', 110),
+    (1, '2024-01-01 00:00:20', 105),
+    (1, '2024-01-01 00:00:30', 130);
+```
+
+```sql title="Query"
+SELECT
+    ts,
+    reading,
+    nonNegativeDerivative(reading, ts) OVER (ORDER BY ts ASC) AS deriv_per_second
+FROM sensor_readings
+ORDER BY ts ASC;
+```
+
+```response title="Response"
+   ┌──────────────────ts─┬─reading─┬─deriv_per_second─┐
+1. │ 2024-01-01 00:00:00 │     100 │                0 │
+2. │ 2024-01-01 00:00:10 │     110 │                1 │
+3. │ 2024-01-01 00:00:20 │     105 │                0 │
+4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
+   └─────────────────────┴─────────┴──────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 }
 }
