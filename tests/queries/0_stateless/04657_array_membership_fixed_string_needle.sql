@@ -54,6 +54,14 @@ SELECT '-- constant array, compared as Fields';
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)), countEqual(['V0', 'V0\0'], toFixedString('V0', 3));
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 5)), has([toFixedString('V0', 4)], 'V0'), has([toFixedString('V0', 3)], 'V0\0\0\0');
 SELECT 'per row', has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)) FROM t_str ORDER BY id;
+-- `indexOfAssumeSorted` assumes ascending order, and ['V0', 'V0\0'] is sorted bytewise, so its
+-- precondition holds. Order under zero-padded comparison need not match the order the binary search
+-- relies on, so a constant FixedString needle takes the linear scan instead. `arrayFirstIndex` is a
+-- separate implementation, so it is an independent position oracle, and `indexOf` must agree too.
+SELECT 'indexOfAssumeSorted',              indexOfAssumeSorted(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)), arrayFirstIndex(x -> x = toFixedString('V0', 3), ['V0', 'V0\0']);
+SELECT 'indexOfAssumeSorted wider needle', indexOfAssumeSorted(['V0', 'V0\0'], toFixedString('V0', 5)), indexOf(['V0', 'V0\0'], toFixedString('V0', 5)), arrayFirstIndex(x -> x = toFixedString('V0', 5), ['V0', 'V0\0']);
+-- Must not regress: a String needle keeps the binary search, which must stay correct.
+SELECT 'indexOfAssumeSorted String needle', indexOfAssumeSorted(['V0', 'V0\0'], 'V0'), indexOfAssumeSorted(['V0', 'V0\0'], 'V0\0'), arrayFirstIndex(x -> x = 'V0', ['V0', 'V0\0']), arrayFirstIndex(x -> x = 'V0\0', ['V0', 'V0\0']);
 
 SELECT '-- Map keys take the same path';
 CREATE TABLE t_map    (id UInt64, m Map(String, UInt8)) ENGINE = Memory;
@@ -63,14 +71,18 @@ INSERT INTO t_map_lc VALUES (0, {'V0':1}), (1, {'V0\0':1}), (2, {'X':1});
 SELECT 'Map',                 groupArray(id) FROM t_map    WHERE has(m, toFixedString('V0', 3));
 SELECT 'Map(LowCardinality)', groupArray(id) FROM t_map_lc WHERE has(m, toFixedString('V0', 3));
 -- `has(Map, ...)` strips LowCardinality before dispatch, so it cannot reach the LowCardinality
--- shortcut. `mapContainsKey` and `mapContainsValue` go through the Map-to-array adapter, which keeps
--- LowCardinality, and select a different tuple element from each other, so all four are separate.
+-- shortcut. `mapContainsValue` goes through the Map-to-array adapter, which keeps LowCardinality.
+-- `mapContainsKey` reaches that adapter only with the rewrite disabled: at the default,
+-- `FunctionToSubcolumnsPass` replaces it with `has(m.keys, ...)`, and there is no such rewrite for
+-- `mapContainsValue`. Hence four key rows: both spellings x both element types.
 CREATE TABLE t_map_val    (id UInt64, m Map(UInt8, String)) ENGINE = Memory;
 CREATE TABLE t_map_val_lc (id UInt64, m Map(UInt8, LowCardinality(String))) ENGINE = Memory;
 INSERT INTO t_map_val    VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
 INSERT INTO t_map_val_lc VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
 SELECT 'mapContainsKey',                   groupArray(id), (SELECT groupArray(id) FROM t_map        WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map        WHERE mapContainsKey(m, toFixedString('V0', 3));
 SELECT 'mapContainsKey LowCardinality',    groupArray(id), (SELECT groupArray(id) FROM t_map_lc     WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc     WHERE mapContainsKey(m, toFixedString('V0', 3));
+SELECT 'mapContainsKey no-subcolumns',                groupArray(id), (SELECT groupArray(id) FROM t_map    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map    WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'mapContainsKey LowCardinality no-subcolumns', groupArray(id), (SELECT groupArray(id) FROM t_map_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'mapContainsValue',                 groupArray(id), (SELECT groupArray(id) FROM t_map_val    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val    WHERE mapContainsValue(m, toFixedString('V0', 3));
 SELECT 'mapContainsValue LowCardinality',  groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val_lc WHERE mapContainsValue(m, toFixedString('V0', 3));
 

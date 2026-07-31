@@ -19,11 +19,16 @@ LowCardinality	2	1	2
 per row	1	1
 per row	1	1
 per row	1	1
+indexOfAssumeSorted	1	1	1
+indexOfAssumeSorted wider needle	1	1	1
+indexOfAssumeSorted String needle	1	2	1	2
 -- Map keys take the same path
 Map	[0,1]
 Map(LowCardinality)	[0,1]
 mapContainsKey	[0,1]	[0,1]
 mapContainsKey LowCardinality	[0,1]	[0,1]
+mapContainsKey no-subcolumns	[0,1]	[0,1]
+mapContainsKey LowCardinality no-subcolumns	[0,1]	[0,1]
 mapContainsValue	[0,1]	[0,1]
 mapContainsValue LowCardinality	[0,1]	[0,1]
 -- the rewrite of arrayExists to has must preserve results
