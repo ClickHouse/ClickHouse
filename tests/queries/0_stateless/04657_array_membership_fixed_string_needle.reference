@@ -22,6 +22,10 @@ per row	1	1
 -- Map keys take the same path
 Map	[0,1]
 Map(LowCardinality)	[0,1]
+mapContainsKey	[0,1]	[0,1]
+mapContainsKey LowCardinality	[0,1]	[0,1]
+mapContainsValue	[0,1]	[0,1]
+mapContainsValue LowCardinality	[0,1]	[0,1]
 -- the rewrite of arrayExists to has must preserve results
 FixedString needle	1
 String needle	1

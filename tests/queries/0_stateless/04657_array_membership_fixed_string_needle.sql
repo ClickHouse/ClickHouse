@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS t_fs4;
 DROP TABLE IF EXISTS t_lc_fs3;
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS t_map_lc;
+DROP TABLE IF EXISTS t_map_val;
+DROP TABLE IF EXISTS t_map_val_lc;
 
 -- id0 and id1 are two members of the equivalence class of toFixedString('V0', 3):
 -- string-family equality is zero-padded, so both must match.
@@ -60,6 +62,17 @@ INSERT INTO t_map    VALUES (0, {'V0':1}), (1, {'V0\0':1}), (2, {'X':1});
 INSERT INTO t_map_lc VALUES (0, {'V0':1}), (1, {'V0\0':1}), (2, {'X':1});
 SELECT 'Map',                 groupArray(id) FROM t_map    WHERE has(m, toFixedString('V0', 3));
 SELECT 'Map(LowCardinality)', groupArray(id) FROM t_map_lc WHERE has(m, toFixedString('V0', 3));
+-- `has(Map, ...)` strips LowCardinality before dispatch, so it cannot reach the LowCardinality
+-- shortcut. `mapContainsKey` and `mapContainsValue` go through the Map-to-array adapter, which keeps
+-- LowCardinality, and select a different tuple element from each other, so all four are separate.
+CREATE TABLE t_map_val    (id UInt64, m Map(UInt8, String)) ENGINE = Memory;
+CREATE TABLE t_map_val_lc (id UInt64, m Map(UInt8, LowCardinality(String))) ENGINE = Memory;
+INSERT INTO t_map_val    VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
+INSERT INTO t_map_val_lc VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
+SELECT 'mapContainsKey',                   groupArray(id), (SELECT groupArray(id) FROM t_map        WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map        WHERE mapContainsKey(m, toFixedString('V0', 3));
+SELECT 'mapContainsKey LowCardinality',    groupArray(id), (SELECT groupArray(id) FROM t_map_lc     WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc     WHERE mapContainsKey(m, toFixedString('V0', 3));
+SELECT 'mapContainsValue',                 groupArray(id), (SELECT groupArray(id) FROM t_map_val    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val    WHERE mapContainsValue(m, toFixedString('V0', 3));
+SELECT 'mapContainsValue LowCardinality',  groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val_lc WHERE mapContainsValue(m, toFixedString('V0', 3));
 
 SELECT '-- the rewrite of arrayExists to has must preserve results';
 SELECT 'FixedString needle', (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = toFixedString('V0', 3), v) SETTINGS optimize_rewrite_array_exists_to_has = 1)
@@ -144,6 +157,8 @@ DROP TABLE t_fs4;
 DROP TABLE t_lc_fs3;
 DROP TABLE t_map;
 DROP TABLE t_map_lc;
+DROP TABLE t_map_val;
+DROP TABLE t_map_val_lc;
 DROP TABLE t_f64_lc;
 DROP TABLE t_f64;
 DROP TABLE t_i64_lc;
