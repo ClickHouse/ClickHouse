@@ -14,7 +14,6 @@
 #include <array>
 #include <bit>
 #include <tuple>
-#include <vector>
 
 #define QUANTILE_EXACT_MAX_ARRAY_SIZE 1'000'000'000
 
@@ -88,7 +87,7 @@ void radixSelect(const Value * data, size_t size, SelectTarget * targets, size_t
     /// Small candidate sets are cheaper to sort than to histogram.
     if (size <= 256)
     {
-        std::vector<Value> sorted(data, data + size);
+        VectorWithMemoryTracking<Value> sorted(data, data + size);
         ::sort(sorted.begin(), sorted.end());
         for (size_t t = 0; t < targets_count; ++t)
             out[targets[t].out_index] = sorted[targets[t].rank];
@@ -115,8 +114,8 @@ void radixSelect(const Value * data, size_t size, SelectTarget * targets, size_t
 
     /// Locate each target's bucket and rebase its rank within that bucket. Targets sharing
     /// a bucket form contiguous groups because targets are sorted by rank.
-    std::vector<size_t> group_bucket;
-    std::vector<size_t> group_first_target;
+    VectorWithMemoryTracking<size_t> group_bucket;
+    VectorWithMemoryTracking<size_t> group_first_target;
     {
         size_t cum = 0;
         size_t bucket = 0;
@@ -139,7 +138,7 @@ void radixSelect(const Value * data, size_t size, SelectTarget * targets, size_t
     size_t num_groups = group_bucket.size();
     /// The gathered buckets are the only allocation proportional to the data (a clustered
     /// distribution can put most of the array in one bucket), so track it with throwing.
-    std::vector<VectorWithMemoryTracking<Value>> group_elements(num_groups);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Value>> group_elements(num_groups);
     std::array<UInt16, radix_buckets> bucket_group{}; /// group index + 1, or 0 when the bucket needs no gathering
     bool any_gathers = false;
     for (size_t g = 0; g < num_groups; ++g)
@@ -191,10 +190,13 @@ void radixSelect(const Value * data, size_t size, SelectTarget * targets, size_t
 template <typename Array, typename Value>
 void selectAtPositions(Array & array, const size_t * positions, size_t count, Value * out)
 {
-    std::vector<QuantileExactImpl::SelectTarget> targets(count);
+    /// A stack buffer for the common counts, so that a small state costs no allocation.
+    std::array<QuantileExactImpl::SelectTarget, 16> small_targets;
+    VectorWithMemoryTracking<QuantileExactImpl::SelectTarget> large_targets(count > small_targets.size() ? count : 0);
+    QuantileExactImpl::SelectTarget * targets = count > small_targets.size() ? large_targets.data() : small_targets.data();
     for (size_t i = 0; i < count; ++i)
         targets[i] = {positions[i], i};
-    ::sort(targets.begin(), targets.end(), [](const auto & a, const auto & b) { return a.rank < b.rank; });
+    ::sort(targets, targets + count, [](const auto & a, const auto & b) { return a.rank < b.rank; });
 
     if constexpr (is_radix_selectable<Value>)
     {
@@ -202,8 +204,8 @@ void selectAtPositions(Array & array, const size_t * positions, size_t count, Va
         /// are often tiny and must not pay for histograms.
         if (array.size() >= 4096)
         {
-            std::vector<size_t> histogram(QuantileExactImpl::radix_buckets);
-            QuantileExactImpl::radixSelect(array.data(), array.size(), targets.data(), count, out, histogram.data());
+            std::array<size_t, QuantileExactImpl::radix_buckets> histogram;
+            QuantileExactImpl::radixSelect(array.data(), array.size(), targets, count, out, histogram.data());
             return;
         }
     }
@@ -322,14 +324,14 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
             return;
         }
 
-        std::vector<size_t> ns(size);
+        VectorWithMemoryTracking<size_t> ns(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto level = levels[indices[i]];
             ns[i] = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
         }
 
-        std::vector<Value> values(size);
+        VectorWithMemoryTracking<Value> values(size);
         selectAtPositions(array, ns.data(), size, values.data());
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = values[i];
@@ -378,8 +380,8 @@ struct QuantileExactExclusive : public QuantileExact<Value>
         }
 
         /// Interpolating levels need the order statistics at positions n - 1 and n.
-        std::vector<size_t> positions;
-        std::vector<std::tuple<size_t, Float64, size_t>> interpolated; /// (i, h, n)
+        VectorWithMemoryTracking<size_t> positions;
+        VectorWithMemoryTracking<std::tuple<size_t, Float64, size_t>> interpolated; /// (i, h, n)
         for (size_t i = 0; i < size; ++i)
         {
             auto level = levels[indices[i]];
@@ -401,7 +403,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             }
         }
 
-        std::vector<Value> values(positions.size());
+        VectorWithMemoryTracking<Value> values(positions.size());
         if (!positions.empty())
             selectAtPositions(array, positions.data(), positions.size(), values.data());
         for (size_t j = 0; j < interpolated.size(); ++j)
@@ -451,8 +453,8 @@ struct QuantileExactInclusive : public QuantileExact<Value>
         }
 
         /// Interpolating levels need the order statistics at positions n - 1 and n.
-        std::vector<size_t> positions;
-        std::vector<std::tuple<size_t, Float64, size_t>> interpolated; /// (i, h, n)
+        VectorWithMemoryTracking<size_t> positions;
+        VectorWithMemoryTracking<std::tuple<size_t, Float64, size_t>> interpolated; /// (i, h, n)
         for (size_t i = 0; i < size; ++i)
         {
             auto level = levels[indices[i]];
@@ -472,7 +474,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             }
         }
 
-        std::vector<Value> values(positions.size());
+        VectorWithMemoryTracking<Value> values(positions.size());
         if (!positions.empty())
             selectAtPositions(array, positions.data(), positions.size(), values.data());
         for (size_t j = 0; j < interpolated.size(); ++j)
@@ -534,7 +536,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
             return;
         }
 
-        std::vector<size_t> ns(size);
+        VectorWithMemoryTracking<size_t> ns(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto level = levels[indices[i]];
@@ -562,7 +564,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
             ns[i] = n;
         }
 
-        std::vector<Value> values(size);
+        VectorWithMemoryTracking<Value> values(size);
         selectAtPositions(array, ns.data(), size, values.data());
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = values[i];
@@ -611,7 +613,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
             return;
         }
 
-        std::vector<size_t> ns(size);
+        VectorWithMemoryTracking<size_t> ns(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto level = levels[indices[i]];
@@ -632,7 +634,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
             ns[i] = n;
         }
 
-        std::vector<Value> values(size);
+        VectorWithMemoryTracking<Value> values(size);
         selectAtPositions(array, ns.data(), size, values.data());
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = values[i];
