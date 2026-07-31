@@ -14,21 +14,17 @@ integration:
 
 ボタンをクリックして個別のテーブルを再同期する機能は現在開発中ですが、このガイドでは、現時点で MongoDB ClickPipe でこれを実現する方法を紹介します。
 
-<div id="removing-table">
-  ### 1. パイプからテーブルを削除する
-</div>
+<Steps>
+  <Step title="パイプからテーブルを削除する" id="removing-table">
+    これは、[テーブル削除ガイド](/ja/integrations/clickpipes/mongodb/remove-table) に従って実行できます。
+  </Step>
 
-これを行うには、[テーブル削除ガイド](/ja/integrations/clickpipes/mongodb/remove-table)に従ってください。
+  <Step title="ClickHouse でテーブルを TRUNCATE または drop する" id="truncate-drop-table">
+    この手順は、次の手順でこのテーブルを再度追加した際にデータが重複するのを防ぐためのものです。これを行うには、ClickHouse Cloud の **SQL Console** タブに移動し、クエリを実行します。
+    テーブルが ClickHouse にすでに存在し、かつ空でない場合は、テーブルの追加をブロックする検証が行われることに注意してください。
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. ClickHouse 上のテーブルを TRUNCATE または削除する
-</div>
-
-この手順は、次の手順でこのテーブルを再度追加する際のデータ重複を防ぐためのものです。これを行うには、ClickHouse Cloud の **SQL Console** タブに移動し、クエリを実行します。
-なお、ClickHouse にテーブルがすでに存在し、かつ空でない場合は、テーブルを追加できないよう検証が行われます。
-
-<div id="add-table-again">
-  ### 3. テーブルを ClickPipe に再度追加する
-</div>
-
-続けて、[テーブル追加ガイド](/ja/integrations/clickpipes/mongodb/add-table)に従ってください。
+  <Step title="テーブルを ClickPipe に再度追加する" id="add-table-again">
+    これは、[テーブル追加ガイド](/ja/integrations/clickpipes/mongodb/add-table) に従って実行できます。
+  </Step>
+</Steps>

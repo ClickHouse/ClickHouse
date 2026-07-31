@@ -1,16 +1,43 @@
 ---
 slug: /operations/overview
 sidebarTitle: 'Обзор производительности и оптимизации'
-description: 'Обзорная страница раздела «Производительность и оптимизация»'
+description: 'Страница обзора производительности и оптимизации'
 title: 'Производительность и оптимизация'
 keywords: ['оптимизация производительности', 'лучшие практики', 'руководство по оптимизации', 'производительность ClickHouse', 'оптимизация базы данных']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ru/_performance_optimizations_table_of_contents.mdx';
-
 В этом разделе собраны советы и лучшие практики по повышению производительности в ClickHouse.
-Рекомендуем пользователям сначала ознакомиться с разделом [Основные концепции](/ru/concepts/core-concepts/parts),
-так как в нем рассматриваются ключевые понятия, необходимые для повышения производительности.
+Мы рекомендуем пользователям сначала прочитать [Основные концепции](/ru/concepts/core-concepts/parts),
+в которых изложены ключевые концепции, необходимые для повышения производительности.
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="Оптимизация PREWHERE" icon="filter" href="/ru/concepts/features/performance/prewhere">
+    Как `PREWHERE` снижает объём I/O, фильтруя данные до чтения ненужных столбцов, и как отслеживать его эффективность.
+  </Card>
+
+  <Card title="Профилирование выделений памяти" icon="memory" href="/ru/concepts/features/performance/allocation-profiling">
+    Профилирование выделений памяти с помощью jemalloc.
+  </Card>
+
+  <Card title="Профилирование выделений памяти для версий до 25.9" icon="clock-rotate-left" href="/ru/concepts/features/performance/allocation-profiling-old">
+    Профилирование выделений памяти для версий ClickHouse до 25.9.
+  </Card>
+
+  <Card title="Кэши" icon="hard-drive" href="/ru/concepts/features/performance/caches/caches">
+    Типы кэшей, включая кэш запросов, кэш условий запроса и кэш страниц в пространстве пользователя.
+  </Card>
+
+  <Card title="Индексы пропуска данных" icon="forward" href="/ru/concepts/features/performance/skip-indexes/skipping-indexes">
+    Как работают индексы пропуска данных, с примерами.
+  </Card>
+
+  <Card title="Отложенная материализация" icon="hourglass-half" href="/ru/concepts/features/performance/lazy-materialization">
+    Откладывайте чтение данных из столбцов до момента, когда они действительно понадобятся.
+  </Card>
+
+  <Card title="Устранение неполадок" icon="bug" href="/ru/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    Отладка проблем с памятью, тестирование оборудования и выборочный профилировщик запросов.
+  </Card>
+</CardGroup>

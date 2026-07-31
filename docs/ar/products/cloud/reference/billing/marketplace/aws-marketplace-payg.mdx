@@ -23,34 +23,26 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### ابحث عن ClickHouse Cloud - Pay as you go
-
+  <Step title="ابحث عن ClickHouse Cloud - Pay as you go" id="search-payg">
     انتقل إلى [AWS Marketplace](https://aws.amazon.com/marketplace) وابحث عن “ClickHouse Cloud - Pay As You Go”.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="البحث عن ClickHouse في AWS Marketplace" border />
   </Step>
 
-  <Step>
-    ### عرض خيارات الشراء
-
+  <Step title="عرض خيارات الشراء" id="purchase-options">
     انقر على [صفحة العرض](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu) ثم على **View purchase options**.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="عرض خيارات الشراء في AWS Marketplace" border />
   </Step>
 
-  <Step>
-    ### الاشتراك
-
+  <Step title="الاشتراك" id="subscribe">
     في الشاشة التالية، انقر على Subscribe.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="الاشتراك في AWS Marketplace" border />
   </Step>
 
-  <Step>
-    ### إعداد حسابك
-
-    في هذه المرحلة، لا يكون الإعداد قد اكتمل بعد، ولن تتم فوترة مؤسسة ClickHouse Cloud الخاصة بك عبر marketplace بعد. ستحتاج الآن إلى النقر على Set up your account ضمن marketplace subscription الخاصة بك لإعادة توجيهك إلى ClickHouse Cloud لإكمال الإعداد.
+  <Step title="إعداد حسابك" id="set-up-your-account">
+    في هذه المرحلة، لا يكون الإعداد قد اكتمل بعد، ولن تتم فوترة مؤسسة ClickHouse Cloud الخاصة بك عبر marketplace بعد. ستحتاج الآن إلى النقر على Set up your account على اشتراك السوق (marketplace اشتراك) لإعادة توجيهك إلى ClickHouse Cloud لإكمال الإعداد.
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="إعداد حسابك" border />
 
@@ -81,18 +73,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     إذا كنت مستخدمًا حاليًا لـ ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام credentials الخاصة بك.
   </Step>
 
-  <Step>
-    ### إضافة marketplace subscription إلى مؤسسة
+  <Step title="إضافة marketplace اشتراك إلى مؤسسة" id="add-marketplace-subscription">
+    بعد تسجيل الدخول بنجاح، يمكنك إما إنشاء مؤسسة جديدة لتتم فوترة هذه marketplace اشتراك عليها، أو اختيار مؤسسة حالية لتتم الفوترة عليها عبر هذا الاشتراك.
 
-    بعد تسجيل الدخول بنجاح، يمكنك إما إنشاء مؤسسة جديدة لتتم فوترة هذه marketplace subscription عليها، أو اختيار مؤسسة حالية لتتم الفوترة عليها عبر هذه subscription.
-
-    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="إضافة marketplace subscription" border />
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="إضافة marketplace اشتراك" border />
 
     بعد إكمال هذه الخطوة، سيتم ربط مؤسستك باشتراك AWS هذا، وستتم فوترة كل Usage عبر حساب AWS الخاص بك.
 
-    يمكنك التأكد من صفحة billing الخاصة بالمؤسسة في واجهة ClickHouse من أن billing أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
+    يمكنك التأكد من صفحة الفوترة الخاصة بالمؤسسة في واجهة ClickHouse من أن الفوترة أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
 
-    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="تأكيد صفحة billing" border />
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="تأكيد صفحة الفوترة" border />
   </Step>
 </Steps>
 
