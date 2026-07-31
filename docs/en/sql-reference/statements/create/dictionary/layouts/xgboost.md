@@ -121,7 +121,7 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `seed` | Random number seed. |
 | `verbosity` | Logging verbosity: `0` (silent) to `3` (debug). |
 | `nthread` | Number of parallel threads used for training. |
-| `eta` / `learning_rate` | Step-size shrinkage applied after each boosting round (aliases). |
+| `eta` | Step-size shrinkage applied after each boosting round. |
 | `gamma` | Minimum loss reduction required to make a further split on a leaf. |
 | `max_depth` | Maximum depth of a tree. |
 | `min_child_weight` | Minimum sum of instance weight (hessian) needed in a child. |
@@ -129,8 +129,8 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `subsample` | Fraction of the training rows sampled for each boosting round. |
 | `sampling_method` | Row sampling method: `uniform` or `gradient_based`. |
 | `colsample_bytree` / `colsample_bylevel` / `colsample_bynode` | Fraction of columns (features) sampled per tree / per level / per split. |
-| `lambda` / `reg_lambda` | L2 regularization term on weights (aliases). |
-| `alpha` / `reg_alpha` | L1 regularization term on weights (aliases). |
+| `lambda` | L2 regularization term on weights (aliases). |
+| `alpha` | L1 regularization term on weights (aliases). |
 | `tree_method` | Tree construction algorithm: `auto`, `exact`, `approx`, or `hist`. |
 | `scale_pos_weight` | Balances positive and negative weights, useful for imbalanced classes. |
 | `grow_policy` | How new nodes are added to the tree: `depthwise` or `lossguide`. |
