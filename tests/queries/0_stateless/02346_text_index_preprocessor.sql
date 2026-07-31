@@ -674,6 +674,18 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Preprocessor referencing an ALIAS whose compound identifier root is captured is rejected';
+-- `a` expands to `t.v`, whose root `t` the lambda parameter shadows. Without checking the root, the
+-- index would silently be built from the lambda-local tuple instead of the table column.
+CREATE TABLE tab
+(
+    s String,
+    t Tuple(v String),
+    a String ALIAS t.v,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(t -> lower(a), [CAST(tuple('shadow'), 'Tuple(v String)')]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 SELECT '-- The same capture in a non-text index expression is still accepted';
 -- The rejection above is scoped to the text index `preprocessor` / `postprocessor` arguments.
 -- Index expressions accepted such definitions before, so `ATTACH` must keep working for them.

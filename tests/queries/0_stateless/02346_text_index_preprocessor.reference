@@ -225,6 +225,7 @@ Baz	3
 0
 -- Preprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected
 -- Preprocessor referencing a chained ALIAS captured by a lambda parameter is rejected
+-- Preprocessor referencing an ALIAS whose compound identifier root is captured is rejected
 -- The same capture in a non-text index expression is still accepted
 0
 -- Preprocessor referencing chained ALIAS columns (a -> b -> s)

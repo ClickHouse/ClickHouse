@@ -343,6 +343,17 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT 'Postprocessor referencing an ALIAS whose compound identifier root is captured is rejected.';
+-- `a` expands to `t.v`, whose root `t` the lambda parameter shadows.
+CREATE TABLE tab
+(
+    s String,
+    t Tuple(v String),
+    a String ALIAS t.v,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayStringConcat(arrayMap(t -> lower(a), [CAST(tuple('shadow'), 'Tuple(v String)')]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Postprocessor referencing chained ALIAS columns (a -> b -> s).';
 
 CREATE TABLE tab
