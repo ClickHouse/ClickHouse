@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -165,6 +166,16 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    virtual std::optional<Pipe> read(
+        ObjectInfoPtr,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        FormatParserSharedResourcesPtr,
+        FormatFilterInfoPtr,
+        bool) const { return std::nullopt; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 

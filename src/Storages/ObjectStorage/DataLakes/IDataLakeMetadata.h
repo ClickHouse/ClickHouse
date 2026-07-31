@@ -10,6 +10,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -95,6 +96,18 @@ public:
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    /// Some data lake formats are datasets rather than file formats. They can create
+    /// a custom read pipeline instead of asking FormatFactory to read a single object.
+    virtual std::optional<Pipe> read(
+        ObjectInfoPtr,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        FormatParserSharedResourcesPtr,
+        FormatFilterInfoPtr,
+        bool) const { return std::nullopt; }
 
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
