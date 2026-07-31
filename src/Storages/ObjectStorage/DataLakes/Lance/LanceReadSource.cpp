@@ -240,15 +240,23 @@ void accountLanceBatchMetrics(const arrow::RecordBatch & batch, size_t batch_row
 }
 
 ReadSource::ReadSource(
-    const Block & header, ObjectInfoPtr object_info_, DatasetHandle dataset_, ScanDescription scan_, FormatSettings format_settings_)
+    const Block & header,
+    ObjectInfoPtr object_info_,
+    DatasetHandle dataset_,
+    ScanDescription scan_,
+    CancelHandlePtr cancel_handle_,
+    FormatSettings format_settings_)
     : ISource(std::make_shared<const Block>(header), /*enable_auto_progress=*/true)
     , object_info(std::move(object_info_))
     , dataset(std::move(dataset_))
     , scan(std::move(scan_))
+    , cancel_handle(std::move(cancel_handle_))
     , format_settings(std::move(format_settings_))
 {
     if (!dataset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty DatasetHandle");
+    if (!cancel_handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty CancelHandle");
 }
 
 void ReadSource::onCancel() noexcept
@@ -274,8 +282,8 @@ Chunk ReadSource::generate()
 
         try
         {
-            const auto rows = scan.predicate
-                ? dataset.countRows(scan.snapshot, scan.predicate, cancel_handle)
+            const auto rows = scan.predicate || !scan.fragment_ids.empty()
+                ? dataset.countRows(scan.snapshot, scan.predicate, scan.fragment_ids, cancel_handle)
                 : dataset.totalRows(scan.snapshot, cancel_handle);
             if (rows)
             {

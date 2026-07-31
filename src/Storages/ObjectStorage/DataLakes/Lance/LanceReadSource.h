@@ -32,6 +32,7 @@ public:
         ObjectInfoPtr object_info_,
         DatasetHandle dataset_,
         ScanDescription scan_,
+        CancelHandlePtr cancel_handle_,
         FormatSettings format_settings_);
 
     String getName() const override { return "LanceReadSource"; }
@@ -49,7 +50,7 @@ private:
     /// Rows already emitted; used as a C++-side cap when scan.limit is set.
     size_t rows_emitted = 0;
     /// Shared with plan/count/next so onCancel interrupts any in-flight Lance work.
-    CancelHandlePtr cancel_handle = std::make_shared<CancelHandle>();
+    CancelHandlePtr cancel_handle;
     /// Protects optional engagement of scan_handle for concurrent onCancel vs generate.
     /// nextBatch/requestCancel on the Scan itself are safe without holding this mutex.
     std::mutex scan_mutex;

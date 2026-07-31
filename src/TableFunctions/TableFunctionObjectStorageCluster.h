@@ -108,4 +108,8 @@ using TableFunctionDeltaLakeAzureCluster = TableFunctionObjectStorageCluster<Del
 using TableFunctionHudiCluster = TableFunctionObjectStorageCluster<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
 #endif
 
+#if USE_LANCE && USE_AWS_S3
+using TableFunctionLanceS3Cluster = TableFunctionObjectStorageCluster<LanceS3ClusterDefinition, StorageS3LanceConfiguration, true>;
+#endif
+
 }

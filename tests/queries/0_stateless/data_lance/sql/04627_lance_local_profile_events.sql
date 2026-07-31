@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- ProfileEvents are selected by a unique log comment, so this test can run in parallel.
 -- ProfileEvents are asserted via system.query_log; avoid concurrent interference.
 
 SET log_queries = 1;

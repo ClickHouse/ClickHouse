@@ -44,6 +44,7 @@ public:
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot & state, ContextPtr local_context) const override;
     bool shouldReloadSchemaForConsistency(ContextPtr) const override { return true; }
+    bool supportsDistributedReadWithExplicitSchema() const override { return true; }
 
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,

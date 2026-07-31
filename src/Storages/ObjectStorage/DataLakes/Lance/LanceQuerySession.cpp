@@ -3,6 +3,7 @@
 #if USE_LANCE
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceQuerySession.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -35,6 +36,32 @@ namespace
 constexpr const char * session_type_tag = "Lance::QuerySession";
 }
 
+QuerySession::QuerySession()
+    : cancel_handle(std::make_shared<CancelHandle>())
+{
+}
+
+void QuerySession::bindToQueryCancellation(const ContextPtr & context)
+{
+    if (!context)
+        return;
+
+    const auto query_status = context->getProcessListElementSafe();
+    if (!query_status)
+        return;
+
+    std::lock_guard lock(mutex);
+    if (query_cancel_callback)
+        return;
+
+    query_cancel_callback = std::make_unique<StopCallback>(
+        query_status->getCancellationToken(),
+        [handle = cancel_handle]
+        {
+            handle->requestCancel();
+        });
+}
+
 std::shared_ptr<QuerySession> QuerySession::get(const ContextPtr & context)
 {
     if (!context)
@@ -59,6 +86,7 @@ std::shared_ptr<QuerySession> QuerySession::get(const ContextPtr & context)
         const auto threads = static_cast<UInt32>(context->getSettingsRef()[Setting::lance_runtime_threads]);
         ensureRuntime(threads);
         session->setReuseEnabled(context->getSettingsRef()[Setting::lance_query_dataset_reuse]);
+        session->bindToQueryCancellation(query_context);
         holder = session;
         return session;
     }
@@ -66,13 +94,14 @@ std::shared_ptr<QuerySession> QuerySession::get(const ContextPtr & context)
     auto session = std::static_pointer_cast<QuerySession>(holder);
     if (!session)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query kitchen_sink holds unexpected type for {}", session_type_tag);
+    session->bindToQueryCancellation(query_context);
     return session;
 }
 
 DatasetHandle QuerySession::getOrOpen(const DatasetOptions & options)
 {
     if (!reuse_enabled)
-        return DatasetHandle::openEphemeral(options);
+        return DatasetHandle::openEphemeral(options, cancel_handle);
 
     const auto key = options.identityKey();
 
@@ -83,7 +112,7 @@ DatasetHandle QuerySession::getOrOpen(const DatasetOptions & options)
         return it->second;
     }
 
-    auto handle = DatasetHandle::openEphemeral(options);
+    auto handle = DatasetHandle::openEphemeral(options, cancel_handle);
     open_datasets.emplace(key, handle);
     ++open_count;
     return handle;
@@ -124,7 +153,7 @@ DatasetHandle QuerySession::getPinned(const DatasetOptions & options, UInt64 pin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Lance dataset for pinned version 0");
 
     if (!reuse_enabled)
-        return DatasetHandle::openEphemeral(options);
+        return DatasetHandle::openEphemeral(options, cancel_handle);
 
     const auto key = options.identityKey();
     std::lock_guard lock(mutex);
@@ -152,7 +181,7 @@ DatasetHandle QuerySession::getPinned(const DatasetOptions & options, UInt64 pin
         return it->second;
     }
 
-    auto handle = DatasetHandle::openEphemeral(options);
+    auto handle = DatasetHandle::openEphemeral(options, cancel_handle);
     open_datasets.emplace(key, handle);
     ++open_count;
     return handle;

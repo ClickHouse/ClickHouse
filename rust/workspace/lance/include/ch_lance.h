@@ -96,7 +96,31 @@ typedef struct ch_lance_scan_options
     uint64_t limit;
     /// Optional. When non-null, planScan is interruptible and the resulting scan shares this token.
     ch_lance_cancel_handle * cancel;
+    /// false (zero-init): ordered scan (SDK default, compatible).
+    /// true: unordered scan; enables meaningful fragment_readahead.
+    bool scan_unordered;
+    /// 0 = leave Lance SDK default; >0 → Scanner::fragment_readahead.
+    /// Only effective when scan_unordered is true.
+    uint32_t fragment_readahead;
+    /// 0 = leave Lance SDK default; >0 → Scanner::batch_readahead.
+    uint32_t batch_readahead;
+    /// 0 = leave Lance SDK default; >0 → Scanner::io_buffer_size.
+    /// Do not set very small values (Lance may deadlock if a single batch exceeds the buffer).
+    uint64_t io_buffer_size;
+    /// Optional fragment id filter. null or size==0 → all fragments.
+    /// Otherwise Scanner::with_fragments restricted to these ids (from the pinned version).
+    const uint64_t * fragment_ids;
+    size_t fragment_ids_size;
 } ch_lance_scan_options;
+
+typedef struct ch_lance_fragment_info
+{
+    uint64_t id;
+    /// UINT64_MAX if unknown (Lance Option::None).
+    uint64_t num_rows;
+    /// 0 if unknown; best-effort sum of data file sizes.
+    uint64_t size_bytes;
+} ch_lance_fragment_info;
 
 typedef struct ch_lance_runtime_config
 {
@@ -146,6 +170,19 @@ bool ch_lance_count_rows(
     ch_lance_cancel_handle * cancel,
     ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
+
+/// Lists fragments for an exact dataset version (checkout_exact_version).
+/// On success with size>0: *out_list is allocated; free with ch_lance_free_fragment_list.
+/// Empty datasets: *out_size=0 and *out_list=null.
+/// cancel may be null.
+bool ch_lance_list_fragments(
+    ch_lance_dataset * dataset,
+    uint64_t version,
+    ch_lance_fragment_info ** out_list,
+    size_t * out_size,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
+void ch_lance_free_fragment_list(ch_lance_fragment_info * list, size_t size);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
 bool ch_lance_next_batch(ch_lance_scan * scan, struct ArrowArray * array, struct ArrowSchema * schema, bool * has_batch, ch_lance_error * error);

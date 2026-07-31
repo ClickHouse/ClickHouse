@@ -614,6 +614,48 @@ A table with the specified structure for reading data from cluster in the specif
 }
 #endif
 
+#if USE_LANCE && USE_AWS_S3
+void registerTableFunctionLanceCluster(TableFunctionFactory & factory);
+void registerTableFunctionLanceCluster(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionLanceS3Cluster>(
+        {
+            .description = R"DOCS_MD(
+This is an extension to the [lanceS3](/sql-reference/table-functions/lance) table function.
+
+Allows reading [Lance](https://lancedb.github.io/lance/) datasets from Amazon S3 in parallel across nodes in a specified cluster. The initiator pins a dataset version, splits fragments into packs, and dispatches packs to workers. Each worker opens the pinned version and scans only its fragment subset.
+
+## Syntax {#syntax}
+
+```sql
+lanceS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key [, session_token]])
+lanceS3Cluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+## Arguments {#arguments}
+
+- `cluster_name` — Name of a cluster used to build addresses and connection parameters for remote and local servers.
+- All other arguments match the [lanceS3](/sql-reference/table-functions/lance) table function.
+
+## Notes {#notes}
+
+- Tasks carry the pinned dataset version and fragment ids; workers never fall back to the latest version.
+- `LIMIT` pushdown and count fast paths may force a single pack (little or no cluster speedup).
+- Prefer single-node `lanceS3` for small datasets.
+
+## Related {#related}
+
+- [Lance table engine](/engines/table-engines/integrations/lance)
+- [lanceS3 table function](/sql-reference/table-functions/lance)
+)DOCS_MD",
+            .examples{{LanceS3ClusterDefinition::name, "SELECT * FROM lanceS3Cluster(cluster, url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = false}
+    );
+}
+#endif
+
 void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -626,6 +668,9 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory)
 #endif
 #if USE_AWS_S3
     registerTableFunctionHudiCluster(factory);
+#endif
+#if USE_LANCE && USE_AWS_S3
+    registerTableFunctionLanceCluster(factory);
 #endif
 }
 
