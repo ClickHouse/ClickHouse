@@ -1614,7 +1614,7 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
-        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
+        "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
