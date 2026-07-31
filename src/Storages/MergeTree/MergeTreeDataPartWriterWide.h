@@ -10,7 +10,7 @@ namespace DB
 struct StreamNameAndMark
 {
     String stream_name;
-    MarkInCompressedFile mark;
+    MarkInCompressedFile mark{};
 };
 
 using StreamsWithMarks = std::vector<StreamNameAndMark>;
@@ -38,7 +38,7 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_,
         WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumnPermutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;

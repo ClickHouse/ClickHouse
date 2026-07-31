@@ -100,7 +100,7 @@ and escape characters are highlighted separately.
         .arguments = {{"query", "A ClickHouse SQL query string. String."}},
         .returned_value = {"An array of named tuples `(begin UInt64, end UInt64, type Enum8(...))` representing highlighted ranges.", {"Array(Tuple(begin UInt64, end UInt64, type Enum8(...)))"}},
         .examples = {{"simple", "SELECT highlightQuery('SELECT 1')", R"([(0,6,'keyword'),(7,8,'number')])"}},
-        .introduced_in = {26, 4},
+        .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::Other,
     });
 }

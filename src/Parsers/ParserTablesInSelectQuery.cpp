@@ -1,3 +1,4 @@
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -10,6 +11,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
@@ -67,7 +69,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 ParserAlias alias_parser(allow_alias_without_as_keyword);
                 ASTPtr alias_node;
                 if (alias_parser.parse(pos, alias_node, expected))
-                    res->subquery->setAlias(alias_node->getColumnName());
+                    res->subquery->setAlias(getIdentifierName(alias_node));
             }
             else
             {
@@ -114,6 +116,15 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
     }
 
+    /// STREAM [CURSOR '{...}']
+    if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
+    {
+        ParserStreamSettings stream_settings_p;
+
+        if (!stream_settings_p.parse(pos, res->stream_settings, expected))
+            return false;
+    }
+
     if (res->database_and_table_name)
         res->children.emplace_back(res->database_and_table_name);
     if (res->table_function)
@@ -124,10 +135,12 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+    if (res->stream_settings)
+        res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
 
-    assert(res->database_and_table_name || res->table_function || res->subquery);
+    chassert(res->database_and_table_name || res->table_function || res->subquery);
 
     node = res;
     return true;
@@ -164,7 +177,10 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!has_array_join)
         return false;
 
-    if (!ParserExpressionList(false).parse(pos, res->expression_list, expected))
+    /// An empty expression list is not a valid ARRAY JOIN clause: the analyzer rejects it, and the
+    /// formatter would emit a dangling `ARRAY JOIN` keyword that cannot be parsed back, because inside
+    /// a set operation it swallows the next branch's SELECT.
+    if (!ParserNotEmptyExpressionList(false).parse(pos, res->expression_list, expected))
         return false;
 
     if (res->expression_list)
@@ -357,8 +373,18 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     else
         return false;
 
-    while (ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+    while (true)
+    {
+        /// A comma (cross) join right after an ARRAY JOIN is not supported: reject it
+        /// instead of misparsing the item after the comma as a table.
+        const auto * prev = res->children.back()->as<ASTTablesInSelectQueryElement>();
+        if (prev && prev->array_join && pos->type == TokenType::Comma)
+            break;
+
+        if (!ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+            break;
         res->children.emplace_back(child);
+    }
 
     node = res;
     return true;

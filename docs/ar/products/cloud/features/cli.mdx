@@ -1,0 +1,167 @@
+---
+sidebarTitle: 'ClickHouse CLI'
+slug: /cloud/features/cli
+title: 'ClickHouse CLI'
+description: 'استخدم ClickHouse CLI لإدارة خدمات ClickHouse Cloud ومثيلات ClickHouse المحلية'
+keywords: ['clickhousectl', 'CLI', 'إدارة السحابة', 'التطوير المحلي']
+doc_type: 'مرجع'
+---
+
+ClickHouse CLI (`clickhousectl`) هي أداة موحّدة لسطر الأوامر لإدارة موارد ClickHouse Cloud ودعم التطوير المحلي باستخدام ClickHouse. كما تتيح أيضًا إدارة خدمات [ClickHouse Cloud Postgres](/ar/products/managed-postgres/overview).
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+يُنشأ أيضًا اسم مستعار لـ `chctl` تلقائيًا لتسهيل الاستخدام.
+
+<div id="cloud-management">
+  ## إدارة Cloud
+</div>
+
+قم بالمصادقة باستخدام ClickHouse Cloud وأدِر خدماتك مباشرةً من سطر الأوامر.
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+```bash
+clickhousectl cloud auth
+```
+
+سيُطلب منك إدخال مفتاح API والسر الخاصَّين بك، وسيتم حفظهما في `.clickhouse/credentials.json` (محلي على مستوى المشروع، ومتجاهَل من `git`).
+
+يمكنك أيضًا استخدام متغيرات البيئة:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+<div id="services">
+  ### الخدمات
+</div>
+
+```bash
+# List services
+clickhousectl cloud service list
+
+# Create a service
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1
+
+# Get service details
+clickhousectl cloud service get <service-id>
+
+# Scale a service
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3
+
+# Start/stop a service
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# Delete a service
+clickhousectl cloud service delete <service-id>
+```
+
+<div id="postgres-services">
+  ### خدمات Postgres (بيتا)
+</div>
+
+أنشئ [ClickHouse Cloud Postgres](/ar/products/managed-postgres/overview) وأدِر خدماته.
+
+```bash
+# List Postgres services
+clickhousectl cloud postgres list
+
+# Create a Postgres service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18
+
+# Get service details
+clickhousectl cloud postgres get <pg-id>
+
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+
+# Reset the password
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Read replicas and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Delete a service
+clickhousectl cloud postgres delete <pg-id>
+```
+
+<div id="organizations">
+  ### المنظمات
+</div>
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+```
+
+<div id="api-keys">
+  ### مفاتيح API
+</div>
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key delete <key-id>
+```
+
+<div id="members-and-invitations">
+  ### الأعضاء والدعوات
+</div>
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+```
+
+<div id="backups">
+  ### النسخ الاحتياطية
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="json-output">
+  ### مخرجات JSON
+</div>
+
+استخدم الخيار `--json` للحصول على استجابات مُنسّقة بتنسيق JSON من أي أمر سحابي:
+
+```bash
+clickhousectl cloud --json service list
+```
+
+<div id="local-development">
+  ## التطوير المحلي
+</div>
+
+تُدير أداة CLI أيضًا عمليات التثبيت المحلية لـ ClickHouse والخوادم. راجع صفحة [clickhousectl (CLI)](/ar/get-started/setup/self-managed/clickhousectl) للتعرّف على خطوات البدء في التطوير المحلي.
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+* macOS ‏(aarch64, x86&#95;64) أو Linux ‏(aarch64, x86&#95;64)
+* تتطلب أوامر Cloud [مفتاح API لـ ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/openapi)

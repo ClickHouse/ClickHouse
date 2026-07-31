@@ -5,6 +5,7 @@
         <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
         <parallel_hash_join_threshold>1</parallel_hash_join_threshold>
         <max_threads>8</max_threads>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
     </settings>
 
     <create_query>

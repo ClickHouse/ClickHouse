@@ -26,7 +26,15 @@ namespace ErrorCodes
 
 void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
+    /// Skip already-normalized union queries: `NormalizeSelectWithUnionQueryMatcher`
+    /// flattens inner `UNION ALL` / `UNION DISTINCT` children into the parent's
+    /// `list_of_selects` without updating `list_of_modes`, so on a normalized AST
+    /// `list_of_modes.size() + 1 == list_of_selects->children.size()` no longer
+    /// holds. A normalized AST also cannot contain `INTERSECT` or `EXCEPT` modes
+    /// (`NormalizeSelectWithUnionQueryMatcher` only sets `union_mode` to
+    /// `UNION_ALL` or `UNION_DISTINCT`), so this matcher has nothing to do.
+    /// Mirrors the early-return check in `NormalizeSelectWithUnionQueryMatcher::visit`.
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
         visit(*select_union, data);
 }
 

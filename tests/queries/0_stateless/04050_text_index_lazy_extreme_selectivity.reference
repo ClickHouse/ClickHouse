@@ -1,0 +1,28 @@
+Q1 materialize: dense AND ultrarare
+14
+Q1 lazy: dense AND ultrarare
+14
+Q2 materialize: 4-token AND
+14
+Q2 lazy: 4-token AND
+14
+Q3 materialize: dense AND medium
+1334
+Q3 lazy: dense AND medium
+1334
+Q4 materialize: sparse OR
+400
+Q4 lazy: sparse OR
+400
+Q5 materialize: mixed OR
+69333
+Q5 lazy: mixed OR
+69333
+Q6 materialize: single ultrarare
+40
+Q6 lazy: single ultrarare
+40
+Q7 materialize: rare AND ultrarare
+40
+Q7 lazy: rare AND ultrarare
+40

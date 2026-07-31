@@ -76,6 +76,10 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    /// Distributed only serializes the query to shards; it never reads columns locally, so rewriting
+    /// functions to subcolumns brings no benefit and breaks shard-side skip-index analysis (a rewritten
+    /// subcolumn no longer matches an index defined on the original expression). Same as IStorageCluster.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -261,7 +265,7 @@ private:
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolWithFailoverPtr connection_pool;
         Cluster::Addresses addresses;
-        size_t clusters_version;
+        size_t clusters_version{};
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
