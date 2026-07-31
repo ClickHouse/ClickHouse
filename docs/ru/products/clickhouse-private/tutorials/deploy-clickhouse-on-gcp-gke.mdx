@@ -30,9 +30,7 @@ description: "Это руководство поможет вам разверн
 ***
 
 <Steps>
-  <Step stepNumber={0}>
-    ## Шаг 0: Настройка сервисного аккаунта
-
+  <Step stepNumber={0} title="Шаг 0: Настройка сервисного аккаунта" id="step-0-service-account-setup">
     В средах FedRAMP, где прямая аутентификация пользователей ограничена, создайте сервисный аккаунт для имперсонации.
 
     ### Вариант 1: Через консоль GCP
@@ -109,9 +107,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={1}>
-    ## Шаг 1: Задание переменных окружения (`00-env.sh`)
-
+  <Step stepNumber={1} title={<>Шаг 1: Задание переменных окружения (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
     Создайте этот файл и подключите его перед запуском других скриптов. Укажите актуальные значения для вашей среды.
 
     ```bash expandable
@@ -225,9 +221,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={2}>
-    ## Шаг 2: Создайте Artifact Registry (`01-artifact-registry.sh`)
-
+  <Step stepNumber={2} title={<>Шаг 2: Создайте Artifact Registry (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -269,9 +263,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={3}>
-    ## Шаг 3: Скопируйте образы контейнеров (`02-copy-images.sh`)
-
+  <Step stepNumber={3} title={<>Шаг 3: Скопируйте образы контейнеров (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
     Для сохранения всех архитектур требуется [skopeo](https://github.com/containers/skopeo).
 
     ```bash expandable
@@ -348,12 +340,10 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={4}>
-    ## Шаг 4: Настройка VPC и подсети (`03-vpc-subnet.sh`)
+  <Step stepNumber={4} title={<>Шаг 4: Настройка VPC и подсети (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
+    Этот скрипт предполагает, что у вас уже есть существующая VPC с хостом-бастионом. Он создает или обновляет подсеть GKE с необходимыми вторичными диапазонами.
 
-    Этот скрипт рассчитан на то, что у вас уже есть VPC с бастионом. Он создает или обновляет подсеть GKE с необходимыми вторичными диапазонами.
-
-    **Важно: требования к границам CIDR** - блоки `/14`: третий октет должен делиться на 4 (например, `10.244.0.0`, НЕ `10.245.0.0`) - блоки `/20`: четвертый октет должен быть равен 0, а третий — кратен 16 (например, `10.252.0.0`)
+    **Важно: требования к границам CIDR** - блоки `/14`: третий октет должен делиться на 4 (например, `10.244.0.0`, НЕ `10.245.0.0`) - блоки `/20`: четвертый октет должен быть равен 0, а третий — быть кратным 16 (например, `10.252.0.0`)
 
     ```bash expandable
     #!/bin/bash
@@ -433,9 +423,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={5}>
-    ## Шаг 5: Создайте Cloud NAT (`04-cloud-nat.sh`)
-
+  <Step stepNumber={5} title={<>Шаг 5: Создайте Cloud NAT (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
     Для приватных узлов GKE требуется Cloud NAT для исходящего доступа в интернет.
 
     ```bash expandable
@@ -489,9 +477,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={6}>
-    ## Шаг 6: Создайте сервисный аккаунт GCP (`05-service-account.sh`)
-
+  <Step stepNumber={6} title={<>Шаг 6: Создайте сервисный аккаунт GCP (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
     ```bash
     #!/bin/bash
     set -e
@@ -522,9 +508,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={7}>
-    ## Шаг 7: Создание бакета GCS (`06-gcs-bucket.sh`)
-
+  <Step stepNumber={7} title={<>Шаг 7: Создание бакета GCS (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -573,9 +557,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={8}>
-    ## Шаг 8: Создание кластера GKE (`07-gke-cluster.sh`)
-
+  <Step stepNumber={8} title={<>Шаг 8: Создание кластера GKE (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
     Создаёт **полностью приватный кластер GKE** — у воркер-узлов есть только внутренние IP-адреса, у control plane нет публичной конечной точки, а весь доступ должен осуществляться из VPC через бастион.
 
     ```bash expandable
@@ -655,9 +637,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={9}>
-    ## Шаг 9: Создайте пулы узлов (`08-node-pools.sh`)
-
+  <Step stepNumber={9} title={<>Шаг 9: Создайте пулы узлов (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
     | Пул узлов | Тип машины                                  | Диск                         | Метки                    | Тейнты                                      |
     | --------- | ------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper    | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                  | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -732,9 +712,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={10}>
-    ## Шаг 10: Разверните ДемонСет Local SSD (`09-local-ssd-daemonset.sh`)
-
+  <Step stepNumber={10} title={<>Шаг 10: Разверните ДемонСет Local SSD (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
     В GKE Container-Optimized OS корневая файловая система доступна **только для чтения**, поэтому создать `/nvme` нельзя. ДемонСет форматирует и монтирует локальный SSD в `/mnt/disks/ssd0`.
 
     **Важно:** Разверните его **до** кластера ClickHouse, чтобы избежать состояния гонки.
@@ -834,9 +812,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={11}>
-    ## Шаг 11: Добавьте топологические метки (`10-topology-labels.sh`)
-
+  <Step stepNumber={11} title={<>Шаг 11: Добавьте топологические метки (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
     ```bash
     #!/bin/bash
     set -e
@@ -871,9 +847,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={12}>
-    ## Шаг 12: Установка необходимых компонентов Kubernetes
-
+  <Step stepNumber={12} title="Шаг 12: Установка необходимых компонентов Kubernetes" id="step-12-install-kubernetes-prerequisites">
     ### Установка VolumeSnapshot CRDs (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1027,9 +1001,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={13}>
-    ## Шаг 13: Настройка FIPS (при необходимости)
-
+  <Step stepNumber={13} title="Шаг 13: Настройка FIPS (при необходимости)" id="step-13-fips-steps-conditional">
     Пропустите этот раздел, если `ENABLE_FIPS=false`.
 
     ### Создание сертификатов FIPS (`14-create-fips-certs.sh`)
@@ -1099,9 +1071,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={14}>
-    ## Шаг 14: Установите оператор (`16-install-operator.sh`)
-
+  <Step stepNumber={14} title={<>Шаг 14: Установите оператор (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1154,9 +1124,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={15}>
-    ## Шаг 15: Развёртывание кластера ClickHouse (`17-install-cluster.sh`)
-
+  <Step stepNumber={15} title={<>Шаг 15: Развёртывание кластера ClickHouse (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1270,9 +1238,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={16}>
-    ## Шаг 16: Привязка Workload Identity (`18-bind-helm-workload-identity.sh`)
-
+  <Step stepNumber={16} title={<>Шаг 16: Привязка Workload Identity (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
     Helm-чарт создаёт собственный service account (`ch-${CLUSTER_NAME}-sa`). Необходимо привязать Workload Identity к этому SA для доступа к GCS.
 
     **Важно:** поды Keeper и server, созданные на шаге 15, запускаются до создания этой привязки, поэтому будут выдавать ошибки GCS 403. Этот скрипт перезапускает поды после привязки.
@@ -1373,9 +1339,7 @@ description: "Это руководство поможет вам разверн
     ***
   </Step>
 
-  <Step stepNumber={17}>
-    ## Шаг 17: Проверка установки
-
+  <Step stepNumber={17} title="Шаг 17: Проверка установки" id="step-17-verify-installation">
     ### Стандартный режим (без TLS)
 
     ```text
