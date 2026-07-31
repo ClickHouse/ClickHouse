@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -220,6 +221,32 @@ def get_request_count():
             ["cat", request_counting_server.COUNT_PATH], user="root"
         ).strip()
     )
+
+
+def get_request_bodies():
+    raw = server.exec_in_container(
+        ["cat", request_counting_server.BODIES_PATH], user="root"
+    )
+    return [json.loads(line) for line in raw.splitlines() if line]
+
+
+def test_subquery_body_identical_across_schema_inference_and_read(started_cluster):
+    # Regression: the body subquery used to be executed with top-level query options. Under the
+    # old planner, `InterpreterSelectWithUnionQuery` folds the session `limit`/`offset` settings
+    # into the stored AST in place for top-level queries, and since the same AST is reused for
+    # the schema-inference POST and the read POST, each send mutated it again and the two
+    # requests carried different payloads. The body query is executed as a subquery now, so the
+    # session `limit`/`offset` do not apply to it and every send carries the same payload.
+    expected = '{"n":0}\n{"n":1}\n{"n":2}\n'
+    for analyzer in (1, 0):
+        reset_request_count()
+        server.query(
+            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, "
+            "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+            f"SETTINGS enable_analyzer = {analyzer}, offset = 1"
+        )
+        assert get_request_count() == 2
+        assert get_request_bodies() == [expected, expected]
 
 
 def test_post_count_without_structure_is_two(started_cluster):

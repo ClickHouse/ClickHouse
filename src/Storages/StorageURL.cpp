@@ -153,10 +153,21 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
     return [body_query = query, body_format = format.empty() ? "JSONLines" : format, context](std::ostream & os)
     {
         QueryPipelineBuilder builder;
+        /// Execute the body query as a subquery (as `interpretSubquery` does), and clear the session
+        /// `limit`/`offset` settings, which apply only to top-level queries. With top-level semantics
+        /// the payload would depend on which send interprets the query: the old planner folds these
+        /// settings into the stored AST in place (so the schema-inference request, the actual read,
+        /// and any retries each mutate the AST again and the body drifts), and the analyzer folds
+        /// them into the query tree only when they are still set in the interpreting context (so
+        /// schema inference would truncate the body while the read would not).
+        auto body_context = Context::createCopy(context);
+        body_context->setSetting("limit", UInt64(0));
+        body_context->setSetting("offset", UInt64(0));
+        auto subquery_options = SelectQueryOptions{}.subquery();
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
-            builder = InterpreterSelectQueryAnalyzer(body_query, context, {}).buildQueryPipeline();
+            builder = InterpreterSelectQueryAnalyzer(body_query, body_context, subquery_options).buildQueryPipeline();
         }
         else
         {
@@ -165,7 +176,7 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
             ASTPtr select_query = body_query;
             if (const auto * subquery = body_query->as<ASTSubquery>())
                 select_query = subquery->children.at(0);
-            builder = InterpreterSelectWithUnionQuery(select_query, context, {}).buildQueryPipeline();
+            builder = InterpreterSelectWithUnionQuery(select_query, body_context, subquery_options).buildQueryPipeline();
         }
 
         WriteBufferFromOStream out_buf(os);

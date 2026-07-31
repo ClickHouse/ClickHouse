@@ -1,4 +1,5 @@
 import http.server
+import json
 import sys
 import threading
 
@@ -7,8 +8,11 @@ import threading
 # POST to infer the schema and one more to read the data (two POSTs); with an explicit `structure`,
 # schema inference is skipped, so exactly one POST is sent.
 #
-# The current count is written to COUNT_PATH after every POST and can be reset via `GET /reset`.
+# The current count is written to COUNT_PATH after every POST, and every received body is appended
+# to BODIES_PATH as a JSON-encoded string (one per line), so tests can also assert that repeated
+# sends carry identical payloads. Both are reset via `GET /reset`.
 COUNT_PATH = "/request_count.txt"
+BODIES_PATH = "/request_bodies.jsonl"
 
 _lock = threading.Lock()
 _count = 0
@@ -28,6 +32,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             with _lock:
                 _count = 0
                 self._write_count()
+                open(BODIES_PATH, "w").close()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -35,11 +40,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         global _count
-        # Drain the request body so the connection stays healthy.
-        self.read_body()
+        body = self.read_body()
         with _lock:
             _count += 1
             self._write_count()
+            with open(BODIES_PATH, "a") as f:
+                f.write(json.dumps(body) + "\n")
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Content-Length", str(len(RESPONSE)))
