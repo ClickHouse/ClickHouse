@@ -166,6 +166,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
+    extern const char atomic_populate_fail_before_subscription[];
 }
 
 namespace ErrorCodes
@@ -195,6 +196,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int FAULT_INJECTED;
 }
 
 namespace fs = std::filesystem;
@@ -2952,6 +2954,46 @@ constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snap
 
 std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create)
 {
+    try
+    {
+        return fillMaterializedViewAtomicallyImpl(create);
+    }
+    catch (...)
+    {
+        /// doCreateTable has already created and started the view, but the atomic cut failed - most
+        /// realistically `lockExclusively` timed out on a busy source, before `addDependencies` subscribed
+        /// the view to it. Letting the exception escape as-is would leave behind a view that exists but is
+        /// not registered as a dependent of the source, so future inserts would silently never populate it.
+        /// Drop the just-created view instead, so the failed CREATE leaves nothing behind and can simply be
+        /// retried (the same no-orphan contract as the temporary-table path of CREATE TABLE ... AS SELECT).
+        /// A failure after the subscription (e.g. while building the population pipeline) is rolled back the
+        /// same way: the DROP also removes the registered dependencies. The drop runs under the global
+        /// context, like the internal drop of a view's inner table: the user needed only CREATE to get here.
+        try
+        {
+            InterpreterDropQuery::executeDropQuery(
+                ASTDropQuery::Kind::Drop,
+                getContext()->getGlobalContext(),
+                getContext(),
+                StorageID{create.getDatabase(), create.getTable(), create.uuid},
+                /* sync */ true,
+                /* ignore_sync_setting */ true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterCreateQuery"),
+                fmt::format(
+                    "Cannot drop materialized view {}.{} while rolling back its failed atomic population; "
+                    "the view exists but may not be subscribed to its source table",
+                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable())));
+        }
+        throw;
+    }
+}
+
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create)
+{
     auto source = getValidatedAtomicPopulateSource(create);
     if (!source)
         return {};
@@ -2995,6 +3037,15 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     StorageSnapshotPtr snapshot;
     {
         auto source_lock = source->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        /// Models a failure of the cut before the view is subscribed to the source (the realistic cause is
+        /// a `lockExclusively` timeout right above, which a test cannot trigger deterministically). The
+        /// rollback in `fillMaterializedViewAtomically` must drop the just-created view.
+        fiu_do_on(FailPoints::atomic_populate_fail_before_subscription,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Failpoint atomic_populate_fail_before_subscription is triggered");
+        });
 
         DatabaseCatalog::instance().addDependencies(
             qualified_name,

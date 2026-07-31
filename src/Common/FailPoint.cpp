@@ -246,6 +246,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \

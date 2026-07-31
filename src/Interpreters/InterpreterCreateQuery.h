@@ -139,7 +139,15 @@ private:
     /// once. Returns std::nullopt when atomic population does not apply - there is no single source table to
     /// subscribe to, the source does not exist yet, or it cannot provide a pinned snapshot (see
     /// getValidatedAtomicPopulateSource); the caller then falls back to the regular, non-atomic path.
+    ///
+    /// The view itself was already created and started by doCreateTable before this runs, so on any failure
+    /// here - most realistically an exclusive-lock timeout on a busy source - the just-created view is
+    /// dropped before the exception is rethrown. Otherwise the failed CREATE would leave behind a view that
+    /// is not registered as a dependent of its source, which future inserts would silently never populate.
     std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create);
+
+    /// The body of fillMaterializedViewAtomically; the wrapper adds the drop-on-failure rollback.
+    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
