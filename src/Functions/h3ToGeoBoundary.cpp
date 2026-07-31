@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionH3ToGeoBoundary : public IFunction
+class FunctionH3ToGeoBoundary final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToGeoBoundary";

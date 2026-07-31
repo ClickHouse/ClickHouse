@@ -30,10 +30,23 @@ public:
     void shutdown();
 
 private:
+    /// Identity-based hash: uses UUID when available, falls back to database+table name.
+    /// This ensures that during batch renames (e.g., A↔B swap), each table
+    /// is tracked by its stable identity (UUID) rather than its mutable name.
+    struct IdentityHash
+    {
+        size_t operator()(const StorageID & storage_id) const;
+    };
+
+    struct IdentityEqual
+    {
+        bool operator()(const StorageID & lhs, const StorageID & rhs) const;
+    };
+
     const LoggerPtr log = getLogger("StreamingStorageRegistry");
     bool shutdown_called = false;
     std::mutex mutex;
-    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storages;
+    std::unordered_set<StorageID, IdentityHash, IdentityEqual> storages;
 };
 
 /*

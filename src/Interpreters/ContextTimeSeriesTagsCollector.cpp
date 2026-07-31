@@ -5,9 +5,11 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/re2.h>
 #include <Common/quoteString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
 #include <boost/container_hash/hash.hpp>
 #include <city.h>
 
@@ -491,6 +493,12 @@ namespace
             , src_tag(src_tag_)
             , regex(regex_)
         {
+            if (!regex.ok())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid regular expression {}: {}",
+                                quoteString(regex_), regex.error());
+            }
             parseReplacementPattern(replacement_);
             submatches.resize(1 + regex.NumberOfCapturingGroups());
         }
@@ -527,59 +535,49 @@ namespace
         }
 
     private:
+        /// Parses a replacement pattern using the same rules as Prometheus label_replace() function:
+        /// - `$$` is a literal `$`.
+        /// - `$name` and `${name}` reference a capture group, where `name` is the longest
+        ///   run of letters, digits, and underscores after `$` (or until `}` for the braced form).
+        /// - If `name` is purely decimal digits AND not a multi-digit string with a leading zero
+        ///   (so "0", "1", "11" qualify but "01" does not), it's a numeric group reference;
+        ///   otherwise it's a named-group reference.
+        /// - `$` followed by invalid name characters or an unmatched `${...` is treated as literal text.
         void parseReplacementPattern(std::string_view replacement_)
         {
             for (size_t pos = 0; pos != replacement_.length();)
             {
                 if (replacement_[pos] != '$')
                 {
-                    size_t next_dollar = replacement_.find('$', pos);
-                    if (next_dollar == String::npos)
-                        next_dollar = replacement_.length();
+                    addTextFragment(replacement_[pos]);
+                    ++pos;
+                    continue;
+                }
 
-                    addTextFragment(replacement_.substr(pos, next_dollar - pos));
-                    pos = next_dollar;
-                }
-                else if (pos + 1 == replacement_.length())
+                if ((pos + 1 < replacement_.length()) && (replacement_[pos + 1] == '$'))
                 {
-                    addTextFragment(replacement_[pos++]);
-                }
-                else if (replacement_[pos + 1] == '$')
-                {
-                    addTextFragment("$");
+                    addTextFragment('$');
                     pos += 2;
+                    continue;
                 }
-                else if (std::isdigit(replacement_[pos + 1]))
+
+                bool brace = (pos + 1 < replacement_.length()) && (replacement_[pos + 1] == '{');
+                size_t name_start = pos + 1 + (brace ? 1 : 0);
+                size_t name_end = name_start;
+                while ((name_end < replacement_.length())
+                       && (std::isalnum(static_cast<unsigned char>(replacement_[name_end])) || replacement_[name_end] == '_'))
+                    ++name_end;
+
+                /// `$` with no name, or `${...` without a closing `}` — treat the `$` as literal.
+                if ((name_end == name_start) || (brace && (name_end >= replacement_.length() || replacement_[name_end] != '}')))
                 {
-                    addCapturingGroupFragment(replacement_[pos + 1] - '0');
-                    pos += 2;
+                    addTextFragment('$');
+                    ++pos;
+                    continue;
                 }
-                else if (std::isalnum(replacement_[pos + 1]) || replacement_[pos + 1] == '_')
-                {
-                    size_t i = pos + 2;
-                    while ((i < replacement_.length()) && (std::isalnum(replacement_[i]) || (replacement_[i] == '_')))
-                        ++i;
-                    size_t after_name = i;
-                    addCapturingGroupFragment(replacement_.substr(pos + 1, after_name - pos - 1));
-                    pos = after_name;
-                }
-                else if (replacement_[pos + 1] != '{')
-                {
-                    addTextFragment(replacement_[pos++]);
-                }
-                else if (size_t closing_brace = replacement_.find('}', pos + 2); closing_brace == String::npos)
-                {
-                    addTextFragment(replacement_[pos++]);
-                }
-                else
-                {
-                    std::string_view between_braces = replacement_.substr(pos + 2, closing_brace - pos - 2);
-                    if ((between_braces.length() == 1) && std::isdigit(between_braces[0]))
-                        addCapturingGroupFragment(between_braces[0] - '0');
-                    else
-                        addCapturingGroupFragment(between_braces);
-                    pos = closing_brace + 1;
-                }
+
+                addCapturingGroupFragment(replacement_.substr(name_start, name_end - name_start));
+                pos = name_end + (brace ? 1 : 0);
             }
         }
 
@@ -598,18 +596,38 @@ namespace
             addTextFragment(std::string_view{&c, 1});
         }
 
+        /// Adds a fragment for a `$name` / `${name}` reference.
+        /// A name made entirely of decimal digits with no leading zero (single "0" is fine) is treated
+        /// as a numeric group, otherwise it's a named-group.
+        void addCapturingGroupFragment(std::string_view name)
+        {
+            chassert(!name.empty());
+
+            /// At most 9 digits: longer all-digit names fall through to a named-group lookup.
+            bool numeric = (name.size() <= 9)
+                && std::all_of(name.begin(), name.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
+
+            /// A multi-digit name with a leading zero (e.g. "01") is treated as a named-group reference,
+            /// and not a numeric one.
+            if (numeric && (name.size() > 1) && (name.front() == '0'))
+                numeric = false;
+
+            if (numeric)
+            {
+                addCapturingGroupFragment(parseFromString<int>(name));
+                return;
+            }
+
+            const auto & groups = regex.NamedCapturingGroups();
+            auto it = groups.find(String{name});
+            if (it != groups.end())
+                addCapturingGroupFragment(it->second);
+        }
+
         void addCapturingGroupFragment(int capturing_group)
         {
             if (capturing_group <= regex.NumberOfCapturingGroups())
                 replacement_fragments.emplace_back().capturing_group = capturing_group;
-        }
-
-        void addCapturingGroupFragment(std::string_view named_capturing_group)
-        {
-            const auto & groups = regex.NamedCapturingGroups();
-            auto it = groups.find(String{named_capturing_group});
-            if (it != groups.end())
-                addCapturingGroupFragment(it->second);
         }
 
         std::string_view dest_tag;
@@ -695,9 +713,9 @@ Group ContextTimeSeriesTagsCollector::getGroupForTags(const TagNamesAndValuesPtr
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::vector<TagNamesAndValuesPtr> & tags_vector)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
 {
-    std::vector<Group> res;
+    VectorWithMemoryTracking<Group> res;
     res.resize(tags_vector.size(), INVALID_GROUP);
     size_t num_found = 0;
 
@@ -765,9 +783,9 @@ TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByGroup(Group group)
 }
 
 
-std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByGroup(const std::vector<Group> & groups_) const
+VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByGroup(const VectorWithMemoryTracking<Group> & groups_) const
 {
-    std::vector<TagNamesAndValuesPtr> res;
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -790,9 +808,9 @@ UInt64 ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(Group group) const
 }
 
 
-std::vector<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const std::vector<Group> & groups_) const
+VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const
 {
-    std::vector<UInt64> res;
+    VectorWithMemoryTracking<UInt64> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -820,9 +838,9 @@ String ContextTimeSeriesTagsCollector::extractTag(Group group, const String & ta
     return {};
 }
 
-std::vector<String> ContextTimeSeriesTagsCollector::extractTag(const std::vector<Group> & groups_, const String & tag_to_extract) const
+VectorWithMemoryTracking<String> ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const
 {
-    std::vector<String> res;
+    VectorWithMemoryTracking<String> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -843,7 +861,7 @@ std::vector<String> ContextTimeSeriesTagsCollector::extractTag(const std::vector
     return res;
 }
 
-void ContextTimeSeriesTagsCollector::extractTag(const std::vector<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const
+void ContextTimeSeriesTagsCollector::extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const
 {
     out_column.reserve(groups_.size());
     SharedLockGuard lock{mutex};
@@ -900,11 +918,11 @@ void ContextTimeSeriesTagsCollector::storeTags(const IDType & id, const TagNames
 
 
 template <typename IDType>
-void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector)
+void ContextTimeSeriesTagsCollector::storeTags(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
 {
     chassert(ids.size() == tags_vector.size());
 
-    std::vector<Group> found_groups;
+    VectorWithMemoryTracking<Group> found_groups;
     found_groups.resize(tags_vector.size(), INVALID_GROUP);
     size_t num_found_groups = 0;
 
@@ -971,9 +989,9 @@ Group ContextTimeSeriesTagsCollector::getGroupByID(const IDType & id) const
 
 
 template <typename IDType>
-std::vector<Group> ContextTimeSeriesTagsCollector::getGroupByID(const std::vector<IDType> & ids) const
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(const VectorWithMemoryTracking<IDType> & ids) const
 {
-    std::vector<Group> res;
+    VectorWithMemoryTracking<Group> res;
     res.reserve(ids.size());
 
     SharedLockGuard lock{mutex};
@@ -1005,9 +1023,9 @@ TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID(const IDType & 
 }
 
 template <typename IDType>
-std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const std::vector<IDType> & ids) const
+VectorWithMemoryTracking<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const VectorWithMemoryTracking<IDType> & ids) const
 {
-    std::vector<TagNamesAndValuesPtr> res;
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
     res.reserve(ids.size());
 
     SharedLockGuard lock{mutex};
@@ -1037,7 +1055,7 @@ Group ContextTimeSeriesTagsCollector::transformTags(Group group, TransformFunc &
 
 
 template <typename TransformFunc>
-std::vector<Group> ContextTimeSeriesTagsCollector::transformTags(const std::vector<Group> & groups_, TransformFunc && transform_func)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(const VectorWithMemoryTracking<Group> & groups_, TransformFunc && transform_func)
 {
     auto tags_vector = getTagsByGroup(groups_);
     chassert(tags_vector.size() == groups_.size());
@@ -1062,7 +1080,7 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags(const std::vect
 
     auto new_groups = getGroupForTags(tags_vector);
 
-    std::vector<Group> res;
+    VectorWithMemoryTracking<Group> res;
     res.reserve(groups_.size());
 
     for (auto old_group : groups_)
@@ -1081,7 +1099,7 @@ Group ContextTimeSeriesTagsCollector::removeTag(Group group, const String & tag_
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::removeTag(const std::vector<Group> & groups_, const String & tag_to_remove)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::removeTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_remove)
 {
     return transformTags(groups_, RemoveTagTransformFunc{tag_to_remove});
 }
@@ -1093,7 +1111,7 @@ Group ContextTimeSeriesTagsCollector::removeTags(Group group, const Strings & ta
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::removeTags(const std::vector<Group> & groups_, const Strings & tags_to_remove)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::removeTags(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_remove)
 {
     return transformTags(groups_, RemoveTagsTransformFunc{tags_to_remove});
 }
@@ -1105,7 +1123,7 @@ Group ContextTimeSeriesTagsCollector::removeAllTagsExcept(Group group, const Str
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::removeAllTagsExcept(const std::vector<Group> & groups_, const Strings & tags_to_keep)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::removeAllTagsExcept(const VectorWithMemoryTracking<Group> & groups_, const Strings & tags_to_keep)
 {
     return transformTags(groups_, RemoveAllTagsExceptTransformFunc{tags_to_keep});
 }
@@ -1122,8 +1140,8 @@ Group ContextTimeSeriesTagsCollector::transformTags2(Group group1, Group group2,
 
 
 template <typename TransformFunc2>
-std::vector<Group>
-ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, Group group2, TransformFunc2 && transform_func)
+VectorWithMemoryTracking<Group>
+ContextTimeSeriesTagsCollector::transformTags2(const VectorWithMemoryTracking<Group> & groups1, Group group2, TransformFunc2 && transform_func)
 {
     return transformTags(
         groups1,
@@ -1137,8 +1155,8 @@ ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups
 
 
 template <typename TransformFunc2>
-std::vector<Group>
-ContextTimeSeriesTagsCollector::transformTags2(Group group1, const std::vector<Group> & groups2, TransformFunc2 && transform_func)
+VectorWithMemoryTracking<Group>
+ContextTimeSeriesTagsCollector::transformTags2(Group group1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func)
 {
     return transformTags(
         groups2,
@@ -1152,7 +1170,7 @@ ContextTimeSeriesTagsCollector::transformTags2(Group group1, const std::vector<G
 
 
 template <typename TransformFunc2>
-std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(const VectorWithMemoryTracking<Group> & groups1, const VectorWithMemoryTracking<Group> & groups2, TransformFunc2 && transform_func)
 {
     chassert(groups1.size() == groups2.size());
 
@@ -1183,7 +1201,7 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vec
 
     auto new_groups = getGroupForTags(tags_vector1);
 
-    std::vector<Group> res;
+    VectorWithMemoryTracking<Group> res;
     res.reserve(groups1.size());
 
     for (size_t i = 0; i != groups1.size(); ++i)
@@ -1204,19 +1222,19 @@ Group ContextTimeSeriesTagsCollector::copyTag(Group dest_group, Group src_group,
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTag(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy)
 {
     return transformTags2(dest_group, src_groups, CopyTagTransformFunc2{tag_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTag(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const String & tag_to_copy)
 {
     return transformTags2(dest_groups, src_group, CopyTagTransformFunc2{tag_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTag(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const String & tag_to_copy)
 {
     return transformTags2(dest_groups, src_groups, CopyTagTransformFunc2{tag_to_copy});
 }
@@ -1228,19 +1246,19 @@ Group ContextTimeSeriesTagsCollector::copyTags(Group dest_group, Group src_group
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTags(Group dest_group, const std::vector<Group> & src_groups, const Strings & tags_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTags(Group dest_group, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy)
 {
     return transformTags2(dest_group, src_groups, CopyTagsTransformFunc2{tags_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTags(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTags(const VectorWithMemoryTracking<Group> & dest_groups, Group src_group, const Strings & tags_to_copy)
 {
     return transformTags2(dest_groups, src_group, CopyTagsTransformFunc2{tags_to_copy});
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::copyTags(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::copyTags(const VectorWithMemoryTracking<Group> & dest_groups, const VectorWithMemoryTracking<Group> & src_groups, const Strings & tags_to_copy)
 {
     return transformTags2(dest_groups, src_groups, CopyTagsTransformFunc2{tags_to_copy});
 }
@@ -1252,7 +1270,7 @@ Group ContextTimeSeriesTagsCollector::joinTags(Group group, const String & dest_
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::joinTags(const std::vector<Group> & groups_, const String & dest_tag, const String & separator, const Strings & src_tags)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::joinTags(const VectorWithMemoryTracking<Group> & groups_, const String & dest_tag, const String & separator, const Strings & src_tags)
 {
     return transformTags(groups_, JoinTagsTransformFunc{dest_tag, separator, src_tags});
 }
@@ -1264,7 +1282,7 @@ Group ContextTimeSeriesTagsCollector::replaceTag(Group group, const String & des
 }
 
 
-std::vector<Group> ContextTimeSeriesTagsCollector::replaceTag(const std::vector<Group> & groups_, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex)
+VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::replaceTag(const VectorWithMemoryTracking<Group> & groups_, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex)
 {
     return transformTags(groups_, ReplaceTagTransformFunc{dest_tag, replacement, src_tag, regex});
 }
@@ -1293,11 +1311,11 @@ const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsColle
 
 #define TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(IDType) \
     template void ContextTimeSeriesTagsCollector::storeTags<IDType>(const IDType & id, const TagNamesAndValuesPtr & tags); \
-    template void ContextTimeSeriesTagsCollector::storeTags<IDType>(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector); \
+    template void ContextTimeSeriesTagsCollector::storeTags<IDType>(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector); \
     template Group ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const IDType & id) const; \
-    template std::vector<Group> ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const std::vector<IDType> & ids) const; \
+    template VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID<IDType>(const VectorWithMemoryTracking<IDType> & ids) const; \
     template ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const IDType & id) const; \
-    template std::vector<ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const std::vector<IDType> & ids) const; \
+    template VectorWithMemoryTracking<ContextTimeSeriesTagsCollector::TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID<IDType>(const VectorWithMemoryTracking<IDType> & ids) const; \
 
 TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(UInt64)
 TIME_SERIES_ID_TO_TAGS_MAP_INSTANTIATE(UInt128)
