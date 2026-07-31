@@ -118,12 +118,7 @@ public:
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
-    /// Send all scalars.
-    virtual void sendScalarsData(Scalars & data) = 0;
-
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
-
-    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

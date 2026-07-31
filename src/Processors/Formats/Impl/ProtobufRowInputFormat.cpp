@@ -53,14 +53,22 @@ void ProtobufRowInputFormat::destroyReaderAndSerializer()
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 try
 {
+    bool serializer_recreated = false;
     if (!reader)
+    {
         createReaderAndSerializer();
+        serializer_recreated = true;
+    }
 
     if (reader->eof())
         return false;
 
+    /// Point the serializer at the current columns before reading. Besides the start
+    /// of a block (row_num == 0), this is also needed mid-block when error recovery
+    /// recreated the serializer with a valid row already buffered (row_num > 0) —
+    /// otherwise readRow dereferences its null column.
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num)
+    if (!row_num || serializer_recreated)
         serializer->setColumns(columns.data(), columns.size());
 
     serializer->readRow(row_num);
@@ -461,7 +469,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```bash
+```sql
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -497,7 +505,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```bash
+```sql
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -548,9 +556,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge/>
+:::note
+This format is not supported in ClickHouse Cloud.
+:::
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -558,7 +566,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 
 ## Description {#description}
 
-The `ProtobufSingle` format is the same as the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
+The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
 
 ## Example usage {#example-usage}
 

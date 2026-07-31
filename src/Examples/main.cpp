@@ -9,8 +9,6 @@
 #include <vector>
 #include <filesystem>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 namespace
 {
 
@@ -23,8 +21,6 @@ std::pair<std::string_view, MainFunc> examples[] =
 #endif
     {"quantile-t-digest", mainEntryExampleQuantileTDigest},
     {"group_array_sorted", mainEntryExampleGroupArraySorted},
-    {"timeseries_to_grid_two_stack_vs_recompute", mainEntryExampleTimeSeriesToGridTwoStackVsRecompute},
-    {"timeseries_to_grid_range_scan_vs_std_sort", mainEntryExampleTimeSeriesToGridRangeScanVsStdSort},
     {"test-connect", mainEntryExampleTestConnect},
     {"zkutil_test_commands", mainEntryExampleZkutilTestCommands},
     {"zkutil_test_commands_new_lib", mainEntryExampleZkutilTestCommandsNewLib},
@@ -61,7 +57,6 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"encrypt_decrypt", mainEntryExampleEncryptDecrypt},
 #endif
     {"check_pointer_valid", mainEntryExampleCheckPointerValid},
-    {"memory_tracker_benchmark", mainEntryExampleMemoryTrackerBenchmark},
 #if USE_ICU
     {"utf8_upper_lower", mainEntryExampleUtf8UpperLower},
 #endif
@@ -135,7 +130,7 @@ void printHelp()
 
 int main(int argc, char ** argv)
 {
-    DB::VectorWithMemoryTracking<char *> args(argv, argv + argc);
+    std::vector<char *> args(argv, argv + argc);
 
     if (args.empty())
     {

@@ -71,17 +71,10 @@ struct MergeTreeReaderSettings
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
-    /// If true, compress marks into the in-memory representation one block at a time
-    /// instead of materializing the full plain marks array.
-    bool use_streaming_marks_compression = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.
     bool read_only_column_sample = false;
-    /// True when predicate_statistics_sample_rate > 0, i.e. the read steps must
-    /// maintain selectivity counters for system.predicate_statistics_log. When
-    /// false (the default), the readers skip the per-granule counter work.
-    bool collect_predicate_statistics = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
