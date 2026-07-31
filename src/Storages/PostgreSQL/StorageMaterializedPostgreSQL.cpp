@@ -439,7 +439,13 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     catch (...)
     {
         if (replication_handler->isStopped())
+        {
+            /// A plain handler discards its storage pointers after the first successful start (see the end of
+            /// `startSynchronization`), so re-add this storage or the restarted handler would rebuild a
+            /// consumer with no tables and silently apply nothing.
+            replication_handler->addStorage(remote_table_name, this);
             replication_handler->restartReplicationAfterFailedDrop();
+        }
         throw;
     }
 
