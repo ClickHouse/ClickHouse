@@ -1,10 +1,4 @@
 #include <Common/StatusFile.h>
-#if defined(OS_WINDOWS)
-#include <io.h>
-#include <Poco/UnWindows.h>
-#endif
-
-#include <sys/file.h>
 #include <fcntl.h>
 #include <cerrno>
 
@@ -15,6 +9,7 @@
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -73,31 +68,12 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
 
     try
     {
-#if defined(OS_WINDOWS)
-        /// `LockFileEx` is the Windows equivalent: exclusive, and failing rather than waiting when
-        /// the lock is already held, which is what `LOCK_EX | LOCK_NB` asks for. Unlike `flock` it
-        /// locks a byte range rather than the whole file, so lock the maximum range. The lock is
-        /// released when the handle closes, as `flock`'s is when the descriptor does.
-        auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
-        OVERLAPPED overlapped{};
-        if (handle == INVALID_HANDLE_VALUE
-            || !LockFileEx(
-                handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, MAXDWORD, MAXDWORD, &overlapped))
-        {
-            const auto error = GetLastError();
-            if (error == ERROR_LOCK_VIOLATION || error == ERROR_IO_PENDING)
-                throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {} (LockFileEx), error code: {}", path, error);
-        }
-#else
-        int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
-        if (-1 == flock_ret)
+        if (-1 == platformLockFileExclusive(fd, /*blocking*/ false))
         {
             if (errno == EWOULDBLOCK)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
         }
-#endif
 
         if (0 != ftruncate(fd, 0))
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot ftruncate file {}", path);

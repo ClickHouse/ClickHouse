@@ -12,6 +12,7 @@
 #include <io.h>
 #include <Poco/UnWindows.h>
 #else
+#include <sys/file.h>
 #include <unistd.h>
 #endif
 
@@ -105,6 +106,25 @@ int platformFDataSync(int fd)
     return ::_commit(fd);
 }
 
+int platformLockFileExclusive(int fd, bool blocking)
+{
+    auto * handle = toHandle(fd);
+    if (handle == INVALID_HANDLE_VALUE)
+        return -1;
+
+    DWORD flags = LOCKFILE_EXCLUSIVE_LOCK;
+    if (!blocking)
+        flags |= LOCKFILE_FAIL_IMMEDIATELY;
+
+    OVERLAPPED overlapped{};
+    if (!LockFileEx(handle, flags, 0, MAXDWORD, MAXDWORD, &overlapped))
+    {
+        errno = GetLastError() == ERROR_LOCK_VIOLATION ? EWOULDBLOCK : EACCES;
+        return -1;
+    }
+    return 0;
+}
+
 int platformOpenDirectory(const std::string & path)
 {
     auto * handle = CreateFileW(
@@ -156,6 +176,11 @@ int platformFDataSync(int fd)
 #else
     return ::fdatasync(fd);
 #endif
+}
+
+int platformLockFileExclusive(int fd, bool blocking)
+{
+    return ::flock(fd, LOCK_EX | (blocking ? 0 : LOCK_NB));
 }
 
 int platformOpenDirectory(const std::string & path)

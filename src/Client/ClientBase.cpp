@@ -726,10 +726,14 @@ try
         WriteBuffer * underlying_buf = nullptr;
         if (!pager.empty() && !isEmbeeddedClient())
         {
+#if !defined(OS_WINDOWS)
+            /// Neither signal exists on Windows: a write to a closed pipe fails with an error
+            /// rather than raising `SIGPIPE`, and there is no `SIGQUIT`. Nothing to ignore.
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+#endif
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -1011,8 +1015,17 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
     struct stat file_stat{};
-    return fstat(fd, &file_stat) == 0
-        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+    if (fstat(fd, &file_stat) != 0)
+        return false;
+    if (S_ISREG(file_stat.st_mode))
+        return true;
+#if defined(S_ISLNK)
+    /// The Windows CRT's `_stat` has no symlink bit - it follows reparse points and reports the
+    /// target - so there is nothing to test for there.
+    if (S_ISLNK(file_stat.st_mode))
+        return true;
+#endif
+    return false;
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()

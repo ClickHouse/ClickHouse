@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <base/time.h>
 #include <base/pathToString.h>
 #include <Loggers/Loggers.h>

@@ -401,8 +401,15 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SHUTDOWN:
         {
             getContext()->checkAccess(AccessType::SYSTEM_SHUTDOWN);
+#if defined(OS_WINDOWS)
+            /// Windows has no `kill` and no process groups to signal; `raise` delivers to this
+            /// process, which is the whole server there.
+            if (::raise(SIGTERM))
+                throw ErrnoException(ErrorCodes::CANNOT_KILL, "System call raise(SIGTERM) failed");
+#else
             if (kill(0, SIGTERM))
                 throw ErrnoException(ErrorCodes::CANNOT_KILL, "System call kill(0, SIGTERM) failed");
+#endif
             break;
         }
         case Type::KILL:
@@ -411,7 +418,12 @@ BlockIO InterpreterSystemQuery::execute()
             /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
             /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
             LOG_INFO(log, "Exit immediately as the SYSTEM KILL command has been issued.");
+#if defined(OS_WINDOWS)
+            /// There is no `SIGKILL` on Windows; 9 is the number it has everywhere else.
+            _exit(128 + 9);
+#else
             _exit(128 + SIGKILL);
+#endif
             // break; /// unreachable
         }
         case Type::SUSPEND:

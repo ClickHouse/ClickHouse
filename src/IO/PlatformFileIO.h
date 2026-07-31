@@ -32,6 +32,14 @@ Int64 platformWrite(int fd, const char * from, size_t bytes);
 /// between flushing data and flushing metadata, so this is `fsync` there.
 int platformFDataSync(int fd);
 
+/// Takes an exclusive lock on the whole of an open file, released when the descriptor is closed.
+/// With `blocking`, waits for a conflicting lock to go away; without it, fails immediately.
+///
+/// `flock(LOCK_EX)` on POSIX. Windows has `LockFileEx`, which differs in that it locks a byte
+/// range rather than a file, so this locks the largest range there is. Reports failure as `-1`
+/// with `errno` set, `EWOULDBLOCK` for a lock already held.
+int platformLockFileExclusive(int fd, bool blocking);
+
 /// Opens a directory, for no purpose other than passing the descriptor to `platformFDataSync` -
 /// which is how MergeTree makes a rename durable. `open(O_DIRECTORY)` on POSIX; on Windows the
 /// CRT's `_open` refuses a directory outright, so this goes through `CreateFileW` with

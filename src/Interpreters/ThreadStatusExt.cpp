@@ -680,6 +680,8 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 #endif
 }
 
+#if !defined(OS_WINDOWS)
+
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
@@ -725,6 +727,8 @@ void ThreadStatus::finalizeQueryProfiler()
     query_profiler_real.reset();
     query_profiler_cpu.reset();
 }
+
+#endif
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {

@@ -62,9 +62,11 @@ ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
+#if !defined(OS_WINDOWS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {
@@ -86,6 +88,13 @@ bool ClientApplicationBase::isEmbeeddedClient() const
 
 void ClientApplicationBase::setupSignalHandler()
 {
+#if defined(OS_WINDOWS)
+    /// This installs a `SIGINT` handler so that Ctrl+C cancels the running query instead of ending
+    /// the process. On Windows that job belongs to the console control handler in
+    /// `InterruptListener`, which the interactive loop already installs, so there is nothing to do
+    /// here.
+#else
+
     ClientApplicationBase::getInstance().stopQuery();
 
     struct sigaction new_act{};
@@ -109,6 +118,7 @@ void ClientApplicationBase::setupSignalHandler()
 
     if (sigaction(SIGQUIT, &new_act, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+#endif
 }
 
 void ClientApplicationBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
@@ -250,11 +260,13 @@ void ClientApplicationBase::init(int argc, char ** argv)
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
 
+#if !defined(OS_WINDOWS)
     /// Print stacktrace in case of crash
     HandledSignals::instance().setupTerminateHandler();
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
+#endif
 
     fatal_channel_ptr = new Poco::SplitterChannel;
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
@@ -270,8 +282,14 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if !defined(OS_WINDOWS)
+    /// Windows reports a fault through Structured Exception Handling rather than a signal, so
+    /// there is no handler to install and no pipe for one to write to. A crash there loses the
+    /// stack trace that this thread would have printed; `AddVectoredExceptionHandler` is what
+    /// would restore it.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
+#endif
 }
 
 

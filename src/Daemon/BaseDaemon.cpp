@@ -63,7 +63,9 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
+#if !defined(OS_WINDOWS)
 #include <ucontext.h>
+#endif
 
 namespace fs = std::filesystem;
 
