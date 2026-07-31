@@ -429,12 +429,6 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
-    /// Materialize the `uuid_type_version` setting into the query on the initiator (a primary, user-issued `ALTER`),
-    /// before it is forwarded to `ON CLUSTER` hosts or enqueued into a `Replicated` database DDL log. Internal DDL has
-    /// already been normalized by its initiator, so it must not be touched again here.
-    if (!getContext()->isDDLOrOnClusterInternal())
-        materializeUUIDTypeVersion(query_ptr->as<ASTAlterQuery &>(), getContext()->getSettingsRef()[Setting::uuid_type_version]);
-
     ASTSelectWithUnionQuery * modify_query = nullptr;
 
     for (auto & child : alter.command_list->children)
@@ -451,6 +445,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// Materialize the `uuid_type_version` setting into the query on the initiator (a primary, user-issued `ALTER`),
+    /// before it is forwarded to `ON CLUSTER` hosts or enqueued into a `Replicated` database DDL log. Internal DDL has
+    /// already been normalized by its initiator, so it must not be touched again here. This runs after SQL UDF
+    /// expansion above, so bare `UUID` carriers introduced by an expanded UDF body (`CAST(x, 'UUID')` and the like)
+    /// are materialized as well.
+    if (!getContext()->isDDLOrOnClusterInternal())
+        materializeUUIDTypeVersion(query_ptr->as<ASTAlterQuery &>(), settings[Setting::uuid_type_version]);
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;

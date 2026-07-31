@@ -2996,9 +2996,16 @@ BlockIO InterpreterCreateQuery::execute()
             /// This legacy path enqueues the query before it is normalized on the initiator (see `createTable`), so
             /// materialize the `uuid_type_version` setting into the column types here; otherwise workers, which treat
             /// the forwarded query as already-normalized internal DDL, would ignore the setting and create a bare
-            /// `UUID` as the historical `UUID` type.
+            /// `UUID` as the historical `UUID` type. SQL UDF bodies may introduce bare `UUID` carriers of their own
+            /// (`CAST(x, 'UUID')` and the like), so under version 2 they are expanded first; otherwise the legacy
+            /// path stays byte-identical and workers expand the UDFs themselves as before.
             if (!is_create_database)
+            {
+                if (getContext()->getSettingsRef()[Setting::uuid_type_version] == 2
+                    && !UserDefinedSQLFunctionFactory::instance().empty())
+                    UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
                 materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
+            }
             return executeQueryOnCluster(create);
         }
     }
