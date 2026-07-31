@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
+-- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database, no-flaky-check
 
 SET send_logs_level = 'fatal';
 

@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -23,11 +25,11 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#    include <Client/BuzzHouse/AST/SQLProtoStr.h>
-#    include <Client/BuzzHouse/Generator/FuzzConfig.h>
-#    include <Client/BuzzHouse/Generator/QueryOracle.h>
-#    include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#    include <Common/re2.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#include <Common/re2.h>
 namespace BuzzHouse
 {
 extern void loadFuzzerServerSettings(const FuzzConfig & fc);
@@ -46,6 +48,7 @@ namespace ErrorCodes
 extern const int CANNOT_PARSE_TEXT;
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
@@ -55,7 +58,8 @@ extern std::string_view getName(ErrorCode error_code);
 bool Client::tryToReconnect(const uint32_t max_reconnection_attempts, const uint32_t time_to_sleep_between_reconnects)
 {
     chassert(max_reconnection_attempts);
-    if (!connection->isConnected())
+    const bool was_connected = connection->isConnected();
+    if (!was_connected)
     {
         // Try to reconnect after errors, for two reasons:
         // 1. We might not have realized that the server died, e.g. if
@@ -101,6 +105,12 @@ bool Client::tryToReconnect(const uint32_t max_reconnection_attempts, const uint
 
         return false;
     }
+#if USE_BUZZHOUSE
+    /// A new session was established: server-side session-scoped state is gone,
+    /// so let the fuzzer drop its bookkeeping of it.
+    if (!was_connected && after_fuzz_reconnect)
+        after_fuzz_reconnect();
+#endif
     return true;
 }
 
@@ -112,7 +122,9 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-    if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    // Similarly, MEMORY_LIMIT_EXCEEDED means the server correctly
+    // rejected an expensive query, not that it died.
+    if (have_error && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
     {
         have_error = false;
         server_exception.reset();
@@ -245,6 +257,14 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             if (fuzz_step > 0)
             {
                 fuzzer.fuzzMain(ast_to_process);
+
+                /// The fuzzer can substitute fragments that contain {name:type} query parameters
+                /// (e.g. from the column_like pool) and generates values for them. Register the
+                /// values for client-side parameter substitution, like the server-side fuzzer
+                /// does (see executeASTFuzzerQueries); otherwise every such query fails with
+                /// "Substitution ... is not set" before even reaching the server.
+                for (const auto & [name, value] : fuzzer.getLastQueryParameters())
+                    query_parameters.insert_or_assign(name, value);
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
@@ -368,6 +388,9 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         {
             if (!ast_to_process)
                 fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
+            else
+                fmt::print(
+                    stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
@@ -377,6 +400,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // The exception may mean that the connection to the server was lost (e.g. the server
+            // died and the connection attempt throws). processASTFuzzerStep performs this check
+            // for errors received without throwing, but thrown exceptions bypass it. Without the
+            // check every subsequent step fails instantly the same way, so the fuzzer silently
+            // burns through the rest of the corpus in seconds and exits with code 0 as if all
+            // the queries were fuzzed.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
 #if USE_BUZZHOUSE
@@ -462,9 +494,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         }
         catch (...)
         {
+            fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
+
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // See the comment on the same check in the main fuzzing loop above.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
         if (have_error)
@@ -490,11 +528,18 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
 bool Client::processBuzzHouseQuery(const String & full_query)
 {
+    static constexpr size_t max_query_bytes = 1 << 20;
     bool server_up = true;
 
     have_error = false;
     error_code = 0;
-    if (!processQueryText(full_query))
+    if (full_query.size() > max_query_bytes)
+    {
+        have_error = true;
+        error_code = ErrorCodes::CANNOT_PARSE_TEXT;
+        LOG_WARNING(fuzz_config->log, "Skipping oversized query ({} bytes, limit {})", full_query.size(), max_query_bytes);
+    }
+    else if (!processQueryText(full_query))
     {
         have_error = true;
         error_code = ErrorCodes::CANNOT_PARSE_TEXT;
@@ -534,6 +579,43 @@ static const String & restart_cmd = "--Reconnecting client";
 static const String & external_cmd = "--External command ";
 static const String & health_check_cmd = "--Health check";
 
+/// Encode a string as uppercase hex so it contains no whitespace or dots,
+/// making it safe to embed in the one-line external-command replay marker.
+static String markerHexEncode(const String & s)
+{
+    static const char hex_digits[] = "0123456789ABCDEF";
+    String result;
+    result.reserve(s.size() * 2);
+    for (const unsigned char c : s)
+    {
+        result += hex_digits[c >> 4];
+        result += hex_digits[c & 0xF];
+    }
+    return result;
+}
+
+/// Decode a hex string written by markerHexEncode.
+static String markerHexDecode(const String & s)
+{
+    if (s.size() % 2 != 0)
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "markerHexDecode: odd-length input '{}'", s);
+    auto nibble = [&](const char c) -> uint8_t
+    {
+        if (c >= '0' && c <= '9')
+            return static_cast<uint8_t>(c - '0');
+        if (c >= 'A' && c <= 'F')
+            return static_cast<uint8_t>(c - 'A' + 10);
+        if (c >= 'a' && c <= 'f')
+            return static_cast<uint8_t>(c - 'a' + 10);
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "markerHexDecode: invalid hex character '{}' in '{}'", c, s);
+    };
+    String result;
+    result.reserve(s.size() / 2);
+    for (size_t i = 0; i < s.size(); i += 2)
+        result += static_cast<char>((nibble(s[i]) << 4) | nibble(s[i + 1]));
+    return result;
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
@@ -546,7 +628,7 @@ bool Client::buzzHouse()
     static const String & rerun_table = "--External table ";
     static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
     static const RE2 extern_re(
-        R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s([^\s.]+)\stable\s+([^\s.]+)\.([^\s.]+)\s*$)");
+        R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s]+)\s+table\s+([0-9A-Fa-f]+)\s+([0-9A-Fa-f]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     using clock = std::chrono::steady_clock;
@@ -592,8 +674,14 @@ bool Client::buzzHouse()
                 const auto * const last = first + seed_str.size();
                 const auto x = std::from_chars(first, last, seed, 10);
 
-                UNUSED(x);
-                runExternalCommand(external_integrations, seed, !async_flag.empty(), engine, database, table);
+                if (x.ec != std::errc{} || x.ptr != last)
+                    throw DB::Exception(
+                        DB::ErrorCodes::BUZZHOUSE,
+                        "Malformed external-command marker: cannot parse seed '{}' ({})",
+                        seed_str,
+                        x.ec == std::errc::result_out_of_range ? "out of range" : "invalid characters");
+                runExternalCommand(
+                    external_integrations, seed, !async_flag.empty(), engine, markerHexDecode(database), markerHexDecode(table));
             }
             else if (startsWith(full_query, health_check_cmd))
             {
@@ -665,6 +753,15 @@ bool Client::buzzHouse()
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
+        /// Open transactions and hypothetical indexes are session scoped on the server, so the
+        /// bookkeeping must be dropped on every reconnect, including the ones `tryToReconnect`
+        /// does after query errors on a dropped TCP session.
+        after_fuzz_reconnect = [&gen]()
+        {
+            gen.setInTransaction(false);
+            gen.clearHypotheticalIndexes();
+        };
+        SCOPE_EXIT({ after_fuzz_reconnect = {}; });
         while (server_up && (no_timeout = (!deadline || clock::now() < *deadline)))
         {
             sq1.Clear();
@@ -698,6 +795,41 @@ bool Client::buzzHouse()
             }
             else
             {
+                auto runDumpReadOracle = [&](auto dumpContent, auto dumpIntermediate, const char * oracle_name)
+                {
+                    qo.resetOracleValues();
+
+                    BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
+                    rg.pickWeighted(
+                        {{20, [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
+                         {5 * static_cast<uint32_t>(fuzz_config->enable_backups),
+                          [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
+
+                    full_query.resize(0);
+                    dumpContent();
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                    dumpIntermediate(strategy);
+                    for (const auto & entry : intermediate_queries)
+                    {
+                        full_query.resize(0);
+                        BuzzHouse::SQLQueryToString(full_query, entry);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
+
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, oracle_name);
+                };
+
                 rg.pickWeighted({
                     {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
                      [&]()
@@ -770,49 +902,105 @@ bool Client::buzzHouse()
                              && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                          const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                              test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
+                         const bool is_mt = tbl.get().isMergeTreeFamily();
+                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
 
-                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
                          rg.pickWeighted(
-                             {{20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
-                              {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                              {5 * static_cast<uint32_t>(test_content),
+                              {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
+                              {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
+                              {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
-                              {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends()),
+                              {25 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends(true)),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
-                              {40, [&]() { /* DUMP_TABLE is the default */ }}});
+                              {10 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::RENAME_BACK; }},
+                              {15 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::FREEZE_UNFREEZE; }},
+                              {10 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
+                              {10 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
+                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                              {3
+                                   * static_cast<uint32_t>(
+                                       test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
+                              {70 * static_cast<uint32_t>(!tbl.get().isNotTruncableEngine()),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE; }},
+                              {1, [&]() { /* Defensive line */ }}});
 
-                         if (test_content)
+                         if (strategy != BuzzHouse::DumpOracleStrategy::DO_NOTHING)
                          {
-                             /// Dump table content and read it later to look for correctness
-                             full_query.resize(0);
-                             qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1, sq2);
-                             BuzzHouse::SQLQueryToString(full_query, sq1);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.processFirstOracleQueryResult(error_code, *external_integrations);
-                         }
+                             if (test_content)
+                             {
+                                 /// Dump table content and read it later to look for correctness
+                                 full_query.resize(0);
+                                 qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1, sq2);
+                                 BuzzHouse::SQLQueryToString(full_query, sq1);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.processFirstOracleQueryResult(error_code, *external_integrations);
+                             }
 
-                         qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
-                         for (const auto & entry : intermediate_queries)
-                         {
-                             /// Run each from the chosen strategy
-                             full_query.resize(0);
-                             BuzzHouse::SQLQueryToString(full_query, entry);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.setIntermediateStepSuccess(!have_error);
-                         }
+                             qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
+                             for (const auto & entry : intermediate_queries)
+                             {
+                                 /// Run each from the chosen strategy
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, entry);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.setIntermediateStepSuccess(!have_error);
+                             }
 
-                         if (test_content)
-                         {
-                             full_query.resize(0);
-                             BuzzHouse::SQLQueryToString(full_query, sq2);
-                             fuzz_config->outf << full_query << std::endl;
-                             server_up &= processBuzzHouseQuery(full_query);
-                             qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
+                             if (test_content)
+                             {
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, sq2);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                                 qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
+                             }
                          }
+                     }},
+                    {5
+                         * static_cast<uint32_t>(
+                             fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 1
+                             && gen.collectionHas<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content)),
+                     [&]()
+                     {
+                         const auto & dict = rg.pickRandomly(
+                             gen.filterCollection<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content));
+                         BuzzHouse::SQLQuery reload;
+                         runDumpReadOracle(
+                             [&]()
+                             {
+                                 qo.dumpDictionaryContent(rg, gen, dict, reload, sq1, sq2);
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, reload);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                             },
+                             [&](auto s)
+                             { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
+                             "Dump and read dictionary");
+                     }},
+                    {5
+                         * static_cast<uint32_t>(
+                             fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 1
+                             && gen.collectionHas<BuzzHouse::SQLView>(gen.attached_views_to_compare_content)),
+                     [&]()
+                     {
+                         const auto & view
+                             = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLView>(gen.attached_views_to_compare_content));
+                         runDumpReadOracle(
+                             [&]() { qo.dumpViewContent(rg, view, sq1, sq2); },
+                             [&](auto s)
+                             { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
+                             "Dump and read view");
                      }},
                     {20
                          * static_cast<uint32_t>(
@@ -894,6 +1082,26 @@ bool Client::buzzHouse()
                     {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
                      [&]()
                      {
+                         /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function
+                         qo.resetOracleValues();
+                         sq2.Clear();
+                         qo.generateArrayJoinOracleQueries(rg, gen, sq1, sq2);
+
+                         full_query.resize(0);
+                         BuzzHouse::SQLQueryToString(full_query, sq1);
+                         fuzz_config->outf << full_query << std::endl;
+                         server_up &= processBuzzHouseQuery(full_query);
+                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                         full_query.resize(0);
+                         BuzzHouse::SQLQueryToString(full_query, sq2);
+                         fuzz_config->outf << full_query << std::endl;
+                         server_up &= processBuzzHouseQuery(full_query);
+                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Array join oracle");
+                     }},
+                    {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
+                     [&]()
+                     {
                          /// COUNT(DISTINCT col) oracle: uniqExact aggregator vs DISTINCT + COUNT
                          qo.resetOracleValues();
                          qo.generateCountDistinctFirstQuery(rg, gen, sq1);
@@ -916,7 +1124,8 @@ bool Client::buzzHouse()
                     {30
                          * static_cast<uint32_t>(
                              fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
-                             && gen.collectionHas<BuzzHouse::SQLPolicy>(gen.row_policies_for_oracle)),
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p)
+                                                                        { return gen.rowPolicyForOracle(p); })),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
@@ -966,7 +1175,6 @@ bool Client::buzzHouse()
                      [&]()
                      {
                          fuzz_config->outf << restart_cmd << std::endl;
-                         gen.setInTransaction(false);
                          server_up &= fuzzLoopReconnect();
                      }},
                     {10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)),
@@ -975,14 +1183,16 @@ bool Client::buzzHouse()
                          const uint64_t nseed = rg.nextInFullRange();
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                         const auto & engine = tbl.isAnyIcebergEngine() ? "iceberg" : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : "kafka");
+                         const auto & engine = tbl.isAnyIcebergEngine()
+                             ? "iceberg"
+                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
                          const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
-                         const auto & ntname = tbl.getTableName(false);
+                         const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyIcebergEngine() || tbl.isAnyDeltaLakeEngine() || tbl.isKafkaEngine());
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
-                                           << " table " << ndname << "." << ntname << std::endl;
+                                           << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
                      }},
                     {3 * static_cast<uint32_t>(fuzz_config->allow_health_check),

@@ -7,8 +7,6 @@ title: 'Apply mask of deleted rows'
 doc_type: 'reference'
 ---
 
-# Apply mask of deleted rows
-
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 ```

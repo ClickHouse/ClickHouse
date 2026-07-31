@@ -39,6 +39,8 @@ public:
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
+    void setPassThrough(bool value);
+
     String getName() const override { return "LazyMaterializingTransform"; }
     Status prepare() override;
 
@@ -58,6 +60,11 @@ private:
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// When true, pass lazy chunks directly to output without combining
+    /// with main columns or permuting. Used when main input only has
+    /// __global_row_index and output only needs lazy columns.
+    bool pass_through = false;
 
     /// Those functions are called once each after the corresponding port is finished.
     void prepareMainChunk();

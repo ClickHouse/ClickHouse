@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -27,7 +26,12 @@ public:
     bool hasActions() const { return !original_actions.getActions().empty(); }
     const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
+    bool isLowerOrUpper() const { return is_lower_or_upper; }
+
 private:
+    /// True only when the preprocessor is exactly lower/lowerUTF8/upper/upperUTF8 applied
+    /// directly to the index column (no nested transformations).
+    bool is_lower_or_upper = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.

@@ -1,5 +1,6 @@
 -- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+SET use_primary_key = 1; -- test relies on PK index being active (force_primary_key + max_rows_to_read)
 
 DROP TABLE IF EXISTS test_hilbert_encode_hilbert_encode;
 

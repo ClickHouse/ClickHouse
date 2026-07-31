@@ -164,7 +164,9 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        auto res =  static_cast<Int64>(transform_y.execute(y, timezone_y)) - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        auto res = static_cast<Int64>(
+            static_cast<UInt64>(transform_y.execute(y, timezone_y))
+            - static_cast<UInt64>(transform_x.execute(x, timezone_x)));
 
         if (is_diff)
         {
@@ -175,7 +177,7 @@ public:
             /// Adjust res:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
-            Int64 adjust_value;
+            Int64 adjust_value = 0;
             auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
             auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
@@ -325,7 +327,7 @@ private:
   *
   * The timezone matters because days can have different lengths.
   */
-class FunctionDateDiff : public IFunction
+class FunctionDateDiff final : public IFunction
 {
 public:
     FunctionDateDiff(const char * name_, bool is_relative_)
@@ -418,7 +420,7 @@ private:
 /** timeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
-class FunctionTimeDiff : public IFunction
+class FunctionTimeDiff final : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -42,6 +43,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
         {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
+        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt64>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt64>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
@@ -114,6 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
+        res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
@@ -179,3 +182,6 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProcesses) }

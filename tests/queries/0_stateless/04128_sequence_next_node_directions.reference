@@ -1,0 +1,28 @@
+--- forward + head ---
+B
+--- forward + first_match ---
+C
+--- forward + last_match ---
+D
+--- backward + tail ---
+A
+--- backward + first_match ---
+X
+--- backward + last_match ---
+C
+--- partitioned with GROUP BY (merge path) ---
+p1	B
+p2	\N
+--- too few events (size <= events_size): NULL ---
+\N
+--- empty input ---
+\N
+--- long chain forward ---
+I
+--- -Distinct combinator (events_size=0 returns base event) ---
+A
+--- error: invalid direction ---
+--- error: invalid base ---
+--- error: forward + tail is rejected ---
+--- error: backward + head is rejected ---
+--- error: event column must be String ---

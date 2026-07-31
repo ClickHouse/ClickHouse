@@ -22,7 +22,7 @@ where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
 Uses `CRC32` as a hash function.
 )";
-    FunctionDocumentation::Syntax syntax_sparse = "sparseGrams(s[, min_ngram_length, max_ngram_length])";
+    FunctionDocumentation::Syntax syntax_sparse = "sparseGrams(s[, min_ngram_length[, max_ngram_length[, min_cutoff_length]]])";
     FunctionDocumentation::Arguments arguments_sparse = {
         {"s", "An input string.", {"String"}},
         {"min_ngram_length", "Optional. The minimum length of extracted ngram. The default and minimal value is 3.", {"UInt*"}},
@@ -50,7 +50,7 @@ Finds all substrings of a given UTF-8 string that have a length of at least `n`,
 Expects a UTF-8 string, throws an exception in case of an invalid UTF-8 sequence.
 Uses `CRC32` as a hash function.
 )";
-    FunctionDocumentation::Syntax syntax_sparse_utf8 = "sparseGramsUTF8(s[, min_ngram_length, max_ngram_length])";
+    FunctionDocumentation::Syntax syntax_sparse_utf8 = "sparseGramsUTF8(s[, min_ngram_length[, max_ngram_length[, min_cutoff_length]]])";
     FunctionDocumentation::ReturnedValue returned_value_sparse_utf8 = {"Returns an array of selected UTF-8 substrings.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_sparse_utf8 = {
     {

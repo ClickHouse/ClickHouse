@@ -1,8 +1,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/ASTExpressionList.h>
+
 
 namespace DB
 {

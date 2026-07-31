@@ -2212,7 +2212,7 @@ def render_text(
     if binary.build_id:
         lines.append(f"Build ID: {binary.build_id[:16]}...")
     lines.append(f"Address: 0x{symbol.address:x}..0x{symbol.address + symbol.size:x} ({symbol.size} bytes)")
-    lines.append(f"Resolution confidence: high")
+    lines.append("Resolution confidence: high")
     lines.append("")
 
     # Metrics section
