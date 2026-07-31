@@ -25,12 +25,15 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -62,6 +65,11 @@ namespace Setting
     extern const SettingsBool enable_positional_arguments;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool sql_security_views_are_optimization_barriers;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
@@ -72,6 +80,54 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A step is row-preserving when it cannot drop rows, so an expression evaluated below it sees
+/// exactly the rows that reach the step above it. Only such steps may separate an outer predicate
+/// from the view's data without weakening what the view filters out.
+bool isRowPreservingStep(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const ExpressionStep *>(&step))
+        return true;
+
+    /// Sorting keeps every row unless it also truncates to a top-N.
+    if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
+        return sorting->getLimit() == 0;
+
+    /// Reading the source: PREWHERE written in the view drops rows, and an outer predicate must
+    /// not join that same PREWHERE chain. A row policy of the definer needs no barrier — the
+    /// reading step always applies it before PREWHERE and before any pushed-down filter.
+    if (const auto * source_with_filter = typeid_cast<const SourceStepWithFilter *>(&step))
+        return source_with_filter->getPrewhereInfo() == nullptr;
+
+    if (typeid_cast<const ISourceStep *>(&step))
+        return true;
+
+    return false;
+}
+
+/// Mark every step of a view's subplan that decides which rows the view exposes, so that the
+/// optimizer will not evaluate anything from the outer query below it. See
+/// `IQueryPlanStep::isSecurityBarrier`. Returns whether the view can drop rows at all.
+///
+/// Nothing is marked when it cannot, which keeps a plain projection view exactly as optimizable
+/// as it is today.
+bool markSecurityBarriers(QueryPlan::Node * node)
+{
+    if (!node || !node->step)
+        return false;
+
+    bool marked = false;
+    if (!isRowPreservingStep(*node->step))
+    {
+        node->step->setSecurityBarrier();
+        marked = true;
+    }
+
+    for (auto * child : node->children)
+        marked |= markSecurityBarriers(child);
+
+    return marked;
+}
 
 bool isNullableOrLcNullable(DataTypePtr type)
 {
@@ -388,6 +444,27 @@ void StorageView::readImpl(
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
+
+    /// A view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE` runs its inner query as somebody
+    /// else, so whatever the inner query filters out is data the invoker has no right to observe.
+    /// The plan built above is about to be embedded into the invoker's plan, where merging and
+    /// pushdown would otherwise let an invoker-supplied expression run on the filtered-out rows.
+    /// Mark the steps that do the filtering so the optimizer keeps the outer query above them.
+    ///
+    /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
+    /// there is nothing the invoker could learn that they are not already entitled to.
+    const auto sql_security_type = storage_snapshot->metadata->sql_security_type;
+    if ((sql_security_type == SQLSecurityType::DEFINER || sql_security_type == SQLSecurityType::NONE)
+        && context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers])
+    {
+        auto * root = query_plan.getRootNode();
+        /// Marking the individual filtering steps lets an outer predicate still sink through the
+        /// view's projections and sit right on top of them. Marking the converting step on top as
+        /// well seals the view: even if a later optimization rebuilds one of the inner steps and
+        /// drops its flag, nothing from outside can enter the subplan.
+        if (markSecurityBarriers(root))
+            root->step->setSecurityBarrier();
+    }
 }
 
 void StorageView::drop()
