@@ -94,6 +94,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
+        else if (type == "MultiPoint")
+            result += "`](/sql-reference/data-types/geo#multipoint)";
         else if (type == "Ring")
             result += "`](/sql-reference/data-types/geo#ring)";
         else if (type == "LineString")
@@ -285,6 +287,6 @@ String FunctionDocumentation::categoryAsString() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
 
-FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"This function is used internally by ClickHouse (for example by the query planner or by other functions) and is not part of the public interface. It should not be used directly and may change or be removed at any time.", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
 
 }
