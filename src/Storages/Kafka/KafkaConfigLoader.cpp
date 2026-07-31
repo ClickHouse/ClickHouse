@@ -102,14 +102,14 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     /// and broker threads are created while signals are already all-blocked
     /// (inside rd_kafka_new), so they inherit the all-blocked mask.
     /// We unblock only the specific signals needed by `system.stack_trace`
-    /// (SIGRTMIN) and the query profiler (SIGUSR1/SIGUSR2), rather than
-    /// the full mask — otherwise we would also drop the process-wide
+    /// (STACK_TRACE_SERVICE_SIGNAL) and the query profiler (SIGUSR1/SIGUSR2),
+    /// rather than the full mask — otherwise we would also drop the process-wide
     /// SIGPIPE block installed by the daemon.
     ///
     ///   [1]: https://github.com/confluentinc/librdkafka/issues/4571
     sigset_t mask;
     sigemptyset(&mask);
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     sigaddset(&mask, STACK_TRACE_SERVICE_SIGNAL);
 #endif
     sigaddset(&mask, QueryProfilerReal::PAUSE_SIGNAL);

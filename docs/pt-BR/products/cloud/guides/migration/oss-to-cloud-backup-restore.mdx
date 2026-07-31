@@ -272,29 +272,21 @@ Você restaurará seus dados em um novo serviço Cloud.
 Siga as etapas abaixo para criar um novo serviço Cloud.
 
 <Steps>
-  <Step>
-    #### Abra o Cloud Console
-
+  <Step title="Abra o Cloud Console" id="open-cloud-console">
     Acesse [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step>
-    #### Crie um novo serviço
-
+  <Step title="Crie um novo serviço" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="criar um novo serviço" />
   </Step>
 
-  <Step>
-    #### Configure e crie um serviço
-
+  <Step title="Configure e crie um serviço" id="configure-and-create">
     Escolha a região e a configuração desejadas e clique em `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="definir preferências do serviço" />
   </Step>
 
-  <Step>
-    #### Crie uma role de acesso
-
+  <Step title="Crie uma role de acesso" id="create-an-access-role">
     Abra o SQL Console
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="definir preferências do serviço" />
@@ -303,9 +295,9 @@ Siga as etapas abaixo para criar um novo serviço Cloud.
 
     Para restaurar seu backup do S3, você precisará configurar acesso seguro entre o ClickHouse Cloud e seu bucket do S3.
 
-    1. Siga as etapas em [&quot;Accessing S3 data securely&quot;](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para criar uma role de acesso e obter o ARN da role.
+    1. Siga as etapas em [&quot;Acessar dados no S3 com segurança&quot;](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para criar uma role de acesso e obter o ARN da role.
 
-    2. Atualize a política do bucket do S3 que você criou em [&quot;How to create an S3 bucket and IAM role&quot;](/pt-BR/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket), adicionando o ARN da role da etapa anterior.
+    2. Atualize a política do bucket do S3 que você criou em [&quot;Como criar um bucket do S3 e uma IAM role&quot;](/pt-BR/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket), adicionando o ARN da role da etapa anterior.
 
     Sua política atualizada para o bucket do S3 ficará mais ou menos assim:
 
@@ -443,8 +435,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- Retorna imediatamente com o ID do backup
--- Exemplo de resultado:
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘
