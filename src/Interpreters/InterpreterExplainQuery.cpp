@@ -380,6 +380,20 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// A parameterized view call carrying `FINAL` or `SAMPLE` must stay unexpanded, mirroring the
+            /// skip in `ExpandParameterizedViewsMatcher`: those modifiers are valid on the view call at
+            /// execution time, but attaching them to a subquery produces a form the executor rejects, so
+            /// rewriting would make the `EXPLAIN` output non-executable even though the real `SELECT` is
+            /// valid. The `analyze()`-mode interpreter below mutates the call in place (its own
+            /// `StorageView::replaceWithSubquery` / `restoreViewName` round trip leaves a fake table
+            /// identifier holding the view name instead of the original `pv(...)` call), so snapshot the
+            /// original table expression up front and restore it afterwards.
+            ASTPtr main_table_expression_backup;
+            if (const auto * main_table_expression = getTableExpression(select, 0);
+                main_table_expression && main_table_expression->table_function
+                && (main_table_expression->final || main_table_expression->sample_size || main_table_expression->sample_offset))
+                main_table_expression_backup = main_table_expression->clone();
+
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
@@ -407,7 +421,19 @@ namespace
             /// views that matcher deliberately leaves intact - `SQL SECURITY DEFINER` and `NONE` - whose
             /// bodies a user granted `SELECT` on the view may see, exactly as for a regular view with those
             /// security settings, because their base tables are read under the view's own context.
-            if (query_info.view_query && main_view_access_check_performed)
+            if (query_info.is_parameterized_view && main_table_expression_backup)
+            {
+                /// Put the original `pv(...) FINAL` / `pv(...) SAMPLE ...` call back in place of whatever
+                /// the interpreter's in-place analysis left there (see the snapshot above), instead of
+                /// expanding it into a subquery the executor would reject.
+                auto & tables_element_ast = select.tables()->children.at(0);
+                auto & tables_element = tables_element_ast->as<ASTTablesInSelectQueryElement &>();
+                for (auto & child : tables_element.children)
+                    if (child.get() == tables_element.table_expression.get())
+                        child = main_table_expression_backup;
+                tables_element.table_expression = main_table_expression_backup;
+            }
+            else if (query_info.view_query && main_view_access_check_performed)
             {
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);

@@ -1,0 +1,74 @@
+-- real legacy SELECTs with FINAL / SAMPLE are valid
+1	a
+1
+-- legacy EXPLAIN SYNTAX keeps the parameterized view call intact
+SELECT
+    k,
+    v
+FROM pv_04660(equals(p, 1))
+FINAL
+SELECT
+    k,
+    v
+FROM pv_04660(equals(p, 1))
+SAMPLE 1 / 2
+-- EXPLAIN AST optimize = 1 keeps the parameterized view call intact
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 2)
+    Identifier k
+    Identifier v
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function pv_04660 (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier p
+          Literal UInt64_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 2)
+    Identifier k
+    Identifier v
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 2)
+      Function pv_04660 (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier p
+          Literal UInt64_1
+      SampleRatio 1 / 2
+-- without FINAL / SAMPLE the view body is still expanded
+SELECT
+    k,
+    v
+FROM
+(
+    SELECT
+        k,
+        v
+    FROM default.t_04660
+    WHERE equals(k, _CAST(1, \'UInt64\'))
+) AS pv_04660
+-- EXPLAIN AST optimize = 1 uses the same legacy visitor under the analyzer too
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 2)
+    Identifier k
+    Identifier v
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function pv_04660 (children 1)
+       ExpressionList (children 1)
+        Function equals (children 1)
+         ExpressionList (children 2)
+          Identifier p
+          Literal UInt64_1
