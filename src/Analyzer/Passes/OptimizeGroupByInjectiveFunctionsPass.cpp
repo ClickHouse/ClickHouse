@@ -559,7 +559,7 @@ private:
         }
 
         auto grouping_set_column = std::make_shared<ColumnNode>(
-            NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, QueryTreeNodeWeakPtr{});
+            NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, TableExpressionNodeWeakPtr{});
 
         auto grouping_function = std::make_shared<FunctionNode>("groupingForResolved");
         grouping_function->getArguments().getNodes() = {grouping_set_column, unwrapped_key->clone()};
