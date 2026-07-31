@@ -7,8 +7,6 @@ title: 'FixedString(N)'
 doc_type: 'reference'
 ---
 
-# FixedString(N)
-
 A fixed-length string of `N` bytes (neither characters nor code points).
 
 To declare a column of `FixedString` type, use the following syntax:

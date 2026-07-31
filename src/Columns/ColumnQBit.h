@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -15,11 +14,12 @@ namespace DB
   * rather than by vector element. For example, with Float32 vectors, there are 32 groups (one for each bit),
   * and each group contains the corresponding bit from all vector elements.
   *
-  * This column is designed to store the output of the transposeBits() function calls, which convert one float within
+  * This column is designed to store the output of the transposeBits() function calls, which convert one element within
   * a regular array into this bit-transposed format. Currently supported numeric types include:
   * - Float64 (64 bit groups)
   * - Float32 (32 bit groups)
   * - BFloat16 (16 bit groups)
+  * - Int8 (8 bit groups)
   *
   * Internal structure:
   * - For a Float32 array, the underlying storage is a tuple of 32 FixedString columns
@@ -55,8 +55,10 @@ private:
     WrappedPtr tuple;
     /// Number of elements in the original vectors. We will store dimension elements padded to a multiple of 8 (padding elements are 0)
     size_t dimension = 0;
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when the QBit is not strided.
+    size_t stride = 0;
 
-    explicit ColumnQBit(MutableColumnPtr && tuple_, size_t dimension);
+    explicit ColumnQBit(MutableColumnPtr && tuple_, size_t dimension, size_t stride);
 
 
 public:
@@ -65,8 +67,8 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnQBit>, ColumnQBit>;
 
-    static Ptr create(const ColumnPtr & column, size_t dimension) { return Base::create(column->assumeMutable(), dimension); }
-    static MutablePtr create(MutableColumnPtr && tuple_, size_t dimension) { return Base::create(std::move(tuple_), dimension); }
+    static Ptr create(const ColumnPtr & column, size_t dimension, size_t stride) { return Base::create(column->assumeMutable(), dimension, stride); }
+    static MutablePtr create(MutableColumnPtr && tuple_, size_t dimension, size_t stride) { return Base::create(std::move(tuple_), dimension, stride); }
 
     const char * getFamilyName() const override { return "QBit"; }
     TypeIndex getDataType() const override { return TypeIndex::QBit; }
@@ -76,10 +78,14 @@ public:
 
     /// Number of rows
     size_t size() const override { return tuple->size(); }
-    /// Number of columns in the tuple, which corresponds to the number of bit groups
+    /// Number of columns in the tuple, which corresponds to the number of bit planes times the number of stride groups
     size_t getBitsCount() const;
     /// Number of elements in the vectors
     size_t getDimension() const { return dimension; }
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
+    size_t getStride() const { return stride; }
+    /// Number of stride groups. Equal to 1 when not strided.
+    size_t getNumStrides() const { return dimension / stride; }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -128,7 +134,10 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
-    WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
+    {
+        tuple->computeHashInto(row_begin, row_end, hash_out, initial);
+    }
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -183,7 +192,7 @@ public:
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
-            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
+            return dimension == rhs_qbit->dimension && stride == rhs_qbit->stride && tuple->structureEquals(*rhs_qbit->tuple);
         return false;
     }
     bool isFinalized() const override { return tuple->isFinalized(); }

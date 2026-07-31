@@ -2,7 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -13,6 +13,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB::ErrorCodes
 {
@@ -106,6 +108,17 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     columns[i]->insert(snapshot.peak_memory_usage);
 }
 
+static void dumpTempDataOnDiskUsage(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name)
+{
+    size_t i = 0;
+    columns[i++]->insertData(host_name.data(), host_name.size());
+    columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+    columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+    columns[i++]->insert(Type::GAUGE);
+    columns[i++]->insertData(DB::TemporaryDataOnDiskScope::USAGE_EVENT_NAME, strlen(DB::TemporaryDataOnDiskScope::USAGE_EVENT_NAME));
+    columns[i]->insert(snapshot.temp_data_on_disk_usage);
+}
+
 DB::Block getSampleBlock()
 {
     using namespace DB;
@@ -148,6 +161,15 @@ DB::Block getProfileEvents(
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
+        group_snapshot.temp_data_on_disk_usage = 0;
+        if (auto query_context = thread_group->query_context.lock())
+        {
+            /// Report only the per-query scope (not the root scope, which would aggregate across all queries).
+            auto temp_data_on_disk = query_context->getTempDataOnDisk();
+            auto shared_temp_data_on_disk = query_context->getSharedTempDataOnDisk();
+            if (temp_data_on_disk && temp_data_on_disk != shared_temp_data_on_disk)
+                group_snapshot.temp_data_on_disk_usage = static_cast<Int64>(temp_data_on_disk->currentCompressedSize());
+        }
         auto group_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
         auto prev_group_snapshot = last_sent_snapshots.find(0);
         group_snapshot.counters =
@@ -163,6 +185,7 @@ DB::Block getProfileEvents(
 
     dumpProfileEvents(group_snapshot, columns, host_name);
     dumpMemoryTracker(group_snapshot, columns, host_name);
+    dumpTempDataOnDiskUsage(group_snapshot, columns, host_name);
 
     Block curr_block;
 

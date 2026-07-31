@@ -7,8 +7,6 @@ title: 'ALTER TABLE ... MODIFY QUERY Statement'
 doc_type: 'reference'
 ---
 
-# ALTER TABLE ... MODIFY QUERY Statement
-
 You can modify `SELECT` query that was specified when a [materialized view](/sql-reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
@@ -203,12 +201,16 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 The schedule (`EVERY` or `AFTER`) is mandatory: the statement replaces *all* refresh parameters at once. Any clause not specified — `RANDOMIZE FOR`, `DEPENDS ON`, or `SETTINGS` — is removed or reset to defaults. To change only refresh settings, repeat the current schedule.
 
+The command updates the refresh configuration of the existing view in place without recreating the materialized view or its target table, clearing existing target data, or canceling an already-running refresh. Reads continue against the existing target table while the configuration is changed.
+
+Repeating the command with the same complete `REFRESH` specification is safe. Make sure to repeat every clause that should remain configured, because each execution replaces all refresh parameters as described above.
+
 ```sql
 -- Change the schedule.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
 -- Change retry settings (schedule must be repeated).
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
