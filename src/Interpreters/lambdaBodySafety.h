@@ -30,13 +30,17 @@ struct LambdaBodySafety
 ///
 /// Never throws: this is an optimizer predicate, so an unrecognized shape is skipped.
 ///
-/// Deliberately shares no visited state with hasStatefulFunctionsInLambdaBodies below: that one
-/// walks a whole DAG and can reuse a visited set across its nodes, while this one is called per
-/// node and must stay stateless, or a later call would skip a body an earlier node already saw.
+/// Deliberately shares no visited state with the whole-DAG entry points below: those walk a whole
+/// DAG and can reuse a visited set across its nodes, while this one is called per node and must
+/// stay stateless, or a later call would skip a body an earlier node already saw.
 LambdaBodySafety inspectLambdaBodies(const ActionsDAG::Node & node);
 
 /// True if any node of `dag` holds a lambda body containing a stateful function.
 /// Complements ActionsDAG::hasStatefulFunctions, which only sees the outer DAG.
 bool hasStatefulFunctionsInLambdaBodies(const ActionsDAG & dag);
+
+/// True if any node of `dag` holds a lambda body containing a function that is not deterministic in
+/// the scope of the query. Complements the outer-DAG-only scans, which cannot see into a body.
+bool hasNonDeterministicFunctionsInLambdaBodies(const ActionsDAG & dag);
 
 }

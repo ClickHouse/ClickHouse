@@ -88,6 +88,15 @@ SELECT 'A8 hoisted no argument', countIf(rb IS NULL) = 0 FROM (
     WHERE arrayExists(z -> rand() % 2 = 0, [t_left.a])
 ) SETTINGS query_plan_filter_push_down = 1;
 
+-- A capturing lambda. The rows above all mix the unsafe call with the lambda PARAMETER only, so
+-- the lambda folds to a constant ColumnFunction and is reached through the node's column. Mixing
+-- the parameter with an outer column instead leaves a genuine FunctionCapture on the node, whose
+-- body DAG has to be entered through a different code path. Pre-fix this printed 0.
+SELECT 'A9 capturing lambda', countIf(rb IS NULL) = 0 FROM (
+    SELECT t_right.b AS rb FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
+    WHERE arrayExists(z -> rand(z + t_left.a) % 2 = 0, [t_left.a])
+) SETTINGS query_plan_filter_push_down = 1;
+
 -- Oracle B: surviving row count.
 -- The partial push-down path copies the conjunct below the join and keeps it above, so a
 -- non-deterministic predicate is drawn twice and about a quarter of the rows survive instead
@@ -203,6 +212,33 @@ SELECT 'P5 deterministic predicate still pushed', countIf(is_filter AND rn > joi
         WHERE t_left.a % 2 = 0
     ) SETTINGS query_plan_filter_push_down = 1
 );
+
+-- Leaving the predicate above the JOIN hands it to the next optimization, which decides whether a
+-- LEFT JOIN can become an INNER one by evaluating the filter on a single fabricated not-matched row.
+-- That verdict is only sound for a predicate whose value does not vary per row, so the same lambda
+-- blindness has to be closed there too: below, the `t_right.b > 1` atom alone would license the
+-- rewrite, and the hidden non-deterministic call must veto it. The join kind must stay LEFT.
+-- The runner turns the rewrite off in about 5% of runs and the stress runner's randomized
+-- `compatibility` reverts its pre-24.4 default, so pin it or the row passes without testing anything.
+SELECT 'J1 hidden non deterministic keeps join kind', countIf(explain ILIKE '%Type: left%') = 1 FROM (
+    EXPLAIN SELECT t_left.a FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
+    WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left.a]) AND t_right.b > 1
+) SETTINGS query_plan_filter_push_down = 1, query_plan_convert_outer_join_to_inner_join = 1;
+
+-- The same shape with the call visible: the rewrite is already vetoed on master, so this row does
+-- not move. It pins the asymmetry that makes J1 a consequence of leaving the predicate above the
+-- join rather than a pre-existing gap.
+SELECT 'J2 visible non deterministic keeps join kind', countIf(explain ILIKE '%Type: left%') = 1 FROM (
+    EXPLAIN SELECT t_left.a FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
+    WHERE rand(t_left.a) % 2 = 0 AND t_right.b > 1
+) SETTINGS query_plan_filter_push_down = 1, query_plan_convert_outer_join_to_inner_join = 1;
+
+-- The rewrite must survive: a deterministic lambda body still lets the join kind change.
+-- Without this row the veto could degrade into refusing to convert any lambda-bearing filter.
+SELECT 'J3 deterministic lambda still converts', countIf(explain ILIKE '%Type: left%') = 0 FROM (
+    EXPLAIN SELECT t_left.a FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
+    WHERE arrayExists(z -> z % 2 = 0, [t_left.a]) AND t_right.b > 1
+) SETTINGS query_plan_filter_push_down = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 DROP TABLE t_left;
 DROP TABLE t_right;

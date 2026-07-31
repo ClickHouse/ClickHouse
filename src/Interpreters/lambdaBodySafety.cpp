@@ -114,4 +114,18 @@ bool hasStatefulFunctionsInLambdaBodies(const ActionsDAG & dag)
     return false;
 }
 
+bool hasNonDeterministicFunctionsInLambdaBodies(const ActionsDAG & dag)
+{
+    /// One inspector for the whole DAG: reusing its visited sets across nodes only ever skips a body
+    /// already answered for, which is sound for a single yes/no question about the DAG as a whole.
+    LambdaBodyInspector inspector;
+    for (const auto & node : dag.getNodes())
+    {
+        inspector.inspectNode(node);
+        if (inspector.result.has_non_deterministic)
+            return true;
+    }
+    return false;
+}
+
 }
