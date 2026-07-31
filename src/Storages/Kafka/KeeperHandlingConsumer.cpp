@@ -131,12 +131,14 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
 
 void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
 {
-    keeper = keeper_;
+    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
+    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
     }
+    keeper = keeper_;
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
@@ -361,7 +363,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     pcg64 generator(randomSeed());
     std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
 
-    for (const auto & tp : available_topic_partitions)
+    for (const auto & tp : available_topic_partitions_copy)
     {
         if (tmp_locks.size() >= tmp_locks_quota)
             break;

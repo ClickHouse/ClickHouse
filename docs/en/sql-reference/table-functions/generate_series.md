@@ -7,8 +7,6 @@ description: 'Returns a table with the single `generate_series` column (UInt64) 
 doc_type: 'reference'
 ---
 
-# generate_series Table Function
-
 Alias: `generateSeries`
 
 ## Syntax {#syntax}

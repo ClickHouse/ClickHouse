@@ -1,0 +1,94 @@
+---
+slug: /cloud/reference/shared-catalog
+sidebarTitle: 'Shared Catalog'
+title: 'Shared Catalog 与 Shared 数据库引擎'
+keywords: ['SharedCatalog', 'SharedDatabaseEngine']
+description: '介绍 ClickHouse Cloud 中的 Shared Catalog 组件和 Shared 数据库引擎'
+doc_type: 'reference'
+---
+
+**仅在 ClickHouse Cloud (以及官方合作伙伴云服务) 中提供**
+
+Shared Catalog 是一个云原生组件，负责在 ClickHouse Cloud 的各副本之间复制使用无状态引擎的数据库和表的元数据及 DDL 操作。它为这些对象提供一致、集中的状态管理，即使在动态或部分离线的环境中，也能确保元数据保持一致。
+
+Shared Catalog **不会复制表本身**，而是通过复制 DDL 查询和元数据，确保所有副本对数据库和表定义具有一致的认知。
+
+它支持复制以下数据库引擎：
+
+* Shared
+* PostgreSQL
+* MySQL
+* DataLakeCatalog
+
+<div id="architecture-and-metadata-storage">
+  ## 架构与元数据存储
+</div>
+
+Shared Catalog 中的所有元数据和 DDL 查询历史都集中存储在 ZooKeeper 中，不会持久化到本地磁盘。此架构可确保：
+
+* 所有副本的状态保持一致
+* 计算节点为无状态
+* 快速且可靠的副本引导
+
+<div id="shared-database-engine">
+  ## Shared 数据库引擎
+</div>
+
+**Shared 数据库引擎**与 Shared Catalog 配合使用，用于管理那些表采用**无状态表引擎** (如 `SharedMergeTree`) 的数据库。这些表引擎不会将持久状态写入磁盘，并且适用于动态计算环境。
+
+Shared 数据库引擎在 Replicated 数据库引擎的基础上进一步改进了其行为，同时提供了额外保障和运维优势。
+
+<div id="key-benefits">
+  ### 关键优势
+</div>
+
+* **原子性的 CREATE TABLE ... AS SELECT**
+  表创建和数据插入以原子方式执行——要么整个操作全部完成，要么根本不会创建该表。
+
+* **跨数据库的 RENAME TABLE**
+  支持在数据库之间以原子方式移动表：
+  ```sql
+  RENAME TABLE db1.table TO db2.table;
+  ```
+
+* **使用 UNDROP TABLE 自动恢复表**
+  已删除的表默认会保留 8 小时，并可在此期间恢复：
+  ```sql
+  UNDROP TABLE my_table;
+  ```
+  保留时长可通过服务器设置进行配置。
+
+* **改进的 Compute-compute separation**
+  与 Replicated 数据库引擎 不同，后者要求所有副本都在线才能处理 DROP 查询，而 Shared Catalog 采用集中式元数据删除。因此，即使某些副本离线，操作也能成功完成。
+
+* **自动元数据复制**
+  Shared Catalog 可确保数据库定义在启动时自动复制到所有服务器。运维人员无需在新实例上手动配置或同步元数据。
+
+* **集中式、带版本的元数据状态**
+  Shared Catalog 在 ZooKeeper 中存储唯一可信的元数据来源。副本启动时，会拉取最新状态并应用差异以达到一致性。在查询执行期间，系统还可以等待其他副本至少达到所需的元数据版本，以确保正确性。
+
+<div id="usage-in-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 中的使用方式
+</div>
+
+对于最终用户，使用 Shared Catalog 和 Shared 数据库引擎无需额外配置。创建数据库的方式与以往相同：
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud 会自动为数据库分配 Shared 数据库引擎。在此类数据库中，使用无状态引擎创建的任何表都会自动受益于 Shared Catalog 的复制和协调能力。
+
+<div id="summary">
+  ## 总结
+</div>
+
+Shared Catalog 和 Shared 数据库引擎提供：
+
+* 为无状态引擎提供可靠且自动的元数据复制
+* 无状态计算，且不在本地持久化元数据
+* 支持复杂 DDL 的原子操作
+* 更好地支持弹性、临时或部分离线的计算环境
+* ClickHouse Cloud 用户可无缝使用
+
+这些能力使 Shared Catalog 成为 ClickHouse Cloud 中可扩展的云原生元数据管理基础。
