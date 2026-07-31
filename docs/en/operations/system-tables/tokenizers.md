@@ -39,5 +39,6 @@ SELECT * FROM system.tokenizers;
 │ sparse_grams    │
 │ asciiCJK        │
 │ icu             │
+│ japanese        │
 └─────────────────┘
 ```
