@@ -7,8 +7,6 @@ keywords: ['APPLY', 'modifier']
 doc_type: 'reference'
 ---
 
-# APPLY modifier {#apply}
-
 > Allows you to invoke some function for each row returned by an outer table expression of a query.
 
 ## Syntax {#syntax}

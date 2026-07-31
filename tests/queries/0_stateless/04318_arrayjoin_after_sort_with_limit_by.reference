@@ -1,0 +1,12 @@
+-- LIMIT 1 BY id
+1	1
+2	10
+3	30
+4	40
+-- Old analyzer
+1	1
+2	10
+3	30
+4	40
+-- Plain expression: pushdown still applied
+1

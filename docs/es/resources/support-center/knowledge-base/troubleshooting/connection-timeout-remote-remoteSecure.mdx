@@ -1,0 +1,61 @@
+---
+title: Cómo resolver errores de tiempo de espera con las funciones de tabla `remote` y `remoteSecure`
+description: Aprenda a corregir los errores de tiempo de espera al usar las funciones de tabla `remote` o `remoteSecure` en ClickHouse ajustando la configuración del tiempo de espera de conexión.
+date: 2023-03-20
+tags: ['Errores y excepciones']
+keywords: ['Intentos de conexión fallidos']
+---
+
+<div id="code-279-dbnetexception-all-connection-tries-failed">
+  ## Código: 279. DB::NetException: Fallaron todos los intentos de conexión.
+</div>
+
+**Problema**
+La [función de tabla `remote()` o `remoteSecure()`](/es/reference/functions/table-functions/remote) permite acceder a una tabla remota desde otro nodo de ClickHouse.
+
+Al usar estas funciones en un nodo que está a más de 100 ms (en términos de latencia) del nodo remoto, es habitual encontrarse con un error de tiempo de espera.
+
+Por ejemplo:
+
+```
+4776d4bd8190 :) SELECT * FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+
+SELECT *
+FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+
+Query id: 2bd6ddd0-66d9-4d19-830f-87e3cec3724b
+
+0 rows in set. Elapsed: 1.213 sec.
+
+Received exception from server (version 22.6.9):
+Code: 519. DB::Exception: Received from localhost:9000. DB::NetException. DB::NetException: All attempts to get table structure failed. Log:
+
+Code: 279. DB::NetException: All connection tries failed. Log:
+
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+Code: 209. DB::NetException: Timeout: connect timed out: 18.218.245.169:9440 (hc7d963h1t.us-east-2.aws.clickhouse.cloud:9440, connection timeout 100 ms). (SOCKET_TIMEOUT) (version 22.6.9.11 (official build))
+
+. (ALL_CONNECTION_TRIES_FAILED) (version 22.6.9.11 (official build))
+
+. (NO_REMOTE_SHARD_AVAILABLE)
+```
+
+**Solución alternativa**
+Para aumentar el tiempo de espera de la conexión, establece [`connect_timeout_with_failover_secure_ms`](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L67) en un valor más alto (por ejemplo, 1 segundo) en lugar del valor predeterminado de 100 ms.
+
+```
+4776d4bd8190 :) SELECT * FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud:9440', DATABASE, TABLE, 'USER', 'USER_PASSWORD') SETTINGS connect_timeout_with_failover_secure_ms = 1000
+
+SELECT *
+FROM remoteSecure('HOSTNAME.us-east-2.aws.clickhouse.cloud:9440', DATABASE, TABLE, 'USER', 'USER_PASSWORD')
+SETTINGS connect_timeout_with_failover_secure_ms = 1000
+
+Query id: 8e2f4d41-307b-4e61-abb8-809190023247
+
+┌─x─┐
+│ 1 │
+└───┘
+
+1 row in set. Elapsed: 2.403 sec.
+```

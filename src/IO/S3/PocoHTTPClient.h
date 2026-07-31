@@ -35,9 +35,16 @@ namespace DB
 class Context;
 }
 
+namespace Poco::Net
+{
+class HTTPMessage;
+}
 
 namespace DB::S3
 {
+
+/// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
+bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
 
 class ClientFactory;
 class PocoHTTPClient;

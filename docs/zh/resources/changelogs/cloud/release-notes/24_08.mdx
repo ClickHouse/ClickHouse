@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'Cloud v24.8 更新日志'
+description: 'v24.8 快速发布版更新日志'
+keywords: ['更新日志', '云']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+以下是基于 v24.8 发布的 ClickHouse Cloud 服务相关变更。
+
+<div id="backward-incompatible-change">
+  ## 向后不兼容的变更
+</div>
+
+* 更改 Variant 数据类型的二进制序列化：添加紧凑模式，避免在仅包含单一 Variant 或仅包含 NULL 值的粒度中多次写入相同的判别器。新增 MergeTree 设置 `use_compact_variant_discriminators_serialization`，默认启用。请注意，Variant 类型仍处于 Experimental 阶段，因此除非你此前在支持团队协助下提前启用了该功能，否则这项序列化层面的向后不兼容变更通常不会对你造成影响。[#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel)。
+
+* 禁止在 Replicated 数据库中使用 `CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...`。该 PR 只适用于仍在使用 ReplicatedMergeTree 的用户。[#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir)。
+
+* 指标 KeeperOutstandingRequets 已重命名为 KeeperOutstandingRequests。此更改修复了 [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179) 中报告的拼写错误。[#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze)。
+
+* clickhouse-client 和 clickhouse-local 现在默认启用多查询模式 (而非单查询模式) 。例如，`clickhouse-client -q "SELECT 1; SELECT 2"` 现在可以直接运行，而此前用户必须添加 `--multiquery` (或 `-n`) 。`--multiquery`/`-n` 开关现已废弃。多查询语句中的 INSERT 查询会根据其 FORMAT 子句进行特殊处理：如果 FORMAT 为 VALUES (最常见的情况) ，则 INSERT 语句以查询末尾的分号 `;` 作为结束标志；对于所有其他 FORMAT (例如 CSV 或 JSONEachRow) ，则以查询末尾的两个换行符 `\n\n` 作为结束标志。[#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear)。
+
+* 在之前的版本中，可以通过在数据类型名称后附加 WithDictionary，使用 LowCardinality 数据类型的一种替代语法。这只是最初的一个可用实现，从未写入文档，也未向公众公开。现在，该语法已被弃用。如果你使用过这种语法，则必须 ALTER 你的表，并将该数据类型重命名为 LowCardinality。[#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov)。
+
+* 修复了 Buffer 存储与分布式目标表配合使用时的逻辑错误。这是一项向后不兼容的变更：如果某张表在同一查询中出现多次 (例如在自连接中) ，那么使用 Buffer 和分布式目标表的查询可能会停止工作。[#67015](https://github.com/vdimir) (vdimir)。
+
+* 在之前的版本中，调用基于伽马函数的随机分布函数 (例如 Chi-Squared、Student、Fisher) 时，如果传入接近零的负参数，可能导致计算时间过长甚至陷入无限循环。在新版本中，使用零或负参数调用这些函数将抛出异常。此更改关闭了 [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297)。[#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov)。
+
+* 在之前的版本中，如果要求生成非常大的数组，arrayWithConstant 可能会很慢。在新版本中，它被限制为每个数组最多 1 GB。此更改关闭了 [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754)。[#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov)。
+
+* 修复了 REPLACE modifier 的格式问题 (禁止省略括号) 。[#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin)。
+
+<div id="new-feature">
+  ## 新特性
+</div>
+
+* 扩展函数 tuple，使其能够在查询中构造命名元组。引入函数 tupleNames，用于从元组中提取名称。[#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* full&#95;sorting&#95;join 算法现已支持 ASOF JOIN。关闭 [#54493](https://github.com/ClickHouse/ClickHouse/issues/54493)。[#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* 新增表函数 fuzzQuery。该函数允许对给定的查询字符串进行随机变异。例如：SELECT query FROM fuzzQuery(&#39;SELECT 1&#39;);. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* 新增窗口函数 percent&#95;rank。[#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* clickhouse-client 现已支持 JWT 身份验证。[#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* 新增 SQL 函数 changeYear、changeMonth、changeDay、changeHour、changeMinute、changeSecond。例如，SELECT changeMonth(toDate(&#39;2024-06-14&#39;), 7) 返回日期 2024-07-14。[#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* 新增 system.error&#95;log，其中包含表 system.errors 中 error values 的历史记录，并会定期写入磁盘。[#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* 新增 aggregate function groupConcat。其效果与 arrayStringConcat( groupArray(column), &#39;,&#39;) 基本相同。可接收 2 个参数：字符串分隔符和要处理的元素个数。[#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* 新增 AzureQueue 存储。[#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* 新增一个设置，用于禁用/启用向 Parquet 文件写入 page index。[#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* 在使用表函数 file 时，会自动在目录路径末尾追加通配符 *。[#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* 在非交互模式下，为客户端新增 --memory-usage 选项。[#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* 为 S3 table engine 新增 &#95;etag virtual columns。修复 [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312)。[#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* 此拉取请求为不同引擎 (File、URL、S3、AzureBlobStorage、HDFS) 引入了 Hive-style partitioning。Hive-style partitioning 会将数据组织到按分区划分的子目录中，从而更高效地查询和管理大型数据集。目前，它只会创建具有相应名称和数据的 virtual columns。后续 PR 将引入相应的数据过滤功能 (提升性能) 。[#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* 为兼容 spark，新增函数 printf。[#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* 新增支持使用函数 readWKTLineString 读取 WKT 格式的 MULTILINESTRING Geometry。[#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* 为 query cache 新增了标签 (命名空间) 机制。带有不同标签的相同查询会被 query cache 视为不同查询。例如：SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;abc&#39; and SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;def&#39; 现在会创建不同的 query cache entries。[#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).
