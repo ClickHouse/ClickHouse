@@ -957,7 +957,8 @@ int openOutfileCancellable(const String & file_name, int flags, const std::funct
         if (file_status_flags == -1 || ::fcntl(fd, F_SETFL, file_status_flags & ~O_NONBLOCK) == -1)
         {
             int saved_errno = errno;
-            ::close(fd);
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!(err && errno == EBADF));
             errno = saved_errno;
             ErrnoException::throwFromPath(
                 ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot reset the non-blocking mode for file {}", file_name);
@@ -1089,7 +1090,10 @@ try
                 /// covers the case when it throws before doing so.
                 SCOPE_EXIT({
                     if (out_file_fd != -1)
-                        ::close(out_file_fd);
+                    {
+                        [[maybe_unused]] int err = ::close(out_file_fd);
+                        chassert(!(err && errno == EBADF));
+                    }
                 });
 
                 auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
