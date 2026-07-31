@@ -287,6 +287,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->auth_settings[S3AuthSetting::session_token] = "";
     }
 
+    /// When the query supplies its own key pair but no `session_token`, drop any token inherited from the
+    /// collection: it was issued for the collection's keys and would be sent with the query's keys instead
+    /// (and would break the STS base when a query-supplied `role_arn` is also present). Mirrors the
+    /// explicit-URL path in `fromAST`.
+    if (collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")
+        && !collection.isQueryOverridden("session_token"))
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
+
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");

@@ -255,6 +255,56 @@ def test_named_collection_role_arn_override_does_not_use_collection_keys():
     assert error, error
 
 
+def test_named_collection_key_override_drops_inherited_session_token():
+    # A collection that stores temporary credentials (key pair + session_token). When a query supplies its
+    # own key pair but no session_token, the collection's token must not be inherited: it was issued for the
+    # collection's keys and MinIO rejects it alongside a different key pair (and it would poison the STS base
+    # when a query-supplied role_arn is present). Mirrors the explicit-URL path.
+    url = f"http://{cluster.minio_host}:{cluster.minio_port}/root/nc_keys_and_token/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 7 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    # Control: using the collection as-is sends its stale session_token, which MinIO rejects.
+    error = node.query_and_get_error(
+        "SELECT * FROM s3(nc_keys_and_token, format = 'TSV', structure = 'x UInt8')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # A query that overrides the key pair (no session_token) drops the collection's token, so the read
+    # succeeds with the query's keys alone.
+    assert (
+        node.query(
+            f"SELECT * FROM s3(nc_keys_and_token, access_key_id = '{minio_access_key}', "
+            f"secret_access_key = '{minio_secret_key}', format = 'TSV', structure = 'x UInt8')"
+        ).strip()
+        == "7"
+    )
+
+
+def test_backup_key_override_drops_inherited_session_token():
+    # Same as above for the backup credential path (registerBackupEngineS3 / BackupIO_S3): a query key-pair
+    # override with no session_token must not inherit the collection's stale token.
+    node.query("DROP TABLE IF EXISTS t_backup_token_override SYNC")
+    node.query("CREATE TABLE t_backup_token_override (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO t_backup_token_override SELECT 1")
+
+    # Control: the collection's stale session_token is sent and MinIO rejects the backup.
+    error = node.query_and_get_error(
+        "BACKUP TABLE t_backup_token_override TO S3(nc_backup_keys_and_token, 'b_token_control')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # Overriding the key pair (no session_token) drops the collection's token, so the backup succeeds.
+    node.query(
+        f"BACKUP TABLE t_backup_token_override TO S3(nc_backup_keys_and_token, "
+        f"access_key_id = '{minio_access_key}', secret_access_key = '{minio_secret_key}', 'b_token_ok')"
+    )
+
+    node.query("DROP TABLE t_backup_token_override SYNC")
+
+
 def test_database_s3_named_collection_use_environment_credentials():
     # ENGINE = S3(named_collection) must apply the same restriction as the s3 table function it flattens into.
     # A collection opting in with use_environment_credentials = 1 is refused by default and works with the

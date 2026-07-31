@@ -222,6 +222,12 @@ void registerBackupEngineS3(BackupFactory & factory)
                 drop_collection_keys_for_query_role = true;
             }
 
+            /// A query that supplies its own key pair but no `session_token` must not inherit the collection's
+            /// token: it was issued for the collection's keys and would be sent with the query's keys instead
+            /// (and would break the STS base when a query-supplied `role_arn` is also present).
+            const bool drop_inherited_token = collection->isQueryOverridden("access_key_id")
+                && collection->isQueryOverridden("secret_access_key") && !collection->isQueryOverridden("session_token");
+
             /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
             /// to empty/0, so none is inherited from the server `<s3>` config: a URL-only backup collection
             /// stays anonymous and a role-only collection has no base keys to assume the role with (matches
@@ -233,10 +239,12 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::use_environment_credentials]
                 = collection->getOrDefault<bool>("use_environment_credentials", false);
             auth[S3AuthSetting::no_sign_request] = collection->getOrDefault<bool>("no_sign_request", false);
-            /// Carry the collection's own `session_token` so temporary credentials are signed with it (unless
-            /// the collection keys were dropped above; the token belongs to those keys).
+            /// Carry the collection's own `session_token` so temporary credentials are signed with it, unless
+            /// the collection keys were dropped above (the token belongs to those keys) or the query supplied
+            /// its own key pair without a token.
             auth[S3AuthSetting::session_token]
-                = drop_collection_keys_for_query_role ? "" : collection->getOrDefault<String>("session_token", "");
+                = (drop_collection_keys_for_query_role || drop_inherited_token)
+                ? "" : collection->getOrDefault<String>("session_token", "");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;
