@@ -97,25 +97,44 @@ mkdir -p "$TEST_DIR_ABS/overprune/root/deep/mid"
 printf "row1\n" > "$TEST_DIR_ABS/overprune/root/f.txt"
 ln -s ../.. "$TEST_DIR_ABS/overprune/root/deep/mid/back"
 
-# Adjacent globstars through the zero-level re-application escape, over a symlink
-# loop: `globstarloop/root/top.txt`, `globstarloop/root/a/back -> ..`
-# (canonical(`root/a/back`) == canonical(`root`)). Pattern `root/**/**/*.txt`
-# reaches `top.txt` ONLY through the zero-level re-application chain: both `**`
-# segments match zero directory levels and the trailing `*.txt` is re-applied at
-# `root` itself. Each re-application re-enters `root`, which the caller frame
-# already holds on `active_dirs_on_stack`, so it MUST be exempt from the cycle
-# guard (the `zero_level_reapplication` escape). If that escape were dropped, the
-# re-application would see `canonical(root)` already on the stack and return
-# early, silently dropping `top.txt` (0 rows instead of 1). The `back -> ..`
-# symlink still forms a genuine loop during the recursive descent, which the
-# guard breaks (canonical(`root/a/back`) == on-stack `root`), so the walk
-# terminates with no `Too many levels of symbolic links` exception. This locks
-# down the `**/**` interaction with a symlink loop, which the two sibling tests
-# (04489 adjacent globstars without symlinks, and the scenarios above without the
-# `**/**` interaction) do not cover.
+# Adjacent globstars over a symlink loop: `globstarloop/root/top.txt`,
+# `globstarloop/root/a/back -> ..` (canonical(`root/a/back`) == canonical(`root`)).
+# Pattern `root/**/**/*.txt` reaches `top.txt` ONLY through the zero-level
+# re-application chain: both `**` segments match zero directory levels and the
+# trailing `*.txt` is re-applied at `root` itself. Each re-application re-enters
+# `root` with a SHORTER remaining pattern while the caller frame at `root` is still
+# in progress, so the recursion-stack set must distinguish those frames or
+# `top.txt` is dropped (0 rows instead of 1). The `back -> ..` symlink still forms
+# a genuine loop during the recursive descent, which the guard breaks, so the walk
+# terminates with no `Too many levels of symbolic links` exception. 04489 covers
+# adjacent globstars without symlinks and the scenarios above cover symlink loops
+# without the `**/**` interaction, so neither covers this combination.
 mkdir -p "$TEST_DIR_ABS/globstarloop/root/a"
 printf "row1\n" > "$TEST_DIR_ABS/globstarloop/root/top.txt"
 ln -s .. "$TEST_DIR_ABS/globstarloop/root/a/back"
+
+# Re-entry with a DIFFERENT remaining pattern, reached through a glob rather than a
+# zero-level `**`: `reenter/root/top.txt`, `reenter/root/x/back -> ..`. For
+# `root/*/**/top.txt` the finite `*` matches `x`, the walk follows `back` into
+# canonical(`root`), and there the `**` matches zero levels so `top.txt` is
+# re-applied. That inner frame is (`root`, `/top.txt`) while the outer frame still
+# in progress is (`root`, `/*/**/top.txt`): same directory, different remaining
+# pattern, therefore new work and not a cycle. Keying the recursion-stack set on the
+# canonical directory alone conflates the two and returns 0 rows.
+mkdir -p "$TEST_DIR_ABS/reenter/root/x"
+printf "row1\n" > "$TEST_DIR_ABS/reenter/root/top.txt"
+ln -s .. "$TEST_DIR_ABS/reenter/root/x/back"
+
+# The same file named twice: `dedup/root/a/back -> ..`, real file
+# `dedup/root/file.txt`. A recursive `root/**/file.txt` walk names it directly and
+# again as `root/a/back/file.txt`. Both spellings resolve to one file but their
+# lexically-normal forms differ, so a lexical deduplication key counts 2 rows.
+# Because the recursion-stack set permits re-entering a directory with a different
+# remaining pattern, canonical deduplication is what stops a symlinked ancestor from
+# double-counting a file.
+mkdir -p "$TEST_DIR_ABS/dedup/root/a"
+printf "row1\n" > "$TEST_DIR_ABS/dedup/root/file.txt"
+ln -s .. "$TEST_DIR_ABS/dedup/root/a/back"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -186,13 +205,27 @@ echo "bounded-finite-tail-after-last-globstar"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/overprune/root/**/mid/*/*.txt', 'TSV', 'val String')"
 
 # Adjacent globstars over a symlink loop, exercising the zero-level re-application
-# escape while the remaining suffix still has another whole-segment `**`: must
-# return 1 (`top.txt`) and must not raise `Too many levels of symbolic links`.
-# The row is reachable only through the zero-level re-application chain that
-# re-enters the on-stack root, so it verifies the escape; the `back -> ..`
-# symlink loop is broken by the guard during the recursive descent.
+# while the remaining suffix still has another whole-segment `**`: must return 1
+# (`top.txt`) and must not raise `Too many levels of symbolic links`. The row is
+# reachable only through the zero-level re-application chain that re-enters the
+# on-stack root; the `back -> ..` loop is broken during the recursive descent.
 echo "adjacent-globstars-through-symlink-loop"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/globstarloop/root/**/**/*.txt', 'TSV', 'val String')"
+
+# Re-entry with a different remaining pattern: both spellings must return 1. The
+# only route to `top.txt` re-enters the on-stack root carrying a shorter remaining
+# pattern, once with the symlink reached through a finite `*` and once with it named
+# literally. Keying the recursion-stack set on the canonical directory alone prunes
+# that re-entry and both return 0.
+echo "reenter-same-dir-different-remaining-pattern"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/root/*/**/top.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/root/*/back/**/top.txt', 'TSV', 'val String')"
+
+# Canonical deduplication: must return 1, not 2. The file is named directly and
+# again through the `back -> ..` ancestor symlink; the two lexical spellings differ,
+# so only a canonical deduplication key collapses them.
+echo "canonical-dedup-through-ancestor-symlink"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/**/file.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

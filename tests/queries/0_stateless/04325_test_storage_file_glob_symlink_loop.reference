@@ -19,4 +19,9 @@ bounded-finite-tail-after-last-globstar
 1
 adjacent-globstars-through-symlink-loop
 1
+reenter-same-dir-different-remaining-pattern
+1
+1
+canonical-dedup-through-ancestor-symlink
+1
 alive
