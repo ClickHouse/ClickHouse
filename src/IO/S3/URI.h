@@ -2,6 +2,17 @@
 
 #include "config.h"
 
+#include <string_view>
+
+namespace DB::S3
+{
+inline bool isAuthenticationQueryParameter(std::string_view key)
+{
+    return key == "AWSAccessKeyId" || key == "Signature" || key == "Expires" || key.starts_with("X-Amz-")
+        || key == "GoogleAccessId" || key.starts_with("X-Goog-");
+}
+}
+
 #if USE_AWS_S3
 
 #include <optional>

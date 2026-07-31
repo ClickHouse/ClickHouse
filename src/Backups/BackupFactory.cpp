@@ -54,7 +54,12 @@ BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
     auto it = engines.find(engine_name);
     if (it == engines.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
-    return it->second.creator(params);
+
+    CreateParams frozen_params = params;
+    frozen_params.backup_info = params.backup_info.freezeNamedCollection(params.context);
+    if (params.base_backup_info)
+        frozen_params.base_backup_info = params.base_backup_info->freezeNamedCollection(params.context);
+    return it->second.creator(frozen_params);
 }
 
 String BackupFactory::getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const
@@ -79,14 +84,50 @@ String BackupFactory::getDestinationIdentity(const BackupInfo & backup_info, Con
     return identity;
 }
 
+BackupInfo BackupFactory::withoutCredentials(const BackupInfo & backup_info, ContextPtr context) const
+{
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to remove credentials from a backup locator");
+
+    auto it = engines.find(backup_info.backup_engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", backup_info.backup_engine_name);
+
+    BackupInfo res = backup_info;
+    res.frozen_named_collection.reset();
+    res.credentials_source.reset();
+    it->second.remove_credentials(res, context);
+    return res;
+}
+
+bool BackupFactory::copyCredentials(
+    const BackupInfo & source,
+    BackupInfo & destination,
+    ContextPtr context,
+    const BackupInfo * expected_credentials) const
+{
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to copy credentials between backup locators");
+
+    if (source.backup_engine_name != destination.backup_engine_name)
+        return false;
+
+    auto it = engines.find(destination.backup_engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", destination.backup_engine_name);
+    return it->second.copy_credentials(source, destination, context, expected_credentials);
+}
+
 void BackupFactory::registerBackupEngine(
     const String & engine_name,
     const CreatorFn & creator_fn,
-    const DestinationIdentityFn & destination_identity_fn)
+    const DestinationIdentityFn & destination_identity_fn,
+    const RemoveCredentialsFn & remove_credentials_fn,
+    const CopyCredentialsFn & copy_credentials_fn)
 {
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn});
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, remove_credentials_fn, copy_credentials_fn});
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

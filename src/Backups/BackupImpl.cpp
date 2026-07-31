@@ -78,6 +78,7 @@ namespace
     const int INITIAL_BACKUP_VERSION = 1;
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
+    constexpr auto BASE_BACKUP_COPY_CREDENTIALS_FROM_BACKUP = "base_backup_copy_credentials_from_backup";
     constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
@@ -326,14 +327,20 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         /// The stored `base_backup_info` must stay unchanged because `writeBackupMetadata`
         /// serializes it into the `.backup` file, and the copied credentials must not be persisted there.
         BackupInfo effective_base_backup_info = *base_backup_info;
-        if (params.use_same_s3_credentials_for_base_backup)
+        if (params.use_same_s3_credentials_for_base_backup
+            && !BackupFactory::instance().copyCredentials(backup_info, effective_base_backup_info, params.context))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `use_same_s3_credentials_for_base_backup` is not compatible with these '{}' backup locators",
+                backup_info.backup_engine_name);
+        if (base_backup_copy_credentials_from_backup)
         {
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
-        }
-        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
-        {
-            /// Metadata marker asks to copy credentials from this backup locator at restore time.
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            const bool copied = BackupFactory::instance().copyCredentials(backup_info, effective_base_backup_info, params.context);
+            if (!copied && base_backup_copy_credentials_required)
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: Cannot reconstruct credentials for the base backup",
+                    backup_name_for_logging);
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
@@ -466,27 +473,38 @@ void BackupImpl::writeBackupMetadata()
     {
         if (base_backup_in_use)
         {
-            /// Persist base backup locators without inline `S3` credentials.
             BackupInfo effective_base_backup_info = *base_backup_info;
-            if (params.use_same_s3_credentials_for_base_backup)
-                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+            if (params.use_same_s3_credentials_for_base_backup
+                && !BackupFactory::instance().copyCredentials(backup_info, effective_base_backup_info, params.context))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `use_same_s3_credentials_for_base_backup` is not compatible with these '{}' backup locators",
+                    backup_info.backup_engine_name);
 
-            const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
+            const BackupInfo base_backup_info_for_metadata
+                = BackupFactory::instance().withoutCredentials(effective_base_backup_info, params.context);
             const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
             bool base_backup_can_use_this_backup_credentials = false;
 
-            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            if (base_backup_credentials_were_stripped)
             {
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
-                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
-                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
+                base_backup_can_use_this_backup_credentials
+                    = BackupFactory::instance().copyCredentials(
+                        backup_info, base_backup_info_with_this_backup_credentials, params.context, &effective_base_backup_info)
+                    && BackupFactory::instance().getDestinationIdentity(base_backup_info_with_this_backup_credentials, params.context)
+                        == BackupFactory::instance().getDestinationIdentity(
+                            effective_base_backup_info.freezeNamedCollection(params.context), params.context);
             }
 
             *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
             if (base_backup_can_use_this_backup_credentials)
-                *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
-                     << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">";
+            {
+                const auto * const marker = backup_info.backup_engine_name == "S3"
+                    ? BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP : BASE_BACKUP_COPY_CREDENTIALS_FROM_BACKUP;
+                *out << "<" << marker << ">true</" << marker << ">";
+            }
         }
     }
 
@@ -645,9 +663,12 @@ void BackupImpl::readBackupMetadata()
 
             /// The marker is honored only when the base backup locator itself comes from the metadata:
             /// if the locator was overridden with the `base_backup` setting, the override is used as is.
-            auto it = h.find(BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP);
-            base_backup_copy_s3_credentials_from_backup
-                = (it != h.end()) && to_bool(it->second, BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP);
+            auto it = h.find(BASE_BACKUP_COPY_CREDENTIALS_FROM_BACKUP);
+            base_backup_copy_credentials_required = it != h.end();
+            if (it == h.end())
+                it = h.find(BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP);
+            base_backup_copy_credentials_from_backup
+                = (it != h.end()) && to_bool(it->second, it->first);
         }
 
         if (h.contains("base_backup_uuid"))

@@ -3,9 +3,14 @@
 import io
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import (
+    BlobServiceClient,
+    ContainerSasPermissions,
+    generate_container_sas,
+)
 
 from helpers.cluster import ClickHouseCluster
 
@@ -316,6 +321,132 @@ def test_backup_restore(cluster):
         azure_query(node, "SELECT * from test_simple_write_connection_string_restored")
         == "1\ta\n"
     )
+
+
+def test_incremental_backup_credentials_metadata(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    reordered_connection_string = ";".join(
+        reversed([part for part in connection_string.split(";") if part])
+    )
+    base_name = new_backup_name()
+    incremental_name = new_backup_name()
+    base = f"AzureBlobStorage('{connection_string}', 'cont', '{base_name}')"
+    incremental = f"AzureBlobStorage('{reordered_connection_string}', 'cont', '{incremental_name}')"
+
+    node.query("DROP TABLE IF EXISTS incremental_credentials")
+    node.query("CREATE TABLE incremental_credentials (x UInt64) ENGINE=MergeTree ORDER BY x")
+    node.query("INSERT INTO incremental_credentials VALUES (1)")
+    azure_query(node, f"BACKUP TABLE incremental_credentials TO {base}")
+    node.query("INSERT INTO incremental_credentials VALUES (2)")
+    azure_query(node, f"BACKUP TABLE incremental_credentials TO {incremental} SETTINGS base_backup={base}")
+
+    metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
+    assert "AccountKey=" not in metadata
+    assert "<base_backup_copy_credentials_from_backup>true" in metadata
+
+    node.query("DROP TABLE incremental_credentials")
+    azure_query(node, f"RESTORE TABLE incremental_credentials FROM {incremental}")
+    assert node.query("SELECT x FROM incremental_credentials ORDER BY x") == "1\n2\n"
+
+
+def test_incremental_backup_inherited_named_collection_credentials(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    storage_account_url = f"http://azurite1:{port}/devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    base_name = new_backup_name()
+    incremental_name = new_backup_name()
+    base = (
+        f"AzureBlobStorage('{storage_account_url}', 'cont', '{base_name}', "
+        f"'devstoreaccount1', '{account_key}')"
+    )
+    incremental = f"AzureBlobStorage(azure_conf2, '{incremental_name}')"
+
+    node.query("DROP TABLE IF EXISTS incremental_inherited_credentials")
+    node.query(
+        "CREATE TABLE incremental_inherited_credentials (x UInt64) ENGINE=MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO incremental_inherited_credentials VALUES (1)")
+    azure_query(node, f"BACKUP TABLE incremental_inherited_credentials TO {base}")
+    node.query("INSERT INTO incremental_inherited_credentials VALUES (2)")
+    azure_query(
+        node,
+        f"BACKUP TABLE incremental_inherited_credentials TO {incremental} SETTINGS base_backup={base}",
+    )
+
+    metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
+    assert account_key not in metadata
+    assert "<base_backup_copy_credentials_from_backup>true" in metadata
+
+    node.query("DROP TABLE incremental_inherited_credentials")
+    azure_query(
+        node,
+        f"RESTORE TABLE incremental_inherited_credentials FROM {incremental}",
+    )
+    assert (
+        node.query("SELECT x FROM incremental_inherited_credentials ORDER BY x")
+        == "1\n2\n"
+    )
+
+
+def test_incremental_backup_inherited_named_collection_sas(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    collection_name = "incremental_inherited_sas"
+    sas_token = generate_container_sas(
+        account_name="devstoreaccount1",
+        account_key="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+        container_name="cont",
+        permission=ContainerSasPermissions(
+            read=True, write=True, delete=True, list=True, create=True, add=True
+        ),
+        expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    sas_url = f"http://azurite1:{port}/devstoreaccount1/cont/?{sas_token}"
+    reordered_sas_url = (
+        f"http://azurite1:{port}/devstoreaccount1/cont/?"
+        + "&".join(reversed(sas_token.split("&")))
+    )
+    base_name = new_backup_name()
+    incremental_name = new_backup_name()
+    base = f"AzureBlobStorage('{sas_url}', '', '{base_name}')"
+    incremental = f"AzureBlobStorage({collection_name}, '{incremental_name}')"
+
+    node.query(f"DROP NAMED COLLECTION IF EXISTS {collection_name}")
+    node.query(
+        f"CREATE NAMED COLLECTION {collection_name} AS "
+        f"storage_account_url = '{reordered_sas_url}', container = ''"
+    )
+    try:
+        node.query("DROP TABLE IF EXISTS incremental_inherited_sas")
+        node.query(
+            "CREATE TABLE incremental_inherited_sas (x UInt64) ENGINE=MergeTree ORDER BY x"
+        )
+        node.query("INSERT INTO incremental_inherited_sas VALUES (1)")
+        azure_query(node, f"BACKUP TABLE incremental_inherited_sas TO {base}")
+        node.query("INSERT INTO incremental_inherited_sas VALUES (2)")
+        azure_query(
+            node,
+            f"BACKUP TABLE incremental_inherited_sas TO {incremental} SETTINGS base_backup={base}",
+        )
+
+        metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
+        assert sas_token not in metadata
+        assert "<base_backup_copy_credentials_from_backup>true" in metadata
+
+        node.query("DROP TABLE incremental_inherited_sas")
+        azure_query(
+            node,
+            f"RESTORE TABLE incremental_inherited_sas FROM {incremental}",
+        )
+        assert (
+            node.query("SELECT x FROM incremental_inherited_sas ORDER BY x")
+            == "1\n2\n"
+        )
+    finally:
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {collection_name}")
 
 
 def test_backup_restore_diff_container(cluster):

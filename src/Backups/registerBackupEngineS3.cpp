@@ -3,6 +3,11 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <IO/S3/URI.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <Poco/URI.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -49,6 +54,102 @@ namespace ErrorCodes
 namespace Setting
 {
 extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
+}
+
+namespace
+{
+    String removeCredentialsFromS3URL(const String & url)
+    {
+        if (url.find('@') == String::npos && url.find('?') == String::npos)
+            return url;
+
+        try
+        {
+            Poco::URI uri(url);
+            bool changed = false;
+            bool query_changed = false;
+            if (!uri.getUserInfo().empty())
+            {
+                uri.setUserInfo("");
+                changed = true;
+            }
+
+            Poco::URI::QueryParameters kept_params;
+            for (const auto & [key, value] : uri.getQueryParameters())
+            {
+                if (S3::isAuthenticationQueryParameter(key))
+                {
+                    changed = true;
+                    query_changed = true;
+                }
+                else
+                    kept_params.emplace_back(key, value);
+            }
+
+            if (!changed)
+                return url;
+            if (query_changed)
+                uri.setQueryParameters(kept_params);
+            return uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse S3 backup locator while removing credentials");
+        }
+    }
+
+    void removeS3Credentials(BackupInfo & backup_info, ContextPtr context)
+    {
+        if (backup_info.id_arg.empty() && backup_info.args.size() == 3)
+            backup_info.args.resize(1);
+        if (backup_info.id_arg.empty() && !backup_info.args.empty() && backup_info.args[0].getType() == Field::Types::Which::String)
+            backup_info.args[0] = removeCredentialsFromS3URL(backup_info.args[0].safeGet<String>());
+
+        ASTs kv_args;
+        kv_args.reserve(backup_info.kv_args.size());
+        for (const auto & kv_arg : backup_info.kv_args)
+        {
+            String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
+            if (key == "access_key_id" || key == "secret_access_key" || key == "session_token" || key == "role_arn"
+                || key == "role_session_name" || key == "external_id" || key == "google_adc_client_secret"
+                || key == "google_adc_refresh_token")
+                continue;
+
+            if (key == "url")
+            {
+                ASTPtr cloned = kv_arg->clone();
+                cloned->as<ASTFunction>()->arguments->children[1]
+                    = make_intrusive<ASTLiteral>(removeCredentialsFromS3URL(BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
+                kv_args.emplace_back(std::move(cloned));
+            }
+            else
+                kv_args.emplace_back(kv_arg);
+        }
+        backup_info.kv_args = std::move(kv_args);
+        backup_info.function_arg = nullptr;
+    }
+
+    bool copyS3Credentials(
+        const BackupInfo & source, BackupInfo & destination, ContextPtr context, const BackupInfo * expected_credentials)
+    {
+        if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3 || destination.args.empty())
+            return false;
+        if (source.args[0].getType() != Field::Types::Which::String
+            || source.args[1].getType() != Field::Types::Which::String
+            || source.args[2].getType() != Field::Types::Which::String
+            || destination.args[0].getType() != Field::Types::Which::String)
+            return false;
+
+        BackupInfo new_destination = destination;
+        new_destination.args.resize(3);
+        new_destination.args[1] = source.args[1];
+        new_destination.args[2] = source.args[2];
+        if (expected_credentials && !new_destination.isEquivalentTo(*expected_credentials, context))
+            return false;
+
+        destination = std::move(new_destination);
+        return true;
+    }
 }
 
 #if USE_AWS_S3
@@ -382,7 +483,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, removeS3Credentials, copyS3Credentials);
 }
 
 }
