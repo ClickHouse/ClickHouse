@@ -5,22 +5,23 @@ A non-replicated ``MergeTree`` refuses to load a table when two active parts in
 the same partition partially overlap (``LOGICAL_ERROR`` "Part ... intersects
 previous/next part"), and it does so by throwing on the *first* such pair it
 meets, so a failed startup never reveals the full picture. This tool
-reconstructs the whole picture from the on-disk part-directory names alone -- no
-running server, no table attach -- by replaying the exact classification the
-server performs in ``PartLoadingTree`` / ``MergeTreePartInfo``:
+reconstructs the whole picture from the part names you feed it -- no running
+server, no table attach -- by replaying the exact classification the server
+performs in ``PartLoadingTree`` / ``MergeTreePartInfo``:
 
 * ``contains``     -- one part supersedes another (a merge result over its
                       sources); the covered one would load as ``Outdated``.
 * ``isDisjoint``   -- the parts share no block numbers; both stay active.
 * neither          -- a partial overlap; this is what aborts startup.
 
-It reports, per table and partition:
+You supply the list of parts yourself (from ``find``, ``clickhouse-disks
+list``, ``system.parts``, etc.), one per line on stdin. It reports, per table
+and partition:
 
 * PARTIAL OVERLAP  -- the crash-causers you must resolve before the table loads.
 * covered layers   -- parts a survivor name-covers; they load fine, but a
                       re-issued block range can make a survivor *falsely* cover
                       a part with unique data, so they are worth auditing.
-* same part name on more than one disk -- an interrupted move left a stale copy.
 
 The tool is strictly read-only: it never moves, attaches, or deletes anything.
 """
@@ -49,13 +50,6 @@ _NEW_NAME_RE = re.compile(r"^(?P<pid>.+?)_(?P<min>\d+)_(?P<max>\d+)_(?P<level>\d
 # Old-format part name: <min_date>_<max_date>_<min>_<max>_<level>.
 _OLD_NAME_RE = re.compile(r"^(?P<dmin>\d{6,8})_(?P<dmax>\d{6,8})_(?P<min>\d+)_(?P<max>\d+)_(?P<level>\d+)$")
 
-# Directory entries under a table path that are never data parts.
-_SKIP_EXACT = {"detached", "moving", "format_version.txt", "tmp"}
-_SKIP_PREFIXES = (
-    "tmp_", "tmp-", "delete_tmp_", "deleting_", "broken_", "broken-on-start",
-    "attaching_", "ignored_", "inactive_", "covered-by-", "cloning_", "future_",
-)
-
 
 @dataclass(frozen=True)
 class PartInfo:
@@ -65,9 +59,8 @@ class PartInfo:
     level: int
     mutation: int
     name: str
-    # Full path to the part directory, when known (scan mode). Excluded from
-    # equality/hashing so two copies of the same part (e.g. on two disks) compare
-    # equal on identity of block coordinates.
+    # Full path to the part directory, when the input line carried one. Excluded
+    # from equality/hashing so it does not affect classification.
     path: Optional[str] = field(default=None, compare=False)
 
     def contains(self, rhs: "PartInfo") -> bool:
@@ -99,8 +92,8 @@ class PartInfo:
 def parse_part_name(name: str, format_version: int = FORMAT_VERSION_CUSTOM) -> Optional[PartInfo]:
     """Parse a part-directory name into a PartInfo, or None if it is not a part.
 
-    ``format_version`` selects the on-disk naming scheme, exactly as the server
-    does from ``format_version.txt``.
+    ``format_version`` selects the on-disk naming scheme (0 = legacy, 1 = custom
+    partitioning), exactly as the server reads it from ``format_version.txt``.
     """
     if format_version == FORMAT_VERSION_OLD:
         m = _OLD_NAME_RE.match(name)
@@ -189,71 +182,44 @@ def classify(parts: List[PartInfo]) -> Dict[str, PartitionReport]:
 
 
 # --------------------------------------------------------------------------- #
-# Filesystem scanning
+# Input
 # --------------------------------------------------------------------------- #
 
-def _is_part_dir_name(name: str) -> bool:
-    if name in _SKIP_EXACT:
-        return False
-    return not any(name.startswith(pfx) for pfx in _SKIP_PREFIXES)
+def read_parts_from_stream(stream, format_version: int) -> Dict[str, List[PartInfo]]:
+    """Read parts from a plain-text stream (e.g. the output of ``find``), one per
+    line, grouped by table.
 
+    Each non-empty, non-``#`` line is::
 
-def read_format_version(table_dir: str) -> int:
-    path = os.path.join(table_dir, "format_version.txt")
-    try:
-        with open(path, "r", encoding="ascii") as f:
-            return int(f.read().strip() or FORMAT_VERSION_CUSTOM)
-    except (OSError, ValueError):
-        return FORMAT_VERSION_CUSTOM
+        [<table>\\t]<token>
 
-
-def find_table_dirs(root: str) -> List[str]:
-    """Return every directory under ``root`` that looks like a MergeTree table
-    data dir (it contains ``format_version.txt``). Works for both Atomic
-    (``store/<prefix>/<uuid>/``) and Ordinary (``data/<db>/<table>/``) layouts.
+    ``<token>`` is a part name (``20260722_98_20874_190``) or a full path to the
+    part directory. When a path is given, its basename is the part name, the path
+    is remembered (so ``--emit-detach-commands`` can produce a concrete ``mv``),
+    and the parent directory is the default table. Lines that are not part names
+    are skipped with a warning.
     """
-    table_dirs: List[str] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        if "format_version.txt" in filenames:
-            table_dirs.append(dirpath)
-            dirnames[:] = []  # do not descend into a table's own part dirs
-    return table_dirs
-
-
-def scan_table_dir(table_dir: str, format_version: Optional[int] = None) -> Tuple[List[PartInfo], List[str]]:
-    """List the parts of a single table dir. Returns (parts, skipped_entry_names)."""
-    fv = read_format_version(table_dir) if format_version is None else format_version
-    parts: List[PartInfo] = []
-    skipped: List[str] = []
-    try:
-        entries = sorted(os.listdir(table_dir))
-    except OSError as e:
-        print(f"warning: cannot list {table_dir}: {e}", file=sys.stderr)
-        return parts, skipped
-    for entry in entries:
-        full = os.path.join(table_dir, entry)
-        if not os.path.isdir(full) or not _is_part_dir_name(entry):
-            continue
-        info = parse_part_name(entry, fv)
-        if info is None:
-            skipped.append(entry)
-            continue
-        parts.append(replace(info, path=full))
-    return parts, skipped
-
-
-def read_names_from_stream(stream) -> Dict[str, List[str]]:
-    """Read '<table>\\t<part_name>' or bare '<part_name>' lines. Returns table -> names."""
-    tables: Dict[str, List[str]] = {}
+    tables: Dict[str, List[PartInfo]] = {}
     for raw in stream:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        table: Optional[str] = None
+        token = line
         if "\t" in line:
-            table, name = line.split("\t", 1)
-        else:
-            table, name = "(stdin)", line
-        tables.setdefault(table, []).append(name.strip())
+            table, token = line.split("\t", 1)
+            table, token = table.strip(), token.strip()
+        path = token if "/" in token else None
+        name = os.path.basename(token.rstrip("/")) if path else token
+        if table is None:
+            table = os.path.dirname(path.rstrip("/")) if path else "(input)"
+        info = parse_part_name(name, format_version)
+        if info is None:
+            print(f"warning: not a part name, skipped: {name}", file=sys.stderr)
+            continue
+        if path:
+            info = replace(info, path=path)
+        tables.setdefault(table, []).append(info)
     return tables
 
 
@@ -267,11 +233,11 @@ def suggest_keep(cluster: List[PartInfo]) -> PartInfo:
     return max(cluster, key=lambda p: (p.level, p.max_block - p.min_block, p.name))
 
 
-def build_report(tables: Dict[str, List[PartInfo]], cross_disk_dups: Dict[str, List[str]]) -> dict:
-    out = {"tables": {}, "has_conflicts": False}
+def build_report(tables: Dict[str, List[PartInfo]]) -> dict:
+    out: dict = {"tables": {}, "has_conflicts": False}
     for table, parts in sorted(tables.items()):
         per_partition = classify(parts)
-        table_entry = {"partitions": {}, "cross_disk_duplicates": cross_disk_dups.get(table, [])}
+        partitions: dict = {}
         for pid, rep in sorted(per_partition.items()):
             if not rep.conflicts and not rep.covered:
                 continue
@@ -281,7 +247,7 @@ def build_report(tables: Dict[str, List[PartInfo]], cross_disk_dups: Dict[str, L
                 cluster = [p for p in rep.maximal if p.name in conflict_parts]
                 keep = suggest_keep(cluster)
                 detach = sorted(n for n in conflict_parts if n != keep.name)
-            table_entry["partitions"][pid] = {
+            partitions[pid] = {
                 "conflicts": [
                     {"a": c.a.name, "b": c.b.name, "overlap_blocks": list(c.overlap())}
                     for c in rep.conflicts
@@ -291,8 +257,8 @@ def build_report(tables: Dict[str, List[PartInfo]], cross_disk_dups: Dict[str, L
             }
             if rep.conflicts:
                 out["has_conflicts"] = True
-        if table_entry["partitions"] or table_entry["cross_disk_duplicates"]:
-            out["tables"][table] = table_entry
+        if partitions:
+            out["tables"][table] = {"partitions": partitions}
     return out
 
 
@@ -302,8 +268,6 @@ def print_report(report: dict) -> None:
         return
     for table, entry in report["tables"].items():
         print(f"\n=== table: {table} ===")
-        for dup in entry["cross_disk_duplicates"]:
-            print(f"  ! same part on more than one disk (interrupted move?): {dup}")
         for pid, pinfo in entry["partitions"].items():
             print(f"  partition {pid}:")
             for c in pinfo["conflicts"]:
@@ -322,13 +286,12 @@ def _sh_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
-def emit_detach_commands(tables: Dict[str, List["PartInfo"]]) -> List[str]:
+def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
     """Produce a shell script that moves each suggested-detach part into its
     table's detached/ dir. Read-only: the lines are printed, never executed.
 
-    Concrete `mv` lines are produced only for parts scanned from disk (path
-    known). For parts fed by name (stdin) the path is unknown and a placeholder
-    comment is emitted instead.
+    Concrete ``mv`` lines are produced only for parts fed as a path; for parts
+    fed by bare name the path is unknown and a placeholder comment is emitted.
     """
     lines = [
         "#!/bin/sh",
@@ -356,7 +319,7 @@ def emit_detach_commands(tables: Dict[str, List["PartInfo"]]) -> List[str]:
                     lines.append(f"\n# table: {table}")
                     header_done = True
                 if p.path:
-                    table_dir = os.path.dirname(p.path)
+                    table_dir = os.path.dirname(p.path.rstrip("/"))
                     detached_dir = os.path.join(table_dir, "detached")
                     dest = os.path.join(detached_dir, p.name)
                     lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name})")
@@ -365,7 +328,7 @@ def emit_detach_commands(tables: Dict[str, List["PartInfo"]]) -> List[str]:
                     any_cmd = True
                 else:
                     lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name}) "
-                                 f"-- path unknown; run in scan mode to get an mv command")
+                                 f"-- path unknown; feed the part's full path to get an mv command")
                 reattach.append(f"#   ALTER TABLE <db>.<table> ATTACH PART '{p.name}';")
 
     if reattach:
@@ -377,46 +340,21 @@ def emit_detach_commands(tables: Dict[str, List["PartInfo"]]) -> List[str]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("paths", nargs="*", help="data roots / disk mount points to scan")
-    parser.add_argument("--stdin", action="store_true",
-                        help="read part names from stdin ('<table>\\t<name>' or bare '<name>')")
-    parser.add_argument("--format-version", type=int, choices=[0, 1], default=None,
-                        help="override on-disk format version (default: auto from format_version.txt)")
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0],
+        epilog="Feed part names (or full paths), one per line, on stdin. E.g.: "
+               "find /var/lib/clickhouse/store -mindepth 3 -maxdepth 3 -type d | %(prog)s",
+    )
+    parser.add_argument("--format-version", type=int, choices=[0, 1], default=FORMAT_VERSION_CUSTOM,
+                        help="on-disk part-name format version (default: 1, custom partitioning)")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--emit-detach-commands", action="store_true",
                         help="print a read-only shell script that moves the suggested parts "
                              "into detached/ (never executed)")
     args = parser.parse_args(argv)
 
-    tables: Dict[str, List[PartInfo]] = {}
-    # (table, name) -> set of source roots, to catch the same part on two disks.
-    seen: Dict[Tuple[str, str], set] = {}
-    cross_disk_dups: Dict[str, List[str]] = {}
-
-    if args.stdin:
-        fv = FORMAT_VERSION_CUSTOM if args.format_version is None else args.format_version
-        for table, names in read_names_from_stream(sys.stdin).items():
-            for name in names:
-                info = parse_part_name(name, fv)
-                if info is not None:
-                    tables.setdefault(table, []).append(info)
-                else:
-                    print(f"warning: not a part name, skipped: {name}", file=sys.stderr)
-
-    for root in args.paths:
-        for table_dir in find_table_dirs(root):
-            table = os.path.relpath(table_dir, root)
-            parts, _ = scan_table_dir(table_dir, args.format_version)
-            for info in parts:
-                key = (table, info.name)
-                seen.setdefault(key, set()).add(root)
-                if len(seen[key]) == 2:  # first time it becomes a duplicate
-                    cross_disk_dups.setdefault(table, []).append(info.name)
-                else:
-                    tables.setdefault(table, []).append(info)
-
-    report = build_report(tables, cross_disk_dups)
+    tables = read_parts_from_stream(sys.stdin, args.format_version)
+    report = build_report(tables)
 
     if args.emit_detach_commands:
         print("\n".join(emit_detach_commands(tables)))

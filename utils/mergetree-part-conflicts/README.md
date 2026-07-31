@@ -1,7 +1,7 @@
 # mergetree-part-conflicts
 
 Offline detector of intersecting / covered `MergeTree` data parts, working from
-part-directory names alone -- no running server.
+the part names you feed it -- no running server.
 
 A non-replicated `MergeTree` refuses to load a table when two active parts in
 the same partition partially overlap (`LOGICAL_ERROR`, "Part ... intersects
@@ -15,24 +15,52 @@ picture by replaying the server's own classification (`MergeTreePartInfo::contai
 * **covered layer** -- a survivor name-covers the part (normally a merge source);
   reported because a re-issued block range can make a survivor *falsely* cover a
   part that holds unique data.
-* **same part on more than one disk** -- an interrupted move left a stale copy.
 
 The tool is strictly read-only. It never moves, attaches, or deletes anything.
 
-## Usage
+## Input
+
+Part names (or full part-directory paths), one per line on stdin -- typically the
+output of `find`, `clickhouse-disks list`, or a `system.parts` query. A line may
+be prefixed with `<table>\t` to group by table; otherwise the parent directory of
+a path is the table, and bare names all fall under one group. Blank lines, `#`
+comments, and non-part entries (e.g. `detached`) are ignored.
+
+## Examples
 
 ```bash
-# Scan one or more data roots / disk mount points (auto-discovers table dirs by
-# their format_version.txt; handles Atomic store/<prefix>/<uuid>/ and Ordinary
-# data/<db>/<table>/ layouts, and tiered disks when several roots are given):
-./mergetree_part_conflicts.py /var/lib/clickhouse /mnt/ngx2/clickhouse
+# Bare names for one table (find with -printf '%f'):
+find /var/lib/clickhouse/store/b11/b11e7407 -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
+    | ./mergetree_part_conflicts.py
 
-# Feed part names directly (e.g. from clickhouse-disks list, find, or system.parts):
-find /var/lib/clickhouse/store -mindepth 3 -maxdepth 3 -type d -printf '%f\n' \
-    | ./mergetree_part_conflicts.py --stdin
+# Full paths across a whole disk, all tables at once (parent dir groups by table):
+find /var/lib/clickhouse/store -mindepth 3 -maxdepth 3 -type d \
+    | ./mergetree_part_conflicts.py
+
+# From a running server (a healthy table, as a sanity check):
+clickhouse-client -q "SELECT database || '.' || table || '\t' || name FROM system.parts
+                      WHERE active FORMAT TSVRaw" \
+    | ./mergetree_part_conflicts.py
 
 # Machine-readable output:
-./mergetree_part_conflicts.py --json /var/lib/clickhouse
+find ... -type d | ./mergetree_part_conflicts.py --json
+
+# Legacy on-disk format (pre custom partitioning):
+find ... -type d | ./mergetree_part_conflicts.py --format-version 0
+
+# Emit a read-only recovery script (concrete `mv` needs full paths as input):
+find /var/lib/clickhouse/store/b11/b11e7407 -mindepth 1 -maxdepth 1 -type d \
+    | ./mergetree_part_conflicts.py --emit-detach-commands
+```
+
+Example report:
+
+```
+=== table: /var/lib/clickhouse/store/b11/b11e7407 ===
+  partition 20260722:
+    PARTIAL OVERLAP (aborts load): 20260722_98_20874_190  <->  20260722_2313_113249_107  [shared blocks 2313..20874]
+      suggested: keep the survivor, DETACH + REATTACH: 20260722_2313_113249_107
+    covered layers (load fine; audit for a false dominator): 20260722_98_20874_50
 ```
 
 Exit code is `2` when any partial overlap is found, `0` otherwise.

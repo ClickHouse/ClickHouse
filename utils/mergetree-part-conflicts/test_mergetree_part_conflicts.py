@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Tests for mergetree_part_conflicts. Run: python3 -m unittest -v (from this dir)."""
+"""Tests for mergetree_part_conflicts. Run: python3 -m unittest -v (from this dir).
+
+The tool's only input is plain text on stdin -- one part per line, exactly as
+`find <table_dir> -mindepth 1 -maxdepth 1 -type d` (full paths) or
+`find ... -printf '%f\\n'` (bare names) would print it. The feed/CLI tests below
+pass such text verbatim so the input shape is obvious.
+"""
 
 import io
+import json
 import os
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -13,9 +19,15 @@ import mergetree_part_conflicts as m  # noqa: E402
 
 
 def P(name, fv=m.FORMAT_VERSION_CUSTOM):
+    """Build a PartInfo from a name (helper for the pure predicate/classify tests)."""
     info = m.parse_part_name(name, fv)
     assert info is not None, name
     return info
+
+
+def feed(text, fv=m.FORMAT_VERSION_CUSTOM):
+    """Run the input reader over a block of text, as if piped in from `find`."""
+    return m.read_parts_from_stream(io.StringIO(text), fv)
 
 
 class TestParsing(unittest.TestCase):
@@ -53,7 +65,6 @@ class TestContains(unittest.TestCase):
         self.assertTrue(P("all_0_100_1").contains(P("all_51_100_0")))
 
     def test_equal_range_needs_higher_or_equal_level(self):
-        # equal block range: strictly_contains satisfied by equal range; level>= required
         self.assertTrue(P("all_0_5_3").contains(P("all_0_5_2")))
         self.assertFalse(P("all_0_4_2").contains(P("all_0_5_2")))  # narrower range
 
@@ -120,12 +131,44 @@ class TestClassify(unittest.TestCase):
         # (0_50,40_90) and (40_90,80_120) overlap; (0_50,80_120) do not.
         self.assertEqual(len(rep.conflicts), 2)
 
-    def test_classify_groups_by_partition(self):
-        parts = [P("20260722_98_20874_190"), P("20260722_2313_113249_107"),
-                 P("20260723_0_10_0")]
-        groups = m.classify(parts)
-        self.assertTrue(groups["20260722"].has_conflicts)
-        self.assertFalse(groups["20260723"].has_conflicts)
+
+class TestReadInput(unittest.TestCase):
+    def test_reads_bare_names_like_find_printf_f(self):
+        # exactly what `find <uuid> -mindepth 1 -maxdepth 1 -type d -printf '%f\n'` prints
+        text = """\
+20260722_98_20874_190
+20260722_2313_113249_107
+20260723_0_10_0
+"""
+        tables = feed(text)
+        self.assertEqual(list(tables), ["(input)"])  # no path -> single default table
+        self.assertEqual(len(tables["(input)"]), 3)
+
+    def test_reads_full_paths_like_find_type_d(self):
+        # exactly what `find <uuid> -mindepth 1 -maxdepth 1 -type d` prints (full paths),
+        # including the non-part `detached` dir which must be skipped.
+        text = """\
+/var/lib/clickhouse/store/b11/b11e7407/20260722_98_20874_190
+/var/lib/clickhouse/store/b11/b11e7407/20260722_2313_113249_107
+/var/lib/clickhouse/store/b11/b11e7407/detached
+"""
+        tables = feed(text)
+        # grouped under the parent (table) dir; detached line skipped
+        self.assertEqual(list(tables), ["/var/lib/clickhouse/store/b11/b11e7407"])
+        parts = tables["/var/lib/clickhouse/store/b11/b11e7407"]
+        self.assertEqual(len(parts), 2)
+        self.assertTrue(all(p.path is not None for p in parts))
+
+    def test_blank_lines_comments_and_non_parts_are_ignored(self):
+        text = "\n# a comment\n20260722_98_20874_190\nnot_a_part_dir\n"
+        tables = feed(text)
+        self.assertEqual(len(tables["(input)"]), 1)
+
+    def test_explicit_table_column(self):
+        text = "db.t\t20260722_98_20874_190\ndb.t\t20260722_2313_113249_107\n"
+        tables = feed(text)
+        self.assertEqual(list(tables), ["db.t"])
+        self.assertEqual(len(tables["db.t"]), 2)
 
 
 class TestSuggestKeep(unittest.TestCase):
@@ -138,65 +181,23 @@ class TestSuggestKeep(unittest.TestCase):
         self.assertEqual(keep.max_block, 100)
 
 
-class TestScan(unittest.TestCase):
-    def _make_table(self, root, rel, fv, parts, extras=()):
-        tdir = os.path.join(root, rel)
-        os.makedirs(tdir)
-        with open(os.path.join(tdir, "format_version.txt"), "w") as f:
-            f.write(str(fv))
-        for name in list(parts) + list(extras):
-            os.makedirs(os.path.join(tdir, name))
-        return tdir
-
-    def test_scan_skips_non_parts(self):
-        with tempfile.TemporaryDirectory() as root:
-            tdir = self._make_table(
-                root, "store/b11/b11e7407", 1,
-                parts=["20260722_98_20874_190", "20260722_2313_113249_107"],
-                extras=["detached", "tmp_insert_9", "delete_tmp_5", "broken_x"],
-            )
-            parts, skipped = m.scan_table_dir(tdir)
-            self.assertEqual(sorted(p.name for p in parts),
-                             ["20260722_2313_113249_107", "20260722_98_20874_190"])
-            self.assertEqual(skipped, [])  # non-parts are filtered by name, not counted as skipped
-
-    def test_find_table_dirs_atomic_layout(self):
-        with tempfile.TemporaryDirectory() as root:
-            self._make_table(root, "store/b11/b11e7407", 1, parts=["all_1_1_0"])
-            self._make_table(root, "store/120/1206e97e", 1, parts=["all_1_1_0"])
-            found = m.find_table_dirs(root)
-            self.assertEqual(len(found), 2)
-
-    def test_scan_reads_old_format_version(self):
-        with tempfile.TemporaryDirectory() as root:
-            tdir = self._make_table(root, "data/db/t", 0,
-                                    parts=["20140317_20140323_2_2_0"])
-            parts, _ = m.scan_table_dir(tdir)
-            self.assertEqual(len(parts), 1)
-            self.assertEqual(parts[0].partition_id, "201403")
-
-
 class TestEmitDetachCommands(unittest.TestCase):
-    def test_scan_mode_emits_mv(self):
-        with tempfile.TemporaryDirectory() as root:
-            tdir = os.path.join(root, "store/b11/b11e7407")
-            os.makedirs(tdir)
-            with open(os.path.join(tdir, "format_version.txt"), "w") as f:
-                f.write("1")
-            for name in ("20260722_98_20874_190", "20260722_2313_113249_107"):
-                os.makedirs(os.path.join(tdir, name))
-            parts, _ = m.scan_table_dir(tdir)
-            script = "\n".join(m.emit_detach_commands({"t": parts}))
-            # keep the higher-level _190, detach the _107, with a concrete mv into detached/
-            self.assertIn("mv -- ", script)
-            self.assertIn("20260722_2313_113249_107", script)
-            self.assertIn(os.path.join(tdir, "detached", "20260722_2313_113249_107"), script)
-            self.assertNotIn("mv -- '" + os.path.join(tdir, "20260722_98_20874_190"), script)
-            self.assertIn("ATTACH PART '20260722_2313_113249_107'", script)
+    def test_full_paths_emit_concrete_mv(self):
+        # find output with full paths -> concrete mv into the table's detached/
+        text = """\
+/var/lib/clickhouse/store/b11/b11e7407/20260722_98_20874_190
+/var/lib/clickhouse/store/b11/b11e7407/20260722_2313_113249_107
+"""
+        script = "\n".join(m.emit_detach_commands(feed(text)))
+        # keep the higher-level _190, detach the _107 with a concrete mv
+        self.assertIn("mv -- ", script)
+        self.assertIn("/var/lib/clickhouse/store/b11/b11e7407/detached/20260722_2313_113249_107", script)
+        self.assertNotIn("20260722_98_20874_190'", script.split("# After")[0].replace("mkdir", ""))
+        self.assertIn("ATTACH PART '20260722_2313_113249_107'", script)
 
-    def test_stdin_mode_no_path_placeholder(self):
-        parts = [P("20260722_98_20874_190"), P("20260722_2313_113249_107")]
-        script = "\n".join(m.emit_detach_commands({"t": parts}))
+    def test_bare_names_emit_placeholder(self):
+        text = "20260722_98_20874_190\n20260722_2313_113249_107\n"
+        script = "\n".join(m.emit_detach_commands(feed(text)))
         self.assertIn("path unknown", script)
         self.assertNotIn("mv -- ", script)
 
@@ -204,14 +205,13 @@ class TestEmitDetachCommands(unittest.TestCase):
         self.assertEqual(m._sh_quote("a'b"), "'a'\\''b'")
 
 
-class TestMainStdin(unittest.TestCase):
+class TestMain(unittest.TestCase):
     def _run(self, text, *args):
         old_in, old_out = sys.stdin, sys.stdout
         sys.stdin = io.StringIO(text)
         sys.stdout = io.StringIO()
         try:
-            code = m.main(["--stdin", *args])
-            return code, sys.stdout.getvalue()
+            return m.main(list(args)), sys.stdout.getvalue()
         finally:
             sys.stdin, sys.stdout = old_in, old_out
 
@@ -219,7 +219,6 @@ class TestMainStdin(unittest.TestCase):
         text = "t\t20260722_98_20874_190\nt\t20260722_2313_113249_107\n"
         code, out = self._run(text, "--json")
         self.assertEqual(code, 2)
-        import json
         report = json.loads(out)
         self.assertTrue(report["has_conflicts"])
         part = report["tables"]["t"]["partitions"]["20260722"]
@@ -227,7 +226,7 @@ class TestMainStdin(unittest.TestCase):
         self.assertEqual(part["suggested_detach"], ["20260722_2313_113249_107"])
 
     def test_clean_exit_code(self):
-        text = "t\tall_0_50_0\nt\tall_51_100_0\n"
+        text = "all_0_50_0\nall_51_100_0\n"
         code, out = self._run(text)
         self.assertEqual(code, 0)
 
