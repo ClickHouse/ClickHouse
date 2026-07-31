@@ -249,7 +249,7 @@ Calculates the [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient
 
 The result ranges from `0` (perfect equality: all values are the same) to a maximum approaching `1` as `n` grows (perfect inequality: one value holds everything and the rest are zero). For a finite sample of `n` values the maximum is `(n - 1) / n`.
 
-To get the exact value, all the passed values are collected in their input type and then sorted. The final calculation is normalized to avoid overflow. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped, while infinite values are rejected.
+All passed values are collected in their input type and then sorted before a numerically stable final calculation. The coefficient is computed from normalized adjacent pairwise differences and returned as `Float64`, so it is rounded to `Float64` precision. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed. `NaN` values are skipped, while infinite values are rejected.
     )";
     FunctionDocumentation::Syntax syntax = "gini(expr)";
     FunctionDocumentation::Arguments arguments = {
