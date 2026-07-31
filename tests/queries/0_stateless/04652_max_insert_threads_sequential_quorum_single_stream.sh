@@ -17,7 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Pin max_threads and disable the memory-based thread clamping so that the number of
 # parallel insert streams is deterministic regardless of the machine.
-SETTINGS="--max_threads=8 --max_insert_threads=4 --max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0"
+SETTINGS="--max_threads=8 --max_insert_threads=4 --max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0 --async_insert=0"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_single_stream_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_single_stream_2"
