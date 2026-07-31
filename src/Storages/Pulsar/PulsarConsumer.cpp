@@ -2,11 +2,17 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <pulsar/Client.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CANNOT_CONNECT_PULSAR;
+}
 
 PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : log(logger_)
 {
@@ -39,7 +45,14 @@ ReadBufferPtr PulsarConsumer::consume()
         next_message = polled_messages.end();
     }
     pulsar::Messages new_messages;
-    consumer.batchReceive(new_messages);
+    auto result = consumer.batchReceive(new_messages);
+    /// On the batch receive timeout the client completes the call with `ResultOk` and whatever
+    /// messages were collected (possibly none). Any other result is a terminal condition of the
+    /// consumer (e.g. `ResultAlreadyClosed`, `ResultConsumerNotInitialized`) and must not be
+    /// mistaken for an idle topic, otherwise background streaming would silently stall forever.
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR, "Failed to receive messages from Pulsar: {}", pulsar::strResult(result));
     if (new_messages.empty())
         return nullptr;
     LOG_TRACE(log, "Polled messages: {}", new_messages.size());

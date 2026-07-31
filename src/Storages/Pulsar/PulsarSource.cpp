@@ -47,7 +47,14 @@ PulsarSource::PulsarSource(
 PulsarSource::~PulsarSource()
 {
     if (consumer)
+    {
+        /// If some consumed messages were not acknowledged (an early stop of a direct SELECT
+        /// because of LIMIT or an exception, or `pulsar_commit_on_select = 0`), request their
+        /// redelivery instead of leaving them attached to the pooled consumer, where a later
+        /// query could acknowledge messages it never returned.
+        consumer->rollback();
         storage.pushConsumer(consumer);
+    }
 }
 
 Chunk PulsarSource::generate()

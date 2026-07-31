@@ -16,7 +16,7 @@ class PulsarConsumer
     friend class StoragePulsar;
 
 public:
-    PulsarConsumer(LoggerPtr logger_);
+    explicit PulsarConsumer(LoggerPtr logger_);
 
     ReadBufferPtr getNextMessage();
     ReadBufferPtr consume();

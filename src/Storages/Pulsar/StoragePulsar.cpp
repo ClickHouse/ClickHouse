@@ -36,6 +36,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_pulsar_storage_engine;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
@@ -71,6 +72,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int QUERY_NOT_ALLOWED;
 extern const int ABORTED;
 extern const int CANNOT_CONNECT_PULSAR;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 class ReadFromStoragePulsar final : public ReadFromStreamLikeEngine
@@ -524,6 +526,16 @@ void registerStoragePulsar(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
+        /// The check applies only to CREATE: existing tables must load on server startup
+        /// and stay attachable regardless of the current value of the setting.
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_pulsar_storage_engine])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Experimental Pulsar table engine is not enabled (the setting 'allow_experimental_pulsar_storage_engine')");
+        }
+
         auto pulsar_settings = std::make_unique<PulsarSettings>();
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))

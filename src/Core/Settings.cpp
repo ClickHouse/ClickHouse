@@ -8284,6 +8284,11 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_pulsar_storage_engine, false, R"(
+Allows creation of tables with the `Pulsar` table engine. Possible values:
+- 0 — the `Pulsar` table engine is disabled.
+- 1 — the `Pulsar` table engine is enabled.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
