@@ -17,6 +17,7 @@ from ci.jobs.llvm_coverage_job import (
     coverage_degraded,
     coverage_drop,
 )
+from ci.praktika.result import Result
 
 _JOB = os.path.join(os.path.dirname(__file__), "..", "jobs", "llvm_coverage_job.py")
 
@@ -39,12 +40,13 @@ def _gate_snippet() -> str:
 
 
 class _ResultStub:
-    """Captures the three side effects the gate has on its Result."""
+    """Captures the side effects the gate has on its Result."""
 
     def __init__(self):
         self.info = None
         self.comment = None
         self.failed = False
+        self.status = None
 
     def set_comment(self, msg):
         self.comment = msg
@@ -52,8 +54,14 @@ class _ResultStub:
     def set_failed(self):
         self.failed = True
 
+    def set_status(self, status):
+        self.status = status
+        return self
 
-def _run_gate(baseline: float, current: float) -> _ResultStub:
+
+def _run_gate(
+    baseline: float, current: float, comparable: bool = True
+) -> _ResultStub:
     """Execute the job's own verdict block and report what it did to the Result."""
     res = _ResultStub()
     ns = {
@@ -62,6 +70,11 @@ def _run_gate(baseline: float, current: float) -> _ResultStub:
         "COVERAGE_DROP_TOLERANCE": COVERAGE_DROP_TOLERANCE,
         "b_line_cov": baseline,
         "c_line_cov": current,
+        # The gate only reaches a tolerance verdict for two comparable
+        # measurements; these tests are about the tolerance, so they say so.
+        "_measurement_comparable": comparable,
+        "_incomparable_reason": "" if comparable else "test-supplied reason",
+        "Result": Result,
         "diff_res": res,
         "print": lambda *a, **k: None,
     }
@@ -76,6 +89,9 @@ def test_gate_snippet_is_the_real_verdict_block():
     assert "coverage_drop(" in src
     assert "coverage_degraded(" in src
     assert "diff_res.set_failed()" in src
+    # The verdict is reached only for two comparable measurements; if this guard
+    # ever leaves the block, the comparable=False assertions below go vacuous.
+    assert "_measurement_comparable" in src
 
 
 def test_tolerance_is_unchanged():
@@ -152,3 +168,12 @@ def test_gate_still_fails_the_large_drop():
     res = _run_gate(86.20, 28.60)
     assert res.failed is True
     assert "dropped 57.60 pp" in res.comment
+
+
+def test_gate_produces_no_verdict_for_two_incomparable_measurements():
+    # The same over-tolerance drop that fails above must NOT fail when the two
+    # measurements are not comparable: the number itself is then meaningless.
+    res = _run_gate(86.20, 28.60, comparable=False)
+    assert res.failed is False
+    assert res.status == Result.Status.SKIPPED
+    assert "test-supplied reason" in res.comment

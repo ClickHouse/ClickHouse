@@ -21,24 +21,82 @@ fi
 # Try to find .info file from S3, checking up to 30 ancestor commits
 IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
+BASE_S3_PREFIX="https://clickhouse-builds.s3.amazonaws.com/REFs/master"
+
+# Our own completeness metadata, written by the job before this script runs. Used
+# to prefer a baseline that measured the same artifact manifest.
+OUR_MANIFEST_FP=""
+if [ -f "llvm_coverage.meta.json" ]; then
+  OUR_MANIFEST_FP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('manifest_fp',''))" llvm_coverage.meta.json 2>/dev/null || true)
+fi
+
+# Two passes over the same ancestor list.
+#
+# Pass 1 prefers an ancestor that published a COMPLETE measurement of the same
+# artifact manifest. Most master runs are not complete, so selecting the first
+# ancestor that merely has an .info would make the gate abstain on the majority of
+# runs rather than judge them.
+#
+# Pass 2 is byte-for-byte the previous behaviour, and it is what keeps this
+# backward compatible: no master commit published before this change carries
+# completeness metadata, so until master republishes, pass 1 finds nothing, pass 2
+# selects exactly as before, and the job reports SKIPPED with a reason instead of
+# failing.
 FOUND=0
 FIRST_BASE_COMMIT=""
-for TEST_COMMIT in "${COMMITS[@]}"; do
-COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
-echo "Checking coverage file for commit ${TEST_COMMIT}..."
-if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
-echo "Found coverage file at ${COVERAGE_URL}"
-wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-FIRST_BASE_COMMIT="${TEST_COMMIT}"
-FOUND=1
-break
-fi
+for PASS in prefer_complete any_info; do
+  if [ "$PASS" = "prefer_complete" ] && [ -z "$OUR_MANIFEST_FP" ]; then
+    echo "No local completeness metadata; skipping the complete-baseline pass"
+    continue
+  fi
+  echo "Baseline selection pass: ${PASS}"
+  for TEST_COMMIT in "${COMMITS[@]}"; do
+    COVERAGE_URL="${BASE_S3_PREFIX}/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
+    META_URL="${BASE_S3_PREFIX}/${TEST_COMMIT}/llvm_coverage/llvm_coverage.meta.json"
+    echo "Checking coverage file for commit ${TEST_COMMIT}..."
+    if ! wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
+      continue
+    fi
+    rm -f base_llvm_coverage.meta.json
+    # Fetch the sidecar when it exists; the job validates the pair either way.
+    wget --quiet "${META_URL}" -O base_llvm_coverage.meta.json || rm -f base_llvm_coverage.meta.json
+    if [ "$PASS" = "prefer_complete" ]; then
+      if [ ! -f base_llvm_coverage.meta.json ]; then
+        echo "  no completeness metadata for ${TEST_COMMIT}"
+        continue
+      fi
+      if ! python3 -c "
+import json, sys
+d = json.load(open('base_llvm_coverage.meta.json'))
+sys.exit(0 if d.get('complete') and d.get('manifest_fp') == sys.argv[1] else 1)
+" "${OUR_MANIFEST_FP}" 2>/dev/null; then
+        rm -f base_llvm_coverage.meta.json
+        echo "  ${TEST_COMMIT} is not a complete measurement of our artifact manifest"
+        continue
+      fi
+      echo "  ${TEST_COMMIT} reports a complete measurement of our artifact manifest"
+    fi
+    echo "Found coverage file at ${COVERAGE_URL}"
+    wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
+    FIRST_BASE_COMMIT="${TEST_COMMIT}"
+    FOUND=1
+    break
+  done
+  if [ $FOUND -eq 1 ]; then
+    break
+  fi
 done
 
 if [ $FOUND -eq 0 ]; then
   echo "ERROR: Could not find baseline coverage file after checking ${#COMMITS[@]} commits"
   exit 1
 fi
+
+# Record which ancestor was actually selected. The job cannot re-derive it: its
+# own base_commit_sha is the NEAREST ancestor, generally not this one, and
+# re-walking S3 from Python could select a different commit than the .info that
+# ended up on disk.
+echo "${FIRST_BASE_COMMIT}" > selected_base_commit.txt
 
 # Note: base_llvm_coverage_{2..6}.info (extra older master baselines) are not
 # downloaded anywhere. The slot loop below is a no-op unless something else

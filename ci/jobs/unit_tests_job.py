@@ -33,6 +33,45 @@ if __name__ == "__main__":
     )
     profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
+    # Name the profile after this job's own coverage artifact, so the aggregation
+    # can tell which shards arrived from the filenames alone. JOB_CONFIG has been
+    # through dump()/get() by the time a job body runs, so it is a plain dict
+    # here and attribute access on it raises AttributeError.
+    _job_config = Info().job_config
+    assert (
+        _job_config is not None
+    ), "JOB_CONFIG is not set, cannot derive the coverage profile name"
+    _provides = _job_config["provides"]
+    assert (
+        isinstance(_provides, list)
+        and len(_provides) == 1
+        and isinstance(_provides[0], str)
+        and _provides[0]
+    ), f"expected exactly one provided artifact name, got {_provides!r}"
+    merged_file = f"./{_provides[0]}.profdata"
+
+    # Drop any pre-existing profile at our target name before deciding whether to
+    # merge at all. llvm-profdata truncates its -o target in place instead of
+    # replacing it, so a failed merge would otherwise leave an older valid
+    # profile for the uploader to publish as this shard's contribution. On CI the
+    # pre-run `git clean` already removes it; this covers a bare local run, where
+    # that clean is skipped.
+    if os.path.exists(merged_file):
+        print(f"Removing pre-existing {merged_file}")
+        os.unlink(merged_file)
+
+    if profraw_files:
+        # A zero-length .profraw is silently ignored by llvm-profdata at every
+        # --failure-mode, so it would drop one process's coverage with no signal
+        # at all. Treat it as an incomplete shard and publish no profile.
+        empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+        if empty_files:
+            print(
+                f"ERROR: {len(empty_files)} .profraw files are empty, so this shard's coverage "
+                f"is incomplete; publishing no profile: {', '.join(empty_files)}"
+            )
+            profraw_files = []
+
     if profraw_files:
         # Merge profraw files into profdata
         print("Collecting and merging LLVM coverage files...")
@@ -51,21 +90,13 @@ if __name__ == "__main__":
         else:
             print(f"Using {llvm_profdata} to merge coverage files")
 
-            # Merge all profraw files to current directory
-            merged_file = "./unit-tests.profdata"
-            merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+            # --failure-mode=any makes the merge all-or-nothing: on any invalid
+            # input it exits non-zero and writes no file, so the shard is simply
+            # absent instead of contributing a silently short profile that drags
+            # the total down. The clean path is byte-identical to =warn.
+            merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=any {' '.join(profraw_files)} -o {merged_file} 2>&1"
             merge_output = Shell.get_output(merge_cmd, verbose=True)
-
-            # Check for corrupted files in the output
-            corrupted_files = [
-                line
-                for line in merge_output.split("\n")
-                if "invalid instrumentation profile" in line
-                or "file header is corrupt" in line
-            ]
-            if corrupted_files:
-                print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
-                for corrupted in corrupted_files:
-                    print(f"  {corrupted}")
+            if not os.path.exists(merged_file):
+                print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
     R.complete_job()

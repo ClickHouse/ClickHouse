@@ -629,7 +629,20 @@ class ArtifactConfigs:
     llvm_coverage_info_file = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/llvm_coverage.info",
+        # llvm_coverage.meta.json rides along on the same artifact so that the
+        # completeness of a published measurement is fetchable next to it, without
+        # introducing a new artifact name (which would have to be registered in
+        # every workflow that uses it).
+        path=[
+            f"{TEMP_DIR}/llvm_coverage.info",
+            f"{TEMP_DIR}/llvm_coverage.meta.json",
+        ],
+        # The aggregate merge is all-or-nothing: on a corrupt input it produces no
+        # .info at all, and the job then reports SKIPPED rather than comparing a
+        # partial measurement. The runner re-checks artifact paths after the job
+        # exits, so without this it would override that verdict with ERROR. The
+        # consumer treats a missing .info as "measurement incomplete".
+        optional=True,
     )
     clickhouse_debians = Artifact.Config(
         name="*",

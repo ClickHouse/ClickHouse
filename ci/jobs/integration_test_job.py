@@ -336,6 +336,42 @@ def parse_args():
     return parser.parse_args()
 
 
+def coverage_profile_target() -> str:
+    """Filename this shard must publish its coverage profile under.
+
+    Named after the job's own coverage artifact, so the aggregation can tell which
+    shards arrived from the filenames alone. JOB_CONFIG has been through
+    dump()/get() by the time a job body runs, so it is a plain dict here and
+    attribute access on it raises AttributeError.
+    """
+    job_config = Info().job_config
+    assert (
+        job_config is not None
+    ), "JOB_CONFIG is not set, cannot derive the coverage profile name"
+    provides = job_config["provides"]
+    assert (
+        isinstance(provides, list)
+        and len(provides) == 1
+        and isinstance(provides[0], str)
+        and provides[0]
+    ), f"expected exactly one provided artifact name, got {provides!r}"
+    return f"./{provides[0]}.profdata"
+
+
+def remove_stale_coverage_profile(final_file: str) -> None:
+    """Drop any pre-existing profile at our target name.
+
+    llvm-profdata truncates its -o target in place instead of replacing it, and
+    the completion gate can skip the merge entirely, so a stale valid profile
+    would otherwise be published as this shard's contribution. On CI the pre-run
+    `git clean` already removes it; this covers a bare local run, where that clean
+    is skipped.
+    """
+    if os.path.exists(final_file):
+        print(f"Removing pre-existing {final_file}", flush=True)
+        os.unlink(final_file)
+
+
 def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     """Merge all profraw files into final profdata file.
 
@@ -346,6 +382,8 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     import subprocess
     from pathlib import Path
 
+    final_file = coverage_profile_target()
+
     # Find all profraw files
     profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
 
@@ -353,42 +391,31 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print("No profraw files found", flush=True)
         return
 
-    joined_job_params = "_".join(job_params) if job_params else "all"
-    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
-    final_file = f"./it-{joined_job_params}.profdata"
+    # A zero-length .profraw is silently ignored by llvm-profdata at every
+    # --failure-mode, so it would drop one process's coverage with no signal at
+    # all. Treat it as an incomplete shard and publish no profile.
+    empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+    if empty_files:
+        print(
+            f"ERROR: {len(empty_files)} .profraw files are empty, so this shard's coverage "
+            f"is incomplete; publishing no profile: {', '.join(empty_files)}",
+            flush=True,
+        )
+        return None
+
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
+    # --failure-mode=any makes the merge all-or-nothing: on any invalid input it
+    # exits non-zero and writes no file, so the shard is simply absent instead of
+    # contributing a silently short profile. The clean path is byte-identical
+    # to =warn.
     result = subprocess.run(
-        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"]
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=any"]
         + profraw_files
         + ["-o", final_file],
         capture_output=True,
         text=True,
     )
-
-    # Check for corrupted files in stderr
-    corrupted_count = result.stderr.count(
-        "invalid instrumentation profile"
-    ) + result.stderr.count("file header is corrupt")
-    if corrupted_count > 0:
-        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
-        # Extract and display corrupted filenames from stderr
-        corrupted_files = set()
-        for line in result.stderr.split("\n"):
-            if (
-                "invalid instrumentation profile" in line
-                or "file header is corrupt" in line
-                or "error:" in line.lower()
-            ):
-                print(f"    {line.strip()}", flush=True)
-                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    potential_file = parts[1].strip()
-                    if potential_file.endswith(".profraw"):
-                        corrupted_files.add(potential_file)
-        if corrupted_files:
-            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
 
     if result.returncode == 0:
         print(f"Successfully created final coverage file: {final_file}", flush=True)
@@ -1017,6 +1044,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    # Cleared when a test phase is dropped before it runs. Such a drop sets no
+    # termination status of its own, so it must be RECORDED where the decision is
+    # made rather than derived afterwards.
+    coverage_phases_complete = True
     # Set when a pytest run was cut short by a timeout (graceful session-timeout or the
     # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
     # best-effort SKIPPED only when a timeout actually exhausted the budget.
@@ -1156,6 +1187,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     f"Flaky/targeted check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
                 )
                 break
+    elif sequential_test_modules:
+        # There were sequential tests to run and we chose not to run them, because
+        # too many tests had already failed or because of an infrastructure error.
+        # That skip is silent and sets nothing, so record it here.
+        print(
+            "Sequential test phase was dropped before it ran; this run did not execute "
+            "everything it planned"
+        )
+        coverage_phases_complete = False
+
+    # Whether this run executed what it planned, snapshotted HERE: both accumulators
+    # already reflect the sequential phase being dropped before it started (the
+    # admission test above is silent, it sets nothing) and the phase timing out
+    # after it started, and the LLVM-coverage block further down resets `has_error`,
+    # so reading them later would answer a different question. A coverage shard that
+    # did not complete must publish no profile: its short-but-valid profile is
+    # indistinguishable from a complete one downstream. Note this is deliberately
+    # NOT "no test failed" - a completed run with ordinary test failures still
+    # publishes its profile.
+    coverage_run_complete = coverage_phases_complete and not has_error and not timed_out
 
     # Run additional build types for bugfix validation.
     # Exit early on first failure to avoid duplicate test names and workspace pollution.
@@ -1507,8 +1558,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
 
-        # Merge all profraw files into final profdata file
-        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+        # Unconditionally, and before deciding whether to merge: the gate below
+        # skips the merge entirely, so nothing would otherwise open the target
+        # name and a stale profile would be published as this shard's result.
+        remove_stale_coverage_profile(coverage_profile_target())
+
+        merged_profdata = None
+        if not coverage_run_complete:
+            print(
+                "This run did not execute everything it planned, so its coverage would be "
+                "incomplete; publishing no profile."
+            )
+        else:
+            # Merge all profraw files into final profdata file
+            merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
 
         # Attach profdata file to the result report so it is uploaded
         # unconditionally (even when tests fail) and visible in the CI report.

@@ -111,6 +111,10 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/integration_tests_configs.py",
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
+    "ci/jobs/scripts/llvm_coverage_completeness.py",
+    # Parses the marker that decides whether a functional coverage shard publishes
+    # its profile at all (functional_tests.py).
+    "ci/jobs/scripts/functional_tests_results.py",
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",

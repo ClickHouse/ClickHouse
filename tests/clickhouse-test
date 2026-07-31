@@ -5994,6 +5994,16 @@ ORDER BY (test_name, callee_offset)
                 )
             print(test_result.description)
 
+    # An authoritative marker for coverage: the scheduler ran to the end AND no
+    # worker was killed on the way. `All tests have finished.` below cannot carry
+    # this - it is also printed when a worker died mid-run, because the counter it
+    # tests is the SELECTED test count, not a completed one - and it is printed
+    # for a zero-test run too. A coverage shard that did not execute what it
+    # planned must publish no profile, so the fact is emitted here, where both the
+    # worker state and the scheduler state are known.
+    if total_tests_run != 0 and not runner_process_killed.is_set():
+        print("Coverage run completed all selected tests.")
+
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)

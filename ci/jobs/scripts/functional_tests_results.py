@@ -61,6 +61,12 @@ ABORTED_RUN_EXIT_CODES = frozenset(
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
+# Emitted by tests/clickhouse-test only when the scheduler ran to the end AND no
+# worker was killed. Deliberately separate from SUCCESS_FINISH_SIGNS, which is
+# also true for "No tests were run" and for a run that lost a worker - both would
+# let an under-executed coverage shard publish a short profile.
+COVERAGE_RUN_COMPLETE_SIGN = "Coverage run completed all selected tests."
+
 RETRIES_SIGN = "Some tests were restarted"
 
 # Regex pattern to match test result lines.
@@ -87,6 +93,10 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        # True only when tests/clickhouse-test reported that it executed every
+        # selected test. Used to decide whether a coverage shard may publish its
+        # profile; success_finish is NOT a substitute (see the sign definitions).
+        coverage_run_complete: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
@@ -102,6 +112,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        coverage_run_complete = False
         test_results = []
         test_end = True
 
@@ -112,6 +123,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if COVERAGE_RUN_COMPLETE_SIGN in line:
+                    coverage_run_complete = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
                 if HUNG_SIGN in line:
@@ -208,6 +221,7 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            coverage_run_complete=coverage_run_complete,
             retries=retries,
         )
 
@@ -335,6 +349,11 @@ class FTResultsProcessor:
             info=info,
             with_info_from_results=False,
         )
+
+        # Expose the coverage-completion fact additively, for the coverage merge
+        # in functional_tests.py. Status, info and results are untouched, so no
+        # non-coverage job changes behaviour.
+        result.ext["coverage_run_complete"] = s.coverage_run_complete
 
         if not result.is_ok():
             order = {

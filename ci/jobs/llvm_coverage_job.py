@@ -8,7 +8,8 @@ from pathlib import Path
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.defs.defs import LLVM_ARTIFACTS_LIST, S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.jobs.scripts import llvm_coverage_completeness as completeness
 
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
@@ -206,29 +207,116 @@ if __name__ == "__main__":
 
     results = []
 
+    # Which shard profiles this run expects, and which actually arrived. Snapshot
+    # the present set BEFORE the merge runs: the merge writes merged.profdata into
+    # the very directory being listed.
+    _expected_artifacts = list(LLVM_ARTIFACTS_LIST)
+    _present_profiles = completeness.present_profiles(TEMP_DIR)
+    _merge_inputs = completeness.merge_inputs(_expected_artifacts, _present_profiles)
+    print(f"Coverage shard profiles expected: {len(_expected_artifacts)}, present: {len(_present_profiles)}")
+
+    # Merge and report are separate steps. A failed MERGE means "no complete
+    # measurement", which is reported as SKIPPED further down; a failed REPORT is a
+    # tooling failure and must stay RED. praktika collapses a step's exit code to a
+    # boolean, so the merge status is passed back in a marker file instead.
+    _merge_env = f"MERGE_PROFDATA_FILES={shlex.quote(' '.join(_merge_inputs))}"
+    merge_res = Result.from_commands_run(
+        name="Merge LLVM Coverage Profiles",
+        command=[f"{_merge_env} bash ci/jobs/scripts/merge_llvm_coverage.sh merge"],
+    )
+    results.append(merge_res)
+
+    _merge_status_file = Path(TEMP_DIR) / "merge_profdata.status"
+    _merge_ok = (
+        merge_res.is_ok()
+        and _merge_status_file.exists()
+        and _merge_status_file.read_text().strip() == "ok"
+    )
+    if not _merge_ok:
+        print("The aggregate coverage merge did not produce a usable profile.")
+
     gen_report_res = Result.from_commands_run(
         name="Generate LLVM Coverage Report",
-        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
+        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh report"],
     )
+
+    # Our own completeness metadata, published beside llvm_coverage.info so that a
+    # later PR comparing against this commit can tell whether this measurement was
+    # complete. Written even when incomplete - "incomplete" is exactly the fact the
+    # consumer needs.
+    _sidecar = completeness.build_sidecar(
+        _expected_artifacts,
+        _present_profiles,
+        info_path=f"{TEMP_DIR}/llvm_coverage.info",
+        merge_ok=_merge_ok,
+    )
+    completeness.write_sidecar(f"{TEMP_DIR}/{completeness.SIDECAR_BASENAME}", _sidecar)
+    if not _sidecar["complete"]:
+        print(
+            "This run's coverage measurement is INCOMPLETE: "
+            f"missing={_sidecar['missing']} unexpected={_sidecar['unexpected']} merge_ok={_merge_ok}"
+        )
 
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
     # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
-    Utils.compress_gz(
-        f"{TEMP_DIR}/llvm_coverage_html_report",
-        f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
-    )
-    gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
-    _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
-    gen_report_res.files.extend(_html_files)
-    gen_report_res.assets.extend(_html_assets)
+    # The report directory is absent when the merge produced no profile.
+    if Path(f"{TEMP_DIR}/llvm_coverage_html_report").exists():
+        Utils.compress_gz(
+            f"{TEMP_DIR}/llvm_coverage_html_report",
+            f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+        )
+        gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
+        _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
+        gen_report_res.files.extend(_html_files)
+        gen_report_res.assets.extend(_html_assets)
+    if not _sidecar["complete"]:
+        # The full report is still published: it is a genuine measurement of what
+        # DID run and the best artifact for finding out which shard went missing.
+        # It is labelled so it cannot be read as a complete measurement.
+        _n_present = len(_expected_artifacts) - len(_sidecar["missing"])
+        _banner = (
+            f"partial measurement: {_n_present} of {len(_expected_artifacts)} shards"
+        )
+        gen_report_res.info = f"{gen_report_res.info}\n{_banner}" if gen_report_res.info else _banner
     results.append(gen_report_res)
+
+    _measurement_comparable = True
+    _incomparable_reason = ""
 
     if not is_master_branch:
         diff_res = Result.from_commands_run(
             name="Generate LLVM Coverage Diff Report",
             command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
         )
+
+        # Both sides must be complete measurements of the same artifact manifest
+        # before any number derived from them may be published. Computed here, ahead
+        # of every consumer of those numbers.
+        _baseline_sidecar = completeness.read_sidecar(
+            f"{TEMP_DIR}/base_llvm_coverage.meta.json"
+        )
+        _selected_base_file = Path(TEMP_DIR) / "selected_base_commit.txt"
+        _selected_base_commit = (
+            _selected_base_file.read_text().strip()
+            if _selected_base_file.exists()
+            else ""
+        )
+        if not Path(f"{TEMP_DIR}/llvm_coverage.info").exists():
+            _measurement_comparable = False
+            _incomparable_reason = (
+                "this run published no coverage data, so there is nothing to compare"
+            )
+        else:
+            _measurement_comparable, _incomparable_reason = completeness.comparable(
+                _sidecar,
+                _baseline_sidecar,
+                baseline_info_path=f"{TEMP_DIR}/base_llvm_coverage.info",
+            )
+        if not _measurement_comparable:
+            print(f"Coverage comparison skipped: {_incomparable_reason}")
+        elif _selected_base_commit:
+            print(f"Comparing against baseline commit {_selected_base_commit}")
 
         # The diff script exits 0 without running genhtml when no C/C++ files changed.
         # Use the presence of its output directory as the authoritative indicator.
@@ -261,7 +349,17 @@ if __name__ == "__main__":
             print(f"Delta             : {delta:+.2f}%")
 
             _drop = coverage_drop(b_line_cov, c_line_cov)
-            if coverage_degraded(_drop):
+            if not _measurement_comparable:
+                # SKIPPED counts as OK, so the job stays green while stating that it
+                # did not judge. Reddening instead would turn a tool crash the PR
+                # author cannot act on into a blocking failure, and would relitigate
+                # the deliberate decision to let a shard's profile go missing.
+                _skip_msg = f"Coverage comparison skipped: {_incomparable_reason}"
+                print(_skip_msg)
+                diff_res.info = _skip_msg
+                diff_res.set_comment(_skip_msg)
+                diff_res.set_status(Result.Status.SKIPPED)
+            elif coverage_degraded(_drop):
                 _failure_msg = (
                     f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
                     f" (dropped {_drop:.2f} pp, tolerance {COVERAGE_DROP_TOLERANCE} pp)"
@@ -274,23 +372,27 @@ if __name__ == "__main__":
                 print(f"Coverage did not degrade beyond tolerance (delta {delta:+.2f}%).")
 
             # Compress and attach the diff HTML report archive + files to the diff result.
-            Utils.compress_gz(
-                f"{TEMP_DIR}/llvm_coverage_diff_html_report",
-                f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
-            )
-            diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
-            # Copy index.html → index_diff.html so the diff entry-point has a unique
-            # name in S3 links. The original index.html is kept as an asset so that
-            # relative links inside the report continue to work.
-            _diff_index = Path(TEMP_DIR) / "llvm_coverage_diff_html_report" / "index.html"
-            _diff_index_copy = _diff_index.parent / "index_diff.html"
-            if _diff_index.exists():
-                shutil.copy2(_diff_index, _diff_index_copy)
-            _diff_files, _diff_assets = collect_html_report_files(
-                "llvm_coverage_diff_html_report", entry_point="index_diff.html"
-            )
-            diff_res.files.extend(_diff_files)
-            diff_res.assets.extend(_diff_assets)
+            # Unlike the full report, the DIFFERENTIAL report renders per-line deltas
+            # against the baseline, so it belongs with the numbers: when the two sides
+            # are not comparable its content is as fabricated as the verdict would be.
+            if _measurement_comparable:
+                Utils.compress_gz(
+                    f"{TEMP_DIR}/llvm_coverage_diff_html_report",
+                    f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz",
+                )
+                diff_res.files.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+                # Copy index.html to index_diff.html so the diff entry-point has a
+                # unique name in S3 links. The original index.html is kept as an asset
+                # so that relative links inside the report continue to work.
+                _diff_index = Path(TEMP_DIR) / "llvm_coverage_diff_html_report" / "index.html"
+                _diff_index_copy = _diff_index.parent / "index_diff.html"
+                if _diff_index.exists():
+                    shutil.copy2(_diff_index, _diff_index_copy)
+                _diff_files, _diff_assets = collect_html_report_files(
+                    "llvm_coverage_diff_html_report", entry_point="index_diff.html"
+                )
+                diff_res.files.extend(_diff_files)
+                diff_res.assets.extend(_diff_assets)
         else:
             print("No C/C++ source files changed — differential coverage report was not generated.")
 
@@ -302,7 +404,20 @@ if __name__ == "__main__":
             Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
-        if _diff_inputs_exist:
+        if _diff_inputs_exist and not _measurement_comparable:
+            # The uncovered-code analysis compares the changed-line slice of the two
+            # measurements, extracted from the same merged data as the totals, so its
+            # output is fabricated for exactly the same reason.
+            msg = f"Skipping uncovered code analysis: {_incomparable_reason}"
+            print(msg)
+            print_res = Result.create_from(
+                name="Print Uncovered Code",
+                status=Result.Status.SKIPPED,
+                info=msg,
+            )
+            print_res.set_comment(msg)
+            _diff_inputs_exist = False
+        elif _diff_inputs_exist:
             Shell.run(
                 f"python3 ci/jobs/scripts/print_uncovered_code.py 2>&1 | tee {_print_log}",
                 verbose=True,
@@ -319,7 +434,7 @@ if __name__ == "__main__":
             print_res.set_comment(msg)
         # Append high-precision hit/total counts to the log so they are visible
         # in the artifact without cluttering the GitHub comment.
-        if _diff_ran:
+        if _diff_ran and _measurement_comparable:
             with open(_print_log, "a") as _f:
                 _f.write(
                     f"\n--- Coverage counts ---\n"
@@ -361,9 +476,12 @@ if __name__ == "__main__":
             # Tests-only PRs never reach this job at all - the coverage family is
             # auto-skipped for them (see filter_job.py) since the compiled binary,
             # and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran
+            _has_coverage_data = _diff_ran and _measurement_comparable
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source changes) — skipping coverage comment.")
+                if _diff_ran:
+                    print(f"Skipping coverage comment and CI DB row: {_incomparable_reason}")
+                else:
+                    print("No coverage-relevant changes detected (no C/C++ source changes), skipping coverage comment.")
             else:
                 _comment_data = {
                     # GitHub comment fields
@@ -414,7 +532,15 @@ if __name__ == "__main__":
             print("Local run, skipping CI DB update with coverage results")
     else:
         print("On master branch, skipping diff coverage generation")
-        if not is_local_run:
+        if not is_local_run and not _sidecar["complete"]:
+            # The post-hook's non-PR branch inserts this row into the coverage CI DB
+            # table, which is the series every later baseline and trend reads. An
+            # incomplete master measurement must not enter it.
+            print(
+                "This master run's coverage measurement is incomplete, "
+                "skipping the CI DB row so it cannot poison the baseline series."
+            )
+        elif not is_local_run:
             try:
                 (m_line_cov, m_line_hit, m_line_total), \
                 (m_function_cov, m_func_hit, m_func_total), \
@@ -476,14 +602,21 @@ if __name__ == "__main__":
         report_links.append(
             f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
         )
-        if _diff_ran:
+        if _diff_ran and _measurement_comparable:
             report_links.append(
                 f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             )
 
-    archives = [f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz"]
-    if _diff_ran:
-        archives.append(f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz")
+    archives = [
+        a
+        for a in [
+            f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
+            f"{TEMP_DIR}/llvm_coverage_diff_html_report.tar.gz"
+            if (_diff_ran and _measurement_comparable)
+            else None,
+        ]
+        if a and Path(a).exists()
+    ]
 
     Result.create_from(
         results=results,
