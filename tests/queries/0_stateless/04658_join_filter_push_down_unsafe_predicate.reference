@@ -28,16 +28,18 @@ INSERT INTO t_right_big SELECT number, number FROM numbers(200000);
 -- fabricated NULLs then escaped a post-join filter the push-down had emptied.
 -- Correct answer is exactly 0, on every run.
 
--- The conjunct is moved below the join by the main path and copied by the partial path.
--- Run at the shipped default of use_join_disjunctions_push_down so a regression on either
--- path is visible. Pre-fix this printed 0 (the count was about 500).
+-- These rows observe the main path's MOVE defect only. Oracle A is blind to the partial path's
+-- COPY defect, because the partial filter lands on the preserved left side and a copied predicate
+-- still constrains the post-join rows, so no NULL is fabricated; B1 and B3 observe the copy.
+-- Run at the shipped default of use_join_disjunctions_push_down.
+-- Pre-fix this printed 0 (the count was about 500).
 SELECT 'A1 default', countIf(rb IS NULL) = 0 FROM (
     SELECT t_right.b AS rb FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
     WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left.a])
 ) SETTINGS query_plan_filter_push_down = 1;
 A1 default	1
--- Both values of use_join_disjunctions_push_down, so neither push-down path can regress
--- unobserved. Pre-fix both printed 0 (counts about 500).
+-- Both values of use_join_disjunctions_push_down, so the main path is observed with the partial
+-- path enabled and disabled. Pre-fix both printed 0 (counts about 500).
 SELECT 'A2 disjunctions on', countIf(rb IS NULL) = 0 FROM (
     SELECT t_right.b AS rb FROM t_left LEFT JOIN t_right ON t_left.a = t_right.a
     WHERE arrayExists(z -> rand(z) % 2 = 0, [t_left.a])
@@ -89,10 +91,16 @@ A8 hoisted no argument	1
 -- post-fix about 1.0. Oracle A cannot see this defect, because a copied predicate still
 -- constrains the post-join rows and fabricates no NULLs.
 -- This shape needs no lambda at all: the partial path had no determinism check whatsoever.
+-- This is the only row that observes the partial path's own-metadata determinism rejection: the
+-- main path rejects a visible non-deterministic function node on master already, so this verdict
+-- can move only via the partial path, which is gated on use_join_disjunctions_push_down. The
+-- runner randomizes that setting off directly and the stress runner's randomized `compatibility`
+-- reverts its pre-26.1 default, so pin it or the row reads 1 whatever the optimizer does.
 SELECT 'B1 visible non deterministic', abs((
     (SELECT count() FROM (
         SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
-        WHERE rand(t_left_big.a) % 2 = 0) SETTINGS query_plan_filter_push_down = 1) /
+        WHERE rand(t_left_big.a) % 2 = 0) SETTINGS
+            query_plan_filter_push_down = 1, use_join_disjunctions_push_down = 1) /
     (SELECT count() FROM (
         SELECT t_left_big.a FROM t_left_big LEFT JOIN t_right_big ON t_left_big.a = t_right_big.a
         WHERE rand(t_left_big.a) % 2 = 0) SETTINGS query_plan_filter_push_down = 0)) - 1.) < 0.05;
