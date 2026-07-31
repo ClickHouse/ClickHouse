@@ -777,7 +777,7 @@ std::optional<String> optimizeUseNormalProjections(
     /// Skip the projection (keep the correct regular read) when the rewritten stream cannot match the
     /// structure it replaces. This runs before `filterPartsByProjection` mutates the analysis result and
     /// before query access info is recorded, so a skipped projection neither drops parts from the
-    /// regular read nor is reported as selected in `system.query_log`. Rewrite the candidate's stat
+    /// regular read nor records this read as having used the projection. Rewrite the candidate's stat
     /// description so `EXPLAIN projections = 1` reflects the rejection instead of the earlier `selected`.
     if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
     {
