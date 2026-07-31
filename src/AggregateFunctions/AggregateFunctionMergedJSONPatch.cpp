@@ -496,33 +496,34 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
     if (is_nullable)
         return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyGeneric>>(argument_types, typed_path_serializations);
 
-#define DISPATCH_KEY_TYPE(TYPE) \
-    return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyFixed<TYPE>>>(argument_types, typed_path_serializations);
+    // Templated helper to dispatch fixed-width key types
+    auto dispatchFixedType = [&]<typename T>()
+    {
+        return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyFixed<T>>>(argument_types, typed_path_serializations);
+    };
 
-    if (which_key.idx == TypeIndex::UInt8) { DISPATCH_KEY_TYPE(UInt8) }
-    if (which_key.idx == TypeIndex::UInt16) { DISPATCH_KEY_TYPE(UInt16) }
-    if (which_key.idx == TypeIndex::UInt32) { DISPATCH_KEY_TYPE(UInt32) }
-    if (which_key.idx == TypeIndex::UInt64) { DISPATCH_KEY_TYPE(UInt64) }
-    if (which_key.idx == TypeIndex::UInt128) { DISPATCH_KEY_TYPE(UInt128) }
-    if (which_key.idx == TypeIndex::UInt256) { DISPATCH_KEY_TYPE(UInt256) }
-    if (which_key.idx == TypeIndex::Int8) { DISPATCH_KEY_TYPE(Int8) }
-    if (which_key.idx == TypeIndex::Int16) { DISPATCH_KEY_TYPE(Int16) }
-    if (which_key.idx == TypeIndex::Int32) { DISPATCH_KEY_TYPE(Int32) }
-    if (which_key.idx == TypeIndex::Int64) { DISPATCH_KEY_TYPE(Int64) }
-    if (which_key.idx == TypeIndex::Int128) { DISPATCH_KEY_TYPE(Int128) }
-    if (which_key.idx == TypeIndex::Int256) { DISPATCH_KEY_TYPE(Int256) }
-    if (which_key.idx == TypeIndex::Float32) { DISPATCH_KEY_TYPE(Float32) }
-    if (which_key.idx == TypeIndex::Float64) { DISPATCH_KEY_TYPE(Float64) }
-    if (which_key.idx == TypeIndex::Decimal32) { DISPATCH_KEY_TYPE(Decimal32) }
-    if (which_key.idx == TypeIndex::Decimal64) { DISPATCH_KEY_TYPE(Decimal64) }
-    if (which_key.idx == TypeIndex::Decimal128) { DISPATCH_KEY_TYPE(Decimal128) }
-    if (which_key.idx == TypeIndex::Decimal256) { DISPATCH_KEY_TYPE(Decimal256) }
-    if (which_key.idx == TypeIndex::Date) { DISPATCH_KEY_TYPE(UInt16) }
-    if (which_key.idx == TypeIndex::Date32) { DISPATCH_KEY_TYPE(Int32) }
-    if (which_key.idx == TypeIndex::DateTime) { DISPATCH_KEY_TYPE(UInt32) }
-    if (which_key.idx == TypeIndex::DateTime64) { DISPATCH_KEY_TYPE(UInt64) }
-
-#undef DISPATCH_KEY_TYPE
+    if (which_key.idx == TypeIndex::UInt8) return dispatchFixedType.operator()<UInt8>();
+    if (which_key.idx == TypeIndex::UInt16) return dispatchFixedType.operator()<UInt16>();
+    if (which_key.idx == TypeIndex::UInt32) return dispatchFixedType.operator()<UInt32>();
+    if (which_key.idx == TypeIndex::UInt64) return dispatchFixedType.operator()<UInt64>();
+    if (which_key.idx == TypeIndex::UInt128) return dispatchFixedType.operator()<UInt128>();
+    if (which_key.idx == TypeIndex::UInt256) return dispatchFixedType.operator()<UInt256>();
+    if (which_key.idx == TypeIndex::Int8) return dispatchFixedType.operator()<Int8>();
+    if (which_key.idx == TypeIndex::Int16) return dispatchFixedType.operator()<Int16>();
+    if (which_key.idx == TypeIndex::Int32) return dispatchFixedType.operator()<Int32>();
+    if (which_key.idx == TypeIndex::Int64) return dispatchFixedType.operator()<Int64>();
+    if (which_key.idx == TypeIndex::Int128) return dispatchFixedType.operator()<Int128>();
+    if (which_key.idx == TypeIndex::Int256) return dispatchFixedType.operator()<Int256>();
+    if (which_key.idx == TypeIndex::Float32) return dispatchFixedType.operator()<Float32>();
+    if (which_key.idx == TypeIndex::Float64) return dispatchFixedType.operator()<Float64>();
+    if (which_key.idx == TypeIndex::Decimal32) return dispatchFixedType.operator()<Decimal32>();
+    if (which_key.idx == TypeIndex::Decimal64) return dispatchFixedType.operator()<Decimal64>();
+    if (which_key.idx == TypeIndex::Decimal128) return dispatchFixedType.operator()<Decimal128>();
+    if (which_key.idx == TypeIndex::Decimal256) return dispatchFixedType.operator()<Decimal256>();
+    if (which_key.idx == TypeIndex::Date) return dispatchFixedType.operator()<UInt16>();
+    if (which_key.idx == TypeIndex::Date32) return dispatchFixedType.operator()<Int32>();
+    if (which_key.idx == TypeIndex::DateTime) return dispatchFixedType.operator()<UInt32>();
+    if (which_key.idx == TypeIndex::DateTime64) return dispatchFixedType.operator()<DateTime64>();
 
     if (which_key.idx == TypeIndex::String)
         return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyString>>(argument_types, typed_path_serializations);

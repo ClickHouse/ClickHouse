@@ -457,4 +457,16 @@ SELECT mergedJSONPatch(json, d) FROM t_bad_sort_keys; -- { serverError ILLEGAL_T
 SELECT mergedJSONPatch(json, t) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mergedJSONPatch(json, a) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mergedJSONPatch(json, m) FROM t_bad_sort_keys; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- DateTime64 sort keys must read correctly from ColumnDecimal (not cast to ColumnVector).
+-- Regression test for: https://github.com/ClickHouse/ClickHouse/issues/[issue-number]
+-- Without the fix, DateTime64 keys would incorrectly cast ColumnDecimal to ColumnVector, causing UB in release builds.
+SELECT toJSONString(mergedJSONPatch(patch, ts))
+FROM
+(
+    SELECT '{"a":1}'::JSON AS patch, toDateTime64('2020-01-01 00:00:00', 3) AS ts
+    UNION ALL
+    SELECT '{"a":2}'::JSON, toDateTime64('2020-01-02 00:00:00', 3)
+);
+
 DROP TABLE t_bad_sort_keys;
