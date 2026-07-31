@@ -105,8 +105,13 @@ run "expanding replacement" "SELECT $EXPAND FORMAT Null" throw "" fold
 # 6. The literal-search implementation reached through the regexp function's trivial-pattern shortcut,
 #    whose delegated call re-traverses the whole value. The needle must be a plain literal, or the
 #    shortcut is not taken and the case duplicates case 2.
+#    Materializing the argument happens before the call and is not interruptible by this fix, while the
+#    deadline runs from when the query was registered. That part therefore has to stay well inside the
+#    deadline on the slowest build, or the query is stopped before the function is entered and the case
+#    passes whatever the function does. The value is kept small and the cost carried by the replacement
+#    length instead, which is charged inside the loop.
 run "regexp fallback to literal" \
-    "SELECT length(replaceRegexpAll(materialize(repeat(repeat('ab', 1000000), 300)), 'ab', 'YZ')) FROM numbers(1) FORMAT Null"
+    "SELECT length(replaceRegexpAll(materialize(repeat(repeat('ab', 1000000), 60)), 'ab', 'YZYZYZYZYZYZYZYZYZYZYZYZYZYZYZYZ')) FROM numbers(1) FORMAT Null"
 
 # 7. The same work reached directly through replaceAll rather than through that shortcut.
 run "replaceAll" \
@@ -309,9 +314,12 @@ esac
 #     per-row offset loop and its own search loop over the whole block. The haystack has to be
 #     materialized: constant arguments are unwrapped to their nested data column before the dispatcher
 #     runs, which leaves the needle no longer constant so no branch matches. A prologue is therefore
-#     unavoidable, so the work per byte is large rather than the data - a needle matching every second byte
-#     - while the replacement stays short so the output cannot outgrow the input.
+#     unavoidable, so the work per byte is large rather than the data - every byte matches - while the
+#     replacement stays bounded so the output cannot outgrow the test's memory profile.
 #     Sizing this case by its written bytes instead does not work, which is what two earlier versions got
 #     wrong: the output is then what bounds the call, and no single size satisfies a fast and a slow build.
+#     The row count bounds that unavoidable prologue, which the deadline covers but this fix cannot
+#     interrupt: at 400000 rows it alone outlasted the deadline on a thread-sanitizer build, so the query
+#     was stopped before the function was entered and the case reported the same time either way.
 run "fixed string literal" \
-    "SELECT sum(length(replaceAll(toFixedString(materialize(repeat('ab', 800)), 1600), 'b', 'YY'))) FROM numbers(400000) SETTINGS max_block_size = 400000"
+    "SELECT sum(length(replaceAll(toFixedString(materialize(repeat('b', 1600)), 1600), 'b', 'YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY'))) FROM numbers(50000) SETTINGS max_block_size = 50000"
