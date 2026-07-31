@@ -1924,23 +1924,36 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true when the first separator was a comma
+    bool second_separator_was_comma = false; /// true when the second separator was a comma
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: Parse further commas, but only when every separator so far was a
+        ///    comma, i.e. in the purely functional form (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1976,8 +1989,17 @@ public:
 
         if (state == 1)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                second_separator_was_comma = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1985,6 +2007,26 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the purely functional form, accept further arguments so that a too-long call is
+        /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
+        /// Both flags are required: a further comma is accepted only when EVERY separator so
+        /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
+        /// keeps its fixed shape and stays a syntax error, exactly as before this change.
+        else if (comma_mode && second_separator_was_comma && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
