@@ -1668,6 +1668,7 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as whole Unix seconds
 (for backward compatibility, previously discarded subsecond precision). When disabled (default), they are
 interpreted as scaled `DateTime64` ticks matching the column precision, which preserves subseconds.
+Enable it (or `SET compatibility = '26.7'`) to restore the pre-26.8 whole-seconds reader.
 )", 0) \
     DECLARE(Bool, output_format_protobuf_datetime64_legacy_seconds, false, R"(
 When enabled, numeric Protobuf fields mapped from `DateTime64` are written as whole Unix seconds
