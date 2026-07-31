@@ -337,6 +337,14 @@ public:
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
+    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
+    /// the query condition cache and without caching the analysis on the step. Used for the automatic
+    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
+    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
+    /// applies, and the read that actually executes analyzes again with the gate that matches its final
+    /// shape.
+    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.

@@ -22,6 +22,9 @@ SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Pin the gate to its default value: this test covers the default-off contract.
 SET use_query_condition_cache_for_top_k = 0;
+-- `force_optimize_projection` only checks (and the rewrite only runs) when projections are allowed at
+-- all, so pin `optimize_use_projections`: the test settings randomization turns it off.
+SET optimize_use_projections = 1;
 SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
