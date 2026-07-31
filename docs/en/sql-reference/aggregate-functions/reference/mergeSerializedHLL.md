@@ -22,7 +22,7 @@ mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)
 ## Parameters (optional) {#parameters}
 
 - The function accepts **multiple equivalent parameter orderings** for convenience:
-  - `mergeSerializedHLL()` — defaults: `base64_encoded=0`, `lg_k=10`, `type='HLL_4'`
+  - `mergeSerializedHLL()` — `base64_encoded` defaults to `0`; `lg_k` and `type` are taken from the input sketches (see below)
   - `mergeSerializedHLL(base64_encoded)` — `base64_encoded` is `0` or `1`
   - `mergeSerializedHLL(lg_k)` — `lg_k` is in `[4..21]`
   - `mergeSerializedHLL(base64_encoded, lg_k)`
@@ -41,9 +41,9 @@ mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)
   - `0` (false, default): Input is raw binary data, no decoding needed (recommended for ClickHouse-generated sketches)
   - `1` (true): Input is base64-encoded and will be decoded before merging (for external data sources)
 
-- `lg_k` — Log-base-2 of buckets (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedHLL)). Type: [UInt8](../../../sql-reference/data-types/int-uint). Valid range: 4-21. Default: 10.
+- `lg_k` — Log-base-2 of buckets (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedHLL)). Type: [UInt8](../../../sql-reference/data-types/int-uint). Valid range: 4-21. When omitted, the precision of the input sketches is preserved: the result uses the smallest `lg_k` among the inputs.
 
-- `type` — Storage format (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedHLL)). Type: [String](../../../sql-reference/data-types/string). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. Default: 'HLL_4'.
+- `type` — Storage format (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedHLL)). Type: [String](../../../sql-reference/data-types/string). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. When omitted, the representation is inferred from the first non-empty input sketch.
 
 ## Returned Value {#returned-value}
 

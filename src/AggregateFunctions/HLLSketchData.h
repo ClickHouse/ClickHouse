@@ -14,6 +14,7 @@ namespace DB
 {
 
 const int DEFAULT_LG_K = 10;
+const int MAX_LG_K = 21;
 const auto DEFAULT_HLL_TYPE = datasketches::HLL_4; // this is the default, but explicit here for illustration
 
 template <typename Key>
@@ -25,6 +26,13 @@ private:
 
     uint8_t lg_k;
     datasketches::target_hll_type type;
+    /// Whether lg_k / type were explicitly requested by the user (as opposed to being defaults).
+    /// When they were not, the union must not degrade input sketches to the default precision:
+    /// it is created with the maximum lg_k (an `hll_union` adapts downward to the smallest lg_k
+    /// among its inputs, so this preserves each input sketch's precision), and the output
+    /// representation is inferred from the first non-empty input sketch.
+    bool lg_k_explicit;
+    bool type_explicit;
 
     datasketches::hll_sketch * getHLLUpdate()
     {
@@ -36,17 +44,26 @@ private:
     datasketches::hll_union * getHLLUnion()
     {
         if (!sk_union)
-            sk_union = std::make_unique<datasketches::hll_union>(datasketches::hll_union(lg_k));
+            sk_union = std::make_unique<datasketches::hll_union>(datasketches::hll_union(lg_k_explicit ? lg_k : MAX_LG_K));
         return sk_union.get();
+    }
+
+    void adoptTypeFrom(const datasketches::hll_sketch & sk)
+    {
+        if (!type_explicit && !sk.is_empty())
+        {
+            type = sk.get_target_type();
+            type_explicit = true;
+        }
     }
 
 public:
     using value_type = Key;
 
-    HLLSketchData() : lg_k(DEFAULT_LG_K), type(DEFAULT_HLL_TYPE) {}
+    HLLSketchData() : lg_k(DEFAULT_LG_K), type(DEFAULT_HLL_TYPE), lg_k_explicit(true), type_explicit(true) {}
 
-    HLLSketchData(uint8_t lg_k_, datasketches::target_hll_type type_)
-        : lg_k(lg_k_), type(type_) {}
+    HLLSketchData(uint8_t lg_k_, datasketches::target_hll_type type_, bool lg_k_explicit_ = true, bool type_explicit_ = true)
+        : lg_k(lg_k_), type(type_), lg_k_explicit(lg_k_explicit_), type_explicit(type_explicit_) {}
 
     ~HLLSketchData() = default;
 
@@ -58,8 +75,9 @@ public:
     void insert(Key value)
     {
         /// DataSketches hll_sketch supports a limited set of primitive overloads.
-        /// For unsupported ClickHouse numeric types (e.g. Int256), fall back to
-        /// updating with raw bytes (still stable within ClickHouse).
+        /// Types without a DataSketches-compatible encoding (e.g. Int256) are rejected
+        /// by `serializedHLL` up front; the raw-bytes branch below remains only for
+        /// template instantiations that are never reached from interoperable sketches.
         if constexpr (std::is_same_v<Key, BFloat16>)
         {
             getHLLUpdate()->update(static_cast<float>(value));
@@ -117,6 +135,7 @@ public:
 
         /// Deserialize and merge the sketch
         auto sk = deserializeSketch<datasketches::hll_sketch>(data_ptr, data_size);
+        adoptTypeFrom(sk);
         getHLLUnion()->update(sk);
     }
 
@@ -140,6 +159,12 @@ public:
 
     void merge(const HLLSketchData & rhs)
     {
+        if (!type_explicit && rhs.type_explicit)
+        {
+            type = rhs.type;
+            type_explicit = true;
+        }
+
         datasketches::hll_union * u = getHLLUnion();
 
         if (sk_update)
@@ -161,6 +186,7 @@ public:
         if (!bytes.empty())
         {
             auto sk = deserializeSketch<datasketches::hll_sketch>(bytes.data(), bytes.size());
+            adoptTypeFrom(sk);
             getHLLUnion()->update(sk);
         }
     }
