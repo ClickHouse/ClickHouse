@@ -105,6 +105,7 @@ SETTINGS_SPLIT_FAMILIES = {
     "server-settings": {
         "base_route": "/reference/settings/server-settings/settings",
         "navigation_group": "Server Settings",
+        "overview_as_page": True,
         "detail_title_suffix": "server settings",
         "description_noun": "server settings",
         "browse_title": "Browse server settings",
@@ -126,6 +127,15 @@ SETTINGS_SPLIT_FAMILIES = {
         "explorer_root": "/merge-tree-settings",
         "component_name": "MergeTreeSettingsExplorer",
         "component_path": "snippets/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+        # The marker-based MergeTree source keeps these imports outside the
+        # generated region in the legacy page. They are therefore unavailable
+        # in the Mintlify overview shell when it is split into detail pages.
+        "detail_component_imports": (
+            'import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";',
+            'import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";',
+            'import SettingsInfoBlock from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";',
+            'import { VersionHistory } from "/snippets/components/VersionHistory/VersionHistory.jsx";',
+        ),
         "max_characters": SESSION_SETTINGS_MAX_CHARS_PER_PAGE,
         "detail_intro": (
             "These settings are available in "
@@ -162,13 +172,6 @@ SETTINGS_SPLIT_FAMILIES = {
 #              scratch as {staged_name: repo-root-relative source path}
 SETTINGS_GENERATORS = [
     {
-        "name": "beta-and-experimental",
-        "sql": ["beta-settings.sql", "experimental-settings.sql"],
-        "outfile": "experimental-beta-settings.md",
-        "dest": "docs/about-us/beta-and-experimental-features.md",
-        "method": "markers",
-    },
-    {
         "name": "session-settings",
         "sql": ["session-settings.sql"],
         "outfile": "settings.md",
@@ -202,6 +205,15 @@ SETTINGS_GENERATORS = [
         "dest": "docs/operations/settings/merge-tree-settings.md",
         "method": "markers",  # preserves frontmatter + hand-written intro
         "fixups": True,        # backtick-wrap angle-bracket text so it is valid MDX
+    },
+    {
+        # Run after the split settings families so both `--write` and `--check`
+        # resolve links from their freshly generated manifests.
+        "name": "beta-and-experimental",
+        "sql": ["beta-settings.sql", "experimental-settings.sql"],
+        "outfile": "experimental-beta-settings.md",
+        "dest": "docs/about-us/beta-and-experimental-features.md",
+        "method": "markers",
     },
 ]
 
@@ -983,7 +995,8 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         return target + "#" + anchor
 
     markdown = re.sub(
-        re.escape(base_route) + r"#(?P<anchor>[A-Za-z0-9_.:-]+)",
+        re.escape(base_route)
+        + r"(?:/[A-Za-z0-9_.-]+)?#(?P<anchor>[A-Za-z0-9_.:-]+)",
         absolute_repl,
         markdown,
     )
@@ -1000,32 +1013,94 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         r"\]\(#(?P<anchor>[A-Za-z0-9_.:-]+)\)", fragment_repl, markdown)
 
 
+def _settings_manifest_path(docs_dir, family):
+    return (
+        Path(docs_dir)
+        / family["base_route"].lstrip("/")
+        / "manifest.json"
+    )
+
+
+def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    manifest_path = _settings_manifest_path(docs_dir, family).resolve()
+    matches = [
+        artifact for artifact in artifacts
+        if artifact.path.resolve() == manifest_path
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected one generated {family_name} manifest, found {len(matches)}"
+        )
+    return json.loads(matches[0].content)
+
+
+def _rewrite_setting_links_from_manifests(
+        markdown, docs_dir, generated_manifests=None):
+    """Resolve settings links against the current generated shard manifests."""
+    if generated_manifests is not None:
+        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_manifests)
+        if missing:
+            raise ValueError(
+                "missing generated settings manifests: "
+                + ", ".join(sorted(missing))
+            )
+
+    for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
+        if generated_manifests is None:
+            manifest = json.loads(
+                _settings_manifest_path(docs_dir, family).read_text(
+                    encoding="utf-8"
+                )
+            )
+        else:
+            manifest = generated_manifests[family_name]
+        markdown = _rewrite_setting_links(
+            markdown,
+            manifest["routes"],
+            family["base_route"],
+            manifest["anchorRoutes"],
+        )
+    return markdown
+
+
 def _rewrite_session_setting_links(markdown, routes):
     return _rewrite_setting_links(markdown, routes, SESSION_SETTINGS_BASE_ROUTE)
 
 
-def _component_imports_for_page(preamble, markdown):
+def _component_imports_for_page(preamble, markdown, fallback_imports=()):
     imports = []
+    seen_symbols = set()
     candidates = [
         (match.group("symbol"), match.group(0).strip())
         for regex in (IMPORT_RE, NAMED_IMPORT_RE)
         for match in regex.finditer(preamble)
     ]
+    for import_line in fallback_imports:
+        match = IMPORT_RE.fullmatch(import_line.strip())
+        if not match:
+            match = NAMED_IMPORT_RE.fullmatch(import_line.strip())
+        if not match:
+            raise ValueError(f"invalid fallback component import: {import_line!r}")
+        candidates.append((match.group("symbol"), import_line.strip()))
+
     for symbol, import_line in candidates:
-        if not re.search(rf"<{re.escape(symbol)}\b", markdown):
+        if symbol in seen_symbols:
             continue
-        # Mintlify's JSX snippet renderer requires `VersionHistory` to use its
-        # named export. A default import silently omits the component.
-        if (
-            symbol == "VersionHistory"
-            and import_line.startswith(f"import {symbol} from ")
-        ):
-            import_line = import_line.replace(
-                f"import {symbol} from ",
-                f"import {{ {symbol} }} from ",
-                1,
-            )
-        imports.append(import_line)
+        if re.search(rf"<{re.escape(symbol)}\b", markdown):
+            # Mintlify badge modules and `VersionHistory` must use their named
+            # exports. Default imports omit the component or its MDX siblings.
+            if (
+                (symbol.endswith("Badge") or symbol == "VersionHistory")
+                and import_line.startswith(f"import {symbol} from ")
+            ):
+                import_line = import_line.replace(
+                    f"import {symbol} from ",
+                    f"import {{ {symbol} }} from ",
+                    1,
+                )
+            imports.append(import_line)
+            seen_symbols.add(symbol)
     return imports
 
 
@@ -1061,6 +1136,17 @@ def _settings_explorer(family):
         f"## {family['browse_title']}\n\n"
         f"<{family['component_name']} />\n"
     )
+
+
+def _strip_settings_explorer(preamble, family):
+    """Remove previously generated explorer blocks before emitting one copy."""
+    pattern = re.compile(
+        rf"^[ \t]*##[ \t]+{re.escape(family['browse_title'])}"
+        rf"(?:[ \t]+\{{#[^}}\n]+\}})?[ \t]*\n+"
+        rf"[ \t]*<{re.escape(family['component_name'])}[ \t]*/>[ \t]*(?:\n+|$)",
+        re.MULTILINE,
+    )
+    return pattern.sub("", preamble).strip()
 
 
 def _settings_legacy_routes_script(anchor_routes, family):
@@ -1420,6 +1506,8 @@ def split_settings_page(dest, content, docs_dir, family_name):
     # its historical fragment as an explicit anchor.
     preamble_without_imports = _replace_redundant_h1_with_anchor(
         preamble_without_imports)
+    preamble_without_imports = _strip_settings_explorer(
+        preamble_without_imports, family)
     explorer_import = (
         f'import {family["component_name"]} from '
         f'"/{family["component_path"]}";'
@@ -1446,7 +1534,11 @@ def split_settings_page(dest, content, docs_dir, family_name):
         page_markdown = "\n\n".join(section.markdown.rstrip("\n") for section in page.sections)
         page_markdown = _rewrite_setting_links(
             page_markdown, routes, family["base_route"], anchor_routes)
-        imports = _component_imports_for_page(preamble, page_markdown)
+        imports = _component_imports_for_page(
+            preamble,
+            page_markdown,
+            family.get("detail_component_imports", ()),
+        )
         title = f"{page.label} {family['detail_title_suffix']}"
         description = (
             f"ClickHouse {family['description_noun']} in the "
@@ -1473,12 +1565,18 @@ def split_settings_page(dest, content, docs_dir, family_name):
             "characters": page.char_count,
         })
 
-    navigation = {
-        "group": family["navigation_group"],
-        "root": family["base_route"].lstrip("/"),
-        "directory": "none",
-        "pages": [_navigation_entry(page) for page in pages],
-    }
+    base_route = family["base_route"].lstrip("/")
+    navigation = {"group": family["navigation_group"]}
+    if family.get("overview_as_page", False):
+        navigation["directory"] = "none"
+        navigation["pages"] = [
+            base_route,
+            *[_navigation_entry(page) for page in pages],
+        ]
+    else:
+        navigation["root"] = base_route
+        navigation["directory"] = "none"
+        navigation["pages"] = [_navigation_entry(page) for page in pages]
     artifacts.append(GeneratedArtifact(
         shard_dir / "navigation.json", json.dumps(navigation, indent=2, sort_keys=False) + "\n"))
 
@@ -1505,7 +1603,9 @@ def split_session_settings_page(dest, content, docs_dir):
     return split_settings_page(dest, content, docs_dir, "session-settings")
 
 
-def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
+def generate(
+        gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+        generated_settings_manifests=None):
     scratch = tempfile.mkdtemp(prefix="autogen-")
     # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
     for staged, src in gen.get("deps", {}).items():
@@ -1531,6 +1631,9 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
             content = transform_full_body(migrate, content, gen["dest"], dest, lk, title)
         else:
             content = transform_body(migrate, content, gen["dest"], dest, lk)
+        if gen["name"] == "beta-and-experimental":
+            content = _rewrite_setting_links_from_manifests(
+                content, docs_dir, generated_settings_manifests)
 
     if gen["method"] == "markers":
         with open(dest, encoding="utf-8") as f:
@@ -1547,8 +1650,20 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
     return dest, new
 
 
-def generate_artifacts(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
-    dest, content = generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap)
+def generate_artifacts(
+        gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+        generated_settings_manifests=None):
+    dest, content = generate(
+        gen,
+        binary,
+        docs_dir,
+        repo_root,
+        migrate,
+        lk,
+        file_map,
+        remap,
+        generated_settings_manifests,
+    )
     if content is None:
         return []
     if gen["name"] in SETTINGS_SPLIT_FAMILIES and remap:
@@ -1715,11 +1830,25 @@ def main(argv=None):
         raise SystemExit(f"error: --only '{args.only}' matched no generator; nothing to do.")
 
     drift = 0
+    generated_settings_manifests = {}
     for gen in generators:
         artifacts = generate_artifacts(
-            gen, binary, docs_dir, repo_root, migrate, lk, file_map, args.remap)
+            gen,
+            binary,
+            docs_dir,
+            repo_root,
+            migrate,
+            lk,
+            file_map,
+            args.remap,
+            generated_settings_manifests or None,
+        )
         stale_paths = []
         if gen["name"] in SETTINGS_SPLIT_FAMILIES and args.remap:
+            generated_settings_manifests[gen["name"]] = (
+                _settings_manifest_from_artifacts(
+                    gen["name"], artifacts, docs_dir)
+            )
             stale_paths = stale_settings_page_paths(
                 gen["name"], artifacts, docs_dir)
         drift += reconcile_generated_artifacts(

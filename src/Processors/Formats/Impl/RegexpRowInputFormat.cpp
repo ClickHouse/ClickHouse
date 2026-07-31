@@ -111,7 +111,18 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        bool read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        /// A capture group is the whole field, so the value must consume it entirely. The `Quoted`
+        /// readers stop at the first character that cannot belong to the value, and in a stream-based
+        /// format the leftover would fail the subsequent delimiter check; here there is no delimiter,
+        /// so without this check a trailing unparsed rest would be silently discarded (for example, a
+        /// fractional timestamp read by the integer-only compatibility parser would lose its fraction).
+        if (escaping_rule == FormatSettings::EscapingRule::Quoted && !field_buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected data '{}' after parsed value in the matched field '{}'",
+                String(field_buf.position(), field_buf.available()),
+                String(matched_field.data(), matched_field.size()));
+        return read;
     }
     catch (Exception & e)
     {
