@@ -43,11 +43,10 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         )
 
     node1.query(
-        f"CREATE TABLE {db}.tt (key Int64, value String) ENGINE = ReplicatedMergeTree ORDER BY key "
-        "SETTINGS index_granularity = 8192, index_granularity_bytes = 0"
+        f"CREATE TABLE {db}.tt (key Int64, value String) ENGINE = ReplicatedMergeTree ORDER BY key"
     )
     node1.query(
-        f"INSERT INTO {db}.tt SELECT number, toString(number) FROM numbers(2000000)"
+        f"INSERT INTO {db}.tt SELECT number, toString(number) FROM numbers(100000)"
     )
     # Make sure the surviving replica holds a full local copy of the data.
     node2.query(f"SYSTEM SYNC REPLICA {db}.tt")
@@ -58,48 +57,6 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         f"SELECT count() FROM system.clusters WHERE cluster = '{db}' AND is_active = 1",
         "3\n",
     )
-
-    stream_count_query = f"""
-        SELECT max(toUInt32OrZero(extract(explain, 'MergeTreeSelect.*× (\\d+)')))
-        FROM (EXPLAIN PIPELINE SELECT sum(key) FROM {db}.tt SETTINGS max_parallel_replicas = 3)
-    """
-    stream_count_settings = {
-        "enable_parallel_replicas": 1,
-        "cluster_for_parallel_replicas": db,
-        "max_threads": 64,
-        # Keep `max_threads` deterministic on memory-limited sanitizer workers. Otherwise
-        # `getMaxThreadsForAvailableMemory` can reduce both plans to the same width.
-        "max_threads_min_free_memory_per_thread": 0,
-        "merge_tree_min_rows_for_concurrent_read": 0,
-        "merge_tree_min_bytes_for_concurrent_read": 0,
-        "merge_tree_min_read_task_size": 1,
-        "merge_tree_min_bytes_per_read_stream": 4096,
-    }
-    three_replica_streams = int(node1.query(stream_count_query, settings=stream_count_settings))
-
-    # A nested query can carry an explicit replica limit lower than the outer parallel-replicas
-    # statement. The effective-count rewrite must clamp over-requests without widening that limit.
-    # Exercise both the SQL and serialized remote-plan modes; before the clamp both plans used 3.
-    for serialize_query_plan in (0, 1):
-        explicit_limit_streams = {}
-        for explicit_limit in (1, 3):
-            nested_stream_count_query = f"""
-                SELECT max(toUInt32OrZero(extract(explain, 'MergeTreeSelect.*× (\\d+)')))
-                FROM (EXPLAIN PIPELINE
-                    SELECT sum(key)
-                    FROM (SELECT key FROM {db}.tt SETTINGS max_parallel_replicas = {explicit_limit}))
-            """
-            explicit_limit_streams[explicit_limit] = int(
-                node1.query(
-                    nested_stream_count_query,
-                    settings={
-                        **stream_count_settings,
-                        "serialize_query_plan": serialize_query_plan,
-                    },
-                )
-            )
-
-        assert explicit_limit_streams[1] > explicit_limit_streams[3]
 
     # Stop one replica gracefully: it stays registered in the cluster definition but becomes inactive.
     node3.stop_clickhouse()
@@ -114,13 +71,6 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         # The inactive replica is still part of the cluster definition.
         assert node1.query(f"SELECT count() FROM system.clusters WHERE cluster = '{db}'") == "3\n"
 
-        coordinator_count_2_before = int(
-            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=2")
-        )
-        coordinator_count_3_before = int(
-            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=3")
-        )
-
         # Run a query with parallel replicas over the database cluster, requesting more replicas than are
         # online so that the coordinator is sized by what is actually available. Use a data-reading query
         # (not a trivial `count()`, which `optimize_trivial_count_query` answers from metadata and thus never
@@ -133,20 +83,14 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
                 "cluster_for_parallel_replicas": db,
             },
         )
-        assert result == "1999999000000\n"
-
-        # With fewer participating nodes, each node reads a larger share and needs more local streams. The
-        # configured cluster and `max_parallel_replicas` are unchanged, so this specifically verifies that the
-        # stream cap uses the coordinator's live replica count.
-        two_replica_streams = int(node1.query(stream_count_query, settings=stream_count_settings))
-        assert two_replica_streams > three_replica_streams
+        assert result == "4999950000\n"
 
         # The coordinator must be created for the 2 active replicas, not the 3 registered ones.
-        assert int(
-            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=2")
-        ) > coordinator_count_2_before
-        assert int(
-            node1.count_in_log("Creating parallel replicas coordinator with replicas_count=3")
-        ) == coordinator_count_3_before
+        assert node1.contains_in_log(
+            "Creating parallel replicas coordinator with replicas_count=2"
+        )
+        assert not node1.contains_in_log(
+            "Creating parallel replicas coordinator with replicas_count=3"
+        )
     finally:
         node3.start_clickhouse()

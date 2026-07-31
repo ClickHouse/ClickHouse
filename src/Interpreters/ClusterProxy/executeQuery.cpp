@@ -27,7 +27,6 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -804,37 +803,6 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     return {pools_to_use, max_replicas_to_use};
 }
 
-static void setEffectiveParallelReplicasCount(const ContextMutablePtr & context, size_t replicas_count)
-{
-    /// This copied context is used to build the local plan and is sent to remote replicas. Keep its limit in
-    /// sync with the coordinator after liveness filtering so planning uses the number of participating nodes.
-    context->setSetting("max_parallel_replicas", replicas_count);
-}
-
-static ASTPtr getQueryASTWithEffectiveParallelReplicasCount(const ASTPtr & query_ast, size_t replicas_count)
-{
-    auto result = query_ast->clone();
-    std::vector<IAST *> nodes_to_visit{result.get()};
-    while (!nodes_to_visit.empty())
-    {
-        auto * current = nodes_to_visit.back();
-        nodes_to_visit.pop_back();
-
-        if (auto * settings = current->as<ASTSetQuery>(); settings && !settings->is_standalone)
-        {
-            if (const auto * requested_replicas = settings->changes.tryGet("max_parallel_replicas"))
-            {
-                settings->changes.setSetting(
-                    "max_parallel_replicas", std::min<UInt64>(requested_replicas->safeGet<UInt64>(), replicas_count));
-            }
-        }
-
-        for (auto & child : current->children)
-            nodes_to_visit.push_back(child.get());
-    }
-    return result;
-}
-
 static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
@@ -894,8 +862,6 @@ void executeQueryWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
-    setEffectiveParallelReplicasCount(new_context, max_replicas_to_use);
-    auto remote_query_ast = getQueryASTWithEffectiveParallelReplicasCount(query_ast, max_replicas_to_use);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -947,7 +913,7 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            remote_query_ast,
+            query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -987,7 +953,7 @@ void executeQueryWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            remote_query_ast,
+            query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -1022,7 +988,6 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
-    setEffectiveParallelReplicasCount(new_context, max_replicas_to_use);
     if (connection_pools.size() == 1)
         return nullptr;
 
@@ -1436,13 +1401,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
     }
 
-    setEffectiveParallelReplicasCount(new_context, max_replicas_to_use);
-
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
         const auto & query_tree = analyzer.getQueryTree();
-        setEffectiveParallelReplicasCountInQueryTree(query_tree, max_replicas_to_use);
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();

@@ -373,8 +373,6 @@ public:
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
-    std::optional<size_t> estimateReadBytesForStreamCap(const RangesInDataParts & parts_with_ranges) const;
-    size_t getNumStreamsCappedByReadBytes(size_t num_streams, size_t estimated_read_bytes) const;
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
@@ -584,10 +582,6 @@ private:
         const MergeTreeIndexBuildContextPtr & index_build_context,
         const Names & column_names,
         const InputOrderInfoPtr & input_order_info);
-
-    /// Number of nodes that will each read a share of the selected parts: the number of participating
-    /// replicas when reading from parallel replicas, 1 otherwise.
-    size_t getTotalQueryNodes() const;
 
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,

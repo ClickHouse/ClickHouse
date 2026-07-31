@@ -89,37 +89,6 @@ echo "-- exact sizing never charges one subcolumn more than the physical column 
 SUB_ONE_EXACT=$(stream_count "SELECT sum(arraySum(arrayMap(x -> length(x), m.keys))) FROM t_sub SETTINGS max_threads = 64, allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1")
 [ "$SUB_ONE_EXACT" -le "$SUB_TWO" ] && echo 1 || echo 0
 
-# FINAL nests one merging pipeline per primary key range, so the `× N` multiplicity of a single
-# line does not carry the stream count there. Sum the read processors across all lines instead.
-total_read_processors() {
-    $CLICKHOUSE_CLIENT -q "
-        SELECT sum(if(match(explain, 'MergeTreeSelect.*× (\\d+)'), toUInt32OrZero(extract(explain, 'MergeTreeSelect.*× (\\d+)')), 1))
-        FROM (EXPLAIN PIPELINE $1)
-        WHERE explain LIKE '%MergeTreeSelect%'"
-}
-
-# FINAL uses a separate stream-spreading path, which the cap also covers.
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_final"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_final (k UInt64, w UInt16) ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_final SELECT number, number % 50000 FROM numbers(1000000)"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_final SELECT number, number % 50000 FROM numbers(1000000)"
-echo "-- FINAL: cap applies and results are identical --"
-F_ON=$(total_read_processors "SELECT sum(w) FROM t_final FINAL SETTINGS max_threads = 64, max_final_threads = 64")
-F_OFF=$(total_read_processors "SELECT sum(w) FROM t_final FINAL SETTINGS max_threads = 64, max_final_threads = 64, merge_tree_min_bytes_per_read_stream = 0")
-[ "$F_ON" -lt "$F_OFF" ] && echo 1 || echo 0
-F_RES_ON=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM t_final FINAL SETTINGS max_threads = 64, max_final_threads = 64")
-F_RES_OFF=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM t_final FINAL SETTINGS max_threads = 64, max_final_threads = 64, merge_tree_min_bytes_per_read_stream = 0")
-[ "$F_RES_ON" = "$F_RES_OFF" ] && echo 1 || echo 0
-
-# Reading in order uses yet another path.
-echo "-- read in order: cap applies and results are identical --"
-O_ON=$(stream_count "SELECT w FROM t_narrow ORDER BY k SETTINGS max_threads = 64, optimize_read_in_order = 1, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
-O_OFF=$(stream_count "SELECT w FROM t_narrow ORDER BY k SETTINGS max_threads = 64, optimize_read_in_order = 1, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 0")
-[ "$O_ON" -lt "$O_OFF" ] && echo 1 || echo 0
-O_RES_ON=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM (SELECT w FROM t_narrow ORDER BY k) SETTINGS max_threads = 64, optimize_read_in_order = 1")
-O_RES_OFF=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM (SELECT w FROM t_narrow ORDER BY k) SETTINGS max_threads = 64, optimize_read_in_order = 1, merge_tree_min_bytes_per_read_stream = 0")
-[ "$O_RES_ON" = "$O_RES_OFF" ] && echo 1 || echo 0
-
 # Many parts: the estimate sums over all of them.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_parts"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_parts (k UInt64, w UInt16) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0"
@@ -156,23 +125,10 @@ SKEW_ON=$(stream_count "SELECT sum(cityHash64(s)) FROM t_skewed_string WHERE k <
 SKEW_OFF=$(stream_count "SELECT sum(cityHash64(s)) FROM t_skewed_string WHERE k < 64 SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 0")
 [ "$SKEW_ON" -eq "$SKEW_OFF" ] && echo 1 || echo 0
 
-# Parallel replicas plan over all selected parts on every node, but each node reads only its share.
-# Use a smaller byte-equivalent cost so both the single-node and per-node estimates stay above the
-# 16-stream floor: this makes the division by the participating node count directly observable.
-LOCAL_FOR_PR=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 4096")
-PARALLEL_REPLICAS_SETTINGS="max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, enable_analyzer = 1, parallel_replicas_only_with_analyzer = 0, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1"
-PR_ON=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS $PARALLEL_REPLICAS_SETTINGS, merge_tree_min_bytes_per_read_stream = 4096")
-PR_OFF=$(stream_count "SELECT sum(w) FROM t_narrow SETTINGS $PARALLEL_REPLICAS_SETTINGS, merge_tree_min_bytes_per_read_stream = 0")
-echo "-- parallel replicas: cap reduces streams --"
-[ "$PR_ON" -lt "$PR_OFF" ] && echo 1 || echo 0
-echo "-- parallel replicas: per-node estimate reduces the cap --"
-[ "$PR_ON" -lt "$LOCAL_FOR_PR" ] && echo 1 || echo 0
-
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_narrow"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_compact"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_hicomp"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_sub"
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_final"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_parts"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_default_dependency"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_skewed_string"

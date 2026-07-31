@@ -28,37 +28,12 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
 namespace FailPoints
 {
     extern const char slowdown_parallel_replicas_local_plan_read[];
-}
-
-void setEffectiveParallelReplicasCountInQueryTree(const QueryTreeNodePtr & query_tree, size_t replicas_count)
-{
-    std::vector<IQueryTreeNode *> nodes_to_visit{query_tree.get()};
-    while (!nodes_to_visit.empty())
-    {
-        auto * current = nodes_to_visit.back();
-        nodes_to_visit.pop_back();
-
-        if (auto * query_node = current->as<QueryNode>())
-        {
-            UInt64 effective_replicas = replicas_count;
-            if (const auto * requested_replicas = query_node->getSettingsChanges().tryGet("max_parallel_replicas"))
-                effective_replicas = std::min(effective_replicas, requested_replicas->safeGet<UInt64>());
-            query_node->setSettingChange("max_parallel_replicas", effective_replicas);
-        }
-
-        for (auto & child : current->getChildren())
-        {
-            if (child)
-                nodes_to_visit.push_back(child.get());
-        }
-    }
 }
 
 /// Finds and returns the first QueryPlan node containing the specified ReadingStep type or nullptr
@@ -160,8 +135,6 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     /// Disable parallel replicas in every nested QueryNode/UnionNode context — otherwise
     /// nested subqueries would re-enter parallel-replicas execution. Mirrors `createLocalPlanForParallelReplicas`.
     auto remote_query_tree = query_tree->clone();
-    setEffectiveParallelReplicasCountInQueryTree(
-        remote_query_tree, context->getSettingsRef()[Setting::max_parallel_replicas]);
     {
         std::vector<IQueryTreeNode *> nodes_to_visit;
         nodes_to_visit.push_back(remote_query_tree.get());
@@ -241,8 +214,6 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// parallel replicas enabled in their contexts, causing the Planner to create
     /// additional `ParallelReplicasReadingCoordinator` instances.
     auto local_query_tree = query_tree->clone();
-    setEffectiveParallelReplicasCountInQueryTree(
-        local_query_tree, context->getSettingsRef()[Setting::max_parallel_replicas]);
     {
         std::vector<IQueryTreeNode *> nodes_to_visit;
         nodes_to_visit.push_back(local_query_tree.get());

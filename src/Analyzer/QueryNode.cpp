@@ -16,8 +16,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Interpreters/Context.h>
-
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -58,13 +56,6 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
 QueryNode::QueryNode(ContextMutablePtr context_)
     : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
-
-void QueryNode::setSettingChange(std::string_view name, const Field & value)
-{
-    context->setSetting(name, value);
-    if (settings_changes.tryGet(name))
-        settings_changes.setSetting(name, value);
-}
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {

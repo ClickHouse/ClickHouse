@@ -18,20 +18,10 @@
 1
 -- exact sizing never charges one subcolumn more than the physical column --
 1
--- FINAL: cap applies and results are identical --
-1
-1
--- read in order: cap applies and results are identical --
-1
-1
 -- many parts: cap applies and results are identical --
 1
 1
 -- unknown DEFAULT dependencies do not cap streams --
 1
 -- partial variable-width reads do not cap streams --
-1
--- parallel replicas: cap reduces streams --
-1
--- parallel replicas: per-node estimate reduces the cap --
 1

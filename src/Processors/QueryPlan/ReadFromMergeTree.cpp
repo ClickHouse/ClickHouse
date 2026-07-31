@@ -6,7 +6,6 @@
 #include <cmath>
 #include <limits>
 
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
@@ -990,18 +989,6 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
-size_t ReadFromMergeTree::getTotalQueryNodes() const
-{
-    if (!is_parallel_reading_from_replicas)
-        return 1;
-
-    /// The parallel-replicas execution context replaces `max_parallel_replicas` with the effective coordinator
-    /// size after filtering inactive replicas.
-    return std::min<size_t>(
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        context->getSettingsRef()[Setting::max_parallel_replicas]);
-}
-
 Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1014,7 +1001,11 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
-    const size_t total_query_nodes = getTotalQueryNodes();
+    const size_t total_query_nodes = is_parallel_reading_from_replicas
+        ? std::min<size_t>(
+              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+              context->getSettingsRef()[Setting::max_parallel_replicas])
+        : 1;
 
     PoolSettings pool_settings{
         .threads = max_streams,
@@ -1362,9 +1353,7 @@ static void capStreamsByEstimatedReadBytes(
     size_t & num_streams,
     size_t total_bytes,
     const Settings & settings,
-    size_t total_query_nodes,
-    LoggerPtr log,
-    std::string_view context_hint = {})
+    LoggerPtr log)
 {
     const size_t overhead_cost_bytes = settings[Setting::merge_tree_min_bytes_per_read_stream];
     if (overhead_cost_bytes == 0)
@@ -1373,16 +1362,9 @@ static void capStreamsByEstimatedReadBytes(
     if (total_bytes == 0)
         return;
 
-    /// With parallel replicas every node plans over the whole set of parts but reads only its own
-    /// share of them, so each node must size its streams by that share. Otherwise every node caps
-    /// as if it read everything, overestimating by about sqrt(total_query_nodes).
-    const size_t query_nodes = std::max<size_t>(1, total_query_nodes);
-    const size_t bytes_per_node = static_cast<size_t>(
-        (static_cast<UInt128>(total_bytes) + query_nodes - 1) / query_nodes);
-
     /// Round up: truncating sqrt(3.99) to 1 would halve the streams for a rounding artefact.
     const size_t max_streams_by_volume = std::max<size_t>(
-        1, static_cast<size_t>(std::ceil(std::sqrt(static_cast<double>(bytes_per_node) / static_cast<double>(overhead_cost_bytes)))));
+        1, static_cast<size_t>(std::ceil(std::sqrt(static_cast<double>(total_bytes) / static_cast<double>(overhead_cost_bytes)))));
 
     /// The stream count also sets the width of everything downstream of the read - PREWHERE,
     /// expression evaluation and aggregation - but the estimate above only measures how many bytes
@@ -1402,8 +1384,8 @@ static void capStreamsByEstimatedReadBytes(
 
     if (capped_num_streams < num_streams)
     {
-        LOG_DEBUG(log, "Reducing num_streams from {} to {}{} (estimated_read_bytes={}, query_nodes={}, overhead_cost={}, by_volume={})",
-            num_streams, capped_num_streams, context_hint, total_bytes, total_query_nodes, overhead_cost_bytes, max_streams_by_volume);
+        LOG_DEBUG(log, "Reducing num_streams from {} to {} (estimated_read_bytes={}, overhead_cost={}, by_volume={})",
+            num_streams, capped_num_streams, total_bytes, overhead_cost_bytes, max_streams_by_volume);
         num_streams = capped_num_streams;
     }
 }
@@ -1413,9 +1395,7 @@ static void capStreamsByReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const Settings & settings,
-    size_t total_query_nodes,
-    LoggerPtr log,
-    std::string_view context_hint = {})
+    LoggerPtr log)
 {
     const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, settings);
     if (!estimated_read_bytes)
@@ -1425,26 +1405,7 @@ static void capStreamsByReadBytes(
         num_streams,
         *estimated_read_bytes,
         settings,
-        total_query_nodes,
-        log,
-        context_hint);
-}
-
-std::optional<size_t> ReadFromMergeTree::estimateReadBytesForStreamCap(const RangesInDataParts & parts_with_ranges) const
-{
-    return estimateReadBytes(parts_with_ranges, all_column_names, context->getSettingsRef());
-}
-
-size_t ReadFromMergeTree::getNumStreamsCappedByReadBytes(size_t num_streams, size_t estimated_read_bytes) const
-{
-    capStreamsByEstimatedReadBytes(
-        num_streams,
-        estimated_read_bytes,
-        context->getSettingsRef(),
-        getTotalQueryNodes(),
-        log,
-        " while reading by layers");
-    return num_streams;
+        log);
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
@@ -1491,7 +1452,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
                 num_streams = parts_with_ranges.size();
         }
 
-        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log);
+        if (!is_parallel_reading_from_replicas
+            && !isQueryWithFinal()
+            && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
+            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -1687,8 +1651,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             num_streams = std::max(
                 (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
         }
-
-        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log);
     }
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -1699,7 +1661,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
-    const size_t total_query_nodes = getTotalQueryNodes();
+    const size_t total_query_nodes = is_parallel_reading_from_replicas
+        ? std::min<size_t>(
+              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+              context->getSettingsRef()[Setting::max_parallel_replicas])
+        : 1;
 
     PoolSettings pool_settings{
         .threads = num_streams,
@@ -2074,9 +2040,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
-
-    if (num_streams > 1)
-        capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, settings, getTotalQueryNodes(), log, " in FINAL");
 
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.

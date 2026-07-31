@@ -14,8 +14,6 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-void setEffectiveParallelReplicasCountInQueryTree(const QueryTreeNodePtr & query_tree, size_t replicas_count);
-
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,

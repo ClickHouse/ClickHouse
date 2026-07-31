@@ -255,29 +255,8 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Generally, it should work because we don't use the part a lot. The only needed info is the PK prefix.
     /// The types of PK prefix expression always match because JOIN equality is applied to identical types (after conversions).
     auto logger = getLogger("optimizeJoinByLayers");
-    const size_t requested_layers = data.sources.front()->getNumStreams();
-    size_t num_layers = requested_layers;
-    std::optional<size_t> total_estimated_read_bytes = 0;
-    size_t source_index = 0;
-    for (const auto * source : data.sources)
-    {
-        const auto source_estimated_read_bytes
-            = source->estimateReadBytesForStreamCap(analysis_results[source_index]->parts_with_ranges);
-        if (!source_estimated_read_bytes)
-        {
-            total_estimated_read_bytes.reset();
-            break;
-        }
-
-        if (__builtin_add_overflow(
-                *total_estimated_read_bytes, *source_estimated_read_bytes, &*total_estimated_read_bytes))
-            *total_estimated_read_bytes = std::numeric_limits<size_t>::max();
-        ++source_index;
-    }
-    if (total_estimated_read_bytes)
-        num_layers = data.sources.front()->getNumStreamsCappedByReadBytes(requested_layers, *total_estimated_read_bytes);
     auto all_split = splitIntersectingPartsRangesIntoLayers(
-        all_parts, num_layers, data.common_prefix, data.is_reverse_order, logger);
+        all_parts, data.sources.front()->getNumStreams(), data.common_prefix, data.is_reverse_order, logger);
     std::vector<SplitPartsByRanges> splits(analysis_results.size());
     splits[0].borders = std::move(all_split.borders);
     splits[0].in_reverse_order = data.is_reverse_order;
