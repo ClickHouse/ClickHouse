@@ -1056,13 +1056,13 @@ The geographic types alias to nested arrays and tuples:
 | Type string              | Underlying wire type        |
 |--------------------------|-----------------------------|
 | `Point`                  | `Tuple(Float64, Float64)`   |
-| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`    |
+| `Ring`, `LineString`     | `Array(Point)`              |
 | `Polygon`, `MultiLineString` | `Array(Ring)`           |
 | `MultiPolygon`           | `Array(Polygon)`            |
 
 So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
 
-`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the seven geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. Unlike a user-spelled `Variant`, the discriminators of `Geometry` do **not** follow the name-sorted order: they are fixed for compatibility, and new geo types are only ever appended. The mapping is `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (added in 26.7 — streams from older servers simply never contain discriminator `6`). Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
+`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the six geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. As with any `Variant`, the discriminators follow the canonical name-sorted order of the geo aliases: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
 
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 

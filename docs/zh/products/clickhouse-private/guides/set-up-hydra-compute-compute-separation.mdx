@@ -26,7 +26,9 @@ description: "本指南将指导你为现有 ClickHouse 私网集群预配 Hydra
 * 拥有 Helm registry 以及 `onprem-clickhouse-cluster` Helm 图表的访问权限
 
 <Steps>
-  <Step title="1. Identify the Parent Cluster" id="1-identify-the-parent-cluster">
+  <Step>
+    ## 1. 确认父集群
+
     在创建子实例之前，先记下父集群的**名称**和**命名空间**。父集群必须处于运行状态——如果父集群已停止、已终止或处于休眠状态，则无法预配子实例。
 
     对于名为 `default-xx-01` 的集群，默认值如下：
@@ -37,7 +39,9 @@ description: "本指南将指导你为现有 ClickHouse 私网集群预配 Hydra
     | 命名空间 | `ns-default-xx-01` |
   </Step>
 
-  <Step title="2. Create a Child Instance" id="2-create-a-child-instance">
+  <Step>
+    ## 2. 创建子实例
+
     <Warning>
       每个 ClickHouseCluster 实例都必须位于各自独立的命名空间中。不要将子实例部署到与父集群相同的命名空间中。Operator 假定每个命名空间只有一个 ClickHouseCluster，违反这一约束会导致集群降级。
     </Warning>
@@ -64,7 +68,9 @@ description: "本指南将指导你为现有 ClickHouse 私网集群预配 Hydra
     * 暴露其自己的 Kubernetes Service 端点
   </Step>
 
-  <Step title="3. Create a Read-Only Child (Optional)" id="3-create-a-read-only-child-optional">
+  <Step>
+    ## 3. 创建只读子实例 (可选)
+
     如果要创建一个可以查询数据但不能写入数据的子实例，请添加 `isReadonly` 标志：
 
     ```bash
@@ -83,7 +89,9 @@ description: "本指南将指导你为现有 ClickHouse 私网集群预配 Hydra
     只读子实例适用于报表、仪表盘或分析工作负载等不需要写入权限的场景。
   </Step>
 
-  <Step title="4. Verify the Child Instance" id="4-verify-the-child-instance">
+  <Step>
+    ## 4. 验证子实例
+
     子实例部署完成后，确认其是否正在运行：
 
     ```bash

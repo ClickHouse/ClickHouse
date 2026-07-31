@@ -3,7 +3,9 @@ title: Instrumentar una aplicación
 ---
 
 <Steps>
-  <Step title="Clona y ejecuta la aplicación" id="clone-and-run-the-application">
+  <Step>
+    ## Clona y ejecuta la aplicación
+
     Clona el repositorio, instala las dependencias y crea el archivo `.env`:
 
     ```bash
@@ -21,14 +23,14 @@ title: Instrumentar una aplicación
 
     Abre [http://localhost:5001](http://localhost:5001). Verás un selector de año, estadísticas resumidas, un gráfico de actividad, tablas de usuarios y dominios principales, y un cuadro de búsqueda. Explora la aplicación: cambia de año y profundiza en las historias.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="La aplicación HackerNews Analyzer ejecutándose localmente" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="La aplicación HackerNews Analyzer ejecutándose localmente" />
 
     En este punto, la aplicación se está ejecutando, pero aún no está instrumentada. ClickStack no muestra datos: está esperando telemetría. Este es el estado &quot;anterior&quot;.
   </Step>
 
-  <Step title="Obtén los detalles de conexión" id="get-connection-details">
+  <Step>
+    ## Obtén los detalles de conexión
+
     La aplicación necesita dos valores para conectarse al colector:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: el endpoint de OTLP que expone tu colector (normalmente el puerto `4318` para OTLP sobre HTTP).
@@ -45,7 +47,9 @@ title: Instrumentar una aplicación
     El SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para establecer el encabezado de autorización para las tres señales: trazas, métricas y logs. Si el collector se ejecuta localmente y no exige autenticación, puedes dejar el valor vacío (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), pero la variable debe estar presente; el SDK omite por completo la inicialización si no está definida o si está completamente vacía.
   </Step>
 
-  <Step title="Instrumentar la aplicación" id="instrument-the-application">
+  <Step>
+    ## Instrumentar la aplicación
+
     La instrumentación consta de tres partes: instalar los SDKs, cambiar el comando de inicio y habilitar el SDK para navegador. Nada de esto cambia la lógica de negocio de la aplicación.
 
     ### Instalar los SDKs
@@ -98,7 +102,9 @@ title: Instrumentar una aplicación
     </Warning>
   </Step>
 
-  <Step title="Generar tráfico y ver la telemetría" id="generate-traffic-and-view-telemetry">
+  <Step>
+    ## Generar tráfico y ver la telemetría
+
     Reinicia la aplicación para que el nuevo comando de inicio y el paquete del navegador recién compilado surtan efecto:
 
     ```bash
@@ -112,21 +118,15 @@ title: Instrumentar una aplicación
 
     1. Ve a **Búsqueda** y filtra por los últimos 5 minutos. Los logs de `hn-analyzer-api` empezarán a aparecer.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs de ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs de ClickStack" />
 
     2. Haz clic en una petición y sube por la traza. Verás el span del handler de Express, un span HTTP hijo que apunta al clúster de ClickHouse con la duración real de la red, y registros de `console.log` correlacionados en la misma traza.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces de ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces de ClickStack" />
 
     3. Abre **Session Replay** para reproducir un video de una sesión del navegador por el que puedes desplazarte, sincronizado con la cronología de la traza.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sesiones de ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sesiones de ClickStack" />
 
     Los logs, las métricas, las trazas y las repeticiones de sesión aparecen en la misma UI, comparten el mismo lenguaje de consulta y se correlacionan automáticamente.
   </Step>

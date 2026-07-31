@@ -41,7 +41,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -123,12 +122,6 @@ namespace KafkaSetting
 }
 
 namespace fs = std::filesystem;
-
-namespace FailPoints
-{
-extern const char kafka2_remove_zk_before_get_children[];
-extern const char kafka2_remove_zk_before_final_multi[];
-}
 
 namespace ErrorCodes
 {
@@ -775,22 +768,13 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 {
     bool completely_removed = false;
 
-    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_get_children);
-
     Strings children;
     if (const auto code = keeper_to_use->tryGetChildren(keeper_path, children); code == Coordination::Error::ZNONODE)
-    {
-        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
-        /// allowing another process to complete the removal. The table is completely gone.
-        LOG_WARNING(log, "Table {} was already removed from Keeper, looks like a concurrent operation removed it", keeper_path);
-        return true;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal. It's a bug");
 
     for (const auto & child : children)
         if (child != "dropped")
             keeper_to_use->tryRemoveRecursive(fs_keeper_path / child);
-
-    FailPointInjection::pauseFailPoint(FailPoints::kafka2_remove_zk_before_final_multi);
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -801,14 +785,10 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 
     if (code == Coordination::Error::ZNONODE)
     {
-        /// It is possible if the Keeper session expired and the ephemeral drop lock was deleted,
-        /// allowing another process to complete the removal or create a new table.
-        LOG_WARNING(
-            log,
-            "Table {} was not completely removed from Keeper, some nodes were already removed by a concurrent operation",
-            keeper_path);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -1108,7 +1088,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element =
+                    dead_letter_queue->add(
                         DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
@@ -1121,7 +1101,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                                 .topic_name = msg_info.currentTopic(),
                                 .partition = msg_info.currentPartition(),
                                 .offset = msg_info.currentOffset(),
-                                .key = msg_info.currentKey()}}; });
+                                .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;

@@ -809,7 +809,7 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (!location_path.contains("://") && !location_path.starts_with('/'))
+    if (location_path.find("://") == String::npos && !location_path.starts_with('/'))
         location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
@@ -836,7 +836,7 @@ void IcebergMetadata::createInitial(
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().contains("PreconditionFailed"))
+            && e.message().find("PreconditionFailed") != String::npos)
             return;
         throw;
     }
@@ -1360,13 +1360,7 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            /// update_row_numbers_info = true: every transform that can precede this one (the
-            /// position-delete transform, an earlier equality-delete filter) maintains
-            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
-            return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
-                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
-                /*update_row_numbers_info=*/true);
+            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }

@@ -7,7 +7,7 @@ keywords: ['Moose']
 doc_type: 'guide'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -38,12 +38,14 @@ Moose OLAP предоставляет удобные для разработчи
   ### Предварительные требования
 </div>
 
-* **Node.js 20+** или **Python 3.12+** - требуется для разработки на TypeScript или Python
-* **Docker Desktop** - для локальной среды разработки
-* **macOS/Linux** - Windows поддерживается через WSL2
+* **Node.js 20+** или **Python 3.12+** — требуется для разработки на TypeScript или Python
+* **Docker Desktop** — для локальной среды разработки
+* **macOS/Linux** — Windows поддерживается через WSL2
 
 <Steps>
-  <Step title="Установите Moose" id="step-1-install-moose">
+  <Step>
+    ### Установите Moose
+
     Установите Moose CLI глобально в системе:
 
     ```bash
@@ -51,7 +53,9 @@ Moose OLAP предоставляет удобные для разработчи
     ```
   </Step>
 
-  <Step title="Настройте проект" id="step-2-set-up-project">
+  <Step>
+    ### Настройте проект
+
     #### Вариант A: используйте существующее развертывание ClickHouse
 
     **Важно**: Ваш ClickHouse в продакшн останется нетронутым. Эта команда лишь инициализирует новый проект Moose OLAP с моделями данных, созданными на основе ваших таблиц ClickHouse.
@@ -83,7 +87,9 @@ Moose OLAP предоставляет удобные для разработчи
     ```
   </Step>
 
-  <Step title="Установите зависимости" id="step-3-install-dependencies">
+  <Step>
+    ### Установите зависимости
+
     ```bash
     # TypeScript
     cd my-project
@@ -99,13 +105,17 @@ Moose OLAP предоставляет удобные для разработчи
     Вы должны увидеть: `Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step title="Изучите сгенерированные модели" id="step-4-explore-models">
+  <Step>
+    ### Изучите сгенерированные модели
+
     Moose CLI автоматически генерирует интерфейсы TypeScript или модели Pydantic для Python на основе существующих таблиц ClickHouse.
 
     Новые модели данных можно посмотреть в файле `app/index.ts`.
   </Step>
 
-  <Step title="Начните разработку" id="step-5-start-development">
+  <Step>
+    ### Начните разработку
+
     Запустите dev-сервер, чтобы поднять локальный экземпляр ClickHouse, в котором все ваши таблицы из продакшн будут автоматически воссозданы на основе определений в коде:
 
     ```bash
@@ -115,7 +125,9 @@ Moose OLAP предоставляет удобные для разработчи
     **Важно**: Ваш ClickHouse в продакшн останется нетронутым. Эта команда создаёт локальную среду разработки.
   </Step>
 
-  <Step title="Заполните локальную базу данных тестовыми данными" id="step-6-seed-database">
+  <Step>
+    ### Заполните локальную базу данных тестовыми данными
+
     Загрузите данные в локальный экземпляр ClickHouse:
 
     #### Из собственного ClickHouse
@@ -131,7 +143,9 @@ Moose OLAP предоставляет удобные для разработчи
     ```
   </Step>
 
-  <Step title="Разработка с Moose OLAP" id="step-7-building-with-moose-olap">
+  <Step>
+    ### Разработка с Moose OLAP
+
     Теперь, когда ваши таблицы определены в коде, вы получаете те же преимущества, что и при работе с ORM-моделями данных в веб-приложениях: типобезопасность и автодополнение при создании API и materialized view поверх аналитических данных. В качестве следующего шага можно попробовать:
 
     * Создать REST API с помощью [Moose API](https://docs.fiveonefour.com/moosestack/apis)

@@ -176,10 +176,7 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!has_array_join)
         return false;
 
-    /// An empty expression list is not a valid ARRAY JOIN clause: the analyzer rejects it, and the
-    /// formatter would emit a dangling `ARRAY JOIN` keyword that cannot be parsed back, because inside
-    /// a set operation it swallows the next branch's SELECT.
-    if (!ParserNotEmptyExpressionList(false).parse(pos, res->expression_list, expected))
+    if (!ParserExpressionList(false).parse(pos, res->expression_list, expected))
         return false;
 
     if (res->expression_list)

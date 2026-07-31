@@ -270,7 +270,7 @@ ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが、パ�
   ## 2025年3月7日
 </div>
 
-* 新しい `UsageCost` API エンドポイント: API 仕様で、使用状況情報を取得するための新しいエンドポイントが利用可能になりました。これは組織向けのエンドポイントで、使用コストは最大 31 日分まで照会できます。取得できるメトリクスには、Storage、コンピュート、データ転送、ClickPipes が含まれます。詳細は [ドキュメント](/ja/products/cloud/api-reference/billing/get-organization-usage-costs)を参照してください。
+* 新しい `UsageCost` API エンドポイント: API 仕様で、使用状況情報を取得するための新しいエンドポイントが利用可能になりました。これは組織向けのエンドポイントで、使用コストは最大 31 日分まで照会できます。取得できるメトリクスには、Storage、コンピュート、データ転送、ClickPipes が含まれます。詳細は [ドキュメント](/ja/api-reference/billing/get-organization-usage-costs)を参照してください。
 * Terraform プロバイダー [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) リリースでは、MySQL エンドポイントを有効にできるようになりました。
 
 <div id="february-21-2025">
@@ -428,14 +428,14 @@ JDBC / Java については、リリースされ次第[ 0.8.0](https://github.co
   ### Prometheus インテグレーションの改善
 </div>
 
-Prometheus インテグレーションにいくつかの機能強化を追加しました。
+Prometheus インテグレーションに、いくつかの機能強化を追加しました。
 
-* **組織レベルのエンドポイント**。ClickHouse Cloud の Prometheus インテグレーションが強化され、サービスレベルのメトリクスに加えて、API で **組織レベルのメトリクス** 用エンドポイントも利用できるようになりました。この新しいエンドポイントは、組織内のすべてのサービスのメトリクスを自動的に収集するため、Prometheus collector へのメトリクスのエクスポートを効率化できます。これらのメトリクスは、Grafana や Datadog などのデータ可視化ツールと連携でき、組織全体のパフォーマンスをより包括的に把握できます。
+* **組織レベルのエンドポイント**。ClickHouse Cloud 向けの Prometheus インテグレーションを強化し、サービスレベルのメトリクスに加えて、API で **組織レベルのメトリクス** 用エンドポイントを利用できるようになりました。この新しいエンドポイントは、組織内のすべてのサービスのメトリクスを自動的に収集するため、Prometheus collector へのメトリクスのエクスポートを効率化できます。これらのメトリクスは Grafana や Datadog などの可視化ツールと統合でき、組織全体のパフォーマンスをより包括的に把握できます。
 
   この機能は現在、すべてのユーザーが利用できます。詳細は[こちら](/ja/products/cloud/features/monitoring/prometheus)をご覧ください。
 
-* **フィルタ済みメトリクス**。ClickHouse Cloud の Prometheus インテグレーションで、フィルタされたメトリクスの一覧を返せるようになりました。この機能により、サービスの健全性の監視で重要なメトリクスに絞り込めるため、レスポンス payload のサイズ削減に役立ちます。
+* **フィルタリングされたメトリクス**。ClickHouse Cloud 向けの Prometheus インテグレーションで、フィルタリングしたメトリクスの一覧を返せるようになりました。この機能により、サービスの健全性の監視に重要なメトリクスに絞り込めるため、レスポンスの payload サイズを削減できます。
 
   この機能は API のオプションのクエリパラメータで利用でき、データ収集の最適化や、Grafana や Datadog などのツールとのインテグレーションの効率化が容易になります。
 
-  フィルタ済みメトリクス機能は現在、すべてのユーザーが利用できます。詳細は[こちら](/ja/products/cloud/features/monitoring/prometheus)をご覧ください。
+  フィルタリングされたメトリクス機能は現在、すべてのユーザーが利用できます。詳細は[こちら](/ja/products/cloud/features/monitoring/prometheus)をご覧ください。

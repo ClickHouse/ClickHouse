@@ -13,7 +13,7 @@ import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx
 
 <Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
 
-Вы можете использовать ClickHouse, а точнее [`clickhouse-local`](/ru/concepts/features/tools-and-utilities/clickhouse-local)
+Вы можете использовать ClickHouse, а точнее [`clickhouse-local`](/ru/concepts/features/tools-and-utilities/clickhouse-local),
 как ETL-инструмент для миграции данных из вашей текущей системы баз данных в ClickHouse Cloud, если для этой системы баз данных доступен либо
 предоставляемый ClickHouse [движок интеграции](/ru/reference/engines/table-engines/index#integration-engines), либо [табличная функция](/ru/reference/functions/table-functions/index),
 либо JDBC driver или ODBC driver от поставщика системы.
@@ -92,8 +92,7 @@ ClickHouse предоставляет движки интеграции и та�
   ## Пример: миграция из MySQL в ClickHouse Cloud с использованием движка Integration
 </div>
 
-Мы будем использовать [движок интеграции](/ru/reference/engines/table-engines/integrations/mysql) (динамически создаваемый с помощью [табличной функции mysql](/ru/reference/functions/table-functions/mysql)) для чтения данных из исходной базы данных MySQL, а [табличную функцию remoteSecure](/ru/reference/functions/table-functions/remote)
-— для записи данных в целевую таблицу в вашем сервисе ClickHouse Cloud.
+Мы будем использовать [табличный движок интеграции](/ru/reference/engines/table-engines/integrations/mysql) (динамически создаваемый с помощью [табличной функции mysql](/ru/reference/functions/table-functions/mysql)) для чтения данных из исходной базы данных MySQL, а [табличную функцию remoteSecure](/ru/reference/functions/table-functions/remote) — для записи данных в целевую таблицу в вашем сервисе ClickHouse Cloud.
 
 <Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Миграция с самоуправляемого ClickHouse" />
 

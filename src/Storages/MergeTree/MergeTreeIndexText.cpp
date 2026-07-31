@@ -1640,9 +1640,8 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
-    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
-    , granule_builder(params, tokenizer, posting_list_codec_)
+    , tokenizer(tokenizer_)
+    , granule_builder(params, tokenizer_, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
@@ -1780,13 +1779,12 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const IDataPartStorage * storage) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0, {}};
-
-    if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+    if (!indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
         return {0, {}};
 
     MergeTreeIndexSubstreams substreams =
@@ -1797,7 +1795,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeD
     };
 
     /// V2: positions file exists on disk.
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix + ".pos", ".idx", part.getDataPartStoragePtr().get()))
+    if (indexFileExistsInChecksums(checksums, path_prefix + ".pos", ".idx", storage))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
         return {2, std::move(substreams)};

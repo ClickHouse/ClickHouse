@@ -389,15 +389,6 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
-    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
-    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
-    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
-    /// an announcement was sent.
-    bool announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
-
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
@@ -455,9 +446,6 @@ public:
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
     void deferFiltersAfterFinalIfNeeded();
-
-    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
-    bool isPrewhereDeferredAfterFinal() const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
@@ -606,8 +594,6 @@ private:
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool isRowPolicyDeferredAfterFinal() const;
-
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -634,6 +620,8 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;

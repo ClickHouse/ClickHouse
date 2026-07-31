@@ -1942,16 +1942,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// There is no need to process later key columns.
     const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
 
-    /// Whether every key column the filter references has per-mark values in the in-memory primary index.
-    /// A part may hold only a prefix of the key in memory (see the `MergeTree` setting
-    /// `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). The key columns beyond that
-    /// prefix are analysed as constant coordinates over the whole universe, or over the part's partition
-    /// minmax bound, instead of the actual per-mark values, which relaxes the analysis: a granule that the
-    /// index cannot distinguish may still contain rows the filter rejects. The exact-range invariant below
-    /// therefore only holds when the index resolves the whole used prefix.
-    /// Only consulted by the debug-only consistency check on the exact ranges.
-    [[maybe_unused]] const bool used_key_prefix_loaded_in_memory = used_key_prefix_size <= index->size();
-
     /// Do not touch the part's minmax index unless some key column the filter uses has a partition-minmax
     /// bound to consume: `getMinMaxIndex` may lazy-load `minmax_*.idx` from disk, and a bound at a key
     /// position the filter never references cannot affect the analysis. The minmax index may also be
@@ -2438,44 +2428,33 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             /// The thrown message is deliberately kept constant: CI derives the failure's name
                             /// from the exception's format string, so the details go to the log instead of the
                             /// message to keep failures grouped under a single stable name.
-                            ///
-                            /// The check only means something when the in-memory index resolves every key column
-                            /// the filter uses. Otherwise the unloaded columns were analysed as constant
-                            /// coordinates, so an interior granule can legitimately hold rows the filter rejects
-                            /// even though the condition itself describes one continuous key range - the exact
-                            /// range is then simply dropped, the same as in a release build.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory)
+                            auto describe_condition = [](const KeyCondition & condition)
                             {
-                                auto describe_condition = [](const KeyCondition & condition)
-                                {
-                                    return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
-                                };
+                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
+                            };
 
-                                String conditions_description = fmt::format(
-                                    "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
-                                if (part_offset_condition_useful)
-                                    conditions_description
-                                        += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
-                                if (total_offset_condition_useful)
-                                    conditions_description
-                                        += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
+                            String conditions_description = fmt::format(
+                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
+                            if (part_offset_condition_useful)
+                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
+                            if (total_offset_condition_useful)
+                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
 
-                                LOG_ERROR(
-                                    log,
-                                    "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
-                                    "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
-                                    "not exactly continuous. This is most likely caused by a function reporting inaccurate "
-                                    "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
-                                    "Participating conditions: {}",
-                                    result_range.begin, result_range.end,
-                                    result_exact_range.begin, result_exact_range.end,
-                                    part_name,
-                                    conditions_description);
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
-                            }
+                            LOG_ERROR(
+                                log,
+                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                                "Participating conditions: {}",
+                                result_range.begin, result_range.end,
+                                result_exact_range.begin, result_exact_range.end,
+                                part_name,
+                                conditions_description);
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
 #endif
                         }
                         else
@@ -2509,7 +2488,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(*part, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName(), &part->getDataPartStorage()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
@@ -2886,7 +2865,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(*part, skip_index_minmax->getFileName()))
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName(), &part->getDataPartStorage()))
     {
         return nullptr;
     }

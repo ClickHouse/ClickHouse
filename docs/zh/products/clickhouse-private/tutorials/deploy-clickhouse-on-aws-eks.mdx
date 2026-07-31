@@ -35,7 +35,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
 ***
 
 <Steps>
-  <Step title="阶段 1：创建用于访问 ECR 的 IAM 角色" id="phase-1-create-iam-role-for-ecr-access">
+  <Step>
+    ## 阶段 1：创建用于访问 ECR 的 IAM 角色
+
     创建一个 IAM 角色，以便从 ClickHouse 私有 ECR 拉取镜像。请在您的 AWS 账户中部署此 CloudFormation 模板：
 
     ```yaml expandable
@@ -92,7 +94,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 2：复制容器镜像" id="phase-2-copy-container-images">
+  <Step>
+    ## 阶段 2：复制容器镜像
+
     先在你的账户中为每个制品创建 ECR 仓库，然后使用 skopeo 将 ClickHouse ECR 中的镜像复制到你自己的仓库。`--all` flag 会保留所有架构 (amd64、arm64) 。
 
     ```ini
@@ -121,7 +125,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 3：创建 VPC" id="phase-3-create-vpc">
+  <Step>
+    ## 阶段 3：创建 VPC
+
     创建一个至少跨 3 个可用区的 VPC，以实现高可用性。以下是一个示例配置：
 
     | 设置          | 值              |
@@ -151,7 +157,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 4：创建 EKS 集群" id="phase-4-create-eks-cluster">
+  <Step>
+    ## 阶段 4：创建 EKS 集群
+
     创建一个与阶段 3 中的 VPC 关联的 EKS 集群。该集群需要具备以下组件：
 
     * 使用 IPv4 的 CNI 插件 (例如启用 IRSA 的 [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s))
@@ -173,7 +181,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 5：创建节点组" id="phase-5-create-node-groups">
+  <Step>
+    ## 阶段 5：创建节点组
+
     创建三个节点组。**所有节点均需使用 [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) 进行身份验证。**
 
     对于 Keeper 和 server 节点组，如需跨可用区支持集群自动扩缩器，请为每个可用区创建一个节点组。
@@ -196,7 +206,7 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
 
     <Tabs>
       <Tab title="AL2023">
-        | 设置            | 值                                                                     |
+        | 配置项           | 值                                                                     |
         | ------------- | --------------------------------------------------------------------- |
         | AMI           | x86: `AL2023_x86_64` / arm64: `AL2023_ARM_64`                         |
         | 磁盘大小          | 20 GB                                                                 |
@@ -291,7 +301,7 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
 
         **注意：** 如果启动模板中已包含用户数据，请使用 MIME 边界将此脚本与其分隔开。
 
-        在第 9 阶段，将 `server.ssdCacheConfiguration.isOnEmptyDir` 保持为默认值 (`false`) 。
+        在第 9 阶段，保持 `server.ssdCacheConfiguration.isOnEmptyDir` 为默认值 (`false`) 。
       </Tab>
 
       <Tab title="Bottlerocket">
@@ -339,7 +349,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 6：创建 S3 bucket 和 IAM 角色" id="phase-6-create-s3-bucket-and-iam-roles">
+  <Step>
+    ## 阶段 6：创建 S3 bucket 和 IAM 角色
+
     ### S3 bucket
 
     在与 EKS 集群相同的区域中创建一个启用加密的 S3 bucket (Standard 类别) 。可以为每个 ClickHouse 集群使用一个 bucket，也可以共用一个 bucket，并为每个集群设置唯一的前缀。
@@ -383,7 +395,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 7：安装 Kubernetes 前置条件" id="phase-7-install-kubernetes-prerequisites">
+  <Step>
+    ## 阶段 7：安装 Kubernetes 前置条件
+
     ### 安装 VolumeSnapshot CRD 资源定义
 
     ClickHouse Operator 需要这些 CRD 资源定义。
@@ -429,7 +443,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 8：安装 Operator" id="phase-8-install-the-operator">
+  <Step>
+    ## 阶段 8：安装 Operator
+
     如有需要，请通过 Helm 登录 ECR：
 
     ```ini
@@ -473,7 +489,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 9：部署 ClickHouse 集群" id="phase-9-deploy-a-clickhouse-cluster">
+  <Step>
+    ## 阶段 9：部署 ClickHouse 集群
+
     ### 为集群命名
 
     每个 ClickHouse 集群在 EKS 集群中都需要一个**唯一名称**，请遵循以下命名规范 `$DESCRIPTOR-$LETTERS-$ORDINAL`：
@@ -561,7 +579,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 10：运行预检" id="phase-10-run-preflight-checks">
+  <Step>
+    ## 阶段 10：运行预检
+
     为验证集群的 readiness，建议运行预检。预检使用 [Troubleshoot](https://troubleshoot.sh/)，这是一个用于集群诊断的 Kubernetes 插件。
 
     ### 安装插件
@@ -601,7 +621,9 @@ description: "本教程将逐步指导你在 AWS 上使用 Amazon EKS 部署 Cli
     ***
   </Step>
 
-  <Step title="阶段 11：验证安装" id="phase-11-verify-installation">
+  <Step>
+    ## 阶段 11：验证安装
+
     ### 为 ClickHouse 服务执行端口转发
 
     ```bash

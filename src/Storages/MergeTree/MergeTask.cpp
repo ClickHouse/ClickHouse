@@ -74,9 +74,9 @@
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
-#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
 
 namespace ProfileEvents
@@ -1314,7 +1314,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
         }
-        else if (projection.with_block_number || projection.with_block_offset)
+        else if (projection.with_block_number)
         {
             /// Commit-order projections are not written during insert (block number is not yet finalized).
             /// When some source parts don't have the projection, rebuild it during the horizontal phase
@@ -2237,7 +2237,6 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
-        part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
@@ -2253,9 +2252,6 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     auto cached_index_marks = global_ctx->to->releaseCachedIndexMarks();
     for (auto & [name, marks] : cached_index_marks)
         global_ctx->cached_index_marks.emplace(name, std::move(marks));
-
-    global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
-        global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
@@ -2403,7 +2399,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName(), &part->getDataPartStorage()))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -2425,8 +2421,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,
-            global_ctx->to->getWriterSettings(),
-            ctx->need_sync);
+            global_ctx->to->getWriterSettings());
 
         ctx->merge_tasks.emplace_back(std::move(task));
     }
@@ -2981,7 +2976,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName(), &data_part.getDataPartStorage()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
@@ -3017,8 +3012,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         global_ctx->temporary_text_index_storage,
         std::move(writer_settings),
         global_ctx->compression_codec,
-        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.

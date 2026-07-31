@@ -53,8 +53,8 @@ ClickHouse Cloud가 계정에 배포하는 주요 클라우드 리소스는 다�
 
 * **VPC:** ClickHouse 배포 전용 Virtual Private Cloud입니다. ClickHouse 또는 고객이 관리할 수 있으며, 일반적으로 애플리케이션 VPC와 피어링됩니다.
 * **IAM 역할 and policies:** Kubernetes, ClickHouse 서비스, 모니터링 스택에 필요한 역할과 권한입니다. ClickHouse가 프로비저닝할 수도 있고 고객이 제공할 수도 있습니다.
-* **Storage 버킷:** 데이터 파트, 백업, 그리고 (선택적으로) 장기 메트릭 및 로그 아카이브를 저장하는 데 사용됩니다.
-* **Kubernetes 클러스터:** 클라우드 제공업체에 따라 Amazon EKS, Google GKE 또는 Azure AKS가 될 수 있으며, 아키텍처 다이어그램에 표시된 ClickHouse 서버와 지원 서비스를 호스팅합니다.
+* **Storage buckets:** 데이터 파트, 백업, 그리고 (선택적으로) 장기 메트릭 및 로그 아카이브를 저장하는 데 사용됩니다.
+* **Kubernetes cluster:** 클라우드 제공업체에 따라 Amazon EKS, Google GKE 또는 Azure AKS가 될 수 있으며, 아키텍처 다이어그램에 표시된 ClickHouse 서버와 지원 서비스를 호스팅합니다.
 
 기본적으로 ClickHouse Cloud는 새 전용 VPC를 프로비저닝하고 Kubernetes 서비스가 안전하게 운영되도록 필요한 IAM 역할을 설정합니다. 고급 네트워킹 또는 보안 요구 사항이 있는 조직을 위해 VPC와 IAM 역할을 별도로 관리할 수 있는 옵션도 제공합니다. 이 접근 방식은 네트워크 구성을 더 유연하게 사용자 지정하고 권한을 더욱 세밀하게 제어할 수 있게 해줍니다. 다만 이러한 리소스를 자체 관리하면 운영 책임이 더 커집니다.
 

@@ -21,7 +21,9 @@ description: "أنشئ شهادات TLS لخادم ClickHouse وKeeper باست�
 </div>
 
 <Steps>
-  <Step title="1. إنشاء مُصدِر شهادة" id="1-create-a-certificate-issuer">
+  <Step>
+    ### 1. إنشاء مُصدِر شهادة
+
     أنشئ `Issuer` موقَّعًا ذاتيًا ليعمل كجهة مصدِّقة للشهادات:
 
     ```yaml
@@ -37,7 +39,9 @@ description: "أنشئ شهادات TLS لخادم ClickHouse وKeeper باست�
     > **ملاحظة:** يكون `Issuer` محصورًا ضمن مساحة الاسم، ويجب أن يوجد في مساحة الاسم نفسها التي توجد فيها موارد `Certificate` التي تشير إليه. ويُعد `Issuer` الموقَّع ذاتيًا مناسبًا للاختبار. أما في بيئات الإنتاج، فراجِع [قائمة خيارات الـ مُصدِر](https://cert-manager.io/docs/configuration/issuers/).
   </Step>
 
-  <Step title="2. إنشاء موارد الشهادة" id="2-create-certificate-resources">
+  <Step>
+    ### 2. إنشاء موارد الشهادة
+
     أنشئ مورد `Certificate` لخادم ClickHouse:
 
     ```yaml
@@ -60,7 +64,9 @@ description: "أنشئ شهادات TLS لخادم ClickHouse وKeeper باست�
     كرّر ذلك مع `dnsNames` و`secretName` المناسبين لـ Keeper عند الحاجة.
   </Step>
 
-  <Step title="3. إعداد قيم Helm لاستخدام مفاتيح Secret الخاصة بـ cert-manager" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
+  <Step>
+    ### 3. إعداد قيم Helm لاستخدام مفاتيح Secret الخاصة بـ cert-manager
+
     افتراضيًا، يتوقع مخطط Helm ‏`onprem-clickhouse-cluster` مفاتيح secret بالأسماء `ca.crt` و`server.crt` و`server.key`. وينتج Cert Manager المفاتيح `ca.crt` و`tls.crt` و`tls.key`. استبدل أسماء المفاتيح في قيم Helm لديك:
 
     ```yaml

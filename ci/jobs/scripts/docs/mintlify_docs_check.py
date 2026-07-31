@@ -65,13 +65,8 @@ SNIPPET_IMPORTS_CHECK = (
     "Check snippet imports",
     "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
 )
-CHANGELOGS_CHECK = (
-    "Check changelogs",
-    "python3 ../ci/jobs/scripts/docs/changelogs_check.py .",
-)
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
-    CHANGELOGS_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
