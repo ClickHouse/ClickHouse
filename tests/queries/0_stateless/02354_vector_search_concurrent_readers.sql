@@ -3,6 +3,11 @@
 -- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
 -- read layer uses a different pool, so the concurrency this test pins would not exist.
 
+-- The test runner can enable the query result cache. A cache hit returns an earlier attempt's answer
+-- without building a plan or reading the part, which would make every assertion below replay a stale
+-- result instead of measuring this attempt. Session wide, so a future assertion cannot forget it.
+SET use_query_cache = 0;
+
 -- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
 DROP TABLE IF EXISTS vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
 
@@ -57,10 +62,12 @@ WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
 --                                                name; the prefetched pool has a different name
 --   force_data_skipping_indices = 'idx'          the query must fail rather than silently degrade to
 --                                                a brute force scan
---   use_query_cache = 0                          the test runner can enable the query result cache,
---                                                and a cache hit returns the result without reading
---                                                the part, so the system.query_log assertions below
---                                                would see no index search and a single thread
+--   use_query_cache = 0                          also pinned per statement, on top of the session wide
+--                                                SET above, because these three are the statements
+--                                                read back from system.query_log
+-- The runner injects query_cache_system_table_handling = 'ignore' in the same block that enables the
+-- cache, which is why the two statements below that read system tables never hit the
+-- QUERY_CACHE_USED_WITH_SYSTEM_TABLE throw that setting raises at its default.
 
 -- vector_search_with_rescoring = 0: the vector column is replaced by _distance, which is the first
 -- clause of the gate that stores per-part read hints.
@@ -150,10 +157,20 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
 SYSTEM FLUSH LOGS query_log;
 
 -- EXPLAIN PIPELINE above shows how wide the plan is, not that anything ran on more than one thread.
--- This reads the three executed queries instead: more than one thread was involved in executing each
--- of them, which a single stream execution cannot produce, and each did a real index search rather
--- than a brute force scan. thread_ids is the cumulative set of threads attached to the query, so it
--- does not by itself say they overlapped in time. Counting to 3 also catches a missing row.
+-- This reads the three executed queries instead, asserting three things about each:
+--   length(thread_ids) > 1        more than one thread was ever attached. thread_ids is cumulative,
+--                                "threads which has been attached to the group", so it does not say
+--                                they overlapped in time, and a single stream read already reads 2
+--                                because PullingAsyncPipelineExecutor::pull always spawns one thread
+--                                outside the max_threads limit (01283_max_threads_simple_query_
+--                                optimization.sql, 02871_peak_threads_usage.sh). Kept as that weaker
+--                                statement only
+--   USearchSearchCount > 0       a real index search happened rather than a brute force scan
+--   peak_threads_usage > 2       readers ran CONCURRENTLY: this is the maximum number of threads
+--                                simultaneously attached, which a single stream execution cannot
+--                                reach. This is the column that carries the concurrency claim
+-- Inequalities, not exact counts, because the thread count is host dependent. Counting to 3 also
+-- catches a missing row.
 -- The window has to hold exactly this attempt's rows: the test runner re-runs a whole test on retry
 -- and does not recreate a fixed --database, so an earlier attempt's rows are still visible. Counting
 -- them too would over-count, and taking only the newest three would under-count just as badly, by
@@ -165,7 +182,8 @@ SYSTEM FLUSH LOGS query_log;
 -- 03148_query_log_used_dictionaries.sql).
 SELECT 'threads_and_index',
        countIf(length(thread_ids) > 1) = 3,
-       countIf(ProfileEvents['USearchSearchCount'] > 0) = 3
+       countIf(ProfileEvents['USearchSearchCount'] > 0) = 3,
+       countIf(peak_threads_usage > 2) = 3
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase() AND type = 'QueryFinish'
