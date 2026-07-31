@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/QueryNode.h>
@@ -92,7 +93,7 @@ IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope()
     return scope_to_check;
 }
 
-AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node)
+AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node)
 {
     auto it = table_expression_node_to_data.find(table_expression_node);
     if (it == table_expression_node_to_data.end())
@@ -106,7 +107,7 @@ AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrTh
     return it->second;
 }
 
-const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const
+const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const
 {
     auto it = table_expression_node_to_data.find(table_expression_node);
     if (it == table_expression_node_to_data.end())

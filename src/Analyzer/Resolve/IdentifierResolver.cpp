@@ -573,7 +573,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -630,7 +630,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node_to_ignore,
+    const TableExpressionNodePtr & table_expression_node_to_ignore,
     const IdentifierResolveScope & scope)
 {
     bool can_bind_identifier_to_table_expression = false;
@@ -671,7 +671,7 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
     size_t identifier_column_qualifier_parts,
@@ -741,7 +741,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         std::unordered_set<Identifier> valid_identifiers;
         TypoCorrection::collectTableExpressionValidIdentifiers(
             identifier,
-            table_expression_node,
+            *table_expression_node,
             table_expression_data,
             valid_identifiers);
 
@@ -793,7 +793,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -959,15 +959,17 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_cross_join_node = table_expression_node->as<const CrossJoinNode &>();
     bool prefer_left_table = scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table];
 
     IdentifierResolveResult resolve_result;
-    for (const auto & expr : from_cross_join_node.getTableExpressions())
+    size_t num_tables = from_cross_join_node.getChildren().size();
+    for (size_t i = 0; i < num_tables; ++i)
     {
+        auto expr = from_cross_join_node.getTableExpressionTypedAt(i);
         auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
         if (!identifier)
             continue;
@@ -1100,8 +1102,8 @@ static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNod
         return true;
 
     if (const auto * join = root->as<JoinNode>())
-        return joinSubtreeContains(join->getLeftTableExpression().get(), target)
-            || joinSubtreeContains(join->getRightTableExpression().get(), target);
+        return joinSubtreeContains(join->getLeftTableExpressionNode().get(), target)
+            || joinSubtreeContains(join->getRightTableExpressionNode().get(), target);
 
     if (const auto * cross_join = root->as<CrossJoinNode>())
     {
@@ -1112,7 +1114,7 @@ static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNod
     }
 
     if (const auto * array_join = root->as<ArrayJoinNode>())
-        return joinSubtreeContains(array_join->getTableExpression().get(), target);
+        return joinSubtreeContains(array_join->getTableExpressionNode().get(), target);
 
     return false;
 }
@@ -1186,7 +1188,7 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
   * `db.table.column` are correctly attributed to the skipped side of a SEMI/ANTI JOIN.
   */
 static bool qualifierBindsToJoinSubtree(
-    const QueryTreeNodePtr & join_tree_node,
+    const TableExpressionNodePtr & join_tree_node,
     const Identifier & identifier,
     const IdentifierResolveScope & scope)
 {
@@ -1203,21 +1205,25 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), identifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), identifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier, scope);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
-            for (const auto & expr : cross.getTableExpressions())
+            size_t num_tables = cross.getTableExpressions().size();
+            for (size_t i = 0; i < num_tables; ++i)
+            {
+                auto expr = cross.getTableExpressionTypedAt(i);
                 if (qualifierBindsToJoinSubtree(expr, identifier, scope))
                     return true;
+            }
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), identifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope);
         }
         default:
             break;
@@ -1241,7 +1247,7 @@ static bool qualifierBindsToJoinSubtree(
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
@@ -1265,7 +1271,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
     std::optional<JoinTableSide> denied_qualified_access;
 
-    auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
+    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
     {
         /// Do not resolve identifiers from a non-preserved side. For an explicitly qualified
         /// identifier, defer the dedicated access-denied exception until the preserved side has
@@ -1331,16 +1337,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
     QueryTreeNodePtr right_resolved_identifier = nullptr;
     if (binds_left || !binds_right)
-        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right, JoinTableSide::Left);
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
     if (!binds_left || binds_right)
-        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right, JoinTableSide::Right);
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
 
     if (!left_resolved_identifier && !right_resolved_identifier && denied_qualified_access)
     {
@@ -1765,11 +1771,11 @@ std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identif
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
+    const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
-    auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
+    auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpressionNodeTyped(), scope);
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
@@ -1834,7 +1840,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & join_tree_node,
+    const TableExpressionNodePtr & join_tree_node,
     IdentifierResolveScope & scope)
 {
     auto join_tree_node_type = join_tree_node->getNodeType();
@@ -1901,10 +1907,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
         return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
-    if (!query_scope_node || !query_scope_node->getJoinTree())
+    if (!query_scope_node || !query_scope_node->getJoinTreeNode())
         return {};
 
-    const auto & join_tree_node = query_scope_node->getJoinTree();
+    const auto & join_tree_node = query_scope_node->getJoinTreeNodeTyped();
     return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
 }
 
