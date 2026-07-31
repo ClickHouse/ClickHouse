@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'PROJECTIONの概要'
 title: '初めてのPROJECTIONを作成する'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['リアルタイム分析', 'データウェアハウジング']
 products: ['Cloud']
 description: 'ClickHouse でPROJECTIONを使用して、同じテーブル内にデータの別のソート済みコピーを格納し、主キーに含まれないカラムに対する高速なルックアップを可能にする方法を学びます。'
 ---
@@ -15,7 +15,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
@@ -42,9 +42,7 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
 最後には、PROJECTION を追加して materialize する方法、ClickHouse がそれをどのように自動選択するか、そして materialized view ではなく PROJECTION を選ぶべき場面を理解できるようになります。
 
 <Steps titleSize="h3">
-  <Step>
-    ### projection が必要な理由を理解する
-
+  <Step title="projection が必要な理由を理解する" id="understand-why-you-need-a-projection">
     `uk_price_paid` テーブルは `(postcode, addr1, addr2)` でソートされています。つまり、`postcode`、`addr1`、`addr2` でフィルタする場合、ClickHouse は大きなデータブロックをスキップできますが、`town` でフィルタするクエリでは 3,000 万行すべてをスキャンしなければなりません。
 
     **projection** は、*同じテーブル内に* (一部またはすべての) カラムの追加のソート済みコピーを保持します。テーブルにクエリを実行すると、クエリオプティマイザは projection から読み取ったほうがベースデータより少ない granule で済むかどうかを自動的に確認し、該当する場合は透過的にそれを使用します。
@@ -58,9 +56,7 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
     詳しくは、[projection のリファレンスドキュメント](/ja/reference/statements/alter/projection)を参照してください。
   </Step>
 
-  <Step>
-    ### テーブルにプロジェクションを追加する
-
+  <Step title="テーブルにプロジェクションを追加する" id="add-a-projection-to-your-table">
     `uk_price_paid` に、`town`、`date`、`price`、`type` を `(town, date)` でソートして保存するプロジェクションを定義します。
 
     ```sql
@@ -83,9 +79,7 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
     出力に `PROJECTION uk_price_paid_by_town` ブロックが表示されるはずです。
   </Step>
 
-  <Step>
-    ### 既存データのプロジェクションをマテリアライズする
-
+  <Step title="既存データのプロジェクションをマテリアライズする" id="materialize-the-projection-for-existing-data">
     materialized view と同様に、新しく追加したプロジェクションが適用されるのは今後の insert のみです。テーブルにすでにある 3,000 万行にも適用するには、明示的にマテリアライズします:
 
     ```sql
@@ -121,9 +115,7 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
     ```
   </Step>
 
-  <Step>
-    ### テーブルにクエリを実行し、自動プロジェクションの使用を確認する
-
+  <Step title="テーブルにクエリを実行し、自動プロジェクションの使用を確認する" id="query-the-table-and-observe-automatic-projection-usage">
     では、これまでクエリしてきた**同じテーブル**に対して、`town` で絞り込むクエリを実行します:
 
     ```sql
@@ -170,15 +162,11 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
     これによりテーブル全体がスキャンされるため、読み取られる行数の違いを確認できます。
   </Step>
 
-  <Step>
-    ### プロジェクションとmaterialized viewの比較
-
+  <Step title="プロジェクションとmaterialized viewの比較" id="compare-projections-to-materialized-views">
     プロジェクションとmaterialized viewは、どちらも同じ課題、つまり異なるアクセスパターンでの読み取りを高速化するという課題を解決しますが、そのためのトレードオフは異なります。要するに、プロジェクションは同じデータに対して別のソート順が必要なだけの場合に最適です。一方、materialized viewは、データの変換や集約、あるいは別のスキーマへの振り分けが必要な場合に、より柔軟に対応できます。詳しい比較については、[materialized view とプロジェクションの比較](/ja/concepts/features/projections/materialized-views-versus-projections)を参照してください。
   </Step>
 
-  <Step>
-    ### ストレージのオーバーヘッドを確認する
-
+  <Step title="ストレージのオーバーヘッドを確認する" id="observe-the-storage-overhead">
     プロジェクションは、選択したカラムのコピーを同じテーブル内にもう1つ保存するため、ディスク使用量が増加します。`system.parts` をクエリして、`uk_price_paid` の合計サイズ (プロジェクションのデータも含まれるようになっています) を確認します。
 
     ```sql
@@ -211,9 +199,11 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
-このクイックスタートでは、`uk_price_paid` に `(town, date)` でソートされたデータを格納するPROJECTIONを追加し、別のテーブルを作成せずに town による高速なルックアップを可能にしました。また、PROJECTIONはクエリオプティマイザによって透過的に選択され、ミューテーションとの同期が保たれ、ディスク容量を消費する代わりに読み取り性能を向上させることを学びました。
+このクイックスタートでは、`uk_price_paid` に `(town, date)` でソートされたデータを格納するPROJECTIONを追加し、別のテーブルを作成せずに town による高速なルックアップを可能にしました。また、PROJECTIONはクエリオプティマイザによって透過的に選択され、mutationとの同期が保たれ、ディスク容量を消費する代わりに読み取り性能を向上させることを学びました。
 
 次に、以下のクイックスタートもご覧ください。
 

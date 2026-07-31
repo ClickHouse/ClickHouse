@@ -1,14 +1,15 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- This test validates that max_execution_speed & timeout_before_checking_execution_speed works with:
 --      a) regular query
 --      b) merge query
 -- NOTE: This test uses simple synthetic data to validate the fact throttling was applied.
 -- If throttling works as expected - each execution will take >= 1 second, as we allow not more than {max_execution_speed} records/sec
+--      (30 records are read at 15 records/sec, so ~2 seconds per query; without throttling it finishes in milliseconds)
 -- If it doesn't - each select will finish immediately, and the test will fail
--- NOTE: randomizer and parallelism are disabled as they can fiddle behaviour of merge and cause flakiness - we're checking functional correctness here
+-- NOTE: randomizer is disabled as it can fiddle the settings under test and cause flakiness - we're checking functional correctness here
 -- NOTE: sleep(0.001) per block ensures CLOCK_MONOTONIC_COARSE (ReadProgressCallback) ticks between reads - otherwise entire data can be read within a single ~10ms clock tick and skipping throttling
 
-SET max_execution_speed = 2;                      -- this is the parameter we're testing - execution to be throttled down to 2 records/sec
+SET max_execution_speed = 15;                     -- this is the parameter we're testing - execution to be throttled down to 15 records/sec
 SET timeout_before_checking_execution_speed = 0;  -- and to apply it immediately
 SET max_block_size = 1;                           -- this one needs to be tweaked to ensure only 1 record per block is read; otherwise we'll read everything at once, and throttling won't work
 

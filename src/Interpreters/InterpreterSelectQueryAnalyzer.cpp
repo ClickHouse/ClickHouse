@@ -225,7 +225,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
             replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
 
-        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
+        replacement_map.emplace(&table_node, std::move(replacement_table_expression));
     }
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }

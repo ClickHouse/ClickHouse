@@ -39,6 +39,10 @@ doc_type: 'مرجع'
 
 يقلب بتّات سلسلة الإدخال `s`، باحتمال `p` لكل بت.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -82,6 +86,10 @@ FROM numbers(3)
 يستخدم مولِّد توافق خطي بحالة ابتدائية يحصل عليها من النظام، ما يعني أنه رغم أنه يبدو عشوائيًا، فإنه ليس عشوائيًا حقيقيًا وقد يمكن التنبؤ به إذا كانت الحالة الابتدائية معروفة.
 في الحالات التي تكون فيها العشوائية الحقيقية بالغة الأهمية، فكّر في استخدام أساليب بديلة مثل استدعاءات على مستوى نظام التشغيل أو التكامل مع مكتبات خارجية.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -121,6 +129,10 @@ SELECT rand();
 يستخدم مولّدًا توافقيًا خطيًا بحالة ابتدائية تُستمد من النظام، ما يعني أنه رغم أنه يبدو عشوائيًا، فإنه ليس عشوائيًا فعليًا وقد يكون قابلًا للتنبؤ إذا كانت الحالة الابتدائية معروفة.
 في الحالات التي تكون فيها العشوائية الحقيقية ضرورية، فكّر في استخدام أساليب بديلة مثل استدعاءات على مستوى النظام أو التكامل مع مكتبات خارجية.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -129,7 +141,7 @@ rand64([x])
 
 **الوسائط**
 
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذا الوسيط هو منع [إزالة التعبيرات الفرعية الشائعة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذا الوسيط هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المُعادة**
 
@@ -155,6 +167,10 @@ SELECT rand64();
 
 يعيد عددًا عشوائيًا من نوع Float64 مولّدًا وفق [توزيع برنولي](https://en.wikipedia.org/wiki/Bernoulli_distribution).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -164,7 +180,7 @@ randBernoulli(probability[, x])
 **الوسائط**
 
 * `probability` — احتمال النجاح، على شكل قيمة بين `0` و`1`. [`Float64`](/ar/reference/data-types/float)
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في query. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في query. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المُعادة**
 
@@ -195,6 +211,10 @@ SELECT randBernoulli(.75) FROM numbers(5)
 أُضيفت في: v22.10.0
 
 تعيد عددًا عشوائيًا من النوع Float64 مأخوذًا من [التوزيع ذي الحدين](https://en.wikipedia.org/wiki/Binomial_distribution).
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعطي نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -238,6 +258,10 @@ SELECT randBinomial(100, .75) FROM numbers(5)
 
 يُرجِع عددًا عشوائيًا من النوع `Float64` بتوزيع منتظم بين `0` (شامل) و`1` (غير شامل).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للمعاملات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -271,6 +295,10 @@ SELECT randCanonical();
 أُضيف في: v22.10.0
 
 يعيد عددًا عشوائيًا من نوع Float64 مُستمدًا من [توزيع كاي-تربيع](https://en.wikipedia.org/wiki/Chi-squared_distribution).
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -320,6 +348,10 @@ SELECT randChiSquared(10) FROM numbers(5)
 
 وهي مفيدة لتطبيق بذور عشوائية أو معرّفات متسقة على جميع الصفوف في مجموعة البيانات
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -368,6 +400,10 @@ SELECT randConstant(10) AS random_value;
 
 تعيد عددًا عشوائيًا من نوع Float64 يتبع [توزيعًا أسيًا](https://en.wikipedia.org/wiki/Exponential_distribution).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -377,7 +413,7 @@ randExponential(lambda[, x])
 **الوسيطات**
 
 * `lambda` — معلمة المعدّل أو قيمة لامدا للتوزيع [`Float64`](/ar/reference/data-types/float)
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية الشائعة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في query. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في query. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المعادة**
 
@@ -409,6 +445,10 @@ SELECT randExponential(1/10) FROM numbers(5)
 
 يعيد عددًا عشوائيًا من نوع Float64 مُولَّدًا من [توزيع F](https://en.wikipedia.org/wiki/F-distribution).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -419,7 +459,7 @@ randFisherF(d1, d2[, x])
 
 * `d1` — درجة الحرية `d1` في `X = (S1 / d1) / (S2 / d2)`. [`Float64`](/ar/reference/data-types/float)
 * `d2` — درجة الحرية `d2` في `X = (S1 / d1) / (S2 / d2)`. [`Float64`](/ar/reference/data-types/float)
-* `x` — اختياري ويتم تجاهله. الغرض الوحيد من هذه الوسيطة هو منع [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويتم تجاهله. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المعادة**
 
@@ -450,6 +490,10 @@ SELECT randFisherF(10, 3) FROM numbers(5)
 أُضيف في: v22.10.0
 
 يُرجع عددًا عشوائيًا من نوع Float64 مُولَّدًا من [توزيع لوغ-طبيعي](https://en.wikipedia.org/wiki/Log-normal_distribution).
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصيغة**
 
@@ -493,6 +537,10 @@ SELECT randLogNormal(100, 5) FROM numbers(5)
 
 يعيد عددًا عشوائيًا من نوع Float64 مُستمدًّا من [توزيع ذي الحدين السالب](https://en.wikipedia.org/wiki/Negative_binomial_distribution).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -503,7 +551,7 @@ randNegativeBinomial(experiments, probability[, x])
 
 * `experiments` — عدد التجارب. [`UInt64`](/ar/reference/data-types/int-uint)
 * `probability` — `احتمال الفشل في كل تجربة، كقيمة بين `0` و`1`. [`Float64&#96;](/reference/data-types/float)
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [حذف التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المعادة**
 
@@ -534,6 +582,10 @@ SELECT randNegativeBinomial(100, .75) FROM numbers(5)
 أُضيفت في: v22.10.0
 
 تُرجع عددًا عشوائيًا من نوع Float64 مأخوذًا من [التوزيع الطبيعي](https://en.wikipedia.org/wiki/Normal_distribution).
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -577,6 +629,10 @@ SELECT randNormal(10, 2) FROM numbers(5)
 
 تُرجع عددًا عشوائيًا من نوع Float64 مُولَّدًا وفق [توزيع بواسون](https://en.wikipedia.org/wiki/Poisson_distribution).
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -618,6 +674,10 @@ SELECT randPoisson(10) FROM numbers(5)
 
 يعيد عددًا عشوائيًا من نوع Float64 مأخوذًا من [توزيع ستودنت t](https://en.wikipedia.org/wiki/Student%27s_t-distribution).
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -658,6 +718,10 @@ SELECT randStudentT(10) FROM numbers(5)
 قُدِّم في: v22.10.0
 
 يعيد عددًا عشوائيًا من النوع Float64 مأخوذًا بتوزيع منتظم من المجال $[\min, \max]$.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **البنية**
 
@@ -702,13 +766,17 @@ SELECT randUniform(5.5, 10) FROM numbers(5)
 يولّد سلسلة نصية عشوائية ثابتة الطول بعدد الأحرف المحدد.
 ولا يُشترط أن تكون الأحرف المُعادة من نوع ASCII، أي إنها قد لا تكون قابلة للطباعة.
 
+<Note>
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
 randomFixedString(length)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `length` — طول السلسلة بالبايت. [`UInt*`](/ar/reference/data-types/int-uint)
 
@@ -725,9 +793,9 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 ```response title=Response
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
 ```
 
 <div id="randomPrintableASCII">
@@ -740,6 +808,10 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 
 إذا مرّرت `length < 0`، فسيكون سلوك الدالة غير معرّف.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
@@ -749,7 +821,7 @@ randomPrintableASCII(length[, x])
 **الوسيطات**
 
 * `length` — طول السلسلة بالبايت. [`(U)Int*`](/ar/reference/data-types/int-uint)
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية الشائعة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المُعادة**
 
@@ -780,6 +852,10 @@ SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers 
 يُنشئ سلسلة نصية عشوائية بعدد الأحرف المحدد.
 الأحرف المُعادة ليست بالضرورة من نوع ASCII، أي إنها قد لا تكون قابلة للطباعة.
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -789,7 +865,7 @@ randomString(length[, x])
 **الوسيطات**
 
 * `length` — طول السلسلة بالبايت. [`(U)Int*`](/ar/reference/data-types/int-uint)
-* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية الشائعة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
+* `x` — اختياري ويُتجاهل. الغرض الوحيد من هذه الوسيطة هو منع [إزالة التعبيرات الفرعية المشتركة](/ar/reference/functions/regular-functions/overview#common-subexpression-elimination) عند استخدام استدعاء الدالة نفسه عدة مرات في استعلام. [`Any`](/ar/reference/data-types/index)
 
 **القيمة المُعادة**
 
@@ -818,7 +894,11 @@ SELECT randomString(5) AS str FROM numbers(2)
 لا يُعاد أيٌّ من نقاط الترميز من [المستويات](https://en.wikipedia.org/wiki/Plane_\(Unicode\)) غير المعيّنة (المستويات من 4 إلى 13).
 ومع ذلك، قد لا يتمكن العميل الذي يتفاعل مع خادم ClickHouse من عرض سلسلة UTF-8 الناتجة بشكل صحيح.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 randomStringUTF8(length)
@@ -842,7 +922,7 @@ SELECT randomStringUTF8(13)
 
 ```response title=Response
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
 ```
 
