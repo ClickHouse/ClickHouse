@@ -6,8 +6,6 @@ title: 'Bitmap Functions'
 doc_type: 'reference'
 ---
 
-# Bitmap functions
-
 Bitmaps can be constructed in two ways. The first way is constructed by aggregation function groupBitmap with `-State`, the other way is to constructed a bitmap from an Array object.
 
 <!-- 

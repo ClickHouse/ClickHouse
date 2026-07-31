@@ -1,0 +1,148 @@
+-- pql::Count --
+5
+-- pql::DoubleCount --
+1
+-- pql::Extend --
+ATLANTIC SOUTH	Waterspout	0	1
+FLORIDA	Heavy Rain	0	1
+FLORIDA	Tornado	6200000	1
+GEORGIA	Thunderstorm Wind	2000	1
+MISSISSIPPI	Thunderstorm Wind	20000	1
+-- pql::ExtendExprOnly --
+ATLANTIC SOUTH	Waterspout	0	42
+FLORIDA	Heavy Rain	0	42
+FLORIDA	Tornado	6200000	42
+GEORGIA	Thunderstorm Wind	2000	42
+MISSISSIPPI	Thunderstorm Wind	20000	42
+-- pql::If --
+parser_test.go	Large
+parser.go	Smol
+lex.go	Smol
+lex_test.go	Smol
+ast.go	Smol
+golden_test.go	Smol
+pql.go	Smol
+clickhouse_test.go	Smol
+pql_test.go	Smol
+tokenkind_string.go	Smol
+-- pql::In --
+11503	GEORGIA	Thunderstorm Wind	2000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::InAnd --
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::Let --
+Alabama	Montgomery
+Alaska	Juneau
+Arizona	Phoenix
+-- pql::Limit --
+11032	ATLANTIC SOUTH	Waterspout	0
+11098	FLORIDA	Heavy Rain	0
+60913	FLORIDA	Tornado	6200000
+-- pql::OpParens --
+4	TokenString
+5	TokenAnd
+6	TokenOr
+7	TokenPipe
+-- pql::Project --
+ATLANTIC SOUTH	Waterspout	0
+FLORIDA	Heavy Rain	0
+FLORIDA	Tornado	6200000
+GEORGIA	Thunderstorm Wind	2000
+MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::ProjectAfterTake --
+ATLANTIC SOUTH	Waterspout	0
+FLORIDA	Heavy Rain	0
+GEORGIA	Thunderstorm Wind	2000
+-- pql::ProjectAssignment --
+11032	0
+11098	0
+60913	6200
+11503	2
+13913	20
+-- pql::ProjectStrcat --
+Waterspout in ATLANTIC SOUTH
+Heavy Rain in FLORIDA
+Tornado in FLORIDA
+Thunderstorm Wind in GEORGIA
+Thunderstorm Wind in MISSISSIPPI
+-- pql::Sort --
+60913	FLORIDA	Tornado	6200000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+11503	GEORGIA	Thunderstorm Wind	2000
+11032	ATLANTIC SOUTH	Waterspout	0
+11098	FLORIDA	Heavy Rain	0
+-- pql::SortLimit --
+60913	FLORIDA	Tornado	6200000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+11503	GEORGIA	Thunderstorm Wind	2000
+-- pql::Summarize --
+.	0	78
+.	1	206
+parser	0	1757
+parser	1	1491
+-- pql::SummarizeBy --
+.
+parser
+-- pql::SummarizeCount --
+.	0	1
+.	1	3
+parser	0	4
+parser	1	2
+-- pql::SummarizeCountIf --
+.	1
+parser	4
+-- pql::SummarizeMinMax --
+24	1108
+-- pql::SummarizeMinMaxUnnamed --
+24	1108
+-- pql::Table --
+11032	ATLANTIC SOUTH	Waterspout	0
+11098	FLORIDA	Heavy Rain	0
+60913	FLORIDA	Tornado	6200000
+11503	GEORGIA	Thunderstorm Wind	2000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::Top --
+parser	parser_test.go	1108
+parser	parser.go	878
+parser	lex.go	681
+-- pql::Where --
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::WhereCaseInsensitiveEq --
+11503	GEORGIA	Thunderstorm Wind	2000
+-- pql::WhereCaseInsensitiveNE --
+11032	ATLANTIC SOUTH	Waterspout	0
+11098	FLORIDA	Heavy Rain	0
+60913	FLORIDA	Tornado	6200000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
+-- pql::WhereFunc --
+1	TokenIdentifier
+-1	TokenError
+-- pql::WhereIsNotNull --
+1	TokenIdentifier
+2	TokenQuotedIdentifier
+3	TokenNumber
+4	TokenString
+5	TokenAnd
+6	TokenOr
+7	TokenPipe
+-1	TokenError
+-- pql::WhereNot --
+-1	TokenError
+-- pql::WhereNotEqualsNegative --
+1	TokenIdentifier
+2	TokenQuotedIdentifier
+3	TokenNumber
+4	TokenString
+5	TokenAnd
+6	TokenOr
+7	TokenPipe
+-- pql::WhereToLower --
+60913	FLORIDA	Tornado	6200000
+-- pql::WhereToUpper --
+60913	FLORIDA	Tornado	6200000
+-- pql::WhereTrue --
+11032	ATLANTIC SOUTH	Waterspout	0
+11098	FLORIDA	Heavy Rain	0
+60913	FLORIDA	Tornado	6200000
+11503	GEORGIA	Thunderstorm Wind	2000
+13913	MISSISSIPPI	Thunderstorm Wind	20000
