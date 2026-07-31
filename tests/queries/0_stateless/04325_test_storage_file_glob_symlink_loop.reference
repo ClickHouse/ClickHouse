@@ -26,4 +26,6 @@ canonical-dedup-through-ancestor-symlink
 1
 branching-ancestor-loops-are-pruned
 4
+dense-alias-graph-is-bounded
+10
 alive

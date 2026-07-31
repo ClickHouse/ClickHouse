@@ -68,7 +68,6 @@
 #include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
-#include <base/scope_guard.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -179,7 +178,7 @@ void listFilesWithRegexpMatchingImpl(
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth,
-    std::unordered_set<std::string> & active_frames_on_stack)
+    std::unordered_set<std::string> & visited_frames)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -281,40 +280,39 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
 
-    /// Track this directory's canonical path on the recursion stack while the REMAINING
-    /// pattern for this frame (`for_match`) still contains a whole-segment `**`, i.e. while
-    /// unbounded recursion is still reachable from here. This covers the `**` segment itself
-    /// and every finite `*` ancestor traversed before reaching a `**` (their remaining pattern
-    /// still has the `**` ahead), so a deeper symlink resolving to one of those ancestors
-    /// (including the initial glob root) is recognized. Inside a BOUNDED finite tail after the
-    /// last `**` no unbounded recursion is possible, so nothing is tracked there and a finite
-    /// suffix like `*/*.txt` may legitimately reach a file through a symlink whose canonical
-    /// equals an on-stack ancestor (`file('root/**/mid/*/*.txt')` with
-    /// `root/deep/mid/back -> ../..`). Purely finite globs never track anything, so
-    /// `file('root/*/*/*.txt')` with `root/a/back -> ..` keeps working.
+    /// Walk each frame at most once, where a frame is the canonical directory together with the
+    /// pattern still to be matched there. That pair is the whole state of the walk, so a frame
+    /// repeating it can only redo what another frame has already done, whether that frame is an
+    /// enclosing one (a symlink cycle) or an already-finished sibling (an alias reaching the same
+    /// directory by another name). Both are pruned here.
     ///
-    /// A frame is identified by BOTH the canonical directory and the pattern still to be
-    /// matched there, because that pair is the whole state of the walk: given the same
-    /// directory and the same remaining pattern, the frame can only repeat what an outer frame
-    /// is already doing, which is exactly a cycle. Re-entering the same directory with a
-    /// DIFFERENT remaining pattern is legitimate new work and must proceed: `**` matches zero
-    /// directory levels, so the zero-level re-application enters the current directory with a
-    /// shorter suffix and can reach a file no other path reaches (e.g.
-    /// `file('root/*/**/top.txt')` with `root/x/back -> ..` reaches `root/top.txt` only as
-    /// (`root`, `/top.txt`), while the outer frame holds (`root`, `/*/**/top.txt`)). Keying on
-    /// the directory alone conflates the two and silently drops such matches.
+    /// Re-entering the same directory with a DIFFERENT remaining pattern is legitimate new work
+    /// and must proceed: `**` matches zero directory levels, so the zero-level re-application
+    /// enters the current directory with a shorter suffix and can reach a file no other path
+    /// reaches (e.g. `file('root/*/**/top.txt')` with `root/x/back -> ..` reaches `root/top.txt`
+    /// only as (`root`, `/top.txt`), while the enclosing frame holds (`root`, `/*/**/top.txt`)).
+    /// Keying on the directory alone conflates the two and silently drops such matches.
     ///
-    /// Termination still holds: every remaining pattern is a suffix of the expanded pattern, so
-    /// the set of reachable (canonical directory, remaining pattern) pairs is finite and each is
-    /// on the stack at most once.
+    /// Tracking is limited to frames whose remaining pattern still contains a whole-segment `**`,
+    /// i.e. those from which unbounded recursion is still reachable. That covers the `**` segment
+    /// itself and every finite `*` ancestor traversed before reaching a `**`, since their
+    /// remaining pattern still has the `**` ahead. Inside a BOUNDED finite tail after the last
+    /// `**` no unbounded recursion is possible, so nothing is tracked and a finite suffix like
+    /// `*/*.txt` may legitimately reach a file through a symlink resolving to an ancestor
+    /// (`file('root/**/mid/*/*.txt')` with `root/deep/mid/back -> ../..`). Purely finite globs
+    /// never track anything, so `file('root/*/*/*.txt')` with `root/a/back -> ..` keeps working.
+    ///
+    /// Termination and completeness both hold: every remaining pattern is a suffix of the
+    /// expanded pattern, so the set of reachable pairs is finite, and skipping a repeated pair
+    /// cannot lose a match because the frame that claimed it enumerates exactly the same paths.
+    /// The set is scoped per expanded pattern, so brace-expansion alternatives never share it.
     ///
     /// This prunes TRAVERSAL, which is a different job from the output deduplication in
     /// `add_matched_path`: that one keeps a repeated visit from emitting a row twice, while this
-    /// one keeps the walk from making the repeated visit at all. Both are needed. Several sibling
-    /// ancestor symlinks under one root let an unpruned walk re-descend every branch each time it
-    /// re-enters the root, so the visited-path count grows exponentially until the kernel symlink
-    /// limit stops it, which deduplication cannot prevent because it filters results.
-    std::optional<std::string> active_frame_to_erase;
+    /// one keeps the walk from making the repeated visit at all. Both are needed. Without pruning,
+    /// several sibling symlinks under one root let the walk re-descend every branch on each
+    /// re-entry, so the visited-path count grows combinatorially until the kernel symlink limit
+    /// stops it, which deduplication cannot prevent because it only filters results.
     if (patternHasGlobstarSegment(suffix_with_globs))
     {
         std::error_code prefix_canon_ec;
@@ -327,17 +325,9 @@ void listFilesWithRegexpMatchingImpl(
         /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
         /// ancestor subtree would be rescanned once per loop instead of being pruned.
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
-        auto frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
-        if (!active_frames_on_stack.insert(frame_key).second)
-            return; /// Same directory AND same remaining pattern already in progress: real cycle.
-        active_frame_to_erase = std::move(frame_key);
+        if (!visited_frames.emplace(prefix_canonical.string() + '\0' + suffix_with_globs).second)
+            return; /// This directory has already been walked with this remaining pattern.
     }
-    /// Erase by key (not iterator): nested inserts during recursion may rehash and
-    /// invalidate iterators, but `unordered_set::erase(const Key&)` is unaffected.
-    SCOPE_EXIT({
-        if (active_frame_to_erase)
-            active_frames_on_stack.erase(*active_frame_to_erase);
-    });
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
@@ -349,7 +339,7 @@ void listFilesWithRegexpMatchingImpl(
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
                                         total_bytes_to_read, result, matched_paths, false, depth + 1,
-                                        active_frames_on_stack);
+                                        visited_frames);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -409,11 +399,11 @@ void listFilesWithRegexpMatchingImpl(
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, active_frames_on_stack);
+                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, visited_frames);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1, active_frames_on_stack);
+                                                total_bytes_to_read, result, matched_paths, false, depth + 1, visited_frames);
         }
     }
 }
@@ -435,15 +425,15 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// same concrete file once per alternative, rather than being silently collapsed.
         std::unordered_set<std::string> matched_paths;
 
-        /// Tracks the (canonical directory, remaining pattern) frames currently on the recursion
-        /// stack so symlink cycles are broken without affecting sibling brace-expansion
-        /// alternatives. Scoped per expanded pattern for the same reason as `matched_paths`. Only
-        /// frames whose remaining pattern still has a whole-segment `**` are tracked, i.e. those
-        /// that can still recurse without bound (see `patternHasGlobstarSegment` inside
-        /// `listFilesWithRegexpMatchingImpl`).
-        std::unordered_set<std::string> active_frames_on_stack;
+        /// Records the (canonical directory, remaining pattern) frames the walk has already
+        /// entered, so a symlink cycle or an aliased directory is not walked twice. Scoped per
+        /// expanded pattern for the same reason as `matched_paths`, which also keeps sibling
+        /// brace-expansion alternatives independent. Only frames whose remaining pattern still has
+        /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
+        /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
+        std::unordered_set<std::string> visited_frames;
 
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0, active_frames_on_stack);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0, visited_frames);
     }
 
     return result;

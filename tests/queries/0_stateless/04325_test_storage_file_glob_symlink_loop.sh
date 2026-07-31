@@ -103,7 +103,7 @@ ln -s ../.. "$TEST_DIR_ABS/overprune/root/deep/mid/back"
 # re-application chain: both `**` segments match zero directory levels and the
 # trailing `*.txt` is re-applied at `root` itself. Each re-application re-enters
 # `root` with a SHORTER remaining pattern while the caller frame at `root` is still
-# in progress, so the recursion-stack set must distinguish those frames or
+# in progress, so the visited-frame set must distinguish those frames or
 # `top.txt` is dropped (0 rows instead of 1). The `back -> ..` symlink still forms
 # a genuine loop during the recursive descent, which the guard breaks, so the walk
 # terminates with no `Too many levels of symbolic links` exception. 04489 covers
@@ -119,7 +119,7 @@ ln -s .. "$TEST_DIR_ABS/globstarloop/root/a/back"
 # canonical(`root`), and there the `**` matches zero levels so `top.txt` is
 # re-applied. That inner frame is (`root`, `/top.txt`) while the outer frame still
 # in progress is (`root`, `/*/**/top.txt`): same directory, different remaining
-# pattern, therefore new work and not a cycle. Keying the recursion-stack set on the
+# pattern, therefore new work and not a cycle. Keying the visited-frame set on the
 # canonical directory alone conflates the two and returns 0 rows.
 mkdir -p "$TEST_DIR_ABS/reenter/root/x"
 printf "row1\n" > "$TEST_DIR_ABS/reenter/root/top.txt"
@@ -129,7 +129,7 @@ ln -s .. "$TEST_DIR_ABS/reenter/root/x/back"
 # `dedup/root/file.txt`. A recursive `root/**/file.txt` walk names it directly and
 # again as `root/a/back/file.txt`. Both spellings resolve to one file but their
 # lexically-normal forms differ, so a lexical deduplication key counts 2 rows.
-# Because the recursion-stack set permits re-entering a directory with a different
+# Because the visited-frame set permits re-entering a directory with a different
 # remaining pattern, canonical deduplication is what stops a symlinked ancestor from
 # double-counting a file.
 mkdir -p "$TEST_DIR_ABS/dedup/root/a"
@@ -154,6 +154,25 @@ for b in b1 b2 b3; do
     ln -s ../.. "$TEST_DIR_ABS/branching/root/$b/up"
 done
 
+# A dense alias graph with no cycle through an ancestor: ten sibling directories, each
+# holding a symlink to every other one, so every directory is reachable under many
+# different names. Nothing here loops back to the root, so a guard that only looks at
+# the frames currently being descended prunes none of it, and the walk enumerates paths
+# combinatorially in the number of aliases. Recording every frame the walk has entered,
+# rather than only the ones still in progress, bounds this to one visit per directory
+# per remaining pattern, which is safe because a repeated frame enumerates exactly the
+# paths the first one already did. Only the six real files are reported.
+mkdir -p "$TEST_DIR_ABS/aliasgraph/root"
+for i in $(seq 1 10); do
+    mkdir -p "$TEST_DIR_ABS/aliasgraph/root/d$i"
+    printf "row1\n" > "$TEST_DIR_ABS/aliasgraph/root/d$i/f.txt"
+done
+for i in $(seq 1 10); do
+    for j in $(seq 1 10); do
+        [ "$i" != "$j" ] && ln -s "../d$j" "$TEST_DIR_ABS/aliasgraph/root/d$i/to$j"
+    done
+done
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -163,14 +182,14 @@ trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 ln -s ../../dir1 "$TEST_DIR_ABS/loop/dir1/dir2/loop_to_root"
 
 # Real cycle: recursive `**` glob would otherwise descend the loop until ELOOP.
-# With recursion-stack tracking the loop is broken and the real `file.txt` is
+# With visited-frame tracking the loop is broken and the real `file.txt` is
 # read.
 echo "ancestor-loop"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/loop/dir1/**/*.txt', 'TSV', 'val String')"
 
 # Brace expansion: `{txt,csv}` expands into two separate walks. Both walks must
 # enter `subdir` and report their respective files. With a global visited-path
-# set the second walk would silently skip `subdir`; with recursion-stack
+# set the second walk would silently skip `subdir`; with per-pattern visited-frame
 # tracking both files are returned.
 echo "brace-expansion"
 $CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/brace/d/**/*.{txt,csv}', 'TSV', 'val String') ORDER BY _file"
@@ -180,7 +199,7 @@ $CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/brace/d/**/*.
 echo "independent-aliases"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliases/{parentA,parentB}/**/*.txt', 'TSV', 'val String')"
 
-# Descendant-to-root: must return exactly 1 row (not 2). The recursion-stack
+# Descendant-to-root: must return exactly 1 row (not 2). The visited-frame
 # guard inserts the initial glob root on entry, so a descendant `back` symlink
 # whose canonical is the root is rejected as a cycle and the sibling `b/file.txt`
 # is read only once via the top-level walk.
@@ -233,7 +252,7 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/globstarloo
 # Re-entry with a different remaining pattern: both spellings must return 1. The
 # only route to `top.txt` re-enters the on-stack root carrying a shorter remaining
 # pattern, once with the symlink reached through a finite `*` and once with it named
-# literally. Keying the recursion-stack set on the canonical directory alone prunes
+# literally. Keying the visited-frame set on the canonical directory alone prunes
 # that re-entry and both return 0.
 echo "reenter-same-dir-different-remaining-pattern"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/root/*/**/top.txt', 'TSV', 'val String')"
@@ -250,10 +269,19 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/
 # branch from the re-entered root, so the visited-path count grows exponentially and
 # the walk runs until the kernel symlink limit. Output deduplication cannot prevent
 # that because it filters results rather than traversal, so this is the assertion
-# that fails if the recursion-stack pruning is removed while every other scenario
+# that fails if the visited-frame pruning is removed while every other scenario
 # here still passes.
 echo "branching-ancestor-loops-are-pruned"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/branching/root/**/*.txt', 'TSV', 'val String')"
+
+# Dense alias graph without any ancestor cycle: must return 10 and must finish. Every
+# directory is reachable under many names, so pruning only the frames still being
+# descended leaves the path count growing combinatorially with the number of aliases.
+# This is the assertion that fails if completed frames are forgotten rather than kept.
+# Measured on this shape, forgetting them costs 0.5s at six aliases, 30s at eight and
+# over 700s at ten, while keeping them stays at about 0.1s throughout.
+echo "dense-alias-graph-is-bounded"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasgraph/root/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
