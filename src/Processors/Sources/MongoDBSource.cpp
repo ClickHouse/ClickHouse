@@ -3,6 +3,7 @@
 #if USE_MONGODB
 #include <Processors/Sources/MongoDBSource.h>
 
+#include <Common/config_version.h>
 #include <vector>
 
 #include <Columns/ColumnArray.h>
@@ -19,6 +20,9 @@
 #include <Common/logger_useful.h>
 #include <base/range.h>
 
+#include <mongoc/mongoc-client.h>
+#include <mongocxx/client.hpp>
+
 namespace DB
 {
 
@@ -26,6 +30,34 @@ namespace ErrorCodes
 {
 extern const int TYPE_MISMATCH;
 extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+mongocxx::client createMongoDBClient(const mongocxx::uri & uri)
+{
+    mongocxx::client client{uri};
+
+    /// Access the underlying mongoc_client_t through the internal bridge
+    /// to append ClickHouse metadata to the MongoDB driver handshake.
+    /// The C++ driver's public metadata API is not yet available in the pinned version.
+    mongoc_client_t * mongoc_client = mongocxx::v_noabi::client::internal::as_mongoc(client);
+
+    if (!mongoc_client_append_metadata(
+            mongoc_client,
+            "ClickHouse",
+            VERSION_STRING,
+            nullptr))
+    {
+        LOG_WARNING(
+            getLogger("MongoDBSource"),
+            "Failed to append ClickHouse metadata to the MongoDB client handshake");
+    }
+
+    return client;
+}
+
 }
 
 using BSONCXXHelper::BSONElementAsNumber;
@@ -161,7 +193,7 @@ MongoDBSource::MongoDBSource(
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
     : ISource{sample_block_}
-    , client{uri}
+    , client{createMongoDBClient(uri)}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
