@@ -138,6 +138,7 @@ public:
 
             /// Replace original aggregation step with MergingAggregated step
             aggregator_params.only_merge = true; /// Merge partial aggregation results
+            aggregator_params.top_k.reset(); /// The heap prunes in the replicas' partial aggregation; the merge path ignores it
             const bool memory_efficient_aggregation = false;
             QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
                 new_split_node.step->getOutputHeader(),
