@@ -260,12 +260,14 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
--- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
--- carries no granule counts, which is what happens with the pin removed. Require instead that the plan
--- names a Partition section and leaves granules unread, so neither a full scan nor a missing section passes.
-SELECT 'partition_key_prunes_something', (SELECT countIf(explain LIKE '%Partition%') > 0
-    AND sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
-      < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
+-- The equality above is satisfied by two full scans and measures nothing at all if the pinned plan carries
+-- no granule counts, which is what happens with the pin removed, so assert the narrowing separately. The
+-- ratio is read from the Min-Max section by name rather than summed over every section. Each stage's
+-- denominator is the previous stage's numerator, and on a partition key Min-Max narrows to the surviving
+-- partitions first, so the Partition stage that follows it always reports N/N and cannot be asserted on.
+SELECT 'partition_key_prunes_something', (SELECT
+    toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: (\\d+)/'))
+      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: \\d+/(\\d+)'))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
