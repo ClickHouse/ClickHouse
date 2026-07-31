@@ -24,8 +24,8 @@
 # `KILL QUERY`; randomized query limits would break that -- e.g. a low `max_rows_to_read` /
 # `max_memory_usage` aborts it early, and a random `max_execution_time` would terminate it instead of
 # our `KILL`. We need the read/time/memory limits left at their (unlimited) defaults.
-# no-random-merge-tree-settings: a randomized index_granularity changes the granule/throttle cadence
-# and the write cost assumptions here.
+# no-random-merge-tree-settings: a randomized index_granularity changes the granule cadence and the
+# write cost assumptions here.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -88,8 +88,8 @@ run_case()
         timeout 15 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null || true
         kill "$insert_pid" 2>/dev/null
         wait "$insert_pid" 2>/dev/null
-    # On the fixed server the cancel is observed at the next throttled check (within one 65536-row
-    # batch, well under a second even on sanitizer builds) and `KILL QUERY` returns quickly. The bound
+    # On the fixed server the cancel is observed at the next granule boundary (well under a second even
+    # on sanitizer builds) and `KILL QUERY` returns quickly. The bound
     # is far below the full-block ZSTD(22) write time (tens of seconds), so a regression -- KILL ignored
     # until the whole block is written -- still trips the timeout instead of hanging.
     elif timeout 15 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"

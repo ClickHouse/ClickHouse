@@ -93,10 +93,11 @@ protected:
 
     /// Observe query cancellation / time limits while writing column data. Writing a block goes
     /// granule by granule with no other cancellation point, so a fuzzed/huge block can keep a
-    /// cancelled INSERT running for minutes. Counts rows and only checks every
-    /// `cancellation_check_period_rows` rows, so it stays cheap on the hot write path and never
-    /// degenerates to a per-row check at small index_granularity. No-op outside a query (e.g. merges).
-    void checkWriteCancellation(size_t rows_written);
+    /// cancelled INSERT running for minutes. Called for every granule: the check is a single atomic
+    /// load of the query's `is_killed` flag, which is negligible next to serializing a granule, and
+    /// any row- or byte-based throttle would leave some shape of block (few but very large rows)
+    /// uninterruptible. No-op outside a query (e.g. merges).
+    void checkWriteCancellation();
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
@@ -209,8 +210,6 @@ private:
     /// on the query/merge thread). Null when there is no query in scope (e.g. background merges).
     std::shared_ptr<QueryStatus> cancellation_query_status;
     bool cancellation_query_status_initialized = false;
-    size_t rows_since_cancellation_check = 0;
-    static constexpr size_t cancellation_check_period_rows = 1ULL << 16;
 };
 
 }

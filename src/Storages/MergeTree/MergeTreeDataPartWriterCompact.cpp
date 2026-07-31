@@ -318,7 +318,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
-        checkWriteCancellation(granule.rows_to_write);
+        checkWriteCancellation();
 
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.

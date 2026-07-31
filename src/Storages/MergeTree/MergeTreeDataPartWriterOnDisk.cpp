@@ -275,7 +275,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         last_index_block = primary_index_block;
 }
 
-void MergeTreeDataPartWriterOnDisk::checkWriteCancellation(size_t rows_written)
+void MergeTreeDataPartWriterOnDisk::checkWriteCancellation()
 {
     if (!cancellation_query_status_initialized)
     {
@@ -287,19 +287,17 @@ void MergeTreeDataPartWriterOnDisk::checkWriteCancellation(size_t rows_written)
     if (!cancellation_query_status)
         return;
 
-    rows_since_cancellation_check += rows_written;
-    if (rows_since_cancellation_check >= cancellation_check_period_rows)
-    {
-        rows_since_cancellation_check = 0;
-        /// `is_killed` is set by an explicit KILL QUERY and by `CancellationChecker` when
-        /// `max_execution_time` is exceeded in 'throw' mode, so this single check covers both
-        /// cancellation and throw-mode timeouts. In 'break' mode the flag stays unset and the
-        /// writer finishes the current block, yielding the graceful partial INSERT that mode promises.
-        /// `throwIfKilled` preserves the recorded cancel reason: it throws `TIMEOUT_EXCEEDED` for a
-        /// throw-mode `max_execution_time` and `QUERY_WAS_CANCELLED` for an explicit kill, so clients
-        /// keep seeing the right error code when the query stops inside column serialization.
-        cancellation_query_status->throwIfKilled();
-    }
+    /// `is_killed` is set by an explicit KILL QUERY and by `CancellationChecker` when
+    /// `max_execution_time` is exceeded in 'throw' mode, so this single check covers both
+    /// cancellation and throw-mode timeouts. In 'break' mode the flag stays unset and the
+    /// writer finishes the current block, yielding the graceful partial INSERT that mode promises.
+    /// `throwIfKilled` preserves the recorded cancel reason: it throws `TIMEOUT_EXCEEDED` for a
+    /// throw-mode `max_execution_time` and `QUERY_WAS_CANCELLED` for an explicit kill, so clients
+    /// keep seeing the right error code when the query stops inside column serialization.
+    /// In the common (not cancelled) case this is a single atomic load, so it is called for every
+    /// granule: a row-count throttle would leave byte-heavy blocks with few very large rows
+    /// uninterruptible, which is exactly the case this cancellation point is for.
+    cancellation_query_status->throwIfKilled();
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
