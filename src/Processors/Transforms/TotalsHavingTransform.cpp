@@ -5,6 +5,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -14,6 +15,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char totals_having_transform_pause[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -209,6 +215,8 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         }
 
         expression->execute(finalized_block, num_rows, false, false, [this]() { return isCancelled(); });
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
 
         if (isCancelled())
         {
