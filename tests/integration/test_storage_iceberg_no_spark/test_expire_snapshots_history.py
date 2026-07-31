@@ -32,18 +32,34 @@ def _write_next_metadata(instance, table_name, meta, prev_path):
 
 
 def _history(instance, table_name):
-    """snapshot_id -> (made_current_at, is_current_ancestor) for every row of iceberg_history."""
+    """snapshot_id -> (made_current_at_ms, is_current_ancestor) for every row of iceberg_history.
+
+    `made_current_at` is read as unix milliseconds so it can be compared against the raw
+    `timestamp-ms` of the metadata it is supposed to come from. That round-trips exactly: the
+    column is DateTime64(6) and Iceberg timestamps are whole milliseconds.
+    """
     raw = instance.query(
-        f"SELECT snapshot_id, toString(made_current_at), is_current_ancestor "
+        f"SELECT snapshot_id, toUnixTimestamp64Milli(made_current_at), is_current_ancestor "
         f"FROM system.iceberg_history "
         f"WHERE database = 'default' AND table = '{table_name}' "
         f"ORDER BY snapshot_id FORMAT TSV"
     ).strip()
     result = {}
     for line in raw.split("\n"):
-        snapshot_id, made_current_at, is_current_ancestor = line.split("\t")
-        result[snapshot_id] = (made_current_at, is_current_ancestor)
+        snapshot_id, made_current_at_ms, is_current_ancestor = line.split("\t")
+        result[snapshot_id] = (int(made_current_at_ms), is_current_ancestor)
     return result
+
+
+def _expected_made_current_at_ms(meta):
+    """snapshot_id -> the timestamp-ms `made_current_at` must report, per the documented contract.
+
+    The snapshot-log entry wins when the snapshot is still listed there; otherwise the value falls
+    back to the snapshot's own commit timestamp.
+    """
+    snapshot_ts = {str(s["snapshot-id"]): s["timestamp-ms"] for s in meta["snapshots"]}
+    log_ts = {str(e["snapshot-id"]): e["timestamp-ms"] for e in meta.get("snapshot-log", [])}
+    return {sid: log_ts.get(sid, ts) for sid, ts in snapshot_ts.items()}, snapshot_ts, log_ts
 
 
 def test_iceberg_history_made_current_at_stable_after_expire(
@@ -79,10 +95,13 @@ def test_iceberg_history_made_current_at_stable_after_expire(
 
     before = _history(instance, table_name)
     assert len(before) == 3, f"expected three snapshots before expire, got: {before}"
-    # None of the snapshots should sit at the epoch before expire either.
-    assert all(
-        made_current_at > "2000-01-01" for made_current_at, _ in before.values()
-    ), f"unexpected epoch timestamp before expire: {before}"
+    # Every snapshot already reports its own metadata timestamp before expire.
+    meta_before, _ = _read_latest_metadata(instance, table_name)
+    expected_before, _, _ = _expected_made_current_at_ms(meta_before)
+    assert {sid: ms for sid, (ms, _) in before.items()} == expected_before, (
+        f"made_current_at does not match the metadata timestamps before expire: "
+        f"{before} vs {expected_before}"
+    )
 
     # Expire the middle snapshot B (the OVERWRITE). It is an ancestor's child, so trimming the
     # snapshot-log removes the oldest APPEND (A) from the log while keeping it in `snapshots`.
@@ -105,15 +124,28 @@ def test_iceberg_history_made_current_at_stable_after_expire(
     assert b_id not in after, f"expired snapshot {b_id} still present: {after}"
     assert set(after) == set(before) - {b_id}, f"unexpected surviving set: {after}"
 
-    # made_current_at of every retained snapshot is unchanged (and never the epoch).
-    for snapshot_id, (made_current_at, _) in after.items():
-        assert made_current_at == before[snapshot_id][0], (
+    # The premise of the regression: expiring B trims the snapshot-log so that a RETAINED snapshot
+    # is no longer listed there and can only be dated from its own timestamp-ms. Without this the
+    # test below would pass while never exercising the fallback.
+    meta_after, _ = _read_latest_metadata(instance, table_name)
+    expected_after, snapshot_ts_after, log_ts_after = _expected_made_current_at_ms(meta_after)
+    dropped_from_log = set(snapshot_ts_after) - set(log_ts_after)
+    assert dropped_from_log, (
+        f"expected a retained snapshot to drop out of the snapshot-log after expiring {b_id}; "
+        f"snapshots={sorted(snapshot_ts_after)} log={sorted(log_ts_after)}"
+    )
+
+    # made_current_at of every retained snapshot is unchanged, and equals the exact timestamp-ms it
+    # must come from - the snapshot's own for the one dropped from the log, the log entry otherwise.
+    for snapshot_id, (made_current_at_ms, _) in after.items():
+        assert made_current_at_ms == before[snapshot_id][0], (
             f"made_current_at of retained snapshot {snapshot_id} changed after expire: "
-            f"{before[snapshot_id][0]} -> {made_current_at}"
+            f"{before[snapshot_id][0]} -> {made_current_at_ms}"
         )
-        assert made_current_at > "2000-01-01", (
-            f"retained snapshot {snapshot_id} shows epoch made_current_at after expire: "
-            f"{made_current_at}"
+        assert made_current_at_ms == expected_after[snapshot_id], (
+            f"made_current_at of retained snapshot {snapshot_id} is {made_current_at_ms}, "
+            f"expected timestamp-ms {expected_after[snapshot_id]} "
+            f"({'own snapshot' if snapshot_id in dropped_from_log else 'snapshot-log'})"
         )
 
 
@@ -149,9 +181,9 @@ def test_iceberg_history_without_snapshot_log(started_cluster_iceberg_no_spark):
     assert set(history) == set(snapshot_ts), (
         f"expected all snapshots reported with snapshot-log absent, got: {history}"
     )
-    # made_current_at falls back to the snapshot's own timestamp-ms (never the epoch).
-    for snapshot_id, (made_current_at, _) in history.items():
-        assert made_current_at > "2000-01-01", (
-            f"snapshot {snapshot_id} shows epoch made_current_at with snapshot-log absent: "
-            f"{made_current_at}"
+    # made_current_at is exactly the snapshot's own timestamp-ms, not merely some non-epoch value.
+    for snapshot_id, (made_current_at_ms, _) in history.items():
+        assert made_current_at_ms == snapshot_ts[snapshot_id], (
+            f"snapshot {snapshot_id} reports made_current_at {made_current_at_ms} with "
+            f"snapshot-log absent, expected its own timestamp-ms {snapshot_ts[snapshot_id]}"
         )
