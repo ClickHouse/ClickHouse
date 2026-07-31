@@ -73,6 +73,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_skip_indexes_on_data_read;
@@ -161,7 +162,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
-    lift_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_predicate_across_join];
+    /// The lift only pays off when the copied conjunct feeds primary-key pruning on the target
+    /// side; with `use_primary_key` disabled `KeyCondition` skips analysis and the conjunct would
+    /// remain a plain filter evaluated over the full target scan
+    lift_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_predicate_across_join]
+        && from[Setting::use_primary_key];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];

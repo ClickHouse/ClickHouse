@@ -282,7 +282,10 @@ void optimizeTreeSecondPass(
             /// The lift must run before `tryAddJoinRuntimeFilter`: the latter wraps the probe side
             /// in an `Apply runtime join filter` `FilterStep` and the build side in `BuildRuntimeFilterStep`,
             /// which would hide the original source filters and indexed reads from the lift's walk.
-            if (optimization_settings.lift_predicate_across_join)
+            /// The lift only pays off when the copied conjunct is consumed by the PK re-analysis
+            /// below; with `query_plan_optimize_primary_key` disabled it would survive as a plain
+            /// target-side `FilterStep` evaluated over the full scan, so skip the pass entirely.
+            if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
             {
                 if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
                 {
@@ -295,18 +298,15 @@ void optimizeTreeSecondPass(
                     /// selection rerun against the rebuilt `indexes`).
                     /// Inner traversal needs its own stack: `traverseQueryPlan` starts with
                     /// `stack.clear()`, which would corrupt the outer walk's stack.
-                    if (optimization_settings.query_plan_optimize_primary_key)
+                    Stack inner_stack;
+                    for (auto * child : frame_node.children)
                     {
-                        Stack inner_stack;
-                        for (auto * child : frame_node.children)
+                        traverseQueryPlan(inner_stack, *child, [&](auto & fn)
                         {
-                            traverseQueryPlan(inner_stack, *child, [&](auto & fn)
-                            {
-                                if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
-                                    mt->invalidateIndexes();
-                            });
-                            traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
-                        }
+                            if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
+                                mt->invalidateIndexes();
+                        });
+                        traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
                     }
                 }
             }
