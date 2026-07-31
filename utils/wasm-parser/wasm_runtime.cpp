@@ -17,9 +17,11 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Core/Settings.h>
 
+#include <csetjmp>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <typeinfo>
@@ -282,15 +284,59 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// Exceptions.
 ///
 /// The build uses `-fignore-exceptions`: `throw`, `try` and `catch` still compile, but no landing
-/// pads or unwind tables are emitted, so nothing can be caught. That is sound here because an
-/// exception can only mean a bug or a resource limit - a syntax error is reported by
-/// `tryParseQuery` returning null, and `src/Parsers` contains no `catch` at all, which a style
-/// check enforces. Defining `__cxa_throw` here keeps libc++abi's exception machinery out of the
-/// bundle entirely; the exception object is constructed and then we stop.
+/// pads or unwind tables are emitted, so nothing can be caught, and defining `__cxa_throw` here
+/// keeps libc++abi's exception machinery out of the bundle entirely.
+///
+/// A syntax error does not come this way - `tryParseQuery` returns null and fills in the message,
+/// and `src/Parsers` contains no `catch` at all, which a style check enforces. But a handful of
+/// checks in the parser still report an invalid query by throwing (`Frame start cannot be
+/// UNBOUNDED FOLLOWING`, for one), and stopping the module on an ordinary user mistake is not
+/// acceptable. So `ch_check` and `ch_format` arm a `setjmp` boundary and a throw returns to it,
+/// with the message, as a parse failure.
+///
+/// The unwinding this replaces would have run destructors; `longjmp` does not, so a throw leaks
+/// whatever the parser allocated below the boundary. The alternative is `-fwasm-exceptions`, which
+/// costs 262 KB and an engine implementing the exception-handling proposal - too much to pay for
+/// tidiness on a path that a browser hits only on an invalid query.
+///
+/// Recovery is for `DB::Exception` and nothing else. The object arriving at `__cxa_throw` is
+/// untyped, so its dynamic type has to be established from the `type_info` argument before it can
+/// be read as anything; a `std::bad_alloc` from `operator new` or a `Poco` exception is an
+/// unrelated object, and reading it through a `Poco::Exception` pointer would be undefined. For
+/// those only the type name can be reported, and the module stops. The comparison is exact rather
+/// than a `dynamic_cast` - there is no RTTI hierarchy walk available here - so a hypothetical class
+/// derived from `DB::Exception` also lands in the second case, which is the safe direction.
 /// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+
+jmp_buf recovery_point;
+bool recovery_armed = false;
+
+/// Not a `std::string`: filling this in must not allocate, or a throw from the allocation would
+/// re-enter `__cxa_throw`.
+char recovery_message[1024];
+
+}
 
 extern "C"
 {
+
+jmp_buf * chParserRecoveryPoint()
+{
+    return &recovery_point;
+}
+
+void chParserArmRecovery(bool armed)
+{
+    recovery_armed = armed;
+}
+
+const char * chParserRecoveryMessage()
+{
+    return recovery_message;
+}
 
 void * __cxa_allocate_exception(size_t size) noexcept
 {
@@ -306,17 +352,33 @@ void __cxa_free_exception(void *) noexcept
 
 [[noreturn]] void __cxa_throw(void * thrown, void * type_info, void (*)(void *))
 {
-    /// Only `DB::Exception` may be read as such: the thrown object is untyped here, and everything
-    /// else - `std::bad_alloc` from `operator new`, a `Poco` exception from a `Poco::Net` address
-    /// parser - would be a reinterpretation of an unrelated object. For those, the type name is all
-    /// that can be reported safely. This is not a `dynamic_cast`, so a hypothetical class derived
-    /// from `DB::Exception` also falls into the second case rather than into undefined behavior.
     const auto * thrown_type = static_cast<const std::type_info *>(type_info);
-    const char * message = thrown_type && *thrown_type == typeid(DB::Exception)
-        ? static_cast<const DB::Exception *>(thrown)->what()
-        : (thrown_type ? thrown_type->name() : "unknown exception");
 
-    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
+    if (thrown_type && *thrown_type == typeid(DB::Exception))
+    {
+        /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
+        const char * message = static_cast<const DB::Exception *>(thrown)->what();
+
+        if (recovery_armed)
+        {
+            /// Disarm first: this is the only path that can be re-entered.
+            recovery_armed = false;
+
+            size_t length = std::strlen(message);
+            if (length > sizeof(recovery_message) - 1)
+                length = sizeof(recovery_message) - 1;
+            std::memcpy(recovery_message, message, length);
+            recovery_message[length] = 0;
+
+            longjmp(recovery_point, 1);
+        }
+
+        std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
+        std::abort();
+    }
+
+    /// The object cannot be read, so the type name is all there is to report.
+    std::fprintf(stderr, "ClickHouse parser: unrecoverable error of type %s\n", thrown_type ? thrown_type->name() : "unknown");
     std::abort();
 }
 
