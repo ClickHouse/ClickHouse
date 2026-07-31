@@ -272,10 +272,11 @@ def test_read_in_order_with_complex_truncate(started_cluster_iceberg_with_spark,
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, storage_type):
-    # Reading a sorted Iceberg table through a `Merge` table has to go through
-    # `ReadFromObjectStorageStep::requestReadingInOrder` just like the direct
-    # path: that is what validates the sortedness, and it only ever promises the
-    # natural order - there is no reverse file walk and no `ReverseTransform`.
+    # An object storage table reached through a `Merge` table must not be told to
+    # read in an order it cannot deliver: `ReadFromObjectStorageStep` has no
+    # reverse file walk and no `ReverseTransform`, so it only ever promises the
+    # natural order. The direct path is where that gate is observable today, and
+    # this test pins it, together with the current `Merge` behaviour.
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_read_in_order_merge_" + storage_type + "_" + get_uuid_str()
@@ -308,16 +309,28 @@ def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, s
 
     merge_source = f"merge(currentDatabase(), '^{TABLE_NAME}$')"
 
-    # The order request reaches the object storage reader, which accepts it, so
-    # the sorting step is replaced by a merge of the already sorted streams.
-    assert get_array(instance.query(f"SELECT id FROM {merge_source} ORDER BY id")) == [1, 2, 3, 4]
-    assert "PartialSortingTransform" not in (
+    # The `Merge` queries have to come first, before the table has ever been read
+    # directly. A persistent `Iceberg` table only learns its sort order when
+    # `updateExternalDynamicMetadataIfExists` is called, which the analyzer does
+    # for the tables named in the query - and a `Merge` table does not forward it
+    # to the tables it selects. So while the `Merge` table is the only reader, the
+    # child's sorting key is empty as far as `checkSupportedReadingStep` is
+    # concerned and reading in order is rejected before the object storage reader
+    # is ever asked, in either direction. Reading it directly below refreshes the
+    # metadata for the rest of the test.
+    #
+    # This makes the object storage arm of `recursivelyApplyToReadingSteps` a
+    # fail-closed safeguard rather than an enabled optimization: it makes sure
+    # that if and when a `Merge` table does refresh the metadata of its children,
+    # the outer step cannot announce an order the child reader does not deliver.
+    # Flip the ascending assertion below when that happens.
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id"
+    ).strip().split("\n") == ["1", "2", "3", "4"]
+    assert "PartialSortingTransform" in (
         instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id")
     )
 
-    # The reverse direction is not supported by the reader, so it must be
-    # rejected and the sorting step kept - otherwise ascending chunks would be
-    # announced as descending.
     assert instance.query(
         f"SELECT id FROM {merge_source} ORDER BY id DESC"
     ).strip().split("\n") == ["4", "3", "2", "1"]
@@ -325,7 +338,21 @@ def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, s
         instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id DESC")
     )
 
-    # Same for the direct path.
+    # The direct path is where reading in order really engages. Ascending is
+    # accepted, so the sorting step is replaced by a merge of the already sorted
+    # streams.
+    assert instance.query(
+        f"SELECT id FROM {TABLE_NAME} ORDER BY id"
+    ).strip().split("\n") == ["1", "2", "3", "4"]
+    assert "PartialSortingTransform" not in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {TABLE_NAME} ORDER BY id")
+    )
+
+    # The reverse direction is not supported by the reader, so it must be
+    # rejected and the sorting step kept - otherwise ascending chunks would be
+    # announced as descending and the rows would come out in the wrong order.
+    # This is the regression test for the direction gate in
+    # `ReadFromObjectStorageStep::requestReadingInOrder`.
     assert instance.query(
         f"SELECT id FROM {TABLE_NAME} ORDER BY id DESC"
     ).strip().split("\n") == ["4", "3", "2", "1"]

@@ -258,6 +258,11 @@ def test_sort_order_through_merge_table(started_cluster_iceberg_no_spark):
     # used to ignore object storage children and advertise the order of the
     # declared sorting key on its own, which dropped the sorting step and
     # returned unsorted rows.
+    #
+    # Note that the request can also be rejected earlier, because a `Merge` table
+    # does not refresh the metadata of the tables it selects, so their sorting key
+    # is not always visible to `checkSupportedReadingStep`. This check is
+    # fail-closed either way: the rows must come out sorted.
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     root_namespace = f"clickhouse_{uuid.uuid4()}"
     catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
