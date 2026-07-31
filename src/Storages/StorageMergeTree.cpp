@@ -240,6 +240,7 @@ void StorageMergeTree::startup()
     /// Do not schedule any background jobs if the table is read-only.
     if (isTableReadonly())
         return;
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
     clearEmptyParts();
 
