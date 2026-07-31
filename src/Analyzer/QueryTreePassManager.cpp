@@ -208,12 +208,24 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
 {
-    // Run only query tree passes that doesn't affect output header:
-    // 1. QueryAnalysisPass
-    // 2. GroupingFunctionsResolvePass
-    // 3. AutoFinalOnQueryPass
-    // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, 4);
+    /// Run only query tree passes that don't affect the output header, up to and including
+    /// `RemoveUnusedProjectionColumnsPass`. The index is looked up by name instead of being
+    /// hardcoded, so that adding a pass before it does not silently exclude it here.
+    size_t up_to_pass_index = 0;
+    size_t passes_size = passes.size();
+    for (size_t i = 0; i < passes_size; ++i)
+    {
+        if (passes[i]->getName() == "RemoveUnusedProjectionColumnsPass")
+        {
+            up_to_pass_index = i + 1;
+            break;
+        }
+    }
+
+    if (up_to_pass_index == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RemoveUnusedProjectionColumnsPass is not registered in the query tree pass manager");
+
+    run(query_tree_node, up_to_pass_index);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
