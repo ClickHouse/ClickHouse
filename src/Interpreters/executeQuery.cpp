@@ -92,6 +92,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Common/Licensing/LicenseChecker.h>
 #endif
+#include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -1403,10 +1404,26 @@ static bool isEmptySetQuery(const ASTSetQuery & set_query)
     return set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty();
 }
 
+static bool isConstructionSettingName(std::string_view name)
+{
+    return name == "select" || name == "filter" || name == "order" || name == "sort"
+        || name == "limit" || name == "offset" || name == "page";
+}
+
 /// Read and remove the construction settings from a single `SETTINGS` clause into `out` (accumulating
 /// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
 static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
 {
+    /// The construction settings are read straight out of `changes` here instead of being applied to a
+    /// `BaseSettings` schema, so nothing else rejects the value-less form `SETTINGS name` for them. None
+    /// of them is Bool (`limit` / `offset` / `page` are `Double`, the rest are `String`), so the shorthand
+    /// is always an error, and it has to be reported before anything is consumed — otherwise the
+    /// `Field(true)` the parser records for it would surface below as a `BAD_GET` / `BAD_ARGUMENTS` from
+    /// reading the value, instead of the `TYPE_MISMATCH` the shorthand contract promises.
+    for (const auto & change : set_query.changes)
+        if (change.shorthand && isConstructionSettingName(change.name))
+            BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name);
+
     /// Take a construction setting's *effective* value and erase ALL its occurrences. `ParserSetQuery`
     /// appends one entry per occurrence and normal setting application is last-wins, so read the last
     /// match (to agree with the effective value) and remove every copy — `SettingsChanges::removeSetting`
@@ -1520,12 +1537,6 @@ static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_unio
             }
         }
     }
-}
-
-static bool isConstructionSettingName(std::string_view name)
-{
-    return name == "select" || name == "filter" || name == "order" || name == "sort"
-        || name == "limit" || name == "offset" || name == "page";
 }
 
 /// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting
