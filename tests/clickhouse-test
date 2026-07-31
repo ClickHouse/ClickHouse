@@ -1424,6 +1424,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -1613,7 +1619,7 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
-        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
+        "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
@@ -2150,11 +2156,17 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=8):
-                alphabet = string.ascii_lowercase + string.digits
+            def random_str(length=12):
+                # Alternate letters and digits so no two consecutive characters share a class,
+                # hence no word can appear in the name. It is embedded into DDL, paths and table
+                # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
+                # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
+                # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
                 # NOTE: it is important not to use default random generator, since it shares state.
+                rng = random.SystemRandom()
                 return "".join(
-                    random.SystemRandom().choice(alphabet) for _ in range(length)
+                    rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
+                    for i in range(length)
                 )
 
             database = f"test_{random_str()}"

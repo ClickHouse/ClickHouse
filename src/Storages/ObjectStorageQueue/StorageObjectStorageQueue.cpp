@@ -1393,6 +1393,13 @@ static bool requiresDetachedMV(const std::string & name)
     return name == "buckets";
 }
 
+bool StorageObjectStorageQueue::isSettingChangeableInPlace(
+    const std::string & name,
+    ObjectStorageQueueMode mode)
+{
+    return isSettingChangeable(name, mode) && !requiresDetachedMV(name);
+}
+
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
 {
     /// Remove s3queue_ prefix from setting to avoid duplicated settings,
@@ -1880,7 +1887,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
 
-    if (context_ && result_zk_path.find('{') != String::npos)
+    if (context_ && result_zk_path.contains('{'))
     {
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
