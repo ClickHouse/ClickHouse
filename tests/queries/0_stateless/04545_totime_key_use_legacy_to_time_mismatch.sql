@@ -21,13 +21,18 @@ ENGINE = MergeTree() ORDER BY toTime(c1) SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_totime_order (c0) SETTINGS use_legacy_to_time = 1 SELECT number FROM numbers(1000);
 SELECT count() FROM t_totime_order;
 
--- Reverse direction: key metadata created under legacy = 1, then insert with default (0).
+-- DDL behaviour change carried by this fix: the stored key type is resolved under the server-wide
+-- default of use_legacy_to_time, not the writing session's value, so setting it in the session at
+-- CREATE time no longer flips the stored key type. DESCRIBE mergeTreeIndex reads the resolved key
+-- type back: it is Time (the server default resolution), not DateTime, despite the session setting.
 SET use_legacy_to_time = 1;
 CREATE TABLE t_totime_legacy_created (c0 Int32, c1 DateTime64 MATERIALIZED nowInBlock64())
 ENGINE = MergeTree() PRIMARY KEY (toTime(c1));
 SET use_legacy_to_time = 0;
 INSERT INTO t_totime_legacy_created (c0) SELECT number FROM numbers(1000);
 SELECT count() FROM t_totime_legacy_created;
+SET describe_compact_output = 1;
+DESCRIBE mergeTreeIndex(currentDatabase(), t_totime_legacy_created);
 
 -- The user-facing toTime type is still governed by the setting in normal query resolution.
 SELECT toTypeName(toTime(now64())) SETTINGS use_legacy_to_time = 0;
