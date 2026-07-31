@@ -52,7 +52,7 @@ namespace
 ///
 /// Features are passed as individual columns, positionally: argument i (after the dictionary name) is bound
 /// to the model's i-th feature (the i-th key column, in declaration order). The optional trailing `params`
-/// is a constant `Map(String, <numeric>)` of XGBoost prediction parameters (for example
+/// is a constant `Map(String, <Int64>)` of XGBoost prediction parameters (for example
 /// `map('type', 0, 'iteration_end', 0)`), forwarded to the XGBoost prediction call. This function is the only
 /// way to query the model: an XGBoost dictionary does not support the generic dictionary interface.
 class FunctionPredictXGBoost final : public IFunction

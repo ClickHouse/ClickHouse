@@ -165,7 +165,7 @@ LIFETIME(0);
 SELECT predictXGBoost('model', 1.0, 2.0, map('type', 0, 'iteration_end', 0));
 ```
 
-The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query. Values are numeric — `strict_shape` is given as `0` or `1`.
+The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query. Values are Int64 — `strict_shape` is given as `0` or `1`.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
