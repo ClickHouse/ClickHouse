@@ -324,6 +324,27 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
     return false;
 }
 
+/// Direct read from a text index (`query_plan_direct_read_from_text_index`) replaces a text-search
+/// function with a synthetic `__text_index_..._has_<hash>` virtual column and registers an index read
+/// task on the `ReadFromMergeTree` step. That per-step state does not survive capturing the read into
+/// a plan fragment: `ReadFromMergeTree::clone` copies the rewritten column list but not the index read
+/// tasks, so re-optimizing the local fragment registers the virtual column a second time and throws the
+/// logical error `Column ... already added for reading` (e.g. when the same predicate appears in both
+/// PREWHERE and WHERE), and a remote replica cannot resolve the synthetic column against the table at
+/// all. The text-index rewrite runs earlier in the same optimization pass, so the tasks are already
+/// registered here; keep such a plan local, like the FINAL case above.
+static bool planHasTextIndexDirectRead(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()); read && !read->getIndexReadTasks().empty())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasTextIndexDirectRead(child))
+            return true;
+    return false;
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -337,6 +358,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         return;
 
     if (planHasSubquerySet(root))
+        return;
+
+    if (planHasTextIndexDirectRead(root))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;
