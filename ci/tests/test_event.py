@@ -5,6 +5,9 @@ The Event.ci_status field stores Result.Status values directly.
 The EventFeed sanitizer must handle both old (lowercase) and new (uppercase) formats.
 """
 
+import gzip
+import io
+import json
 import os
 import pytest
 import sys
@@ -83,9 +86,11 @@ def test_update_retries_conditional_request_conflict(monkeypatch):
         put_calls = 0
 
         def get_object(self, **kwargs):
-            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+            body = gzip.compress(json.dumps(EventFeed().to_dict()).encode())
+            return {"Body": io.BytesIO(body), "ETag": '"etag"'}
 
         def put_object(self, **kwargs):
+            assert kwargs.get("IfMatch") == '"etag"', "write must be conditional"
             self.put_calls += 1
             if self.put_calls == 1:
                 raise ClientError(
