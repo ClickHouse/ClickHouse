@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
@@ -94,7 +93,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    http_request.set("Authorization", "Bearer " + api_key);
+    if (!api_key.empty()) /// not all providers need API key
+        http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -113,9 +113,9 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;
@@ -176,7 +176,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    http_request.set("Authorization", "Bearer " + api_key);
+    if (!api_key.empty()) /// not all providers need API key
+        http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -195,9 +196,9 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", extractProviderError(response_body, static_cast<int>(status))));
     }
 
     Poco::JSON::Parser parser;

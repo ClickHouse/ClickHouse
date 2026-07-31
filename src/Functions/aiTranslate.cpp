@@ -85,7 +85,7 @@ Translates the given text into the specified target language using an LLM provid
 
 Additional style or dialect instructions may be passed via the `instructions` key of the parameter map (e.g. `'keep technical terms untranslated'`).
 
-Credentials (a named collection specifying the provider, model, endpoint, and API key)
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 )",

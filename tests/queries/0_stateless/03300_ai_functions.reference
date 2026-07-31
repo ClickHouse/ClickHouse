@@ -9,7 +9,10 @@ aiGenerate
 -- Named collection missing model (and none in map)
 -- Model supplied via the parameter map resolves
 0
--- Named collection missing api_key
+-- Named collection without api_key resolves
+0
+-- Named collection without api_key reaches HTTP path
+0
 -- Nonexistent named collection
 -- aiGenerate return type
 result	String
