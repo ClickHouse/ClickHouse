@@ -13,10 +13,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_checksums"
 
+# min_*_for_wide_part pins PartType, not PartStorageType. Pin Full part storage too: on Packed
+# storage checksums.txt lives inside data.packed, so the manipulations below would touch an ignored
+# side file and the test would pass without exercising the repaired path.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_checksums (a UInt64, s String)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+             min_level_for_full_part_storage = 0;
 "
 
 # The test manipulates one part's checksums.txt by an absolute path captured once, so the table must
@@ -33,6 +38,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_empty_checksums"
 
 # Require exactly one active part; otherwise the single-path manipulation below is meaningless.
 ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part') FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active" > /dev/null || exit 1
+# Fail loudly rather than vacuously if the pin above ever stops selecting Full storage.
+${CLICKHOUSE_CLIENT} --query "SELECT throwIf(part_storage_type != 'Full', 'Expected Full part storage') FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active" > /dev/null || exit 1
 DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active LIMIT 1")
 # ensure the path is absolute before touching it
 ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${DATA_PATH}', 1, 1) != '/', 'Path is relative: ${DATA_PATH}')" > /dev/null || exit 1
