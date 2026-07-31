@@ -280,6 +280,9 @@
   reason: 'INVESTIGATE - Fails on ARM'
   check_types:
   - arm_binary
+- name: test_storage_s3_queue/test_0.py::test_move_after_processing[another_bucket-AzureQueue]
+  reason: 'KNOWN: https://github.com/ClickHouse/ClickHouse/issues/94038 - azure_queue_log empty after successful processing'
+  message: 'assert 0 == (5 * 10)'
 - name: test_backup_restore_s3/test.py::test_backup_to_s3_different_credentials[data_file_name_from_checksum-non_native_single]
   reason: 'INVESTIGATE - Timeout on tsan'
   message: 'Timeout exceeded'
