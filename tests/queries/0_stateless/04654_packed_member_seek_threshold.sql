@@ -28,7 +28,14 @@
 -- measured read. Encrypted because reading the encryption header initialises the gather buffer, which
 -- is what puts the member seek on the branch under test.
 
+-- Each measured read gets its own table. The two reads request the same bytes, so sharing one table
+-- lets whichever runs first serve part of the second one from a read cache and halve its counter:
+-- with `use_uncompressed_cache = 1` the second read measured 12398 bytes against 24796 on separate
+-- tables, because `CachedCompressedReadBuffer` keys on (path, offset) and both reads use the same
+-- path. That setting is randomized, so the second cell has to be measured on bytes nothing else has
+-- already fetched.
 DROP TABLE IF EXISTS t_packed_seek;
+DROP TABLE IF EXISTS t_packed_seek_small_threshold;
 
 CREATE TABLE t_packed_seek (id UInt64, big String, body String)
 ENGINE = MergeTree ORDER BY id
@@ -48,9 +55,14 @@ SETTINGS storage_policy = 's3_no_cache_encrypted',
          -- The measured query has to be the one that first reads these marks.
          prewarm_mark_cache = 0;
 
+CREATE TABLE t_packed_seek_small_threshold AS t_packed_seek;
+
 -- `randomPrintableASCII` is incompressible on purpose: a compressible filler (repeat('x', N)) shrinks
 -- the archive to a few KB and leaves no prefix to skip, which makes the whole test vacuous.
 INSERT INTO t_packed_seek
+SELECT number, randomPrintableASCII(1000), 'vector word here' FROM numbers(3000);
+
+INSERT INTO t_packed_seek_small_threshold
 SELECT number, randomPrintableASCII(1000), 'vector word here' FROM numbers(3000);
 
 -- Reads `body`, whose marks member sits at the far end of the archive.
@@ -71,7 +83,7 @@ FORMAT Null;
 -- Same read with a threshold far BELOW the buffer size: a guard that a small user value does not make
 -- the transfer blow up. It does not distinguish taking a minimum from overwriting the value, because
 -- either way the prefix here stays above both candidates and is seeked over.
-SELECT body FROM t_packed_seek WHERE id = 2999
+SELECT body FROM t_packed_seek_small_threshold WHERE id = 2999
 SETTINGS remote_filesystem_read_method = 'read',
          enable_parallel_replicas = 0,
          remote_read_min_bytes_for_seek = 128,
@@ -111,3 +123,4 @@ ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 DROP TABLE t_packed_seek;
+DROP TABLE t_packed_seek_small_threshold;
