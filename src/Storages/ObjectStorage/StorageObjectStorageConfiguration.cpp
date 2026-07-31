@@ -326,12 +326,18 @@ bool StorageObjectStorageConfiguration::Path::hasGlobs(bool use_glob_ast) const
 
 std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
 {
-    if (supports_partial_prefix)
-    {
-        return path.substr(0, path.find_first_of("*?{"));
-    }
+    return cutGlobs(supports_partial_prefix, /*use_glob_ast=*/ false);
+}
 
-    auto first_glob_pos = path.find_first_of("*?{");
+std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const
+{
+    const size_t first_glob_pos = use_glob_ast
+        ? GlobAST::GlobString(path).firstGlobPosition()
+        : path.find_first_of("*?{");
+
+    if (supports_partial_prefix)
+        return path.substr(0, first_glob_pos);
+
     auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
     if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
         return "/";

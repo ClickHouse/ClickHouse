@@ -89,6 +89,10 @@ public:
         bool hasGlobsIgnorePlaceholders(bool use_glob_ast) const;
         bool hasGlobs(bool use_glob_ast) const;
         std::string cutGlobs(bool supports_partial_prefix) const;
+        /// Setting-aware variant: with use_glob_ast the listing prefix is cut at the first
+        /// expression the AST parser classifies as a glob, so a literal brace group such as
+        /// "tenant_{42}/" stays inside the prefix instead of truncating it at the raw '{'.
+        std::string cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const;
     };
 
     using Paths = std::vector<Path>;

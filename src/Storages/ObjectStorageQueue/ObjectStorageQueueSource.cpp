@@ -132,13 +132,13 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
     const auto globbed_key = reading_path.path;
     const auto start_after = metadata->getStartAfterForListing();
+    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
     object_storage_iterator = object_storage->iterate(
-        reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
+        reading_path.cutGlobs(configuration->supportsPartialPathPrefix(), use_glob_ast),
         list_objects_batch_size_,
         /*with_tags=*/ false,
         start_after);
 
-    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
     if (use_glob_ast)
         matcher.emplace(GlobMatcher::createNew(globbed_key));
     else

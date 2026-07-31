@@ -449,9 +449,32 @@ bool GlobString::matches(std::string_view candidate) const
 {
     /// Memoization table: (candidate_pos, expression_idx) -> tri-state.
     /// This avoids exponential backtracking for patterns with multiple wildcards.
+    /// The state space also bounds the matching work, so cap it before allocating.
+    static constexpr size_t max_match_states = 1ULL << 26;
     const size_t cols = expressions.size() + 1;
-    std::vector<int8_t> memo((candidate.size() + 1) * cols, 0);
-    return matchesImpl(candidate, 0, 0, memo);
+    size_t memo_size = 0;
+    if (common::mulOverflow(candidate.size() + 1, cols, memo_size) || memo_size > max_match_states)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Glob pattern with {} expressions matched against a string of {} bytes needs more than {} match states. "
+            "Consider simplifying the glob pattern.",
+            expressions.size(), candidate.size(), max_match_states);
+
+    /// matches() runs inside file/object-storage listing loops, once per listed key,
+    /// so reuse the buffer across calls instead of allocating a fresh one per key.
+    thread_local std::vector<int8_t> memo;
+    memo.assign(memo_size, 0);
+    const bool result = matchesImpl(candidate, 0, 0, memo);
+
+    /// Don't let one oversized candidate pin a large buffer to the thread forever.
+    static constexpr size_t max_kept_memo_bytes = 1ULL << 20;
+    if (memo.capacity() > max_kept_memo_bytes)
+    {
+        memo.clear();
+        memo.shrink_to_fit();
+    }
+
+    return result;
 }
 
 bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const

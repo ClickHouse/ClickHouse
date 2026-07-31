@@ -763,6 +763,19 @@ TEST(Common, GlobASTRangeOverflow)
     EXPECT_TRUE(large_range.matches("12345"));
 }
 
+TEST(Common, GlobASTMatchStateSpaceLimit)
+{
+    /// matches caps its memoization state space (candidate length x pattern expressions)
+    /// and throws instead of allocating an unbounded table.
+    GlobAST::GlobString wide(std::string(70, '?'));
+    EXPECT_THROW(wide.matches(std::string(1 << 20, 'a')), DB::Exception);
+
+    /// The same pattern still matches ordinary candidates after the throw
+    /// (the reused per-thread buffer must be left in a valid state).
+    EXPECT_TRUE(wide.matches(std::string(70, 'a')));
+    EXPECT_FALSE(wide.matches(std::string(71, 'a')));
+}
+
 /// Differential fuzzer: the AST matcher (use_glob_ast_parser = 1) must agree with the
 /// legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch) on every
 /// (pattern, candidate) pair. Patterns and candidates are drawn from a small alphabet
