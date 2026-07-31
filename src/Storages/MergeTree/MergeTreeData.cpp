@@ -5597,6 +5597,47 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot RECOMPRESS COLUMN `{}`: it is an ALIAS or EPHEMERAL column and has no stored data to recompress.",
                     command.column_name);
+
+            /// A lossy codec (e.g. `SZ3`) does not reproduce the original values, so recompressing with
+            /// it changes what the part returns. The mutation rewrites the column, but hardlinks the
+            /// part's projections and skip indices unchanged (a `READ_COLUMN` schedules dependents for a
+            /// rebuild only when the column type changes). A projection would keep describing the
+            /// pre-recompression values, so a query could get different results depending on whether it
+            /// reads the base part or the projection, and a stale skip index could prune granules that do
+            /// match. Reject that combination; recompressing a column no projection or skip index depends
+            /// on is fine, and so is a lossless codec. Column statistics are only used for cardinality
+            /// estimation, never for filtering, so they are deliberately not covered here.
+            ///
+            /// A column that has no explicit codec inherits the table's default codec, which can never be
+            /// lossy (`CompressionCodecFactory::get` rejects a lossy codec when the column type is unknown),
+            /// so only the explicit codec has to be examined.
+            const auto & column_desc = columns.get(command.column_name);
+            if (column_desc.codec && codecResolvesToLossyCompression(column_desc.codec, column_desc.type))
+            {
+                for (const auto & projection : columns_metadata->getProjections())
+                {
+                    const auto & required_columns = projection.getRequiredColumns();
+                    if (std::ranges::find(required_columns, command.column_name) != required_columns.end())
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
+                            "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                            "were before the recompression. Drop the projection, or rebuild it with "
+                            "ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
+                            command.column_name, column_desc.codec->formatForErrorMessage(), projection.name);
+                }
+
+                for (const auto & index : columns_metadata->getSecondaryIndices())
+                {
+                    const auto & required_columns = index.expression->getRequiredColumns();
+                    if (std::ranges::find(required_columns, command.column_name) != required_columns.end())
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
+                            "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                            "were before the recompression and could skip granules that do match. Drop the index, or "
+                            "rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
+                            command.column_name, column_desc.codec->formatForErrorMessage(), index.name);
+                }
+            }
         }
     }
 

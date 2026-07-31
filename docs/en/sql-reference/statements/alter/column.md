@@ -371,6 +371,8 @@ Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 `RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
 
+It is also not supported for a column whose codec is lossy (such as `SZ3`) when a projection reads that column or a data skipping index depends on it: a lossy codec does not reproduce the original values, and the recompression does not rebuild the projections and indices, so they would keep describing the values as they were before the recompression. Drop the projection or the index, or rebuild it with `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` after the recompression.
+
 Syntax:
 
 ```sql

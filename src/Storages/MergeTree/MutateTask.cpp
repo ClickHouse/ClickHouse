@@ -192,36 +192,6 @@ static bool codecDependsOnDefault(const ASTPtr & codec_ast)
     return false;
 }
 
-/// Whether a column's explicit codec resolves to a lossy codec (e.g. `SZ3`) on any of its data
-/// substreams. The wide-part fast path re-emits the raw compressed blocks one-to-one and relies on
-/// the decompressed bytes staying byte-identical: it carries over the source part's uncompressed
-/// checksums and marks, and it never sees the column values, so it cannot run the writer-side
-/// vector-dimension setup (`setVectorDimensionsIfNeeded`) that a normal write performs for such
-/// codecs. A lossy codec breaks the byte-identity premise, so route it through the whole-part
-/// rewrite, which re-serializes the column through the regular writer.
-static bool codecIsLossy(const ASTPtr & codec_ast, const DataTypePtr & column_type)
-{
-    bool is_lossy = false;
-
-    /// Resolve the codec against the type of each data substream, the same way codec validation
-    /// (`validateCodecAndGetPreprocessedAST`) and the part writers do: type-dependent codecs
-    /// (e.g. `Delta` without arguments) cannot be constructed from the top-level composite type.
-    ISerialization::StreamCallback callback = [&](const auto & substream_path)
-    {
-        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-            return;
-
-        const auto & last_type = substream_path.back().data.type;
-        auto codec = CompressionCodecFactory::instance().get(codec_ast, last_type.get());
-        is_lossy = codec->isLossyCompression();
-    };
-
-    auto serialization = column_type->getDefaultSerialization();
-    serialization->enumerateStreams(callback, column_type);
-
-    return is_lossy;
-}
-
 /// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
 /// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
 /// the variant element streams, ...) are not recorded anywhere we can enumerate without a
@@ -370,8 +340,10 @@ static void splitAndModifyMutationCommands(
             /// the fast path's premise that recompression keeps the decompressed content byte-identical
             /// (carried-over uncompressed checksums and marks), and the raw-block path cannot perform
             /// the writer-side vector-dimension setup such codecs need. Re-serialize through the
-            /// regular writer instead.
-            if (codecIsLossy(column_desc->codec, column_desc->type))
+            /// regular writer instead. Such a column cannot have dependent projections or skip indices
+            /// (`MergeTreeData::checkMutationIsPossible` rejects that combination), so the whole-part
+            /// rewrite hardlinking them unchanged is safe here.
+            if (codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
             {
                 recompress_needs_full_rewrite = true;
                 break;
