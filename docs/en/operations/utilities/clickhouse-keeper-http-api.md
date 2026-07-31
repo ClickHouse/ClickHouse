@@ -67,13 +67,32 @@ Success response (HTTP 200):
 
 ### Commands API {#commands-api}
 
-- **Path**: `/api/v1/commands/{command}`
+- **Path**: `/api/v1/commands` or `/api/v1/commands/{command}`
 - **Methods**: GET, POST
-- **Description**: Executes Four-Letter Word commands or ClickHouse Keeper Client CLI commands
+- **Description**: Lists registered Keeper Client CLI commands, or executes Four-Letter Word commands / Keeper Client CLI commands
 
 Query parameters:
-- `command` - The command to execute
+- `list` - When present (for example `?list`), returns the names of registered Keeper Client CLI commands as JSON. The embedded dashboard uses this to populate command completion. No command is executed.
+- `command` - The command to execute (required unless `list` is set)
 - `cwd` - Current working directory for path-based commands (default: `/`)
+
+#### List commands {#list-commands}
+
+Request:
+```bash
+curl "http://localhost:9182/api/v1/commands?list"
+```
+
+Response:
+```json
+{
+  "commands": ["ls", "get", "create", "cd", "..."]
+}
+```
+
+`commands` is an array of registered Keeper Client CLI command names (not Four-Letter Word commands).
+
+#### Execute command {#execute-command}
 
 Response (CLI commands):
 ```json
