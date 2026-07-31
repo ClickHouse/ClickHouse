@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.jobs import check_style
+from ci.jobs.scripts.workflow_hooks.store_data import parse_settings_history_changes
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -100,6 +101,33 @@ def test_declaration_file_change_is_enforced(monkeypatch):
         [{"namespace": "Session", "name": "no_such_setting_at_all"}],
     )
     assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+
+def test_deleting_the_last_record_is_not_an_escape_hatch(monkeypatch):
+    # End-to-end with the diff parser: a change that reverts a compiled default cannot escape
+    # the rule by deleting the row that recorded the original change instead of recording the
+    # revert. 03999_stateless_settings_history would be satisfied by such a deletion (it only
+    # compares the current default with the newest recorded value), so the style check has to
+    # catch it. Deleting a phantom record remains possible - that change touches only the
+    # history file, which the gate lets through (see above).
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        "        });",
+    ]
+    patch = (
+        "@@ -1,3 +1,3 @@\n"
+        " {\n"
+        '-            {"no_such_setting_at_all", 0, 1, "Recorded in 26.7"},\n'
+        " });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+    # The same deletion without any other source change is a historical correction: allowed.
+    assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
 
 
 def test_no_history_change_at_all_is_skipped(monkeypatch):

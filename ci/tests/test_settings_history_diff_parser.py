@@ -4,8 +4,9 @@ Tests for `parse_settings_history_changes` in
 `settings_changes_history` style check with the settings a change adds to
 `src/Core/SettingsChangesHistory.cpp`.
 
-The parser reports new records and value changes (including an in-place edit of an existing
-entry), but not reason-only edits. Whether such a change must sit under the current version
+The parser reports new records, value changes (including an in-place edit of an existing entry)
+and removed records, but not reason-only edits or records moved between blocks. Whether such a
+change must sit under the current version
 block is decided by the style check, not the parser: it enforces the rule as soon as any other
 C++ source file changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
 correction - is allowed there. The parser therefore reports in-place value edits; the source-file
@@ -87,11 +88,62 @@ def test_in_place_value_edit_is_reported():
     ]
 
 
-def test_pure_removal_is_ignored():
+def test_pure_removal_is_reported():
+    # Dropping a record changes what the history says, so it is reported: otherwise a change
+    # that reverts a compiled default to an older value could delete the row recording the
+    # original change instead of recording the revert, and both the style check and
+    # 03999_stateless_settings_history (which only compares the current default with the newest
+    # recorded value) would stay green. Deleting a phantom record is still possible - the
+    # source-file gate lets a change that touches only this file through.
     patch = (
         "@@ -9,3 +9,2 @@\n"
         " {\n"
         '-            {"old_setting", 1, 2, "Phantom record"},\n'
         " });\n"
     )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
+
+
+def test_removal_namespace_comes_from_the_enclosing_block():
+    patch = (
+        "@@ -5,4 +5,3 @@\n"
+        " {\n"
+        '-            {"brand_new_merge_tree_setting", 0, 1, "New setting"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "MergeTree", "name": "brand_new_merge_tree_setting"}
+    ]
+
+
+def test_entry_moved_between_blocks_is_ignored():
+    # The same record moved to another block: the recorded values did not change, so neither
+    # side of the diff is reported.
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        " {\n"
+        '-            {"old_setting", 0, 1000, "Fixed record"},\n'
+        " });\n"
+        "@@ -9,3 +8,4 @@\n"
+        " {\n"
+        '+            {"old_setting", 0, 1000, "Fixed record"},\n'
+        " });\n"
+    )
     assert parse_settings_history_changes(patch, FILE_LINES) == []
+
+
+def test_removal_and_replacement_with_another_value_reports_the_setting_once():
+    # A revert recorded properly: the old row is dropped and a new row with a different value is
+    # added. Both sides name the same setting in the same namespace, so it is reported once.
+    patch = (
+        "@@ -9,3 +9,3 @@\n"
+        " {\n"
+        '-            {"old_setting", 0, 1000, "Fixed record"},\n'
+        '+            {"old_setting", 1000, 0, "Reverted"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]

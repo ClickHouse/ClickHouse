@@ -26,17 +26,30 @@ def _settings_history_entry_signature(entry_body):
 
 def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
-    at HEAD, return a list of {"namespace", "name"} for settings whose recorded value changed or
-    that were newly added (including an in-place value edit of an existing entry). Reason-only
-    edits (an added entry whose value-signature was also removed) are ignored. The namespace
-    comes from the block that physically contains each added line (new-file line number), not
-    from global name presence - names can exist in both histories.
+    at HEAD, return a list of {"namespace", "name"} for settings whose recorded history this
+    change touches: entries that were added, entries whose value was edited in place, and
+    entries that were REMOVED. Reason-only edits and moves (an added or removed entry whose
+    value-signature appears on the other side of the diff) are ignored. The namespace comes
+    from the block that physically contains the line (new-file line number), not from global
+    name presence - names can exist in both histories.
+
+    Removals are reported because dropping a record is just another way of changing what the
+    history says. Without that, deleting the newest record for a setting would be a silent
+    escape hatch: a change that reverts a compiled default to an older value could delete the
+    row that recorded the original change instead of recording the revert under the current
+    version, and both this style check and 03999_stateless_settings_history would stay green
+    (the functional test only compares the current default with the NEWEST recorded value)
+    while `compatibility` would hand out the wrong value for the release that shipped the
+    other default.
 
     Whether such a change must sit under the CURRENT version block is decided by the caller
     (check_settings_changes_history), which enforces the rule as soon as any other C++ source
     file changed. A change that edits only this file - fixing what a past release recorded -
-    is a historical correction, not a default change made now, so it is allowed there."""
+    is a historical correction, not a default change made now, so it is allowed there; that is
+    what keeps a phantom record deletable."""
     added = []  # (new_line_number, name, signature)
+    removed = []  # (new_line_number, name, signature)
+    added_signatures = set()
     removed_signatures = set()
     new_lineno = None
     for line in patch.splitlines():
@@ -49,32 +62,43 @@ def parse_settings_history_changes(patch, file_lines):
         if line.startswith("+") and not line.startswith("+++"):
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
-                added.append(
-                    (new_lineno, m.group(1), _settings_history_entry_signature(line[1:]))
-                )
+                signature = _settings_history_entry_signature(line[1:])
+                added.append((new_lineno, m.group(1), signature))
+                added_signatures.add(signature)
             new_lineno += 1
         elif line.startswith("-") and not line.startswith("---"):
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
-                removed_signatures.add(_settings_history_entry_signature(line[1:]))
+                signature = _settings_history_entry_signature(line[1:])
+                # The removal position in the new file is inside the same block the entry was
+                # in, so the new-file line number resolves its namespace just as for an added
+                # line - removing entries does not move the surrounding block headers.
+                removed.append((new_lineno, m.group(1), signature))
+                removed_signatures.add(signature)
             # A removed line does not advance the new-file line counter.
         else:
             new_lineno += 1
 
     result = []
     seen = set()
-    for lineno, name, signature in added:
-        if signature in removed_signatures:
-            continue  # reason-only edit of an existing entry
-        namespace = None
-        for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
-            mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
-            if mb:
-                namespace = _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1))
-                break
-        if namespace and (namespace, name) not in seen:
-            seen.add((namespace, name))
-            result.append({"namespace": namespace, "name": name})
+    for entries, other_signatures in (
+        (added, removed_signatures),
+        (removed, added_signatures),
+    ):
+        for lineno, name, signature in entries:
+            if signature in other_signatures:
+                # A reason-only edit of an existing entry, or an entry moved between blocks:
+                # the recorded values themselves did not change.
+                continue
+            namespace = None
+            for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
+                mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
+                if mb:
+                    namespace = _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1))
+                    break
+            if namespace and (namespace, name) not in seen:
+                seen.add((namespace, name))
+                result.append({"namespace": namespace, "name": name})
     return result
 
 
@@ -93,8 +117,9 @@ if __name__ == "__main__":
 
     # For the settings-history style check (check_style.py): when
     # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
-    # names of the setting entries this change ADDS so the style check can verify each is
-    # recorded under the current version block. Only the setting names are stored (never the
+    # names of the setting entries this change ADDS, VALUE-EDITS or REMOVES so the style check
+    # can verify each is recorded under the current version block. Only the setting names are
+    # stored (never the
     # raw diff) to keep the pipeline `data` output small and free of user-authored free text
     # (see the note further below about the GH Actions runner dropping outputs that match a
     # secret pattern). Best-effort: a failure here must not break the hook that stores
