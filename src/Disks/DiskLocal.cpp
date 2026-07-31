@@ -315,17 +315,27 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
-    return fs::exists(fs::path(disk_path) / path);
+    /// Use the std::error_code overload: a stat() failure for any reason (e.g. ENAMETOOLONG for a
+    /// path built from an unhashed long file name that was never meant to be looked up this way)
+    /// must be treated as "does not exist" here, since callers use this purely as an existence
+    /// probe. The throwing overload turns such errors into an uncaught filesystem_error instead.
+    std::error_code ec;
+    bool result = fs::exists(fs::path(disk_path) / path, ec);
+    return !ec && result;
 }
 
 bool DiskLocal::existsFile(const String & path) const
 {
-    return fs::is_regular_file(fs::path(disk_path) / path);
+    std::error_code ec;
+    bool result = fs::is_regular_file(fs::path(disk_path) / path, ec);
+    return !ec && result;
 }
 
 bool DiskLocal::existsDirectory(const String & path) const
 {
-    return fs::is_directory(fs::path(disk_path) / path);
+    std::error_code ec;
+    bool result = fs::is_directory(fs::path(disk_path) / path, ec);
+    return !ec && result;
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
