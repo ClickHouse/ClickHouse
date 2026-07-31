@@ -137,17 +137,19 @@ constexpr uint8_t ELEMENTS_PER_ROW_THRESHOLD = 8;
 template <typename T>
 ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
 {
+    const auto & src_offsets = src.getOffsets();
     const IColumn & src_data = src.getData();
     size_t num_rows = row_indexes.size();
 
     auto res_offsets_column = ColumnArray::ColumnOffsets::create(num_rows);
     auto & res_offsets = res_offsets_column->getData();
 
-    size_t total_elements = 0;
+     size_t total_elements = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        total_elements += src.sizeAt(row);
+        /// src_offsets[row] == ColumnArray::sizeAt(row) and src_offsets[row -1] == ColumnArray::OffsetAt(row)
+        total_elements += src_offsets[row] - src_offsets[row - 1];
         res_offsets[i] = total_elements;
     }
     auto res_data = src_data.cloneEmpty();
@@ -155,7 +157,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src.offsetAt(row), src.sizeAt(row));
+        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
