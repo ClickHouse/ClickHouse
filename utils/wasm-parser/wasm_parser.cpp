@@ -14,9 +14,18 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <csetjmp>
 #include <cstdint>
 #include <string>
 #include <new>
+
+extern "C"
+{
+    /// The error boundary; defined in `wasm_runtime.cpp`.
+    jmp_buf * chParserRecoveryPoint();
+    void chParserArmRecovery(bool armed);
+    const char * chParserRecoveryMessage();
+}
 
 namespace
 {
@@ -48,9 +57,17 @@ void ch_free(uint8_t * ptr)
 
 int ch_format(const char * query, uint32_t size, int one_line)
 {
-    /// `tryParseQuery` reports a syntax error by returning null and filling in the message; it does
-    /// not throw, and nothing in `src/Parsers` catches. So there is nothing to catch here either,
-    /// which is what lets this build with `-fno-exceptions`.
+    /// `tryParseQuery` reports a syntax error by returning null and filling in the message, and
+    /// nothing in `src/Parsers` catches. A few checks in the parser still report an invalid query
+    /// by throwing, and this build has no unwinding, so `wasm_runtime.cpp` turns such a throw into
+    /// a jump back to the `setjmp` boundary armed here - see the comment on `__cxa_throw` there.
+    if (setjmp(*chParserRecoveryPoint()) != 0)
+    {
+        result() = chParserRecoveryMessage();
+        return 0;
+    }
+    chParserArmRecovery(true);
+
     std::string error;
     const char * end = query + size;
     DB::ParserQuery parser(end);
@@ -60,11 +77,13 @@ int ch_format(const char * query, uint32_t size, int one_line)
 
     if (!ast)
     {
+        chParserArmRecovery(false);
         result() = std::move(error);
         return 0;
     }
 
     result() = one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
+    chParserArmRecovery(false);
     return 1;
 }
 

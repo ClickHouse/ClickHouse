@@ -53,6 +53,8 @@ CXXFLAGS=(
   -DCLICKHOUSE_PARSER_MINIMAL_BUILD
   -DFMT_USE_LOCALE=0
   -fignore-exceptions
+  # `setjmp`/`longjmp` is the error boundary around the parser - see wasm_runtime.cpp
+  -mllvm -wasm-enable-sjlj
   -fno-asynchronous-unwind-tables
   -Wno-everything
 )
@@ -166,7 +168,7 @@ echo "Linking..."
     -Wl,--no-entry -mexec-model=reactor -Wl,--strip-all \
     -Wl,--export=ch_format,--export=ch_alloc,--export=ch_free \
     -Wl,--export=ch_result_data,--export=ch_result_size \
-    "$OUT"/obj/*.o -lwasi-emulated-signal -lwasi-emulated-mman \
+    "$OUT"/obj/*.o -lsetjmp -lwasi-emulated-signal -lwasi-emulated-mman \
     -o "$OUT/parser.wasm"
 
 printf '%s: %s bytes (%s gzipped)\n' "$OUT/parser.wasm" \

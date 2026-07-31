@@ -35,12 +35,25 @@ const cases = [
     "GRANT SELECT(a, b) ON db.tbl TO u WITH GRANT OPTION",
     'SELECT 1 +',                     // expected to fail
     'SELCT 1',                        // expected to fail
+
+    // Reported by throwing from the parser, which has no unwinding here: it must come back as an
+    // error, and the module must stay usable afterwards - see __cxa_throw in wasm_runtime.cpp.
+    'SELECT sum(x) OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW) FROM t',
+    'SELECT sum(x) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM t',
+    'SELECT 1 + 2',                   // the parse after a throw must still work
 ];
+
+const expectedToFail = new Set([
+    'SELECT 1 +',
+    'SELCT 1',
+    'SELECT sum(x) OVER (ROWS BETWEEN UNBOUNDED FOLLOWING AND CURRENT ROW) FROM t',
+    'SELECT sum(x) OVER (ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING) FROM t',
+]);
 
 let pass = 0;
 for (const sql of cases) {
     const r = format(sql, 1);
-    const expectFail = sql === 'SELECT 1 +' || sql === 'SELCT 1';
+    const expectFail = expectedToFail.has(sql);
     const good = expectFail ? !r.ok : r.ok;
     pass += good ? 1 : 0;
     console.log(`${good ? 'ok  ' : 'FAIL'} ${r.ok ? '' : '[error] '}${r.out.replace(/\n/g, ' ').slice(0, 110)}`);

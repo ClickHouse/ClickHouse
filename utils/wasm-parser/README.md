@@ -24,10 +24,13 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
 
 It runs on any engine: no flags, and in particular no WebAssembly exception-handling proposal.
-The build uses `-fignore-exceptions`, which is sound because a syntax error is not an exception -
-`tryParseQuery` returns null - and `src/Parsers` contains no `catch` at all, which a style check
-enforces. An exception can therefore only mean a bug or a resource limit, and there is nothing to
-unwind to.
+A syntax error is not an exception - `tryParseQuery` returns null - and `src/Parsers` contains no
+`catch` at all, which a style check enforces, so the build passes `-fignore-exceptions`. The
+handful of parser checks that still report an invalid query by throwing - `Frame start cannot be
+UNBOUNDED FOLLOWING`, for one - reach the same place through a `setjmp` boundary that
+`wasm_runtime.cpp` jumps to instead of aborting. Recovery covers `DB::Exception` and nothing else:
+anything else arriving there - a `std::bad_alloc` from `operator new`, say - is an object of an
+unrelated type that cannot be read, so its type name is reported and the module stops.
 
 ## What it costs
 
