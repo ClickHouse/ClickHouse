@@ -1,0 +1,24 @@
+{
+  "directory": "none",
+  "group": "إعدادات التنسيق",
+  "pages": [
+    "ar/reference/settings/formats/bool",
+    "ar/reference/settings/formats/date-time",
+    "ar/reference/settings/formats/format",
+    "ar/reference/settings/formats/format-avro",
+    "ar/reference/settings/formats/format-binary",
+    "ar/reference/settings/formats/format-capn",
+    "ar/reference/settings/formats/format-csv",
+    "ar/reference/settings/formats/format-custom",
+    "ar/reference/settings/formats/format-regexp",
+    "ar/reference/settings/formats/format-schema",
+    "ar/reference/settings/formats/format-template",
+    "ar/reference/settings/formats/input-format",
+    "ar/reference/settings/formats/output-format",
+    "ar/reference/settings/formats/schema-inference",
+    "ar/reference/settings/formats/show-create",
+    "ar/reference/settings/formats/type-json",
+    "ar/reference/settings/formats/other"
+  ],
+  "root": "ar/reference/settings/formats"
+}
