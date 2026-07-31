@@ -691,8 +691,6 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
-    if (!target_model.empty())
-        w.writeString("target_model", target_model);
     if (!target_function.empty())
         w.writeString("target_function", target_function);
     if (!replica.empty())
@@ -851,7 +849,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
-    target_model = r.getString("target_model");
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");
