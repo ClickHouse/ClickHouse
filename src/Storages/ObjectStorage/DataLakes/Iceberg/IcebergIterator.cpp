@@ -374,13 +374,6 @@ void IcebergIterator::ensureDeletesReady()
 
 void IcebergIterator::decodeDeleteManifests()
 {
-    /// TODO: split this into separate "open" (`getManifestFile` + `ManifestFileIterator::create`) and
-    /// "drain" tasks, with drain partitioned by row range, so that `processRow` parallelizes within a
-    /// single large manifest and the first entry reaches `blocking_queue` without waiting for a whole
-    /// manifest. Land that before the worker pool is used for data manifests, where the time to the
-    /// first processed row matters. Note that `ManifestFileIterator::processRow` locks `files_mutex`
-    /// per entry to fill vectors only `getFilesWithoutDeletedHandle` consumers need, so that append
-    /// has to become optional first or row range tasks will serialize on it.
     std::vector<ManifestFileCacheKey> delete_manifests;
     if (data_snapshot)
     {
