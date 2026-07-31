@@ -114,7 +114,7 @@ For each CI failure:
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
 5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
-   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+   🕵 @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
@@ -251,6 +251,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable.
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit

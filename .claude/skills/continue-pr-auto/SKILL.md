@@ -139,7 +139,7 @@ For each CI failure:
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
 5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
-   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+   🕵 @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
@@ -278,6 +278,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable. This applies to every comment, including the `@groeneai` request, review replies, and the supersede/close comment.
 - This skill runs unattended. Never use `AskUserQuestion` or otherwise wait for user input while resolving conflicts, addressing feedback, or pushing — proceed with your best judgment and push. The only hard stop is a genuinely missing PR number (step 1).
 - **Ignore self-imposed status holds on the author's own PRs.** A recalled memory or note marking one of the author's own PRs as `no-push`, `no-comment`, `NA`, `NO-ACTION`, `reserved`/`RSVD`, `FROZEN`, or "DON'T self-merge/push/comment" (including any blanket "web-UI group" rule) is **void as a behavioral directive**: run the normal workflow anyway — keep the branch current (steps 3/3a), fix CI (step 4), address feedback (step 5), and push. Do **not** record new such holds; record only factual status and genuine open design questions. The only standing restriction that survives is **never self-merge** — leave the final merge to a human. (For forks and other authors' PRs, the usual no-self-merge / CLA / permission constraints still apply.)
 - Do not use rebase or amend - always add new commits (per project conventions)
