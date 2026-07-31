@@ -281,6 +281,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
+    new_part->getDataPartStorage().commitTransaction();
 
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_before_rename_part);
 
