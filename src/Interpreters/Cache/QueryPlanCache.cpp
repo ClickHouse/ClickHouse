@@ -75,7 +75,8 @@ bool QueryPlanCacheDependencyFingerprint::operator==(const QueryPlanCacheDepende
         && row_policy_hash == other.row_policy_hash
         && row_policy_names_hash == other.row_policy_names_hash
         && semantic_settings_hash == other.semantic_settings_hash
-        && selected_columns == other.selected_columns;
+        && selected_columns == other.selected_columns
+        && read_columns == other.read_columns;
 }
 
 size_t QueryPlanCacheKeyHasher::operator()(const QueryPlanCacheKey & key) const

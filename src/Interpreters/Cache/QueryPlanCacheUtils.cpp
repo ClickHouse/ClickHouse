@@ -18,10 +18,13 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Planner/PlannerContext.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <algorithm>
+#include <set>
+#include <stack>
 
 namespace DB
 {
@@ -267,10 +270,38 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
     return table_expression_data.begin()->second.getSelectedColumnsNames();
 }
 
+Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return {};
+
+    std::set<String> read_columns;
+    std::stack<const QueryPlan::Node *> stack;
+    stack.push(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        for (const auto * child : node->children)
+            stack.push(child);
+
+        if (typeid_cast<const ReadFromTableStep *>(node->step.get()))
+        {
+            for (const auto & column : node->step->getOutputHeader()->getNames())
+                read_columns.insert(column);
+        }
+    }
+
+    return Names(read_columns.begin(), read_columns.end());
+}
+
 QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
     const QueryPlanCacheLookupContext & lookup_context,
     const ContextPtr & context,
-    const Names & selected_columns)
+    const Names & selected_columns,
+    const Names & read_columns)
 {
     auto storage = DatabaseCatalog::instance().tryGetTable(lookup_context.storage_id, context);
     if (!storage)
@@ -285,6 +316,7 @@ QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
     fingerprint.row_policy_names_hash = getRowPolicyNamesHashForQueryPlanCache(context, lookup_context.storage_id);
     fingerprint.semantic_settings_hash = lookup_context.key.semantic_settings_hash;
     fingerprint.selected_columns = selected_columns;
+    fingerprint.read_columns = read_columns;
     return fingerprint;
 }
 
@@ -292,7 +324,8 @@ static QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerpr
     const QueryPlanCacheLookupContext & lookup_context,
     const ContextPtr & context,
     const StorageMetadataPtr & metadata_snapshot,
-    const Names & selected_columns)
+    const Names & selected_columns,
+    const Names & read_columns)
 {
     QueryPlanCacheDependencyFingerprint fingerprint;
     fingerprint.storage_id = lookup_context.storage_id;
@@ -301,6 +334,7 @@ static QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerpr
     fingerprint.row_policy_names_hash = getRowPolicyNamesHashForQueryPlanCache(context, lookup_context.storage_id);
     fingerprint.semantic_settings_hash = lookup_context.key.semantic_settings_hash;
     fingerprint.selected_columns = selected_columns;
+    fingerprint.read_columns = read_columns;
     return fingerprint;
 }
 
@@ -326,11 +360,15 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
     if (entry.selected_columns != entry.dependencies.selected_columns)
         return {};
 
+    if (entry.read_columns != entry.dependencies.read_columns)
+        return {};
+
     auto fingerprint = buildQueryPlanCacheDependencyFingerprint(
         lookup_context,
         context,
         metadata_snapshot,
-        entry.dependencies.selected_columns);
+        entry.dependencies.selected_columns,
+        entry.dependencies.read_columns);
 
     if (!(entry.dependencies == fingerprint))
         return {};
@@ -338,6 +376,7 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
     ValidatedQueryPlanCacheEntry result;
     result.storage_id = lookup_context.storage_id;
     result.selected_columns = entry.selected_columns;
+    result.read_columns = entry.read_columns;
     result.metadata_snapshot = metadata_snapshot;
     result.storage_bindings.push_back(QueryPlanStorageBinding{
         .table_name = lookup_context.storage_id.getFullTableName(),

@@ -22,15 +22,19 @@ bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
+Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan);
+
 QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
     const QueryPlanCacheLookupContext & lookup_context,
     const ContextPtr & context,
-    const Names & selected_columns);
+    const Names & selected_columns,
+    const Names & read_columns);
 
 struct ValidatedQueryPlanCacheEntry
 {
     StorageID storage_id = StorageID::createEmpty();
     Names selected_columns;
+    Names read_columns;
     StorageMetadataPtr metadata_snapshot;
     std::vector<QueryPlanStorageBinding> storage_bindings;
 };

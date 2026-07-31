@@ -1910,7 +1910,7 @@ static BlockIO executeQueryImpl(
                                     context,
                                     validated_cache_entry->storage_id,
                                     validated_cache_entry->metadata_snapshot,
-                                    cached_entry->selected_columns);
+                                    cached_entry->read_columns);
 
                                 checkStoragesSupportTransactionsForQueryPlanCacheHit(
                                     context,
@@ -1930,13 +1930,13 @@ static BlockIO executeQueryImpl(
                                 /// The normal planner records query access info via Context::addQueryAccessInfo
                                 /// in PlannerJoinTree. On a cache hit the analyzer is skipped, so we restore it
                                 /// here to keep system.query_log.query_databases, query_tables, and query_columns
-                                /// populated. For SELECT count() the cached selected_columns is empty, so only the
-                                /// database and table are recorded.
+                                /// populated. For SELECT count() the semantic selected_columns is empty, so record
+                                /// the physical read columns chosen when the cached plan was built.
                                 if (!internal && context->hasQueryContext())
                                 {
                                     context->getQueryContext()->addQueryAccessInfo(
                                         validated_cache_entry->storage_id,
-                                        cached_entry->selected_columns);
+                                        cached_entry->read_columns);
                                     for (const auto & row_policy : cached_entry->used_row_policies)
                                         context->getQueryContext()->addUsedRowPolicy(row_policy);
                                 }
@@ -2005,11 +2005,13 @@ static BlockIO executeQueryImpl(
                             QueryPlanCacheEntry entry;
                             entry.serialized_plan = serialized_plan.str();
                             entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(interpreter_with_analyzer->getPlanner().getPlannerContext());
+                            entry.read_columns = getReadColumnsForQueryPlanCacheEntry(plan_copy);
                             entry.used_row_policies = interpreter_with_analyzer->getPlanner().getUsedRowPolicies();
                             entry.dependencies = buildQueryPlanCacheDependencyFingerprint(
                                 *query_plan_cache_lookup_context,
                                 context,
-                                entry.selected_columns);
+                                entry.selected_columns,
+                                entry.read_columns);
                             /// Quota is a per-query admission rule only. It is not stored in the cache state.
                             const size_t plan_cache_quota = settings[Setting::query_plan_cache_size_in_bytes_quota];
                             query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry), plan_cache_quota);

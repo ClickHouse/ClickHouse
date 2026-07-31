@@ -89,6 +89,7 @@ struct QueryPlanCacheDependencyFingerprint
     UInt64 row_policy_names_hash = 0;
     UInt64 semantic_settings_hash = 0;
     Names selected_columns;
+    Names read_columns;
 
     bool operator==(const QueryPlanCacheDependencyFingerprint & other) const;
 };
@@ -102,9 +103,12 @@ struct QueryPlanCacheEntry
     /// Binary-serialized QueryPlan bytes (produced by QueryPlan::ensureSerialized / getSerializedData)
     std::string serialized_plan;
 
-    /// Columns that require `SELECT` access revalidation on cache hit.
-    /// Empty means "any accessible column is sufficient", matching `SELECT count()` semantics.
+    /// Columns selected by query semantics. This can be empty for queries such as `SELECT count()`.
     Names selected_columns;
+
+    /// Physical columns read by the cached plan. Cache hits revalidate access to these columns,
+    /// because trivial queries may read a planner-chosen column even when `selected_columns` is empty.
+    Names read_columns;
 
     /// Row policy names applied when the plan was originally built.
     /// Persisted so that cache-hit paths can propagate them to system.query_log.
@@ -131,11 +135,15 @@ struct QueryPlanCacheEntryWeight
         size_t weight = entry.serialized_plan.size();
         for (const auto & col : entry.selected_columns)
             weight += col.size();
+        for (const auto & col : entry.read_columns)
+            weight += col.size();
         for (const auto & policy : entry.used_row_policies)
             weight += policy.size();
         for (const auto & [table, _] : entry.dependencies.table_metadata_versions)
             weight += table.size();
         for (const auto & col : entry.dependencies.selected_columns)
+            weight += col.size();
+        for (const auto & col : entry.dependencies.read_columns)
             weight += col.size();
         return weight;
     }
