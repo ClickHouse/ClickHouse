@@ -6,7 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-
+#include <Common/StringUtils.h>
 #include <cctype>
 
 namespace DB
@@ -33,7 +33,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String) or LowCardinality(String) or Nullable(LowCardinality(String))"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
             {"condition", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -47,8 +47,6 @@ public:
 private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t condition_arg_index = 1;
-
-    String functionName() const override { return name; }
 
     AIParamSpecs functionParams() const override
     {
@@ -75,11 +73,6 @@ private:
         return String(arguments[0].column->getDataAt(row));
     }
 
-    MutableColumnPtr createResultColumn() const override
-    {
-        return ColumnUInt8::create();
-    }
-
     void insertProcessedResult(IColumn & column, const String & processed) const override
     {
         assert_cast<ColumnUInt8 &>(column).insertValue(parseFilterMatch(processed) ? 1 : 0);
@@ -90,9 +83,9 @@ private:
     /// false so a row that the model failed to classify cleanly is filtered out rather than kept.
     static bool parseFilterMatch(std::string_view raw)
     {
-        while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front())))
+        while (!raw.empty() && isWhitespaceASCII(static_cast<unsigned char>(raw.front())))
             raw.remove_prefix(1);
-        while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back())))
+        while (!raw.empty() && isWhitespaceASCII(static_cast<unsigned char>(raw.back())))
             raw.remove_suffix(1);
 
         if (raw.size() != 4)
@@ -134,7 +127,7 @@ Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pai
             {"Filter angry reviews", "SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')", ""},
             {"Filter a column with explicit credentials", "SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5", ""},
         },
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});
 
     factory.registerAlias("AIFilter", "aiFilter");

@@ -14,10 +14,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -340,11 +338,6 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
     }
 }
 
-MutableColumnPtr FunctionBaseAI::createResultColumn() const
-{
-    return ColumnString::create();
-}
-
 void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & processed) const
 {
     column.insertData(processed.data(), processed.size());
@@ -394,7 +387,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    auto result_col = createResultColumn();
+    auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
     UInt64 total_api_calls = 0;

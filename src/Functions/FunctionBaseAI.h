@@ -160,9 +160,9 @@ protected:
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
-    /// Result-column hooks so subclasses can return non-String types (e.g. `aiFilter` → `UInt8`).
-    /// The default implementations preserve `ColumnString` behaviour for existing AI functions.
-    virtual MutableColumnPtr createResultColumn() const;
+    /// Insert a post-processed provider response into the result column.
+    /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types
+    /// (e.g. `aiFilter` → `UInt8`). The result column itself is created from `result_type`.
     virtual void insertProcessedResult(IColumn & column, const String & processed) const;
 
 private:

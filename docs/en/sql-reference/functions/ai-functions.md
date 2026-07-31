@@ -14,9 +14,6 @@ AI functions are experimental. Set [`allow_experimental_ai_functions`](/operatio
 
 :::warning
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
-
-In particular, do **not** trust the output of `aiFilter` without scrutiny.
-LLM-based boolean predicates can produce incorrect or inconsistent results. Use them only where false positives and false negatives are acceptable.
 :::
 
 All functions are sharing a common infrastructure that provides:
