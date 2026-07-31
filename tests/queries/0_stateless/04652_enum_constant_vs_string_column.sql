@@ -276,11 +276,16 @@ SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
--- The two cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the
--- default route, where count() is answered from the partition predicate alone, unmeasured. That route is a
--- separate consumer of the converted constant and it fails in the other direction: instead of dropping the
--- matching row it counted the rows of the '3' partition, returning 3 for a true count of 1.
-SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)'))
+-- The two cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the route
+-- where count() is answered from the partition predicate alone unmeasured. That route is a separate
+-- consumer of the converted constant and it fails in the other direction: instead of dropping the matching
+-- row it counted the rows of the '3' partition, returning 3 for a true count of 1. This cell pins the
+-- setting ON rather than off, both to select that route and because the test runner otherwise disables the
+-- optimization at random in about one run in twenty. Whether the route is then taken depends on the
+-- analyzer, which cannot be pinned inside a subquery, so the cell asserts the count itself: it reads the
+-- correct value on either analyzer after the fix and the wrong one on both before it.
+SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+    SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0)
     = (SELECT count() FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
