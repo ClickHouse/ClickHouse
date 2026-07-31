@@ -107,9 +107,13 @@ SELECT countIf(explain ILIKE '%Exchange%') > 0 FROM (
 -- and makes the system.query_cache assertion below specific.
 SYSTEM DROP QUERY CACHE;
 
+-- enable_parallel_replicas = 0 on every statement below that uses the cache: the ambient profile of the
+-- ParallelReplicas jobs turns it on, which rewrites the subquery plan so the entry is written under a key
+-- the later reads never match, and the hit assertion reads 0. Writer and readers must agree on the key,
+-- so all four are pinned rather than just the write.
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_min_query_duration = 0, query_cache_min_query_runs = 0,
-         query_cache_tag = '04327_totals';
+         query_cache_tag = '04327_totals', enable_parallel_replicas = 0;
 
 SELECT count() > 0 FROM system.query_cache WHERE is_subquery = 1 AND tag = '04327_totals' AND query LIKE '%GROUP BY val WITH TOTALS%';
 
@@ -121,18 +125,18 @@ DELETE FROM t_04327 WHERE 1 SETTINGS lightweight_deletes_sync = 2;
 
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0,
-         query_cache_tag = '04327_totals';
+         query_cache_tag = '04327_totals', enable_parallel_replicas = 0;
 
 -- Control: with reads disabled the same query returns nothing, so the row above is a real hit.
 SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) ORDER BY x
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0, enable_reads_from_query_cache = 0,
-         query_cache_tag = '04327_totals';
+         query_cache_tag = '04327_totals', enable_parallel_replicas = 0;
 
 INSERT INTO t_04327 SELECT number, number * 7 FROM numbers(3);
 
 SELECT id FROM t_04327 WHERE id >= (SELECT x FROM (SELECT val AS x FROM t_04327 GROUP BY val WITH TOTALS) AS s WHERE t_04327.val >= 0) ORDER BY id FORMAT JSONCompact
 SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, enable_writes_to_query_cache = 0,
-         query_cache_tag = '04327_totals', log_comment = '04327_cache_correlated';
+         query_cache_tag = '04327_totals', enable_parallel_replicas = 0, log_comment = '04327_cache_correlated';
 
 -- The rows were restored above, so the statement returns the same main rows whether or not the
 -- subquery came from the cache, and a miss would build a real TotalsHaving step that the carrier-side
