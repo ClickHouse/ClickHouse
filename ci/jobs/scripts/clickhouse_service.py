@@ -76,17 +76,6 @@ class ClickHouseService:
                 if not link_path.exists():
                     Utils.link(clickhouse_bin, link_path)
 
-            # The build artifacts are self-extracting: the first invocation
-            # decompresses the real ELF in place. An unstripped release build
-            # expands to over 4 GB, which on its own can outlast the pid-file
-            # wait in `_wait_ready`, so the server gets killed mid-extraction
-            # before it ever runs and the job fails with `Failed to get PID`.
-            # Extract synchronously here - the same thing the install stage in
-            # `functional_tests.py` does - so that wait covers server startup
-            # only. Decompression is a no-op once the binary is extracted, so
-            # this is cheap on repeat starts within a job.
-            Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
-
             # Run config hooks in order, passing the config and data dirs so a
             # hook can build paths into either. Typically the first is
             # `install_base`, then per-job tune-ups that customize it.
@@ -103,6 +92,20 @@ class ClickHouseService:
             Path(self.run_path).mkdir(parents=True, exist_ok=True)
             Path(self.log_dir).mkdir(parents=True, exist_ok=True)
             Path(self.pid_file).unlink(missing_ok=True)
+
+            # The build artifacts are self-extracting: the first invocation
+            # decompresses the real ELF in place. An unstripped release build
+            # expands to over 4 GB, which on its own can outlast the pid-file
+            # wait in `_wait_ready`, so the server gets killed mid-extraction
+            # before it ever runs and the job fails with `Failed to get PID`.
+            # Extract synchronously here - the same thing the install stage in
+            # `functional_tests.py` does - so that wait covers server startup
+            # only. Decompression is a no-op once the binary is extracted, so
+            # this is cheap on repeat starts within a job. This runs after the
+            # stale `run_path` of a previous job on this reused runner is
+            # removed above, so the extra 4+ GB the extraction needs does not
+            # compete with data we are about to delete anyway.
+            Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
 
             # This context manager is entered once per job and starts a single
             # server on fixed shared ports. Right before that first start, clear
