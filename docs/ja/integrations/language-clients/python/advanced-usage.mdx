@@ -64,7 +64,7 @@ import clickhouse_connect
 if __name__ == '__main__':
     client = clickhouse_connect.get_client()
     query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
-    fmt = 'CSVWithNames'  # or CSV, or CSVWithNamesAndTypes, or TabSeparated, etc.
+    fmt = 'CSVWithNames'  # または CSV、CSVWithNamesAndTypes、TabSeparated など
     stream = client.raw_stream(query=query, fmt=fmt)
     with open("output.csv", "wb") as f:
         for chunk in stream:
@@ -82,7 +82,7 @@ if __name__ == '__main__':
 4,"4"
 ```
 
-同様に、データは [TabSeparated](/ja/reference/formats/TabSeparated/TabSeparated) やその他のフォーマットで保存することもできます。利用可能なすべてのフォーマット オプションの概要については、[Formats for Input and Output Data](/ja/reference/formats/index) を参照してください。
+同様に、データは [TabSeparated](/ja/reference/formats/TabSeparated/TabSeparated) やその他のフォーマットで保存することもできます。利用可能なすべてのフォーマット オプションの概要については、[Formats for Input and Output Data](/ja/reference/formats) を参照してください。
 
 <div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
   ## マルチスレッド、マルチプロセス、非同期/イベント駆動のユースケース

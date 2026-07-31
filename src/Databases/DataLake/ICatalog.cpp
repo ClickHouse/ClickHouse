@@ -177,7 +177,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
+        if (!force_add_bucket && location.contains("/" + bucket))
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
@@ -320,7 +320,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)
     {
@@ -354,7 +354,7 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
             if (fixed_prefix.empty())
                 return getTables();
 
-            DB::Names result;
+            CatalogTables result;
             for (const auto & namespace_name : getNamespaces())
             {
                 const std::string namespace_prefix = namespace_name + ".";

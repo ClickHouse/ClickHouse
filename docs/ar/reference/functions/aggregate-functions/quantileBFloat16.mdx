@@ -33,11 +33,11 @@ quantileBFloat16[(level)](expr)
 
 **الوسيطات**
 
-* `expr` — عمود يحتوي على بيانات رقمية. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `expr` — تعبير على قيم العمود يُرجِع أنواع بيانات رقمية أو `Date` أو `DateTime`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 
 **القيمة المعادة**
 
-الكوانتايل التقريبي للمستوى المحدد. [`Float64`](/ar/reference/data-types/float)
+الكوانتايل التقريبي للمستوى المحدد. بالنسبة إلى مُدخلات `Date` و`DateTime`، يتطابق تنسيق الإخراج مع تنسيق الإدخال. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 

@@ -39,8 +39,7 @@ public:
         ObjectStorageRouterPtr object_storages_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        bool use_fake_transaction_ = true);
+        const String & config_prefix);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
@@ -185,6 +184,8 @@ public:
         ) override;
 
     void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -224,6 +225,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -280,7 +282,6 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
