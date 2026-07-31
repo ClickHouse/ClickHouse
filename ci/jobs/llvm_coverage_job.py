@@ -396,27 +396,17 @@ if __name__ == "__main__":
 
                 _drop = coverage_drop(b_line_cov, c_line_cov)
 
-            if not _measurement_comparable:
-                # SKIPPED counts as OK, so the job stays green while stating that it
-                # did not judge. Reddening instead would turn a tool crash the PR
-                # author cannot act on into a blocking failure, and would relitigate
-                # the deliberate decision to let a shard's profile go missing.
-                _skip_msg = f"Coverage comparison skipped: {_incomparable_reason}"
-                print(_skip_msg)
-                diff_res.info = _skip_msg
-                diff_res.set_comment(_skip_msg)
-                diff_res.set_status(Result.Status.SKIPPED)
-            elif coverage_degraded(_drop):
-                _failure_msg = (
-                    f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
-                    f" (dropped {_drop:.2f} pp, tolerance {COVERAGE_DROP_TOLERANCE} pp)"
-                )
-                print(_failure_msg)
-                diff_res.info = _failure_msg
-                diff_res.set_comment(_failure_msg)
-                diff_res.set_failed()
-            else:
-                print(f"Coverage did not degrade beyond tolerance (delta {delta:+.2f}%).")
+                if coverage_degraded(_drop):
+                    _failure_msg = (
+                        f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
+                        f" (dropped {_drop:.2f} pp, tolerance {COVERAGE_DROP_TOLERANCE} pp)"
+                    )
+                    print(_failure_msg)
+                    diff_res.info = _failure_msg
+                    diff_res.set_comment(_failure_msg)
+                    diff_res.set_failed()
+                else:
+                    print(f"Coverage did not degrade beyond tolerance (delta {delta:+.2f}%).")
 
             # Compress and attach the diff HTML report archive + files to the diff result.
             # Unlike the full report, the DIFFERENTIAL report renders per-line deltas
@@ -445,6 +435,21 @@ if __name__ == "__main__":
             # When it is not comparable the reason was already printed above, and
             # repeating this sentence would name a cause that was never established.
             print("No C/C++ source files changed — differential coverage report was not generated.")
+
+        # Deliberately NOT an arm of the _diff_ran chain above: _diff_ran is False
+        # for three different reasons and only one of them (nothing coverable
+        # changed on a comparable run) licenses an OK, so reaching the abstention
+        # through it left a green sub-result on a run that did not judge. Placing
+        # it after the whole construct also keeps the verdict arm from being
+        # clobbered. SKIPPED counts as OK, so the job stays green while stating
+        # that it did not judge; reddening would turn a tool problem the PR author
+        # cannot act on into a blocking failure.
+        if not _measurement_comparable:
+            _skip_msg = f"Coverage comparison skipped: {_incomparable_reason}"
+            print(_skip_msg)
+            diff_res.info = _skip_msg
+            diff_res.set_comment(_skip_msg)
+            diff_res.set_status(Result.Status.SKIPPED)
 
         results.append(diff_res)
 
@@ -534,7 +539,13 @@ if __name__ == "__main__":
             # and therefore coverage, cannot have moved.
             _has_coverage_data = _diff_ran and _measurement_comparable
             if not _has_coverage_data:
-                if _diff_ran:
+                # Comparability is tested FIRST, as at the two sibling sites above,
+                # because a current-side cause short-circuits the differential
+                # script entirely: _diff_ran is then False for a reason that has
+                # nothing to do with C/C++ files, so selecting the message on it
+                # states something about the PR's contents that was never
+                # established - immediately after the real reason was printed.
+                if not _measurement_comparable:
                     print(f"Skipping coverage comment and CI DB row: {_incomparable_reason}")
                 else:
                     print("No coverage-relevant changes detected (no C/C++ source changes), skipping coverage comment.")
@@ -655,9 +666,17 @@ if __name__ == "__main__":
             else f"REFs/{branch}/{current_commit_sha}"
         )
         _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
-        report_links.append(
-            f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
-        )
+        # Only publish the link when the artifact it addresses exists: the merge
+        # phase now legitimately produces no report at all (it exits 0 without
+        # generating HTML when merged.profdata is absent), so an unconditional
+        # append points the intended green SKIPPED result at a 404. The entry
+        # point rather than the directory is tested, because that is what the URL
+        # addresses and what collect_html_report_files requires before it attaches
+        # anything.
+        if Path(f"{TEMP_DIR}/llvm_coverage_html_report/index.html").exists():
+            report_links.append(
+                f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html"
+            )
         if _diff_ran and _measurement_comparable:
             report_links.append(
                 f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"

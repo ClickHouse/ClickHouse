@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import types
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -954,6 +955,7 @@ def _drive_diff_gate(
     baseline_complete=True,
     sidecar_override=None,
     diff_inputs=True,
+    pr_number=4242,
 ):
     """Drive the real diff-gate out of the job source.
 
@@ -975,15 +977,16 @@ def _drive_diff_gate(
         for s in main_if.body
         if isinstance(s, ast.If) and ast.unparse(s.test) == "not is_master_branch"
     ][0]
-    # Slice through `results.append(print_res)`, not merely to the comparability
-    # verdict: the "Baseline coverage / Current coverage / Delta" prints and the
-    # whole Print Uncovered Code branch live below it, and a cell asserting on
-    # either is VACUOUS unless they are in the executed region at all.
+    # Slice through the `if not is_local_run:` block, not merely to the
+    # comparability verdict: the "Baseline coverage / Current coverage / Delta"
+    # prints, the whole Print Uncovered Code branch AND the coverage-comment /
+    # CI-DB-row branch all live below it, and a cell asserting on any of them is
+    # VACUOUS unless they are in the executed region at all.
     keep = []
     for st in block.body:
         keep.append(st)
         txt = ast.get_source_segment(src, st) or ""
-        if txt.startswith("results.append(print_res)"):
+        if txt.startswith("if not is_local_run:"):
             break
     _sliced = "\n".join((ast.get_source_segment(src, s) or "") for s in keep)
     assert (
@@ -992,6 +995,9 @@ def _drive_diff_gate(
     assert (
         "No C/C++ source files changed" in _sliced
     ), "harness slice no longer contains the no-C++-changes messages it asserts on"
+    assert (
+        "No coverage-relevant changes detected" in _sliced
+    ), "harness slice no longer contains the coverage-comment branch it asserts on"
     mod = ast.Module(body=keep, type_ignores=[])
     ast.fix_missing_locations(mod)
     code = compile(mod, job_path or _JOB, "exec")
@@ -1070,6 +1076,20 @@ def _drive_diff_gate(
         "_measurement_comparable": True,
         "_incomparable_reason": "",
         "results": [],
+        # The coverage-comment / CI-DB-row branch. is_local_run is False so the
+        # branch actually EXECUTES: on a local run the job prints one line and
+        # writes nothing, which would make every cell below it vacuous.
+        "is_local_run": False,
+        "pr_number": pr_number,
+        "current_commit_sha": "c" * 40,
+        "branch": "some-branch",
+        "base_commit_sha": "b" * 40,
+        "base_branch": "master",
+        "datetime": datetime,
+        "timezone": timezone,
+        "json": json,
+        "open": open,
+        "S3_REPORT_BUCKET_HTTP_ENDPOINT": "s3.example.invalid",
     }
     exec(code, ns)
     return types.SimpleNamespace(
@@ -1082,6 +1102,12 @@ def _drive_diff_gate(
         selected_base=ns.get("_selected_base_commit"),
         printed=printed,
         sidecar=sidecar,
+        # Whether the job decided it had coverage data worth publishing. The file
+        # is the artifact the post-hook reads to post the GitHub comment and to
+        # insert the CI DB row, so its absence is the observable that the
+        # abstention really withheld both.
+        comment_written=os.path.exists(os.path.join(tmpdir, "coverage_comment.json")),
+        report_links=ns.get("report_links"),
     )
 
 
@@ -1234,6 +1260,43 @@ def test_two_complete_sides_reach_a_real_comparable_verdict():
     assert any("Baseline coverage : 84.10%" in l for l in got.printed), got.printed
     assert any("Current coverage  : 84.40%" in l for l in got.printed), got.printed
     assert any("Delta             : +0.30%" in l for l in got.printed), got.printed
+    # Reverse direction of the abstention below: a comparable diff-ran verdict must
+    # keep the OK sub-result, so the abstention cannot be widened into "always
+    # SKIPPED".
+    assert got.diff_res.status == Result.Status.OK, got.diff_res.status
+
+
+def test_baseline_incomplete_with_no_coverable_changes_still_abstains():
+    # The one cell in the matrix nobody had driven, and the reason the abstention
+    # cannot live inside `if _diff_ran:`.
+    #
+    # The differential script DOES run here (a baseline-side cause is unknowable
+    # before it fetches the baseline), it selects an INCOMPLETE baseline, and it
+    # then takes its own `${#patterns[@]} -eq 0` exit because nothing coverable
+    # changed - so it never runs genhtml and the report directory is absent. With
+    # the abstention nested under `if _diff_ran:`, that made _diff_ran False, the
+    # override was skipped, and the sub-result kept the OK from_commands_run gave
+    # it: a green verdict for a run that did not judge, which is the exact outcome
+    # this gate exists to prevent.
+    #
+    # _diff_ran is False for three materially different reasons and only one of
+    # them - nothing coverable changed on a COMPARABLE run - licenses an OK, so
+    # the abstention is guarded on comparability alone and placed after the whole
+    # _diff_ran construct, where the degraded arm cannot clobber it either.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, baseline_complete=False, diff_inputs=False)
+    assert got.comparable is False
+    assert "baseline measurement is incomplete" in got.reason, got.reason
+    # The script ran: that is what makes this a BASELINE-side cause rather than
+    # the current-side short-circuit, and it is why _diff_ran cannot stand in for
+    # "this run produced a verdict".
+    assert len(got.invocations) == 1, f"expected one invocation, got {got.invocations}"
+    assert got.diff_res.status == Result.Status.SKIPPED, got.diff_res.status
+    assert got.reason in got.diff_res.info, (got.reason, got.diff_res.info)
+    # A SKIPPED child must keep the JOB green: the abstention states that the gate
+    # did not judge, it does not fail the PR author for a tool problem.
+    parent = Result.create_from(name="LLVM Coverage", results=got.results)
+    assert parent.is_ok(), f"job is not green: {parent.status}"
 
 
 _NO_CPP = "No C/C++ source files changed"
@@ -1284,8 +1347,215 @@ def test_a_comparable_run_with_no_coverable_changes_still_reports_no_cpp_changes
     assert got.print_res.status == Result.Status.OK, got.print_res.status
     assert _NO_CPP in got.print_res.info, got.print_res.info
     assert any(_NO_CPP in line for line in got.printed), got.printed
+    # The diff sub-result too: this cell and the baseline-incomplete one above
+    # differ ONLY in comparability, so together they pin that the abstention is
+    # keyed on comparability rather than on the absent report directory the two
+    # states share.
+    assert got.diff_res.status == Result.Status.OK, got.diff_res.status
     parent = Result.create_from(name="LLVM Coverage", results=got.results)
     assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+_NO_COV_DATA = "No coverage-relevant changes detected"
+_SKIP_COMMENT = "Skipping coverage comment and CI DB row"
+
+
+def test_current_side_abstention_does_not_report_no_cpp_changes_in_the_comment_branch():
+    # The THIRD site of the same ordering defect, in the branch that decides
+    # whether to publish the GitHub comment and the CI DB row.
+    #
+    # The gate on _has_coverage_data is correct - neither is published - but the
+    # MESSAGE was selected on _diff_ran alone. On a current-side cause the
+    # differential script is deliberately never invoked, so _diff_ran is False for
+    # a reason that has nothing to do with C/C++ files, and the run made a claim
+    # about the PR's contents that was never established, immediately after having
+    # printed the real incompleteness reason.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(
+            True, d, present_names=[completeness.profile_basename(_GATE_ARTIFACTS[0])]
+        )
+    assert got.comparable is False
+    assert any(_SKIP_COMMENT in line for line in got.printed), got.printed
+    assert got.reason in " ".join(got.printed), (got.reason, got.printed)
+    assert not any(_NO_COV_DATA in line for line in got.printed), got.printed
+    # And the artifact the post-hook reads really was withheld, so no comment is
+    # posted and no CI DB row is inserted from an unjudged run.
+    assert got.comment_written is False
+
+
+def test_baseline_side_abstention_does_not_report_no_cpp_changes_in_the_comment_branch():
+    # The baseline-side route to the same branch. Here the script DID run, so the
+    # pre-fix _diff_ran test happened to pick the right message when it also
+    # produced a report - but not when it took its own no-coverable-files exit,
+    # which is the state driven here.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, baseline_complete=False, diff_inputs=False)
+    assert got.comparable is False
+    assert "baseline measurement is incomplete" in got.reason, got.reason
+    assert any(_SKIP_COMMENT in line for line in got.printed), got.printed
+    assert not any(_NO_COV_DATA in line for line in got.printed), got.printed
+    assert got.comment_written is False
+
+
+def test_a_comparable_run_with_nothing_coverable_does_report_no_coverage_data():
+    # The reverse direction, and the cell that keeps the one-token fix from being
+    # widened into "always print the reason": both sides are complete, the script
+    # ran, and nothing coverable changed. That is the ONE state in which this
+    # sentence is true, so it must survive.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, diff_inputs=False)
+    assert got.comparable is True, f"gate abstained: {got.reason}"
+    assert any(_NO_COV_DATA in line for line in got.printed), got.printed
+    assert not any(_SKIP_COMMENT in line for line in got.printed), got.printed
+    # Still nothing to publish: there is no delta to report.
+    assert got.comment_written is False
+
+
+def test_a_healthy_comparable_run_publishes_the_comment_and_neither_skip_message():
+    # The path the whole branch exists to serve. Without this cell the two skip
+    # messages could both be suppressed and every assertion above would still
+    # pass while the job never published a comment at all.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d)
+    assert got.comparable is True, f"gate abstained: {got.reason}"
+    assert got.comment_written is True
+    assert not any(_NO_COV_DATA in line for line in got.printed), got.printed
+    assert not any(_SKIP_COMMENT in line for line in got.printed), got.printed
+
+
+# --------------------------------------------------------------------------
+# The job's report_links block: a published URL must address an artifact that
+# exists. The merge phase now legitimately produces no report at all, which is a
+# state that did not exist on the merge base (a failed merge exited 1 there and
+# reddened the job), so the previously-unconditional append can now point the
+# intended green SKIPPED result at a 404.
+# --------------------------------------------------------------------------
+
+_FULL_REPORT_URL_TAIL = "generate_llvm_coverage_report/index.html"
+
+
+def _report_links_nodes():
+    """The job's `report_links = []` and the `not is_local_run` block that fills it."""
+    src = open(_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    return [
+        st
+        for st in main_if.body
+        if (ast.get_source_segment(src, st) or "").startswith("report_links = []")
+        or (
+            isinstance(st, ast.If)
+            and ast.unparse(st.test) == "not is_local_run"
+            and "report_links.append" in ast.unparse(st)
+        )
+    ]
+
+
+def _drive_report_links(tmpdir, report_exists, pr_number=4242, branch="some-branch"):
+    """Drive the job's own report_links block out of its source.
+
+    Extracted by AST rather than by line range, like the other harnesses here:
+    the two statements sit at different nesting depths from anything a single
+    dedent could express, and node extraction cannot silently degenerate into an
+    IndentationError when either is re-nested.
+    """
+    keep = _report_links_nodes()
+    src = open(_JOB, encoding="utf-8").read()
+    assert len(keep) == 2, f"expected the two report_links statements, got {len(keep)}"
+    _sliced = "\n".join((ast.get_source_segment(src, s) or "") for s in keep)
+    assert (
+        _FULL_REPORT_URL_TAIL in _sliced
+    ), "harness slice no longer contains the full-report link it asserts on"
+    mod = ast.Module(body=keep, type_ignores=[])
+    ast.fix_missing_locations(mod)
+
+    if report_exists:
+        os.makedirs(os.path.join(tmpdir, "llvm_coverage_html_report"), exist_ok=True)
+        with open(
+            os.path.join(tmpdir, "llvm_coverage_html_report", "index.html"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("<html></html>")
+
+    ns = {
+        "Path": pathlib.Path,
+        "TEMP_DIR": tmpdir,
+        "is_local_run": False,
+        "pr_number": pr_number,
+        "current_commit_sha": "c" * 40,
+        "branch": branch,
+        "S3_REPORT_BUCKET_HTTP_ENDPOINT": "s3.example.invalid",
+        # The diff link's own guard is not under test here; keep it False so the
+        # assertions below see the full-report link alone.
+        "_diff_ran": False,
+        "_measurement_comparable": False,
+    }
+    exec(compile(mod, _JOB, "exec"), ns)  # noqa: S102 - trusted first-party source
+    return ns["report_links"]
+
+
+def test_no_full_report_link_when_the_merge_produced_no_report():
+    # merge_llvm_coverage.sh exits 0 without generating any HTML when
+    # merged.profdata is absent, so the intended green SKIPPED result would
+    # otherwise advertise a URL that 404s.
+    with tempfile.TemporaryDirectory() as d:
+        assert _drive_report_links(d, report_exists=False) == []
+
+
+def test_full_report_link_is_published_when_the_report_exists():
+    # The reverse direction, so the guard cannot be widened into "never publish".
+    # The URL's shape is asserted verbatim: it is deterministic from the upload
+    # path structure, so a change here means a dead link on every healthy run.
+    with tempfile.TemporaryDirectory() as d:
+        links = _drive_report_links(d, report_exists=True)
+    assert links == [
+        f"https://s3.example.invalid/PRs/4242/{'c' * 40}/llvm_coverage/{_FULL_REPORT_URL_TAIL}"
+    ], links
+
+
+def test_the_master_branch_link_is_gated_on_the_report_too():
+    # The report_links block sits OUTSIDE `if not is_master_branch:`, so a master
+    # run with an incomplete measurement publishes the same dead URL. This path
+    # uses the REFs/<branch>/<sha> prefix and was untested.
+    with tempfile.TemporaryDirectory() as d:
+        assert _drive_report_links(d, report_exists=False, pr_number=0) == []
+    with tempfile.TemporaryDirectory() as d:
+        links = _drive_report_links(d, report_exists=True, pr_number=0, branch="master")
+    assert links == [
+        f"https://s3.example.invalid/REFs/master/{'c' * 40}/llvm_coverage/{_FULL_REPORT_URL_TAIL}"
+    ], links
+
+
+def test_the_diff_link_still_rides_behind_its_own_guard():
+    # The diff link's guard is unchanged; this pins that a comparable diff-ran run
+    # still gets BOTH URLs, in the same order.
+    mod = ast.Module(body=_report_links_nodes(), type_ignores=[])
+    ast.fix_missing_locations(mod)
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "llvm_coverage_html_report"), exist_ok=True)
+        with open(
+            os.path.join(d, "llvm_coverage_html_report", "index.html"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("<html></html>")
+        ns = {
+            "Path": pathlib.Path,
+            "TEMP_DIR": d,
+            "is_local_run": False,
+            "pr_number": 4242,
+            "current_commit_sha": "c" * 40,
+            "branch": "some-branch",
+            "S3_REPORT_BUCKET_HTTP_ENDPOINT": "s3.example.invalid",
+            "_diff_ran": True,
+            "_measurement_comparable": True,
+        }
+        exec(compile(mod, _JOB, "exec"), ns)  # noqa: S102 - trusted first-party source
+    assert [link.rsplit("/llvm_coverage/", 1)[1] for link in ns["report_links"]] == [
+        _FULL_REPORT_URL_TAIL,
+        "generate_llvm_coverage_diff_report/index_diff.html",
+    ], ns["report_links"]
 
 
 # --------------------------------------------------------------------------
