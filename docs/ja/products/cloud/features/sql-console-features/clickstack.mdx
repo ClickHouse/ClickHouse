@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'ClickStack'
+slug: /cloud/manage/clickstack
+title: 'ClickStack'
+description: 'ClickHouse と OpenTelemetry（OTel）を基盤とする本番環境対応のオブザーバビリティ プラットフォームである ClickStack UI を提供します。ログ、トレース、メトリクス、セッションを、単一の高性能かつスケーラブルなソリューションに統合します。'
+doc_type: 'guide'
+keywords: ['hyperdx', 'オブザーバビリティ', 'インテグレーション', 'クラウド機能', '監視', 'clickstack']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[**Managed ClickStack**](/ja/clickstack/overview) は、オープンソースの [ClickStack](/ja/clickstack/overview) オブザーバビリティプラットフォームを、ClickHouse Cloud 上で完全マネージド型の形で提供します。ClickHouse と OpenTelemetry (OTel) を基盤とし、ログ、トレース、メトリクス、セッションデータを単一の高性能ソリューションに統合します。複雑なシステムの監視とデバッグ向けに設計された Managed ClickStack により、開発者や SRE は、ツールを切り替えたり、タイムスタンプや相関 ID を使って手作業でデータをつなぎ合わせたりすることなく、問題をエンドツーエンドで追跡できます。
+
+マネージド型の提供形態として、Managed ClickStack は、ClickStack UI が ClickHouse Cloud コンソールに直接統合され、ネイティブのロールベースアクセス制御 (RBAC) や、AIノートブック、エンタープライズグレードのアラートなどの追加機能を備えたオープンソースプロジェクトを提供します。管理すべきインフラストラクチャはなく、別途認証を設定する必要もありません。
+
+ClickStack UI (HyperDX) は、オブザーバビリティデータの探索と可視化に特化したフロントエンドで、Lucene スタイルと SQL の両方のクエリ、インタラクティブなダッシュボード、アラート、トレースの探索などをサポートしており、そのすべてがバックエンドとしての ClickHouse 向けに最適化されています。
+
+Managed ClickStack はワンクリックで起動してデータに接続でき、オブザーバビリティのインサイトにシームレスかつ安全にアクセスできるよう、ClickHouse Cloud の認証システムに完全に統合されています。
+
+<div id="main-concepts">
+  ## デプロイメント
+</div>
+
+いずれかのサービスを選択すると、左側のメインナビゲーションメニューに ClickStack が表示されます。
+
+<Image img="/images/use-cases/observability/clickstack-cloud.webp" alt="ClickHouse Cloud の Managed ClickStack" size="lg" />
+
+ClickHouse Cloud で ClickStack を使い始めるには、専用の[スタートガイド](/ja/clickstack/deployment/managed)を参照することをおすすめします。
+
+ClickStack の詳細については、[ドキュメント全体](/ja/clickstack/overview)を参照してください。

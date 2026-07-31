@@ -175,7 +175,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                  path, file_status->state.load(), current_exception);
         try
         {
-            Coordination::Error code;
+            Coordination::Error code = {};
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
@@ -393,7 +393,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    Coordination::Error code;
+    Coordination::Error code = {};
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {

@@ -1,0 +1,60 @@
+<test>
+    <!-- Performance test for the `query_plan_top_k_through_join` optimization.
+         The optimization pushes `Sort + Limit n` onto the preserved input of a
+         `LEFT`/`RIGHT` join when the sort key only references columns from that
+         side, turning an N-row join into an n-row join.
+         Measured: ~6x speedup on a 5-table self-join with `LIMIT 10` over the
+         Stack Overflow Posts table. See PR #104268. -->
+
+    <create_query>
+        CREATE TABLE topk_join_l (id UInt64, k Int64, payload String) ENGINE = MergeTree() ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE topk_join_r (id UInt64, value String) ENGINE = MergeTree() ORDER BY id
+    </create_query>
+
+    <!-- `k` is uncorrelated with `id` so the storage primary key cannot satisfy
+         the `ORDER BY` directly - this is the regime where pushing `Sort+Limit`
+         past the join wins, and where master without the optimization has to
+         join all rows before sorting. -->
+    <fill_query>
+        INSERT INTO topk_join_l SELECT number, sipHash64(number), repeat('a', 16) FROM numbers(5000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO topk_join_r SELECT number, repeat('b', 16) FROM numbers(5000000)
+    </fill_query>
+
+    <!-- Single LEFT JOIN, sort key from the preserved side: optimization fires. -->
+    <query>
+        SELECT l.id, l.k, r.value
+        FROM topk_join_l AS l LEFT JOIN topk_join_r AS r ON r.id = l.id
+        ORDER BY l.k DESC LIMIT 10
+        FORMAT Null
+    </query>
+
+    <!-- 4-table LEFT-join chain anchored on the same preserved side - mirrors
+         the Stack Overflow Q3 pattern (`ORDER BY q.col DESC LIMIT 10` over a
+         join chain) where the optimization had its largest measured win. -->
+    <query>
+        SELECT l.id, l.k
+        FROM topk_join_l AS l
+        LEFT JOIN topk_join_r AS r1 ON r1.id = l.id
+        LEFT JOIN topk_join_r AS r2 ON r2.id = l.id
+        LEFT JOIN topk_join_r AS r3 ON r3.id = l.id
+        ORDER BY l.k DESC LIMIT 10
+        FORMAT Null
+    </query>
+
+    <!-- Control: INNER JOIN with the same setup. The optimization must NOT fire
+         for `INNER` (a left row may produce zero output rows), so this query
+         should be unaffected - guards against regressions in the safety check. -->
+    <query>
+        SELECT l.id, l.k, r.value
+        FROM topk_join_l AS l INNER JOIN topk_join_r AS r ON r.id = l.id
+        ORDER BY l.k DESC LIMIT 10
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS topk_join_l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS topk_join_r</drop_query>
+</test>

@@ -1,0 +1,640 @@
+---
+title: 'Accesores de DataStore'
+sidebarTitle: 'Accesores'
+slug: /chdb/datastore/accessors
+description: 'Accesores de cadena, DateTime, Array, JSON, URL, IP y Geo con más de 185 métodos'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+DataStore proporciona 7 espacios de nombres de accesores con más de 185 métodos para operaciones específicas del dominio.
+
+| Accesor | Métodos | Descripción                                                        |
+| ------- | ------- | ------------------------------------------------------------------ |
+| `.str`  | 56      | Operaciones con cadena                                             |
+| `.dt`   | 42+     | Operaciones con DateTime                                           |
+| `.arr`  | 37      | Operaciones con Array (específicas de ClickHouse)                  |
+| `.json` | 13      | Análisis sintáctico de JSON (específico de ClickHouse)             |
+| `.url`  | 15      | Análisis sintáctico de URL (específico de ClickHouse)              |
+| `.ip`   | 9       | Operaciones con direcciones IP (específicas de ClickHouse)         |
+| `.geo`  | 14      | Operaciones geoespaciales/de distancia (específicas de ClickHouse) |
+
+***
+
+<div id="str">
+  ## Accesor de cadenas (`.str`)
+</div>
+
+Se admiten los 56 métodos `.str` de pandas, además de las funciones de cadenas de ClickHouse.
+
+<div id="str-case">
+  ### Conversión de mayúsculas y minúsculas
+</div>
+
+| Método         | ClickHouse  | Descripción                             |
+| -------------- | ----------- | --------------------------------------- |
+| `upper()`      | `upper()`   | Convertir a mayúsculas                  |
+| `lower()`      | `lower()`   | Convertir a minúsculas                  |
+| `capitalize()` | `initcap()` | Convertir la primera letra en mayúscula |
+| `title()`      | `initcap()` | Convertir a formato de título           |
+| `swapcase()`   | -           | Intercambiar mayúsculas y minúsculas    |
+| `casefold()`   | `lower()`   | Plegado de mayúsculas y minúsculas      |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### Longitud y tamaño
+</div>
+
+| Método          | ClickHouse      | Descripción                   |
+| --------------- | --------------- | ----------------------------- |
+| `len()`         | `length()`      | Longitud de la cadena (bytes) |
+| `char_length()` | `char_length()` | Longitud en caracteres        |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### Subcadenas y slicing
+</div>
+
+| Método               | ClickHouse    | Descripción               |
+| -------------------- | ------------- | ------------------------- |
+| `slice(start, stop)` | `substring()` | Extraer subcadena         |
+| `slice_replace()`    | -             | Reemplazar segmento       |
+| `left(n)`            | `left()`      | Los n primeros caracteres |
+| `right(n)`           | `right()`     | Los n últimos caracteres  |
+| `get(i)`             | -             | Carácter en el índice     |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### Eliminación de espacios
+</div>
+
+| Método     | ClickHouse    | Descripción                           |
+| ---------- | ------------- | ------------------------------------- |
+| `strip()`  | `trim()`      | Eliminar espacios en blanco           |
+| `lstrip()` | `trimLeft()`  | Eliminar espacios en blanco al inicio |
+| `rstrip()` | `trimRight()` | Eliminar espacios en blanco al final  |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### Búsqueda y coincidencia
+</div>
+
+| Método            | ClickHouse     | Descripción                              |
+| ----------------- | -------------- | ---------------------------------------- |
+| `contains(pat)`   | `position()`   | Contiene una subcadena                   |
+| `startswith(pat)` | `startsWith()` | Empieza con un prefijo                   |
+| `endswith(pat)`   | `endsWith()`   | Termina con un sufijo                    |
+| `find(sub)`       | `position()`   | Busca la posición                        |
+| `rfind(sub)`      | -              | Busca desde la derecha                   |
+| `index(sub)`      | `position()`   | Busca o genera un error                  |
+| `rindex(sub)`     | -              | Busca desde la derecha o genera un error |
+| `match(pat)`      | `match()`      | Coincidencia con regex                   |
+| `fullmatch(pat)`  | -              | Coincidencia completa con regex          |
+| `count(pat)`      | -              | Cuenta las apariciones                   |
+
+```python
+# Contiene subcadena
+ds['has_john'] = ds['name'].str.contains('John')
+
+# Coincidencia con expresión regular
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### Reemplazar
+</div>
+
+| Método                           | ClickHouse           | Descripción             |
+| -------------------------------- | -------------------- | ----------------------- |
+| `replace(pat, repl)`             | `replace()`          | Sustituir coincidencias |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | Sustitución con regex   |
+| `removeprefix(prefix)`           | -                    | Quitar prefijo          |
+| `removesuffix(suffix)`           | -                    | Quitar sufijo           |
+| `translate(table)`               | -                    | Traducir caracteres     |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### Separación
+</div>
+
+| Método            | ClickHouse        | Descripción                   |
+| ----------------- | ----------------- | ----------------------------- |
+| `split(sep)`      | `splitByString()` | Separar en un array           |
+| `rsplit(sep)`     | -                 | Separar desde la derecha      |
+| `partition(sep)`  | -                 | Separar en 3 partes           |
+| `rpartition(sep)` | -                 | Separar desde la derecha en 3 |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### Relleno
+</div>
+
+| Método          | ClickHouse          | Descripción             |
+| --------------- | ------------------- | ----------------------- |
+| `pad(width)`    | `leftPad()`         | Rellenar a la izquierda |
+| `ljust(width)`  | `rightPad()`        | Alinear a la derecha    |
+| `rjust(width)`  | `leftPad()`         | Alinear a la izquierda  |
+| `center(width)` | -                   | Centrar                 |
+| `zfill(width)`  | `leftPad(..., '0')` | Rellenar con ceros      |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### Pruebas de caracteres
+</div>
+
+| Método        | Descripción                  |
+| ------------- | ---------------------------- |
+| `isalpha()`   | Todos alfabéticos            |
+| `isdigit()`   | Todos dígitos                |
+| `isalnum()`   | Alfanumérico                 |
+| `isspace()`   | Todos los espacios en blanco |
+| `isupper()`   | Todo en mayúsculas           |
+| `islower()`   | Todo en minúsculas           |
+| `istitle()`   | Formato de título            |
+| `isnumeric()` | Caracteres numéricos         |
+| `isdecimal()` | Caracteres decimales         |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### Otros
+</div>
+
+| Método             | Descripción                     |
+| ------------------ | ------------------------------- |
+| `repeat(n)`        | Repetir n veces                 |
+| `reverse()`        | Invertir la cadena              |
+| `wrap(width)`      | Ajustar el texto                |
+| `encode(enc)`      | Codificar                       |
+| `decode(enc)`      | Decodificar                     |
+| `normalize(form)`  | Normalizar en Unicode           |
+| `extract(pat)`     | Extraer grupos de regex         |
+| `extractall(pat)`  | Extraer todas las coincidencias |
+| `cat(sep)`         | Concatenar todo                 |
+| `get_dummies(sep)` | Variables dummy                 |
+
+***
+
+<div id="dt">
+  ## Accesor DateTime (`.dt`)
+</div>
+
+Los más de 42 métodos `.dt` de pandas, además de las funciones de fecha y hora de ClickHouse.
+
+<div id="dt-components">
+  ### Componentes de fecha
+</div>
+
+| Propiedad       | ClickHouse        | Descripción              |
+| --------------- | ----------------- | ------------------------ |
+| `year`          | `toYear()`        | Año                      |
+| `month`         | `toMonth()`       | Mes (1-12)               |
+| `day`           | `toDayOfMonth()`  | Día (1-31)               |
+| `hour`          | `toHour()`        | Hora (0-23)              |
+| `minute`        | `toMinute()`      | Minuto (0-59)            |
+| `second`        | `toSecond()`      | Segundo (0-59)           |
+| `millisecond`   | `toMillisecond()` | Milisegundo              |
+| `microsecond`   | `toMicrosecond()` | Microsegundo             |
+| `quarter`       | `toQuarter()`     | Trimestre (1-4)          |
+| `dayofweek`     | `toDayOfWeek()`   | Día de la semana (0=lun) |
+| `dayofyear`     | `toDayOfYear()`   | Día del año              |
+| `week`          | `toWeek()`        | Número de semana         |
+| `days_in_month` | -                 | Días del mes             |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### Truncamiento
+</div>
+
+| Método                  | ClickHouse           | Descripción          |
+| ----------------------- | -------------------- | -------------------- |
+| `to_start_of_day()`     | `toStartOfDay()`     | Inicio del día       |
+| `to_start_of_week()`    | `toStartOfWeek()`    | Inicio de la semana  |
+| `to_start_of_month()`   | `toStartOfMonth()`   | Inicio del mes       |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | Inicio del trimestre |
+| `to_start_of_year()`    | `toStartOfYear()`    | Inicio del año       |
+| `to_start_of_hour()`    | `toStartOfHour()`    | Inicio de la hora    |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | Inicio del minuto    |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### Aritmética
+</div>
+
+| Método               | ClickHouse         | Descripción    |
+| -------------------- | ------------------ | -------------- |
+| `add_years(n)`       | `addYears()`       | Sumar años     |
+| `add_months(n)`      | `addMonths()`      | Sumar meses    |
+| `add_weeks(n)`       | `addWeeks()`       | Sumar semanas  |
+| `add_days(n)`        | `addDays()`        | Sumar días     |
+| `add_hours(n)`       | `addHours()`       | Sumar horas    |
+| `add_minutes(n)`     | `addMinutes()`     | Sumar minutos  |
+| `add_seconds(n)`     | `addSeconds()`     | Sumar segundos |
+| `subtract_years(n)`  | `subtractYears()`  | Restar años    |
+| `subtract_months(n)` | `subtractMonths()` | Restar meses   |
+| `subtract_days(n)`   | `subtractDays()`   | Restar días    |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### Comprobaciones booleanas
+</div>
+
+| Método               | Descripción              |
+| -------------------- | ------------------------ |
+| `is_month_start()`   | Primer día del mes       |
+| `is_month_end()`     | Último día del mes       |
+| `is_quarter_start()` | Primer día del trimestre |
+| `is_quarter_end()`   | Último día del trimestre |
+| `is_year_start()`    | Primer día del año       |
+| `is_year_end()`      | Último día del año       |
+| `is_leap_year()`     | Año bisiesto             |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### Formato
+</div>
+
+| Método          | ClickHouse         | Descripción             |
+| --------------- | ------------------ | ----------------------- |
+| `strftime(fmt)` | `formatDateTime()` | Dar formato como cadena |
+| `day_name()`    | -                  | Nombre del día          |
+| `month_name()`  | -                  | Nombre del mes          |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### Zona horaria
+</div>
+
+| Método            | ClickHouse     | Descripción               |
+| ----------------- | -------------- | ------------------------- |
+| `tz_convert(tz)`  | `toTimezone()` | Convertir la zona horaria |
+| `tz_localize(tz)` | -              | Asignar una zona horaria  |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## Accesor de Array (`.arr`)
+</div>
+
+Operaciones con arrays específicas de ClickHouse (37 métodos).
+
+<div id="arr-properties">
+  ### Propiedades
+</div>
+
+| Propiedad   | ClickHouse   | Descripción        |
+| ----------- | ------------ | ------------------ |
+| `length`    | `length()`   | Longitud del array |
+| `size`      | `length()`   | Alias de `length`  |
+| `empty`     | `empty()`    | Está vacío         |
+| `not_empty` | `notEmpty()` | No está vacío      |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### Acceso a elementos
+</div>
+
+| Método                  | ClickHouse              | Descripción        |
+| ----------------------- | ----------------------- | ------------------ |
+| `array_first()`         | `arrayElement(..., 1)`  | Primer elemento    |
+| `array_last()`          | `arrayElement(..., -1)` | Último elemento    |
+| `array_element(n)`      | `arrayElement()`        | Elemento n.º       |
+| `array_slice(off, len)` | `arraySlice()`          | Segmento del array |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### Agregaciones
+</div>
+
+| Método            | ClickHouse       | Descripción              |
+| ----------------- | ---------------- | ------------------------ |
+| `array_sum()`     | `arraySum()`     | Suma de elementos        |
+| `array_avg()`     | `arrayAvg()`     | Promedio                 |
+| `array_min()`     | `arrayMin()`     | Mínimo                   |
+| `array_max()`     | `arrayMax()`     | Máximo                   |
+| `array_product()` | `arrayProduct()` | Producto                 |
+| `array_uniq()`    | `arrayUniq()`    | Número de valores únicos |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### Transformaciones
+</div>
+
+| Método                 | ClickHouse           | Descripción                      |
+| ---------------------- | -------------------- | -------------------------------- |
+| `array_sort()`         | `arraySort()`        | Ordenar de forma ascendente      |
+| `array_reverse_sort()` | `arrayReverseSort()` | Ordenar de forma descendente     |
+| `array_reverse()`      | `arrayReverse()`     | Invertir el orden                |
+| `array_distinct()`     | `arrayDistinct()`    | Elementos únicos                 |
+| `array_compact()`      | `arrayCompact()`     | Eliminar duplicados consecutivos |
+| `array_flatten()`      | `arrayFlatten()`     | Aplanar estructuras anidadas     |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### Modificaciones
+</div>
+
+| Método                   | ClickHouse         | Descripción          |
+| ------------------------ | ------------------ | -------------------- |
+| `array_push_back(elem)`  | `arrayPushBack()`  | Agregar al final     |
+| `array_push_front(elem)` | `arrayPushFront()` | Agregar al principio |
+| `array_pop_back()`       | `arrayPopBack()`   | Eliminar el último   |
+| `array_pop_front()`      | `arrayPopFront()`  | Eliminar el primero  |
+| `array_concat(other)`    | `arrayConcat()`    | Concatenar           |
+
+<div id="arr-search">
+  ### Búsqueda
+</div>
+
+| Método              | ClickHouse     | Descripción            |
+| ------------------- | -------------- | ---------------------- |
+| `has(elem)`         | `has()`        | Contiene un elemento   |
+| `index_of(elem)`    | `indexOf()`    | Busca el índice        |
+| `count_equal(elem)` | `countEqual()` | Cuenta las apariciones |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### Operaciones con cadenas
+</div>
+
+| Método                     | ClickHouse            | Descripción            |
+| -------------------------- | --------------------- | ---------------------- |
+| `array_string_concat(sep)` | `arrayStringConcat()` | Combinar en una cadena |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## accesor JSON (`.json`)
+</div>
+
+Análisis sintáctico de JSON específico de ClickHouse (13 métodos).
+
+| Método             | ClickHouse            | Descripción                  |
+| ------------------ | --------------------- | ---------------------------- |
+| `get_string(path)` | `JSONExtractString()` | Extraer cadena               |
+| `get_int(path)`    | `JSONExtractInt()`    | Extraer entero               |
+| `get_float(path)`  | `JSONExtractFloat()`  | Extraer flotante             |
+| `get_bool(path)`   | `JSONExtractBool()`   | Extraer booleano             |
+| `get_raw(path)`    | `JSONExtractRaw()`    | Extraer JSON sin procesar    |
+| `get_keys()`       | `JSONExtractKeys()`   | Obtener claves               |
+| `get_type(path)`   | `JSONType()`          | Obtener tipo                 |
+| `get_length(path)` | `JSONLength()`        | Obtener longitud             |
+| `has_key(key)`     | `JSONHas()`           | Comprobar si la clave existe |
+| `is_valid()`       | `isValidJSON()`       | Validar JSON                 |
+| `to_json_string()` | `toJSONString()`      | Convertir a JSON             |
+
+```python
+# Parsear columnas JSON
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## Accesor de URL (`.url`)
+</div>
+
+Análisis de URL específico de ClickHouse (15 métodos).
+
+| Método                        | ClickHouse               | Descripción                   |
+| ----------------------------- | ------------------------ | ----------------------------- |
+| `domain()`                    | `domain()`               | Extraer dominio               |
+| `domain_without_www()`        | `domainWithoutWWW()`     | Dominio sin www               |
+| `top_level_domain()`          | `topLevelDomain()`       | TLD                           |
+| `protocol()`                  | `protocol()`             | Protocolo (http/https)        |
+| `path()`                      | `path()`                 | Ruta de la URL                |
+| `path_full()`                 | `pathFull()`             | Ruta con consulta             |
+| `query_string()`              | `queryString()`          | Cadena de consulta            |
+| `fragment()`                  | `fragment()`             | Fragmento (#...)              |
+| `port()`                      | `port()`                 | Número de puerto              |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | Obtener parámetro de consulta |
+| `extract_url_parameters()`    | `extractURLParameters()` | Todos los parámetros          |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | Eliminar parámetro            |
+| `decode_url_component()`      | `decodeURLComponent()`   | Decodificar componente de URL |
+| `encode_url_component()`      | `encodeURLComponent()`   | Codificar componente de URL   |
+
+```python
+# Parsear URLs
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## accesor de IP (`.ip`)
+</div>
+
+Operaciones sobre direcciones IP específicas de ClickHouse (9 métodos).
+
+| Método                     | ClickHouse          | Descripción      |
+| -------------------------- | ------------------- | ---------------- |
+| `to_ipv4()`                | `toIPv4()`          | Convertir a IPv4 |
+| `to_ipv6()`                | `toIPv6()`          | Convertir a IPv6 |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | Número a cadena  |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | Cadena a número  |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | IPv6 a cadena    |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | Convertir a IPv6 |
+| `is_ipv4_string()`         | `isIPv4String()`    | Validar IPv4     |
+| `is_ipv6_string()`         | `isIPv6String()`    | Validar IPv6     |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | CIDR a rango     |
+
+```python
+# Operaciones IP
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## Accesor Geo (`.geo`)
+</div>
+
+Operaciones geoespaciales y de distancia específicas de ClickHouse (14 métodos).
+
+<div id="geo-distance">
+  ### Funciones de distancia
+</div>
+
+| Método                        | ClickHouse              | Descripción                      |
+| ----------------------------- | ----------------------- | -------------------------------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | Distancia del círculo máximo     |
+| `geo_distance(...)`           | `geoDistance()`         | Distancia WGS-84                 |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | Distancia de Manhattan           |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | Distancia euclidiana             |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | Distancia euclidiana al cuadrado |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | Distancia de Chebyshev           |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | Distancia de coseno              |
+
+<div id="geo-vector">
+  ### Operaciones vectoriales
+</div>
+
+| Método                | ClickHouse      | Descripción      |
+| --------------------- | --------------- | ---------------- |
+| `dot_product(v1, v2)` | `dotProduct()`  | Producto escalar |
+| `l2_norm(vec)`        | `L2Norm()`      | Norma del vector |
+| `l2_normalize(vec)`   | `L2Normalize()` | Normalización    |
+
+<div id="geo-h3">
+  ### Funciones H3
+</div>
+
+| Método                     | ClickHouse  | Descripción                     |
+| -------------------------- | ----------- | ------------------------------- |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | De Geo al índice H3             |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | De H3 a coordenadas geográficas |
+
+<div id="geo-point">
+  ### Operaciones sobre puntos
+</div>
+
+| Método                       | ClickHouse          | Descripción                 |
+| ---------------------------- | ------------------- | --------------------------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | Punto dentro de un polígono |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | Punto dentro de elipses     |
+
+```python
+from chdb.datastore import F
+
+# Calcular distancias
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# Similitud vectorial
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## Uso de los accesores
+</div>
+
+<div id="lazy">
+  ### Evaluación diferida
+</div>
+
+La mayoría de los métodos de accesor son diferidos: devuelven expresiones que se evalúan más adelante:
+
+```python
+# Todas estas son perezosas
+ds['name_upper'] = ds['name'].str.upper()  # Aún no se ejecuta
+ds['year'] = ds['date'].dt.year            # Aún no se ejecuta
+ds['domain'] = ds['url'].url.domain()      # Aún no se ejecuta
+
+# La ejecución ocurre al acceder a los resultados
+df = ds.to_df()  # Ahora todo se ejecuta
+```
+
+<div id="execute-immediately">
+  ### Métodos que se ejecutan de inmediato
+</div>
+
+Algunos métodos de `.str` deben ejecutarse porque cambian la estructura:
+
+| Método             | Devuelve               | Por qué                     |
+| ------------------ | ---------------------- | --------------------------- |
+| `partition(sep)`   | DataStore (3 columnas) | Crea varias columnas        |
+| `rpartition(sep)`  | DataStore (3 columnas) | Crea varias columnas        |
+| `get_dummies(sep)` | DataStore (N columnas) | Número de columnas dinámico |
+| `extractall(pat)`  | DataStore              | Resultado MultiIndex        |
+| `cat(sep)`         | str                    | Agregación (N filas → 1)    |
+
+<div id="chaining">
+  ### Encadenar accesores
+</div>
+
+Los métodos de accesor pueden encadenarse:
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

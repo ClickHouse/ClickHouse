@@ -76,6 +76,16 @@ public:
     /// Compute cache key from table UUID, part name and condition hash
     static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
+    /// Compose the `part_name` component of a cache key for a file-backed table (e.g. `File`, `S3`,
+    /// object storage). Uses the full path (not just the base name) so files that share a name in
+    /// different directories do not collide, and folds in a content-version token so an in-place
+    /// rewrite of the file yields a different key rather than a stale hit. The token is the ETag for
+    /// remote objects, or a local identity (modification time + inode + size) for local files. For
+    /// immutable files (e.g. data-lake data files) the path alone is a stable identity and the token
+    /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
+    /// either, so the mapping is unambiguous.
+    static String makeFilePartName(const String & path, std::string_view version_token);
+
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
@@ -84,7 +94,10 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
+    /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
+    /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
