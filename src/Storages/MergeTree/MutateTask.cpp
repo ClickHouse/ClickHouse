@@ -2593,7 +2593,7 @@ private:
                 /// + re-sort, then skip-index expressions).
                 if (resort_after_group_by_ttl)
                     resortPipelineAfterTTLGroupBySet(
-                        *builder, ctx->metadata_snapshot, ctx->new_data_part->getColumns(), ctx->context);
+                        *builder, ctx->metadata_snapshot, ctx->new_data_part->getColumns(), ctx->context, *ctx->data->getSettings());
                 add_skip_indices_expression();
             }
         }

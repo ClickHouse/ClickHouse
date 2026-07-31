@@ -19,6 +19,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/VirtualColumnsDescription.h>
 
@@ -29,6 +30,11 @@ namespace Setting
 {
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 ttl_resort_max_bytes_before_external_sort;
 }
 
 namespace
@@ -291,11 +297,36 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*recompute_dag)));
 }
 
+SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, const MergeTreeSettings & storage_settings)
+{
+    SortingStep::Settings sort_settings(context->getSettingsRef());
+
+    /// Background merge and mutation contexts inherit the default `max_bytes_before_external_sort = 0`
+    /// (neither `Context::makeQueryContextForMerge` nor `makeQueryContextForMutate` overrides it),
+    /// and `MergeSortingTransform` spills only when that threshold is non-zero, so as taken from the
+    /// context the sort could never externalize and would buffer the whole post-TTL part in memory.
+    /// Bound it by the table-level setting instead. The temporary storage is only available when the
+    /// global context provides it (a server always does; skip the override otherwise, since a non-zero
+    /// threshold without temporary storage is an error at pipeline build time).
+    const UInt64 max_bytes_before_external_sort = storage_settings[MergeTreeSetting::ttl_resort_max_bytes_before_external_sort];
+    if (max_bytes_before_external_sort && context->getSharedTempDataOnDisk())
+    {
+        sort_settings.max_bytes_in_block_before_external_sort = max_bytes_before_external_sort;
+        /// The query-memory gate (derived from `max_bytes_ratio_before_external_sort`, half of the
+        /// available server memory by default) would delay the spill until this merge or mutation
+        /// alone uses that much memory. Disable it so the threshold above is the actual bound.
+        sort_settings.max_bytes_in_query_before_external_sort = 0;
+    }
+
+    return sort_settings;
+}
+
 void resortPipelineAfterTTLGroupBySet(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     const NamesAndTypesList & storage_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const MergeTreeSettings & storage_settings)
 {
     /// If a MATERIALIZED sort-key column's source was rewritten by the `SET` (e.g.
     /// `d MATERIALIZED toDate(ts)`, `ORDER BY d`, `... SET ts = ...`), the stored `d` in the stream
@@ -382,7 +413,7 @@ void resortPipelineAfterTTLGroupBySet(
         builder.getSharedHeader(),
         sort_description,
         /*limit_=*/0,
-        SortingStep::Settings(context->getSettingsRef()));
+        buildTTLResortSortingSettings(context, storage_settings));
     sorting_step.transformPipeline(builder, BuildQueryPipelineSettings(context));
 }
 

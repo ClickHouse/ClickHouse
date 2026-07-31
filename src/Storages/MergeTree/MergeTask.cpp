@@ -3426,7 +3426,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                 merge_parts_query_plan.getCurrentHeader(),
                 ttl_sort_description,
                 /*limit_=*/0,
-                SortingStep::Settings(global_ctx->context->getSettingsRef()));
+                buildTTLResortSortingSettings(global_ctx->context, *global_ctx->data->getSettings()));
             resort_step->setStepDescription("Re-sort after TTL GROUP BY SET on sorting key column");
             merge_parts_query_plan.addStep(std::move(resort_step));
         }

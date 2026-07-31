@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
@@ -10,6 +11,7 @@ namespace DB
 class QueryPipelineBuilder;
 class ActionsDAG;
 class Block;
+struct MergeTreeSettings;
 
 /// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
 /// sorting key depends on (directly, or through an expression such as `toStartOfDay(ts)`).
@@ -51,6 +53,17 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     const ColumnsDescription & columns_desc,
     const ContextPtr & context);
 
+/// Sort settings for the re-sort after a `TTL ... GROUP BY ... SET` that rewrites a sort-key
+/// column. Background merge and mutation contexts keep the default
+/// `max_bytes_before_external_sort = 0`, which disables spilling entirely, so a plain
+/// `SortingStep::Settings(context->getSettingsRef())` would buffer the whole post-TTL part in
+/// memory (`TTLTransform` passes non-expired rows through unchanged, so on a large merge or
+/// `ALTER TABLE ... MATERIALIZE TTL` that is the entire part). Bound the sort by the
+/// `ttl_resort_max_bytes_before_external_sort` MergeTree setting instead: past the threshold,
+/// sorted runs are spilled to the temporary storage on disk (taken from the global context, so
+/// it is available to background operations) and merged back in a streaming fashion.
+SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, const MergeTreeSettings & storage_settings);
+
 /// Recompute the sorting-key expression columns from the post-`SET` values and re-sort the
 /// pipeline by the sorting key. Used by the mutation path (e.g. `MATERIALIZE TTL`) after a
 /// `TTL ... GROUP BY ... SET` step that rewrites a sort-key column, so the written part is
@@ -60,6 +73,7 @@ void resortPipelineAfterTTLGroupBySet(
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     const NamesAndTypesList & storage_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const MergeTreeSettings & storage_settings);
 
 }
