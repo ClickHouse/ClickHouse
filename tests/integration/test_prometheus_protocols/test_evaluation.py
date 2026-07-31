@@ -810,6 +810,42 @@ def test_timestamp_modifier_fixed_evaluation_time():
     )
 
 
+def test_timestamp_modifier_on_subquery():
+    # A subquery under `@ <timestamp>` is a range vector too, so its whole grid must be kept at the fixed
+    # evaluation time and only the result of the range-vector function on top of it may be repeated across the
+    # query grid. Collapsing the subquery grid to its first step would make the functions below see a single
+    # repeated sample instead of the samples of the `[120s:15s]` window at 210.
+    #
+    # The subquery grid at the fixed time 210 is 105, 120, ..., 210, where `test` evaluates to
+    # (nothing), 1, 3, 4, 4, 4, 5, 8 - hence 4 changes and 8 as the last value.
+    do_query_test(
+        "changes(test[120s:15s] @ 210)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "4"]}]}',
+        [
+            [
+                "[]",
+                "1970-01-01 00:04:10.000",
+                "4",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[120s:15s] @ 210)",
+        210,
+        330,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[210, "8"], [270, "8"], [330, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:03:30.000',8),('1970-01-01 00:04:30.000',8),('1970-01-01 00:05:30.000',8)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     # last_over_time
     do_query_test(
