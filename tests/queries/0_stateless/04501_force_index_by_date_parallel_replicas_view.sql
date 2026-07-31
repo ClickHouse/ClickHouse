@@ -48,30 +48,44 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replic
 -- this always worked. Kept as a control.
 SELECT count() FROM t_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_index_by_date = 1, force_primary_key = 1;
+SETTINGS force_index_by_date = 1, force_primary_key = 1, log_comment = '04501_fipr_base';
 
 -- View with parallel replicas and a key predicate: this used to throw a false-positive INDEX_NOT_USED.
 -- Now it returns the correct count. Exercise both guards together and each on its own.
 SELECT count() FROM v_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_index_by_date = 1, force_primary_key = 1;
+SETTINGS force_index_by_date = 1, force_primary_key = 1, log_comment = '04501_fipr_view_both';
 
 SELECT count() FROM v_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_index_by_date = 1;
+SETTINGS force_index_by_date = 1, log_comment = '04501_fipr_view_date';
 
 SELECT count() FROM v_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_primary_key = 1;
+SETTINGS force_primary_key = 1, log_comment = '04501_fipr_view_pk';
 
 -- View over a view, and a view with column aliases: the predicate must still reach the underlying table.
 SELECT count() FROM vv_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_index_by_date = 1, force_primary_key = 1;
+SETTINGS force_index_by_date = 1, force_primary_key = 1, log_comment = '04501_fipr_view_nested';
 
 SELECT count() FROM va_force_index_pr
 WHERE ts >= toDateTime('2026-06-05 12:00:00')
-SETTINGS force_index_by_date = 1, force_primary_key = 1;
+SETTINGS force_index_by_date = 1, force_primary_key = 1, log_comment = '04501_fipr_view_alias';
+
+-- The counts above match local execution, so they alone cannot prove parallel replicas stayed enabled:
+-- a planner change silently falling back to local execution would keep this test green while re-breaking
+-- the "parallel replicas stays enabled" part of the contract. Prove each positive actually used task-based
+-- parallel replicas on the initiator, like 02950_parallel_replicas_used_count does.
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ParallelReplicasUsedCount'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment LIKE '04501\_fipr\_%'
+    AND initial_query_id = query_id
+ORDER BY log_comment
+SETTINGS enable_parallel_replicas = 0;
 
 -- View without parallel replicas with a key predicate: kept as a control.
 SELECT count() FROM v_force_index_pr
