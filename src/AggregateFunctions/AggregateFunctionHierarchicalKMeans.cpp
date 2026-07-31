@@ -468,37 +468,81 @@ VectorWithMemoryTracking<Float> kMeansLloyd(
     return centroids;
 }
 
-/// Give each of `B` children at least one leaf, total exactly `k`, extra leaves allocated proportional to
-/// population (largest-remainder). Requires k >= B (guaranteed: caller uses branching = min(b, k)).
+/// Split `k` leaves across the `B` children, proportional to population (largest-remainder).
+///
+/// Two constraints decide the shape, and getting either wrong silently loses centroids - the caller has no
+/// way to emit a leaf it was promised but cannot train:
+///   * a child with NO points gets NO leaves. k-means reseeds empty clusters while iterating, but the final
+///     bucketing pass can still leave a centroid owning nothing, and handing that child a leaf (as an
+///     unconditional `leaves(B, 1)` does) means `processTask` skips it and the leaf is gone.
+///   * no child gets more leaves than it has points, since it can only ever emit one centroid per point.
+/// Whatever those two rules displace is redistributed to children that still have headroom, so the total is
+/// exactly `k` whenever the node has at least `k` points at all.
 VectorWithMemoryTracking<size_t> apportion(const VectorWithMemoryTracking<size_t> & pop, size_t k)
 {
-    size_t B = pop.size();
-    VectorWithMemoryTracking<size_t> leaves(B, 1);
-    if (k <= B)
-    {
-        for (size_t c = 0; c < B; ++c)
-            leaves[c] = (c < k) ? 1 : 0;
+    const size_t B = pop.size();
+    VectorWithMemoryTracking<size_t> leaves(B, 0);
+
+    const size_t capacity = std::accumulate(pop.begin(), pop.end(), static_cast<size_t>(0));
+    k = std::min(k, capacity); /// cannot produce more centroids than there are points
+    if (k == 0)
         return leaves;
+
+    /// Seed one leaf per non-empty child, largest first, so that a `k` smaller than the number of non-empty
+    /// children goes to the biggest ones.
+    VectorWithMemoryTracking<size_t> by_pop(B);
+    std::iota(by_pop.begin(), by_pop.end(), 0);
+    std::sort(by_pop.begin(), by_pop.end(), [&](size_t a, size_t b) { return pop[a] > pop[b]; });
+
+    size_t placed = 0;
+    for (size_t i = 0; i < B && placed < k; ++i)
+    {
+        const size_t c = by_pop[i];
+        if (pop[c] == 0)
+            break; /// sorted by population, so every child after this one is empty too
+        leaves[c] = 1;
+        ++placed;
     }
 
-    size_t remaining = k - B;
-    size_t total = std::accumulate(pop.begin(), pop.end(), static_cast<size_t>(0));
+    const size_t remaining = k - placed;
+    if (remaining == 0)
+        return leaves;
+
     VectorWithMemoryTracking<double> frac(B, 0.0);
     size_t handed = 0;
     for (size_t c = 0; c < B; ++c)
     {
-        double exact = total ? static_cast<double>(remaining) * static_cast<double>(pop[c]) / static_cast<double>(total)
-                             : static_cast<double>(remaining) / static_cast<double>(B);
-        size_t add = static_cast<size_t>(std::floor(exact));
+        if (leaves[c] == 0)
+            continue;
+        const double exact = static_cast<double>(remaining) * static_cast<double>(pop[c]) / static_cast<double>(capacity);
+        size_t add = std::min(static_cast<size_t>(std::floor(exact)), pop[c] - leaves[c]);
         leaves[c] += add;
-        frac[c] = exact - static_cast<double>(add);
+        frac[c] = exact - std::floor(exact);
         handed += add;
     }
-    VectorWithMemoryTracking<size_t> order(B);
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return frac[a] > frac[b]; });
-    for (size_t i = 0; i < remaining - handed; ++i)
-        ++leaves[order[i]];
+
+    /// Largest remainder first, then keep sweeping for anything the per-child capacity clamp displaced.
+    /// Terminates: every sweep either places a leaf or stops, and total placement is bounded by `capacity`.
+    VectorWithMemoryTracking<size_t> by_frac(B);
+    std::iota(by_frac.begin(), by_frac.end(), 0);
+    std::sort(by_frac.begin(), by_frac.end(), [&](size_t a, size_t b) { return frac[a] > frac[b]; });
+
+    size_t left = remaining - handed;
+    bool progress = true;
+    while (left > 0 && progress)
+    {
+        progress = false;
+        for (size_t i = 0; i < B && left > 0; ++i)
+        {
+            const size_t c = by_frac[i];
+            if (leaves[c] > 0 && leaves[c] < pop[c])
+            {
+                ++leaves[c];
+                --left;
+                progress = true;
+            }
+        }
+    }
     return leaves;
 }
 
@@ -582,6 +626,23 @@ void processTask(
     VectorWithMemoryTracking<size_t> pop(br, 0);
     for (size_t i = 0; i < n; ++i)
         ++pop[assign[i]];
+
+    /// If one child captured every point the split made no progress, and since `apportion` would then hand
+    /// that child all `k` leaves the recursion would reproduce this exact node forever. It happens on
+    /// degenerate input - a node whose points are all identical, say, where every centroid collapses onto the
+    /// same value. Emit a flat k-means here instead; `kMeansLloyd` clamps to `min(k, n)` and always
+    /// terminates. Past this check every child is strictly smaller than its parent, which is what bounds the
+    /// recursion.
+    size_t non_empty = 0;
+    for (size_t c = 0; c < br; ++c)
+        non_empty += (pop[c] > 0);
+    if (non_empty <= 1)
+    {
+        auto flat = kMeansLloyd(pts, n, d, k, params, rng);
+        out_centroids.insert(out_centroids.end(), flat.begin(), flat.end());
+        return;
+    }
+
     auto leaves = apportion(pop, k);
 
     for (size_t c = 0; c < br; ++c)
