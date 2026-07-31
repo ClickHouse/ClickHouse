@@ -384,6 +384,11 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
 {
+    /// Reported separately from the missing channel below, so a typo is not described as a
+    /// registered fail point that nothing is waiting on.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -419,6 +424,12 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
 {
+    /// A mistyped name would otherwise return at once and silently drop the synchronisation the
+    /// caller asked for, turning a deterministic test into a race. A registered fail point with no
+    /// channel still returns, because it is simply not paused.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -434,6 +445,10 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
 {
+    /// Same as `waitForPause`: an unknown name must not look like an already finished wait.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
