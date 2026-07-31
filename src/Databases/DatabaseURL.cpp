@@ -59,13 +59,12 @@ bool hasURLScheme(const String & url)
     return true;
 }
 
-/// The table function creates the delegate storage in read mode: at resolution time the database
-/// cannot know whether the table is the source or the target of the query, so only the READ
-/// source-access check has run. The delegate storage itself may be writable (`INSERT INTO
-/// web.`s3://...``), and the interpreter checks only the INSERT privilege on the logical table
-/// name, so without an extra check an INSERT would write to the external source without the
-/// corresponding WRITE source grant. This proxy intercepts every write entry point (INSERT,
-/// async insert, a materialized view target) and repeats the source-access check in write mode.
+/// At resolution time the database cannot know whether the table is the source or the target of
+/// the query, so it only requires either of the READ / WRITE source grants there, and this proxy
+/// enforces the operation-specific one. Reading checks READ. The delegate storage itself may be
+/// writable (`INSERT INTO web.`s3://...``), and the interpreter checks only the INSERT privilege
+/// on the logical table name, so the proxy intercepts every write entry point (INSERT, async
+/// insert, a materialized view target) and runs the source-access check in write mode.
 ///
 /// The proxy also carries the logical storage ID (`db`.`name`): the table function creates the
 /// nested storage under the internal `_table_function` database, and privilege checks against the
@@ -127,6 +126,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
+        /// Table resolution accepts either the READ or the WRITE source grant (the direction of
+        /// the access is unknown there), so reading must enforce the exact one.
+        table_function->checkSourceAccess(context, /* is_insert_query */ false);
+
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
         nested->read(query_plan, column_names, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -255,6 +258,18 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     /// The table is referenced by an identifier and governed by the grants on this database and
     /// the source access, so the `CREATE TEMPORARY TABLE` privilege required for a table function
     /// call written in a query does not apply here.
+    ///
+    /// SELECT requires the READ source grant and INSERT requires WRITE, but at resolution time the
+    /// database cannot know which operation the table is being resolved for, and the delegated
+    /// table functions accept either alone (`INSERT INTO FUNCTION file(...)` needs only
+    /// `WRITE ON FILE`). Require either of the two here — the check also gates the schema
+    /// inference the table function performs on the external resource — and let the
+    /// operation-specific entry points of the proxy enforce the exact one: `read` re-checks READ,
+    /// and `write` / `checkInsertIsAllowed` / `truncate` check WRITE. A user with no source grant
+    /// at all gets the READ denial, the error of the more common operation.
+    if (!table_function->isSourceAccessGranted(context_copy, /* is_insert_query */ true))
+        table_function->checkSourceAccess(context_copy, /* is_insert_query */ false);
+
     auto storage = table_function->execute(
         ast_function_ptr,
         context_copy,
@@ -262,7 +277,8 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
         /* cached_columns_ */ {},
         /* use_global_context */ false,
         /* is_insert_query */ false,
-        /* check_create_temporary_table */ false);
+        /* check_create_temporary_table */ false,
+        /* check_source_access */ false);
     if (!storage)
         return nullptr;
 

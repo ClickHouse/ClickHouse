@@ -262,8 +262,10 @@ StoragePtr TableFunctionURL::executeImpl(
     const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     /// The outer `execute` has already run the `CREATE TEMPORARY TABLE` privilege check when it
-    /// applies (it does not when a database engine resolves its table through this function),
-    /// so the delegate must not repeat it. The delegate's source access check still runs.
+    /// applies (it does not when a database engine resolves its table through this function), so
+    /// the delegate must not repeat it. The same holds for the source access check: this function
+    /// reports the delegate's engine name and access URI, so the outer check (or the caller that
+    /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
         return delegate->execute(
             ast_function,
@@ -272,7 +274,8 @@ StoragePtr TableFunctionURL::executeImpl(
             std::move(cached_columns),
             /*use_global_context=*/false,
             is_insert_query,
-            /*check_create_temporary_table=*/false);
+            /*check_create_temporary_table=*/false,
+            /*check_source_access=*/false);
 
     return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 }

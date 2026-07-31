@@ -1089,8 +1089,16 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
 
 void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
-    if (isGranted(context, flags, parameter))
+    if (isGrantedWithFilter(context, flags, parameter, to_check_by_filter))
         return;
+
+    checkAccess(context, flags, parameter);
+}
+
+bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGranted(context, flags, parameter))
+        return true;
 
     if (!to_check_by_filter.empty())
     {
@@ -1099,11 +1107,11 @@ void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const Acce
         for (const auto & filter : filters)
         {
             if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return;
+                return true;
         }
     }
 
-    checkAccess(context, flags, parameter);
+    return false;
 }
 
 

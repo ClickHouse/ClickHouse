@@ -45,6 +45,16 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+bool ITableFunction::isSourceAccessGranted(ContextPtr context, bool is_insert_query) const
+{
+    const auto access_object = getSourceAccessObject();
+    if (!access_object)
+        return true;
+
+    const AccessType type_to_check = is_insert_query ? AccessType::WRITE : AccessType::READ;
+    return context->getAccess()->isGrantedWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
@@ -53,11 +63,12 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    checkSourceAccess(context, is_insert_query);
+    if (check_source_access)
+        checkSourceAccess(context, is_insert_query);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
