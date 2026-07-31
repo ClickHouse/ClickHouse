@@ -1,0 +1,24 @@
+# Customizations
+
+Custom scripts that customize the look and behavior of the Mintlify site.
+These are loaded via the `scripts` array in `docs.json` and run on every page.
+
+See Mintlify's docs on [custom scripts](https://www.mintlify.com/docs/customize/custom-scripts) for more information.
+
+## Scripts
+
+- `ask-ai-button.js` — tweaks the Ask-AI button styling/behavior.
+- `custom-footer.js` — renders the custom site footer (`#ch-custom-footer`).
+- `galaxy.js` — initializes ClickHouse Galaxy analytics, tracks docs and knowledge-base page lifecycle events across Mintlify SPA navigation, sends canonical `https://clickhouse.com/docs` traffic to the production Galaxy API and `.mintlify.app` preview traffic to the development Galaxy API (disabled on localhost and unknown origins), and adds attribution plus the Galaxy visitor ID to ClickHouse Cloud links only on canonical production docs.
+- `inkeep-init.js` — replaces Mintlify's native search (⌘K / navbar search bar) with the Inkeep search modal. Search-only; AI chat stays on Kapa.
+- `kapa-init.js` — bootstraps the Kapa.ai RAG widget.
+- `navbar-cta.js` — adds the "Get started" CTA to the navbar.
+- `nav-icon-preload.js` — warms the small desktop navbar dropdown SVGs at low priority as soon as the document is ready so icons are available before their menus are first opened.
+- `raise-issue-link.js` — repoints Mintlify's default "Raise issue" feedback link at the repository's Documentation issue form (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`), pre-filling the current page path.
+- `scroll-reset.js` — restores scroll-to-top on forward client-side navigation, which Next.js skips when an announcement banner is configured. Leaves back/forward (popstate) alone so the browser/router can restore the prior position, and scrolls to the anchor on cross-page hash links.
+- `tab-nav.js` — wires the desktop top-nav tabs (Home / Database / Solutions / Integrations) to their target URLs, keeping navigation within the active locale and base path.
+- `clickhouse-sql-lexer-wasm.js` — exposes ClickHouse's SQL lexer (`src/Parsers/Lexer.cpp` compiled to WebAssembly) as a base64 global. Snapshot from ClickHouse `programs/server/play.html`; re-extract if the upstream lexer/keyword list changes.
+- `clickhouse-sql-highlight.js` — re-highlights `language="sql"` code blocks using the WASM lexer (ClickHouse-native colors, matching play.html / clickhouse-client) in place of Shiki. Must load after `clickhouse-sql-lexer-wasm.js`. Other languages are left as Shiki rendered them.
+
+To wire a new script up, add a `{ "src": "/_site/customizations/<name>.js" }`
+entry to the top-level `scripts` array in `docs.json`.

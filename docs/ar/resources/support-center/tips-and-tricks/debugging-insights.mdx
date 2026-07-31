@@ -1,0 +1,214 @@
+---
+slug: /community-wisdom/debugging-insights
+sidebarTitle: 'رؤى تصحيح الأخطاء'
+doc_type: 'guide'
+keywords: [
+  'استكشاف أخطاء ClickHouse وإصلاحها',
+  'أخطاء ClickHouse',
+  'استعلامات بطيئة',
+  'مشكلات الذاكرة', 
+  'مشكلات الاتصال',
+  'تحسين الأداء',
+  'أخطاء قاعدة البيانات',
+  'مشكلات الإعداد',
+  'تصحيح الأخطاء',
+  'حلول'
+]
+title: 'دروس - رؤى تصحيح الأخطاء'
+description: 'اعثر على حلول لأكثر مشكلات ClickHouse شيوعًا، بما في ذلك الاستعلامات البطيئة، وأخطاء الذاكرة، ومشكلات الاتصال، ومشكلات الإعداد.'
+---
+
+*هذا الدليل جزء من مجموعة من الخلاصات المستمدة من لقاءات المجتمع. ولمزيد من الحلول العملية والرؤى، يمكنك [التصفح حسب المشكلة](/ar/resources/support-center/tips-and-tricks/community-wisdom).*
+*هل تعاني من ارتفاع التكاليف التشغيلية؟ اطّلع على دليل رؤى المجتمع حول [تحسين التكلفة](/ar/resources/support-center/tips-and-tricks/cost-optimization).*
+
+<div id="essential-system-tables">
+  ## جداول النظام الأساسية
+</div>
+
+تُعد جداول النظام هذه ضرورية لتصحيح الأخطاء في بيئة الإنتاج:
+
+<div id="system-errors">
+  ### system.errors
+</div>
+
+يعرض جميع الأخطاء النشطة في مثيل ClickHouse الخاص بك.
+
+```sql
+SELECT name, value, changed 
+FROM system.errors 
+WHERE value > 0 
+ORDER BY value DESC;
+```
+
+<div id="system-replicas">
+  ### system.replicas
+</div>
+
+يحتوي على معلومات عن حالة النسخ المتماثل ودرجة تأخره لمراقبة صحة العنقود.
+
+```sql
+SELECT database, table, replica_name, absolute_delay, queue_size, inserts_in_queue
+FROM system.replicas 
+WHERE absolute_delay > 60
+ORDER BY absolute_delay DESC;
+```
+
+<div id="system-replication-queue">
+  ### system.replication_queue
+</div>
+
+يوفّر معلومات مفصّلة لتشخيص مشكلات النسخ المتماثل.
+
+```sql
+SELECT database, table, replica_name, position, type, create_time, last_exception
+FROM system.replication_queue 
+WHERE last_exception != ''
+ORDER BY create_time DESC;
+```
+
+<div id="system-merges">
+  ### system.merges
+</div>
+
+يعرض عمليات الدمج الحالية، ويمكن من خلاله تحديد العمليات العالقة.
+
+```sql
+SELECT database, table, elapsed, progress, is_mutation, total_size_bytes_compressed
+FROM system.merges 
+ORDER BY elapsed DESC;
+```
+
+<div id="system-parts">
+  ### system.parts
+</div>
+
+ضروري لمراقبة عدد الأجزاء واكتشاف مشكلات التجزؤ.
+
+```sql
+SELECT database, table, count() as part_count
+FROM system.parts 
+WHERE active = 1
+GROUP BY database, table
+ORDER BY count() DESC;
+```
+
+<div id="common-production-issues">
+  ## المشكلات الشائعة في بيئة الإنتاج
+</div>
+
+<div id="disk-space-problems">
+  ### مشكلات مساحة القرص
+</div>
+
+يؤدي نفاد مساحة القرص في البيئات المعتمدة على النسخ المتماثل إلى مشكلات متتابعة. فعندما تنفد المساحة في إحدى العُقد، تواصل العُقد الأخرى محاولة المزامنة معها، مما يتسبب في ارتفاع مفاجئ في حركة مرور الشبكة وظهور أعراض مُربِكة. وقد أمضى أحد أفراد المجتمع 4 ساعات في تصحيح الأخطاء لم تكن سوى انخفاض مساحة القرص. اطّلع على هذا [الاستعلام](/ar/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting#show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases) لمراقبة تخزين القرص لديك على عنقود معيّن.
+
+إذا كنت تستخدم AWS، فاعلم أن وحدات EBS الافتراضية للأغراض العامة لها حد أقصى يبلغ 16 تيرابايت.
+
+<div id="too-many-parts-error">
+  ### خطأ «Too many parts»
+</div>
+
+تتسبب عمليات الإدراج الصغيرة والمتكررة في مشكلات بالأداء. وقد تبيّن في المجتمع أن معدلات الإدراج التي تتجاوز 10 مرات في الثانية كثيرًا ما تؤدي إلى ظهور أخطاء «Too many parts»، لأن ClickHouse لا يستطيع دمج الأجزاء بالسرعة الكافية.
+
+**الحلول:**
+
+* اجمع البيانات على دفعات باستخدام حدود 30 ثانية أو 200 ميغابايت
+* فعّل async&#95;insert للتجميع التلقائي على دفعات
+* استخدم الجداول المؤقتة للتجميع على دفعات على جانب الخادم
+* اضبط Kafka للتحكم في أحجام الدفعات
+
+[التوصية الرسمية](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous): حد أدنى 1,000 صف لكل عملية إدراج، ويُفضّل أن يتراوح العدد بين 10,000 و100,000.
+
+<div id="data-quality-issues">
+  ### مشكلات الطوابع الزمنية غير الصالحة
+</div>
+
+تتسبب التطبيقات التي ترسل بيانات بطوابع زمنية عشوائية في حدوث مشكلات في الأقسام. وينتج عن ذلك أقسام تضم بيانات بتواريخ غير واقعية (مثل 1998 أو 2050)، مما يسبب سلوكًا غير متوقع في التخزين.
+
+<div id="alter-operation-risks">
+  ### مخاطر عملية `ALTER`
+</div>
+
+قد تستهلك عمليات `ALTER` الكبيرة على الجداول التي تبلغ أحجامها عدة تيرابايت موارد كبيرة، وقد تتسبب في قفل قواعد البيانات. وفي أحد الأمثلة من المجتمع، أدى تغيير النوع من Integer إلى Float على 14 تيرابايت من البيانات إلى قفل قاعدة البيانات بالكامل، واستلزم إعادة بنائها من النسخ الاحتياطية.
+
+**راقب عمليات التعديل المكلفة:**
+
+```sql
+SELECT database, table, mutation_id, command, parts_to_do, is_done
+FROM system.mutations 
+WHERE is_done = 0;
+```
+
+اختبر تغييرات المخطط أولًا على مجموعات بيانات أصغر حجمًا.
+
+<div id="memory-and-performance">
+  ## الذاكرة والأداء
+</div>
+
+<div id="external-aggregation">
+  ### التجميع الخارجي
+</div>
+
+فعِّل التجميع الخارجي للعمليات كثيفة الاستهلاك للذاكرة. يكون أبطأ، لكنه يمنع الأعطال الناتجة عن نفاد الذاكرة عبر تفريغ البيانات إلى القرص. يمكنك إجراء ذلك باستخدام `max_bytes_before_external_group_by`، ما يساعد على منع الأعطال الناتجة عن نفاد الذاكرة في عمليات `GROUP BY` الكبيرة. يمكنك معرفة المزيد عن هذا الإعداد [هنا](/ar/reference/settings/session-settings#max_bytes_before_external_group_by).
+
+```sql
+SELECT 
+    column1,
+    column2,
+    COUNT(*) as count,
+    SUM(value) as total
+FROM large_table
+GROUP BY column1, column2
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
+```
+
+<div id="async-insert-details">
+  ### تفاصيل الإدراج غير المتزامن
+</div>
+
+يقوم الإدراج غير المتزامن تلقائيًا بتجميع عمليات الإدراج الصغيرة في دفعات على مستوى الخادم لتحسين الأداء. يمكنك ضبط ما إذا كنت تريد انتظار كتابة البيانات إلى القرص قبل إعادة تأكيد الاستلام — فالعودة الفورية أسرع، لكنها أقل متانة. وتدعم الإصدارات الحديثة أيضًا إزالة التكرار للتعامل مع البيانات المكررة داخل الدفعات.
+
+**الوثائق ذات الصلة**
+
+* [اختيار استراتيجية الإدراج](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)
+
+<div id="distributed-table-configuration">
+  ### تهيئة الجدول الموزّع
+</div>
+
+بشكل افتراضي، تستخدم الجداول الموزّعة عمليات `insert` أحادية الخيط. فعِّل `insert_distributed_sync` للمعالجة المتوازية والإرسال الفوري للبيانات إلى المقاطع.
+
+راقب تراكم البيانات المؤقتة عند استخدام الجداول الموزّعة.
+
+<div id="performance-monitoring-thresholds">
+  ### عتبات مراقبة الأداء
+</div>
+
+عتبات المراقبة التي يوصي بها المجتمع:
+
+* عدد الأجزاء لكل قسم: يُفضَّل أن يكون أقل من 100
+* عمليات الإدراج المتأخرة: يجب أن تبقى عند الصفر
+* معدل الإدراج: احصره في نحو عملية واحدة في الثانية للحصول على أفضل أداء
+
+**الوثائق ذات الصلة**
+
+* [مفتاح التقسيم المخصص](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key)
+
+<div id="quick-reference">
+  ## مرجع سريع
+</div>
+
+| المشكلة                  | كيفية الاكتشاف                                 | الحل                                           |
+| ------------------------ | ---------------------------------------------- | ---------------------------------------------- |
+| مساحة القرص              | تحقّق من إجمالي عدد البايتات في `system.parts` | راقب الاستخدام وخطّط للتوسعة                   |
+| عدد كبير جدًا من الأجزاء | احسب عدد الأجزاء لكل جدول                      | إدراج البيانات على دفعات، وفعّل `async_insert` |
+| تأخر النسخ المتماثل      | تحقّق من مقدار التأخير في `system.replicas`    | راقب الشبكة، وأعد تشغيل النسخ المتماثلة        |
+| بيانات غير سليمة         | تحقّق من صحة تواريخ الأقسام                    | طبّق التحقّق من صحة `timestamp`                |
+| عمليات التعديل العالقة   | تحقّق من حالة `system.mutations`               | اختبر أولًا على كمية صغيرة من البيانات         |
+
+<div id="video-sources">
+  ### مصادر الفيديو
+</div>
+
+* [10 دروس من تشغيل ClickHouse](https://www.youtube.com/watch?v=liTgGiTuhJE)
+* [عمليات الإدراج غير المتزامنة السريعة والمتوازية والمتسقة في ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM)
