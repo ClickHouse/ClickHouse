@@ -1676,7 +1676,8 @@ ReturnType readDateTimeTextFallback(
 
         if constexpr (throw_exception)
         {
-            if (unlikely(year == 0))
+            /// The calendar year 0 for DateTime64 is valid only if the month and day are valid, non-zero values
+            if (unlikely(year == 0 && (month == 0 || day == 0)))
                 datetime = 0;
             else
                 datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
@@ -1686,7 +1687,7 @@ ReturnType readDateTimeTextFallback(
             if (saturate_on_overflow)
             {
                 /// Use saturating version - makeDateTime saturates out-of-range years
-                if (unlikely(year == 0))
+                if (unlikely(year == 0 && (month == 0 || day == 0)))
                     datetime = 0;
                 else
                     datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);

@@ -14,3 +14,13 @@
 1970-01-19 06:17:16.800
 -- legacy read with setting restores the Unix-second instant
 2020-01-01 00:00:00.000
+-- calendar year 0000 via best_effort text parse into Protobuf
+0000-01-01 00:00:00.000
+-- calendar year 0000 using basic input format parses into Protobuf
+0000-01-01 00:00:00.000
+-- calendar year 0000 with subseconds using best_effort
+0000-01-01 12:34:56.789
+-- parseDateTime64BestEffort and toDateTime64 accept calendar year 0000
+0000-01-01 00:00:00.000	0000-01-01 00:00:00.000
+-- 0000-00-00 still maps to the Unix epoch (with basic input format)
+1970-01-01 00:00:00.000

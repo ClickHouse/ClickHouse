@@ -1894,8 +1894,8 @@ namespace
         {
             if (input_datetime64_legacy_seconds && scale > 0)
             {
-                /// For backward compatibility, previous serialization discarded subsecond precision. 
-                // Legacy interpretation is enabled by the input_format_protobuf_datetime64_legacy_seconds setting.
+                /// For backward compatibility, previous serialization discarded subsecond precision.
+                /// Legacy interpretation is enabled by the input_format_protobuf_datetime64_legacy_seconds setting.
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, scale_multiplier);
             }
 
