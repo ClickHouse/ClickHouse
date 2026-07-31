@@ -3361,6 +3361,7 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
     applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -7472,6 +7473,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+    adjustSettingsForMakeDistributedPlan(*settings);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     makeBackgroundContext(config);

@@ -1313,9 +1313,13 @@ Enabling this setting gives the wrong impression that different values within a 
 Therefore, please do not enable this setting.
 )", 0) \
     DECLARE(Bool, use_legacy_to_time, false, R"(
-When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
-Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+When enabled, the name `toTime` refers to the legacy [`toTime`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate) function,
+which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, the name refers to the new [`toTime`](/sql-reference/functions/type-conversion-functions#toTime) function,
+which converts values of different types into the [`Time`](/sql-reference/data-types/time) type.
+
+The legacy function is also unconditionally accessible as `toTimeWithFixedDate`, regardless of this setting.
+While this setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to the `Time` type.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
 Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) data types.
@@ -4378,7 +4382,7 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \
     DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
-Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial`, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it.
+Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial` with a probability strictly between 0 and 1, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it. The probabilities 0 and 1 are exempt from that hard cap, because a sample costs constant time for them.
 )", 0) \
     DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
 Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values. `0` disables the limit; values for which the sampler does not terminate at all are still rejected.
@@ -8492,6 +8496,14 @@ Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
+
+Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
+- `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
+- `rewrite_in_to_join = 1` — rewrites `IN (subquery)` to a `JOIN` so that it can be distributed (only when `allow_experimental_correlated_subqueries` is enabled);
+- `correlated_subqueries_use_in_memory_buffer = 0`;
+- `use_skip_indexes_on_data_read = 0`;
+- `compile_expressions = 0`;
+- `query_plan_direct_read_from_text_index = 0`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
