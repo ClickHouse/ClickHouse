@@ -239,6 +239,20 @@ INSERT INTO a_empty_log SELECT number, if(number = 7, '', 'FILLER' || toString(n
 SELECT 'A23', count() FROM a_empty_log WHERE s = toFixedString('', 3);
 SELECT 'A23', count() FROM a_empty     WHERE s = toFixedString('', 3);
 
+-- A29: the sparse_grams twin of A25. sparse_grams also walks its input by seqLength (through
+-- SparseGramsImpl<true>), so it has the same final-token clamp and the same decline is required. The stored
+-- value must keep a NUL AFTER the lead byte, exactly as in A25. B28 is the half that reads the decline.
+DROP TABLE IF EXISTS a_sparse_utf8;
+DROP TABLE IF EXISTS a_sparse_utf8_log;
+CREATE TABLE a_sparse_utf8 (id UInt64, s String,
+    INDEX idx_s s TYPE sparse_grams(3, 100, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+CREATE TABLE a_sparse_utf8_log (id UInt64, s String) ENGINE = Log;
+INSERT INTO a_sparse_utf8     SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+INSERT INTO a_sparse_utf8_log SELECT number, if(number = 7, concat('VALUE', unhex('C200')), 'FILLER' || toString(number)) FROM numbers(64);
+SELECT 'A29', count() FROM a_sparse_utf8_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+SELECT 'A29', count() FROM a_sparse_utf8     WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8);
+
 -- ---------------------------------------------------------------------------------------------------
 -- Direction B: no pruning lost. Asserted on the granule count, because a too-wide probe still answers
 -- correctly and shows up only as a full scan.
@@ -320,6 +334,26 @@ SELECT 'B22', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_mv WHERE m
 -- The widthless equals arm needs a fixture whose fillers do NOT share the probe's grams, so c_str cannot serve (there
 -- sharing them is the point). a_str's fillers are `FILLERn`, so an exact probe prunes to one granule.
 SELECT 'B23', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 1/64%';
+
+-- B24-B28: the remaining WIDE-constant granule rows, for the same reason as B20-B23. A decline returns
+-- false from the arm and the atom becomes UNKNOWN, so the skip index removes nothing and every A row still
+-- reads its correct answer - an answer-only cell cannot tell an exact probe from a declined one. These
+-- fixtures' fillers are FILLERn/FILLnnnn, so an exact probe prunes to one granule while a trimmed or
+-- declined one does not.
+-- B24: the widthless-String array arm (A1-A4 are answer-only). B1 uses a plain String constant, for which
+-- normalization never runs, so it cannot cover this cell.
+SELECT 'B24', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_str WHERE hasAny(v, [toFixedString('VALUE0', 10)])) WHERE explain ILIKE '%Granules: 1/64%';
+-- B25: the sparse_grams array arm (A5/A6 are answer-only and a_sparse had no granule row at all).
+SELECT 'B25', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_sparse WHERE hasAny(v, [toFixedString('VALUE0', 10)])) WHERE explain ILIKE '%Granules: 1/64%';
+-- B26: the widthless equals arm reached through LowCardinality(String) (A14/A15 are answer-only).
+SELECT 'B26', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_lc WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 1/64%';
+-- B27: the width equals arm reached through LowCardinality(FixedString(8)) (A15b is answer-only).
+SELECT 'B27', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM a_lcfs WHERE s = toFixedString('VALUE0', 10)) WHERE explain ILIKE '%Granules: 1/64%';
+-- B28: the sparse_grams half of A29, and the only row that pins the SparseGrams answer of the
+-- tokenizer-kind predicate. It reads a DECLINE, like B17g and unlike B18, so it uses the same absence
+-- idiom: the plan carries the primary key's own unconditional `Granules: 64/64` line, so a decline must be
+-- read as the ABSENCE of the skip index's `Granules: 0/64` line.
+SELECT 'B28', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a_sparse_utf8 WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%Granules: 0/64%';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Direction C: the adversarial shared-gram fixture. Every filler shares all of the trimmed probe's 3-grams, so a
@@ -423,6 +457,8 @@ DROP TABLE a_ip6_log;
 DROP TABLE a_lc_utf8;
 DROP TABLE a_lc_utf8_log;
 DROP TABLE a_sparse;
+DROP TABLE a_sparse_utf8;
+DROP TABLE a_sparse_utf8_log;
 DROP TABLE a_fs;
 DROP TABLE a_fs_log;
 DROP TABLE a_lc;

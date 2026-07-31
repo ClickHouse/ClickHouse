@@ -334,16 +334,10 @@ bool isUtf8SequenceComplete(std::string_view value)
     return i == value.size();
 }
 
-/// Whether the tokenizer walks its input by `UTF8::seqLength` and clamps the last token to the buffer end. Such a
-/// tokenizer gives a value that stops inside a declared sequence a shorter final token than the same bytes
-/// followed by more, so only those constrain what may be trimmed away.
-///
-/// The three kinds this index can be built with are answered from their `nextInString`: the n-gram and sparse-gram
-/// tokenizers both advance by `UTF8::seqLength` (the latter through `SparseGramsImpl<true>`), while the token
-/// tokenizer advances one byte at a time and never consults it. Every other kind answers yes: none of them can
-/// reach this index (only `ngrambf_v1`, `tokenbf_v1` and `sparse_grams` are registered to
-/// `bloomFilterIndexTextCreator`), so rather than reason about them, answer conservatively, which also makes a
-/// future tokenizer constrained until it has been looked at.
+/// Whether the tokenizer walks its input by `UTF8::seqLength` and clamps the last token to the buffer end, which
+/// makes a value stopping inside a declared sequence tokenize differently from the same bytes followed by more.
+/// Kinds that cannot reach this index answer `true` to fail closed, so a future tokenizer stays constrained until
+/// it has been looked at.
 bool tokenizerClampsTokensToBufferEnd(const ITokenizer & tokenizer)
 {
     switch (tokenizer.getType())
@@ -361,12 +355,9 @@ bool tokenizerClampsTokensToBufferEnd(const ITokenizer & tokenizer)
     return true;
 }
 
-/// The width of the fixed-size byte domain the index stores its values in, if it has one. `FixedString(N)` is
-/// the obvious case; `IPv6` is the other one this index accepts (`bloomFilterIndexTextValidator`), and although
-/// it is not a `DataTypeFixedString` it is stored and tokenized as exactly 16 raw bytes, and `equals` compares
-/// all 16 against a `FixedString(16)` constant without any cast (`FunctionsComparison.h`, the `IPV6_BINARY_LENGTH`
-/// special case, which runs before `getLeastSupertype`). Treating it as widthless would trim bytes the comparison
-/// keeps and cost pruning.
+/// The width of the fixed-size byte domain the index stores its values in, if it has one. Besides `FixedString(N)`,
+/// `IPv6` has one too: it is stored and tokenized as exactly 16 raw bytes, and `equals` compares all 16 of them
+/// against a `FixedString(16)` constant.
 std::optional<size_t> indexDomainByteWidth(const DataTypePtr & indexed_type)
 {
     const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
@@ -377,23 +368,10 @@ std::optional<size_t> indexDomainByteWidth(const DataTypePtr & indexed_type)
     return {};
 }
 
-/// The granule tokenizes the stored bytes verbatim, so for a `FixedString(N)` column it tokenizes all N bytes
-/// including the NUL padding. A `FixedString` constant carries its own padding in the `Field`, which need not
-/// agree with what the executing function compares: `hasAny`/`hasAll` cast both arguments to a common type,
-/// and a `FixedString -> String` cast strips trailing NULs, while `equals` treats a zero tail as equal. Probing
-/// with the raw padded bytes therefore builds a filter over tokens the granule never saw, and a matching
-/// granule is skipped.
-///
-/// Re-encode the constant into the bytes the index actually stores, so the probe tokens are a subset of the
-/// granule's. Trailing NULs are removed first. When the index has a fixed byte width the trimmed value is padded
-/// back to exactly that width: any stored value that compares equal to the constant holds those same bytes, so
-/// the probe tokenizes byte for byte like the granule. When the index has no width only the trimmed value can be
-/// probed. That is token-preserving whenever the tokenizer walks byte by byte, because a NUL is a separator and
-/// removing one cannot change any token. It is not token-preserving for a tokenizer that walks by
-/// `UTF8::seqLength` and clamps its last token to the buffer: there a value ending in a lead byte whose sequence
-/// runs past the end yields a shorter token than the same bytes followed by the padding, so the probe is not a
-/// subset and would skip a matching granule. Require sequence-completeness for those tokenizers and decline
-/// otherwise.
+/// Re-encode a string constant into the bytes the index actually stores, so its probe tokens are a subset of the
+/// granule's. Trailing NULs are trimmed; with a fixed-width domain the result is padded back to that width, and
+/// without one the trimmed value is probed as it is, which is sound only if it does not stop inside a declared
+/// UTF-8 sequence for a clamping tokenizer.
 ///
 /// `indexed_type` is the index column's type as stored in `index_data_types`, before `getPrimitiveType`.
 /// Returns false when the constant cannot be represented in the index domain, in which case the caller must
