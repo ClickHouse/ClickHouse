@@ -65,6 +65,12 @@ public:
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
 
+    /// Creates a file for writing, but only if it doesn't already exist.
+    /// The default implementation calls writeFile().
+    /// Backends that support conditional writes (e.g., S3 with SetIfNoneMatch: *)
+    /// can override this to atomically claim a file.
+    virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
+
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 
