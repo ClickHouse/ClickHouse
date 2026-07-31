@@ -153,9 +153,9 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
             stderr,
             "\n\n"
             "=== AST FUZZER ORACLE MISMATCH (fatal) ===\n"
-            "Last fuzzed query that triggered the mismatch:\n"
+            "Client-side seed query (the server may have mutated it further):\n"
             "  {}\n"
-            "Server-side oracle reproducer:\n"
+            "Server-side oracle reproducer (includes the actual fuzzed query):\n"
             "{}\n"
             "==========================================\n",
             parsed_query->formatForErrorMessage(),

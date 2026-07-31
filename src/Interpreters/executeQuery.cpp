@@ -2433,7 +2433,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                             "Fuzzed query: {}\n"
                             "{}",
                             fuzzed_query, e.message());
-                        throw;
+                        /// Rethrow with the final server-side fuzzed query attached: the
+                        /// client only sees this exception's message, and with
+                        /// `ast_fuzzer_runs > 0` its own seed query differs from the query
+                        /// that actually triggered the mismatch, so without this the CI
+                        /// artifact (`fuzzer.log`) would omit the real reproducer.
+                        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                            "{}\nServer-side fuzzed query (the actual reproducer): {}",
+                            e.message(), fuzzed_query);
                     }
                     LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
                 }
