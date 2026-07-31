@@ -72,4 +72,119 @@ inline bool maskURIPassword(std::string * uri)
     return false;
 }
 
+/** Mask the userinfo part of a URI: `scheme://user:password@host` becomes `scheme://[HIDDEN]@host`.
+  * Returns whether anything was masked.
+  *
+  * This replaces the regular expression `^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@` rewritten to
+  * `\1[HIDDEN]@`, so that masking a secret does not require a regex engine;
+  * `src/Common/tests/gtest_mask_uri_password.cpp` checks it against re2.
+  *
+  * Reading the expression: the match is anchored at the start of the string, `[a-zA-Z][a-zA-Z0-9+.-]*`
+  * is the scheme, and the greedy `[^/?#]+` runs to the last at sign before the path, query, or
+  * fragment, so a userinfo whose password itself contains an at sign is masked whole, not just up
+  * to the first one.
+  */
+inline bool maskURIUserInfo(std::string & url)
+{
+    const auto is_alpha = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+    const auto is_scheme_char = [&](char c)
+    {
+        return is_alpha(c) || (c >= '0' && c <= '9') || c == '+' || c == '.' || c == '-';
+    };
+
+    if (url.empty() || !is_alpha(url[0]))
+        return false;
+
+    size_t separator = 1;
+    while (separator < url.size() && is_scheme_char(url[separator]))
+        ++separator;
+
+    if (url.compare(separator, 3, "://") != 0)
+        return false;
+
+    size_t userinfo_begin = separator + 3;
+    size_t authority_end = url.find_first_of("/?#", userinfo_begin);
+    if (authority_end == std::string::npos)
+        authority_end = url.size();
+    if (authority_end == userinfo_begin)
+        return false;
+
+    /// `[^/?#]+` is greedy, so the at sign that closes the match is the last one before the path.
+    size_t at_sign = url.rfind('@', authority_end - 1);
+    if (at_sign == std::string::npos || at_sign <= userinfo_begin)
+        return false;
+
+    url.replace(userinfo_begin, at_sign - userinfo_begin, "[HIDDEN]");
+    return true;
+}
+
+/** Mask the values of presigned-URL credential query parameters:
+  * `?X-Amz-Signature=abc&Expires=1` becomes `?X-Amz-Signature=[HIDDEN]&Expires=[HIDDEN]`.
+  * Returns whether anything was masked.
+  *
+  * This replaces the regular expression
+  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
+  * applied globally and rewritten to `\1[HIDDEN]`, so that masking a secret does not require a
+  * regex engine; `src/Common/tests/gtest_mask_uri_password.cpp` checks it against re2.
+  */
+inline bool maskURIPresignedCredentials(std::string & url)
+{
+    static constexpr std::string_view HIDDEN = "[HIDDEN]";
+    static constexpr std::string_view EXACT_KEYS[] = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
+    static constexpr std::string_view PREFIX_KEYS[] = {"X-Amz-", "X-Goog-"};
+
+    const auto is_key_char = [](char c)
+    {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+    };
+
+    bool changed = false;
+    size_t pos = 0;
+    while ((pos = url.find_first_of("?&", pos)) != std::string::npos)
+    {
+        size_t key_begin = pos + 1;
+        ++pos;
+
+        size_t value_begin = std::string::npos;
+        for (const auto & key : EXACT_KEYS)
+        {
+            if (url.compare(key_begin, key.size(), key) == 0
+                && key_begin + key.size() < url.size() && url[key_begin + key.size()] == '=')
+            {
+                value_begin = key_begin + key.size() + 1;
+                break;
+            }
+        }
+        if (value_begin == std::string::npos)
+        {
+            for (const auto & prefix : PREFIX_KEYS)
+            {
+                if (url.compare(key_begin, prefix.size(), prefix) != 0)
+                    continue;
+                size_t key_end = key_begin + prefix.size();
+                while (key_end < url.size() && is_key_char(url[key_end]))
+                    ++key_end;
+                if (key_end < url.size() && url[key_end] == '=')
+                {
+                    value_begin = key_end + 1;
+                    break;
+                }
+            }
+        }
+
+        if (value_begin == std::string::npos)
+            continue;
+
+        size_t value_end = url.find_first_of("&#", value_begin);
+        if (value_end == std::string::npos)
+            value_end = url.size();
+
+        url.replace(value_begin, value_end - value_begin, HIDDEN);
+        changed = true;
+        pos = value_begin + HIDDEN.size();
+    }
+
+    return changed;
+}
+
 }

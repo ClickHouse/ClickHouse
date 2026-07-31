@@ -3,7 +3,6 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
@@ -1736,10 +1735,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 }
 
 /// Returns the list of column names required for the transforms in addMergingFinal
-static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_description, MergeTreeData::MergingParams merging_params)
+static NameSet getColumnsRequiredForMergingFinal(
+    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
 {
     NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
         | std::ranges::to<NameSet>();
+    /// The merge always orders by the physical sorting key, so those columns must be read even when
+    /// they are not in the query output (e.g. a sorting-key column moved to PREWHERE and pruned from
+    /// the output header would otherwise be dropped, leaving the merge without its key column).
+    for (const auto & column : metadata_snapshot->getColumnsRequiredForFinal())
+        required_columns.insert(column);
     switch (merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
@@ -2472,40 +2477,45 @@ void ReadFromMergeTree::buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
+bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
+{
+    if (!isQueryWithFinal() || !query_info.row_level_filter)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
+        return false;
+
+    const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+    const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
+        query_info.row_level_filter->column_name);
+
+    /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
+    /// is the same for every row of a dedup group) and deterministic
+    /// (no `rand`/`now` flipping the winner)
+    return !(isNodeOverSortingKey(filter_output, sorting_key_set) && isNodeDeterministic(filter_output));
+}
+
+bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
+{
+    if (!isQueryWithFinal())
+        return false;
+
+    /// PREWHERE must run after the row policy, so deferred row policy defers PREWHERE as well
+    return context->getSettingsRef()[Setting::apply_prewhere_after_final] || isRowPolicyDeferredAfterFinal();
+}
+
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 {
     if (!isQueryWithFinal())
         return;
 
     const auto & settings = context->getSettingsRef();
-    bool defer_row_policy = settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
-    bool defer_prewhere = settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
-    if (defer_row_policy)
-    {
-        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
-
-        const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
-            query_info.row_level_filter->column_name);
-
-        /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
-        /// is the same for every row of a dedup group) and deterministic
-        /// (no `rand`/`now` flipping the winner)
-        bool row_policy_over_sorting_key =
-            isNodeOverSortingKey(filter_output, sorting_key_set)
-            && isNodeDeterministic(filter_output);
-
-        if (row_policy_over_sorting_key)
-            defer_row_policy = false;
-
-        if (!row_policy_over_sorting_key && query_info.prewhere_info)
-            defer_prewhere = true;
-    }
-
-    if (defer_row_policy)
+    if (isRowPolicyDeferredAfterFinal())
         deferred_row_level_filter = query_info.row_level_filter;
-    if (defer_prewhere)
+    if (query_info.prewhere_info && isPrewhereDeferredAfterFinal())
         deferred_prewhere_info = query_info.prewhere_info;
 
     /// Don't prune partitions unless the partition key is determined by the sorting key:
@@ -3278,6 +3288,10 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
+    /// when PREWHERE is deferred after FINAL, a later rewrite must apply to the filter that actually runs
+    if (isPrewhereDeferredAfterFinal())
+        deferred_prewhere_info = prewhere_info_value;
+
     /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
     /// storage level during data reading, before the pipeline-level CreatingSetsStep
     /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
@@ -3565,7 +3579,6 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
     SharedHeader header = getOutputHeader();
-    MergeTreeCursor starting_positions = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -3582,8 +3595,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
             all_column_names,
             num_streams,
             block_size.max_block_size_rows,
-            std::move(subscription),
-            starting_positions));
+            std::move(subscription)));
     }
 
     data.triggerStreamingSubscriptionEnrichment();
@@ -3821,7 +3833,7 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     /// Remove this after statistics based cardinality estimation is enabled.
     if (query_info.query_tree)
     {
-        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTreeNode();
 
         if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
             return false;
@@ -5192,7 +5204,8 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     if (query_info.isFinal())
     {
         // Cannot remove columns if FINAL requires them for merging
-        NameSet required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        NameSet required_for_final
+            = getColumnsRequiredForMergingFinal(result_sort_description, storage_snapshot->metadata, data.merging_params);
         const auto has_column_that_is_not_required_for_final
             = std::ranges::any_of(all_column_names, [&](const auto & column_name) { return !required_for_final.contains(column_name); });
 
@@ -5213,7 +5226,8 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
     std::set<size_t> required_storage_column_positions;
     if (query_info.isFinal())
     {
-        const auto required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        const auto required_for_final
+            = getColumnsRequiredForMergingFinal(result_sort_description, storage_snapshot->metadata, data.merging_params);
 
         for (size_t pos = 0; pos < output_header->columns(); ++pos)
         {

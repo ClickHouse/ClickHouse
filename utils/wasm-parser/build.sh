@@ -139,6 +139,19 @@ $CH/base/poco/Foundation/src/Timestamp.cpp
 $CH/base/poco/Foundation/src/UTF8Encoding.cpp
 $CH/base/poco/Foundation/src/UTF8String.cpp
 $CH/base/poco/Foundation/src/URI.cpp
+$CH/base/poco/Foundation/src/JSONString.cpp
+$CH/base/poco/Foundation/src/Var.cpp
+$CH/base/poco/Foundation/src/VarHolder.cpp
+$CH/base/poco/Foundation/src/VarIterator.cpp
+$CH/base/poco/JSON/src/Array.cpp
+$CH/base/poco/JSON/src/Handler.cpp
+$CH/base/poco/JSON/src/JSONException.cpp
+$CH/base/poco/JSON/src/Object.cpp
+$CH/base/poco/JSON/src/ParseHandler.cpp
+$CH/base/poco/JSON/src/Parser.cpp
+$CH/base/poco/JSON/src/ParserImpl.cpp
+$CH/base/poco/JSON/src/PrintHandler.cpp
+$CH/base/poco/JSON/src/Stringifier.cpp
 $CH/base/poco/Net/src/IPAddress.cpp
 $CH/base/poco/Net/src/IPAddressImpl.cpp
 $CH/base/poco/Net/src/NetException.cpp
@@ -158,6 +171,17 @@ if ! printf '%s\n' "${SOURCES[@]}" | xargs -P "$(getconf _NPROCESSORS_ONLN)" -I{
 then
     grep -E 'error:' "$OUT/compile.log" | head -20 || true
     echo "Compilation failed; the full output is in $OUT/compile.log" >&2
+    exit 1
+fi
+
+# `pdjson.c` (the tokenizer under `Poco::JSON`) is C, not C++; the AST JSON deserialization
+# entry points (`ASTFromJSON.cpp`) make `Poco::JSON::Parser` reachable from the parser sources.
+if ! "$WASI/bin/clang" --target=wasm32-wasip1 --sysroot="$WASI/share/wasi-sysroot" \
+    -Os -DNDEBUG -Wno-everything -I"$CH/base/poco/JSON/src" \
+    -c "$CH/base/poco/JSON/src/pdjson.c" -o "$OUT/obj/pdjson.o" >> "$OUT/compile.log" 2>&1
+then
+    grep -E 'error:' "$OUT/compile.log" | head -20 || true
+    echo "Compilation of pdjson.c failed; the full output is in $OUT/compile.log" >&2
     exit 1
 fi
 

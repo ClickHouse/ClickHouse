@@ -26,6 +26,21 @@ bool maskConnectionStringKeyWithRE2(std::string & str, const std::string & key_w
     return RE2::Replace(&str, pattern, key_with_eq + "[HIDDEN]\\1");
 }
 
+/// The regular expression `maskURIUserInfo` replaced.
+bool maskURIUserInfoWithRE2(std::string & url)
+{
+    static const re2::RE2 pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@";
+    return RE2::Replace(&url, pattern, "\\1[HIDDEN]@");
+}
+
+/// The regular expression `maskURIPresignedCredentials` replaced.
+bool maskURIPresignedCredentialsWithRE2(std::string & url)
+{
+    static const re2::RE2 pattern
+        = "([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\\-]*|X-Goog-[A-Za-z0-9\\-]*)=)[^&#]*";
+    return RE2::GlobalReplace(&url, pattern, "\\1[HIDDEN]") > 0;
+}
+
 const std::vector<std::string> corpus = {
     /// Ordinary URIs with credentials.
     "http://user:password@host",
@@ -181,5 +196,94 @@ TEST(MaskConnectionStringKey, MasksAtLeastAsMuchAsTheRegularExpression)
                 << "the value was not masked in: " << input;
             EXPECT_EQ(with_re2, input) << "re2 was expected to leave this alone: " << input;
         }
+    }
+}
+
+TEST(MaskURIUserInfo, MasksTheUserInfo)
+{
+    std::string url = "https://AKIA123:se+cr/et@bucket.s3.amazonaws.com/key";
+    EXPECT_TRUE(maskURIUserInfo(url));
+    EXPECT_EQ(url, "https://[HIDDEN]@bucket.s3.amazonaws.com/key");
+
+    /// The greedy `[^/?#]+` runs to the last at sign before the path.
+    std::string with_at_in_password = "s3://user:p@ss@host/bucket";
+    EXPECT_TRUE(maskURIUserInfo(with_at_in_password));
+    EXPECT_EQ(with_at_in_password, "s3://[HIDDEN]@host/bucket");
+
+    std::string without_userinfo = "https://bucket.s3.amazonaws.com/key";
+    EXPECT_FALSE(maskURIUserInfo(without_userinfo));
+    EXPECT_EQ(without_userinfo, "https://bucket.s3.amazonaws.com/key");
+
+    /// An at sign after the authority does not make a match.
+    std::string at_in_path = "https://host/name@example.com";
+    EXPECT_FALSE(maskURIUserInfo(at_in_path));
+}
+
+TEST(MaskURIUserInfo, AgreesWithTheRegularExpressionOnRandomStrings)
+{
+    /// Every character class the expression is sensitive to: scheme characters, the separator,
+    /// the authority terminators, the at sign, and a newline (which `[^/?#]` matches).
+    static const std::vector<std::string_view> tokens
+        = {"http", "://", "@", "/", "?", "#", ":", "a", "1", "+", ".", "-", "_", "\n"};
+
+    std::mt19937 random(0); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::uniform_int_distribution<size_t> count(0, 8);
+    std::uniform_int_distribution<size_t> token(0, tokens.size() - 1);
+
+    for (size_t iteration = 0; iteration < 200000; ++iteration)
+    {
+        std::string input;
+        for (size_t i = 0, n = count(random); i < n; ++i)
+            input += tokens[token(random)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        EXPECT_EQ(maskURIUserInfo(with_scan), maskURIUserInfoWithRE2(with_re2)) << "return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
+    }
+}
+
+TEST(MaskURIPresignedCredentials, MasksEveryCredentialParameter)
+{
+    std::string url = "https://b.s3.amazonaws.com/k?X-Amz-Credential=AKIA%2F123&X-Amz-Signature=abc&X-Amz-Expires=3600&other=1#frag";
+    EXPECT_TRUE(maskURIPresignedCredentials(url));
+    EXPECT_EQ(url, "https://b.s3.amazonaws.com/k?X-Amz-Credential=[HIDDEN]&X-Amz-Signature=[HIDDEN]&X-Amz-Expires=[HIDDEN]&other=1#frag");
+
+    std::string v2 = "https://b.s3.amazonaws.com/k?AWSAccessKeyId=AKIA&Signature=s%3D&Expires=1";
+    EXPECT_TRUE(maskURIPresignedCredentials(v2));
+    EXPECT_EQ(v2, "https://b.s3.amazonaws.com/k?AWSAccessKeyId=[HIDDEN]&Signature=[HIDDEN]&Expires=[HIDDEN]");
+
+    /// The key must match whole: `SignatureVersion` is not `Signature`.
+    std::string other_key = "https://host/?SignatureVersion=4&x=y";
+    EXPECT_FALSE(maskURIPresignedCredentials(other_key));
+    EXPECT_EQ(other_key, "https://host/?SignatureVersion=4&x=y");
+}
+
+TEST(MaskURIPresignedCredentials, AgreesWithTheRegularExpressionOnRandomStrings)
+{
+    /// Key names and their fragments, the parameter separators, and the characters the value
+    /// class is sensitive to. Fragments of key names exercise the whole-key requirement and the
+    /// `X-Amz-`/`X-Goog-` prefix forms.
+    static const std::vector<std::string_view> tokens
+        = {"?", "&", "#", "=", "AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId",
+           "X-Amz-", "X-Goog-", "Sig", "a", "1", "-", "_", "\n"};
+
+    std::mt19937 random(0); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::uniform_int_distribution<size_t> count(0, 8);
+    std::uniform_int_distribution<size_t> token(0, tokens.size() - 1);
+
+    for (size_t iteration = 0; iteration < 200000; ++iteration)
+    {
+        std::string input;
+        for (size_t i = 0, n = count(random); i < n; ++i)
+            input += tokens[token(random)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        EXPECT_EQ(maskURIPresignedCredentials(with_scan), maskURIPresignedCredentialsWithRE2(with_re2))
+            << "return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
     }
 }
