@@ -1,6 +1,6 @@
 ok
 Array(Tuple(UInt32, Float32))
-`id` UUID, `timestamp` UInt32, `value` Float32
+`id` UUID, `timestamp` UInt32, `value` Float32, `is_stale_marker` UInt8 DEFAULT 0
 metric_name	String
 tags	Map(String, String)
 time_series	Array(Tuple(DateTime64(3), Float64))

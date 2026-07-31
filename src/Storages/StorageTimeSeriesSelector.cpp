@@ -351,7 +351,8 @@ namespace
                                         DateTime64 max_time,
                                         const DataTypePtr & id_data_type,
                                         const DataTypePtr & timestamp_data_type,
-                                        const DataTypePtr & scalar_data_type)
+                                        const DataTypePtr & scalar_data_type,
+                                        bool has_is_stale_marker)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -371,7 +372,16 @@ namespace
             select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
 
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
+            if (has_is_stale_marker)
+            {
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
+            }
+            else
+            {
+                auto zero = makeASTFunction("CAST", make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}), make_intrusive<ASTLiteral>("UInt8"));
+                zero->setAlias(TimeSeriesColumnNames::IsStaleMarker);
+                select_list.push_back(std::move(zero));
+            }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -460,6 +470,9 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
+    auto samples_storage = DatabaseCatalog::instance().getTable(samples_table_id, context);
+    bool has_is_stale_marker = samples_storage->getInMemoryMetadataPtr()->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
         select_query_from_tags_table,
@@ -467,7 +480,8 @@ void StorageTimeSeriesSelector::readImpl(
         config.max_time,
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type);
+        config.scalar_data_type,
+        has_is_stale_marker);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());

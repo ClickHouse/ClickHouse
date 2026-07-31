@@ -899,7 +899,8 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
-                check_column_type(TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>());
+                if (target_table_columns.has(TimeSeriesColumnNames::IsStaleMarker))
+                    check_column_type(TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>());
                 break;
             }
 

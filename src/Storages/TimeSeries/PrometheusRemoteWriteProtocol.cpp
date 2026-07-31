@@ -543,7 +543,8 @@ namespace
         value_column->reserve(total_samples);
 
         /// Column "is_stale_marker".
-        DataTypePtr is_stale_marker_type = samples_metadata.columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
+        bool has_is_stale_marker = samples_metadata.columns.has(TimeSeriesColumnNames::IsStaleMarker);
+        DataTypePtr is_stale_marker_type = has_is_stale_marker ? samples_metadata.columns.get(TimeSeriesColumnNames::IsStaleMarker).type : std::make_shared<DataTypeUInt8>();
         auto is_stale_marker_column = is_stale_marker_type->createColumn();
         is_stale_marker_column->reserve(total_samples);
 
@@ -559,7 +560,8 @@ namespace
         samples_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
-        samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+        if (has_is_stale_marker)
+            samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
         BlocksToInsert res;
 
