@@ -373,7 +373,8 @@ public:
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
-    size_t getNumStreamsCappedByReadBytes(size_t num_streams, const RangesInDataParts & parts_with_ranges) const;
+    std::optional<size_t> estimateReadBytesForStreamCap(const RangesInDataParts & parts_with_ranges) const;
+    size_t getNumStreamsCappedByReadBytes(size_t num_streams, size_t estimated_read_bytes) const;
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;

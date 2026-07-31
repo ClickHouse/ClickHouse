@@ -1602,6 +1602,8 @@ Per-stream overhead cost expressed as byte-equivalent. Controls the maximum numb
 
 `estimated_read_bytes` is the uncompressed size of the columns being read, over the mark ranges left after index and partition pruning, divided by the number of participating replicas when reading from parallel replicas. Uncompressed size is used because per-stream overhead is traded against the work done per stream, which scales with the number of values processed rather than with how well they compress.
 
+The cap is not applied when the read volume cannot be estimated conservatively, for example when an old part needs other physical columns to evaluate a newly added `DEFAULT` column, or when a selected range reads only part of a variable-width column.
+
 The default of 64 KB is derived from the cost model `T(N) = W/N + F + V·N`, where `W` is useful work, `F` is fixed pipeline overhead, and `V` is per-stream variable cost. The optimal stream count is `sqrt(W/V)`. Expressing `W` in bytes via throughput gives `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`. Increasing this value reduces the number of streams (more conservative); decreasing it allows more streams. Set to 0 to disable this optimization.
 
 Possible values:

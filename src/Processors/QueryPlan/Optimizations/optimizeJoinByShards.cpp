@@ -257,14 +257,25 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     auto logger = getLogger("optimizeJoinByLayers");
     const size_t requested_layers = data.sources.front()->getNumStreams();
     size_t num_layers = requested_layers;
+    std::optional<size_t> total_estimated_read_bytes = 0;
     size_t source_index = 0;
     for (const auto * source : data.sources)
     {
-        num_layers = std::min(
-            num_layers,
-            source->getNumStreamsCappedByReadBytes(requested_layers, analysis_results[source_index]->parts_with_ranges));
+        const auto source_estimated_read_bytes
+            = source->estimateReadBytesForStreamCap(analysis_results[source_index]->parts_with_ranges);
+        if (!source_estimated_read_bytes)
+        {
+            total_estimated_read_bytes.reset();
+            break;
+        }
+
+        if (__builtin_add_overflow(
+                *total_estimated_read_bytes, *source_estimated_read_bytes, &*total_estimated_read_bytes))
+            *total_estimated_read_bytes = std::numeric_limits<size_t>::max();
         ++source_index;
     }
+    if (total_estimated_read_bytes)
+        num_layers = data.sources.front()->getNumStreamsCappedByReadBytes(requested_layers, *total_estimated_read_bytes);
     auto all_split = splitIntersectingPartsRangesIntoLayers(
         all_parts, num_layers, data.common_prefix, data.is_reverse_order, logger);
     std::vector<SplitPartsByRanges> splits(analysis_results.size());

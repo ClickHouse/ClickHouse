@@ -1240,14 +1240,15 @@ Pipe ReadFromMergeTree::readByLayers(
 /// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
 /// `parts_with_ranges`.
 ///
-/// Returns 0 if nothing usable could be estimated, in which case the caller must not cap.
+/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not cap.
 ///
 /// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
 /// against is proportional to the work done per stream, which scales with the number of values
 /// processed, not with how well they compress. A highly compressible column (e.g. a constant
 /// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
 /// expressions and aggregation.
-static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, const Names & column_names, const Settings & settings)
+static std::optional<size_t> estimateReadBytes(
+    const RangesInDataParts & parts_with_ranges, const Names & column_names, const Settings & settings)
 {
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
 
@@ -1264,8 +1265,8 @@ static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, con
         /// Only a fraction of the part may survive primary key / partition pruning. Scaling by it
         /// keeps the cap meaningful for selective queries, which would otherwise be sized as if the
         /// whole part were read.
-        const size_t selected_marks = std::min(part.ranges.getNumberOfMarks(), part_marks);
-        if (selected_marks == 0)
+        const size_t selected_rows = std::min(part.getRowsCount(), data_part.rows_count);
+        if (selected_rows == 0)
             continue;
 
         /// Several requested subcolumns can share streams. Group them by their physical column so
@@ -1273,8 +1274,19 @@ static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, con
         std::unordered_map<String, NameSet> requested_names_by_column;
         for (const auto & col_name : column_names)
         {
-            if (auto col = data_part.tryGetColumn(col_name))
-                requested_names_by_column[col->getNameInStorage()].emplace(col_name);
+            const auto col = data_part.tryGetColumn(col_name);
+            /// Defaults and mutation steps can make the reader fetch other physical columns. The
+            /// dependency set is built later for each read task, so do not cap when it is unknown here.
+            if (!col)
+                return std::nullopt;
+
+            /// Per-column sizes are stored for the whole part. Scaling a variable-width column by
+            /// selected rows can underestimate arbitrarily when large values are concentrated in the
+            /// selected range.
+            if (selected_rows < data_part.rows_count && !col->type->haveMaximumSizeOfValue())
+                return std::nullopt;
+
+            requested_names_by_column[col->getNameInStorage()].emplace(col_name);
         }
 
         size_t part_bytes = 0;
@@ -1315,7 +1327,7 @@ static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, con
             part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
 
         const auto selected_bytes_wide
-            = (static_cast<UInt128>(part_bytes) * selected_marks + part_marks - 1) / part_marks;
+            = (static_cast<UInt128>(part_bytes) * selected_rows + data_part.rows_count - 1) / data_part.rows_count;
         const size_t selected_bytes = selected_bytes_wide > std::numeric_limits<size_t>::max()
             ? std::numeric_limits<size_t>::max()
             : static_cast<size_t>(selected_bytes_wide);
@@ -1346,10 +1358,9 @@ static size_t estimateReadBytes(const RangesInDataParts & parts_with_ranges, con
 /// wide, so capping a narrow pipeline changes its shape without winning anything.
 static constexpr size_t MIN_STREAMS_TO_CAP_BY_READ_BYTES = 16;
 
-static void capStreamsByReadBytes(
+static void capStreamsByEstimatedReadBytes(
     size_t & num_streams,
-    const RangesInDataParts & parts_with_ranges,
-    const Names & column_names,
+    size_t total_bytes,
     const Settings & settings,
     size_t total_query_nodes,
     LoggerPtr log,
@@ -1359,7 +1370,6 @@ static void capStreamsByReadBytes(
     if (overhead_cost_bytes == 0)
         return;
 
-    const size_t total_bytes = estimateReadBytes(parts_with_ranges, column_names, settings);
     if (total_bytes == 0)
         return;
 
@@ -1398,13 +1408,38 @@ static void capStreamsByReadBytes(
     }
 }
 
-size_t ReadFromMergeTree::getNumStreamsCappedByReadBytes(
-    size_t num_streams, const RangesInDataParts & parts_with_ranges) const
+static void capStreamsByReadBytes(
+    size_t & num_streams,
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const Settings & settings,
+    size_t total_query_nodes,
+    LoggerPtr log,
+    std::string_view context_hint = {})
 {
-    capStreamsByReadBytes(
+    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, settings);
+    if (!estimated_read_bytes)
+        return;
+
+    capStreamsByEstimatedReadBytes(
         num_streams,
-        parts_with_ranges,
-        all_column_names,
+        *estimated_read_bytes,
+        settings,
+        total_query_nodes,
+        log,
+        context_hint);
+}
+
+std::optional<size_t> ReadFromMergeTree::estimateReadBytesForStreamCap(const RangesInDataParts & parts_with_ranges) const
+{
+    return estimateReadBytes(parts_with_ranges, all_column_names, context->getSettingsRef());
+}
+
+size_t ReadFromMergeTree::getNumStreamsCappedByReadBytes(size_t num_streams, size_t estimated_read_bytes) const
+{
+    capStreamsByEstimatedReadBytes(
+        num_streams,
+        estimated_read_bytes,
         context->getSettingsRef(),
         getTotalQueryNodes(),
         log,

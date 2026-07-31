@@ -134,6 +134,28 @@ P_RES_ON=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM t_parts SETTINGS max_thread
 P_RES_OFF=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM t_parts SETTINGS max_threads = 64, merge_tree_min_bytes_per_read_stream = 0")
 [ "$P_RES_ON" = "$P_RES_OFF" ] && echo 1 || echo 0
 
+# A column added with DEFAULT can require reading other physical columns from old parts. The
+# estimator does not have the per-part dependency expansion available here, so it must leave the
+# stream count unchanged instead of charging only the physically present requested columns.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_default_dependency"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_default_dependency (k UInt64, w UInt16, s String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_default_dependency SELECT number, number, repeat('x', 65536) FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_default_dependency ADD COLUMN d UInt64 DEFAULT length(s)"
+echo "-- unknown DEFAULT dependencies do not cap streams --"
+DEFAULT_ON=$(stream_count "SELECT sum(w), sum(d) FROM t_default_dependency SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
+DEFAULT_OFF=$(stream_count "SELECT sum(w), sum(d) FROM t_default_dependency SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 0")
+[ "$DEFAULT_ON" -eq "$DEFAULT_OFF" ] && echo 1 || echo 0
+
+# Whole-part column sizes cannot be scaled safely for a selected range of a variable-width column:
+# large values may be concentrated entirely in that range.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_skewed_string"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_skewed_string (k UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_skewed_string SELECT number, if(number < 64, repeat('x', 900000), '') FROM numbers(1000)"
+echo "-- partial variable-width reads do not cap streams --"
+SKEW_ON=$(stream_count "SELECT sum(cityHash64(s)) FROM t_skewed_string WHERE k < 64 SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
+SKEW_OFF=$(stream_count "SELECT sum(cityHash64(s)) FROM t_skewed_string WHERE k < 64 SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 0")
+[ "$SKEW_ON" -eq "$SKEW_OFF" ] && echo 1 || echo 0
+
 # Parallel replicas plan over all selected parts on every node, but each node reads only its share.
 # Use a smaller byte-equivalent cost so both the single-node and per-node estimates stay above the
 # 16-stream floor: this makes the division by the participating node count directly observable.
@@ -152,3 +174,5 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_hicomp"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_sub"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_final"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_parts"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_default_dependency"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_skewed_string"

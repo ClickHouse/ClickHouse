@@ -77,6 +77,30 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
     }
     three_replica_streams = int(node1.query(stream_count_query, settings=stream_count_settings))
 
+    # A nested query can carry an explicit replica limit lower than the outer parallel-replicas
+    # statement. The effective-count rewrite must clamp over-requests without widening that limit.
+    # Exercise both the SQL and serialized remote-plan modes; before the clamp both plans used 3.
+    for serialize_query_plan in (0, 1):
+        explicit_limit_streams = {}
+        for explicit_limit in (1, 3):
+            nested_stream_count_query = f"""
+                SELECT max(toUInt32OrZero(extract(explain, 'MergeTreeSelect.*× (\\d+)')))
+                FROM (EXPLAIN PIPELINE
+                    SELECT sum(key)
+                    FROM (SELECT key FROM {db}.tt SETTINGS max_parallel_replicas = {explicit_limit}))
+            """
+            explicit_limit_streams[explicit_limit] = int(
+                node1.query(
+                    nested_stream_count_query,
+                    settings={
+                        **stream_count_settings,
+                        "serialize_query_plan": serialize_query_plan,
+                    },
+                )
+            )
+
+        assert explicit_limit_streams[1] > explicit_limit_streams[3]
+
     # Stop one replica gracefully: it stays registered in the cluster definition but becomes inactive.
     node3.stop_clickhouse()
     try:
