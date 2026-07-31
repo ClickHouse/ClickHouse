@@ -193,7 +193,7 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTrips)
         out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
         out.initial_user = "default";
         out.initial_query_id = "query-id";
-        out.initial_address = std::make_shared<Poco::Net::SocketAddress>(good);
+        out.initial_address = Poco::Net::SocketAddress(good);
         out.interface = ClientInfo::Interface::TCP;
 
         WriteBufferFromOwnString buf;
@@ -230,7 +230,7 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
         out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
         out.initial_user = "default";
         out.initial_query_id = "query-id";
-        out.initial_address = std::make_shared<Poco::Net::SocketAddress>("127.0.0.1:9000");
+        out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
         out.interface = ClientInfo::Interface::TCP;
         out.current_roles = roles;
 
