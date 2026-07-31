@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -93,6 +95,11 @@ private:
     const size_t hash_functions;
     const Names normalized_column_names;
     std::vector<RPNElement> rpn;
+
+    bool hasIndexColumn(const String & column_name) const
+    {
+        return header.has(column_name) || std::find(normalized_column_names.begin(), normalized_column_names.end(), column_name) != normalized_column_names.end();
+    }
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 
