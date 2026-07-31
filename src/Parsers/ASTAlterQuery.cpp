@@ -136,6 +136,13 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     if (!remove_property.empty())
         w.writeString("remove_property", remove_property);
 
+    /// The delta of the internal `MATERIALIZE TTL <delta>` form (see `AlterCommands::getMutationCommands`).
+    /// `formatImpl` emits it, so it must round-trip through JSON as well: dropping it would silently turn
+    /// an internal-only command, which `InterpreterAlterQuery` rejects, into a plain `MATERIALIZE TTL`
+    /// that rewrites the data.
+    if (ttl_delta != 0)
+        w.writeInt("ttl_delta", ttl_delta);
+
     w.writeChild("col_decl", col_decl);
     w.writeChild("column", column);
     w.writeChild("order_by", order_by);
@@ -208,6 +215,15 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     snapshot_name = r.getString("snapshot_name");
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
+
+    /// See `writeJSON`. `formatImpl` prints the delta only for `MATERIALIZE TTL`, so a delta on any
+    /// other command type could only come from malformed `clickhouse_json`; reject it instead of
+    /// silently ignoring the field.
+    ttl_delta = r.getInt("ttl_delta");
+    if (ttl_delta != 0 && type != ASTAlterCommand::MATERIALIZE_TTL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'ttl_delta' is only valid for the MATERIALIZE TTL command, not '{}', during AST JSON deserialization",
+            magic_enum::enum_name(type));
 
     /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
     /// are arbitrary expressions/lists with no single parser-produced node type, so they are
