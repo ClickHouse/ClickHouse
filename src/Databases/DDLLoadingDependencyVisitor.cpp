@@ -1,3 +1,4 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
