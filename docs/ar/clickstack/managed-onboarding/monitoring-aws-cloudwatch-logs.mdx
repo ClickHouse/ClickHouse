@@ -22,9 +22,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 يمكن نشر ClickStack collector إما كـ **Docker container** (راجع [Setting up your OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)) أو كـ **Helm release** في Kubernetes باستخدام Helm chart الخاص بـ OpenTelemetry من المصدر upstream مع image الخاصة بـ ClickStack collector (راجع [Deploying the collector](/ar/clickstack/ingesting-data/collector#configuring-the-collector)). **تأكد من أنك دوّنت OTLP endpoint الخاص به** و`OTLP_AUTH_TOKEN` الذي عيّنته عند نشره.
 
 <Steps>
-  <Step>
-    ## جهّز المتطلبات الأساسية
-
+  <Step title="جهّز المتطلبات الأساسية" id="gather-prerequisites">
     ستحتاج إلى:
 
     * **حساب AWS** يضم مجموعةً واحدة أو أكثر من مجموعات سجلات CloudWatch، وبيانات اعتماد تتضمن أذونات IAM المذكورة أدناه.
@@ -33,9 +31,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * قيمة `OTLP_AUTH_TOKEN` التي عيّنتها في مجمّع ClickStack الخاص بك. إذا لم تؤمّنه، فيمكنك حذف ترويسة `authorization` من التهيئة أدناه.
   </Step>
 
-  <Step>
-    ## تهيئة بيانات اعتماد AWS
-
+  <Step title="تهيئة بيانات اعتماد AWS" id="configure-aws">
     يقرأ الـ receiver بيانات اعتماد AWS من متغيرات البيئة القياسية. صدّرها على الجهاز الذي سيشغّل الـ collector.
 
     **لمستخدمي AWS SSO:**
@@ -83,9 +79,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    ## تهيئة مستقبِل CloudWatch
-
+  <Step title="تهيئة مستقبِل CloudWatch" id="configure-receiver">
     صدّر نقطة نهاية مجمّع ClickStack ورمز المصادقة، ثم أنشئ ملف `otel-collector-config.yaml`.
 
     <Info>
@@ -220,9 +214,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    ## ابدأ مُجمِّع receiver
-
+  <Step title="ابدأ مُجمِّع receiver" id="start-collector">
     أنشئ ملف `docker-compose.yaml` بجانب `otel-collector-config.yaml`. يتيح الإدخال `extra_hosts` للحاوية الوصول إلى مُجمِّع ClickStack الذي يعمل على المضيف نفسه عبر `host.docker.internal`؛ كما أن `bind mount` بصيغته المطوّلة يُظهر خطأً صراحةً إذا كان ملف الإعداد مفقودًا، بدلًا من إنشاء دليل فارغ بصمت:
 
     ```shell
@@ -262,9 +254,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    ## أكّد ذلك في واجهة ClickStack
-
+  <Step title="أكّد ذلك في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) واختر **ClickStack** من القائمة اليمنى.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="تشغيل ClickStack" border />
@@ -296,9 +286,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * أكّد أن `OTLP_AUTH_TOKEN` يطابق القيمة المضبوطة على ClickStack collector لديك.
   </Step>
 
-  <Step>
-    ## استيراد لوحة معلومات CloudWatch (اختياري)
-
+  <Step title="استيراد لوحة معلومات CloudWatch (اختياري)" id="import-dashboard">
     تتوفر للتنزيل لوحة معلومات جاهزة تعرض حجم السجلات، وتصنيف مستويات الخطورة، وتوزيع الأخطاء.
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل `cloudwatch-logs-dashboard.json`</TrackedLink>، ثم انتقل في ClickStack UI إلى **Dashboards** وانقر على **Import**.
@@ -310,9 +298,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="مربع حوار إتمام الاستيراد" />
   </Step>
 
-  <Step>
-    ## للمزيد من القراءة
-
+  <Step title="للمزيد من القراءة" id="further-reading">
     * [مرجع تكامل AWS CloudWatch Logs](/ar/clickstack/integration-examples/cloudwatch) لمجموعة البيانات التجريبية، ودليل استكشاف الأخطاء وإصلاحها بالكامل، وخيارات الضبط.
     * [تأمين المُجمِّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP، وباستخدام حسابات إدخال البيانات ذات أقل الامتيازات.
     * [معالجة الأحداث وتصفيتها وإثراؤها](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) في المُجمِّع.
