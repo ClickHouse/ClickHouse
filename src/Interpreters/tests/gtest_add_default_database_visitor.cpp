@@ -32,21 +32,15 @@ const ASTTableIdentifier & tableIdentifier(const ASTPtr & ast)
 }
 
 /// `AddDefaultDatabaseVisitor` qualifies a one-part table name with the current database by
-/// rebuilding the identifier through `name` and the constructor. A name supplied by a query
-/// parameter is stored as an empty part whose substituting expression lives in the node's
-/// children, so the rebuilt identifier carries no parameters and the constructor's
-/// `chassert(!part.empty())` fails. The visitor must leave such a name alone.
+/// rebuilding the identifier through `name` and the constructor, which drops the query
+/// parameters, so a parameterized name would re-enter the constructor with an empty part and
+/// trip `chassert(!part.empty())`. The visitor must leave such a name alone.
 ///
-/// This is a unit test rather than a stateless SQL test, per the carve-out of the
-/// "default to SQL tests" rule: the behaviour is not observable from SQL on the build type
-/// where the assertion is live. Reaching this rebuild site needs an explicit `UUID '...'`
-/// clause on the table reference (`StorageID::assertNotEmpty` rejects the empty name first,
-/// and `StorageID::empty` exempts a non-Nil UUID), and a separate pre-existing defect makes
-/// any statement carrying that clause abort earlier on a debug binary: the formatter never
-/// emits the clause while `ASTTableIdentifier::updateTreeHashImpl` hashes it, so the
-/// format-parse-format check in `executeQueryImpl` raises `Inconsistent AST formatting`.
-/// That check lives only in `executeQueryImpl`; parsing and running the visitor never enter
-/// it, so this test exercises the site directly on every build type.
+/// Driven directly rather than through SQL: reaching this rebuild needs an explicit
+/// `UUID '...'` clause (`StorageID::empty` exempts a non-Nil UUID from `assertNotEmpty`), and
+/// on a debug build any statement carrying that clause hits a separate pre-existing formatter
+/// defect first. Sanitizer builds keep `chassert` but define `NDEBUG`, so they would reach the
+/// assertion from SQL; a debug stress job would not, and `no-debug` is ignored there.
 TEST(AddDefaultDatabaseVisitor, ParameterizedTableNameWithUUIDIsLeftUnqualified)
 {
     const auto & context = getContext().context;
