@@ -1,8 +1,7 @@
 Positive: an XGBOOST dictionary with explicit hyperparameters
 10
 Float64
-10
-10
+Error: the generic dictionary interface is not supported
 Positive: default hyperparameters (empty layout)
 10
 Positive: predict with prediction parameters
@@ -28,8 +27,9 @@ Error: num_class itself is not an accepted training parameter
 Error: target is not a valid parameter, because the target is inferred
 Negative: an integer target attribute (rejected at first use)
 Error: only Float32 and Float64 are accepted as the target
-Positive: a Float32 target agrees with predictXGBoost
+Positive: a Float32 target is accepted
 10
+Float64
 Negative: non-numeric structure (rejected at first use)
 Train on demand with SYSTEM RELOAD DICTIONARY
 LOADED
