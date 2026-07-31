@@ -21,7 +21,7 @@ namespace TimeSeriesSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_TYPE_OF_FIELD;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -87,8 +87,11 @@ ASTPtr TimeSeriesIDGenerator::getDefault(
     if (id_which.isUInt128())
         return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));
 
-    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
-        table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
+        "either as a DEFAULT expression of that column or in the 'id_generator' setting. "
+        "An expression can be chosen automatically only for types UInt64, UInt128, UUID, and FixedString(16)",
+        table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
 }
 
 
