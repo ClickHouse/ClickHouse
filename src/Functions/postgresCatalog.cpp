@@ -162,6 +162,45 @@ public:
     }
 };
 
+/// Render a schema name as one element of a PostgreSQL `search_path`.
+///
+/// `search_path` is not an arbitrary string: PostgreSQL parses it as a comma-separated list of
+/// identifiers, down-casing every element that is not double-quoted and splitting on every comma that
+/// is not inside quotes. A ClickHouse database name is under no such restriction, so a name that is not
+/// already a valid unquoted identifier - `Mixed Case`, `a,b`, `1st`, `$user` - has to be quoted, or a
+/// client that resolves unqualified names through `search_path` would look in a different schema than
+/// the one `current_schema()` reports and the server itself uses. Inside the quotes a `"` is doubled,
+/// as in PostgreSQL's `quote_ident`.
+String quoteSearchPathElement(const String & name)
+{
+    /// An unquoted identifier is a lowercase letter or `_` followed by lowercase letters, digits, `_`
+    /// or `$`. Anything else (including an empty name and any non-ASCII byte, whose case folding is
+    /// encoding-dependent) is quoted.
+    bool needs_quoting = name.empty();
+    for (size_t i = 0; !needs_quoting && i < name.size(); ++i)
+    {
+        const char c = name[i];
+        const bool lowercase_letter = c >= 'a' && c <= 'z';
+        const bool digit = c >= '0' && c <= '9';
+        needs_quoting = i == 0 ? !(lowercase_letter || c == '_') : !(lowercase_letter || digit || c == '_' || c == '$');
+    }
+
+    if (!needs_quoting)
+        return name;
+
+    String result;
+    result.reserve(name.size() + 2);
+    result += '"';
+    for (const char c : name)
+    {
+        if (c == '"')
+            result += '"';
+        result += c;
+    }
+    result += '"';
+    return result;
+}
+
 /// `current_setting(name [, missing_ok])` - PostgreSQL compatibility function.
 /// Returns the textual value of a run-time configuration parameter (GUC). Only a small set of the
 /// read-only parameters that clients probe during introspection is emulated. For an unknown
@@ -253,8 +292,9 @@ private:
             /// Unqualified table names resolve in the connected database (`current_schema()` is
             /// `currentDatabase`), so report exactly that - not PostgreSQL's default `public`. A client
             /// that discovers the default schema through this function must arrive at the same place the
-            /// server itself resolves unqualified names in.
-            value = current_database;
+            /// server itself resolves unqualified names in, which is why the name is rendered as a
+            /// `search_path` element rather than pasted in raw.
+            value = quoteSearchPathElement(current_database);
         else
             return false;
         return true;
