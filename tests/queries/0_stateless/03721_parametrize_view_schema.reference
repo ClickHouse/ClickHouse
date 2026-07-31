@@ -52,7 +52,14 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: n, result_type: UInt64, source_id: 3
   JOIN TREE
-    TABLE id: 3, alias: __table1, table_name: default.03271_parametrized_v_expl_mismatch
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: 03271_parametrized_v_expl_mismatch
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          FUNCTION id: 5, function_name: equals, function_type: ordinary
+            ARGUMENTS
+              LIST id: 6, nodes: 2
+                IDENTIFIER id: 7, identifier: upper_bound
+                CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
 SELECT *
 FROM 03271_parametrized_v_expl(upper_bound = 3);
 0
