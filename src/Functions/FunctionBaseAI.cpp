@@ -3,7 +3,10 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Poco/Net/NetException.h>
 #include <algorithm>
+#include <exception>
 #include <thread>
 #include <utility>
 #include <Common/logger_useful.h>
@@ -17,6 +20,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Core/Settings.h>
@@ -52,7 +56,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -298,6 +301,46 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
+{
+    /// Catch order matters: more derived exception types must come first.
+    try
+    {
+        std::rethrow_exception(eptr);
+    }
+    catch (const AIProviderHTTPException & e)
+    {
+        return isRetriableHTTPError(e.getHTTPStatus());
+    }
+    catch (const NetException &)
+    {
+        /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
+        return true;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Connection refused/reset, TLS connect failure, or an unreachable advertised address.
+        return true;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        /// Connect or receive timeout.
+        return true;
+    }
+    catch (const Poco::IOException & e)
+    {
+        /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
+        /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
+        return e.code() != POCO_EMFILE;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
+        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
+        return false;
+    }
+}
+
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -373,6 +416,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
+            /// Enforce the API-call quota before every provider request, including retries, so a flaky
+            /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
+            if (quota.checkQuotas())
+                break;
+
             try
             {
                 AIRequest ai_request;
@@ -397,21 +446,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 success = true;
                 break;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                /// `url` table function does; deterministic errors are surfaced immediately.
+                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
-                if (!throw_on_error)
-                    break;
-
-                throw;
-            }
-            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-            {
                 if (!throw_on_error)
                     break;
 
