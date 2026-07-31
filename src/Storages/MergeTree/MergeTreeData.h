@@ -1363,9 +1363,15 @@ public:
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
+    struct PartCompressionCodec
+    {
+        CompressionCodecPtr codec;
+        bool is_explicit_recompression = false; /// True if `codec` comes from a `RECOMPRESS` TTL entry and is not `Default`.
+    };
+
     /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
     /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
-    CompressionCodecPtr getCompressionCodecForPart(
+    PartCompressionCodec getCompressionCodecForPart(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size_compressed,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,

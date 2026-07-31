@@ -2201,10 +2201,10 @@ private:
         /// (which is locked in shared mode when input streams are created) and when inserting new data
         /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
         /// deadlock is impossible.
-        ctx->compression_codec = ctx->data->getCompressionCodecForPart(
+        auto part_compression_codec = ctx->data->getCompressionCodecForPart(
             ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
-        const bool is_explicit_recompression = isExplicitRecompression(
-            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
+        ctx->compression_codec = std::move(part_compression_codec.codec);
+        const bool is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
