@@ -212,7 +212,8 @@ def test_iceberg_history_dropped_log_entry_falls_back_to_commit_time(
     `..._stable_after_expire` test only covers ClickHouse-written metadata, where the two
     timestamps coincide and the fallback happens to be lossless.
 
-    The divergence is handcrafted: no ClickHouse write path can produce it.
+    The divergence is handcrafted: no ClickHouse write path can produce it, and the timestamps are
+    laid out relative to each other rather than to wall-clock latency between the two INSERTs.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_history_log_time_differs_" + get_uuid_str()
@@ -235,14 +236,15 @@ def test_iceberg_history_dropped_log_entry_falls_back_to_commit_time(
     older, newer = sorted(meta["snapshots"], key=lambda s: s["timestamp-ms"])
     older_id, newer_id = str(older["snapshot-id"]), str(newer["snapshot-id"])
 
-    # Give the older snapshot a made-current time well clear of its commit time, so the two cannot
-    # be confused for one another, and keep it below the newer commit so the log stays ordered.
-    commit_ms = older["timestamp-ms"]
-    made_current_ms = commit_ms + 1000
-    assert made_current_ms < newer["timestamp-ms"], (
-        f"cannot place a distinct made-current time between the two commits: "
-        f"{commit_ms} and {newer['timestamp-ms']}"
-    )
+    # Place the older snapshot's commit time and made-current time backwards from the newer commit,
+    # so the two are a full second apart and cannot be confused for one another. Both are
+    # handcrafted: the real INSERTs land only a few hundred milliseconds apart (they may even share
+    # a millisecond), so offsetting the observed commit time forwards would overshoot the newer
+    # commit and make the ordering unsatisfiable.
+    newer_ms = newer["timestamp-ms"]
+    commit_ms = newer_ms - 2000
+    made_current_ms = newer_ms - 1000
+    older["timestamp-ms"] = commit_ms
 
     meta["snapshot-log"] = [
         {"snapshot-id": older["snapshot-id"], "timestamp-ms": made_current_ms},
