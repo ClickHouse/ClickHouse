@@ -304,6 +304,7 @@ void StorageMergeTree::startup()
     /// Do not schedule any background jobs if the table is read-only.
     if (isTableReadonly())
         return;
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
     /// When `leader_election` is enabled, data lives on shared object storage and only
     /// the leader may mutate it. Defer startup cleanup (`clearEmptyParts`,
