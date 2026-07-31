@@ -1,9 +1,22 @@
 # docker build -t clickhouse/fasttest .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
-# ARG for quick switch to a given ubuntu mirror
+# ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
+# builds are unchanged; CI passes the in-region AWS mirror on the command line
+# (see ci/praktika/docker.py). amd64 base images use archive.ubuntu.com, arm64
+# uses ports.ubuntu.com, so rewrite both. On 24.04 the sources live in the deb822
+# file /etc/apt/sources.list.d/ubuntu.sources, so rewrite every apt source file.
+# The runners have no IPv6 egress, so force IPv4 to avoid hanging on IPv6 connect
+# attempts (this is a CI-only image, never pulled by end users, so forcing IPv4
+# here is safe). Also retry transient apt failures.
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
+    && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
 ARG LLVM_APT_VERSION="1:21.1.5~"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
@@ -24,7 +37,6 @@ RUN apt-get update \
         git \
         xxd \
         time \
-        awscli \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -63,6 +75,7 @@ RUN apt-get update \
         python3 \
         python3-pip \
         zstd \
+        unzip \
         moreutils \
         less \
         expect \
@@ -137,7 +150,11 @@ RUN arch=${TARGETARCH} \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
@@ -146,7 +163,8 @@ RUN mkdir -p /var/lib/clickhouse \
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN groupadd --system --gid 1000 clickhouse \
+RUN (userdel -r ubuntu 2>/dev/null || true) && (groupdel ubuntu 2>/dev/null || true) \
+    && groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
 

@@ -1,0 +1,46 @@
+<clickhouse>
+    <stateless_worker_server>
+        <enabled>1</enabled>
+        <endpoint>localhost</endpoint>
+    </stateless_worker_server>
+
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <cluster>default</cluster>
+    </stateless_worker_client>
+
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
+        <!-- Persisted exchange needs storage that all workers can read; use the
+             MinIO instance provided by `with_minio=True`. The Streaming kind
+             does not touch this section. -->
+        <temporary_files_storage>
+            <type>object_storage</type>
+            <object_storage_type>s3</object_storage_type>
+            <endpoint>http://minio1:9001/root/distributed_query_tmp/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <endpoint_subpath>tmp_sub_path/</endpoint_subpath>
+        </temporary_files_storage>
+    </distributed_query>
+
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

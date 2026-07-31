@@ -8,8 +8,6 @@ title: 'clusterAllReplicas'
 doc_type: 'reference'
 ---
 
-# clusterAllReplicas Table Function
-
 Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Only one replica of each shard is queried.
 
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as a separate shard/connection.

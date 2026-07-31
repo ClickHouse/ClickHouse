@@ -21,6 +21,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -83,8 +84,13 @@ struct QueryState
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
-    /// Query text.
-    String query;
+    /// Query text. Uses `StringWithMemoryTracking` so that the resize on
+    /// receive goes through the throwing memory-tracker path. A client
+    /// sending an oversized query body trips `MEMORY_LIMIT_EXCEEDED`
+    /// cleanly, rather than driving the server's RSS past
+    /// `max_server_memory_usage` via `allocNoThrow` and getting
+    /// cgroup-OOM-killed.
+    StringWithMemoryTracking query;
     std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
@@ -102,9 +108,6 @@ struct QueryState
     bool need_receive_data_for_insert = false;
     /// Data was read.
     bool read_all_data = true;
-
-    /// A state got uuids to exclude from a query
-    std::optional<std::vector<UUID>> part_uuids_to_ignore;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -221,9 +224,6 @@ private:
     std::unique_ptr<Session> session;
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
-    /// A state got uuids to exclude from a query
-    std::optional<std::vector<UUID>> part_uuids_to_ignore;
-
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
     std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
@@ -285,9 +285,10 @@ private:
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
+    InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::shared_ptr<QueryState> & state);
-    void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
 
@@ -296,9 +297,10 @@ private:
 
     bool processUnexpectedData();
     [[noreturn]] void processUnexpectedQuery();
-    [[noreturn]] void processUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void processUnexpectedHello();
     [[noreturn]] void processUnexpectedTablesStatusRequest();
+    /// Reject the obsolete IgnoredPartUUIDs packet (allow_experimental_query_deduplication was removed).
+    [[noreturn]] void processObsoleteIgnoredPartUUIDs();
 
     /// Process INSERT query
     void startInsertQuery(QueryState & state);
@@ -315,11 +317,13 @@ private:
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
+    /// Send an exception when the connection buffers are not initialized yet
+    /// (for example, when their allocation failed because the server memory limit is reached).
+    void trySendExceptionWithoutConnectionBuffers(const Exception & e);
     void sendProgress(QueryState & state);
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
-    void sendPartUUIDs(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);

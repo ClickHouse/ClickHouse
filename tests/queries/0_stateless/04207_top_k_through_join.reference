@@ -1,0 +1,30 @@
+left_join_top_k	10	0	-9
+left_join_top_k_off	10	0	-9
+inner_join_correctness	10	0	-18
+left_join_multiplied	10
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Limit
+                Sorting
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (default.t_l)
+            Expression (Right Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_r)
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_l)
+            Expression (Right Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_r)

@@ -1,0 +1,409 @@
+---
+slug: /materialized-view/refreshable-materialized-view
+title: 'العرض المادي القابل للتحديث'
+description: 'كيفية استخدام العروض المادية لتسريع الاستعلامات'
+keywords: ['العرض المادي القابل للتحديث', 'التحديث', 'العروض المادية', 'تسريع الاستعلامات', 'تحسين الاستعلامات']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُعد [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) مشابهة من حيث الفكرة للعروض المادية في قواعد بيانات OLTP التقليدية؛ إذ تخزّن ناتج استعلام محدد لسرعة استرجاعه وتقليل الحاجة إلى إعادة تنفيذ الاستعلامات كثيفة الاستهلاك للموارد بشكل متكرر. وعلى عكس [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) في ClickHouse، يتطلب هذا النوع تنفيذ الاستعلام دوريًا على مجموعة البيانات كاملة، ثم تخزين نتائجه في جدول هدف للاستعلام عنها. ومن الناحية النظرية، ينبغي أن تكون مجموعة النتائج هذه أصغر من مجموعة البيانات الأصلية، مما يتيح تنفيذ الاستعلامات اللاحقة بسرعة أكبر.
+
+يوضح المخطط التالي آلية عمل العروض المادية القابلة للتحديث:
+
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="مخطط العرض المادي القابل للتحديث" />
+
+يمكنك أيضًا مشاهدة الفيديو التالي:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-KhFJSY8yrs?si=VPRSZb20vaYkuR_C" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="when-should-refreshable-materialized-views-be-used">
+  ## متى ينبغي استخدام العروض المادية القابلة للتحديث؟
+</div>
+
+تُعد العروض المادية التزايدية في ClickHouse قوية للغاية، وعادةً ما تكون قابليتها للتوسع أفضل بكثير من النهج المستخدم في العروض المادية القابلة للتحديث، خاصةً في الحالات التي يلزم فيها إجراء aggregation على جدول واحد. فمن خلال احتساب aggregation فقط لكل block من البيانات عند insertه، ثم دمج الحالات التزايدية في الجدول النهائي، لا يُنفَّذ الـ query إلا على مجموعة فرعية من البيانات. ويمكن لهذا الأسلوب أن يتوسع ليصل إلى بيتابايتات من البيانات، وهو عادةً الأسلوب المفضل.
+
+ومع ذلك، هناك حالات استخدام لا تكون فيها هذه العملية التزايدية مطلوبة أو قابلة للتطبيق. فبعض المشكلات إما لا تتوافق مع النهج التزايدي أو لا تتطلب تحديثات في الوقت الفعلي، بحيث تكون إعادة البناء الدورية أكثر ملاءمة. على سبيل المثال، قد ترغب في إجراء إعادة احتساب كاملة لعرضٍ ما بانتظام على مجموعة البيانات بأكملها لأنه يستخدم عملية join معقدة، وهو ما لا يتوافق مع النهج التزايدي.
+
+> يمكن للعروض المادية القابلة للتحديث تشغيل عمليات دفعية لتنفيذ مهام مثل إلغاء التطبيع. ويمكن إنشاء تبعيات بين العروض المادية القابلة للتحديث بحيث يعتمد أحد العروض على نتائج عرض آخر، ولا يُنفَّذ إلا بعد اكتماله. ويمكن أن يحل هذا محل مسارات العمل المجدولة أو مخططات DAG البسيطة مثل مهمة [dbt](https://www.getdbt.com/). ولمعرفة المزيد حول كيفية تعيين التبعيات بين العروض المادية القابلة للتحديث، انتقل إلى [CREATE VIEW](/ar/reference/statements/create/view#refresh-dependencies)، قسم `Dependencies`.
+
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## كيف يتم تحديث عرض مادي قابل للتحديث؟
+</div>
+
+يُحدَّث العرض المادي القابل للتحديث تلقائيًا على فاصل زمني يُحدَّد أثناء الإنشاء.
+على سبيل المثال، يُحدَّث العرض المادي التالي كل دقيقة:
+
+```sql
+CREATE MATERIALIZED VIEW table_name_mv
+REFRESH EVERY 1 MINUTE TO table_name AS
+...
+```
+
+إذا أردت فرض تحديث عرض مادي، يمكنك استخدام العبارة `SYSTEM REFRESH VIEW`:
+
+```sql
+SYSTEM REFRESH VIEW table_name_mv;
+```
+
+يمكنك أيضًا إلغاء العرض أو إيقافه أو تشغيله.
+لمزيد من التفاصيل، راجع توثيق [إدارة العروض المادية القابلة للتحديث](/ar/reference/statements/system#managing-refreshable-materialized-views).
+
+<div id="when-was-a-refreshable-materialized-view-last-refreshed">
+  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟
+</div>
+
+لمعرفة وقت آخر تحديث للعرض المادي القابل للتحديث، يمكنك الاستعلام عن جدول النظام [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes)، كما هو موضح أدناه:
+
+```sql
+SELECT database, view, status,
+       last_success_time, last_refresh_time, next_refresh_time,
+       read_rows, written_rows
+FROM system.view_refreshes;
+```
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:10:00 │ 2024-11-11 12:10:00 │ 2024-11-11 12:11:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="how-can-i-change-the-refresh-rate">
+  ## كيف يمكنني تغيير معدل التحديث؟
+</div>
+
+لتغيير معدل التحديث لعرض مادي قابل للتحديث، استخدم صيغة [`ALTER TABLE...MODIFY REFRESH`](/ar/reference/statements/alter/view#alter-table--modify-refresh-statement).
+
+```sql
+ALTER TABLE table_name_mv
+MODIFY REFRESH EVERY 30 SECONDS;
+```
+
+بمجرد الانتهاء من ذلك، يمكنك استخدام استعلام [متى كان آخر تحديث لعرض مادي قابل للتحديث؟](/ar/concepts/features/materialized-views/refreshable-materialized-view#when-was-a-refreshable-materialized-view-last-refreshed) للتحقق من تحديث المعدّل:
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:22:30 │ 2024-11-11 12:22:30 │ 2024-11-11 12:23:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="using-append-to-add-new-rows">
+  ## استخدام `APPEND` لإضافة صفوف جديدة
+</div>
+
+تتيح لك وظيفة `APPEND` إضافة صفوف جديدة إلى نهاية الجدول بدلًا من استبدال العرض بأكمله.
+
+ومن استخدامات هذه الميزة التقاط لقطات للقيم في نقطة زمنية معيّنة. على سبيل المثال، لنتخيّل أن لدينا جدول `events` يُملأ بتدفّق من الرسائل من [Kafka](https://kafka.apache.org/)، أو [Redpanda](https://www.redpanda.com/)، أو أي منصة أخرى للبيانات المتدفقة.
+
+```sql
+SELECT *
+FROM events
+LIMIT 10
+```
+
+```response
+Query id: 7662bc39-aaf9-42bd-b6c7-bc94f2881036
+
+┌──────────────────ts─┬─uuid─┬─count─┐
+│ 2008-08-06 17:07:19 │ 0eb  │   547 │
+│ 2008-08-06 17:07:19 │ 60b  │   148 │
+│ 2008-08-06 17:07:19 │ 106  │   750 │
+│ 2008-08-06 17:07:19 │ 398  │   875 │
+│ 2008-08-06 17:07:19 │ ca0  │   318 │
+│ 2008-08-06 17:07:19 │ 6ba  │   105 │
+│ 2008-08-06 17:07:19 │ df9  │   422 │
+│ 2008-08-06 17:07:19 │ a71  │   991 │
+│ 2008-08-06 17:07:19 │ 3a2  │   495 │
+│ 2008-08-06 17:07:19 │ 598  │   238 │
+└─────────────────────┴──────┴───────┘
+```
+
+تحتوي مجموعة البيانات هذه على `4096` قيمة في العمود `uuid`. ويمكننا كتابة الاستعلام التالي للعثور على القيم الأعلى من حيث العدد الإجمالي:
+
+```sql
+SELECT
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL
+ORDER BY count DESC
+LIMIT 10
+```
+
+```response
+┌─uuid─┬───count─┐
+│ c6f  │ 5676468 │
+│ 951  │ 5669731 │
+│ 6a6  │ 5664552 │
+│ b06  │ 5662036 │
+│ 0ca  │ 5658580 │
+│ 2cd  │ 5657182 │
+│ 32a  │ 5656475 │
+│ ffe  │ 5653952 │
+│ f33  │ 5653783 │
+│ c5b  │ 5649936 │
+└──────┴─────────┘
+```
+
+لنفترض أننا نريد تسجيل العدد لكل `uuid` كل 10 ثوانٍ وتخزينه في جدول جديد باسم `events_snapshot`. سيبدو مخطط `events_snapshot` كما يلي:
+
+```sql
+CREATE TABLE events_snapshot (
+    ts DateTime32,
+    uuid String,
+    count UInt64
+)
+ENGINE = MergeTree
+ORDER BY uuid;
+```
+
+يمكننا بعد ذلك إنشاء عرض مادي قابل للتحديث لتعبئة هذا الجدول:
+
+```sql
+CREATE MATERIALIZED VIEW events_snapshot_mv
+REFRESH EVERY 10 SECOND APPEND TO events_snapshot
+AS SELECT
+    now() AS ts,
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL;
+```
+
+يمكننا بعد ذلك الاستعلام عن `events_snapshot` للحصول على العدد بمرور الوقت لقيمة `uuid` محددة:
+
+```sql
+SELECT *
+FROM events_snapshot
+WHERE uuid = 'fff'
+ORDER BY ts ASC
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌──────────────────ts─┬─uuid─┬───count─┐
+│ 2024-10-01 16:12:56 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:00 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:10 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:20 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:30 │ fff  │ 5674669 │
+│ 2024-10-01 16:13:40 │ fff  │ 5947912 │
+│ 2024-10-01 16:13:50 │ fff  │ 6203361 │
+│ 2024-10-01 16:14:00 │ fff  │ 6501695 │
+└─────────────────────┴──────┴─────────┘
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+لنرَ الآن كيفية استخدام العروض المادية القابلة للتحديث مع بعض مجموعات البيانات النموذجية.
+
+<div id="stack-overflow">
+  ### Stack Overflow
+</div>
+
+يوضح [دليل إزالة تطبيع البيانات](/ar/guides/clickhouse/data-modelling/denormalization) تقنيات متنوعة لإزالة تطبيع البيانات باستخدام مجموعة بيانات Stack Overflow. نملأ هذه الجداول بالبيانات التالية: `votes` و`users` و`badges` و`posts` و`postlinks`.
+
+في ذلك الدليل، أوضحنا كيفية إزالة تطبيع مجموعة بيانات `postlinks` ضمن جدول `posts` باستخدام الاستعلام التالي:
+
+```sql
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+ثم أوضحنا كيفية إجراء `insert` لمرة واحدة لهذه البيانات في جدول `posts_with_links`، ولكن في نظام production، سنرغب في تشغيل هذه العملية بشكل دوري.
+
+قد يُحدَّث كلٌّ من جدولي `posts` و`postlinks`. لذلك، بدلًا من محاولة تنفيذ عملية `join` هذه باستخدام العروض المادية التزايدية، قد يكون من الكافي ببساطة جدولة هذا الاستعلام ليعمل على فاصل زمني محدد، مثل مرة كل ساعة، مع تخزين النتائج في جدول `post_with_links`.
+
+وهنا يأتي دور العرض المادي القابل للتحديث، ويمكننا إنشاء واحد باستخدام الاستعلام التالي:
+
+```sql
+CREATE MATERIALIZED VIEW posts_with_links_mv
+REFRESH EVERY 1 HOUR TO posts_with_links AS
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+سيُنفَّذ العرض فورًا، ثم كل ساعة بعد ذلك وفقًا للإعدادات، لضمان انعكاس التحديثات على الجدول المصدر. والأهم من ذلك أنه عند إعادة تنفيذ الاستعلام، تُحدَّث مجموعة النتائج بصورة ذرّية وشفافة.
+
+<Note>
+  الصياغة هنا مطابقة لصياغة العرض المادي التزايدي، باستثناء أننا نُدرج بند [`REFRESH`](/ar/reference/statements/create/view#refreshable-materialized-view):
+</Note>
+
+<div id="imdb">
+  ### IMDb
+</div>
+
+في [دليل تكامل dbt وClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index)، ملأنا مجموعة بيانات IMDb بالجداول التالية: `actors` و`directors` و`genres` و`movie_directors` و`movies` و`roles`.
+
+يمكننا بعد ذلك كتابة الاستعلام التالي لاستخراج ملخص لكل ممثل، مرتبًا حسب أكبر عدد من مرات الظهور في الأفلام.
+
+```sql
+SELECT
+  id, any(actor_name) AS name, uniqExact(movie_id) AS movies,
+  round(avg(rank), 2) AS avg_rank, uniqExact(genre) AS genres,
+  uniqExact(director_name) AS directors, max(created_at) AS updated_at
+FROM (
+  SELECT
+    imdb.actors.id AS id,
+    concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+    imdb.movies.id AS movie_id, imdb.movies.rank AS rank, genre,
+    concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+    created_at
+  FROM imdb.actors
+  INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+  LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+  LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+  LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+  LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬───────────avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884792542982515 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605094212635 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034230202023 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342420755093 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │                  0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴────────────────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.393 sec. Processed 5.45 million rows, 86.82 MB (13.87 million rows/s., 221.01 MB/s.)
+Peak memory usage: 1.38 GiB.
+```
+
+لا يستغرق إرجاع النتيجة وقتًا طويلًا، ولكن لنفترض أننا نريدها أن تكون أسرع وأقل تكلفةً من الناحية الحسابية.
+ولنفترض أيضًا أن مجموعة البيانات هذه تخضع لتحديثات مستمرة، إذ تصدر أفلام جديدة باستمرار ويظهر كذلك ممثلون ومخرجون جدد.
+
+لقد حان وقت استخدام عرض مادي قابل للتحديث، لذا لننشئ أولًا الجدول الهدف للنتائج:
+
+```sql
+CREATE TABLE imdb.actor_summary
+(
+        `id` UInt32,
+        `name` String,
+        `num_movies` UInt16,
+        `avg_rank` Float32,
+        `unique_genres` UInt16,
+        `uniq_directors` UInt16,
+        `updated_at` DateTime
+)
+ENGINE = MergeTree
+ORDER BY num_movies
+```
+
+والآن يمكننا تعريف العرض:
+
+```sql
+CREATE MATERIALIZED VIEW imdb.actor_summary_mv
+REFRESH EVERY 1 MINUTE TO imdb.actor_summary AS
+SELECT
+        id,
+        any(actor_name) AS name,
+        uniqExact(movie_id) AS num_movies,
+        avg(rank) AS avg_rank,
+        uniqExact(genre) AS unique_genres,
+        uniqExact(director_name) AS uniq_directors,
+        max(created_at) AS updated_at
+FROM
+(
+        SELECT
+        imdb.actors.id AS id,
+        concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+        imdb.movies.id AS movie_id,
+        imdb.movies.rank AS rank,
+        genre,
+        concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+        created_at
+        FROM imdb.actors
+    INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+    LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+    LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+    LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+    LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY num_movies DESC;
+```
+
+سيُنفَّذ الـ view فورًا، ثم كل دقيقة بعد ذلك وفقًا للإعدادات، لضمان انعكاس التحديثات على جدول المصدر. كما يصبح استعلامنا السابق للحصول على ملخص للممثلين أبسطَ من حيث الصياغة وأسرعَ بكثير!
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+لنفترض أننا أضفنا ممثلًا جديدًا، وهو &quot;Clicky McClickHouse&quot;، إلى بيانات المصدر لدينا، واتضح أنه ظهر في عدد كبير من الأفلام!
+
+```sql
+INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
+INSERT INTO imdb.roles SELECT
+        845466 AS actor_id,
+        id AS movie_id,
+        'Himself' AS role,
+        now() AS created_at
+FROM imdb.movies
+LIMIT 10000, 910;
+```
+
+بعد أقل من 60 ثانية بقليل، يُحدَّث الجدول المستهدف لدينا ليعكس غزارة أعمال Clicky التمثيلية:
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name────────────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│ 845466 │ Clicky McClickHouse │        910 │ 1.4687939 │            21 │            662 │ 2024-11-11 12:53:51 │
+│  45332 │ Mel Blanc           │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers        │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London          │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi         │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴─────────────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.006 sec.
+```
