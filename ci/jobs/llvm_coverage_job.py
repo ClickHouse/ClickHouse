@@ -219,19 +219,34 @@ if __name__ == "__main__":
     # measurement", which is reported as SKIPPED further down; a failed REPORT is a
     # tooling failure and must stay RED. praktika collapses a step's exit code to a
     # boolean, so the merge status is passed back in a marker file instead.
-    _merge_env = f"MERGE_PROFDATA_FILES={shlex.quote(' '.join(_merge_inputs))}"
-    merge_res = Result.from_commands_run(
-        name="Merge LLVM Coverage Profiles",
-        command=[f"{_merge_env} bash ci/jobs/scripts/merge_llvm_coverage.sh merge"],
-    )
+    if not _merge_inputs:
+        # An empty input set is the limit of the same tolerated case as one absent
+        # shard, so it reports SKIPPED instead of reddening. The script is not
+        # invoked: its guard cannot tell an empty value from an omitted one, and it
+        # must keep refusing the latter to stay safe against an unbounded glob. It
+        # writes no marker either, so the marker read is skipped rather than
+        # satisfied with a fabricated one.
+        _merge_msg = "no shard coverage profile arrived, so there is nothing to merge"
+        merge_res = Result.create_from(
+            name="Merge LLVM Coverage Profiles",
+            status=Result.Status.SKIPPED,
+            info=_merge_msg,
+        )
+        merge_res.set_comment(_merge_msg)
+        _merge_ok = False
+    else:
+        _merge_env = f"MERGE_PROFDATA_FILES={shlex.quote(' '.join(_merge_inputs))}"
+        merge_res = Result.from_commands_run(
+            name="Merge LLVM Coverage Profiles",
+            command=[f"{_merge_env} bash ci/jobs/scripts/merge_llvm_coverage.sh merge"],
+        )
+        _merge_status_file = Path(TEMP_DIR) / "merge_profdata.status"
+        _merge_ok = (
+            merge_res.is_ok()
+            and _merge_status_file.exists()
+            and _merge_status_file.read_text().strip() == "ok"
+        )
     results.append(merge_res)
-
-    _merge_status_file = Path(TEMP_DIR) / "merge_profdata.status"
-    _merge_ok = (
-        merge_res.is_ok()
-        and _merge_status_file.exists()
-        and _merge_status_file.read_text().strip() == "ok"
-    )
     if not _merge_ok:
         print("The aggregate coverage merge did not produce a usable profile.")
 
@@ -286,29 +301,32 @@ if __name__ == "__main__":
 
     if not is_master_branch:
         # Both sides must be complete measurements of the same artifact manifest
-        # before any number derived from them may be published. Computed here, ahead
-        # of every consumer of those numbers.
-        _baseline_sidecar = completeness.read_sidecar(
-            f"{TEMP_DIR}/base_llvm_coverage.meta.json"
-        )
-        _selected_base_file = Path(TEMP_DIR) / "selected_base_commit.txt"
-        _selected_base_commit = (
-            _selected_base_file.read_text().strip()
-            if _selected_base_file.exists()
-            else ""
-        )
-        # This test comes before the differential script runs, not after: that
-        # script's own precondition exits 1 when llvm_coverage.info is absent, and
-        # a non-zero command turns the sub-result FAIL. Its output directory is
-        # then missing too, so the SKIPPED override further down is never reached
-        # and the whole job reddens - exactly the outcome a failed aggregate merge
-        # is meant to report as SKIPPED.
+        # before any number derived from them may be published.
+        #
+        # The baseline sidecar and the selected-base marker are produced BY the
+        # differential script, so they may only be read after it has run.
+        #
+        # The current side is decided BEFORE it. An absent llvm_coverage.info trips
+        # that script's own precondition, which exits 1 and turns the sub-result
+        # FAIL; its output directory is then missing too, so the SKIPPED override
+        # further down is never reached and the whole job reddens - exactly the
+        # outcome a failed aggregate merge is meant to report as SKIPPED. The
+        # sidecar's own causes are short-circuited here for a different reason:
+        # running the script on a measurement already known incomparable spends
+        # genhtml on it and prints a delta the very next line says was not judged.
+        # Baseline-side causes cannot be known yet, because that script is what
+        # fetches the baseline, so they stay with the override.
         _have_own_info = Path(f"{TEMP_DIR}/llvm_coverage.info").exists()
-        if not _have_own_info:
+        _own_side_reason = completeness.current_side_reason(_sidecar)
+        if not _have_own_info or _own_side_reason:
             _measurement_comparable = False
             _incomparable_reason = (
-                "this run published no coverage data, so there is nothing to compare"
+                _own_side_reason
+                if _have_own_info
+                else "this run published no coverage data, so there is nothing to compare"
             )
+            # The script never ran, so it wrote no marker and there is nothing to read.
+            _selected_base_commit = ""
             diff_res = Result.create_from(
                 name="Generate LLVM Coverage Diff Report",
                 status=Result.Status.SKIPPED,
@@ -319,6 +337,15 @@ if __name__ == "__main__":
             diff_res = Result.from_commands_run(
                 name="Generate LLVM Coverage Diff Report",
                 command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
+            )
+            _baseline_sidecar = completeness.read_sidecar(
+                f"{TEMP_DIR}/base_llvm_coverage.meta.json"
+            )
+            _selected_base_file = Path(TEMP_DIR) / "selected_base_commit.txt"
+            _selected_base_commit = (
+                _selected_base_file.read_text().strip()
+                if _selected_base_file.exists()
+                else ""
             )
             _measurement_comparable, _incomparable_reason = completeness.comparable(
                 _sidecar,

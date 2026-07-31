@@ -26,6 +26,7 @@ import ast
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -693,6 +694,106 @@ def test_report_phase_does_nothing_when_the_merge_produced_no_profile():
         assert "nothing to report on" in r.stdout
 
 
+def _drive_merge_gate(present_profiles, tmpdir, artifact_names=None, marker=None):
+    """Drive the real merge-invocation decision out of the job source.
+
+    Returns a namespace with the merge-script invocations, merge_res and _merge_ok.
+    The real statements are executed in their real order; only from_commands_run is
+    stubbed, and that stub reproduces the script's observable behaviour (it writes
+    the status marker) so the marker read is exercised rather than bypassed.
+    """
+    src = open(_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    keep = []
+    started = False
+    for st in main_if.body:
+        txt = ast.get_source_segment(src, st) or ""
+        if txt.startswith("_expected_artifacts = "):
+            started = True
+        if not started:
+            continue
+        keep.append(st)
+        if txt.startswith("if not _merge_ok:"):
+            break
+    mod = ast.Module(body=keep, type_ignores=[])
+    ast.fix_missing_locations(mod)
+    code = compile(mod, _JOB, "exec")
+
+    for profile in present_profiles:
+        with open(os.path.join(tmpdir, profile), "wb") as f:
+            f.write(b"\x00profdata\x00")
+
+    invocations = []
+
+    def _from_commands_run(name, command, **kwargs):
+        invocations.append(command)
+        if marker is not None:
+            with open(os.path.join(tmpdir, "merge_profdata.status"), "w") as f:
+                f.write(marker)
+        return Result.create_from(name=name, status=True)
+
+    class _ResultShim:
+        Status = Result.Status
+        create_from = staticmethod(Result.create_from)
+        from_commands_run = staticmethod(_from_commands_run)
+
+    ns = {
+        "Path": pathlib.Path,
+        "TEMP_DIR": tmpdir,
+        "Result": _ResultShim,
+        "completeness": completeness,
+        "shlex": shlex,
+        "print": lambda *a, **k: None,
+        "LLVM_ARTIFACTS_LIST": list(
+            _GATE_ARTIFACTS if artifact_names is None else artifact_names
+        ),
+        "results": [],
+    }
+    exec(code, ns)
+    return types.SimpleNamespace(
+        invocations=invocations,
+        merge_res=ns.get("merge_res"),
+        merge_ok=ns.get("_merge_ok"),
+        results=ns["results"],
+        sidecar_inputs=ns.get("_merge_inputs"),
+    )
+
+
+def test_zero_arriving_profiles_reports_skipped_instead_of_reddening():
+    # Every shard profile is optional=True, so "none arrived" is the limit of the
+    # case the job promises to report as a green SKIPPED. Invoking the merge script
+    # with an empty file list instead exits 1 on its unbounded-glob guard, which
+    # cannot distinguish an empty value from an omitted one, so the FAIL child
+    # reddens the whole job BEFORE the marker mechanism the SKIPPED verdict is
+    # built on is ever reached.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_merge_gate([], d)
+    assert got.invocations == [], f"merge script was invoked: {got.invocations}"
+    assert got.merge_res.status == Result.Status.SKIPPED, got.merge_res.status
+    assert got.merge_ok is False
+    # The assertion that pins the invariant: the composite job result stays green.
+    parent = Result.create_from(name="LLVM Coverage", results=[got.merge_res])
+    assert parent.is_ok(), f"job is not green: {parent.status}"
+    # And the sidecar must record the measurement as unusable, not as complete.
+    sidecar = completeness.build_sidecar(
+        _GATE_ARTIFACTS, [], info_path="", merge_ok=got.merge_ok
+    )
+    assert sidecar["complete"] is False
+
+
+def test_at_least_one_arriving_profile_still_invokes_the_merge_script():
+    # Reverse direction. Without this the new branch could be widened to always
+    # skip and the aggregate merge would silently stop running.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_merge_gate(["COV_A.profdata"], d, marker="ok")
+    assert len(got.invocations) == 1, f"expected one invocation, got {got.invocations}"
+    joined = " ".join(got.invocations[0])
+    assert "merge_llvm_coverage.sh merge" in joined
+    assert "MERGE_PROFDATA_FILES=COV_A.profdata" in joined, joined
+    assert got.merge_ok is True
+
+
 def test_the_scripts_are_syntactically_valid():
     for path in (_MERGE_SH, _SELECT_SH):
         assert (
@@ -719,16 +820,67 @@ def test_the_sidecar_rides_on_the_existing_artifact_so_no_new_name_is_introduced
     assert any(p.endswith(completeness.SIDECAR_BASENAME) for p in paths)
 
 
-def _drive_diff_gate(info_present, tmpdir, job_path=None):
-    """Drive the real diff-gate ordering out of the job source.
+_GATE_ARTIFACTS = ["COV_A", "COV_B"]
 
-    Returns (script_invocations, diff_res, measurement_comparable). The statement
-    ORDER is the property under test - whether the absent-.info verdict is reached
-    before or after the differential script runs - so the real statements are
-    executed in their real order rather than a copy of the logic. Only the leaf
-    calls that need a workspace (from_commands_run) are stubbed, and that stub
-    reproduces the script's own precondition: it exits non-zero when
-    llvm_coverage.info is absent (measured separately).
+
+def _load_job_module_namespace():
+    """The job's module-level definitions, without running its __main__ block."""
+    src = open(_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    body = [n for n in tree.body if not isinstance(n, ast.If)]
+    mod = ast.Module(body=body, type_ignores=[])
+    ast.fix_missing_locations(mod)
+    ns = {"__name__": "_job_defs"}
+    exec(compile(mod, _JOB, "exec"), ns)
+    return ns
+
+
+def _write_baseline_outputs(tmpdir, artifact_names, complete=True):
+    """Reproduce what generate_diff_coverage_report.sh leaves in TEMP_DIR.
+
+    The script is the SOLE writer of base_llvm_coverage.meta.json (its wget) and
+    of selected_base_commit.txt (its echo), so a stub that writes neither makes
+    the whole baseline side unobservable and the harness blind to the order of
+    the reads that consume them. Every field is produced by the real module
+    functions rather than a literal dict, so a schema change cannot leave this
+    stub silently describing something the production reader no longer accepts.
+    """
+    base_info = os.path.join(tmpdir, "base_llvm_coverage.info")
+    with open(base_info, "w", encoding="utf-8") as f:
+        f.write("TN:\nSF:/src/a.cpp\nDA:1,1\nend_of_record\n")
+    present = [completeness.profile_basename(n) for n in artifact_names]
+    if not complete:
+        present = present[:-1]
+    completeness.write_sidecar(
+        os.path.join(tmpdir, "base_llvm_coverage.meta.json"),
+        completeness.build_sidecar(artifact_names, present, info_path=base_info),
+    )
+    with open(os.path.join(tmpdir, "selected_base_commit.txt"), "w", encoding="utf-8") as f:
+        f.write("a" * 40 + "\n")
+    os.makedirs(os.path.join(tmpdir, "llvm_coverage_diff_html_report"), exist_ok=True)
+
+
+def _drive_diff_gate(
+    info_present,
+    tmpdir,
+    job_path=None,
+    artifact_names=None,
+    present_names=None,
+    merge_ok=True,
+    baseline_complete=True,
+    sidecar_override=None,
+):
+    """Drive the real diff-gate out of the job source.
+
+    Returns a namespace with the script invocations, diff_res, the comparability
+    verdict and reason, the selected base commit and every printed line.
+
+    The statement ORDER is a property under test: the baseline sidecar and the
+    selected-base marker are written BY the differential script, so a read placed
+    above it can only ever see nothing. The real statements therefore run in
+    their real order; only from_commands_run is stubbed, and that stub both
+    reproduces the script's precondition (non-zero when llvm_coverage.info is
+    absent, measured separately) and writes the files the real script writes.
     """
     src = open(job_path or _JOB, encoding="utf-8").read()
     tree = ast.parse(src)
@@ -738,25 +890,45 @@ def _drive_diff_gate(info_present, tmpdir, job_path=None):
         for s in main_if.body
         if isinstance(s, ast.If) and ast.unparse(s.test) == "not is_master_branch"
     ][0]
+    # Slice through the `if _diff_ran:` statement, not merely to the comparability
+    # verdict: the "Baseline coverage / Current coverage / Delta" prints live inside
+    # it, and a cell asserting that they are absent is VACUOUS unless they are in
+    # the executed region at all.
     keep = []
     for st in block.body:
         keep.append(st)
         txt = ast.get_source_segment(src, st) or ""
-        if txt.startswith("if not _measurement_comparable:"):
+        if txt.startswith("if _diff_ran:"):
             break
+    assert any(
+        "Baseline coverage" in (ast.get_source_segment(src, s) or "") for s in keep
+    ), "harness slice no longer contains the delta prints it asserts on"
     mod = ast.Module(body=keep, type_ignores=[])
     ast.fix_missing_locations(mod)
     code = compile(mod, job_path or _JOB, "exec")
 
+    names = list(_GATE_ARTIFACTS if artifact_names is None else artifact_names)
+    present = (
+        [completeness.profile_basename(n) for n in names]
+        if present_names is None
+        else list(present_names)
+    )
+    for profile in present:
+        with open(os.path.join(tmpdir, profile), "wb") as f:
+            f.write(b"\x00profdata\x00")
+
+    info_path = os.path.join(tmpdir, "llvm_coverage.info")
     if info_present:
-        with open(os.path.join(tmpdir, "llvm_coverage.info"), "w") as f:
-            f.write("TN:\nend_of_record\n")
+        with open(info_path, "w", encoding="utf-8") as f:
+            f.write("TN:\nSF:/src/a.cpp\nDA:1,1\nend_of_record\n")
 
     invocations = []
 
     def _from_commands_run(name, command, **kwargs):
         invocations.append(command)
-        ok = os.path.exists(os.path.join(tmpdir, "llvm_coverage.info"))
+        ok = os.path.exists(info_path)
+        if ok:
+            _write_baseline_outputs(tmpdir, names, complete=baseline_complete)
         return Result.create_from(name=name, status=ok)
 
     class _ResultShim:
@@ -764,22 +936,45 @@ def _drive_diff_gate(info_present, tmpdir, job_path=None):
         create_from = staticmethod(Result.create_from)
         from_commands_run = staticmethod(_from_commands_run)
 
+    printed = []
+    sidecar = (
+        completeness.build_sidecar(
+            names, present, info_path=info_path, merge_ok=merge_ok
+        )
+        if sidecar_override is None
+        else sidecar_override
+    )
+    # lcov is not required to be installed here, so the only summary values the
+    # slice needs are stubbed - but the two verdict helpers are the REAL ones, so
+    # the tolerance semantics under test cannot drift from production.
+    job_ns = _load_job_module_namespace()
     ns = {
         "Path": pathlib.Path,
         "TEMP_DIR": tmpdir,
         "Result": _ResultShim,
+        "Utils": types.SimpleNamespace(compress_gz=lambda *a, **k: None),
         "completeness": completeness,
-        "_sidecar": {
-            "complete": True,
-            "missing": [],
-            "names": [],
-            "manifest_fp": "fp",
-        },
+        "print": lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
+        "shutil": shutil,
+        "get_lcov_summary": lambda path: ((50.0, 1, 2), (50.0, 1, 2), (50.0, 1, 2)),
+        "coverage_drop": job_ns["coverage_drop"],
+        "coverage_degraded": job_ns["coverage_degraded"],
+        "collect_html_report_files": lambda *a, **k: ([], []),
+        "COVERAGE_DROP_TOLERANCE": job_ns["COVERAGE_DROP_TOLERANCE"],
+        "_sidecar": sidecar,
         "_measurement_comparable": True,
         "_incomparable_reason": "",
     }
     exec(code, ns)
-    return invocations, ns.get("diff_res"), ns.get("_measurement_comparable")
+    return types.SimpleNamespace(
+        invocations=invocations,
+        diff_res=ns.get("diff_res"),
+        comparable=ns.get("_measurement_comparable"),
+        reason=ns.get("_incomparable_reason"),
+        selected_base=ns.get("_selected_base_commit"),
+        printed=printed,
+        sidecar=sidecar,
+    )
 
 
 def test_absent_info_skips_the_diff_script_and_keeps_the_job_green():
@@ -789,23 +984,131 @@ def test_absent_info_skips_the_diff_script_and_keeps_the_job_green():
     # is missing, so the SKIPPED override that reads _measurement_comparable is
     # never reached and the job reddens on a run it promised to report as SKIPPED.
     with tempfile.TemporaryDirectory() as d:
-        invocations, diff_res, comparable = _drive_diff_gate(False, d)
-    assert invocations == [], f"differential script was invoked: {invocations}"
-    assert diff_res.status == Result.Status.SKIPPED, diff_res.status
-    assert comparable is False
+        got = _drive_diff_gate(False, d)
+    assert got.invocations == [], f"differential script was invoked: {got.invocations}"
+    assert got.diff_res.status == Result.Status.SKIPPED, got.diff_res.status
+    assert got.comparable is False
+    # The script never ran, so there is no marker to read and nothing to select.
+    assert got.selected_base == "", repr(got.selected_base)
     # The assertion that actually pins the invariant: the composite job result.
-    parent = Result.create_from(name="LLVM Coverage", results=[diff_res])
+    parent = Result.create_from(name="LLVM Coverage", results=[got.diff_res])
     assert parent.is_ok(), f"job is not green: {parent.status}"
 
 
-def test_a_present_info_still_runs_the_diff_script():
-    # Reverse direction. Without this the guard above could be widened to always
-    # skip and every other cell would still pass.
+def test_the_baseline_reads_are_below_the_script_that_writes_their_files():
+    # Structural guard, secondary to the behavioural cell below: the differential
+    # script is the sole writer of base_llvm_coverage.meta.json and of
+    # selected_base_commit.txt, so a read placed above its invocation can only ever
+    # observe nothing.
+    src = open(_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    main_if = [n for n in tree.body if isinstance(n, ast.If)][-1]
+    block = [
+        s
+        for s in main_if.body
+        if isinstance(s, ast.If) and ast.unparse(s.test) == "not is_master_branch"
+    ][0]
+    script_lines, read_lines = [], []
+    for node in ast.walk(block):
+        if not isinstance(node, ast.Call):
+            continue
+        rendered = ast.unparse(node)
+        if "from_commands_run" in rendered and "generate_diff_coverage_report" in rendered:
+            script_lines.append(node.lineno)
+        if "read_sidecar" in rendered or "selected_base_commit.txt" in rendered:
+            read_lines.append(node.lineno)
+    assert len(script_lines) == 1, script_lines
+    assert read_lines, "neither baseline read was found"
+    assert min(read_lines) > script_lines[0], (
+        f"a baseline read at line {min(read_lines)} sits above its only writer"
+        f" at line {script_lines[0]}"
+    )
+
+
+def test_a_known_incomplete_pr_side_never_runs_the_script_or_prints_a_delta():
+    # The PR side being short a shard is knowable from the sidecar before the
+    # script runs. Running it anyway spends genhtml on a measurement already known
+    # incomparable and prints "Baseline coverage / Current coverage / Delta"
+    # between two skip notices, which is how a reader mistakes an abstention for a
+    # verdict - the exact confusion this gate exists to remove.
     with tempfile.TemporaryDirectory() as d:
-        invocations, diff_res, _ = _drive_diff_gate(True, d)
-    assert len(invocations) == 1, f"expected one invocation, got {invocations}"
-    assert "generate_diff_coverage_report.sh" in " ".join(invocations[0])
-    assert diff_res.status != Result.Status.SKIPPED
+        got = _drive_diff_gate(
+            True, d, present_names=[completeness.profile_basename(_GATE_ARTIFACTS[0])]
+        )
+    assert got.sidecar["complete"] is False, got.sidecar
+    assert got.invocations == [], f"differential script was invoked: {got.invocations}"
+    assert got.diff_res.status == Result.Status.SKIPPED, got.diff_res.status
+    assert got.comparable is False
+    assert "COV_B.profdata" in got.reason, got.reason
+    assert not any(
+        "Baseline coverage" in line or "Delta" in line for line in got.printed
+    ), got.printed
+    parent = Result.create_from(name="LLVM Coverage", results=[got.diff_res])
+    assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+def test_a_failed_merge_also_short_circuits_the_script():
+    # Same branch, same class: merge_ok=False is a current-side cause too.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, merge_ok=False)
+    assert got.invocations == [], f"differential script was invoked: {got.invocations}"
+    assert got.diff_res.status == Result.Status.SKIPPED, got.diff_res.status
+    assert "aggregate coverage merge failed" in got.reason, got.reason
+
+
+def test_a_baseline_side_cause_still_runs_the_script_and_uses_the_override():
+    # The counterpart that keeps the short-circuit from being over-fixed into
+    # "skip every incomparable case", which would make the later override dead
+    # code. A baseline-side cause is NOT knowable before the script runs, because
+    # that script is what fetches the baseline: so the script MUST run here, and
+    # the verdict must come out incomparable afterwards.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, baseline_complete=False)
+    assert len(got.invocations) == 1, f"expected one invocation, got {got.invocations}"
+    assert "generate_diff_coverage_report.sh" in " ".join(got.invocations[0])
+    assert got.comparable is False
+    assert "baseline measurement is incomplete" in got.reason, got.reason
+
+
+def test_the_short_circuit_reason_cannot_drift_from_the_verdict_function():
+    # The job short-circuits on a current-side cause and must report the SAME
+    # reason comparable() would. Both read one producer, so this cell pins that
+    # they stay one producer.
+    incomplete = completeness.build_sidecar(_GATE_ARTIFACTS, ["COV_A.profdata"])
+    assert (
+        completeness.current_side_reason(incomplete)
+        == completeness.comparable(incomplete, None)[1]
+    )
+    complete = completeness.build_sidecar(
+        _GATE_ARTIFACTS, [completeness.profile_basename(n) for n in _GATE_ARTIFACTS]
+    )
+    # A complete current side yields no current-side reason, while comparable()
+    # still rejects on the absent baseline - so the two must NOT be equal here.
+    assert completeness.current_side_reason(complete) == ""
+    assert completeness.comparable(complete, None)[0] is False
+
+
+def test_two_complete_sides_reach_a_real_comparable_verdict():
+    # The healthy path, asserted on the RUNTIME verdict rather than on the
+    # pre-override sub-result status.
+    #
+    # The property under test is the ORDER of the two baseline reads relative to
+    # the differential script that writes their files: the script is the sole
+    # writer of base_llvm_coverage.meta.json and selected_base_commit.txt, so a
+    # read hoisted above it sees nothing, comparable() takes its absent-baseline
+    # branch and the gate abstains on every single run - while emitting exactly
+    # the reason string that correct back-compat behaviour also emits, so the CI
+    # log of the broken state is indistinguishable from the healthy one. Only a
+    # verdict assertion can see that. Do not weaken this cell to a status or
+    # invocation-count check.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d)
+    assert len(got.invocations) == 1, f"expected one invocation, got {got.invocations}"
+    assert "generate_diff_coverage_report.sh" in " ".join(got.invocations[0])
+    assert got.comparable is True, f"gate abstained: {got.reason}"
+    assert got.reason == "", got.reason
+    assert got.selected_base == "a" * 40, repr(got.selected_base)
+    assert any("Comparing against baseline commit" in line for line in got.printed), got.printed
 
 
 # --------------------------------------------------------------------------

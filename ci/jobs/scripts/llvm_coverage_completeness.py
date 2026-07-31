@@ -165,6 +165,39 @@ def read_sidecar(path: str) -> Optional[dict]:
     return data
 
 
+def current_side_reason(current: dict) -> str:
+    """Why the CURRENT side alone cannot support a verdict, "" when it can.
+
+    These causes depend only on the current sidecar, so they are knowable before
+    the differential script runs. `comparable` delegates to this function, which
+    keeps a single producer of these strings: a caller short-circuiting on a
+    current-side cause cannot drift from the verdict `comparable` would give.
+    """
+    if not isinstance(current, dict):
+        return "current-side completeness metadata is missing"
+
+    if current.get("schema_version") != SCHEMA_VERSION:
+        return (
+            f"current-side sidecar schema version {current.get('schema_version')!r}"
+            f" is not {SCHEMA_VERSION}"
+        )
+
+    if not current.get("merge_ok", True):
+        return "the aggregate coverage merge failed, so this run has no complete measurement"
+
+    if not current.get("complete"):
+        missing = current.get("missing") or []
+        unexpected = current.get("unexpected") or []
+        detail = []
+        if missing:
+            detail.append(f"missing {len(missing)}: {', '.join(missing)}")
+        if unexpected:
+            detail.append(f"unexpected {len(unexpected)}: {', '.join(unexpected)}")
+        return "PR-side measurement is incomplete (" + "; ".join(detail) + ")"
+
+    return ""
+
+
 def comparable(
     current: dict,
     baseline: Optional[dict],
@@ -176,27 +209,9 @@ def comparable(
     otherwise names which side was short and what was missing, so the SKIPPED
     sub-result explains itself.
     """
-    if not isinstance(current, dict):
-        return False, "current-side completeness metadata is missing"
-
-    if current.get("schema_version") != SCHEMA_VERSION:
-        return False, (
-            f"current-side sidecar schema version {current.get('schema_version')!r}"
-            f" is not {SCHEMA_VERSION}"
-        )
-
-    if not current.get("merge_ok", True):
-        return False, "the aggregate coverage merge failed, so this run has no complete measurement"
-
-    if not current.get("complete"):
-        missing = current.get("missing") or []
-        unexpected = current.get("unexpected") or []
-        detail = []
-        if missing:
-            detail.append(f"missing {len(missing)}: {', '.join(missing)}")
-        if unexpected:
-            detail.append(f"unexpected {len(unexpected)}: {', '.join(unexpected)}")
-        return False, "PR-side measurement is incomplete (" + "; ".join(detail) + ")"
+    current_reason = current_side_reason(current)
+    if current_reason:
+        return False, current_reason
 
     if baseline is None:
         return False, (
