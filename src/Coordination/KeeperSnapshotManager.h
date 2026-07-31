@@ -114,6 +114,12 @@ struct KeeperSnapshotReader
     /// this replica would silently diverge from the rest of the cluster.
     bool allow_orphaned_nodes_removal = false;
 
+    /// Filled in by `loadNodesFromSnapshot` when orphaned nodes were removed: the topmost paths that
+    /// are absent from this snapshot, i.e. the roots of the region where the loaded tree differs from
+    /// the tree that the raft log above this snapshot was produced against. Verified by
+    /// `KeeperStateMachine::findOrphanConflictInLogTail` before the raft server is launched.
+    std::vector<std::string> removed_orphan_subtree_roots;
+
     SnapshotVersion current_version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
@@ -136,6 +142,9 @@ struct SnapshotDeserializationResult
     /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
+    /// See `KeeperSnapshotReader::removed_orphan_subtree_roots`. Empty unless orphaned nodes were
+    /// removed while loading this snapshot.
+    std::vector<std::string> removed_orphan_subtree_roots;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be

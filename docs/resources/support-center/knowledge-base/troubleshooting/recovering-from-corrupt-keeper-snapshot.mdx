@@ -241,3 +241,41 @@ Follow the steps below to rebuild the Keeper cluster:
 
 This process is time-intensive and carries a risk of prolonged outage. Total data reconstruction is required.
 </Warning>
+
+---
+
+### 6. Remove orphaned nodes from the snapshot on startup {#remove-orphaned-nodes-on-startup}
+
+An *orphaned* node is a node whose parent is missing from the snapshot. Keeper refuses to load such a
+snapshot, logging `Failure to load from latest snapshot with index`.
+
+You should follow this process when:
+
+- The snapshot is structurally damaged in exactly this way, and
+- No valid backup or older snapshot is available (strategies 1 and 2 are preferable whenever they apply).
+
+Set both of the following under `<keeper_server>` and restart the node:
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+Keeper then drops the orphaned subtrees and starts. The paths it removed are listed in the log at
+`WARNING` level.
+
+<Warning>
+**Repairs local state only**
+
+This removes nodes from *this* node's copy of the data. Peers that still hold those nodes will diverge
+from it, and with `digest_enabled` set to `false` nothing detects that divergence afterwards. Treat this
+as single-node recovery, or apply it to every node in the cluster. Set both settings back to their
+defaults once the node is up.
+</Warning>
+
+Keeper deliberately refuses to start if a local log entry above the snapshot references one of the
+removed nodes, because replaying that entry against the repaired tree would silently produce a different
+state. If that happens, recover the node from a healthy peer instead: stop it, clear its coordination
+directory, and let it re-sync from the leader — or use strategy 1 or 2.

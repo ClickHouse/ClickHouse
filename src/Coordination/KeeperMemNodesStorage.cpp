@@ -9,6 +9,7 @@
 #include <fmt/ranges.h>
 
 #include <filesystem>
+#include <set>
 #include <unordered_set>
 
 namespace DB
@@ -452,6 +453,39 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             container.erase(orphan);
         }
         reader.acl_map.removeUnusedACLs();
+
+        /// The nodes we just removed are only part of the damage: their *missing* ancestors mark the
+        /// boundary between the tree we loaded and the tree that the raft log above this snapshot was
+        /// produced against. Record the topmost absent path of every pruned subtree so that
+        /// `KeeperStateMachine::findOrphanConflictInLogTail` can refuse to start if a local log entry
+        /// above the snapshot still references the damaged region.
+        ///
+        /// Computed after the erase loop on purpose: erasing makes strictly more paths absent, so
+        /// computing this earlier could stop at a path that is too deep and under-report the damage.
+        /// Walks the copied strings in `orphan_roots` rather than container keys, so no `string_view`
+        /// dangles across the erase above.
+        std::set<std::string> damage_roots;
+        for (const auto & orphan_root : orphan_roots)
+        {
+            /// The parent of an orphan root is absent by construction, and `"/"` is always present
+            /// (checked above), so this terminates without ever yielding `"/"`.
+            std::string_view damaged = Coordination::parentNodePath(orphan_root);
+            while (true)
+            {
+                auto parent = Coordination::parentNodePath(damaged);
+                if (container.find(parent) != container.end())
+                    break;
+                damaged = parent;
+            }
+            damage_roots.emplace(damaged);
+        }
+        reader.removed_orphan_subtree_roots.assign(damage_roots.begin(), damage_roots.end());
+
+        LOG_WARNING(
+            getLogger("KeeperMemNodeStorage"),
+            "Paths missing from the snapshot that root the removed subtrees: [{}]. Keeper will refuse to start if a local log entry "
+            "above this snapshot references any of them",
+            fmt::join(reader.removed_orphan_subtree_roots, ", "));
 
         orphans_removed = true;
     }
