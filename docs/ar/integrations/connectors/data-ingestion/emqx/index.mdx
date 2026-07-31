@@ -49,11 +49,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_3.webp" size="sm" border alt="شاشة بيانات اعتماد ClickHouse Cloud التي تعرض اسم المستخدم وكلمة المرور" />
 
-بعد ذلك، ستحصل على مثيل ClickHouse قيد التشغيل. انقر على &quot;Connect&quot; للحصول على عنوان الاتصال بالمثيل في ClickHouse Cloud.
+بعد ذلك، ستحصل على مثيل ClickHouse قيد التشغيل. انقر على &quot;Connect&quot; للحصول على عنوان اتصال المثيل في ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="لوحة معلومات المثيل قيد التشغيل في ClickHouse Cloud مع خيارات الاتصال" />
 
-انقر على &quot;Connect to SQL Console&quot; لإنشاء قاعدة بيانات وجدول من أجل التكامل مع EMQX Cloud.
+انقر على &quot;Connect to SQL Console&quot; لإنشاء قاعدة بيانات وجدول للتكامل مع EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_5.webp" size="lg" border alt="واجهة SQL Console في ClickHouse Cloud" />
 
@@ -126,17 +126,17 @@ PRIMARY KEY (client_id, timestamp)
 
 قبل أن نبدأ إعداد تكامل ClickHouse، نحتاج أولًا إلى تمكين NAT gateway. افتراضيًا، يتم نشر وسيط MQTT داخل VPC خاصة، لذلك لا يمكنه إرسال البيانات إلى أنظمة تابعة لجهات خارجية عبر الشبكة العامة.
 
-ارجع إلى صفحة Overview ومرّر إلى أسفل الصفحة، حيث ستجد أداة NAT gateway. انقر على زر Subscribe واتبع التعليمات. تجدر الإشارة إلى أن NAT Gateway خدمة مدفوعة إضافية، لكنها توفّر أيضًا فترة تجريبية مجانية لمدة 14 يومًا.
+ارجع إلى صفحة النظرة العامة ومرّر إلى أسفل الصفحة، حيث ستجد أداة NAT gateway. انقر على زر Subscribe واتبع التعليمات. تجدر الإشارة إلى أن NAT Gateway خدمة مدفوعة إضافية، لكنها توفّر أيضًا فترة تجريبية مجانية لمدة 14 يومًا.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="لوحة إعداد NAT Gateway في EMQX Cloud" />
 
-بعد إنشائه، ستجد عنوان IP العام في الأداة. يُرجى ملاحظة أنه إذا اخترت &quot;الاتصال من موقع محدد&quot; أثناء إعداد ClickHouse Cloud، فستحتاج إلى إضافة عنوان IP هذا إلى قائمة السماح.
+بعد إنشائه، ستجد عنوان IP العام في الأداة. يُرجى ملاحظة أنه إذا اخترت &quot;الاتصال من موقع محدد&quot; أثناء إعداد ClickHouse Cloud، فستحتاج إلى إضافة عنوان IP هذا إلى قائمة السماح."
 
 <div id="integration-emqx-cloud-with-clickhouse-cloud">
   ## تكامل EMQX Cloud مع ClickHouse Cloud
 </div>
 
-تُستخدم [EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) لتهيئة القواعد الخاصة بمعالجة تدفقات رسائل EMQX والاستجابة لها، بالإضافة إلى أحداث الأجهزة. ولا توفّر Data Integrations حلًا ذا معمارية واضحة ومرنة وقابلة للتهيئة فحسب، بل تُبسّط أيضًا عملية التطوير، وتُحسّن سهولة الاستخدام، وتُقلّل درجة الاقتران بين نظام الأعمال وEMQX Cloud. كما توفّر بنية تحتية متقدمة لتخصيص الإمكانات الخاصة بـ EMQX Cloud.
+تُستخدم [EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) لتهيئة القواعد الخاصة بمعالجة تدفقات رسائل EMQX والاستجابة لها، بالإضافة إلى أحداث الأجهزة. ولا توفّر Data Integrations حلًا ذا معمارية واضحة ومرنة وقابلة للتهيئة فحسب، بل تُبسّط أيضًا عملية التطوير، وتُحسّن سهولة الاستخدام، وتُقلّل درجة الاقتران بين نظام الأعمال وEMQX Cloud. كما توفّر بنية تحتية متقدمة لتخصيص الإمكانات الخاصة بـ EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="خيارات Data Integration في EMQX Cloud التي تعرض الموصلات المتاحة" />
 
@@ -166,7 +166,7 @@ PRIMARY KEY (client_id, timestamp)
 
 عند إنشاء المورد، ستظهر لك نافذة منبثقة، وسيؤدي النقر على &#39;New&#39; إلى نقلك إلى صفحة إنشاء القاعدة.
 
-يوفّر EMQX [محرك القواعد](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html) قويًا يمكنه تحويل رسائل MQTT الخام وإثراءها قبل إرسالها إلى أنظمة خارجية.
+يوفّر EMQX [محرك القواعد](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html) قويًا يمكنه تحويل رسائل MQTT الخام وإثراءها قبل إرسالها إلى أنظمة خارجية.
 
 إليك القاعدة المستخدمة في هذا الدليل العملي:
 
@@ -189,11 +189,11 @@ FROM
 {"temp": 28.5, "hum": 0.68}
 ```
 
-<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_1.webp" size="md" border alt="الخطوة 1 من إنشاء قاعدة تكامل البيانات في EMQX Cloud مع عرض استعلام SQL" />
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_1.webp" size="md" border alt="الخطوة 1 من إنشاء قاعدة Data Integration في EMQX Cloud مع عرض استعلام SQL" />
 
 يمكنك استخدام اختبار SQL لاختبار الاستعلام والاطلاع على النتائج.
 
-<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_2.webp" size="md" border alt="الخطوة 2 من إنشاء قاعدة تكامل البيانات في EMQX Cloud مع عرض نتائج الاختبار" />
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_2.webp" size="md" border alt="الخطوة 2 من إنشاء قاعدة Data Integration في EMQX Cloud مع عرض نتائج الاختبار" />
 
 الآن انقر على زر &quot;NEXT&quot;. في هذه الخطوة، تحدد لـ EMQX Cloud كيفية إدراج البيانات المُعالجة في قاعدة بيانات ClickHouse الخاصة بك.
 
@@ -278,7 +278,7 @@ INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_
   ### تحقّق من البيانات المحفوظة
 </div>
 
-الآن حان الوقت لإلقاء نظرة على البيانات في ClickHouse Cloud. من الناحية المثالية، ستنتقل البيانات التي ترسلها باستخدام MQTTX إلى EMQX Cloud وتُحفَظ في قاعدة بيانات ClickHouse Cloud بمساعدة تكامل البيانات الأصلي.
+الآن حان الوقت لإلقاء نظرة على البيانات في ClickHouse Cloud. من الناحية المثالية، ستنتقل البيانات التي ترسلها باستخدام MQTTX إلى EMQX Cloud وتُحفَظ في قاعدة بيانات ClickHouse Cloud بمساعدة Data Integration الأصلي.
 
 يمكنك الاتصال بـ SQL Console في لوحة ClickHouse Cloud أو استخدام أي أداة عميل لجلب البيانات من ClickHouse. في هذا الدليل العملي، استخدمنا SQL Console.
 من خلال تنفيذ SQL:

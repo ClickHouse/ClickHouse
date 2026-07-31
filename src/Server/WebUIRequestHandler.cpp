@@ -1,4 +1,5 @@
 #include <Server/WebUIRequestHandler.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
@@ -103,9 +104,9 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -253,7 +254,7 @@ std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std
     if (decoded.empty())
         return std::string("index.html");
 
-    if (decoded.find('.') != std::string::npos)
+    if (decoded.contains('.'))
         return decoded;
 
     // assuming a path with no "." is an html page
@@ -306,7 +307,7 @@ const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & res
             continue;
         if (!tail.ends_with(dynamic_tail_suffix))
             continue;
-        if (tail.find('/') != std::string_view::npos)
+        if (tail.contains('/'))
             continue;
 
         return &candidate;
