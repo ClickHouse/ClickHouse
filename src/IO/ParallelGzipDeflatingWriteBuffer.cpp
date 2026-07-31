@@ -30,6 +30,14 @@ void ParallelGzipDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
+    /// No data was ever compressed: with `compress_empty = false` produce no output at all, rather than
+    /// an empty gzip member. Callers such as the HTTP response path rely on this to keep an empty
+    /// response body empty and to be able to replace it with an exception message.
+    if (!header_written && !compress_empty)
+        return;
+
+    ensureHeaderWritten();
+
     auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
     compressAndWrite(in_buf, offset(), true);
     writeTrailer();
@@ -58,6 +66,14 @@ void ParallelGzipDeflatingWriteBuffer::writeHeader()
         out->write(filename.data(), filename.size());
         out->write(static_cast<char>(0x00));   /// terminating zero of the FNAME field
     }
+}
+
+void ParallelGzipDeflatingWriteBuffer::ensureHeaderWritten()
+{
+    if (header_written)
+        return;
+    writeHeader();
+    header_written = true;
 }
 
 void ParallelGzipDeflatingWriteBuffer::writeTrailer()
@@ -141,6 +157,11 @@ size_t ParallelGzipDeflatingWriteBuffer::calcCheck(const unsigned char * buf, si
 
 void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
 {
+    /// The first byte of output is about to be produced, so the gzip header must precede it.
+    /// On the final flush the header has already been written (or deliberately skipped) by
+    /// `finalFlushBefore`, and this call is a no-op.
+    ensureHeaderWritten();
+
     ulen += in_len;
 
     const size_t def_block = BLOCK_SIZE;

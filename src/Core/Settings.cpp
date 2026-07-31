@@ -305,7 +305,7 @@ Cloud default value:
 - `4` for larger nodes
 )", 0) \
     DECLARE(UInt64, max_generic_compression_threads, 1, R"(
-The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage.
+The maximum number of threads used to compress generic stream-compressed output (currently `gzip`) when writing to output formats, files or storage, and when compressing HTTP query responses with `Content-Encoding: gzip`.
 
 The output stays in the standard `gzip` format and can be read by any decompressor; only the writing side is parallelized. Independent blocks are compressed in parallel on the shared IO thread pool. The setting is named generically so that other stream-compression methods can adopt it in the future.
 

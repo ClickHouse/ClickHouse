@@ -36,6 +36,7 @@ public:
         WriteBufferT && out_,
         int compression_level_,
         size_t num_threads_,
+        bool compress_empty_ = true,
         std::string filename_ = "")
         /// Stage about `num_threads` blocks per pass so a single parallel pass keeps the pool busy
         /// while bounding the working memory. NOLINT: std::move on a forwarding reference is intentional.
@@ -43,9 +44,11 @@ public:
               std::move(out_), /// NOLINT(bugprone-move-forwarding-reference)
               std::min(std::max<size_t>(num_threads_, 1), MAX_STAGING_BLOCKS) * BLOCK_SIZE)
         , compression_level(compression_level_)
+        , compress_empty(compress_empty_)
         , filename(std::move(filename_))
     {
-        writeHeader();
+        /// The gzip header is written lazily, on the first byte of output, so that with
+        /// `compress_empty = false` a buffer that never receives any data emits nothing at all.
     }
 
 private:
@@ -60,6 +63,7 @@ private:
     void finalFlushBefore() override;
 
     void writeHeader();
+    void ensureHeaderWritten();
     void writeTrailer();
     void deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush);
     CompressedBuf compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag);
@@ -67,6 +71,8 @@ private:
     void compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
 
     int compression_level;
+    bool compress_empty = true;
+    bool header_written = false;
     std::string filename;
     uint64_t check = crc32_z(0L, Z_NULL, 0);
     uintmax_t ulen = 0;
