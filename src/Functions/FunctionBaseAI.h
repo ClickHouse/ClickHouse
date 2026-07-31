@@ -63,7 +63,10 @@ public:
     /// setting, read once at construction): error if it is empty, run the `NAMED_COLLECTION` access check,
     /// fetch from `NamedCollectionFactory`, and validate that the required fields (`provider`, `endpoint`,
     /// `model`) are non-empty. `api_key` is optional.
-    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const String & collection_name);
+    ///
+    /// When `model_from_collection` is false (i.e. `aiEmbed`, which takes `model` as a required positional
+    /// argument), the collection must not define `model`: it is rejected rather than silently ignored.
+    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const String & collection_name, bool model_from_collection = true);
 
     /// Exponential backoff delay capped at one minute, so adversarial values of
     /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour

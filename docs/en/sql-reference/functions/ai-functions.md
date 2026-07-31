@@ -32,6 +32,13 @@ CREATE NAMED COLLECTION my_ai_credentials AS
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
+
+-- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
+-- Defining `model` in a collection used with `aiEmbed` is an error, not silently ignored.
+CREATE NAMED COLLECTION my_ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    api_key = 'sk-...';
 ```
 
 Select the collection with the `ai_function_credentials` setting, for the session or for a single query:
@@ -54,7 +61,7 @@ When `ai_function_credentials` is empty (the default), an exception is raised.
 |-----------|------|---------|-------------|
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
-| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
+| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; `aiEmbed` requires `model` as a positional argument and errors if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
@@ -72,8 +79,8 @@ Which named collection to use is controlled by the [`ai_function_credentials`](/
 The `ai_function_credentials` setting is read when the default expression is evaluated, NOT when the column is defined. The collection name is not stored in the column definition:
 
 ```sql
-CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
--- The stored default is `aiEmbed(doc)`; no collection is captured.
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc, 'text-embedding-3-small')) ...;
+-- The stored default is `aiEmbed(doc, 'text-embedding-3-small')`; no collection is captured.
 ```
 
 Evaluating the expression requires three things: `allow_experimental_ai_functions` and `ai_function_credentials` must be set, and the evaluating user must hold `GRANT NAMED COLLECTION` on the collection (resolving the credentials runs a `NAMED COLLECTION` access check). Any of them missing raises an exception (`SUPPORT_IS_DISABLED`, an empty-credentials error, or `ACCESS_DENIED`).

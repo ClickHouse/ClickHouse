@@ -184,9 +184,18 @@ SELECT aiGenerate('hi') SETTINGS ai_function_credentials = 'ai_bad_provider'; --
 
 SELECT '-- Unknown provider name on empty input';
 SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
-SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_bad_provider'; -- { serverError BAD_ARGUMENTS }
+
+-- aiEmbed needs a `model`-free collection so the unknown-provider error (not the collection-model
+-- check) is what rejects the call.
+DROP NAMED COLLECTION IF EXISTS ai_bad_provider_embed;
+CREATE NAMED COLLECTION ai_bad_provider_embed AS
+    provider = 'unknown_provider',
+    endpoint = 'http://localhost:1/v1/embeddings',
+    api_key = 'fake-key';
+SELECT aiEmbed(x, 'test-model') FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_bad_provider_embed'; -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_bad_provider;
+DROP NAMED COLLECTION ai_bad_provider_embed;
 
 -- =============================================================================
 -- 10. Provider name: anthropic
@@ -202,11 +211,19 @@ CREATE NAMED COLLECTION ai_anthropic AS
 SELECT '-- Anthropic provider resolves';
 SELECT count() FROM (SELECT aiGenerate(x) AS result FROM tab) SETTINGS ai_function_credentials = 'ai_anthropic';
 
+-- aiEmbed needs a `model`-free collection (it takes `model` as a positional argument).
+DROP NAMED COLLECTION IF EXISTS ai_anthropic_embed;
+CREATE NAMED COLLECTION ai_anthropic_embed AS
+    provider = 'anthropic',
+    endpoint = 'http://localhost:1/v1/messages',
+    api_key = 'fake-key';
+
 SELECT '-- aiEmbed rejects anthropic provider';
-SELECT aiEmbed('hi') SETTINGS ai_function_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
-SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_anthropic'; -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed('hi', 'claude-test') SETTINGS ai_function_credentials = 'ai_anthropic_embed'; -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed(x, 'claude-test') FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = 'ai_anthropic_embed'; -- { serverError NOT_IMPLEMENTED }
 
 DROP NAMED COLLECTION ai_anthropic;
+DROP NAMED COLLECTION ai_anthropic_embed;
 
 -- =============================================================================
 -- 11. Custom system prompt argument
@@ -399,25 +416,54 @@ SELECT count() FROM (SELECT aiTranslate(x, 'French', 'keep proper nouns', 0.3) A
 SELECT '-- aiEmbed: registered';
 SELECT name FROM system.functions WHERE name = 'aiEmbed';
 
+-- aiEmbed takes `model` as a positional argument, so its named collection must not define `model`
+-- (ai_credentials defines `model` for the text functions; use a separate collection without it).
+DROP NAMED COLLECTION IF EXISTS ai_embed_credentials;
+CREATE NAMED COLLECTION ai_embed_credentials AS
+    provider = 'openai',
+    endpoint = 'http://localhost:1/v1/embeddings',
+    api_key = 'fake-key';
+
+SET ai_function_credentials = 'ai_embed_credentials';
+
 SELECT '-- aiEmbed: too few arguments';
 SELECT aiEmbed(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT '-- aiEmbed: too many arguments';
-SELECT aiEmbed('x', 256, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiEmbed('x', 'test-model', 256, 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT '-- aiEmbed: non-constant dimensions';
-SELECT aiEmbed(x, toUInt64(number)) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
+SELECT aiEmbed(x, 'test-model', toUInt64(number)) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
 
 SELECT '-- aiEmbed: wrong type for dimensions (signed integer)';
-SELECT aiEmbed(x, -1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT aiEmbed(x, 'test-model', -1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- aiEmbed: wrong type for dimensions (string)';
-SELECT aiEmbed(x, '256') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT aiEmbed(x, 'test-model', '256') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiEmbed: wrong type for model argument (not a string)';
+SELECT aiEmbed(x, 256) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiEmbed: non-constant model argument';
+SELECT aiEmbed(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+-- `model` is a required positional argument for aiEmbed (unlike the text functions, which read it
+-- from the named collection).
+SELECT '-- aiEmbed: model is a required positional argument';
+SELECT aiEmbed('hi'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- `model` defined in the named collection is rejected rather than silently ignored: aiEmbed never
+-- reads `model` from the collection (ai_credentials defines `model`).
+SELECT '-- aiEmbed: model in the named collection is rejected';
+SELECT aiEmbed('hi', 'test-model') SETTINGS ai_function_credentials = 'ai_credentials'; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiEmbed: model supplied as a positional argument resolves';
+SELECT count() FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
 
 SELECT '-- aiEmbed: return type';
 DROP TABLE IF EXISTS _03300_ret_embed;
 CREATE TABLE _03300_ret_embed ENGINE = Memory AS
-    SELECT aiEmbed(x) AS result FROM tab;
+    SELECT aiEmbed(x, 'test-model') AS result FROM tab;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embed';
 DROP TABLE IF EXISTS _03300_ret_embed;
@@ -425,24 +471,24 @@ DROP TABLE IF EXISTS _03300_ret_embed;
 SELECT '-- aiEmbed: return type with dimensions';
 DROP TABLE IF EXISTS _03300_ret_embed_dim;
 CREATE TABLE _03300_ret_embed_dim ENGINE = Memory AS
-    SELECT aiEmbed(x, 256) AS result FROM tab;
+    SELECT aiEmbed(x, 'test-model', 256) AS result FROM tab;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_ret_embed_dim';
 DROP TABLE IF EXISTS _03300_ret_embed_dim;
 
 SELECT '-- aiEmbed: empty input executes';
-SELECT count() FROM (SELECT aiEmbed(x) AS result FROM tab);
+SELECT count() FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
 
 SELECT '-- aiEmbed: empty input with dimensions';
-SELECT count() FROM (SELECT aiEmbed(x, 128) AS result FROM tab);
+SELECT count() FROM (SELECT aiEmbed(x, 'test-model', 128) AS result FROM tab);
 
 -- `dimensions` is a row-independent constant, so an out-of-range value must fail
 -- the query even when the source has zero rows.
 SELECT '-- aiEmbed: out-of-range dimensions on empty input';
-SELECT aiEmbed(x, 18446744073709551615) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+SELECT aiEmbed(x, 'test-model', 18446744073709551615) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiEmbed: nonexistent named collection';
-SELECT aiEmbed('hello') SETTINGS ai_function_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+SELECT aiEmbed('hello', 'test-model') SETTINGS ai_function_credentials = 'nonexistent_collection_xyz'; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 SELECT '-- aiEmbed: batch size setting default';
 SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batch_size';
@@ -456,7 +502,7 @@ DROP TABLE IF EXISTS _03300_embed_null_out;
 CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
 INSERT INTO _03300_embed_null_in VALUES (NULL);
 CREATE TABLE _03300_embed_null_out ENGINE = Memory AS
-    SELECT aiEmbed(x) AS result FROM _03300_embed_null_in;
+    SELECT aiEmbed(x, 'test-model') AS result FROM _03300_embed_null_in;
 SELECT name, type FROM system.columns
     WHERE database = currentDatabase() AND table = '_03300_embed_null_out';
 
@@ -481,11 +527,14 @@ CREATE TABLE _03300_embed_default
 (
     id UInt32,
     doc String,
-    vector Array(Float32) DEFAULT aiEmbed(doc)
+    vector Array(Float32) DEFAULT aiEmbed(doc, 'test-model')
 ) ENGINE = MergeTree ORDER BY id;
 INSERT INTO _03300_embed_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(vector) FROM _03300_embed_default;
 DROP TABLE _03300_embed_default;
+
+-- The text functions read `model` from the named collection, so switch back to the one defining it.
+SET ai_function_credentials = 'ai_credentials';
 
 SELECT '-- aiGenerate: DEFAULT survives INSERT (no server crash)';
 DROP TABLE IF EXISTS _03300_generate_default;
@@ -554,3 +603,4 @@ SET allow_experimental_ai_functions = 1;
 
 DROP TABLE IF EXISTS tab;
 DROP NAMED COLLECTION ai_credentials;
+DROP NAMED COLLECTION ai_embed_credentials;

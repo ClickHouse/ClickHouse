@@ -9,15 +9,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_name="${CLICKHOUSE_DATABASE}_test_user_04142"
 collection_name="${CLICKHOUSE_DATABASE}_test_nc_04142"
+embed_collection_name="${CLICKHOUSE_DATABASE}_test_nc_embed_04142"
 
+# aiEmbed takes `model` as a positional argument and rejects a named collection that defines it,
+# so it gets its own `model`-free collection.
 $CLICKHOUSE_CLIENT -q "
 DROP NAMED COLLECTION IF EXISTS $collection_name;
+DROP NAMED COLLECTION IF EXISTS $embed_collection_name;
 DROP USER IF EXISTS $user_name;
 
 CREATE NAMED COLLECTION $collection_name AS
     provider = 'openai',
     endpoint = 'http://localhost:1/v1/chat/completions',
     model = 'test-model',
+    api_key = 'fake-key';
+
+CREATE NAMED COLLECTION $embed_collection_name AS
+    provider = 'openai',
+    endpoint = 'http://localhost:1/v1/embeddings',
     api_key = 'fake-key';
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
@@ -35,11 +44,11 @@ function check_access_both()
         SET ai_function_credentials = '$collection_name';
         SELECT aiGenerate('hi') FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('hi') FORMAT Null;
+        SELECT aiEmbed('hi', 'test-model') SETTINGS ai_function_credentials = '$embed_collection_name' FORMAT Null;
         SELECT 'SEP';
         SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiEmbed(x, 'test-model') FROM (SELECT '' AS x WHERE 0) SETTINGS ai_function_credentials = '$embed_collection_name' FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }
@@ -52,6 +61,7 @@ function check_access_both()
 check_access_both
 
 $CLICKHOUSE_CLIENT -q "GRANT NAMED COLLECTION ON $collection_name TO $user_name"
+$CLICKHOUSE_CLIENT -q "GRANT NAMED COLLECTION ON $embed_collection_name TO $user_name"
 
 # With the grant: access check passes. The 1-row calls still fail (unreachable host),
 # but the failure must not be ACCESS_DENIED. The 0-row calls now succeed cleanly.
@@ -60,4 +70,5 @@ check_access_both
 $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user_name;
 DROP NAMED COLLECTION IF EXISTS $collection_name;
+DROP NAMED COLLECTION IF EXISTS $embed_collection_name;
 "

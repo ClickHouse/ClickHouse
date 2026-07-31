@@ -113,28 +113,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_error AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_error', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_dup_index AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_dup_index', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
 
@@ -455,7 +451,7 @@ def parse_embedding(s):
 def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('hello', 'test-embed-model')",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
@@ -463,12 +459,24 @@ def test_embed_basic(started_cluster):
     assert any(v != 0.0 for v in vec)
 
 
+def test_embed_rejects_model_in_named_collection(started_cluster):
+    """aiEmbed takes `model` as a positional argument and never reads it from the named collection.
+    A collection that defines `model` (e.g. the text collection `ai_mock`) is rejected rather than
+    silently ignored."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('hello', 'test-embed-model')",
+        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "defines 'model'" in error
+
+
 def test_embed_multiple_rows(started_cluster):
     """Multiple rows go through one batched request; each row gets its own vector."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input ORDER BY x",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input ORDER BY x",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -481,7 +489,7 @@ def test_embed_multiple_rows(started_cluster):
 def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
-        "SELECT aiEmbed('hello world', 16)",
+        "SELECT aiEmbed('hello world', 'test-embed-model', 16)",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
@@ -496,7 +504,7 @@ def test_embed_null_and_empty_input(started_cluster):
     )
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input_nullable ORDER BY x NULLS FIRST",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
         query_id=qid,
     )
@@ -522,7 +530,7 @@ def test_embed_profile_events_token_accounting(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
     qid = unique_query_id("embed_tokens")
     instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
         query_id=qid,
     )
@@ -542,7 +550,7 @@ def test_embed_batching(started_cluster):
     )
     qid = unique_query_id("embed_batch")
     instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed", "ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
@@ -556,7 +564,7 @@ def test_embed_batching(started_cluster):
 def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('hello', 'test-embed-model')",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_error"},
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -567,7 +575,7 @@ def test_embed_error_graceful(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input",
         settings={
             **AI_SETTINGS, "ai_function_credentials": "ai_embed_error",
             "ai_function_throw_on_error": 0,
@@ -581,7 +589,7 @@ def test_embed_error_graceful(started_cluster):
 def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_dup_index", "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -591,7 +599,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
 def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_wrong_count", "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -602,7 +610,7 @@ def test_embed_empty_input_table(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input",
         settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
         query_id=qid,
     )
@@ -622,7 +630,7 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
     # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model') FROM test_input",
         settings={
             **AI_SETTINGS, "ai_function_credentials": "ai_embed",
             "ai_function_embedding_max_batch_size": 1,
