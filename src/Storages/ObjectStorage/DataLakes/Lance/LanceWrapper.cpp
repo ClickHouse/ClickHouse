@@ -2,6 +2,7 @@
 
 #if USE_LANCE
 
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceScanDescription.h>
 #include <Common/Exception.h>
@@ -143,7 +144,7 @@ SnapshotInfo Dataset::currentSnapshot() const
     return SnapshotInfo{snapshot.snapshot_id, snapshot.schema_id};
 }
 
-NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, ContextPtr) const
+NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const
 {
     ArrowSchema schema{};
     ch_lance_error error{};
@@ -154,7 +155,17 @@ NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, Cont
     if (!arrow_schema.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to import Lance Arrow schema: {}", arrow_schema.status().ToString());
 
-    const auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(**arrow_schema, nullptr, "Lance", FormatSettings{});
+    const auto format_settings = getFormatSettings(context);
+    const auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
+        **arrow_schema,
+        nullptr,
+        "Lance",
+        format_settings,
+        /* skip_columns_with_unsupported_types */ false,
+        /* allow_inferring_nullable_columns */ true,
+        /* case_insensitive_matching */ false,
+        /* allow_geoparquet_parser */ false,
+        /* enable_json_parsing */ false);
     return header.getNamesAndTypesList();
 }
 

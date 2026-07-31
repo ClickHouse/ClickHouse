@@ -207,6 +207,42 @@ def test_lance_s3_table_function(started_cluster):
     )
 
 
+def test_lance_s3_data_types(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    for dataset_name in ["rich_types.lance", "map.lance"]:
+        upload_lance_dataset_to_minio(
+            started_cluster,
+            f"data/lance/{dataset_name}",
+            dataset_name=dataset_name,
+        )
+
+    assert (
+        node.query(
+            """
+            SELECT
+                count() = 3,
+                count(string_value) = 2,
+                count(decimal_value) = 2,
+                sum(length(array_value)) = 3,
+                countIf(toTypeName(array_value) = 'Array(Nullable(Int32))') = 3
+            FROM lanceS3(nc_s3, filename = 'lance/rich_types.lance')
+            """
+        )
+        == "1\t1\t1\t1\t1\n"
+    )
+
+    assert (
+        node.query(
+            """
+            SELECT countIf(length(m) >= 0) = count()
+            FROM lanceS3(nc_s3, filename = 'lance/map.lance')
+            """
+        )
+        == "1\n"
+    )
+
+
 def test_lance_s3_table_engine(started_cluster):
     skip_if_lance_s3_unavailable()
 
@@ -570,11 +606,11 @@ def test_lance_s3_error_paths(started_cluster):
 
     remote_prefix = "data/lance/basic.lance"
     upload_lance_dataset_to_minio(started_cluster, remote_prefix)
-    unsupported_prefix = "data/lance/map_unsupported.lance"
+    unsupported_prefix = "data/lance/extension_unsupported.lance"
     upload_lance_dataset_to_minio(
         started_cluster,
         unsupported_prefix,
-        dataset_name="map_unsupported.lance",
+        dataset_name="extension_unsupported.lance",
     )
 
     missing_error = node.query_and_get_error(
@@ -634,8 +670,8 @@ def test_lance_s3_error_paths(started_cluster):
     unsupported_error = node.query_and_get_error(
         """
         SELECT *
-        FROM lanceS3(nc_s3, filename = 'lance/map_unsupported.lance')
+        FROM lanceS3(nc_s3, filename = 'lance/extension_unsupported.lance')
         """
     )
     assert "BAD_ARGUMENTS" in unsupported_error
-    assert "Unsupported Lance column `m`" in unsupported_error
+    assert "Unsupported Lance column `extension_value`" in unsupported_error

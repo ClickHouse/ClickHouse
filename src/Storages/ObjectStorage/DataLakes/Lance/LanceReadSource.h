@@ -30,7 +30,8 @@ public:
         const Block & header,
         ObjectInfoPtr object_info_,
         DatasetOptions options_,
-        ScanDescription scan_);
+        ScanDescription scan_,
+        FormatSettings format_settings_);
 
     String getName() const override { return "LanceReadSource"; }
     Chunk generate() override;

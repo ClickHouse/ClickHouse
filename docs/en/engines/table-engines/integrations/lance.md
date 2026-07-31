@@ -71,6 +71,12 @@ ENGINE = LanceS3(lance_conf, filename = 'dataset.lance');
 
 If an explicit column is missing from the dataset or has an incompatible type, ClickHouse returns `BAD_ARGUMENTS`.
 
+## Data types {#data-types}
+
+`LanceS3` supports primitive numeric and string types, decimals, `Date32`, timestamps, time and duration types, `Array`, named `Tuple`, and `Map`. Nullability is preserved recursively where the corresponding ClickHouse type can represent it.
+
+Container-level `NULL` values in `Array` and `Map` are rejected because ClickHouse cannot represent them without losing information. Nullable `Struct` values require `enable_nullable_tuple_type = 1`. See the [`lanceS3` data type mapping](/sql-reference/table-functions/lance#data-types) for the complete mapping and unsupported types.
+
 ## Snapshot state {#snapshot-state}
 
 `LanceS3` captures the current Lance snapshot through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent Lance snapshot even if the dataset is updated concurrently.

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -562,8 +563,8 @@ ObjectIterator LanceMetadata::iterate(
 std::optional<Pipe> LanceMetadata::read(
     ObjectInfoPtr object_info,
     const ReadFromFormatInfo & read_from_format_info,
-    const std::optional<FormatSettings> &,
-    ContextPtr,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr local_context,
     size_t max_block_size,
     FormatParserSharedResourcesPtr,
     FormatFilterInfoPtr format_filter_info,
@@ -593,7 +594,8 @@ std::optional<Pipe> LanceMetadata::read(
         Block(std::move(physical_columns)),
         std::move(object_info),
         getDatasetOptions(),
-        std::move(scan));
+        std::move(scan),
+        format_settings ? *format_settings : getFormatSettings(local_context));
     return Pipe(source);
 }
 
