@@ -201,7 +201,13 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             continue;
 
         if (collection_copy->isOverridable(key, allow_override_by_default))
+        {
             collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+            /// The keys of a dictionary created with a DDL query come from the query, so mark them the
+            /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
+            /// credential supplied at the point of use from one defined in the collection itself.
+            collection_copy->markQueryOverridden(key);
+        }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
     }

@@ -1484,7 +1484,26 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
         with pytest.raises(QueryRuntimeException) as exception:
             node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
         assert "Override not allowed for 'ssl_ca'" in str(exception.value)
+
+        # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
+        # arrive as generated configuration keys rather than as an AST, and must be recognized as
+        # query-supplied all the same. The source is instantiated when the dictionary is loaded.
+        node1.query(
+            f"""
+            CREATE DICTIONARY dict_ssl_override (id UInt64, name String DEFAULT '')
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                NAME mysql_with_ssl
+                SSL_CA_PEM {quote_certificate("ca.pem")}
+                SSL_CERT_PEM {quote_certificate("client-cert.pem")}
+                SSL_KEY_PEM {quote_certificate("client-key.pem")}))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY dict_ssl_override")
+        assert node1.query("SELECT count() FROM dict_ssl_override") == "0\n"
     finally:
+        node1.query("DROP DICTIONARY IF EXISTS dict_ssl_override")
         with conn.cursor() as cursor:
             cursor.execute(f"DROP USER 'ssl_user'@'{node1.ip_address}'")
             cursor.execute("FLUSH PRIVILEGES")
