@@ -152,6 +152,12 @@ public:
             for (size_t i = 0; i < conditions_end; i += 2)
             {
                 const auto & condition = args[i];
+                /// A condition whose type is `Nullable(Nothing)` is always NULL and never true -
+                /// `executeImpl` skips it - even when it is not a constant (e.g. `materialize(NULL)`),
+                /// so it can be skipped from the type alone, without a column.
+                if (condition.type->onlyNull())
+                    continue;
+
                 if (!condition.column)
                     return false;
 
@@ -201,7 +207,7 @@ public:
                     return;
                 }
 
-                if (!removeLowCardinality(first_branch->type)->equals(*removeLowCardinality(arg.type))
+                if (!recursiveRemoveLowCardinality(first_branch->type)->equals(*recursiveRemoveLowCardinality(arg.type))
                     || (*first_branch->column)[0] != (*arg.column)[0])
                     identical = false;
             });
@@ -240,8 +246,11 @@ public:
             /// `useDefaultImplementationForLowCardinalityColumns` above). Otherwise an explicit
             /// `LowCardinality` branch would leak into the result type (e.g. as
             /// `Variant(..., LowCardinality(String), ...)` with `use_variant_as_common_type`),
-            /// diverging from `if`, whose default implementation strips it.
-            const auto branch_type = removeLowCardinality(arg.type);
+            /// diverging from `if`, whose default implementation strips it. The strip has to be
+            /// recursive, like `convertLowCardinalityColumnsToFull` in the default implementation:
+            /// a nested carrier such as `Map(String, LowCardinality(String))` must become
+            /// `Map(String, String)` as well.
+            const auto branch_type = recursiveRemoveLowCardinality(arg.type);
             const bool is_const_branch = arg.column && isColumnConst(*arg.column);
             const bool is_string_branch = isString(branch_type);
             const bool is_nullable_string_branch = branch_type->isNullable() && isString(removeNullable(branch_type));
@@ -356,11 +365,16 @@ public:
             /// When it is not LowCardinality itself, convert a LowCardinality branch to its full column -
             /// as the default LowCardinality implementation did before this function opted out of it -
             /// since castColumn cannot cast e.g. LowCardinality(String) to a Variant that only
-            /// contains String.
-            if (source_col.type->lowCardinality() && !return_type->lowCardinality())
+            /// contains String. The check and the strip are recursive so that nested carriers like
+            /// `Map(String, LowCardinality(String))` are normalized too, matching getReturnTypeImpl.
+            if (!return_type->lowCardinality())
             {
-                source_col.column = recursiveRemoveLowCardinality(source_col.column);
-                source_col.type = removeLowCardinality(source_col.type);
+                auto full_type = recursiveRemoveLowCardinality(source_col.type);
+                if (full_type.get() != source_col.type.get())
+                {
+                    source_col.column = recursiveRemoveLowCardinality(source_col.column);
+                    source_col.type = std::move(full_type);
+                }
             }
             if (source_col.type->equals(*return_type))
             {

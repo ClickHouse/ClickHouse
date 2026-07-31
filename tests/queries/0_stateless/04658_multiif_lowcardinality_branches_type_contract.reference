@@ -9,6 +9,12 @@ LowCardinality(String)	b
 LowCardinality(String)	a
 Variant(String, UInt8)	42
 Variant(String, UInt8)	a
+Variant(Map(String, String), UInt8)	42
+Variant(Map(String, String), UInt8)	{'k':'v'}
+Variant(Map(String, String), UInt8)	42
+Variant(Map(String, String), UInt8)	{'k':'v'}
+String	y
+String	y
 -- optimize_if_transform_const_strings_to_lowcardinality = 0
 String	b
 String	a
@@ -20,3 +26,9 @@ String	b
 String	a
 Variant(String, UInt8)	42
 Variant(String, UInt8)	a
+Variant(Map(String, String), UInt8)	42
+Variant(Map(String, String), UInt8)	{'k':'v'}
+Variant(Map(String, String), UInt8)	42
+Variant(Map(String, String), UInt8)	{'k':'v'}
+String	y
+String	y

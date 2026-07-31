@@ -1401,7 +1401,11 @@ public:
         /// constant value, `executeImpl` returns that column as is (see the `arg_then.column == arg_else.column`
         /// fast path below), so the result is constant regardless of the condition - e.g. in
         /// `WITH 'sum' AS f SELECT arrayReduce(if(number % 2, f, f), [1, 2, 3])`.
-        auto const is_condition_constant = arguments[0].column && isColumnConst(*arguments[0].column);
+        /// A condition of type `Nullable(Nothing)` is always NULL, so `executeForConstAndNullableCondition`
+        /// always returns the (constant) else branch - the result is constant even when the condition column
+        /// is not (e.g. `materialize(NULL)`), so treat it as deciding the result too.
+        auto const is_condition_constant = (arguments[0].column && isColumnConst(*arguments[0].column))
+            || arguments[0].type->onlyNull();
         auto const are_branches_constant = arguments[1].column && arguments[2].column
             && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column);
         auto const are_branches_identical = are_branches_constant && arguments[1].type->equals(*arguments[2].type)

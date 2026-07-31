@@ -31,6 +31,20 @@ SELECT toTypeName(multiIf(number % 2, toLowCardinality(materialize('a')), materi
 FROM numbers(2)
 SETTINGS use_variant_as_common_type = 1;
 
+-- The recursive strip: a nested LowCardinality carrier must not leak into a Variant common type either,
+-- and `multiIf` must agree with `if` (whose default implementation strips recursively).
+SELECT toTypeName(multiIf(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))) AS t, multiIf(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))
+FROM numbers(2)
+SETTINGS use_variant_as_common_type = 1;
+SELECT toTypeName(if(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))) AS t, if(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))
+FROM numbers(2)
+SETTINGS use_variant_as_common_type = 1;
+
+-- An always-NULL condition selects the else branch regardless of its column, so the result is a runtime
+-- constant: keep plain String, like for a constant condition.
+SELECT toTypeName(if(materialize(NULL), 'x', 'y')) AS t, if(materialize(NULL), 'x', 'y');
+SELECT toTypeName(multiIf(materialize(NULL), 'x', 'y')) AS t, multiIf(materialize(NULL), 'x', 'y');
+
 SELECT '-- optimize_if_transform_const_strings_to_lowcardinality = 0';
 SET optimize_if_transform_const_strings_to_lowcardinality = 0;
 
@@ -45,3 +59,11 @@ FROM numbers(2);
 SELECT toTypeName(multiIf(number % 2, toLowCardinality(materialize('a')), materialize(42))) AS t, multiIf(number % 2, toLowCardinality(materialize('a')), materialize(42))
 FROM numbers(2)
 SETTINGS use_variant_as_common_type = 1;
+SELECT toTypeName(multiIf(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))) AS t, multiIf(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))
+FROM numbers(2)
+SETTINGS use_variant_as_common_type = 1;
+SELECT toTypeName(if(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))) AS t, if(number % 2, map('k', toLowCardinality(materialize('v'))), materialize(42))
+FROM numbers(2)
+SETTINGS use_variant_as_common_type = 1;
+SELECT toTypeName(if(materialize(NULL), 'x', 'y')) AS t, if(materialize(NULL), 'x', 'y');
+SELECT toTypeName(multiIf(materialize(NULL), 'x', 'y')) AS t, multiIf(materialize(NULL), 'x', 'y');
