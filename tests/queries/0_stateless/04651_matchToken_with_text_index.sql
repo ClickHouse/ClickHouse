@@ -251,3 +251,33 @@ SET enable_full_text_index = 0;
 SELECT groupArray(id) FROM (SELECT id FROM test_rs_regexp WHERE matchToken(message, 't\xff.*') ORDER BY id);
 
 DROP TABLE test_rs_regexp;
+
+-- ============================================================
+-- dot-all semantics with text index: `.` must match newline (RE_DOT_NL).
+-- The 'array' tokenizer keeps the whole element as one token, so 'a.b'
+-- matches 'a\nb'. Index on and off must produce identical results.
+-- ============================================================
+DROP TABLE IF EXISTS test_dot_all;
+
+SET enable_full_text_index = 1;
+
+CREATE TABLE test_dot_all
+(
+    id UInt32,
+    message String,
+    INDEX idx_dot(message) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_dot_all VALUES (1, 'a\nb'), (2, 'abc'), (3, 'no match');
+
+SELECT '-- dot-all index on: a.b matches a\\nb';
+SET enable_full_text_index = 1;
+SELECT groupArray(id) FROM (SELECT id FROM test_dot_all WHERE matchToken(message, 'a.b', 'array') ORDER BY id);
+SELECT '-- dot-all index off: a.b matches a\\nb';
+SET enable_full_text_index = 0;
+SELECT groupArray(id) FROM (SELECT id FROM test_dot_all WHERE matchToken(message, 'a.b', 'array') ORDER BY id);
+
+DROP TABLE test_dot_all;

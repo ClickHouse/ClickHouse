@@ -105,3 +105,9 @@
 -- array table: regexp err.* with splitByNonAlpha tokenizer
 1	['hello world','error handler']
 3	['errno state','misc value']
+-- dot-all: array tokenizer, . matches newline
+1
+-- dot-all: match() agrees
+1
+-- dot-all: splitByNonAlpha tokenizer, no newline inside token
+0

@@ -76,3 +76,7 @@ Granules: 3/4
 [100]
 -- rs successor: tÿ.* (index off)
 [100]
+-- dot-all index on: a.b matches a\\nb
+[1]
+-- dot-all index off: a.b matches a\\nb
+[1]

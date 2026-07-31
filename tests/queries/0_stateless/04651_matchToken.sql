@@ -191,4 +191,16 @@ SELECT id, tags FROM test_match_token_array WHERE matchToken(tags, 'err.*', 'spl
 
 DROP TABLE test_match_token_array;
 
+-- ============================================================
+-- dot-all semantics: `.` must match newline, consistent with `match`.
+-- With the 'array' tokenizer the whole element is one token, so 'a.b'
+-- matches 'a\nb' only when RE_DOT_NL is set.
+-- ============================================================
+SELECT '-- dot-all: array tokenizer, . matches newline';
+SELECT matchToken('a\nb', 'a.b', 'array');
+SELECT '-- dot-all: match() agrees';
+SELECT match('a\nb', 'a.b');
+SELECT '-- dot-all: splitByNonAlpha tokenizer, no newline inside token';
+SELECT matchToken('a\nb', 'a.b');
+
 DROP TABLE test_match_token;

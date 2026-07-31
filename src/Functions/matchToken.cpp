@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/Regexps.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -314,7 +315,10 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'matchToken': pattern argument must be a non-empty constant");
 
             String pattern = String(arguments[arg_pattern].column->getDataAt(0));
-            re = std::make_shared<OptimizedRegularExpression>(pattern);
+            /// Use the same regexp compilation as `match`: RE_DOT_NL so `.` matches newline,
+            /// RE_NO_CAPTURE since matchToken only checks for a match (no group extraction).
+            re = std::make_shared<OptimizedRegularExpression>(
+                Regexps::createRegexp</*like=*/false, /*no_capture=*/true, /*case_insensitive=*/false>(pattern));
         }
 
         DataTypes arg_types;

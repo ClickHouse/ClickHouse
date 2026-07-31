@@ -1369,8 +1369,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// The text index stores per-token posting lists, so the dictionary scan (queries_by_pattern)
         /// is semantically exact: addTokenToPatterns runs pattern->match(token) for each dictionary token.
         ///
-        /// The pattern is compiled with OptimizedRegularExpression(pattern) (default flags = 0),
-        /// matching the function body -- no RE_DOT_NL, no RE_NO_CAPTURE, no RE_CASELESS.
+        /// The pattern is compiled with Regexps::createRegexp<false, true, false> (RE_DOT_NL | RE_NO_CAPTURE),
+        /// matching the function body and the `match` function semantics.
         /// TextSearchQuery::tokens is empty; the matcher lives entirely in .patterns.
         ///
         const auto & pattern = value_field.safeGet<String>();
@@ -1382,7 +1382,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
 
         std::vector<OptimizedRegularExpression> compiled;
-        compiled.emplace_back(pattern);
+        compiled.emplace_back(Regexps::createRegexp</*like=*/false, /*no_capture=*/true, /*case_insensitive=*/false>(pattern));
 
         out.function = RPNElement::FUNCTION_MATCH_TOKEN;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
