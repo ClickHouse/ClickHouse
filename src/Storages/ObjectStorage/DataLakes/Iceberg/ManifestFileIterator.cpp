@@ -254,10 +254,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
-
     Poco::JSON::Parser parser;
 
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
