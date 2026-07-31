@@ -487,9 +487,11 @@ xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
 #
 # The harnesses under tests/, examples/ and fuzzers/ are expected to catch. Kusto is the one part
 # of the parser that has not been cleaned up yet: it still catches to fall back between a number
-# and a timespan, and to turn a failed cast into NULL.
+# and a timespan, and to turn a failed cast into NULL. The AST JSON deserialization is not a
+# parser of SQL text at all: it maps Poco JSON exceptions to BAD_ARGUMENTS at the boundary, and
+# nothing in it is on the standalone parser's call graph.
 find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
-    grep -vP '/(tests|examples|fuzzers|Kusto)/' |
+    grep -vP '/(tests|examples|fuzzers|Kusto)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
     xargs rg -n '\bcatch[[:space:]]*\(' |
     grep . &&
     echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
