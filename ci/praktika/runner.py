@@ -317,7 +317,15 @@ class Runner:
                 print(
                     f"GH artifact [{gh_artifact.name}] is missing; fallback to S3 artifact [{s3_fallback_artifact.name}]"
                 )
-                fallback_prefix = env.get_s3_prefix()
+                # Cached builds skip GH upload; S3 object is under the cached SHA.
+                if workflow.enable_cache:
+                    fallback_prefix = CacheRunnerHooks.pre_run(
+                        _job=job,
+                        _workflow=workflow,
+                        _required_artifacts=[s3_fallback_artifact],
+                    )[0]
+                else:
+                    fallback_prefix = env.get_s3_prefix()
 
                 fallback_artifact = dataclasses.replace(s3_fallback_artifact)
                 if fallback_artifact.compress_zst:
