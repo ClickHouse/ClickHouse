@@ -399,7 +399,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
@@ -539,7 +539,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
@@ -729,7 +729,7 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
     return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 
-bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
 {
     if (node.isFunction())
     {
@@ -750,7 +750,7 @@ bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNod
             if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isExpressionOverSortingKey(argument, context))
+            if (!isDeterministicExpressionOverSortingKey(argument, context))
                 return false;
         }
 
