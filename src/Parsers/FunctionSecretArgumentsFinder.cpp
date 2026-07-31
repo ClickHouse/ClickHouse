@@ -762,8 +762,8 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findMongoDBSecretArguments();
     }
-    else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS")
-             || (engine_name == "DeltaLake") || (engine_name == "Hudi")
+    else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
+             || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
              || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
              || (engine_name == "S3Queue"))
     {
