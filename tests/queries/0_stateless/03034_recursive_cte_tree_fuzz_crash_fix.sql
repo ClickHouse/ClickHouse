@@ -44,7 +44,7 @@ SELECT * FROM
     )
     SELECT * FROM q LIMIT 32
 )
-ORDER BY id ASC, parent_department DESC, name ASC;
+ORDER BY id ASC, parent_department DESC, name ASC SETTINGS max_threads = 1;
 
 DROP TABLE department__fuzz_1;
 DROP TABLE department__fuzz_3;

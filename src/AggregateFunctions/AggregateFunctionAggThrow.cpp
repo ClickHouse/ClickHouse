@@ -84,7 +84,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
@@ -108,6 +108,7 @@ public:
 
 }
 
+void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
         FunctionDocumentation::Description description_aggThrow = R"(

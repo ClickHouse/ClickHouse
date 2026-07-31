@@ -32,7 +32,7 @@ UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 
 }
 
-class FunctionIsValidASCII : public IFunction
+class FunctionIsValidASCII final : public IFunction
 {
 public:
     static constexpr auto name = "isValidASCII";

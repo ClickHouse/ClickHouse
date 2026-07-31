@@ -1,0 +1,6 @@
+all-const, regular	3
+all-const, negative	3
+all-const, old planner	3
+const + real key, generic	4
+const + real key, sorted	4
+const + real key, negative	4
