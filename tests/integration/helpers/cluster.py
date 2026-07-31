@@ -454,8 +454,28 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster):
-    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
+async def check_nats_is_available(cluster, connect_timeout=10):
+    # `nats.connect` reports a TLS or an authentication failure through its error callback
+    # and then keeps retrying, so an unbounded await hangs until the pytest timeout instead
+    # of telling us what went wrong. Bound the attempt and log what the client saw.
+    client_errors = []
+
+    async def collect_error(error):
+        client_errors.append(error)
+
+    try:
+        nc = await asyncio.wait_for(
+            nats_connect_ssl(cluster, max_reconnect_attempts=1, error_cb=collect_error),
+            connect_timeout,
+        )
+    except asyncio.TimeoutError:
+        logging.warning(
+            "Cannot connect to NATS in %s seconds, client errors: %s",
+            connect_timeout,
+            client_errors,
+        )
+        return False
+
     available = nc.is_connected
     await nc.close()
     return available
