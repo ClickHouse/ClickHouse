@@ -1,9 +1,3 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: half the assertions read an index section out of EXPLAIN indexes = 1, and a
--- remote-only parallel replicas plan reports ReadFromRemoteParallelReplicas with no index section at all,
--- so every one of them would read 0. Measured: the partition ratio cell reads 1 on a local plan and 0 with
--- parallel_replicas_local_plan = 0, which the runner randomizes.
-
 -- An Enum constant compared against a String/FixedString column used to be converted to the enum's
 -- underlying number instead of its name, so key analysis, skip indexes and IN sets all used the wrong
 -- bytes. Every assertion below prints 1.
@@ -15,6 +9,13 @@
 -- even before the fix. For the IN family the reference is the equivalent String literal, because IN set
 -- construction goes through convertFieldToType and is storage independent, so an unindexed table returns
 -- the same wrong answer and could not detect the bug.
+
+-- Half the assertions read an index section out of EXPLAIN indexes = 1, and a remote-only parallel
+-- replicas plan is a single ReadFromRemoteParallelReplicas node carrying no index section, so every one of
+-- them would read 0. The runner randomizes parallel_replicas_local_plan, so parallel replicas are turned
+-- off here for the session rather than tagging the test out of that job entirely: the conversion under
+-- test is not parallel replicas specific, so the test should still run there.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ref_str;
 DROP TABLE IF EXISTS pk_str;
@@ -288,7 +289,7 @@ SELECT 'partition_key_condition_uses_name', (SELECT
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
                    use_skip_indexes = 0)) = 'v in [\'7\', \'7\']';
 
--- The two cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the route
+-- The three cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the route
 -- where count() is answered from the partition predicate alone unmeasured. That route is a separate
 -- consumer of the converted constant and it fails in the other direction: instead of dropping the matching
 -- row it counted the rows of the '3' partition, returning 3 for a true count of 1. This cell pins the
