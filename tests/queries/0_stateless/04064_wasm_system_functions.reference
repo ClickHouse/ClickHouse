@@ -1,0 +1,2 @@
+wasm_sf_buffered	0	0	WasmUserDefined	wasm_sf_buffered(x Int32) -> Int32	- `x` — Int32\n	Int32
+wasm_sf_simple	0	0	WasmUserDefined	wasm_sf_simple(x Int32) -> Int32	- `x` — Int32\n	Int32

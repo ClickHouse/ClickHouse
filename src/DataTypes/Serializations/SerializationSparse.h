@@ -95,6 +95,9 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
+    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
 private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
@@ -199,6 +202,12 @@ struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsC
         , read_rows(read_rows_)
         , skipped_values_rows(skipped_values_rows_)
     {
+    }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (offsets)
+            callback(offsets);
     }
 
     ColumnPtr offsets;

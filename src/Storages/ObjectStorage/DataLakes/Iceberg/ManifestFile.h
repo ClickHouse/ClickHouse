@@ -76,6 +76,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
 
     ManifestEntryStatus status;
     std::optional<Int64> parsed_sequence_number;
+    std::optional<Int64> parsed_file_sequence_number;
     std::optional<Int64> parsed_snapshot_id;
 
     DB::Row partition_key_value;
@@ -90,12 +91,17 @@ struct ParsedManifestFileEntry : boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
+    /// File-level statistics from Iceberg manifest (required fields per spec)
+    Int64 record_count;
+    Int64 file_size_in_bytes;
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         IcebergPathFromMetadata file_path_key_,
         Int64 row_number_,
         ManifestEntryStatus status_,
         std::optional<Int64> written_sequence_number_,
+        std::optional<Int64> written_file_sequence_number_,
         std::optional<Int64> written_snapshot_id_,
         DB::Row partition_key_value_,
         std::unordered_map<Int32, ColumnInfo> columns_infos_,
@@ -104,12 +110,15 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
         std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
-        std::optional<Int32> sort_order_id_)
+        std::optional<Int32> sort_order_id_,
+        Int64 record_count_,
+        Int64 file_size_in_bytes_)
         : content_type(content_type_)
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
         , status(status_)
         , parsed_sequence_number(written_sequence_number_)
+        , parsed_file_sequence_number(written_file_sequence_number_)
         , parsed_snapshot_id(written_snapshot_id_)
         , partition_key_value(std::move(partition_key_value_))
         , columns_infos(std::move(columns_infos_))
@@ -119,6 +128,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , upper_reference_data_file_path(std::move(upper_reference_data_file_path_))
         , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
+        , record_count(record_count_)
+        , file_size_in_bytes(file_size_in_bytes_)
     {
     }
 };
@@ -131,6 +142,7 @@ struct ProcessedManifestFileEntry
     // Always zero in case of format version 1
     Int64 sequence_number;
     Int32 resolved_schema_id;
+    String manifest_file_path;
 
     String dumpDeletesMatchingInfo() const;
 };

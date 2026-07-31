@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTWithAlias.h>
 
 namespace DB
@@ -52,6 +51,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 

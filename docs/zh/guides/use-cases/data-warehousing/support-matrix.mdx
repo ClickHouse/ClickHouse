@@ -1,0 +1,174 @@
+---
+title: '支持矩阵'
+sidebarTitle: '支持矩阵'
+slug: /use-cases/data-lake/support-matrix
+description: 'ClickHouse 开放表格式集成和数据目录连接的完整支持矩阵。'
+keywords: ['数据湖', '湖仓', '支持', 'iceberg', 'delta lake', 'hudi', 'paimon', '目录', '特性']
+doc_type: 'reference'
+---
+
+本页提供 ClickHouse 数据湖集成的完整支持矩阵，涵盖各类开放表格式支持的功能、ClickHouse 可连接的目录，以及各类目录所支持的能力。
+
+<div id="format-support">
+  ## 开放表格式支持
+</div>
+
+ClickHouse 可与四种开放表格式集成：[Apache Iceberg](/zh/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/zh/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/zh/reference/engines/table-engines/integrations/hudi) 和 [Apache Paimon](/zh/reference/functions/table-functions/paimon)。请选择下方的一种格式以查看其支持矩阵。
+
+**图例：** ✅ 支持 | ⚠️ 部分支持 / Experimental | ❌ 不支持
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    | 特性                      |  状态 | 备注                                                                                                                                                                                                                                   |
+    | ----------------------- | :-: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | **存储后端**                |     |                                                                                                                                                                                                                                      |
+    | AWS S3                  |  ✅  | 通过 [`icebergS3()`](/zh/reference/functions/table-functions/iceberg) 或 `iceberg()` 别名                                                                                                                                                    |
+    | GCS                     |  ✅  | 通过 [`icebergS3()`](/zh/reference/functions/table-functions/iceberg) 或 `iceberg()` 别名                                                                                                                                                    |
+    | Azure Blob 存储           |  ✅  | 通过 [`icebergAzure()`](/zh/reference/functions/table-functions/iceberg)                                                                                                                                                                  |
+    | HDFS                    |  ⚠️ | 通过 [`icebergHDFS()`](/zh/reference/functions/table-functions/iceberg)。已弃用。                                                                                                                                                              |
+    | 本地文件系统                  |  ✅  | 通过 [`icebergLocal()`](/zh/reference/functions/table-functions/iceberg)                                                                                                                                                                  |
+    | **访问方式**                |     |                                                                                                                                                                                                                                      |
+    | 表函数                     |  ✅  | [`icebergS3()`](/zh/reference/functions/table-functions/iceberg)，针对不同后端提供相应变体                                                                                                                                                           |
+    | 表引擎                     |  ✅  | [`IcebergS3`](/zh/reference/engines/table-engines/integrations/iceberg)，针对不同后端提供相应变体                                                                                                                                                    |
+    | 集群分布式读取                 |  ✅  | [`icebergS3Cluster`](/zh/reference/functions/table-functions/icebergCluster), [`icebergAzureCluster`](/zh/reference/functions/table-functions/icebergCluster), [`icebergHDFSCluster`](/zh/reference/functions/table-functions/icebergCluster) |
+    | 命名集合                    |  ✅  | [定义命名集合](/zh/reference/functions/table-functions/iceberg#defining-a-named-collection)                                                                                                                                                   |
+    |                         |     |                                                                                                                                                                                                                                      |
+    | **读取特性**                |     |                                                                                                                                                                                                                                      |
+    | 读取支持                    |  ✅  | 完整支持 SELECT 以及所有 ClickHouse SQL 函数                                                                                                                                                                                                   |
+    | 分区裁剪                    |  ✅  | 参见 [分区裁剪](/zh/reference/engines/table-engines/integrations/iceberg#partition-pruning)。                                                                                                                                                  |
+    | 隐式分区                    |  ✅  | 支持基于 Iceberg transform 的分区                                                                                                                                                                                                           |
+    | 分区演进                    |  ✅  | 支持读取分区规范随时间变化的表                                                                                                                                                                                                                      |
+    | schema 演进               |  ✅  | 支持列的添加、删除和重排序。参见 [Schema evolution](/zh/reference/engines/table-engines/integrations/iceberg#schema-evolution)。                                                                                                                         |
+    | 类型提升 / 扩展               |  ✅  | `int` → `long`, `float` → `double`, `decimal(P,S)` → `decimal(P',S)`，其中 P&#39; &gt; P。参见 [Schema evolution](/zh/reference/engines/table-engines/integrations/iceberg#schema-evolution)。                                                 |
+    | 时间旅行 / 快照               |  ✅  | 通过 `iceberg_timestamp_ms` 或 `iceberg_snapshot_id` 设置。参见 [Time travel](/zh/reference/engines/table-engines/integrations/iceberg#time-travel)。                                                                                            |
+    | 位置删除                    |  ✅  | 参见 [处理已删除行](/zh/reference/engines/table-engines/integrations/iceberg#deleted-rows)。                                                                                                                                                     |
+    | 相等删除                    |  ✅  | 仅表引擎支持，自 v25.8+ 起。参见 [处理已删除行](/zh/reference/engines/table-engines/integrations/iceberg#deleted-rows)。                                                                                                                                   |
+    | Merge-on-read           |  ⚠️ | 实验性。支持[删除操作](/zh/reference/functions/table-functions/iceberg#iceberg-writes-delete)。                                                                                                                                                    |
+    | 格式版本                    |  ⚠️ | 支持 v1 和 v2。不支持 v3。                                                                                                                                                                                                                   |
+    | 列统计信息                   |  ✅  |                                                                                                                                                                                                                                      |
+    | 布隆过滤器 / puffin 文件       |  ❌  | 不支持 puffin 文件中的布隆过滤器索引                                                                                                                                                                                                               |
+    | 虚拟列                     |  ✅  | `_path`, `_file`, `_size`, `_time`, `_etag`。参见 [虚拟列](/zh/reference/functions/table-functions/iceberg#virtual-columns)。                                                                                                                  |
+    |                         |     |                                                                                                                                                                                                                                      |
+    | **写入特性**                |     |                                                                                                                                                                                                                                      |
+    | 创建表                     |  ✅  | 实验性。需要 `allow_insert_into_iceberg = 1`。自 v25.7+ 起支持。参见 [创建表](/zh/reference/functions/table-functions/iceberg#create-iceberg-table)。                                                                                                     |
+    | INSERT                  |  ✅  | 自 26.2 起为 Beta。需要 `allow_insert_into_iceberg = 1`。参见[插入数据](/zh/reference/functions/table-functions/iceberg#writes-inserts)。                                                                                                             |
+    | DELETE                  |  ✅  | Experimental。需要 `allow_insert_into_iceberg = 1`。通过 `ALTER TABLE ... DELETE WHERE` 实现。参见[删除数据](/zh/reference/functions/table-functions/iceberg#iceberg-writes-delete)。                                                                   |
+    | ALTER TABLE (schema 变更) |  ✅  | Experimental。需要 `allow_insert_into_iceberg = 1`。支持添加、删除、修改和重命名列。参见[Schema 演进](/zh/reference/functions/table-functions/iceberg#iceberg-writes-schema-evolution)。                                                                         |
+    | Compaction              |  ⚠️ | Experimental。需要 `allow_experimental_iceberg_compaction = 1`。将位置删除文件合并整理到数据文件中。参见[Compaction](/zh/reference/functions/table-functions/iceberg#iceberg-writes-compaction)。不支持其他 Iceberg 合并整理操作。                                           |
+    | UPDATE / MERGE          |  ❌  | 不支持。参见 Compaction。                                                                                                                                                                                                                   |
+    | Copy-on-write           |  ❌  | 不支持                                                                                                                                                                                                                                  |
+    | Expire snapshots        |  ❌  | 不支持                                                                                                                                                                                                                                  |
+    | Remove orphan files     |  ❌  | 不支持                                                                                                                                                                                                                                  |
+    | 写入分区                    |  ✅  | 支持。                                                                                                                                                                                                                                  |
+    | 修改分区                    |  ❌  | 不支持从 ClickHouse 更改分区方案。ClickHouse 可以向分区方案已演进的 Iceberg 表写入。                                                                                                                                                                           |
+    |                         |     |                                                                                                                                                                                                                                      |
+    | **元数据**                 |     |                                                                                                                                                                                                                                      |
+    | 分支与标签                   |  ❌  | 不支持 Iceberg 分支/标签引用                                                                                                                                                                                                                  |
+    | 元数据文件解析                 |  ✅  | 支持通过目录、简单目录列表、`version-hint` 和特定路径来解析元数据。可通过 `iceberg_metadata_file_path` 和 `iceberg_metadata_table_uuid` 配置。参见[元数据文件解析](/zh/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution)。                            |
+    | 数据缓存                    |  ✅  | 与 S3/Azure/HDFS 存储引擎采用相同机制。参见[数据缓存](/zh/reference/engines/table-engines/integrations/iceberg#data-cache)。                                                                                                                               |
+    | 元数据缓存                   |  ✅  | manifest 和元数据文件会缓存在内存中。默认通过 `use_iceberg_metadata_files_cache` 启用。参见[元数据缓存](/zh/reference/engines/table-engines/integrations/iceberg#metadata-cache)。                                                                                   |
+  </Tab>
+
+  <Tab title="Delta Lake">
+    从 25.6 版本起，ClickHouse 使用 Delta Lake Rust kernel 读取 Delta Lake 表，从而支持更广泛的功能；不过，在访问 Azure Blob 存储中的数据时存在已知问题。因此，在 Azure Blob 存储上读取数据时，该 Kernel 会被禁用。下面会说明哪些功能需要此 kernel。
+
+    | Feature                   | Status | Notes                                                                                                                                                         |
+    | ------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Storage backends**      |        |                                                                                                                                                               |
+    | AWS S3                    |    ✅   | 通过 [`deltaLake()`](/zh/reference/functions/table-functions/deltalake) 或 `deltaLakeS3()`                                                                          |
+    | GCS                       |    ✅   | 通过 [`deltaLake()`](/zh/reference/functions/table-functions/deltalake) 或 `deltaLakeS3()`                                                                          |
+    | Azure Blob Storage        |    ✅   | 通过 [`deltaLakeAzure()`](/zh/reference/functions/table-functions/deltalake)                                                                                       |
+    | HDFS                      |    ❌   | 不支持                                                                                                                                                           |
+    | Local filesystem          |    ✅   | 通过 [`deltaLakeLocal()`](/zh/reference/functions/table-functions/deltalake)                                                                                       |
+    | **Access methods**        |        |                                                                                                                                                               |
+    | Table function            |    ✅   | [`deltaLake()`](/zh/reference/functions/table-functions/deltalake) 及其针对各后端的变体                                                                                    |
+    | Table engine              |    ✅   | [`DeltaLake`](/zh/reference/engines/table-engines/integrations/deltalake)                                                                                        |
+    | Cluster-distributed reads |    ✅   | [`deltaLakeCluster`](/zh/reference/functions/table-functions/deltalakeCluster), [`deltaLakeAzureCluster`](/zh/reference/functions/table-functions/deltalakeCluster) |
+    | Named collections         |    ✅   | [Named collection](/zh/reference/functions/table-functions/deltalake#arguments)                                                                                  |
+    | **Read features**         |        |                                                                                                                                                               |
+    | Read support              |    ✅   | 完整支持 SELECT 以及所有 ClickHouse SQL 函数                                                                                                                            |
+    | Partition pruning         |    ✅   | 需要 Delta Kernel。                                                                                                                                              |
+    | Schema evolution          |    ✅   | 需要 Delta Kernel。                                                                                                                                              |
+    | Time travel               |    ✅   | 需要 Delta Kernel。                                                                                                                                              |
+    | Deletion vectors          |    ✅   |                                                                                                                                                               |
+    | Column mapping            |    ✅   |                                                                                                                                                               |
+    | Change data feed          |    ✅   | 需要 Delta Kernel。                                                                                                                                              |
+    | Virtual columns           |    ✅   | `_path`, `_file`, `_size`, `_time`, `_etag`。参见 [Virtual columns](/zh/reference/functions/table-functions/deltalake#virtual-columns)。                             |
+    | **Write features**        |        |                                                                                                                                                               |
+    | INSERT                    |    ✅   | Experimental。需要 `allow_experimental_delta_lake_writes = 1`。参见 [DeltaLake engine](/zh/reference/engines/table-engines/integrations/deltalake)。需要 Delta Kernel。    |
+    | DELETE / UPDATE / MERGE   |    ❌   | 不支持                                                                                                                                                           |
+    | CREATE empty table        |    ❌   | 不支持创建新的空 Delta Lake 表。`CREATE TABLE` 操作假定对象存储上已存在 Delta Lake 表。                                                                                               |
+    | **Caching**               |        |                                                                                                                                                               |
+    | Data caching              |    ✅   | 机制与 S3/Azure/HDFS 存储引擎相同。参见 [Data cache](/zh/reference/engines/table-engines/integrations/deltalake#data-cache)。                                                 |
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    | 功能                       |  状态 | 说明                                                                                                               |
+    | ------------------------ | :-: | ---------------------------------------------------------------------------------------------------------------- |
+    | **存储后端**                 |     |                                                                                                                  |
+    | AWS S3                   |  ✅  | 通过 [`hudi()`](/zh/reference/functions/table-functions/hudi)                                                         |
+    | GCS                      |  ✅  | 通过 [`hudi()`](/zh/reference/functions/table-functions/hudi)                                                         |
+    | Azure Blob 存储            |  ❌  | 不支持                                                                                                              |
+    | HDFS                     |  ❌  | 不支持                                                                                                              |
+    | 本地文件系统                   |  ❌  | 不支持                                                                                                              |
+    | **访问方式**                 |     |                                                                                                                  |
+    | 表函数                      |  ✅  | [`hudi()`](/zh/reference/functions/table-functions/hudi)                                                            |
+    | 表引擎                      |  ✅  | [`Hudi`](/zh/reference/engines/table-engines/integrations/hudi)                                                     |
+    | 集群分布式读取                  |  ✅  | [`hudiCluster`](/zh/reference/functions/table-functions/hudiCluster) (仅支持 S3)                                       |
+    | 命名集合                     |  ✅  | [Hudi 参数](/zh/reference/functions/table-functions/hudi#arguments)                                                   |
+    | **读取功能**                 |     |                                                                                                                  |
+    | 读取支持                     |  ✅  | 全面支持 SELECT 以及所有 ClickHouse SQL 函数                                                                               |
+    | schema 演化                |  ❌  | 不支持                                                                                                              |
+    | 时间旅行                     |  ❌  | 不支持                                                                                                              |
+    | 虚拟列                      |  ✅  | `_path`, `_file`, `_size`, `_time`, `_etag`。参见 [虚拟列](/zh/reference/functions/table-functions/hudi#virtual-columns)。 |
+    | **写入功能**                 |     |                                                                                                                  |
+    | INSERT / DELETE / UPDATE |  ❌  | 仅支持只读                                                                                                            |
+    | **缓存**                   |     |                                                                                                                  |
+    | 数据缓存                     |  ❌  | 不支持                                                                                                              |
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    | Feature                  | Status | Notes                                                                                                                                                                                                                            |
+    | ------------------------ | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **存储后端**                 |        |                                                                                                                                                                                                                                  |
+    | S3                       |    ✅   | 实验性。通过 [`paimon()`](/zh/reference/functions/table-functions/paimon) 或 `paimonS3()`                                                                                                                                                  |
+    | GCS                      |    ✅   | 实验性。通过 [`paimon()`](/zh/reference/functions/table-functions/paimon) 或 `paimonS3()`                                                                                                                                                  |
+    | Azure Blob 存储            |    ✅   | 实验性。通过 [`paimonAzure()`](/zh/reference/functions/table-functions/paimon)                                                                                                                                                            |
+    | HDFS                     |   ⚠️   | 实验性。通过 [`paimonHDFS()`](/zh/reference/functions/table-functions/paimon)。已弃用。                                                                                                                                                        |
+    | 本地文件系统                   |    ✅   | 实验性。通过 [`paimonLocal()`](/zh/reference/functions/table-functions/paimon)                                                                                                                                                            |
+    | **访问方式**                 |        |                                                                                                                                                                                                                                  |
+    | 表函数                      |    ✅   | 实验性。[`paimon()`](/zh/reference/functions/table-functions/paimon) 及各后端对应的变体                                                                                                                                                          |
+    | 表引擎                      |    ❌   | 没有专用表引擎                                                                                                                                                                                                                          |
+    | 集群分布式读取                  |    ✅   | 实验性。[`paimonS3Cluster`](/zh/reference/functions/table-functions/paimonCluster)、[`paimonAzureCluster`](/zh/reference/functions/table-functions/paimonCluster)、[`paimonHDFSCluster`](/zh/reference/functions/table-functions/paimonCluster) |
+    | 命名集合                     |    ✅   | 实验性。[定义命名集合](/zh/reference/functions/table-functions/paimon#defining-a-named-collection)                                                                                                                                            |
+    | **读取功能**                 |        |                                                                                                                                                                                                                                  |
+    | 读取支持                     |    ✅   | 实验性。完整支持 SELECT 以及所有 ClickHouse SQL 函数                                                                                                                                                                                           |
+    | schema 演进                |    ❌   | 不支持                                                                                                                                                                                                                              |
+    | 时间旅行                     |    ❌   | 不支持                                                                                                                                                                                                                              |
+    | 虚拟列                      |    ✅   | 实验性。`_path`, `_file`, `_size`, `_time`, `_etag`。参见 [虚拟列](/zh/reference/functions/table-functions/paimon#virtual-columns)。                                                                                                           |
+    | **写入功能**                 |        |                                                                                                                                                                                                                                  |
+    | INSERT / DELETE / UPDATE |    ❌   | 只读集成                                                                                                                                                                                                                             |
+    | **缓存**                   |        |                                                                                                                                                                                                                                  |
+    | 数据缓存                     |    ❌   | 不支持                                                                                                                                                                                                                              |
+  </Tab>
+</Tabs>
+
+<div id="catalog-support">
+  ## 目录支持
+</div>
+
+ClickHouse 可以使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎连接外部数据目录，并将该目录映射为一个 ClickHouse 数据库。注册在目录中的表会自动显示出来，并可使用标准 SQL 查询。
+
+当前支持以下目录。有关完整的设置说明，请参阅各目录的参考指南。
+
+| 目录                                                                           | 格式             |       读取       |   创建表  | INSERT | 参考指南                                                                           |
+| ---------------------------------------------------------------------------- | -------------- | :------------: | :----: | :----: | ------------------------------------------------------------------------------ |
+| [AWS Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Glue 目录 指南](/zh/guides/use-cases/data-warehousing/glue-catalog)             |
+| [BigLake Metastore](/zh/guides/use-cases/data-warehousing/biglake-catalog)      | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [BigLake Metastore 指南](/zh/guides/use-cases/data-warehousing/biglake-catalog)     |
+| [Databricks Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg |     ✅ Beta     | ✅ Beta | ✅ Beta | [Unity Catalog 指南](/zh/guides/use-cases/data-warehousing/unity-catalog)           |
+| [Iceberg REST](/zh/guides/use-cases/data-warehousing/rest-catalog)              | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [REST 目录 指南](/zh/guides/use-cases/data-warehousing/rest-catalog)             |
+| [Lakekeeper](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg        |     ✅ Beta     |    ❌   |    ❌   | [Lakekeeper 目录 指南](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| [Project Nessie](/zh/guides/use-cases/data-warehousing/nessie-catalog)          | Iceberg        | ✅ Experimental |    ❌   |    ❌   | [Nessie 目录 指南](/zh/guides/use-cases/data-warehousing/nessie-catalog)         |
+| [Microsoft OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)      | Iceberg        |     ✅ Beta     | ✅ Beta | ✅ Beta | [OneLake 目录 指南](/zh/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+目前所有目录集成都需要启用 Experimental 或 Beta 设置。除 Microsoft OneLake 和 Databricks Unity Catalog 外，所有目录都仅提供 **read-only** 访问——可以查询表，但不能通过目录连接创建表或写入数据。若要将目录中的数据加载到 ClickHouse 以加快分析速度，请使用[加速分析指南](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics)中所述的 `INSERT INTO SELECT`。若要将数据写回开放表格式，请按[写入数据指南](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)中的说明创建独立的 Iceberg 表。

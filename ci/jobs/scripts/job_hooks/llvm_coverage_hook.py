@@ -25,6 +25,18 @@ def check():
         c_function_cov = d["c_function_cov"]
         b_branch_cov = d["b_branch_cov"]
         c_branch_cov = d["c_branch_cov"]
+        d.get("b_line_hit", 0)
+        d.get("b_line_total", 0)
+        d.get("c_line_hit", 0)
+        d.get("c_line_total", 0)
+        d.get("b_func_hit", 0)
+        d.get("b_func_total", 0)
+        d.get("c_func_hit", 0)
+        d.get("c_func_total", 0)
+        d.get("b_branch_hit", 0)
+        d.get("b_branch_total", 0)
+        d.get("c_branch_hit", 0)
+        d.get("c_branch_total", 0)
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")

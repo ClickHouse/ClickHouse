@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -38,7 +37,10 @@ using UnionNodePtr = std::shared_ptr<UnionNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class UnionNode final : public IQueryTreeNode
+class QueryNode;
+using QueryNodePtr = std::shared_ptr<QueryNode>;
+
+class UnionNode final : public ITableExpressionNode
 {
 public:
     /// Construct union node with context and normalized union mode

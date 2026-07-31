@@ -17,11 +17,4 @@ SQLQueryPiece applyMathBinaryOperator(
     SQLQueryPiece && right_argument,
     ConverterContext & context);
 
-SQLQueryPiece applyMathLikeBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context,
-    std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast);
-
 }

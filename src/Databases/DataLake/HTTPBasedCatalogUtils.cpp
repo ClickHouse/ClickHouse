@@ -3,10 +3,17 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -47,6 +54,11 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & method,
     std::function<void(std::ostream &)> out_stream_callaback)
 {
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
+    });
+
     auto buf = createReadBuffer(endpoint, context, credentials, params, headers, method, out_stream_callaback);
     if (buf->eof())
         return {};

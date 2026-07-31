@@ -15,6 +15,15 @@ class CIDBCluster:
     PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
     USER_SECRET = Settings.SECRET_CI_DB_USER
 
+    @staticmethod
+    def _get_secret_or_raise(info, secret_name):
+        try:
+            return info.get_secret(secret_name)
+        except Exception as ex:
+            raise RuntimeError(
+                f"Failed to resolve CIDB secret [{secret_name}]"
+            ) from ex
+
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
         if url and user is not None and pwd is not None:
@@ -25,9 +34,9 @@ class CIDBCluster:
             self.user = user
             self.pwd = pwd
         else:
-            self.user_secret = info.get_secret(self.USER_SECRET)
-            self.url_secret = info.get_secret(self.URL_SECRET)
-            self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+            self.user_secret = self._get_secret_or_raise(info, self.USER_SECRET)
+            self.url_secret = self._get_secret_or_raise(info, self.URL_SECRET)
+            self.pwd_secret = self._get_secret_or_raise(info, self.PASSWD_SECRET)
             self.user = None
             self.url = None
             self.pwd = None
@@ -38,6 +47,12 @@ class CIDBCluster:
         if self._session:
             self._session.close()
             self._session = None
+
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
 
     def is_ready(self):
         if not self.url:
@@ -58,7 +73,7 @@ class CIDBCluster:
                 "X-ClickHouse-Key": self.pwd,
             }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -140,7 +155,7 @@ class CIDBCluster:
                 response = self._session.post(
                     url=self.url,
                     params=params,
-                    data=data,
+                    data=self._prepare_request_body(data),
                     headers=self._auth,
                     timeout=timeout,
                 )
@@ -163,7 +178,7 @@ class CIDBCluster:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
                 break
-        print(f"ERROR: Failed to query CIDB")
+        print("ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):
@@ -207,7 +222,7 @@ class CIDBCluster:
                 response = requests.post(
                     url=self.url,
                     params=insert_params,
-                    data=body,
+                    data=self._prepare_request_body(body),
                     headers=self._auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

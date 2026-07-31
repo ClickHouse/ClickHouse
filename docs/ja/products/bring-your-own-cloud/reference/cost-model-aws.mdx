@@ -1,0 +1,47 @@
+---
+title: 'BYOC コストモデル（AWS）'
+slug: /cloud/reference/byoc/cost-model-aws
+sidebarTitle: 'コストモデル（AWS）'
+keywords: ['BYOC', 'Bring Your Own Cloud', 'AWS', 'コスト', '課金', 'TCO', '料金', 'EC2', 'S3', 'EBS']
+description: 'BYOC デプロイメントにおける総保有コストは、ClickHouse Cloud の料金と AWS のインフラストラクチャ料金を組み合わせて構成されます'
+doc_type: 'reference'
+---
+
+ClickHouse の BYOC デプロイメントでは、互いに独立した 2 種類の請求が発生します。
+
+1. **ClickHouse Cloud の料金** — 総メモリ割り当て量に基づいて、ClickHouse サービスに対し ClickHouse から請求されます。
+2. **AWS infrastructure charges** — BYOC デプロイメントが AWS 上にプロビジョニングする各リソースについて、AWS からお客様の AWS アカウントに直接請求されます。
+
+このページでは、それぞれの算出方法と、それらを組み合わせて総保有コスト (TCO) がどのように決まるかを説明します。
+
+<div id="clickhouse-cloud-charges">
+  ## ClickHouse Cloud の料金
+</div>
+
+ClickHouse Cloud の料金は、メモリの総割り当て量に基づいて決まります。これが実際にお使いの構成にどう適用されるかについては、[チームにお問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。
+
+<div id="aws-infrastructure-charges">
+  ## AWS インフラストラクチャ料金
+</div>
+
+BYOC によってプロビジョニングされたすべてのリソースについて、AWS はお客様のアカウントに直接請求します。ClickHouse が AWS のキャパシティに料金を上乗せしたり、再販したりすることはありません。必須サービスと任意サービスの完全な一覧については、[課金対象の AWS サービス](/ja/products/bring-your-own-cloud/reference/billable-aws-services)を参照してください。
+
+通常、BYOC の請求額に対する寄与が大きい順に並べると、主なコスト要因は次のとおりです。
+
+1. **Amazon EC2** — EKS のマネージドノードグループを構成するワーカーインスタンスです。標準の Graviton ファミリー (たとえば `m7g`) がデフォルトで使用されます。ファミリーと台数は、サービスに割り当てられたメモリとノードグループのオートスケーリングに応じて変動します。
+2. **Amazon S3** — お客様のバケットに保存される ClickHouse テーブルデータとバックアップです。GB-月単位の課金に加え、リクエストごとの料金とリージョン間のデータ転送料金が発生します。
+3. **Amazon EBS** — OS、コンテナーイメージ、ClickHouse のログ用としてワーカーノードにアタッチされる gp3 ボリュームです。
+4. **NAT Gateway と AZ 間データ転送** — プライベートサブネットからの外向きトラフィックに加え、アベイラビリティゾーン間の通信です (マルチ AZ デプロイメントでは、AZ 間でデータがレプリケートされます) 。
+5. **Amazon EKS** — クラスター時間あたり一律のコントロールプレーン料金です。
+6. **Elastic Load Balancing (NLB)** — クライアントからのイングレストラフィックに対して、LCU-時間単位で課金されます。
+7. **CloudWatch Logs, Route 53, KMS, VPC endpoints** — 通常は請求総額のごく一部ですが、ワークロードによって変動します。
+
+現在の AWS の定価については、[aws.amazon.com](https://aws.amazon.com/pricing/) の各サービスの料金ページを参照してください。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [課金対象の AWS サービス](/ja/products/bring-your-own-cloud/reference/billable-aws-services) — BYOC がプロビジョニングする AWS サービスの全一覧
+* [AWS のサービス制限とクォータ](/ja/products/bring-your-own-cloud/reference/aws-service-limits) — デプロイ前に確認すべきクォータ
+* [BYOC アーキテクチャ](/ja/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud がお客様のアカウントにデプロイするコンポーネント

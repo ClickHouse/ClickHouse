@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 #include <chrono>
 
@@ -11,6 +11,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -162,7 +163,7 @@ public:
     /// Returns true if key was written and false if there was not enough place to write key
     bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
-        assert(cache_key.size > 0);
+        chassert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -191,7 +192,7 @@ public:
 
     bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
     {
-        assert(cache_key.size > 0);
+        chassert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -393,7 +394,7 @@ public:
         current_write_block.reset(buffer.m_data + (block_size * current_block_index));
 
         write_in_current_block = current_write_block.writeKey(key, block_offset);
-        assert(write_in_current_block);
+        chassert(write_in_current_block);
 
         index.block_index = current_block_index;
         index.offset_in_block = block_offset;
@@ -479,12 +480,22 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        #if defined(OS_DARWIN)
+        /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
+        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        #else
         file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
             ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
         }
+
+        #if defined(OS_DARWIN)
+        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+        #endif
 
         allocateSizeForNextPartition();
     }
@@ -508,7 +519,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -528,7 +539,7 @@ public:
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
 
-        io_event event;
+        io_event event{};
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
         {
@@ -542,7 +553,8 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        if (bytes_written > 0)
+            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -579,7 +591,7 @@ public:
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -659,7 +671,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(OS_FREEBSD)
+            #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -792,7 +804,21 @@ private:
 
     static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(OS_FREEBSD)
+        #if defined(OS_DARWIN)
+            /// macOS has neither fallocate nor posix_fallocate. F_PREALLOCATE reserves blocks past EOF
+            /// but does not change the file size, so ftruncate sets the size afterwards. We must match
+            /// fallocate's contract of actually reserving space: if the reservation fails (e.g. ENOSPC)
+            /// we fail here rather than letting ftruncate grow a sparse file and pushing the failure
+            /// into a later write, after cache state (evicted index entries) has already changed.
+            fstore_t store{F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, static_cast<off_t>(len), 0};
+            if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+            {
+                store.fst_flags = F_ALLOCATEALL;
+                if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+                    return -1;
+            }
+            return ::ftruncate(fd, static_cast<off_t>(offset + len));
+        #elif defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -803,7 +829,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);
@@ -814,7 +840,7 @@ private:
 
     static ssize_t eventResult(io_event & event)
     {
-        ssize_t  bytes_written;
+        ssize_t  bytes_written = 0;
 
         #if defined(OS_FREEBSD)
             bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
@@ -876,7 +902,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -892,7 +918,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -929,7 +955,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
     }
 
     PaddedPODArray<std::string_view> getCachedComplexKeys() const override
@@ -982,10 +1008,10 @@ private:
             default_value
         };
 
-        time_t deadline;
+        time_t deadline{};
         SSDCacheIndex index;
-        size_t in_memory_partition_index;
-        CellState state;
+        size_t in_memory_partition_index{};
+        CellState state{};
 
         bool isInMemory() const { return state == in_memory; }
         bool isOnDisk() const { return state == on_disk; }
@@ -1344,7 +1370,7 @@ private:
                     memset(const_cast<char *>(current_memory_buffer_partition.getData()), 0, current_memory_buffer_partition.getSizeInBytes());
 
                     write_into_memory_buffer_result = current_memory_buffer_partition.writeKey(ssd_cache_key, cache_index);
-                    assert(write_into_memory_buffer_result);
+                    chassert(write_into_memory_buffer_result);
 
                     cell.state = Cell::in_memory;
                     cell.index = cache_index;

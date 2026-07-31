@@ -67,10 +67,10 @@ def test_xfailed_is_ok():
     path = _write_jsonl(entries)
     try:
         r = ResultTranslator.from_pytest_jsonl(path)
-        assert r.status == Result.Status.SUCCESS, f"job status: {r.status}"
+        assert r.status == Result.Status.OK, f"job status: {r.status}"
         assert len(r.results) == 1
         test = r.results[0]
-        assert test.status == Result.StatusExtended.XFAIL, f"test status: {test.status}"
+        assert test.status == Result.Status.XFAIL, f"test status: {test.status}"
         assert test.is_ok(), "xfailed test should be considered OK"
         assert not test.is_failure(), "xfailed test should not be a failure"
     finally:
@@ -92,10 +92,10 @@ def test_xpassed_fails_job():
     path = _write_jsonl(entries)
     try:
         r = ResultTranslator.from_pytest_jsonl(path)
-        assert r.status == Result.Status.FAILED, f"job status: {r.status}"
+        assert r.status == Result.Status.FAIL, f"job status: {r.status}"
         assert len(r.results) == 1
         test = r.results[0]
-        assert test.status == Result.StatusExtended.XPASS, f"test status: {test.status}"
+        assert test.status == Result.Status.XPASS, f"test status: {test.status}"
         assert not test.is_ok(), "xpassed test should not be considered OK"
         assert test.is_failure(), "xpassed test should be a failure"
     finally:
@@ -118,10 +118,10 @@ def test_xfailed_and_passed_mix():
     path = _write_jsonl(entries)
     try:
         r = ResultTranslator.from_pytest_jsonl(path)
-        assert r.status == Result.Status.SUCCESS, f"job status: {r.status}"
+        assert r.status == Result.Status.OK, f"job status: {r.status}"
         statuses = {t.name: t.status for t in r.results}
-        assert statuses["test_mod.py::test_a"] == Result.StatusExtended.OK
-        assert statuses["test_mod.py::test_b"] == Result.StatusExtended.XFAIL
+        assert statuses["test_mod.py::test_a"] == Result.Status.OK
+        assert statuses["test_mod.py::test_b"] == Result.Status.XFAIL
     finally:
         os.unlink(path)
 
@@ -142,10 +142,10 @@ def test_xpassed_and_passed_mix():
     path = _write_jsonl(entries)
     try:
         r = ResultTranslator.from_pytest_jsonl(path)
-        assert r.status == Result.Status.FAILED, f"job status: {r.status}"
+        assert r.status == Result.Status.FAIL, f"job status: {r.status}"
         statuses = {t.name: t.status for t in r.results}
-        assert statuses["test_mod.py::test_a"] == Result.StatusExtended.OK
-        assert statuses["test_mod.py::test_b"] == Result.StatusExtended.XPASS
+        assert statuses["test_mod.py::test_a"] == Result.Status.OK
+        assert statuses["test_mod.py::test_b"] == Result.Status.XPASS
     finally:
         os.unlink(path)
 

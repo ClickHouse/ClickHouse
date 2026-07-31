@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <optional>
@@ -40,7 +39,7 @@ namespace ErrorCodes
   */
 
 template <typename Impl>
-class FunctionsMultiStringFuzzySearch : public IFunction
+class FunctionsMultiStringFuzzySearch final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -87,7 +86,7 @@ public:
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
-        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
+        chassert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
         if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(edit_distance_ptr.get()))
@@ -103,7 +102,7 @@ public:
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+        chassert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);

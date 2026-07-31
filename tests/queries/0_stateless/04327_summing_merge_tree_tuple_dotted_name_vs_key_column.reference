@@ -1,0 +1,8 @@
+Summing, dotted element vs partition-key column
+1	(30,300)	5
+Summing, dotted element vs sorting-key column
+(30,300)	5
+Coalescing, dotted element vs sorting-key column
+(20,200)	5
+Coalescing, dotted element vs partition-key column
+1	(20,200)	5

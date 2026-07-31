@@ -1,0 +1,273 @@
+---
+description: 'Documentation du pilote ODBC ClickHouse'
+sidebarTitle: 'pilote ODBC'
+slug: /interfaces/odbc
+title: 'pilote ODBC'
+doc_type: 'reference'
+---
+
+Le pilote ODBC ClickHouse fournit une interface conforme aux standards pour connecter des applications compatibles ODBC à
+ClickHouse. Il implémente l’API ODBC et permet aux applications, aux outils de BI et aux environnements de script
+d’exécuter des requêtes SQL, de récupérer des résultats et d’interagir avec ClickHouse au moyen de mécanismes familiers.
+
+Le pilote communique avec le serveur ClickHouse via le [protocole HTTP](/fr/concepts/features/interfaces/http), qui est le protocole principal
+pris en charge dans tous les déploiements ClickHouse. Cela permet au pilote de fonctionner de manière cohérente dans des
+environnements variés, notamment les installations locales, les services cloud gérés et les environnements où seul un accès HTTP est
+disponible.
+
+Le code source du pilote est disponible dans le
+[dépôt GitHub ClickHouse-ODBC](https://github.com/ClickHouse/clickhouse-odbc).
+
+<Tip>
+  Pour une meilleure compatibilité, nous vous recommandons vivement de mettre à jour votre serveur ClickHouse vers la version 24.11 ou une version ultérieure.
+</Tip>
+
+<Note>
+  Ce pilote fait l’objet d’un développement actif. Certaines fonctionnalités ODBC ne sont peut-être pas encore entièrement implémentées. La version actuelle
+  met l’accent sur la connectivité essentielle et les fonctionnalités ODBC de base, tandis que des fonctionnalités supplémentaires sont prévues dans de futures
+  versions.
+
+  Vos retours sont très précieux et contribuent à orienter la priorisation des nouvelles fonctionnalités et améliorations. Si vous rencontrez
+  des limitations, des fonctionnalités manquantes ou un comportement inattendu, veuillez partager vos observations ou vos demandes de fonctionnalité via
+  le suivi des issues à l’adresse
+  [https://github.com/ClickHouse/clickhouse-odbc/issues](https://github.com/ClickHouse/clickhouse-odbc/issues)
+</Note>
+
+<div id="installation-on-windows">
+  ## Installation sur Windows
+</div>
+
+Vous trouverez la dernière version du pilote à l’adresse suivante :
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest).
+Vous pouvez ensuite télécharger et exécuter le programme d’installation MSI, puis suivre les étapes d’installation.
+
+<div id="testing">
+  ## Test
+</div>
+
+Vous pouvez tester le pilote en exécutant ce simple script PowerShell. Copiez le texte ci-dessous, renseignez votre URL, votre nom d’utilisateur et votre mot de passe, puis collez le texte dans votre console PowerShell — après avoir exécuté `$reader.GetValue(0)`, la version de votre serveur ClickHouse devrait s’afficher.
+
+```powershell
+$url = "http://127.0.0.1:8123/"
+$username = "default"
+$password = ""
+$conn = New-Object System.Data.Odbc.OdbcConnection("`
+    Driver={ClickHouse ODBC Driver (Unicode)};`
+    Url=$url;`
+    Username=$username;`
+    Password=$password")
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "select version()"
+$reader = $cmd.ExecuteReader()
+$reader.Read()
+$reader.GetValue(0)
+$reader.Close()
+$conn.Close()
+```
+
+<div id="configuration-parameters">
+  ## Paramètres de configuration
+</div>
+
+Les paramètres ci-dessous correspondent aux réglages les plus couramment utilisés pour établir une connexion avec le
+pilote ODBC ClickHouse. Ils couvrent les principales options d’authentification, de comportement de la connexion et de
+gestion des données. La liste complète des paramètres pris en charge est disponible sur la page GitHub du projet
+[https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc).
+
+* `Url` : Spécifie l’endpoint HTTP(S) complet du serveur ClickHouse. Cela inclut le protocole, l’hôte, le port et le
+  chemin facultatif.
+* `Username` : Nom d’utilisateur utilisé pour l’authentification auprès du serveur ClickHouse.
+* `Password` : Mot de passe associé au nom d’utilisateur indiqué. S’il n’est pas fourni, le pilote se connecte sans
+  authentification par mot de passe.
+* `Database` : Base de données par défaut à utiliser pour la connexion.
+* `Timeout` : Temps maximal (en secondes) pendant lequel le pilote attend une réponse du serveur avant d’abandonner la requête.
+* `ClientName` : Identifiant personnalisé envoyé au serveur ClickHouse dans les métadonnées du client. Utile pour le traçage ou
+  pour distinguer le trafic provenant de différentes applications. Ce paramètre fera partie de l’en-tête User-Agent dans les requêtes HTTP
+  produites par le pilote.
+* `Compression` : Active ou désactive la compression HTTP pour les payloads des requêtes et des réponses. Lorsqu’elle est activée, elle peut réduire
+  l’utilisation de la bande passante et améliorer les performances pour les jeux de résultats volumineux.
+* `SqlCompatibilitySettings` : Active des paramètres de requête qui font que ClickHouse se comporte davantage comme une
+  base de données relationnelle traditionnelle. Cela est utile lorsque les requêtes sont générées automatiquement par des outils tiers,
+  par exemple Power BI. Ces outils ne tiennent généralement pas compte de certains comportements spécifiques à ClickHouse et peuvent produire des requêtes qui entraînent des erreurs ou
+  des résultats inattendus. Voir [Paramètres ClickHouse utilisés par le paramètre de configuration SqlCompatibilitySettings
+  ](#sql-compatibility-settings) pour plus de détails.
+
+Voici quelques exemples de chaîne de connexion complète transmise au pilote pour configurer une connexion.
+
+* Un serveur ClickHouse installé localement sur une instance WSL
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=http://localhost:8123/;Username=default
+```
+
+* Une instance de ClickHouse Cloud.
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=https://you-instance-url.gcp.clickhouse.cloud:8443/;Username=default;Password=your-password
+```
+
+<div id="powerbi-integration">
+  ## Intégration Microsoft Power BI
+</div>
+
+Vous pouvez utiliser le pilote ODBC pour connecter Microsoft Power BI à un serveur ClickHouse. Power BI propose deux options
+de connexion : le connecteur ODBC générique et le connecteur ClickHouse, tous deux inclus dans les installations standard de Power BI.
+
+Les deux connecteurs s’appuient sur ODBC en interne, mais ils offrent des fonctionnalités différentes :
+
+* Connecteur ClickHouse (recommandé)
+  Utilise ODBC en arrière-plan, mais prend en charge le mode DirectQuery. Dans ce mode, Power BI génère automatiquement des requêtes SQL et
+  ne récupère que les données nécessaires à chaque visualisation ou opération de filtrage.
+
+* Connecteur ODBC
+  Prend uniquement en charge le mode Import. Power BI exécute la requête fournie par l’utilisateur (ou sélectionne la table entière) et importe l’ensemble du
+  jeu de résultats dans Power BI. Les actualisations suivantes réimportent l’intégralité du jeu de données.
+
+Choisissez le connecteur en fonction de votre cas d’usage. DirectQuery convient particulièrement aux tableaux de bord interactifs utilisant de grands jeux de données.
+Choisissez le mode Import lorsque vous avez besoin d’une copie locale complète des données.
+
+Pour plus d’informations sur l’intégration de Microsoft Power BI avec ClickHouse, consultez la [page de la documentation ClickHouse consacrée à l’intégration
+Power BI](/fr/integrations/connectors/data-visualization/powerbi-and-clickhouse).
+
+<div id="sql-compatibility-settings">
+  ## Paramètres de compatibilité SQL
+</div>
+
+ClickHouse possède son propre dialecte SQL et, dans certains cas, son comportement diffère de celui d&#39;autres bases de données, comme MS SQL
+Server, MySQL ou PostgreSQL. Souvent, ces différences sont un avantage, car elles introduisent une syntaxe améliorée qui facilite
+l&#39;utilisation des fonctionnalités de ClickHouse.
+
+Cependant, le pilote ODBC est souvent utilisé dans des environnements où les requêtes sont générées par des outils tiers, comme Power
+BI, plutôt que rédigées par les utilisateurs. Ces requêtes reposent généralement sur un sous-ensemble minimal du standard SQL. Dans ce cas,
+les divergences de ClickHouse par rapport au standard SQL peuvent ne pas produire le comportement attendu et entraîner des résultats inattendus ou des erreurs.
+Le pilote ODBC fournit un paramètre de configuration supplémentaire, `SqlCompatibilitySettings`, qui active des paramètres de requête spécifiques
+afin de rapprocher davantage le comportement de ClickHouse de celui du SQL standard.
+
+<div id="sql-compatibility-settings-list">
+  ### Paramètres ClickHouse activés par le paramètre de configuration SqlCompatibilitySettings
+</div>
+
+Cette section décrit les paramètres que le pilote ODBC modifie et pourquoi.
+
+**[cast&#95;keep&#95;nullable](/fr/reference/settings/session-settings#cast_keep_nullable)**
+
+Par défaut, ClickHouse ne permet pas de convertir des types Nullable en types non Nullable. Cependant, de nombreux outils de BI ne
+font pas la distinction entre les types Nullable et non Nullable lorsqu&#39;ils effectuent des conversions de type. Par conséquent, il n&#39;est pas rare de
+voir des requêtes comme la suivante générées par des outils de BI :
+
+```sql
+SELECT sum(CAST(value, 'Int32'))
+FROM values
+```
+
+Par défaut, lorsque la colonne `value` peut contenir des valeurs NULL, cette requête échouera avec le message :
+
+```plaintext
+DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
+'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+```
+
+L’activation de `cast_keep_nullable` modifie le comportement de `CAST` afin de préserver la nullabilité de ses arguments. Cela
+rapproche le comportement de ClickHouse de celui des autres bases de données ainsi que de la norme SQL pour ce type de conversion.
+
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/fr/reference/settings/session-settings#prefer_column_name_to_alias)**
+
+ClickHouse permet de référencer des expressions de la même liste `SELECT` à l’aide de leurs alias. Par exemple, cette requête évite les
+répétitions et est plus facile à écrire :
+
+```sql
+SELECT
+    sum(value) AS S,
+    count() AS C,
+    S / C
+FROM test
+```
+
+Cette fonctionnalité est très répandue, mais les autres bases de données ne résolvent généralement pas les alias de cette façon dans la même liste `SELECT`,
+et de telles requêtes provoqueraient une erreur. Les problèmes sont particulièrement visibles lorsqu&#39;un alias porte le même nom qu&#39;une colonne. Par exemple :
+
+```sql
+SELECT
+    sum(value) AS value,
+    avg(value)
+FROM test
+```
+
+Quelle `value` la fonction `avg(value)` doit-elle agréger ? Par défaut, ClickHouse privilégie l’alias, ce qui transforme effectivement cela en une
+agrégation imbriquée, ce à quoi la plupart des outils ne s’attendent pas.
+
+En soi, cela pose rarement problème, mais certains outils de BI génèrent des requêtes avec des sous-requêtes qui réutilisent des alias de colonne. Par
+exemple, Power BI génère souvent des requêtes similaires à ce qui suit :
+
+```sql
+SELECT
+    sum(C1) AS C1,
+    count(C1) AS C2
+FROM
+(
+    SELECT sum(value) AS C1
+    FROM test
+    GROUP BY group_index
+) AS TBL
+```
+
+Les références à `C1` peuvent entraîner l’erreur suivante :
+
+```plaintext
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function sum(C1) AS C1 is found
+inside another aggregate function in query. (ILLEGAL_AGGREGATION)
+```
+
+Les autres bases de données ne résolvent généralement pas les alias à ce niveau de cette manière et traitent plutôt `C1` comme une colonne de la
+sous-requête. Pour préserver un comportement similaire dans ClickHouse et permettre à de telles requêtes de s’exécuter sans erreur, le pilote ODBC
+active `prefer_column_name_to_alias`.
+
+Dans la plupart des cas, l’activation de ces paramètres ne devrait pas poser de problème. Cependant, les utilisateurs en lecture seule pour lesquels le paramètre `readonly` est défini sur `1`
+ne peuvent modifier aucun paramètre, même pour les requêtes `SELECT`. Pour ces utilisateurs, l’activation de `SqlCompatibilitySettings` entraînera
+une erreur. La section suivante explique comment faire fonctionner ce paramètre de configuration pour les utilisateurs en lecture seule.
+
+<div id="readonly-users">
+  ## Utiliser les paramètres de compatibilité SQL avec des utilisateurs en lecture seule
+</div>
+
+Lors d’une connexion à ClickHouse via le pilote ODBC avec le paramètre `SqlCompatibilitySettings` activé, un utilisateur dont
+le paramètre readonly est défini sur `1` rencontrera une erreur, car le pilote tente de modifier les paramètres de la requête :
+
+```plaintext
+Code: 164. DB::Exception: Cannot modify 'cast_keep_nullable' setting in readonly mode. (READONLY)
+Code: 164. DB::Exception: Cannot modify 'prefer_column_name_to_alias' setting in readonly mode. (READONLY)
+```
+
+Cela se produit parce que les utilisateurs en mode lecture seule ne sont pas autorisés à modifier les paramètres, même pour des requêtes `SELECT` individuelles.
+Il existe plusieurs façons de corriger cela.
+
+**Option 1. Définir `readonly` sur `2`**
+
+C’est l’option la plus simple. Définir `readonly` sur `2` permet de modifier les paramètres tout en maintenant l’utilisateur en
+mode lecture seule.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    readonly = 2
+```
+
+Dans la plupart des cas, définir `readonly` sur 2 est la méthode la plus simple et recommandée pour résoudre ce problème. Si
+cela ne vous convient pas, utilisez la deuxième option.
+
+**Option 2. Modifier les paramètres utilisateur pour qu&#39;ils correspondent à ceux définis par le pilote ODBC.**
+
+C&#39;est tout aussi simple : mettez à jour les paramètres utilisateur pour qu&#39;ils correspondent déjà à ce que le pilote ODBC essaie de définir.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    cast_keep_nullable = 1,
+    prefer_column_name_to_alias = 1
+```
+
+Avec cette modification, le pilote ODBC peut toujours tenter d&#39;appliquer les paramètres, mais comme les valeurs correspondent déjà, aucun
+changement effectif n&#39;est apporté et l&#39;erreur est ainsi évitée.
+
+Cette option est également simple, mais elle nécessite de la maintenance : les nouvelles versions du pilote peuvent modifier la liste des paramètres ou en ajouter
+de nouveaux pour assurer la compatibilité. Si vous codez ces paramètres en dur pour votre utilisateur ODBC, vous devrez peut-être les mettre à jour chaque fois que le
+pilote ODBC commencera à appliquer des paramètres supplémentaires.
