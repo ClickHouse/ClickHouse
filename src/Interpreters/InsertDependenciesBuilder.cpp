@@ -1050,9 +1050,6 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     return false;
 }
 
-
-
-
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
