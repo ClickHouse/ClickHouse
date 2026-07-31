@@ -8,6 +8,12 @@
 -- result instead of measuring this attempt. Session wide, so a future assertion cannot forget it.
 SET use_query_cache = 0;
 
+-- The test runner can inject a `compatibility` value below 25.1, which reverts
+-- `query_plan_try_use_vector_search` to false and turns the vector search optimization off. Every
+-- query below forces `idx`, so the whole test would fail with INDEX_NOT_USED on a healthy build.
+-- Session wide, so it also covers the statements that only read system tables.
+SET query_plan_try_use_vector_search = 1;
+
 -- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
 DROP TABLE IF EXISTS vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
 
