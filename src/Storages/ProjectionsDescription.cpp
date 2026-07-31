@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -858,6 +859,17 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             return;
         throw Exception(
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
+    }
+
+    /// Validate projection name length: the directory name is <name>.proj,
+    /// so the name must fit in NAME_MAX - strlen(".proj") = 255 - 5 = 250.
+    constexpr size_t max_projection_name_length = 250;
+    if (projection.name.length() > max_projection_name_length)
+    {
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "The max length of projection name is {}, current length is {}",
+            max_projection_name_length, projection.name.length());
     }
 
     auto insert_it = projections.cend();
