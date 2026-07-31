@@ -170,7 +170,9 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
+    /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -196,7 +198,9 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
+    /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 };
 
 class Context;
@@ -220,7 +224,9 @@ public:
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
+    /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
@@ -251,13 +257,17 @@ public:
     /// affects future inserts — so no MATERIALIZE_COLUMN commands are returned.
     /// Replicated storages must pass true: the local part state cannot prove that
     /// the table is empty on all replicas.
+    /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
+    /// intermediate metadata built while planning mutations matches the real commands.apply() for
+    /// IF NOT EXISTS nested adds (see AlterCommand::apply).
     MutationCommands getMutationCommands(
         StorageInMemoryMetadata metadata,
         bool materialize_ttl,
         ContextPtr context,
         bool with_alters = false,
         AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD,
-        bool storage_has_active_parts = true) const;
+        bool storage_has_active_parts = true,
+        bool share_nested_offsets = true) const;
 
     /// Names of explicit skip indices whose effective (normalized) expression
     /// changes when these commands are applied, paired with a human-readable
