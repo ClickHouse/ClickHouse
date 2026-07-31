@@ -1,6 +1,7 @@
 """
-Integration tests that assert Prometheus Query API operations (/api/v1/query and
-/api/v1/query_range) are reflected in system.query_log with read_rows/read_bytes.
+Integration tests that assert Prometheus HTTP handler operations are reflected in
+system.query_log: Query API requests (/api/v1/query and /api/v1/query_range) with
+read_rows/read_bytes and remote-write requests (/write) with written_rows/written_bytes.
 """
 
 import urllib.parse
@@ -11,6 +12,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
+    convert_metrics_metadata_to_protobuf,
     convert_time_series_to_protobuf,
     get_response_to_http_api,
     send_protobuf_to_remote_write,
@@ -26,12 +28,34 @@ def query_log_has_finish_for_query_id_sql(query_id):
     )
 
 
+def query_log_has_finish_with_written_rows_sql(query_id):
+    return (
+        f"SELECT count() > 0 FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
+        f"AND written_rows > 0 AND written_bytes > 0"
+    )
+
+
 def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_time=1):
     """Assert the Prometheus request produced at least one correlated QueryFinish row."""
     node.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(
         node,
         query_log_has_finish_for_query_id_sql(query_id),
+        "1\n",
+        retry_count=retry_count,
+        sleep_time=sleep_time,
+    )
+
+
+def assert_query_log_has_finish_with_written_rows(
+    query_id, retry_count=30, sleep_time=1
+):
+    """Assert the remote write produced a correlated QueryFinish row with written rows/bytes."""
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        query_log_has_finish_with_written_rows_sql(query_id),
         "1\n",
         retry_count=retry_count,
         sleep_time=sleep_time,
@@ -87,6 +111,63 @@ def test_query_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def test_remote_write_appears_in_query_log_with_written_rows():
+    """
+    After a remote write to /write, the inserts into the tags and samples target
+    tables should each produce a row in system.query_log with type = 'QueryFinish',
+    written_rows > 0, and written_bytes > 0. The inserts are correlated to the
+    request via child query ids "<X-ClickHouse-Query-Id>:<target table kind>".
+    """
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+
+    time_series = [
+        (
+            {"__name__": "remote_write_query_log_test", "job": "test"},
+            {1753176700.0: 42},
+        )
+    ]
+    protobuf = convert_time_series_to_protobuf(time_series)
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        headers={"X-ClickHouse-Query-Id": query_id},
+    )
+
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Tags")
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Samples")
+
+
+def test_remote_write_metadata_appears_in_query_log_with_written_rows():
+    """
+    After a remote write to /write containing metrics metadata, the insert into the
+    metrics target table should produce a row in system.query_log with
+    type = 'QueryFinish', written_rows > 0, and written_bytes > 0, correlated to the
+    request via the child query id "<X-ClickHouse-Query-Id>:Metrics".
+    """
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+
+    metrics_metadata = [
+        (
+            "remote_write_query_log_test",
+            "GAUGE",
+            "Test metric for query_log tracking.",
+            "",
+        )
+    ]
+    protobuf = convert_metrics_metadata_to_protobuf(metrics_metadata)
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        protobuf,
+        headers={"X-ClickHouse-Query-Id": query_id},
+    )
+
+    assert_query_log_has_finish_with_written_rows(f"{query_id}:Metrics")
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():

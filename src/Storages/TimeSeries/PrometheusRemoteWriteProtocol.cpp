@@ -28,8 +28,8 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -589,6 +589,7 @@ namespace
 
                 auto insert_query = make_intrusive<ASTInsertQuery>();
                 insert_query->table_id = target_table_id;
+                insert_query->format = "Native";
 
                 auto columns_ast = make_intrusive<ASTExpressionList>();
                 for (const auto & name : block.getNames())
@@ -600,32 +601,35 @@ namespace
 
                 LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
 
-                InterpreterInsertQuery interpreter(
-                    insert_query,
-                    insert_context,
-                    /* allow_materialized= */ false,
-                    /* no_squash= */ false,
-                    /* no_destination= */ false,
-                    /* async_insert= */ false);
+                auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), insert_context, {}, QueryProcessingStage::Complete);
 
-                BlockIO io = interpreter.execute();
-                PushingPipelineExecutor executor(io.pipeline);
+                try
+                {
+                    PushingPipelineExecutor executor(io.pipeline);
 
-                executor.start();
+                    executor.start();
 
-                // Convert block columns to match what the pipeline expects.
-                const Block & expected_header = executor.getHeader();
-                auto converting_dag = ActionsDAG::makeConvertingActions(
-                    block.getColumnsWithTypeAndName(),
-                    expected_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name,
-                    insert_context);
-                auto converting_actions = std::make_shared<ExpressionActions>(
-                    std::move(converting_dag), ExpressionActionsSettings(insert_context));
-                converting_actions->execute(block);
+                    // Convert block columns to match what the pipeline expects.
+                    const Block & expected_header = executor.getHeader();
+                    auto converting_dag = ActionsDAG::makeConvertingActions(
+                        block.getColumnsWithTypeAndName(),
+                        expected_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        insert_context);
+                    auto converting_actions = std::make_shared<ExpressionActions>(
+                        std::move(converting_dag), ExpressionActionsSettings(insert_context));
+                    converting_actions->execute(block);
 
-                executor.push(std::move(block));
-                executor.finish();
+                    executor.push(std::move(block));
+                    executor.finish();
+                }
+                catch (...)
+                {
+                    io.onException();
+                    throw;
+                }
+
+                finishExecutedQuery(io, {});
             }
         }
     }
