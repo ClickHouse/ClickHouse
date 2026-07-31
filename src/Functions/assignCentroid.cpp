@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
@@ -44,6 +45,89 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+}
+
+/// Named (not anonymous) so the `TargetSpecific::*` namespaces the macro generates cannot collide with
+/// identically named kernels from another translation unit.
+namespace AssignCentroidImpl
+{
+namespace
+{
+
+DECLARE_MULTITARGET_CODE(
+
+/// Score `n` rows against ONE packed tile of `width` centroids and keep the running best score/id per row.
+/// `pack` is column-major within the tile (`pack[j * width + c]`), so the inner loop over centroids is a
+/// contiguous FMA against a broadcast `x[j]` - the shape the vectorizer wants. `acc` is caller-provided
+/// scratch of at least `width` floats (kept off the stack because `width` is up to the tile size).
+///
+/// All rows are known to have exactly `dim` elements (validated by the caller), so row `r` starts at
+/// `r * dim` and the offsets array does not need to be touched in the hot loop.
+void scoreTile(
+    const Float32 * __restrict vec_data, size_t n, size_t dim,
+    const Float32 * __restrict pack, const Float32 * __restrict cnorm_tile, const UInt32 * __restrict ids_tile,
+    size_t width, Float32 * __restrict acc, Float32 * __restrict best_score, UInt32 * __restrict res)
+{
+    for (size_t row = 0; row < n; ++row)
+    {
+        const Float32 * __restrict x = vec_data + row * dim;
+
+        for (size_t c = 0; c < width; ++c)
+            acc[c] = 0.0f;
+
+        for (size_t j = 0; j < dim; ++j)
+        {
+            const Float32 xj = x[j];
+            const Float32 * __restrict col = pack + j * width;
+            for (size_t c = 0; c < width; ++c)
+                acc[c] += xj * col[c];
+        }
+
+        Float32 bs = best_score[row];
+        UInt32 bid = res[row];
+        for (size_t c = 0; c < width; ++c)
+        {
+            const Float32 score = cnorm_tile[c] - 2.0f * acc[c];
+            if (score < bs)
+            {
+                bs = score;
+                bid = ids_tile[c];
+            }
+        }
+        best_score[row] = bs;
+        res[row] = bid;
+    }
+}
+
+) // DECLARE_MULTITARGET_CODE
+
+/// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is disabled (ARM, and any
+/// build with `ENABLE_MULTITARGET_CODE=OFF`) only `Default` exists, which is why the kernel above is written
+/// as plain contiguous loops the compiler can auto-vectorize on its own.
+///
+/// Note this is SIMD only, deliberately: `executeImpl` already runs concurrently on many pipeline threads,
+/// one per block, so spawning threads inside it would just oversubscribe.
+void scoreTile(
+    const Float32 * vec_data, size_t n, size_t dim,
+    const Float32 * pack, const Float32 * cnorm_tile, const UInt32 * ids_tile,
+    size_t width, Float32 * acc, Float32 * best_score, UInt32 * res)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        TargetSpecific::x86_64_v4::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        TargetSpecific::x86_64_v3::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+        return;
+    }
+#endif
+    TargetSpecific::Default::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+}
+
+}
 }
 
 namespace
@@ -111,31 +195,9 @@ struct CentroidMatrix
             for (size_t j = 0; j < dim; ++j) /// pack the tile contiguously (reads ct once per tile)
                 std::copy(&ct[j * k + c0], &ct[j * k + c0] + width, &pack[j * width]);
 
-            for (size_t row = 0; row < n; ++row)
-            {
-                const Float32 * x = &vec_data[row ? offsets[row - 1] : 0];
-                std::fill(acc.begin(), acc.begin() + width, 0.0f);
-                for (size_t j = 0; j < dim; ++j)
-                {
-                    Float32 xj = x[j];
-                    const Float32 * col = &pack[j * width];
-                    for (size_t c = 0; c < width; ++c) /// FMA over the cache-resident tile; vectorizes
-                        acc[c] += xj * col[c];
-                }
-                Float32 bs = best_score[row];
-                UInt32 bid = res[row];
-                for (size_t c = 0; c < width; ++c)
-                {
-                    Float32 score = cnorm[c0 + c] - 2.0f * acc[c];
-                    if (score < bs)
-                    {
-                        bs = score;
-                        bid = ids[c0 + c];
-                    }
-                }
-                best_score[row] = bs;
-                res[row] = bid;
-            }
+            AssignCentroidImpl::scoreTile(
+                vec_data, n, dim, pack.data(), &cnorm[c0], &ids[c0], width,
+                acc.data(), best_score.data(), res.data());
         }
     }
 };
