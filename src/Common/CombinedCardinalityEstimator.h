@@ -115,6 +115,70 @@ public:
             getContainer<Large>().insert(value);
     }
 
+    /// Equivalent to calling insert for each value, but dispatches on the container type
+    /// once per batch and runs a loop per container, which also lets the container's insert be inlined.
+    void insertMany(const Key * values, size_t n)
+    {
+        size_t i = 0;
+        while (i < n)
+        {
+            auto container_type = getContainerType();
+
+            if (container_type == details::ContainerType::SMALL)
+            {
+                for (; i < n; ++i)
+                {
+                    if (small.find(values[i]) != small.end())
+                        continue;
+
+                    if (small.full())
+                    {
+                        toMedium();
+                        break;
+                    }
+
+                    small.insert(values[i]);
+                }
+            }
+            else if (container_type == details::ContainerType::MEDIUM)
+            {
+                auto & container = getContainer<Medium>();
+
+                if (container.size() >= medium_set_size_max)
+                {
+                    toLarge();
+                    continue;
+                }
+
+                size_t max_unique_values = std::min(n - i, medium_set_size_max - container.size());
+                size_t batch_end = i + max_unique_values;
+
+                /// Add up to max_unique_values without checking the size in the loop.
+                for (; i < batch_end; ++i)
+                {
+                    container.insert(values[i]);
+                }
+
+                for (; i < n; ++i)
+                {
+                    if (container.size() >= medium_set_size_max)
+                    {
+                        toLarge();
+                        break;
+                    }
+
+                    container.insert(values[i]);
+                }
+            }
+            else if (container_type == details::ContainerType::LARGE)
+            {
+                auto & container = getContainer<Large>();
+                for (; i < n; ++i)
+                    container.insert(values[i]);
+            }
+        }
+    }
+
     UInt64 size() const
     {
         auto container_type = getContainerType();
@@ -158,7 +222,7 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        UInt8 v;
+        UInt8 v = 0;
         readBinary(v, in);
         auto container_type = static_cast<details::ContainerType>(v);
 

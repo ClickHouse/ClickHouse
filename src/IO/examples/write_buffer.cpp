@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleWriteBuffer(int, char **)

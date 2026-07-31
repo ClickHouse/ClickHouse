@@ -1,0 +1,1519 @@
+---
+description: 'H3 相关文档'
+sidebarTitle: 'H3 索引'
+slug: /sql-reference/functions/geo/h3
+title: '用于操作 H3 索引的函数'
+doc_type: 'reference'
+---
+
+<div id="h3-index">
+  ## H3 索引
+</div>
+
+[H3](https://h3geo.org/) 是一种地理空间索引系统，它将地球表面划分为由大小一致的六边形单元组成的网格。该系统具有层级结构，也就是说，顶层的每个六边形 (“父级”) 都可以细分为七个同样规则但更小的六边形 (“子级”) ，以此类推。
+
+该层级称为 `resolution`，取值范围为 `0` 到 `15`，其中 `0` 是 `base` 级别，对应最大且最粗粒度的单元。
+
+一组纬度和经度坐标可以转换为一个 64 位 H3 index，用于标识某个网格单元。
+
+H3 index 主要用于对位置进行分桶以及其他地理空间操作。
+
+有关 H3 系统的完整说明，请参阅 [Uber Engineering 网站](https://www.uber.com/blog/h3/)。
+
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
+
+检查该数字是否为有效的 [H3](#h3-index) 索引。
+
+**语法**
+
+```sql
+h3IsValid(h3index)
+```
+
+**参数**
+
+* `h3index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 1 — 该数值为有效的 H3 索引。[UInt8](/zh/reference/data-types/int-uint)。
+* 0 — 该数值不是有效的 H3 索引。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3IsValid(630814730351855103) AS h3IsValid;
+```
+
+```text title="Response"
+┌─h3IsValid─┐
+│         1 │
+└───────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+返回给定 [H3](#h3-index) 索引的分辨率。
+
+**语法**
+
+```sql
+h3GetResolution(h3index)
+```
+
+**参数**
+
+* `h3index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+* 如果索引无效，函数会返回一个随机值。请使用 [h3IsValid](#h3isvalid) 验证索引。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetResolution(639821929606596015) AS resolution;
+```
+
+```text title="Response"
+┌─resolution─┐
+│         14 │
+└────────────┘
+```
+
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
+
+计算 [H3](#h3-index) 六边形边的平均角长度 (以百分度为单位) 。
+
+**语法**
+
+```sql
+h3EdgeAngle(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。[UInt8](/zh/reference/data-types/int-uint)。范围：`[0, 15]`。
+
+**返回值**
+
+* [H3](#h3-index) 六边形边长的平均值，单位为度。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3EdgeAngle(10) AS edgeAngle;
+```
+
+```text title="Response"
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+```
+
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
+
+计算 [H3](#h3-index) 六边形边长的平均值，单位为米。
+
+**语法**
+
+```sql
+h3EdgeLengthM(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。[UInt8](/zh/reference/data-types/int-uint)。取值范围：`[0, 15]`。
+
+**返回值**
+
+* [H3](#h3-index) 六边形的平均边长，单位为米。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3EdgeLengthM(15) AS edgeLengthM;
+```
+
+```text title="Response"
+┌─edgeLengthM─┐
+│ 0.509713273 │
+└─────────────┘
+```
+
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
+
+计算 [H3](#h3-index) 六边形边长的平均值，单位为千米。
+
+**语法**
+
+```sql
+h3EdgeLengthKm(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。[UInt8](/zh/reference/data-types/int-uint)。取值范围：`[0, 15]`。
+
+**返回值**
+
+* [H3](#h3-index) 六边形边长的平均值，单位为千米。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
+```
+
+```text title="Response"
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+```
+
+<div id="geotoh3">
+  ## geoToH3
+</div>
+
+返回具有指定分辨率的 [H3](#h3-index) 点索引 `(lat, lon)`。
+
+**语法**
+
+```sql
+geoToH3(lat, lon, resolution)
+```
+
+**参数**
+
+* `lat` — 纬度。[Float64](/zh/reference/data-types/float)。
+* `lon` — 经度。[Float64](/zh/reference/data-types/float)。
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* 出错时返回 0。[UInt64](/zh/reference/data-types/int-uint)。
+
+注意：在 ClickHouse v25.4 及更早版本中，`geoToH3()` 接受的参数顺序为 `(lon, lat)`。从 ClickHouse v25.5 起，输入值的顺序为 `(lat, lon)`。可使用设置 `geotoh3_argument_order = 'lon_lat'` 恢复此前的行为。
+
+**示例**
+
+```sql title="Query"
+SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
+```
+
+```text title="Response"
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
+
+返回给定 [H3](#h3-index) 索引对应的质心纬度和经度。
+
+**语法**
+
+```sql
+h3ToGeo(h3Index)
+```
+
+**参数**
+
+* `h3Index` — H3 索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 由两个值组成的 Tuple：`tuple(lat,lon)`。`lat` — 纬度。[Float64](/zh/reference/data-types/float)。`lon` — 经度。[Float64](/zh/reference/data-types/float)。
+
+注意：在 ClickHouse v24.12 及更早版本中，`h3ToGeo()` 返回值的顺序为 `(lon, lat)`。从 ClickHouse v25.1 起，返回值的顺序为 `(lat, lon)`。可以使用设置 `h3togeo_lon_lat_result_order = true` 恢复之前的行为。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToGeo(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─coordinates───────────────────────────┐
+│ (55.71290243145668,37.79506616830252) │
+└───────────────────────────────────────┘
+```
+
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
+
+返回由 `(lat, lon)` 对组成的数组，对应于给定 H3 索引的边界。
+
+**语法**
+
+```sql
+h3ToGeoBoundary(h3Index)
+```
+
+**参数**
+
+* `h3Index` — H3 索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 由 &#39;(lat, lon)&#39; 值对组成的数组。[Array](/zh/reference/data-types/array)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3kring">
+  ## h3kRing
+</div>
+
+按随机顺序列出距给定六边形 `k` 半径范围内的所有 [H3](#h3-index) 六边形。
+
+**语法**
+
+```sql
+h3kRing(h3index, k)
+```
+
+**参数**
+
+* `h3index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `k` — 半径。[integer](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+* H3 索引数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 644325529233966508 │
+│ 644325529233966497 │
+│ 644325529233966510 │
+│ 644325529233966504 │
+│ 644325529233966509 │
+│ 644325529233966355 │
+│ 644325529233966354 │
+└────────────────────┘
+```
+
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
+
+返回给定几何体 (Ring 或 (多) Polygon) 所包含的指定分辨率六边形单元。
+
+**语法**
+
+```sql
+h3PolygonToCells(geometry, resolution)
+```
+
+**参数**
+
+* `geometry` 可以是以下 [Geo 数据类型](/zh/reference/data-types/geo) 之一，或它们对应的底层基本类型：
+  * [Ring](/zh/reference/data-types/geo#ring)
+  * [Polygon](/zh/reference/data-types/geo#polygon)
+  * [MultiPolygon](/zh/reference/data-types/geo#multipolygon)
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 包含的 H3 索引数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.3544736999993603,37.7198061999978478),(-122.4798767000009008,37.8151571999998453)], 7) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
+│ 608692970585063423 │
+│ 608692970819944447 │
+│ 608692970719281151 │
+│ 608692970752835583 │
+│ 608692972027903999 │
+└────────────────────┘
+```
+
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
+
+使用 H3 Experimental 包含模式，返回覆盖给定几何体 (Ring 或 (多) Polygon) 且具有指定分辨率的六边形单元。
+
+此函数将 `flags` 映射为 H3 包含模式：
+
+* `0` — `CONTAINMENT_CENTER`
+* `1` — `CONTAINMENT_FULL`
+* `2` — `CONTAINMENT_OVERLAPPING`
+* `3` — `CONTAINMENT_OVERLAPPING_BBOX`
+
+**语法**
+
+```sql
+h3PolygonToCellsWithContainment(geometry, resolution, flags)
+```
+
+**参数**
+
+* `geometry` 可以是以下 [Geo 数据类型](/zh/reference/data-types/geo) 之一，或其底层基本类型：
+  * [Ring](/zh/reference/data-types/geo#ring)
+  * [Polygon](/zh/reference/data-types/geo#polygon)
+  * [MultiPolygon](/zh/reference/data-types/geo#multipolygon)
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+* `flags` — 包含模式。范围：`[0, 3]`。使用整数字面量，例如 `0`、`1`、`2` 和 `3`，或 [UInt32](/zh/reference/data-types/int-uint) 值 (例如 `toUInt32(2)`) 。这些值会作为 `UInt32` 传递给 H3 API。其他原生整数类型会通过精确类型转换进行转换。
+
+**返回值**
+
+* 根据所选包含模式返回的 H3 索引数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 0) AS center_cells,
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 2) AS overlap_cells;
+```
+
+```text title="Response"
+   ┌─center_cells───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─overlap_cells──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [608692970585063423,608692970719281151,608692970752835583,608692970769612799,608692970819944447,608692971927240703,608692972027903999] │ [608692970249519103,608692970266296319,608692970585063423,608692970601840639,608692970635395071,608692970685726719,608692970719281151,608692970736058367,608692970752835583,608692970769612799,608692970786390015,608692970819944447,608692971927240703,608692971994349567,608692972027903999] │
+   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
+
+返回 [H3](#h3-index) 索引的基础单元编号。
+
+**语法**
+
+```sql
+h3GetBaseCell(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 六边形基础单元编号。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetBaseCell(612916788725809151) AS basecell;
+```
+
+```text title="Response"
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
+
+返回给定分辨率下六边形的平均面积，单位为平方米。
+
+**语法**
+
+```sql
+h3HexAreaM2(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 以平方米为单位的面积。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3HexAreaM2(13) AS area;
+```
+
+```text title="Response"
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
+
+返回给定分辨率下六边形的平均面积，单位为平方千米。
+
+**语法**
+
+```sql
+h3HexAreaKm2(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 以平方千米为单位的面积。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3HexAreaKm2(13) AS area;
+```
+
+```text title="Response"
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
+```
+
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
+
+返回给定的 [H3](#h3-index) 索引是否相邻。
+
+**语法**
+
+```sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**参数**
+
+* `index1` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `index2` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 两个索引彼此相邻。[UInt8](/zh/reference/data-types/int-uint)。
+* `0` — 两个索引彼此不相邻。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
+```
+
+```text title="Response"
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
+
+返回指定 [H3](#h3-index) 索引的子索引数组。
+
+**语法**
+
+```sql
+h3ToChildren(index, resolution)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 子级 H3 索引数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToChildren(599405990164561919, 6) AS children;
+```
+
+```text title="Response"
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3toparent">
+  ## h3ToParent
+</div>
+
+返回包含给定 [H3](#h3-index) 索引的父索引 (较粗粒度) 。
+
+**语法**
+
+```sql
+h3ToParent(index, resolution)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 父级 H3 索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToParent(599405990164561919, 3) AS parent;
+```
+
+```text title="Response"
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+<div id="h3tostring">
+  ## h3ToString
+</div>
+
+将索引的 `H3Index` 表示转换为字符串表示形式。
+
+```sql
+h3ToString(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* H3 索引的字符串表示形式。[String](/zh/reference/data-types/string)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToString(617420388352917503) AS h3_string;
+```
+
+```text title="Response"
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+<div id="stringtoh3">
+  ## stringToH3
+</div>
+
+将字符串表示形式转换为 `H3Index` (UInt64) 表示。
+
+**语法**
+
+```sql
+stringToH3(index_str)
+```
+
+**参数**
+
+* `index_str` — H3 索引的字符串表示形式。[String](/zh/reference/data-types/string)。
+
+**返回值**
+
+* 六边形索引编号。出错时返回 0。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT stringToH3('89184926cc3ffff') AS index;
+```
+
+```text title="Response"
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+返回 [H3](#h3-index) 索引的分辨率。
+
+**语法**
+
+```sql
+h3GetResolution(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetResolution(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   9 │
+└─────┘
+```
+
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
+
+返回 [H3](#h3-index) 索引的分辨率是否为 Class III 方向。
+
+**语法**
+
+```sql
+h3IsResClassIII(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 该索引的分辨率采用 III 类方向。[UInt8](/zh/reference/data-types/int-uint)。
+* `0` — 该索引的分辨率不采用 III 类方向。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3IsResClassIII(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
+
+返回此 [H3](#h3-index) 索引是否表示五边形单元。
+
+**语法**
+
+```sql
+h3IsPentagon(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* `1` — 该索引对应一个五边形单元。[UInt8](/zh/reference/data-types/int-uint)。
+* `0` — 该索引不对应五边形单元。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3IsPentagon(644721767722457330) AS pentagon;
+```
+
+```text title="Response"
+┌─pentagon─┐
+│        0 │
+└──────────┘
+```
+
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
+
+返回与给定 [H3](#h3-index) 索引相交的二十面体各面。
+
+**语法**
+
+```sql
+h3GetFaces(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 一个 数组，包含与给定 H3 索引相交的二十面体各个面。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetFaces(599686042433355775) AS faces;
+```
+
+```text title="Response"
+┌─faces─┐
+│ [7]   │
+└───────┘
+```
+
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
+
+返回给定 H3 索引对应的特定单元的精确面积，单位为平方米。
+
+**语法**
+
+```sql
+h3CellAreaM2(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+* 单元面积 (平方米) 。[Float64](/zh/reference/data-types/float)
+
+**示例**
+
+```sql title="Query"
+SELECT h3CellAreaM2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌───────────────area─┐
+│ 4106166334463.9233 │
+└────────────────────┘
+```
+
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
+
+返回给定输入 H3 索引对应的特定单元的精确面积 (以平方弧度为单位) 。
+
+**语法**
+
+```sql
+h3CellAreaRads2(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 以平方弧度表示的单元面积。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3CellAreaRads2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌────────────────area─┐
+│ 0.10116268528089567 │
+└─────────────────────┘
+```
+
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
+
+返回给定 [H3](#h3-index) 在指定分辨率下包含的中心子 (更细粒度) [H3](#h3-index) 索引。
+
+**语法**
+
+```sql
+h3ToCenterChild(index, resolution)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `resolution` — 索引分辨率。范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 在给定分辨率下，给定 [H3](#h3-index) 所包含的中心子 [H3](#h3-index) 索引。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
+```
+
+```text title="Response"
+┌──────centerToChild─┐
+│ 581496515558637567 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
+
+返回输入 h3 索引所表示的单向边的精确长度，单位为米。
+
+**语法**
+
+```sql
+h3ExactEdgeLengthM(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+* 精确边长，单位为米。[Float64](/zh/reference/data-types/float)
+
+**示例**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+```
+
+```text title="Response"
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
+
+返回输入 h3 索引所表示的单向边的精确长度，单位为千米。
+
+**语法**
+
+```sql
+h3ExactEdgeLengthKm(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 以千米为单位的精确边长。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
+
+返回输入的 h3 索引所表示的单向边的精确长度，单位为弧度。
+
+**语法**
+
+```sql
+h3ExactEdgeLengthRads(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 以弧度表示的精确边长。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
+```
+
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
+
+返回指定分辨率下唯一 H3 索引的数量。
+
+**语法**
+
+```sql
+h3NumHexagons(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* H3 索引数量。[Int64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3NumHexagons(3) AS numHexagons;
+```
+
+```text title="Response"
+┌─numHexagons─┐
+│       41162 │
+└─────────────┘
+```
+
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
+
+返回成对的 GeoCoord 点 (纬度/经度) 之间以米为单位的“大圆”或“半正矢”距离。
+
+**语法**
+
+```sql
+h3PointDistM(lat1, lon1, lat2, lon2)
+```
+
+**参数**
+
+* `lat1`, `lon1` — 点 1 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+* `lat2`, `lon2` — 点 2 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+
+**返回值**
+
+* 半正矢距离 (或大圆距离) ，单位为米。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
+```
+
+```text title="Response"
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
+
+返回成对 GeoCoord 点 (纬度/经度) 之间的“大圆”或“半正矢”距离，单位为千米。
+
+**语法**
+
+```sql
+h3PointDistKm(lat1, lon1, lat2, lon2)
+```
+
+**参数**
+
+* `lat1`, `lon1` — 点 1 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+* `lat2`, `lon2` — 点 2 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+
+**返回值**
+
+* 半正矢 (大圆) 距离，单位为千米。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
+```
+
+```text title="Response"
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
+
+返回成对 GeoCoord 点 (纬度/经度) 之间的“大圆”距离或“半正矢”距离，结果以弧度表示。
+
+**语法**
+
+```sql
+h3PointDistRads(lat1, lon1, lat2, lon2)
+```
+
+**参数**
+
+* `lat1`, `lon1` — 点 1 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+* `lat2`, `lon2` — 点 2 的纬度和经度，单位为度。[Float64](/zh/reference/data-types/float)。
+
+**返回值**
+
+* 以弧度为单位的半正矢距离或大圆距离。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
+```
+
+```text title="Response"
+┌────h3PointDistRads─┐
+│ 0.3490658503988659 │
+└────────────────────┘
+```
+
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
+
+返回包含所有分辨率 0 的 H3 索引的数组。
+
+**语法**
+
+```sql
+h3GetRes0Indexes()
+```
+
+**返回值**
+
+* 由所有分辨率为 0 的 H3 索引组成的数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetRes0Indexes AS indexes ;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────────┐
+│ [576495936675512319,576531121047601151,....]│
+└─────────────────────────────────────────────┘
+```
+
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
+
+返回指定分辨率的所有五边形 H3 索引。
+
+**语法**
+
+```sql
+h3GetPentagonIndexes(resolution)
+```
+
+**参数**
+
+* `resolution` — 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 由所有五边形 H3 索引构成的数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+SELECT h3GetPentagonIndexes(3) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3line">
+  ## h3Line
+</div>
+
+返回所提供的两个索引之间的连线上的索引。
+
+**语法**
+
+```sql
+h3Line(start,end)
+```
+
+**参数**
+
+* `start` — 表示起点的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `end` — 表示终点的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+由 H3 索引组成的数组，表示两个给定索引之间的索引连线。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3Line(590080540275638271,590103561300344831) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3distance">
+  ## h3Distance
+</div>
+
+返回所提供的两个索引之间的距离，单位为网格单元。
+
+**语法**
+
+```sql
+h3Distance(start,end)
+```
+
+**参数**
+
+* `start` — 表示起点的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `end` — 表示终点的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 网格单元数量。[Int64](/zh/reference/data-types/int-uint)。
+
+如果无法计算距离，则返回负数。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3Distance(590080540275638271,590103561300344831) AS distance;
+```
+
+```text title="Response"
+┌─distance─┐
+│        7 │
+└──────────┘
+```
+
+<div id="h3hexring">
+  ## h3HexRing
+</div>
+
+返回以给定的 origin h3Index 为中心、长度为 k 的六边形环上的索引。
+
+如果未遇到五边形畸变，则返回 0。
+
+**语法**
+
+```sql
+h3HexRing(index, k)
+```
+
+**参数**
+
+* `index` — 表示起点的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `k` — 距离。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 由 H3 索引组成的 数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing;
+```
+
+```text title="Response"
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
+
+根据提供的起点和终点，返回一个单向边 H3 index；如果出错，则返回 0。
+
+**语法**
+
+```sql
+h3GetUnidirectionalEdge(originIndex, destinationIndex)
+```
+
+**参数**
+
+* `originIndex` — 起点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `destinationIndex` — 终点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599) AS edge;
+```
+
+```text title="Response"
+┌────────────────edge─┐
+│ 1248204388774707199 │
+└─────────────────────┘
+```
+
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
+
+判断给定的 H3Index 是否为有效的单向边索引。如果是单向边，则返回 1，否则返回 0。
+
+**语法**
+
+```sql
+h3UnidirectionalEdgeisValid(index)
+```
+
+**参数**
+
+* `index` — 六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 1 — 该 H3 索引是有效的单向边。[UInt8](/zh/reference/data-types/int-uint)。
+* 0 — 该 H3 索引是无效的单向边。[UInt8](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) AS validOrNot;
+```
+
+```text title="Response"
+┌─validOrNot─┐
+│          1 │
+└────────────┘
+```
+
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
+
+返回单向边 H3Index 对应的起点六边形索引。
+
+**语法**
+
+```sql
+h3GetOriginIndexFromUnidirectionalEdge(edge)
+```
+
+**参数**
+
+* `edge` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint).
+
+**返回值**
+
+* 起点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint).
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+```
+
+```text title="Response"
+┌─────────────origin─┐
+│ 599686042433355773 │
+└────────────────────┘
+```
+
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
+
+返回单向边 H3Index 对应的目标六边形索引。
+
+**语法**
+
+```sql
+h3GetDestinationIndexFromUnidirectionalEdge(edge)
+```
+
+**参数**
+
+* `edge` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 终点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+```
+
+```text title="Response"
+┌────────destination─┐
+│ 599686043507097597 │
+└────────────────────┘
+```
+
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
+
+返回给定单向边 H3Index 对应的起点和终点六边形索引。
+
+**语法**
+
+```sql
+h3GetIndexesFromUnidirectionalEdge(edge)
+```
+
+**参数**
+
+* `edge` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+一个由两个值组成的元组 `tuple(origin,destination)`：
+
+* `origin` — 起点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `destination` — 终点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+如果提供的输入无效，则返回 `(0,0)`。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────┐
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
+
+返回给定 H3Index 的所有单向边。
+
+**语法**
+
+```sql
+h3GetUnidirectionalEdgesFromHexagon(index)
+```
+
+**参数**
+
+* `index` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+由表示各条单向边的 H3 索引组成的数组。[数组](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+```
+
+```text title="Response"
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
+
+返回定义该单向边的坐标。
+
+**语法**
+
+```sql
+h3GetUnidirectionalEdgeBoundary(index)
+```
+
+**参数**
+
+* `index` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+* 由 &#39;(lon, lat)&#39; 对组成的数组。[Array](/zh/reference/data-types/array)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
+
+**示例**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary;
+```
+
+```text title="Response"
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
