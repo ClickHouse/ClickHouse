@@ -457,6 +457,9 @@ public:
 
     void deferFiltersAfterFinalIfNeeded();
 
+    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
+    bool isPrewhereDeferredAfterFinal() const;
+
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
@@ -603,6 +606,8 @@ private:
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
+
+    bool isRowPolicyDeferredAfterFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
