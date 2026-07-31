@@ -53,6 +53,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -1274,6 +1275,8 @@ static std::optional<size_t> estimateReadBytes(
             /// dependency set is built later for each read task, so do not cap when it is unknown here.
             if (!col)
             {
+                if (isTextIndexVirtualColumn(col_name))
+                    return std::nullopt;
                 if (virtuals.tryGet(col_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader))
                     continue;
                 return std::nullopt;
