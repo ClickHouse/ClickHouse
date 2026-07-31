@@ -78,7 +78,7 @@ def test_sanitize_completed_untouched():
 
 
 def test_update_retries_conditional_request_conflict(monkeypatch):
-    """The 409 lost-race code must be retried like PreconditionFailed (#112786)."""
+    """A lost race (ConditionalRequestConflict) must be retried, not raised."""
     boto3 = pytest.importorskip("boto3")
     from botocore.exceptions import ClientError
 

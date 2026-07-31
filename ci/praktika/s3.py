@@ -281,7 +281,7 @@ class S3:
             ):
                 # Lost optimistic-lock race. Set to true s.t. the caller re-reads the current version and retries.
                 no_strict = True
-                print("ERROR: AWS API conditional request failed (concurrent write)")
+                print("AWS API conditional request failed (concurrent write detected)")
                 print(f"  | awc error: {stderr}")
                 break
             if ret_code != 0:
