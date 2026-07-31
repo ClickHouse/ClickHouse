@@ -36,7 +36,7 @@ TEST(RoaringBitmapWithSmallSetMemory, LargeSparseBitmapAllocatedBytesExceedCardi
 TEST(PuffinFilesCacheWeight, UsesRoaringAllocatedBytesForWeight)
 {
     const auto excluded_rows = makeLargeSparseExcludedRows();
-    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-1", 100, 200, "data/file-a.parquet");
+    const auto key = PuffinFilesCache::tryCreateKey("puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 33, 1000);
     ASSERT_TRUE(key.has_value());
 
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);

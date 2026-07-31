@@ -29,6 +29,11 @@ struct PuffinFilesCacheKey
     Int64 content_offset = 0;
     Int64 content_size_in_bytes = 0;
     String referenced_data_file;
+    /// Manifest DV record_count / expected roaring cardinality. Included so a cache hit cannot
+    /// skip re-validation when a later request declares a different cardinality for the same slice.
+    UInt64 expected_cardinality = 0;
+    /// Data-file manifest record_count used to bound DV positions. Same rationale as cardinality.
+    UInt64 data_file_record_count = 0;
 
     bool operator==(const PuffinFilesCacheKey & other) const;
 };
@@ -71,7 +76,9 @@ public:
         const String & etag,
         Int64 content_offset,
         Int64 content_size_in_bytes,
-        const String & referenced_data_file);
+        const String & referenced_data_file,
+        UInt64 expected_cardinality,
+        UInt64 data_file_record_count);
 
     template <typename LoadFunc>
     DataLakeObjectMetadata::ExcludedRowsPtr getOrSetDeletionVector(const PuffinFilesCacheKey & key, LoadFunc && load_fn)

@@ -211,7 +211,9 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         puffin_object.metadata->etag,
         content_offset,
         content_size_in_bytes,
-        expected_data_file.serialize());
+        expected_data_file.serialize(),
+        expected_cardinality_u64,
+        static_cast<UInt64>(data_file_record_count));
 
     if (!cache_key)
     {
