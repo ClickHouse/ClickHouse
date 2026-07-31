@@ -78,6 +78,15 @@ struct SerializedStateProductQuantization : public ISerialization::SerializeBina
 struct DeserializedStateProductQuantization : public ISerialization::DeserializeBinaryBulkState
 {
     ColumnPtr codebook; /// a one-row column, or null until the first granule reads it
+
+    /// The result column is a `ColumnConst` wrapping this same one-row codebook, so the state and the result share
+    /// the column. Expose it so `ColumnsOwnershipValidator` accounts for the state-side reference too; otherwise the
+    /// validator would only see the result-side edge and could miss an under-counted state-held reference.
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (codebook)
+            callback(codebook);
+    }
 };
 
 /// Read serialization for the codebook subcolumn. The codebook is stored as a SINGLE value per part (written
