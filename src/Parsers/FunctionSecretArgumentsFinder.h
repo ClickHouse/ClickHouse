@@ -62,6 +62,9 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
+        /// Whether `replacement` is a plain string value to wrap in quotes, or already-formatted,
+        /// verbatim SQL text (e.g. a reconstructed nested function call) that must not be quoted.
+        bool quote_replacement = true;
         /// Per-argument replacements by raw argument index; the text is emitted verbatim (it must carry
         /// its own quoting). Used when only a part of an argument is secret, e.g. a presigned S3 URL
         /// keeps its host and path while the credential query parameters are hidden. Unlike
@@ -189,6 +192,12 @@ protected:
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
     void findDataLakeCatalogSecretArguments();
+    /// The `Backup` database engine (`Backup(database_name, backup_destination)`) is not itself an S3
+    /// form, so it is never routed through `findS3DatabaseSecretArguments`; when the destination is a
+    /// nested `S3(...)` call, that call is not recognized as an S3 engine either when the formatter
+    /// recurses into it (it is an argument, not `function`), so its secrets must be masked here by
+    /// reconstructing it with the secret arguments replaced.
+    void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?

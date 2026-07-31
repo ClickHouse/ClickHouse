@@ -205,6 +205,49 @@ BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The Backup database engine reconstructs its nested S3 destination for logging (it is not itself an
+-- S3 engine, so the destination's secrets are not masked by the generic S3 dispatch); extra_credentials
+-- must be masked there too.
+CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor must fail closed on an invalid extra positional argument (a session token).
+CREATE DATABASE db_04510_postok ENGINE = Backup('', S3('url_dbpostok', 'ak', 'SEKRIT_SAK',
+                 'SEKRIT_DBTOK')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- Named-collection locator in the reconstructor: the filename stays visible, but a second positional
+-- is invalid and must be masked.
+CREATE DATABASE db_04510_ncpos ENGINE = Backup('', S3(nc_dbnc_missing, 'visible_dbnc_dir',
+                 'SEKRIT_DBNCPOS')); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor also keeps the filename visible when it follows a named override.
+CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
+                 secret_access_key = 'SEKRIT_DBORD', 'visible_dbnc_dir2')); -- { serverError BAD_ARGUMENTS }
+
+-- Non-string scalar overrides are valid and non-secret; the reconstructor keeps them visible.
+CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
+                 secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
+
+-- A non-secret named value that is an expression (a computed filename, or a nested headers() /
+-- extra_credentials() map) is accepted by the backup named-collection path, which the parser evaluates
+-- as a constant. The reconstructor cannot classify it and its formatted text would carry any nested
+-- secret verbatim, so it fails closed to [HIDDEN] rather than leak.
+CREATE DATABASE db_04510_ncexpr ENGINE = Backup('', S3(nc_dbexpr_missing,
+                 secret_access_key = 'SEKRIT_DBEXPRKEY',
+                 filename = headers('Authorization' = 'SEKRIT_NESTEDHDR'))); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor masks everything after the url on an invalid positional count too.
+CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
+                 access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
+CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
+                 headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }
+
+-- The reconstructor must also fail closed on a constant-expression extra_credentials key.
+CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
+
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
 -- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
 -- positional secrets, and the values of headers(...) / extra_credentials(...).
