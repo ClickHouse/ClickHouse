@@ -65,14 +65,28 @@ UInt64 positionFromKeyAndSubPosition(UInt32 key, UInt32 sub_position)
 
 roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
 {
+    roaring::Roaring bitmap;
     try
     {
-        return roaring::Roaring::readSafe(data, size);
+        bitmap = roaring::Roaring::readSafe(data, size);
     }
     catch (const std::exception & e)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
     }
+
+    /// `readSafe` only bounds the read; CRoaring requires internal validation before use on untrusted input.
+    const char * reason = nullptr;
+    if (!roaring::api::roaring_bitmap_internal_validate(&bitmap.roaring, &reason))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector roaring bitmap at key {} failed internal validation: {}",
+            key,
+            reason ? reason : "unknown");
+    }
+
+    return bitmap;
 }
 
 std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, std::optional<UInt64> expected_cardinality)

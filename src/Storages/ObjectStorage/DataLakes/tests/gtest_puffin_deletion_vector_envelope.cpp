@@ -96,3 +96,29 @@ TEST(PuffinDeletionVectorEnvelope, ReadsValidBlobAfterEnvelopePeek)
     EXPECT_EQ(positions[0], 2u);
     EXPECT_EQ(positions[1], 5u);
 }
+
+TEST(PuffinDeletionVectorEnvelope, RejectsInternallyInconsistentRoaringAfterReadSafe)
+{
+    /// Valid DV envelope + CRC wrapping a portable roaring that `readSafe` accepts but
+    /// `roaring_bitmap_internal_validate` rejects (duplicate values in an array container).
+    /// Bytes from croaring's robust_deserialization_unit `deserialize_unsorted_array` fixture.
+    constexpr UInt8 inconsistent_roaring_dv_blob[] = {
+        0x00, 0x00, 0x00, 0x1D, 0xD1, 0xD3, 0x39, 0x64, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x3B, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x6E, 0x0E, 0x9B, 0x12,
+    };
+
+    const std::string_view blob(
+        reinterpret_cast<const char *>(inconsistent_roaring_dv_blob), sizeof(inconsistent_roaring_dv_blob));
+
+    try
+    {
+        deserializeDeletionVectorV1Blob(blob, /*expected_cardinality=*/2);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("failed internal validation"), std::string::npos);
+    }
+}
