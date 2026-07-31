@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 * 시스템에 Docker가 설치되어 있습니다
 
 <Steps>
-  <Step>
-    ## 디렉터리 구조 및 테스트 환경 설정
-
+  <Step title="디렉터리 구조 및 테스트 환경 설정" id="set-up">
     <ExampleFiles />
 
     이 튜토리얼에서는 [Docker compose](https://docs.docker.com/compose/)를 사용하여 ClickHouse 클러스터를 구성합니다. 이 설정은 별도의 로컬 머신, 가상 머신 또는 클라우드 인스턴스 환경에서도 동작하도록 수정할 수 있습니다.
@@ -51,12 +49,12 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # clickhouse-keeper 디렉토리 생성
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # clickhouse-server 디렉토리 생성
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -140,9 +138,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## ClickHouse 노드 구성
-
+  <Step title="ClickHouse 노드 구성" id="configure-clickhouse-servers">
     ### 서버 설정
 
     이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 위치한 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조 표시된 줄은 각 노드에 맞게 수정해야 합니다:
@@ -244,11 +240,11 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-        <!-- 클러스터 이름 (점(.)을 포함하면 안 됩니다) -->
+        <!-- cluster name (should not contain dots) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- 선택 사항. 레플리카 중 하나에만 데이터를 쓸지 여부입니다. 기본값: false (모든 레플리카에 데이터를 씁니다). -->
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -363,13 +359,11 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     실제 운영 환경에서는 권장하지 않는 방식입니다.
 
     <Note>
-      이 예시에서는 cluster의 모든 노드에서 `users.xml` 파일이 동일합니다.
+      이 예시에서는 클러스터의 모든 노드에서 `users.xml` 파일이 동일합니다.
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper 구성
-
+  <Step title="ClickHouse Keeper 구성" id="configure-clickhouse-keeper-nodes">
     ### Keeper 설정
 
     <KeeperConfig />
@@ -385,9 +379,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 설정 테스트
-
+  <Step title="설정 테스트" id="test-the-setup">
     로컬 환경에서 Docker가 실행 중인지 확인하세요.
     `cluster_1S_2R` 디렉터리의 루트에서 `docker-compose up` 명령으로 클러스터를 시작하세요:
 
@@ -412,7 +404,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     다음 쿼리를 실행합니다. 첫 번째 노드에 연결하는 명령은 다음과 같습니다:
 
     ```bash
-    # 임의의 노드에 연결
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -422,7 +414,8 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     cluster_1S_2R node 1 :)
     ```
 
-    어떤 호스트에 어떤 클러스터 토폴로지가 정의되어 있는지 확인하려면 다음 쿼리를 실행하십시오:
+    어떤 호스트에 어떤 클러스터 토폴로지가 정의되어 있는지 확인하려면 다음
+    쿼리를 실행하십시오:
 
     ```sql title="Query"
     SELECT 
@@ -465,9 +458,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     다음 단계에서는 클러스터에 테이블을 생성합니다.
   </Step>
 
-  <Step>
-    ## 데이터베이스 생성
-
+  <Step title="데이터베이스 생성" id="creating-a-database">
     이제 클러스터가 올바르게 설정되어 실행 중임을 확인했으므로,
     [UK property prices](/ko/get-started/sample-datasets/uk-price-paid)
     예시 데이터셋 튜토리얼에서 사용한 것과 동일한 테이블을 다시 생성합니다. 이 데이터셋은
@@ -523,9 +514,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 클러스터에 테이블 생성
-
+  <Step title="클러스터에 테이블 생성" id="creating-a-table">
     이제 데이터베이스가 생성되었으므로 클러스터에 테이블을 생성합니다.
     다음 쿼리를 호스트 클라이언트 중 아무 곳에서나 실행하세요:
 
@@ -577,12 +566,10 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 데이터 삽입
-
+  <Step title="데이터 삽입" id="inserting-data">
     데이터 세트의 크기가 크고 전체 수집에 몇 분이 소요되므로, 우선 일부 데이터만 삽입합니다.
 
-    `clickhouse-01`에서 아래 쿼리를 사용하여 더 작은 데이터 하위 집합을 삽입하십시오:
+    `clickhouse-01`에서 아래 쿼리를 사용하여 더 작은 데이터 부분 집합을 삽입하십시오:
 
     ```sql
     INSERT INTO uk.uk_price_paid_local
@@ -693,7 +680,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -712,7 +699,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -767,8 +754,8 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 3,021만
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
   </Step>

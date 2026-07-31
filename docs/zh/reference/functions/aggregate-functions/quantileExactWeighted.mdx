@@ -38,12 +38,12 @@ quantileExactWeighted(level)(expr, weight)
 
 **参数**
 
-* `expr` — 基于列值计算的表达式，结果为数值数据类型、Date 或 DateTime。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `expr` — 基于列值计算的表达式，结果为数值数据类型、`Date`、`DateTime` 或 `DateTime64`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Int128`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`Int256`](/zh/reference/data-types/int-uint) 或 [`UInt256`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 * `weight` — 包含序列成员权重的列。权重表示某个值出现的次数。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-指定级别的分位数。[`Float64`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+指定级别的分位数。对于数值数据类型，输出格式与输入格式一致。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Int128`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`Int256`](/zh/reference/data-types/int-uint) 或 [`UInt256`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 
@@ -55,7 +55,7 @@ CREATE TABLE t (
     val Int32
 ) ENGINE = Memory;
 
--- 插入示例数据
+-- Insert the sample data
 INSERT INTO t VALUES
 (0, 3),
 (1, 2),

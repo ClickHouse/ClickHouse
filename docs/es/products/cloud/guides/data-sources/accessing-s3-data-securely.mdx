@@ -31,7 +31,7 @@ En la sección siguiente, aprenderá a configurarlo.
 
 4. Desplázate hacia abajo hasta la sección **Network security information**, al final de la página
 
-5. Copia el valor de **Service role ID (IAM)** correspondiente al servicio, como se muestra a continuación.
+5. Copia el valor de **ID del rol de servicio (IAM)** correspondiente al servicio, como se muestra a continuación.
 
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtención del ARN del rol de IAM del servicio de ClickHouse" border />
 
@@ -52,8 +52,8 @@ La asunción de roles de IAM se puede configurar de una de estas dos maneras:
 
 2. Visite la siguiente [URL de CloudFormation](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3) para rellenar la pila de CloudFormation.
 
-3. Introduzca (o pegue) el **ID del service role (IAM)** de su servicio que obtuvo anteriormente en el campo titulado &quot;ClickHouse Instance Roles&quot;
-   Puede pegar el ID del service role exactamente como aparece en la Cloud Console.
+3. Introduzca (o pegue) el **ID del rol de servicio (IAM)** de su servicio que obtuvo anteriormente en el campo titulado &quot;ClickHouse Instance Roles&quot;
+   Puede pegar el ID del rol de servicio exactamente como aparece en la Cloud Console.
 
 4. Introduzca el nombre de su bucket en el campo titulado &quot;Bucket Names&quot;. Si la URL de su bucket es `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`, entonces el nombre del bucket es `ch-docs-s3-bucket`.
 
@@ -167,10 +167,10 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## Control avanzado de acciones
 </div>
 
-Para un control de acceso más estricto, es posible restringir la política del bucket para que solo acepte solicitudes que se originen en los endpoints de VPC de ClickHouse Cloud mediante la [condición `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obtener los endpoints de VPC de tu región de ClickHouse Cloud, abre una terminal y ejecuta:
+Para un control de acceso más estricto, es posible restringir la policy del bucket para que solo acepte solicitudes que se originen en los endpoints de VPC de ClickHouse Cloud mediante la [condición `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obtener los endpoints de VPC de su región de ClickHouse Cloud, abra una terminal y ejecute:
 
 ```bash
-# Reemplaza <your-region> con tu región de ClickHouse Cloud
+# Replace <your-region> with your ClickHouse Cloud region
 curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
 ```
 
@@ -213,4 +213,4 @@ A continuación, agregue una regla de denegación a la política de IAM con los 
 }
 ```
 
-Para más detalles sobre el acceso a los endpoints de los servicios de ClickHouse Cloud, consulta [Direcciones IP de Cloud](/es/products/cloud/guides/data-sources/cloud-endpoints-api).
+Para obtener más información sobre cómo acceder a los endpoints de los servicios de ClickHouse Cloud, consulta [Direcciones IP de Cloud](/es/products/cloud/guides/data-sources/cloud-endpoints-api).

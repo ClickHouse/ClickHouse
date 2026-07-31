@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programático', 'rest', 'curl']
 ---
 
-Todos los tipos de ClickPipes pueden crearse, actualizarse y eliminarse de forma programática mediante [OpenAPI de ClickHouse Cloud](/es/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). Esta página describe la autenticación y los endpoints disponibles de ClickPipes, con solicitudes `curl` de ejemplo para cada tipo de ClickPipe.
+Todos los tipos de ClickPipes pueden crearse, actualizarse y eliminarse de forma programática mediante [OpenAPI de ClickHouse Cloud](/es/products/cloud/api-reference/clickpipes/list-clickpipes). Esta página describe la autenticación y los endpoints disponibles de ClickPipes, con solicitudes `curl` de ejemplo para cada tipo de ClickPipe.
 
 <div id="authentication">
   ## Autenticación
@@ -57,7 +57,7 @@ Para los ClickPipes de CDC (Postgres, MySQL, MongoDB), hay endpoints adicionales
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | Obtener el escalado de los ClickPipes de CDC    |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | Actualizar el escalado de los ClickPipes de CDC |
 
-Para ver los esquemas completos de solicitud y respuesta de cada endpoint, consulta la [Swagger UI](/es/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+Para ver los esquemas completos de solicitud y respuesta de cada endpoint, consulta la [referencia de la API](/es/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="examples">
   ## Ejemplos
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## Creación de ClickPipes
 </div>
 
-El cuerpo de la solicitud `POST /clickpipes` varía según el tipo de source. Los ejemplos siguientes muestran la estructura de cada tipo de ClickPipe compatible. Para consultar los esquemas JSON definitivos, consulta la [Swagger UI](/es/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+El cuerpo de la solicitud `POST /clickpipes` varía según el tipo de source. Los ejemplos siguientes muestran la estructura de cada tipo de ClickPipe compatible. Para consultar los esquemas JSON definitivos, consulta la [referencia de la API](/es/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="create-kafka">
   ### Kafka
