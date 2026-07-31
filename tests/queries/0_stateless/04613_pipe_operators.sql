@@ -33,6 +33,10 @@ FROM select s INNER JOIN select t ON s.id = t.id WHERE s.id = 2 ORDER BY s.id;
 FROM {CLICKHOUSE_DATABASE:Identifier}.select s WHERE s.id = 1 ORDER BY s.id;
 FROM select s SELECT s.id ORDER BY s.id;
 DROP TABLE `select`;
+-- An alias select in the middle of the FROM clause cannot be the SELECT keyword (only the alias that
+-- ends the FROM clause can), so a joined table gets to keep it even when SELECT is omitted
+FROM numbers(2) AS l INNER JOIN (SELECT number AS id FROM numbers(2)) select ON l.number = select.id WHERE select.id = 1;
+FROM numbers(2) AS l INNER JOIN (SELECT number AS id FROM numbers(2)) select ON l.number = select.id |> WHERE id = 0 |> SELECT id;
 
 SELECT '-- WHERE';
 FROM orders |> WHERE amount >= 100 |> WHERE cancelled = 0 |> ORDER BY amount;
@@ -81,6 +85,10 @@ FROM orders |> AGGREGATE sum(amount) AS total GROUP BY customer |> AS agg |> JOI
 
 SELECT '-- ARRAY JOIN';
 FROM orders |> WHERE customer = 'alice' |> EXTEND [1, 2] AS arr |> ARRAY JOIN arr |> SELECT customer, amount, arr |> ORDER BY amount, arr;
+-- A comma-separated expression list in ARRAY JOIN keeps working, and a comma join right after an
+-- ARRAY JOIN is rejected, same as in the FROM clause of an ordinary query
+FROM orders |> WHERE customer = 'charlie' |> EXTEND [1, 2] AS arr, [3, 4] AS brr |> ARRAY JOIN arr, brr |> SELECT customer, arr, brr |> ORDER BY arr, brr;
+FROM orders |> EXTEND [1] AS arr |> ARRAY JOIN arr, (b, view(SELECT 1 AS A), x); -- { clientError SYNTAX_ERROR }
 
 SELECT '-- Set operations';
 FROM orders |> WHERE customer = 'alice' |> SELECT customer |> UNION ALL (FROM orders |> WHERE customer = 'bob' |> SELECT customer) |> DISTINCT |> ORDER BY customer;

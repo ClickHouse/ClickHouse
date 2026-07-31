@@ -506,6 +506,16 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
             while (true)
             {
+                /// A comma (cross) join is not supported right after an ARRAY JOIN, same as in
+                /// ParserTablesInSelectQuery. ARRAY JOIN greedily consumes its comma-separated
+                /// expression list, so a leftover comma means the next item failed to parse as an
+                /// expression; consuming it as a comma-joined table would break the format/parse
+                /// round-trip (the ARRAY JOIN absorbs the reformatted subquery on reparse). Stop
+                /// instead so the query fails as a syntax error.
+                const auto * prev = tables.back()->as<ASTTablesInSelectQueryElement>();
+                if (prev && prev->array_join && pos->type == TokenType::Comma)
+                    break;
+
                 IParser::Pos saved_pos = pos;
                 ASTPtr next_element;
                 if (!ParserTablesInSelectQueryElement(false).parse(pos, next_element, expected))

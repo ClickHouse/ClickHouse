@@ -155,6 +155,8 @@ FROM customers
 
 Since every operator is a new subquery scope, table aliases are visible only inside the same operator (in the `ON` condition). The following operators see the combined columns of the join result, as after `SELECT *`.
 
+As in the `FROM` clause of an ordinary query, a comma (cross) join is not supported right after an `ARRAY JOIN`: a comma after the `ARRAY JOIN` always belongs to its expression list.
+
 ### UNION, INTERSECT, and EXCEPT {#union-intersect-and-except}
 
 `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, and `|> EXCEPT [ALL/DISTINCT] ...` combine the input with the results of other queries:
