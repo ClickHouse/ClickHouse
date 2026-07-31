@@ -1,3 +1,9 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: half the assertions read an index section out of EXPLAIN indexes = 1, and a
+-- remote-only parallel replicas plan reports ReadFromRemoteParallelReplicas with no index section at all,
+-- so every one of them would read 0. Measured: the partition ratio cell reads 1 on a local plan and 0 with
+-- parallel_replicas_local_plan = 0, which the runner randomizes.
+
 -- An Enum constant compared against a String/FixedString column used to be converted to the enum's
 -- underlying number instead of its name, so key analysis, skip indexes and IN sets all used the wrong
 -- bytes. Every assertion below prints 1.
