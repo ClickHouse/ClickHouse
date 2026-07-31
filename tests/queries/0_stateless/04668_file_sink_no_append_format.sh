@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-WORK_DIR="${CLICKHOUSE_TMP:?}/04660_${CLICKHOUSE_DATABASE:?}"
+WORK_DIR="${CLICKHOUSE_TMP:?}/04668_${CLICKHOUSE_DATABASE:?}"
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 
@@ -63,9 +63,12 @@ local_query "INSERT INTO FUNCTION file('${WORK_DIR}/multi.avro', 'Avro', 'c0 UIn
 local_query "INSERT INTO FUNCTION file('${WORK_DIR}/multi.avro', 'Avro', 'c0 UInt8') SELECT 2 SETTINGS engine_file_allow_create_multiple_files = 1"
 local_query "SELECT c0 FROM file('${WORK_DIR}/multi*.avro', 'Avro') ORDER BY c0"
 
-echo '-- 9. settings-dependent checker is consulted, not bypassed'
+echo '-- 9. settings-dependent checker is consulted: appendable config accepted, non-appendable rejected'
 printf 'x\n' > "${WORK_DIR}/custom.txt"
 insert_via_fd "${WORK_DIR}/custom.txt" CustomSeparated "SELECT 1 SETTINGS format_custom_result_after_delimiter = ''"
 local_query "SELECT count() FROM file('${WORK_DIR}/custom.txt', 'LineAsString')"
+printf 'x\n' > "${WORK_DIR}/custom_reject.txt"
+insert_via_fd "${WORK_DIR}/custom_reject.txt" CustomSeparated "SELECT 1 SETTINGS format_custom_result_after_delimiter = 'END'"
+stat --format=%s "${WORK_DIR}/custom_reject.txt"
 
 rm -rf "${WORK_DIR}"

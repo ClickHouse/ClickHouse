@@ -19,5 +19,7 @@ CANNOT_APPEND_TO_FILE
 -- 8. engine_file_allow_create_multiple_files still creates a new file
 1
 2
--- 9. settings-dependent checker is consulted, not bypassed
+-- 9. settings-dependent checker is consulted: appendable config accepted, non-appendable rejected
+2
+CANNOT_APPEND_TO_FILE
 2
