@@ -251,6 +251,28 @@ SELECT * FROM format(TSKV, unhex('783D2D310A783D312E350A'));
 DESC format(TSKV, unhex('783D2D310A783D2D320A'));
 SELECT * FROM format(TSKV, unhex('783D2D310A783D2D320A'));
 
+-- 13. A map with several equal key types, or several equal value types, keeps only the last one and
+-- discards the rest, so a negative marking recorded on a discarded object was lost, exactly like the
+-- array case in group 12. Only the orders that drop the marked object are affected, which is why the
+-- negative-last row below is a control and not a carrier.
+SELECT 'group 13: the negative marking survives the map key and value collapse';
+-- m={-1:1,1:1} / m={18446744073709551615:1} - two equal keys, only the last object survives
+DESC format(TSKV, unhex('6D3D7B2D313A312C313A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2D313A312C313A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+-- m={'a':-1,'b':1} / m={'a':18446744073709551615} - the same for two equal VALUE types
+DESC format(TSKV, unhex('6D3D7B2761273A2D312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2761273A2D312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+-- m={1:1,-1:1} / m={18446744073709551615:1} - the negative key LAST, correct before this change too
+DESC format(TSKV, unhex('6D3D7B313A312C2D313A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B313A312C2D313A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+-- Carrying the marking across the collapse must not mark anything that was not negative:
+-- m={1:1,2:1} / m={18446744073709551615:1} - no negative key, so the widening must still happen
+DESC format(TSKV, unhex('6D3D7B313A312C323A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B313A312C323A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+-- m={'a':1,'b':1} / m={'a':18446744073709551615} - the same for values
+DESC format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+
 -- The round trip through the writer, asserted without hand-written bytes: what TSKV emits for a
 -- negative map key must infer a type that reads back. This is the reason group 11 is not a
 -- hand-crafted-input-only concern.

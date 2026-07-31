@@ -20,6 +20,7 @@ printf 'x=-2\n' > "$DIR/neg2.tskv"
 printf 'x=1\n' > "$DIR/pos.tskv"
 printf 'x=18446744073709551615\n' > "$DIR/big.tskv"
 printf 'x=1.5\n' > "$DIR/float.tskv"
+printf 'x=\\N\nx=18446744073709551615\n' > "$DIR/nullbig.tskv"
 
 # Report either the inferred type or the error name, never both: the error message text also contains a
 # type name, and it carries the temporary file path, which is not reproducible.
@@ -52,5 +53,18 @@ verdict "set schema_inference_mode='union'; select * from file('$DIR/{neg,float}
 echo "4. the default (non-union) mode on the same two files is unaffected"
 verdict "set schema_inference_mode='default'; desc file('$DIR/{neg,big}.tskv', TSKV);"
 verdict "set schema_inference_mode='default'; select * from file('$DIR/{neg,big}.tskv', TSKV) order by tuple(*);"
+
+# schema_inference_make_columns_nullable=2 is the load-bearing value: it is the only one that leaves the
+# per-file type unwrapped, so a file containing \N yields Nullable(UInt64) while a file without one
+# yields a bare Int64, and only then does the merge see an asymmetrically wrapped pair. Comparing the
+# wrapped shapes made the sign check give up, so the widening it exists to decline went through.
+echo "5. asymmetric nullability across files does not get past the sign check"
+verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; desc file('$DIR/{neg,nullbig}.tskv', TSKV);"
+verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; select * from file('$DIR/{neg,nullbig}.tskv', TSKV) order by tuple(*);"
+# The opposite file order reaches the merge with the two types swapped, and used to emit rows before failing.
+verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; desc file('$DIR/{nullbig,neg}.tskv', TSKV);"
+verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; select * from file('$DIR/{nullbig,neg}.tskv', TSKV) order by tuple(*);"
+# The same shape without a negative value is refused identically, as it is on master.
+verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; desc file('$DIR/{pos,nullbig}.tskv', TSKV);"
 
 rm -rf "$DIR"

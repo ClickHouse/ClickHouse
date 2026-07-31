@@ -1328,6 +1328,14 @@ namespace
             if (!checkIfTypesAreEqual(value_types))
                 return nullptr;
 
+            /// Only the last key and value type objects survive, so carry the dropped ones' provenance
+            /// over to them first, as the array path above does.
+            if (checkIfTypesAreEqual(key_types))
+                for (size_t i = 0; i + 1 < key_types.size(); ++i)
+                    carryOverInferenceProvenance(key_types[i], key_types.back(), json_info);
+            for (size_t i = 0; i + 1 < value_types.size(); ++i)
+                carryOverInferenceProvenance(value_types[i], value_types.back(), json_info);
+
             return std::make_shared<DataTypeMap>(key_types.back(), value_types.back());
         }
 
@@ -1339,9 +1347,18 @@ namespace
         if (!checkIfTypesAreEqual(key_types) || !checkIfTypesAreEqual(value_types))
             return nullptr;
 
+        for (size_t i = 0; i + 1 < key_types.size(); ++i)
+            carryOverInferenceProvenance(key_types[i], key_types.back(), json_info);
+        for (size_t i = 0; i + 1 < value_types.size(); ++i)
+            carryOverInferenceProvenance(value_types[i], value_types.back(), json_info);
+
         auto key_type = removeNullable(key_types.back());
         if (!DataTypeMap::isValidKeyType(key_type))
             return nullptr;
+
+        /// removeNullable returns the nested object, which is a different object than the one the
+        /// provenance was recorded on, so carry it over again (a no-op when nothing was unwrapped).
+        carryOverInferenceProvenance(key_types.back(), key_type, json_info);
 
         return std::make_shared<DataTypeMap>(key_type, value_types.back());
     }
@@ -1455,17 +1472,28 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
     /// Int64 was inferred from a negative literal, which is recorded as inference provenance. Report
     /// it wherever the pair puts an Int64 against a UInt64, at the top level or nested at the same
     /// position, so that a caller with no provenance available can decline it.
+    /// Nullable wrappers are ignored, because transformTypesRecursively peels them at every level
+    /// before comparing the nested types: the merge this guards proceeds through asymmetric
+    /// nullability, so comparing the wrapped shapes would miss the widening it is meant to catch.
     auto collect = [](const DataTypePtr & type)
     {
-        std::vector<TypeIndex> indexes{type->getTypeId()};
-        type->forEachChild([&](const IDataType & child) { indexes.push_back(child.getTypeId()); });
+        const auto & unwrapped = removeNullable(type);
+        std::vector<TypeIndex> indexes{unwrapped->getTypeId()};
+        unwrapped->forEachChild([&](const IDataType & child)
+        {
+            if (child.getTypeId() != TypeIndex::Nullable)
+                indexes.push_back(child.getTypeId());
+        });
         return indexes;
     };
 
     const auto first_indexes = collect(first);
     const auto second_indexes = collect(second);
+    /// Shapes that still do not line up cannot be checked position by position. With no provenance
+    /// available either, report the pair so the caller declines the merge: refusing at inference time
+    /// is preferable to inferring a type whose read then fails.
     if (first_indexes.size() != second_indexes.size())
-        return false;
+        return true;
 
     for (size_t i = 0; i != first_indexes.size(); ++i)
     {

@@ -167,6 +167,22 @@ x	Nullable(Float64)
 x	Nullable(Int64)					
 -1
 -2
+group 13: the negative marking survives the map key and value collapse
+m	Nullable(String)					
+{-1:1,1:1}
+{18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-1,\'b\':1}
+{\'a\':18446744073709551615}
+m	Nullable(String)					
+{1:1,-1:1}
+{18446744073709551615:1}
+m	Map(UInt64, Nullable(Int64))					
+{1:1,2:1}
+{18446744073709551615:1}
+m	Map(String, Nullable(UInt64))					
+{'a':1,'b':1}
+{'a':18446744073709551615}
 group 11 round trip: TSKV output for a negative map key reads back
 1
 m	Nullable(String)					

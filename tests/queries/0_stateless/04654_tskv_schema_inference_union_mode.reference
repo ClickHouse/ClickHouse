@@ -14,3 +14,9 @@ Nullable(Float64)
 Nullable(Int64)
 -1
 -1
+5. asymmetric nullability across files does not get past the sign check
+TYPE_MISMATCH
+TYPE_MISMATCH
+TYPE_MISMATCH
+TYPE_MISMATCH
+TYPE_MISMATCH
