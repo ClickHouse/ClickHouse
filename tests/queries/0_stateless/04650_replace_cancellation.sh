@@ -21,17 +21,23 @@ SCALE=1
 case "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'")" in ON|1) SCALE=2 ;; esac
 BOUND=$((SCALE * 2000))
 
-# $1 = label, $2 = query, $3 = overflow mode (default "throw"), $4 = query id (default none)
+# $1 = label, $2 = query, $3 = overflow mode (default "throw"), $4 = query id (default none),
+# $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case
 #
 # Regexp compilation is pinned off for every case but the one that is about the compiled matcher: the
 # compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times,
 # so an earlier run's pattern would already be compiled and the query would finish inside the deadline.
 #
 # Two messages report the same enforced deadline and only one carries a number: `CancellationChecker`
-# can win the race against this function's own check, and its error has no elapsed part. Both are
-# correct stops, so without a number the wall clock is bounded instead, as cases 19 and 20 do.
+# can win the race against this function's own check, and its error then has no elapsed part to read.
+# For a folded call that is still this function's stop to make, since the fold runs during analysis and
+# there is no pipeline to cancel, so the wall clock is bounded instead - as cases 19 and 20 do. For a
+# pipeline case it is not: `addPipelineExecutor` throws on the killed flag before the executor is
+# registered, so the query can end without ever entering the function, and accepting it on wall time
+# would assert query-level cancellation instead of the in-function checkpoint. That is reported as
+# inconclusive rather than passed.
 run() {
-    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}"
+    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}"
     local output start_ms elapsed_ms wall_ms
     start_ms=$(date +%s%N)
     # shellcheck disable=SC2086
@@ -48,7 +54,9 @@ run() {
         else
             echo "$label: OVERSHOT ${elapsed_ms} ms"
         fi
-    elif printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
+    elif ! printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
+        echo "$label: no timeout"
+    elif [ "$shape" = fold ]; then
         # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
         if [ "$wall_ms" -lt "$((BOUND * 2))" ]; then
             echo "$label: stopped within bound"
@@ -56,14 +64,14 @@ run() {
             echo "$label: OVERSHOT ${wall_ms} ms"
         fi
     else
-        echo "$label: no timeout"
+        echo "$label: cancelled before the pipeline started"
     fi
 }
 
 # 1. Constant folding: no pipeline exists while this runs, which is what the original hung-check reports
 #    showed.
 run "fold regexp" \
-    "SELECT length(replaceRegexpAll(repeat(repeat('1', 1000000), 200), '[0-9]{1,3}', 'x')) FORMAT Null"
+    "SELECT length(replaceRegexpAll(repeat(repeat('1', 1000000), 200), '[0-9]{1,3}', 'x')) FORMAT Null" throw "" fold
 
 # 2. The same work in the pipeline, which makes case 1 non-vacuous: the defect is the missing in-function
 #    checkpoint, not something specific to constant folding. All three arguments must be materialized -
@@ -83,14 +91,14 @@ run "many rows" \
 #    version got wrong. The folds go in one array rather than a '+' chain: a chain nests one node per
 #    fold and formatting it recurses, which overruns the stack allowance a TSan build gives a query thread.
 FOLDS=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 10000), 'x'))\" % i for i in range(60)) + '])')")
-run "many folds" "SELECT $FOLDS FORMAT Null"
+run "many folds" "SELECT $FOLDS FORMAT Null" throw "" fold
 
 # 5. One match per iteration with a replacement much larger than the match: the whole cost is in the
 #    generated output, which accounting that looked only at the searched input would price at zero.
 #    Split across independent folds because a single fold large enough to matter races the 5GiB test
 #    profile; each fold's output is released before the next starts.
 EXPAND=$(python3 -c "print(' + '.join(\"length(replaceAll(repeat('%s', 500), '%s', repeat('Y', 1000000)))\" % (c, c) for c in 'qwertyuiopas'))")
-run "expanding replacement" "SELECT $EXPAND FORMAT Null"
+run "expanding replacement" "SELECT $EXPAND FORMAT Null" throw "" fold
 
 # 6. The literal-search implementation reached through the regexp function's trivial-pattern shortcut,
 #    whose delegated call re-traverses the whole value. The needle must be a plain literal, or the
@@ -100,7 +108,7 @@ run "regexp fallback to literal" \
 
 # 7. The same work reached directly through replaceAll rather than through that shortcut.
 run "replaceAll" \
-    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'ab', 'YZ')) FORMAT Null"
+    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'ab', 'YZ')) FORMAT Null" throw "" fold
 
 # 8. Empty haystacks with a different pattern per row: nothing is scanned or written, so all the work is
 #    building one matcher per row. The needle must vary, otherwise the matcher is built once outside the
@@ -111,18 +119,18 @@ run "per-row matcher setup" \
 # 9. A one-byte needle and replacement on the per-row entry point. It has to be a fold: in the pipeline
 #    the executor's own between-block check bounds the query whatever the function does.
 run "one-byte in place" \
-    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'b', 'c')) FORMAT Null"
+    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'b', 'c')) FORMAT Null" throw "" fold
 
 # 10. Many capture references against an empty capture group: every match executes the whole list while
 #     producing no output, so one checkpoint per match is not enough. The group must be empty and the
 #     references must be substitutions rather than literal bytes.
 run "instruction list" \
-    "SELECT length(replaceRegexpAll(repeat('a', 200000), '()', repeat('\\\\1', 20000))) FORMAT Null"
+    "SELECT length(replaceRegexpAll(repeat('a', 200000), '()', repeat('\\\\1', 20000))) FORMAT Null" throw "" fold
 
 # 11. A pattern that matches the empty string at every position: each iteration advances one byte, runs no
 #     instructions and writes nothing, which is why the budget counts iterations rather than bytes.
 run "empty matches" \
-    "SELECT length(replaceRegexpAll(repeat(repeat('a', 1000000), 20), '()', '')) FORMAT Null"
+    "SELECT length(replaceRegexpAll(repeat(repeat('a', 1000000), 20), '()', '')) FORMAT Null" throw "" fold
 
 # 12. A replacement of 200000 capture references parsed per row against a needle that never matches: the
 #     whole list is built before any processing loop runs. The haystack must not match, or the case
@@ -142,7 +150,7 @@ run "per-row replacement" \
 #     finished would leave one match uninterruptible. Case 10's list is short enough that the per-match
 #     charge alone fires.
 run "one match, long instruction list" \
-    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 2000))) FORMAT Null"
+    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 2000))) FORMAT Null" throw "" fold
 
 # 16. The "replace first" specialization, which leaves the per-row loop at the first match - a different
 #     loop exit from "replace all". Empty haystacks with a per-row pattern make the matcher setup the whole
