@@ -357,6 +357,37 @@ def test_generate_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
+def test_generate_truncated_response_counts_tokens(started_cluster):
+    """A truncated response still consumed provider tokens, so it must be recorded before the
+    rejection: otherwise a query full of truncated rows sees a zero token count and keeps
+    dispatching requests past `ai_function_max_output_tokens_per_query`."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(3)"
+    )
+    qid = unique_query_id("gen_truncated_quota")
+    # The mock reports 10 input / 5 output tokens per call. The first row is rejected as
+    # truncated but exhausts the 5-token output cap, so the remaining two rows are skipped
+    # without an API call.
+    result = instance.query(
+        "SELECT aiGenerate(x, map('credentials', 'ai_truncated')) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_output_tokens_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 3
+
+
 def test_generate_content_filter_response_throw(started_cluster):
     """`finish_reason="content_filter"` means the answer was withheld/filtered; reject as incomplete."""
     error = instance.query_and_get_error(

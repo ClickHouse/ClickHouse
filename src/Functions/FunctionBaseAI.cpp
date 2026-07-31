@@ -464,6 +464,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
+                /// Record tokens before inspecting the finish reason: the provider consumed them regardless of whether
+                /// the response turns out to be complete.
+                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                total_input_tokens += ai_response.input_tokens;
+                total_output_tokens += ai_response.output_tokens;
+
                 /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
                 switch (ai_response.finish_reason)
                 {
@@ -489,10 +495,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                             "returning a completed answer.",
                             ai_response.raw_finish_reason);
                 }
-
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                total_input_tokens += ai_response.input_tokens;
-                total_output_tokens += ai_response.output_tokens;
 
                 result = postProcessResponse(ai_response.result);
                 success = true;
