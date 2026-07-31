@@ -438,11 +438,15 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         else
             SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
-        /// Verify offsets if the data comes over the network
-        if (settings.native_format)
+        /// Verify offsets that were read as absolute values. The other branch accumulates sizes, so it
+        /// is monotonic by construction. Only the values appended by this call are new: everything below
+        /// prev_size was verified by the previous call, and starting one element earlier keeps the
+        /// comparison across the range boundary.
+        if (!settings.position_independent_encoding)
         {
             const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
-            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            const auto * const scan_begin = offsets.begin() + (prev_size ? prev_size - 1 : 0);
+            const auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
