@@ -274,7 +274,7 @@ HashJoin::HashJoin(
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
             auto & asof_key_sizes = key_sizes.emplace_back();
-            data->type = chooseMethod(key_columns, asof_key_sizes, /*use_two_level_maps=*/ is_concurrent_hash_join);
+            selected_join_method = chooseMethod(key_columns, asof_key_sizes, /*use_two_level_maps=*/ is_concurrent_hash_join);
             asof_key_sizes.push_back(asof_size);
         }
         else
