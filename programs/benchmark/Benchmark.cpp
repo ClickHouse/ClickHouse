@@ -660,7 +660,11 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
 
+#if !defined(OS_WINDOWS)
         /// In these threads we do not accept INT signal.
+        ///
+        /// Nothing to do on Windows: a console control event is delivered to a thread the OS
+        /// creates for the purpose, never to one of these, so there is no per-thread mask to set.
         sigset_t sig_set;
         if (sigemptyset(&sig_set)
             || sigaddset(&sig_set, SIGINT)
@@ -668,6 +672,7 @@ private:
         {
             throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
         }
+#endif
 
         while (true)
         {

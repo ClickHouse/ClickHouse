@@ -37,8 +37,12 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseOomCanary(int argc, char ** argv);
+#if ENABLE_CLICKHOUSE_SU
 int mainEntryClickHouseSU(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_DOCKER_INIT
 int mainEntryClickHouseDockerInit(int argc, char ** argv);
+#endif
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
@@ -87,11 +91,13 @@ int mainEntryClickHouseChdig(int argc, char ** argv)
 #endif
 
 // install
+#if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
+#endif
 
 // packed-io: list/extract/create ClickHouse packed-format archives
 int mainEntryClickHousePackedIO(int argc, char ** argv);
@@ -148,8 +154,12 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"oom-canary", mainEntryClickHouseOomCanary},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+#if ENABLE_CLICKHOUSE_SU
     {"su", mainEntryClickHouseSU},
+#endif
+#if ENABLE_CLICKHOUSE_DOCKER_INIT
     {"docker-init", mainEntryClickHouseDockerInit},
+#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
@@ -175,11 +185,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
+#if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+#endif
     // help
     {"help", mainEntryHelp},
     {"packed-io", mainEntryClickHousePackedIO},

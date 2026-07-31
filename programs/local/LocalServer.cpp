@@ -1,6 +1,9 @@
+#include <base/pathToString.h>
 #include <LocalServer.h>
 
+#if !defined(OS_WINDOWS)
 #include <sys/resource.h>
+#endif
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -350,12 +353,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
     else if (config_path.empty() && fs::exists("config.xml"))
         config_path = "config.xml";
     else if (config_path.empty())
-        config_path = getLocalConfigPath(home_path).value_or("");
+        config_path = getLocalConfigPath(pathToGenericString(home_path)).value_or("");
 
     if (fs::exists(config_path))
     {
         ConfigProcessor config_processor(config_path);
-        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+        ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
         loaded_config_path = config_path;
@@ -482,7 +485,7 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
         /// If symlink ends with '/':
         if (!symlink_path.has_filename() && symlink_path.has_parent_path())
             symlink_path = symlink_path.parent_path();
-        default_database_uuid = parse<UUID>(symlink_path.filename());
+        default_database_uuid = parse<UUID>(pathToGenericString(symlink_path.filename()));
     }
     else
         default_database_uuid = UUIDHelpers::generateV4();
@@ -490,7 +493,7 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
     fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
-    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, pathToGenericString(default_database_metadata_path), default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
 }
@@ -559,36 +562,36 @@ void LocalServer::tryInitPath()
 
     fs::create_directories(path);
 
-    global_context->setPath(fs::path(path) / "");
+    global_context->setPath(pathToGenericString(fs::path(path) / ""));
 
     /// clickhouse-local keeps a generous default limit on temporary data to guard against
     /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
     /// via the `max_temporary_data_on_disk_size` server setting.
     const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
     global_context->setTemporaryStoragePath(
-        fs::path(path) / "tmp" / "", max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
-    global_context->setFlagsPath(fs::path(path) / "flags" / "");
+        pathToGenericString(fs::path(path) / "tmp" / ""), max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
+    global_context->setFlagsPath(pathToGenericString(fs::path(path) / "flags" / ""));
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", pathToGenericString(fs::path(path) / "user_scripts" / ""));
     global_context->setUserScriptsPath(user_scripts_path);
 
     std::string dynamic_udf_path = getClientConfiguration().getString(
         "dynamic_user_defined_executable_functions_path",
-        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+        pathToGenericString(fs::path(path) / "dynamic_user_defined_executable_functions" / ""));
     global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
     fs::create_directories(dynamic_udf_path);
 
     /// Set path for filesystem caches
-    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
+    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", pathToGenericString(fs::path(path) / "cache" / "")));
     if (!filesystem_caches_path.empty())
         global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+    const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", pathToGenericString(fs::path(path) / "top_level_domains/"));
     if (!top_level_domains_path.empty())
-        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", getClientConfiguration());
+        TLDListsHolder::getInstance().parseConfig(pathToGenericString(fs::path(top_level_domains_path) / ""), getClientConfiguration());
 }
 
 
@@ -1075,7 +1078,7 @@ void LocalServer::setupUsers()
         /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
         /// which could grant `access_management` to the default user.
         if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = fs::path(config_dir) / users_config_path;
+            users_config_path = pathToGenericString(fs::path(config_dir) / users_config_path);
 
         if (users_config_path.empty())
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -1098,7 +1101,7 @@ void LocalServer::setupUsers()
     if (getClientConfiguration().has("path"))
     {
         /// Use disk storage for persistence when --path is specified.
-        String access_path = fs::path(global_context->getPath()) / "access" / "";
+        String access_path = pathToGenericString(fs::path(global_context->getPath()) / "access" / "");
         access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
     }
     else
@@ -1143,6 +1146,11 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
+#if defined(OS_WINDOWS)
+    /// There is no equivalent limit to raise: Windows caps the number of *stdio streams*
+    /// (`_setmaxstdio`, and only for the CRT's own layer), not the number of open handles, which
+    /// is bounded by memory rather than by a per-process rlimit.
+#else
     /// Try to increase limit on number of open files.
     {
         rlimit rlim{};
@@ -1157,6 +1165,7 @@ try
                 std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
         }
     }
+#endif
 
     is_interactive = stdin_is_a_tty
         && (getClientConfiguration().hasOption("interactive")
@@ -1672,7 +1681,7 @@ void LocalServer::processConfig()
 
         /// Lock path directory before read
         fs::create_directories(fs::path(path));
-        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        status.emplace(pathToGenericString(fs::path(path) / "status"), StatusFile::write_full_info);
 
         if (fs::exists(fs::path(path) / "metadata"))
         {

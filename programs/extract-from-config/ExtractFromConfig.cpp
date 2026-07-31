@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -128,7 +129,7 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
         std::string users_config_path = configuration->getString("user_directories.users_xml.path");
         const auto config_dir = fs::path{config_path}.remove_filename().string();
         if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
-            users_config_path = fs::path(config_dir) / users_config_path;
+            users_config_path = pathToGenericString(fs::path(config_dir) / users_config_path);
         configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
     }
 

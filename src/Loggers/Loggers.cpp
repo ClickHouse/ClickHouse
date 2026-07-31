@@ -45,6 +45,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -223,10 +224,21 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
         else
         {
+#if defined(OS_WINDOWS)
+            UNUSED(cmd_name);
+            /// The local syslog. Windows has no such thing - its counterpart is the Event Log,
+            /// reached through `ReportEvent` rather than through `openlog`, and Poco builds
+            /// `SyslogChannel` only where there is a syslog to talk to. Remote syslog, above,
+            /// works everywhere because it is just UDP.
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Logging to the local syslog is not supported on Windows; set logger.syslog.address to use a remote one");
+#else
             syslog_channel = new Poco::SyslogChannel();
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
+#endif
         }
         syslog_channel->open();
 

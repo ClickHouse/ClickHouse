@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <DisksClient.h>
 #include <optional>
 #include <Client/ClientBase.h>
@@ -87,7 +88,7 @@ std::vector<String> DiskWithPath::getAllFilesByPrefix(const String & prefix, boo
                 return {"", prefix};
 
             std::filesystem::path pattern_path{prefix};
-            return {pattern_path.parent_path(), pattern_path.filename()};
+            return {pathToGenericString(pattern_path.parent_path()), pathToGenericString(pattern_path.filename())};
         }();
 
         if (!isDirectory(path_before))
@@ -132,7 +133,7 @@ void DiskWithPath::setPath(const String & any_path)
 
 String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 {
-    String lexically_normal_path = fs::path(path).lexically_normal();
+    String lexically_normal_path = pathToGenericString(fs::path(path).lexically_normal());
     if (lexically_normal_path.contains(".."))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 

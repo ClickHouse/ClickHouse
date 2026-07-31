@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -152,7 +153,7 @@ public:
             settings[Setting::ai_function_throw_on_quota_exceeded].value);
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+        timeouts.receive_timeout = timespanFromSeconds(timeout_sec);
 
         /// A Nullable text column can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
         /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.

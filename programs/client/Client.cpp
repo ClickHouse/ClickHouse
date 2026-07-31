@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Client.h>
 #include <base/defines.h>
 #include <Client/ConnectionString.h>
@@ -225,7 +226,7 @@ void Client::initialize(Poco::Util::Application & self)
     if (config().has("config-file"))
         config_path.emplace(config().getString("config-file"));
     else
-        config_path = getClientConfigPath(home_path);
+        config_path = getClientConfigPath(pathToGenericString(home_path));
     if (config_path.has_value())
     {
         ConfigProcessor config_processor(*config_path);
@@ -271,7 +272,7 @@ void Client::initialize(Poco::Util::Application & self)
         {
             auto history_file = overrides.history_file.value();
             if (history_file.starts_with("~/") && !home_path.empty())
-                history_file = home_path / history_file.substr(2);
+                history_file = pathToGenericString(home_path / history_file.substr(2));
             configuration.setString("history_file", history_file);
         }
         if (overrides.history_max_entries.has_value())
@@ -336,11 +337,11 @@ void Client::initialize(Poco::Util::Application & self)
 
     /// Set path for format schema files
     if (config().has("format_schema_path"))
-        client_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+        client_context->setFormatSchemaPath(pathToGenericString(fs::weakly_canonical(config().getString("format_schema_path"))));
 
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
-        client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+        client_context->setGoogleProtosPath(pathToGenericString(fs::weakly_canonical(config().getString("google_protos_path"))));
 
     /// Use <server_client_version_message/> unless --server-client-version-message is specified
     if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/re2.h>
@@ -62,19 +63,19 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
     {
         ReadSettings read_settings{};
         read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-        auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
+        auto src_buf = createReadBufferFromFileBase(pathToGenericString(file_path), read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
         /// test mode for integration tests.
         if (test_mode)
         {
-            dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(dst_file_path))
+            dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(pathToGenericString(dst_file_path)))
                           .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                           .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                           .create();
         }
         else
-            dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
+            dst_buf = std::make_shared<WriteBufferFromFile>(pathToGenericString(dst_file_path));
 
         copyData(*src_buf, *dst_buf);
         dst_buf->next();
@@ -95,7 +96,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(files_root / ".index"))
+        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(pathToGenericString(files_root / ".index")))
                       .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                       .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                       .create();
@@ -105,7 +106,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
         dst_path = fs::canonical(dst_path);
         auto files_root = dst_path / prefix;
         fs::create_directories(files_root);
-        root_meta = std::make_shared<WriteBufferFromFile>(files_root / ".index");
+        root_meta = std::make_shared<WriteBufferFromFile>(pathToGenericString(files_root / ".index"));
     }
 
     fs::directory_iterator dir_end;
@@ -121,7 +122,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
+                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(pathToGenericString(dst_path / directory_prefix / ".index")))
                                     .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                                     .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
                                     .create();
@@ -130,7 +131,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             {
                 dst_path = fs::canonical(dst_path);
                 fs::create_directories(dst_path / directory_prefix);
-                directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
+                directory_meta = std::make_shared<WriteBufferFromFile>(pathToGenericString(dst_path / directory_prefix / ".index"));
             }
 
             fs::directory_iterator files_end;
@@ -205,7 +206,7 @@ try
         if (options.contains("output-dir"))
             root_path = options["output-dir"].as<std::string>();
         else
-            root_path = fs::current_path();
+            root_path = pathToGenericString(fs::current_path());
     }
 
     processTableFiles(fs_path, root_path, test_mode, options.contains("link"));

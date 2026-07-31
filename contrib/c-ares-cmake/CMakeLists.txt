@@ -36,6 +36,11 @@ SET(SRCS
     "${LIBRARY_DIR}/src/lib/ares_sysconfig.c"
     "${LIBRARY_DIR}/src/lib/ares_sysconfig_files.c"
     "${LIBRARY_DIR}/src/lib/ares_sysconfig_mac.c"
+    # Windows takes its resolver configuration from the registry and the IP Helper API rather
+    # than from `/etc/resolv.conf`, and drives its event loop with `WSAEventSelect`.
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/ares_sysconfig_win.c>
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/event/ares_event_win32.c>
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/windows_port.c>
     "${LIBRARY_DIR}/src/lib/ares_timeout.c"
     "${LIBRARY_DIR}/src/lib/ares_update_servers.c"
     "${LIBRARY_DIR}/src/lib/ares_version.c"
@@ -93,6 +98,12 @@ SET(SRCS
 
 add_library(_c-ares STATIC ${SRCS})
 target_compile_definitions(_c-ares PRIVATE HAVE_CONFIG_H=1)
+
+# `ares.h` declares every entry point `__declspec(dllimport)` on Windows unless this says the
+# library is static, which it is here. PUBLIC, because it is the callers' declarations that matter.
+if (OS_WINDOWS)
+    target_compile_definitions(_c-ares PUBLIC CARES_STATICLIB)
+endif ()
 
 target_include_directories(_c-ares SYSTEM PUBLIC
     "${LIBRARY_DIR}/src/lib/include"

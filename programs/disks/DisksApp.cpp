@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <DisksApp.h>
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
@@ -484,7 +485,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
-            ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+            ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
             auto loaded_config = config_processor.loadConfig();
             config().add(loaded_config.configuration.duplicate(), false, false);
         }
@@ -513,7 +514,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
         log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(log_path));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, pathToGenericString(fs::weakly_canonical(log_path)));
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, "100M");
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, "false");
@@ -550,7 +551,9 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
-    /// Print stacktrace in case of crash
+#if !defined(OS_WINDOWS)
+    /// Print stacktrace in case of crash. Windows reports a fault through Structured Exception
+    /// Handling rather than a signal, so there is no handler to install and no pipe to drain.
     {
         HandledSignals::instance().setupTerminateHandler();
         HandledSignals::instance().setupCommonDeadlySignalHandlers();
@@ -563,6 +566,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
         signal_listener_thread.start(*signal_listener);
     }
+#endif
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
@@ -598,9 +602,11 @@ DisksApp::~DisksApp()
 
     try
     {
+#if !defined(OS_WINDOWS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {

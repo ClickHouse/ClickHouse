@@ -391,6 +391,13 @@ endif ()
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
+elseif (OS_WINDOWS)
+    # A PE image cannot exceed 4 GiB - the field that holds its size is 32 bits - and full DWARF for
+    # a binary this large is about 4.5 GiB on its own. `-gline-tables-only` keeps what a stack trace
+    # needs, file and line per address, and drops the type and variable descriptions that a debugger
+    # would want. Splitting the debug info into a separate file would be the better answer, but PE
+    # has no equivalent of the `.gnu_debuglink` arrangement the Linux packages use.
+    set (DEBUG_INFO_FLAGS "-gline-tables-only")
 endif()
 
 if (OS_DARWIN)

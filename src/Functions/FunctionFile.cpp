@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -145,9 +146,9 @@ public:
             try
             {
                 if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
-                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
+                    throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", pathToGenericString(user_files_absolute_path));
 
-                ReadBufferFromFile in(file_path);
+                ReadBufferFromFile in(pathToGenericString(file_path));
                 auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                 copyData(in, out);
             }
