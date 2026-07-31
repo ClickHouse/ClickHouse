@@ -59,7 +59,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
     }
     if (data.IsObject())
     {
-        if (data.Size() != 1)
+        if (data.MemberCount() != 1)
         {
             return false;
         }
@@ -122,7 +122,7 @@ bool MongoOrFunction::parseImpl(ASTPtr & node)
 
 bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
 {
-    if (data.Size() < 2)
+    if (!data.IsArray() || data.Size() < 2)
     {
         return false;
     }
