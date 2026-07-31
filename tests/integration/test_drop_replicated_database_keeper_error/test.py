@@ -10,6 +10,8 @@
 # The failpoint injects that exact error (ZCONNECTIONLOSS on the "active" path) at the reported
 # site, so the scenario is deterministic instead of racing a real Keeper.
 
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -64,6 +66,30 @@ def _create_replicated_database(db):
 def _truncate_log():
     node.exec_in_container(
         ["bash", "-c", ": > /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+
+
+def _settled_count_in_log(substring, timeout=30, quiet=1.0, poll=0.25):
+    # query_and_get_error returns as soon as the server has SENT the exception, while the
+    # remaining log records for that same throw are written afterwards. Reading the count right
+    # away can therefore observe a partially written set. Wait until it stops growing instead of
+    # assuming how many records one throw emits, which is what keeps the caller's exact-equality
+    # assertion from depending on that number.
+    deadline = time.monotonic() + timeout
+    count = int(node.count_in_log(substring))
+    stable_since = time.monotonic()
+    while time.monotonic() < deadline:
+        time.sleep(poll)
+        current = int(node.count_in_log(substring))
+        if current != count:
+            count = current
+            stable_since = time.monotonic()
+            continue
+        if time.monotonic() - stable_since >= quiet:
+            return count
+    raise Exception(
+        f"The count of '{substring}' in the log did not settle within {timeout}s "
+        f"(last value {count})"
     )
 
 
@@ -247,7 +273,9 @@ def test_restore_database_replica_after_failed_shutdown(started_cluster):
         assert INJECTED in error, (
             f"The restore did not reach the injected removal: {error}"
         )
-        before = int(node.count_in_log(INJECTED))
+        # Sampled only once the first throw's records have settled, so the equality below cannot
+        # fail just because a record landed between the two reads.
+        before = _settled_count_in_log(INJECTED)
 
         # The failpoint is deliberately still armed. reinitializeDDLWorker throws before it can
         # reset ddl_worker, so this second restore shuts the same stale worker down again. It can
@@ -256,8 +284,10 @@ def test_restore_database_replica_after_failed_shutdown(started_cluster):
         zk.delete(_replica_path(db), recursive=True)
         node.query(f"SYSTEM RESTORE DATABASE REPLICA {db}")
         # Exact equality, never before + N: count_in_log counts log lines, and an unhandled throw
-        # on the restore path emits two of them (executeQuery and TCPHandler).
-        assert int(node.count_in_log(INJECTED)) == before, (
+        # on the restore path emits two of them (executeQuery and TCPHandler). Settled on this
+        # side too, so a regression that does re-enter the removal is given time to log rather
+        # than slipping past the read.
+        assert _settled_count_in_log(INJECTED) == before, (
             "The second restore re-entered the eager removal: the failed shutdown did not "
             "release its holders."
         )
