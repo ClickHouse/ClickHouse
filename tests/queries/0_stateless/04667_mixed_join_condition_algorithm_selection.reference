@@ -13,6 +13,7 @@ RIGHT ALL	2	30
 RIGHT ALL residual reversed	2	30
 FULL ALL rows	4
 LEFT SEMI partial_merge,hash	1
+ASOF plain keeps merge	1
 -- the hash family was already correct and must stay so --
 hash	3	20
 parallel_hash	3	20

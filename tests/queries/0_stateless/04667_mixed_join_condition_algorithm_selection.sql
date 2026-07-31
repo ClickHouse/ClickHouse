@@ -74,6 +74,22 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 SELECT 'LEFT SEMI partial_merge,hash', count() FROM t1 LEFT SEMI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'partial_merge,hash';
 
+-- ASOF consumes only the one closest-match inequality, so a second cross-side predicate still
+-- becomes a mixed condition. FullSortingMergeJoin admits ASOF on strictness, so before this fix
+-- the merge algorithm was selected and dropped that predicate silently: the closest t2 row for
+-- t1.a = 1 is 10, which `1 * 10 != 10` excludes, yet the merge path still matched it (sum 30
+-- where honouring the predicate gives 20). Now the predicate declines, the list falls through to
+-- the hash family, and that reports it cannot evaluate a non-equi condition for ASOF strictness.
+SELECT count() FROM t1 ASOF LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a <= t2.a) AND (t1.a * 10 != t2.a)
+SETTINGS join_algorithm = 'full_sorting_merge,hash'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+
+-- Plain ASOF, with no second predicate, builds no mixed condition and keeps the merge path.
+SELECT 'ASOF plain keeps merge', countIf(explain LIKE '%MergeJoinTransform%') FROM
+(
+    EXPLAIN PIPELINE SELECT count() FROM t1 ASOF LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a <= t2.a)
+    SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_optimize_join_order_randomize = 0
+);
+
 SELECT '-- the hash family was already correct and must stay so --';
 
 SELECT 'hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
