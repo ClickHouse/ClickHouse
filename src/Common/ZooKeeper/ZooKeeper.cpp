@@ -1091,7 +1091,7 @@ void ZooKeeper::removeChildren(const std::string & path)
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(joinZooKeeperPath(path, children.back()), -1));
             children.pop_back();
         }
         multi(ops);
@@ -1109,12 +1109,12 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, RemoveExceptio
         {
             if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
             {
-                removeChildrenRecursive(fs::path(path) / children.back());
-                ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+                removeChildrenRecursive(joinZooKeeperPath(path, children.back()));
+                ops.emplace_back(makeRemoveRequest(joinZooKeeperPath(path, children.back()), -1));
             }
             else if (keep_child.remove_subtree)
             {
-                removeChildrenRecursive(fs::path(path) / children.back());
+                removeChildrenRecursive(joinZooKeeperPath(path, children.back()));
             }
 
             children.pop_back();
@@ -1138,7 +1138,7 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
         batch.reserve(MULTI_BATCH_SIZE);
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = fs::path(path) / children.back();
+            String child_path = joinZooKeeperPath(path, children.back());
 
             if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
             {
@@ -1546,7 +1546,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
 
 void ZooKeeper::initSession()
 {
-    String session_path = fs::path(args.sessions_path) / args.zookeeper_name / toString(DB::ServerUUID::get());
+    String session_path = joinZooKeeperPath(joinZooKeeperPath(args.sessions_path, args.zookeeper_name), toString(DB::ServerUUID::get()));
     Coordination::Stat stat;
     if (trySet(session_path, "", -1, &stat) == Coordination::Error::ZOK)
     {
@@ -1561,7 +1561,7 @@ void ZooKeeper::initSession()
 
 void ZooKeeper::addCheckSessionOp(Coordination::Requests & requests) const
 {
-    String session_path = fs::path(args.sessions_path) / args.zookeeper_name / toString(DB::ServerUUID::get());
+    String session_path = joinZooKeeperPath(joinZooKeeperPath(args.sessions_path, args.zookeeper_name), toString(DB::ServerUUID::get()));
     requests.push_back(zkutil::makeCheckRequest(session_path, session_node_version));
 }
 
@@ -2212,6 +2212,17 @@ String extractZooKeeperName(const String & path)
         return zookeeper_name;
     }
     return String(DEFAULT_ZOOKEEPER_NAME);
+}
+
+String joinZooKeeperPath(std::string_view parent, std::string_view child)
+{
+    if (parent.empty())
+        return String(child);
+    if (child.empty())
+        return String(parent);
+    if (parent.ends_with('/'))
+        return String(parent) + String(child);
+    return String(parent) + "/" + String(child);
 }
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)

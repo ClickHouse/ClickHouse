@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -24,7 +25,7 @@ ZooKeeperLock::ZooKeeperLock(
     const std::string & lock_message_,
     bool throw_if_lost_)
     : zookeeper(zookeeper_)
-    , lock_path(fs::path(lock_prefix_) / lock_name_)
+    , lock_path(pathToGenericString(fs::path(lock_prefix_) / lock_name_))
     , lock_message(lock_message_)
     , throw_if_lost(throw_if_lost_)
     , log(getLogger("zkutil::Lock"))

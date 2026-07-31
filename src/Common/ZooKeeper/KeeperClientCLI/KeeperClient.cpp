@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -88,13 +89,14 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
     confirmation_callback = callback;
 }
 
-fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
+String KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
+    /// A ZooKeeper path, not a filesystem one, so normalize it lexically and read it back
+    /// `/`-separated. `weakly_canonical` - which this used to call - stats every prefix against
+    /// the local filesystem and resolves any symlink it finds there, which for a znode path is
+    /// both wasted work and wrong; and on Windows it would hand back backslashes.
+    const auto absolute = relative.starts_with('/') ? pathFromString(relative) : pathFromString(cwd) / relative;
+    String result = pathToGenericString(absolute.lexically_normal());
 
     if (result.ends_with('/') && result.size() > 1)
         result.pop_back();

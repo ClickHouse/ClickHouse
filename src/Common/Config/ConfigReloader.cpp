@@ -89,7 +89,7 @@ void ConfigReloader::run()
     {
         try
         {
-            bool zk_changed = zk_changed_event->tryWait(std::chrono::milliseconds(reload_interval).count());
+            bool zk_changed = zk_changed_event->tryWait(static_cast<long>(std::chrono::milliseconds(reload_interval).count()));
             if (quit)
                 return;
 

@@ -6,9 +6,13 @@
 
 #include <fstream>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#else
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
+#endif
 
 namespace
 {
@@ -48,6 +52,14 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 
 uint64_t getMemoryAmountOrZero()
 {
+#if defined(OS_WINDOWS)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (!GlobalMemoryStatusEx(&status))
+        return 0;
+
+    uint64_t memory_amount = status.ullTotalPhys;
+#else
     int64_t num_pages = sysconf(_SC_PHYS_PAGES);
     if (num_pages <= 0)
         return 0;
@@ -57,6 +69,7 @@ uint64_t getMemoryAmountOrZero()
         return 0;
 
     uint64_t memory_amount = num_pages * page_size;
+#endif
 
     if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
         memory_amount = *total_numa_memory;

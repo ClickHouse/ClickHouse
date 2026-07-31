@@ -1,8 +1,8 @@
+#include <base/pathToString.h>
 #include "config.h"
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/YAMLParser.h>
 
-#include <sys/utsname.h>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -61,7 +61,7 @@ static std::string main_config_path;
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
-    return endsWith(fs::path(path).stem(), PREPROCESSED_SUFFIX);
+    return endsWith(pathToString(fs::path(path).stem()), PREPROCESSED_SUFFIX);
 }
 
 
@@ -183,7 +183,7 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 {
     auto * with_element_attributes = with_element.attributes();
 
-    for (size_t i = 0; i < with_element_attributes->length(); ++i)
+    for (unsigned long i = 0; i < with_element_attributes->length(); ++i)
     {
         auto * attr = with_element_attributes->item(i);
         config_element.setAttribute(attr->nodeName(), attr->getNodeValue());
@@ -648,10 +648,10 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
     /// Add path_to_config/config_name.d dir
     merge_dir_path.replace_extension("d");
-    merge_dirs.insert(merge_dir_path);
+    merge_dirs.insert(pathToString(merge_dir_path));
     /// Add path_to_config/conf.d dir
     merge_dir_path.replace_filename("conf.d");
-    merge_dirs.insert(merge_dir_path);
+    merge_dirs.insert(pathToString(merge_dir_path));
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
@@ -661,8 +661,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         for (fs::directory_iterator it(merge_dir_name); it != fs::directory_iterator(); ++it)
         {
             fs::path path(it->path());
-            std::string extension = path.extension();
-            std::string base_name = path.stem();
+            std::string extension = pathToString(path.extension());
+            std::string base_name = pathToString(path.stem());
 
             boost::algorithm::to_lower(extension);
 
@@ -670,7 +670,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             if (fs::is_regular_file(path)
                     && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
                     && !startsWith(base_name, "."))
-                files.push_back(it->path());
+                files.push_back(pathToString(it->path()));
         }
     }
 
@@ -682,7 +682,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
 {
     fs::path p(config_path);
-    std::string extension = p.extension();
+    std::string extension = pathToString(p.extension());
     boost::algorithm::to_lower(extension);
 
     if (extension == ".xml")
@@ -991,7 +991,7 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
                 else
                 {
                     fs::path loaded_config_path(loaded_config.configuration->getString("path"));
-                    preprocessed_dir = loaded_config_path / preprocessed_configs_path;
+                    preprocessed_dir = pathToString(loaded_config_path / preprocessed_configs_path);
                 }
             }
             else

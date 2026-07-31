@@ -1,5 +1,6 @@
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/XDGBaseDirectories.h>
+#include <base/pathToString.h>
 
 #include <filesystem>
 #include <vector>
@@ -19,7 +20,7 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
 
     auto xdg_config_home = XDGBaseDirectories::getConfigurationHome();
     if (!xdg_config_home.empty())
-        names.emplace_back(xdg_config_home / "config");
+        names.emplace_back(pathToString(xdg_config_home / "config"));
 
     if (!home_path.empty())
         names.emplace_back(home_path + "/.clickhouse-client/config");

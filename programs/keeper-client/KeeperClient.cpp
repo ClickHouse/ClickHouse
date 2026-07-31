@@ -573,7 +573,7 @@ void KeeperClient::runInteractiveReplxx()
         if (waiting_confirmation)
             prompt = "[y/n] ";
         else
-            prompt = cwd.string() + " :) ";
+            prompt = cwd + " :) ";
 
         auto input = lr.readLine(prompt, ":-] ");
         if (input.empty())
