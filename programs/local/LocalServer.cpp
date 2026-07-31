@@ -335,6 +335,15 @@ void LocalServer::processError(std::string_view) const
 }
 
 
+LocalServer::~LocalServer()
+{
+    /// Stop and join the asynchronous logging threads, like `BaseDaemon` does at shutdown.
+    /// They must not keep consuming the log queues while `exit` runs static destructors,
+    /// and ThreadSanitizer reports finished but unjoined threads as leaks at exit.
+    stopLogging();
+}
+
+
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
