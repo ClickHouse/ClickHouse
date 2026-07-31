@@ -58,7 +58,9 @@ percentages are derived by `PipelineUtilization.to_summary`:
 | Summary field | Meaning & weighting |
 |---|---|
 | `jobs`, `wall_time_s` | Qualifying jobs counted and their total runtime. |
-| `cpu_util_pct` / `mem_util_pct` | Utilization, weighted by **provisioned resource-time** — core-seconds (`cpu_count × duration`) for CPU, GB-seconds (`mem_total_gb × duration`) for RAM. A true efficiency ratio: used ÷ provisioned. A bigger runner and/or longer job impacts it more. |
+| `cpu_hours` / `mem_gb_hours` / `disk_gb_hours` | Provisioned capacity-time (cores/GB × duration), in hours. |
+| `cpu_util_pct` / `mem_util_pct` | Utilization, weighted by **provisioned resource-time** — core-seconds (`cpu_count × duration`) for CPU, GB-seconds (`mem_total_gb × duration`) for RAM. A true efficiency ratio: used ÷ provisioned. A bigger runner and/or longer job impacts it more. Uses the whole-run averages. |
+| `disk_util_pct` | Disk uses the **peak** footprint (you size a disk for its high-water mark), weighted by disk-GB × duration. |
 | `cpu_stall_pct` / `mem_stall_pct` / `io_stall_pct` | `some`-stall, a wall-clock pressure fraction → **duration-weighted** ("% of pipeline runtime under pressure"). |
 | `mem_full_pct` / `io_full_pct` | `full`-stall wastes every core, so weighted by **core-seconds** — the share of provisioned CPU wasted while the box made no progress. |
 
