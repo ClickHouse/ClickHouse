@@ -751,8 +751,12 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
             "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
-            "`s3_allow_server_credentials_in_user_queries`.");
+            "google_adc_client_secret, google_adc_refresh_token)"
+#if CLICKHOUSE_CLOUD
+            ".");
+#else
+            ", or enable the setting `s3_allow_server_credentials_in_user_queries`.");
+#endif
 
     /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
