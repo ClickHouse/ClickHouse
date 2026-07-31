@@ -27,42 +27,55 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain any filter");
 
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
-    const auto & filter_doc = documents[1].documents[0];
 
-    String serialized_filter;
+    /// The 'delete' command carries one or more delete specs, each with its own 'q' filter
+    /// and 'limit'. Execute every spec; 'limit: 1' (deleteOne) cannot be expressed as a
+    /// ClickHouse mutation over an unordered table, so it is rejected instead of being
+    /// silently widened into deleteMany.
+    for (const auto & delete_spec : documents[1].documents)
     {
-        auto json_representation = filter_doc.getRapidJSONRepresentation();
-        auto filter_it = json_representation.FindMember("q");
-        if (filter_it == json_representation.MemberEnd())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
+        String serialized_filter;
+        {
+            auto json_representation = delete_spec.getRapidJSONRepresentation();
+            auto filter_it = json_representation.FindMember("q");
+            if (filter_it == json_representation.MemberEnd())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
 
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        filter_it->value.Accept(writer);
-        serialized_filter = buffer.GetString();
+            auto limit_it = json_representation.FindMember("limit");
+            if (limit_it != json_representation.MemberEnd()
+                && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not supported");
+
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            filter_it->value.Accept(writer);
+            serialized_filter = buffer.GetString();
+        }
+        serialized_filter = modifyFilter(serialized_filter);
+
+        auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
+
+        auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+        auto ast = Mongo::parseMongoQuery(
+            parser,
+            mongo_dialect_query.data(),
+            mongo_dialect_query.data() + mongo_dialect_query.size(),
+            "",
+            10000,
+            10000,
+            10000,
+            collection.database);
+
+        String sql_query;
+        {
+            WriteBufferFromString sql_buffer(sql_query);
+            ast->format(sql_buffer, IAST::FormatSettings(true));
+        }
+
+        executor->execute(sql_query);
     }
-    serialized_filter = modifyFilter(serialized_filter);
-
-    auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
-
-    auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
-    auto ast = Mongo::parseMongoQuery(
-        parser,
-        mongo_dialect_query.data(),
-        mongo_dialect_query.data() + mongo_dialect_query.size(),
-        "",
-        10000,
-        10000,
-        10000,
-        collection.database);
-
-    String sql_query;
-    {
-        WriteBufferFromString sql_buffer(sql_query);
-        ast->format(sql_buffer, IAST::FormatSettings(true));
-    }
-
-    executor->execute(sql_query);
 
     bson_t * bson_doc = bson_new();
 

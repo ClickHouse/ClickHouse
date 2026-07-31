@@ -47,31 +47,49 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
 
     auto collection = getCollectionRef(sections[0].documents[0], "update");
 
-    String serialized_filter;
-    String serialized_update;
+    /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
+    /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be
+    /// expressed as a ClickHouse mutation over an unordered table and 'upsert' has no
+    /// counterpart either, so both are rejected instead of being silently widened into
+    /// updateMany or dropped.
+    for (const auto & update_spec : sections[1].documents)
     {
-        auto json_representation = sections[1].documents[0].getRapidJSONRepresentation();
-        serialized_filter = serializeRequiredMember(json_representation, "q");
-        serialized_update = serializeRequiredMember(json_representation, "u");
+        String serialized_filter;
+        String serialized_update;
+        {
+            auto json_representation = update_spec.getRapidJSONRepresentation();
+            serialized_filter = serializeRequiredMember(json_representation, "q");
+            serialized_update = serializeRequiredMember(json_representation, "u");
+
+            auto multi_it = json_representation.FindMember("multi");
+            if (multi_it == json_representation.MemberEnd() || !multi_it->value.IsBool() || !multi_it->value.GetBool())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'update' command supports only 'multi: true' (updateMany); updating a single document is not supported");
+
+            auto upsert_it = json_representation.FindMember("upsert");
+            if (upsert_it != json_representation.MemberEnd() && upsert_it->value.IsBool() && upsert_it->value.GetBool())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not support 'upsert: true'");
+        }
+
+        auto mongo_dialect_query
+            = fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update);
+
+        auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+        auto ast = Mongo::parseMongoQuery(
+            parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
+
+        /// The Mongo dialect parses `updateMany` into a single `ALTER TABLE` command, which is not
+        /// a statement on its own, so the statement around it is built here.
+        String alter_command;
+        {
+            WriteBufferFromString buffer(alter_command);
+            auto settings = IAST::FormatSettings(true, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::Backticks);
+            ast->format(buffer, settings);
+        }
+
+        executor->execute(fmt::format("ALTER TABLE {} {}", collection.getQualifiedName(), alter_command));
     }
-
-    auto mongo_dialect_query
-        = fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update);
-
-    auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
-    auto ast = Mongo::parseMongoQuery(
-        parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
-
-    /// The Mongo dialect parses `updateMany` into a single `ALTER TABLE` command, which is not
-    /// a statement on its own, so the statement around it is built here.
-    String alter_command;
-    {
-        WriteBufferFromString buffer(alter_command);
-        auto settings = IAST::FormatSettings(true, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::Backticks);
-        ast->format(buffer, settings);
-    }
-
-    executor->execute(fmt::format("ALTER TABLE {} {}", collection.getQualifiedName(), alter_command));
 
     bson_t * bson_doc = bson_new();
 

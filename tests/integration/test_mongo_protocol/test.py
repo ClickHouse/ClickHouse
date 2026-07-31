@@ -384,3 +384,102 @@ def test_invalid_bson_length(started_cluster, document_length):
         sock.close()
 
     assert cluster.instances["node"].query("SELECT 1", password="123").strip() == "1"
+
+
+def test_delete_one_is_rejected(started_cluster):
+    """`delete_one` (limit: 1) cannot be expressed as a ClickHouse mutation, so it must be
+    rejected instead of being silently widened into `deleteMany`."""
+    client = make_client()
+    collection = client["db"]["delete_one_rejected"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.delete_one({"id": 1})
+
+    # Nothing was deleted: the unsupported shape must not delete every matching row.
+    assert collection.estimated_document_count() == 2
+
+
+def test_bulk_delete_executes_every_spec(started_cluster):
+    """A `delete` command may carry several delete specs; all of them must be executed."""
+    client = make_client()
+    collection = client["db"]["bulk_delete"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}, {"id": 3}])
+
+    collection.bulk_write(
+        [pymongo.DeleteMany({"id": 1}), pymongo.DeleteMany({"id": 2})]
+    )
+
+    assert collection.estimated_document_count() == 1
+
+
+def test_update_one_and_upsert_are_rejected(started_cluster):
+    """`update_one` (multi: false) and `upsert: true` cannot be expressed as a ClickHouse
+    mutation, so they must be rejected instead of being silently widened or dropped."""
+    client = make_client()
+    collection = client["db"]["update_one_rejected"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "counter": 10}, {"id": 2, "counter": 20}])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.update_one({"id": 1}, {"$set": {"counter": 0}})
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.update_many({"id": 1}, {"$set": {"counter": 0}}, upsert=True)
+
+    # Nothing was updated by the rejected commands.
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert found == [{"id": 1, "counter": 10}, {"id": 2, "counter": 20}]
+
+
+def test_find_by_bool_and_double(started_cluster):
+    """Filters and comparison operators must cover every scalar type the insert path can
+    create a column from, not only int and String."""
+    client = make_client()
+    collection = client["db"]["scalar_types"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "active": True, "score": 1.5},
+            {"id": 2, "active": False, "score": 2.5},
+        ]
+    )
+
+    assert [doc["id"] for doc in collection.find({"active": True})] == [1]
+    assert [doc["id"] for doc in collection.find({"score": 2.5})] == [2]
+    assert [doc["id"] for doc in collection.find({"score": {"$gt": 2.0}})] == [2]
+    assert [doc["id"] for doc in collection.find({"active": {"$ne": True}})] == [2]
+
+
+def test_unknown_operator_is_an_error(started_cluster):
+    """An unsupported operator object must produce a controlled Mongo error, not a null
+    AST inside the wire handlers."""
+    client = make_client()
+    collection = client["db"]["unknown_operator"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        [doc for doc in collection.find({"id": {"$in": [1, 2]}})]
+
+    # The server is still healthy after the rejected query.
+    assert [doc["id"] for doc in collection.find({"id": 1})] == [1]
+
+
+def test_heterogeneous_array_insert(started_cluster):
+    """Array schema inference must scan the whole array: a heterogeneous array becomes
+    `Array(Dynamic)` instead of failing to insert the very document it was inferred from."""
+    client = make_client()
+    collection = client["db"]["hetero_array"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "a": [1, "x"]}])
+
+    assert collection.estimated_document_count() == 1

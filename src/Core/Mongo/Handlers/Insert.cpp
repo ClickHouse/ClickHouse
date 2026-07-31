@@ -93,14 +93,44 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
             continue;
         }
 
-        /// The element type is taken from the first element; an empty or heterogeneous array
-        /// becomes an array of JSON values.
+        /// The element type is inferred from all the elements, not only the first one:
+        /// a homogeneous array of scalars keeps the scalar type, an array of nested
+        /// documents becomes `Array(JSON)`, and everything else - an empty array or a
+        /// heterogeneous one - becomes `Array(Dynamic)`, which accepts any element
+        /// (`JSON` rejects scalar elements, so it cannot serve as the mixed fallback).
         const auto & array = it->value.GetArray();
-        String element_type = "JSON";
+        String element_type = "Dynamic";
         if (!array.Empty())
         {
             if (auto element_simple_type = getSimpleTypeField(array[0]))
-                element_type = std::move(*element_simple_type);
+            {
+                bool homogeneous = true;
+                for (rapidjson::SizeType i = 1; i < array.Size(); ++i)
+                {
+                    auto other_type = getSimpleTypeField(array[i]);
+                    if (!other_type || *other_type != *element_simple_type)
+                    {
+                        homogeneous = false;
+                        break;
+                    }
+                }
+                if (homogeneous)
+                    element_type = std::move(*element_simple_type);
+            }
+            else
+            {
+                bool all_objects = true;
+                for (rapidjson::SizeType i = 0; i < array.Size(); ++i)
+                {
+                    if (!array[i].IsObject())
+                    {
+                        all_objects = false;
+                        break;
+                    }
+                }
+                if (all_objects)
+                    element_type = "JSON";
+            }
         }
         fields.push_back(
             InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = fmt::format("Array({})", element_type)});
