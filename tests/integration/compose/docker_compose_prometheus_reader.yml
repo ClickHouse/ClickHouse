@@ -1,0 +1,30 @@
+services:
+  # Service "prometheus_reader" runs a prometheus server which scrapes nothing and can request data via the RemoteRead protocol
+  # from ClickHouse by url ${PROMETHEUS_REMOTE_READ_HANDLERS}.
+  prometheus_reader:
+    image: prom/prometheus:v3.5.0
+    hostname: ${PROMETHEUS_READER_HOSTNAME:-prometheus_reader}
+    restart: always
+    entrypoint: |
+      /bin/sh -c '
+      cat << EOF > /etc/prometheus/prometheus.yml
+        remote_read: ${PROMETHEUS_REMOTE_READ_HANDLERS}
+        storage:
+          tsdb:
+            out_of_order_time_window: 100y
+      EOF
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" --enable-feature=promql-experimental-functions &> /var/log/prometheus/prometheus.log
+      '
+    expose:
+      - ${PROMETHEUS_READER_PORT}
+    healthcheck:
+      test: curl -f "http://localhost:${PROMETHEUS_READER_PORT}/api/v1/status/runtimeinfo" || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_READER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_READER_LOGS:-}
+        target: /var/log/prometheus
+    stop_grace_period: 5s
+    cpus: 3

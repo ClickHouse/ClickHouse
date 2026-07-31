@@ -93,6 +93,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
             cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
+
+        enable_compression = cfg.getBool(config_name + ".enable_compression",
+            cfg.getBool(parent_config_name + ".enable_compression", false));
     }
     else
     {
@@ -113,6 +116,8 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+
+        enable_compression = cfg.getBool(config_name + ".enable_compression", false);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -141,7 +146,8 @@ Pool::Pool(
      unsigned default_connections_,
      unsigned max_connections_,
      unsigned enable_local_infile_,
-     bool opt_reconnect_)
+     bool opt_reconnect_,
+     bool enable_compression_)
     : default_connections(default_connections_)
     , max_connections(max_connections_)
     , db(db_)
@@ -157,6 +163,7 @@ Pool::Pool(
     , ssl_key(ssl_key_)
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
+    , enable_compression(enable_compression_)
 {
     LOG_DEBUG(log,
         "Created MySQL Pool with settings: connect_timeout={}, read_write_timeout={}, default_connections_number={}, max_connections_number={}",
@@ -314,7 +321,8 @@ void Pool::Entry::forceConnected() const
                 pool->connect_timeout,
                 pool->rw_timeout,
                 pool->enable_local_infile,
-                pool->opt_reconnect);
+                pool->opt_reconnect,
+                pool->enable_compression);
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -390,7 +398,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             connect_timeout,
             rw_timeout,
             enable_local_infile,
-            opt_reconnect);
+            opt_reconnect,
+            enable_compression);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

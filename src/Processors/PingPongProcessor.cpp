@@ -22,7 +22,7 @@ PingPongProcessor::PingPongProcessor(const Block & header, size_t num_ports, Ord
     , aux_out_port(outputs.back())
     , order(order_)
 {
-    assert(order == First || order == Second);
+    chassert(order == First || order == Second);
 
     port_pairs.resize(num_ports);
 

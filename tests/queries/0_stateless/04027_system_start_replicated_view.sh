@@ -58,7 +58,9 @@ $CLICKHOUSE_CLIENT -q "system start replicated view ${db}.rmv"
 # The bug: the view stayed Disabled forever here because the children watch
 # was not re-registered after the stop event consumed it.
 # Wait for the view to leave Disabled state and complete at least one more refresh.
-for _ in $(seq 1 30); do
+# Budget must cover resume detection plus a full refresh run, so it is not shorter
+# than the initial-refresh wait above.
+for _ in $(seq 1 120); do
     cnt_after=$($CLICKHOUSE_CLIENT -q "select count() from ${db}.rmv")
     if [ "$cnt_after" -gt "$cnt_before" ]; then
         break

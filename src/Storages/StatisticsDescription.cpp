@@ -55,10 +55,12 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
-    if (type == "nullcount")
-        return StatisticsType::NullCount;
+    if (type == "basic")
+        return StatisticsType::Basic;
+    if (type == "uniq_v2")
+        return StatisticsType::UniqV2;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 }
 
 String statisticsTypeToString(StatisticsType type)
@@ -73,10 +75,12 @@ String statisticsTypeToString(StatisticsType type)
             return "countmin";
         case StatisticsType::MinMax:
             return "minmax";
-        case StatisticsType::NullCount:
-            return "nullcount";
+        case StatisticsType::Basic:
+            return "basic";
+        case StatisticsType::UniqV2:
+            return "uniq_v2";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'nullcount', 'tdigest' and 'uniq'.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
     }
 }
 
@@ -96,8 +100,12 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    if (!data_type || !other.data_type)
-        return data_type == other.data_type;
+    if (!data_type)
+        return !other.data_type;
+
+    if (!other.data_type)
+        return false;
+
     return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
@@ -228,16 +236,17 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 
 String ColumnStatisticsDescription::getNameForLogs() const
 {
-    String result;
+    String ret;
     for (const auto & [tp, desc] : types_to_desc)
     {
-        if (!result.empty())
-            result += ',';
-        result += desc.getTypeName();
+        ret += desc.getTypeName();
         if (desc.is_implicit)
-            result += "(auto)";
+            ret += "(auto)";
+        ret += ",";
     }
-    return result;
+    if (!ret.empty())
+        ret.pop_back();
+    return ret;
 }
 
 
