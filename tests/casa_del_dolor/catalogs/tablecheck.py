@@ -242,8 +242,11 @@ class SparkAndClickHouseCheck:
                 elif isinstance(col.spark_type, ArrayType) and isinstance(
                     col.spark_type.elementType, DecimalType
                 ):
+                    # `array_join` drops NULL elements unless a replacement is given, which would
+                    # make `[1, NULL, 2]` and `[1, 2]` hash the same. Render them as `null`, the
+                    # same text `CAST(array AS STRING)` produces for every other element type.
                     elem = spark_decimal_str("x", col.spark_type.elementType.scale)
-                    s = f"'[' || array_join(transform({col.column_name}, x -> {elem}), ', ') || ']'"
+                    s = f"'[' || array_join(transform({col.column_name}, x -> {elem}), ', ', 'null') || ']'"
                 else:
                     s = f"CAST({col.column_name} AS STRING)"
                 return f"COALESCE({s}, '{_NULL_SENTINEL}')"
@@ -270,9 +273,12 @@ class SparkAndClickHouseCheck:
             # ClickHouse arrays as strings don't have a space after the comma, add it
             # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
             # and compared rather than dropped by groupArray.
+            # `toString` of a NULL element is NULL, and `arrayStringConcat` skips those, so a NULL
+            # element would vanish and `[1, NULL, 2]` would hash like `[1, 2]`. Spell it as `null`
+            # to match what Spark renders for the same array.
             clickhouse_strings = {
                 col.column_name: (
-                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> coalesce(toString(x), 'null'), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
                     if isinstance(col.spark_type, (ArrayType))
                     else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
                 )
