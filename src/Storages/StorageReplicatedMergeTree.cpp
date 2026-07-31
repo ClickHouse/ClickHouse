@@ -663,7 +663,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   *
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
-                setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+                /// This metadata snapshot lives for the table's lifetime, so route the clone into the
+                /// dedicated MergeTree arena explicitly (rather than relying on the factory-level scope
+                /// in registerStorageMergeTree), so it converges with the ALTER / restart paths.
+                {
+                    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                    setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+                }
                 metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
             }
         }
@@ -2457,11 +2463,14 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             continue;
         }
 
-        /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and
-        /// the resulting attached `IMergeTreeDataPart` live for the part's lifetime.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-        const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for
+        /// the part's lifetime, so create it in the dedicated arena; `build()` and the metadata load
+        /// below run outside it (the load's transient scratch stays on the default per-CPU arenas).
+        VolumePtr volume;
+        {
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
+        }
         auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
@@ -6808,7 +6817,11 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
+        }
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6817,7 +6830,11 @@ void StorageReplicatedMergeTree::alter(
 
     if (commands.isCommentAlter())
     {
-        setInMemoryMetadata(future_metadata);
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(future_metadata);
+        }
 
         /// It is safe to ignore exceptions here as only the comment is changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6841,7 +6858,11 @@ void StorageReplicatedMergeTree::alter(
         for (auto & index : future_metadata.secondary_indices)
             index.escape_filenames = committed_metadata->escape_index_filenames;
 
-        setInMemoryMetadata(future_metadata);
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(future_metadata);
+        }
 
         /// It is safe to ignore exceptions here as only settings and comments are changed, neither of which is validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6968,6 +6989,8 @@ void StorageReplicatedMergeTree::alter(
             if (comment_is_changed)
             {
                 metadata_copy.setComment(future_metadata.comment);
+                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(metadata_copy);
             }
 
@@ -7282,7 +7305,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         for (const auto & part_name : active_parts_names)
         {
             command.partition = make_intrusive<ASTLiteral>(part_name);
-            attachPartition(command, metadata_snapshot, getContext());
+            attachPartitionImpl(
+                command,
+                metadata_snapshot,
+                getContext(),
+                /* allow_attach_while_readonly */ true,
+                /* deduplicate_part */ false);
         }
     }
 
@@ -7388,8 +7416,18 @@ void StorageReplicatedMergeTree::truncate(
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
-    /// Allow ATTACH PARTITION on readonly replica when restoring it.
-    if (!are_restoring_replica)
+    return attachPartitionImpl(
+        command, metadata_snapshot, query_context, /* allow_attach_while_readonly */ false, /* deduplicate_part */ true);
+}
+
+PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
+    const PartitionCommand & command,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr query_context,
+    bool allow_attach_while_readonly,
+    bool deduplicate_part)
+{
+    if (!allow_attach_while_readonly)
         assertNotReadonly();
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachPartition");
@@ -7409,7 +7447,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         /* majority_quorum */ false,
         query_context,
         /* is_attach */ true,
-        /* allow_attach_while_readonly */ true);
+        /* allow_attach_while_readonly */ allow_attach_while_readonly);
 
     results.reserve(loaded_parts.size());
 
@@ -7417,7 +7455,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     {
         const String old_name = loaded_parts[i]->name;
 
-        output.writeExistingPart(loaded_parts[i]);
+        output.writeExistingPart(loaded_parts[i], deduplicate_part);
 
         renamed_parts.old_and_new_names[i].old_dir.clear();
 
@@ -11790,8 +11828,8 @@ void StorageReplicatedMergeTree::attachRestoredParts(
         /* async_insert */ false, *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,
         /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false, zookeeper_retries_info);
 
-    for (auto part : parts)
-        sink->writeExistingPart(part);
+    for (auto & part : parts)
+        sink->writeExistingPart(part, /* deduplicate_part */ false);
 }
 
 }

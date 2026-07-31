@@ -788,6 +788,7 @@ public:
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
+        MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -905,10 +906,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Release the query slot early so the client can reuse it for its next query.
-    /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
-    /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
-    void releaseQuerySlot() const;
+    void releaseWorkloadResources() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;

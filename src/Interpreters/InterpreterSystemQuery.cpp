@@ -23,7 +23,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Functions/pointInPolygon.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
@@ -298,7 +297,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -482,10 +481,6 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
 #endif
-        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
-            clearPointInPolygonCache();
-            break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1250,6 +1245,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -1499,7 +1495,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
     bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
-    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (elem.second->isExternal())
             continue;
@@ -1561,7 +1557,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1603,7 +1599,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
@@ -1936,7 +1932,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1969,7 +1965,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
 
@@ -2102,7 +2098,7 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
     /// the time-based refresh throttle. Tables with a writable disk own their part set and must not
     /// have it rebuilt here.
     bool disk_refreshed = false;
-    for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
@@ -2244,7 +2240,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
-        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
@@ -2479,7 +2475,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
-        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
@@ -2825,6 +2820,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2840,7 +2840,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;

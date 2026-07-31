@@ -196,6 +196,10 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// The default implementation falls back to the parameterless version.
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
 
@@ -222,7 +226,7 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 

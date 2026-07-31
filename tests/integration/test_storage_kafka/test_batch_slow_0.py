@@ -398,9 +398,17 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         )
         errors_text = instance.query_with_retry(
             errors_query,
-            retry_count=30,
+            retry_count=60,
             sleep_time=1,
             check_callback=lambda res: len(res) > 0,
+        )
+        # query_with_retry returns the last result even if check_callback never
+        # passed, so guard against an empty error MV before json.loads (which
+        # would otherwise raise an opaque "Expecting value" JSONDecodeError).
+        assert (
+            len(errors_text) > 0
+        ), "Error row for format {} did not appear in kafka_errors_{}_mv".format(
+            format_name, format_name
         )
         errors_result = json.loads(errors_text)
         # print(errors_result.strip())

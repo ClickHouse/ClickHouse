@@ -150,9 +150,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     for (size_t i = 0; i < onexprs.size(); ++i)
     {
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
-        join_on_keys.emplace_back(
-            block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i],
-            HashJoin::isLowCardinalityType(join.data->type));
+        join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
     }
 
 

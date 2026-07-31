@@ -145,7 +145,10 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
-elseif (SANITIZE STREQUAL "address")
+elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
+    # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
+    # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
+    # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()

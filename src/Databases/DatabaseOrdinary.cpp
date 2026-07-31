@@ -699,7 +699,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
+Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
     {

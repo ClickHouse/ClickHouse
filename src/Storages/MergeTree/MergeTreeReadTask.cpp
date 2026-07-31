@@ -99,7 +99,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
+static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -133,14 +133,23 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
         }
     }
 
-    /// Allow mixing index columns with regular columns when the regular columns are dependencies
-    /// for evaluating default expressions of text index virtual columns (e.g., for partially materialized text indexes).
-    /// In this case, don't return an index task - let the main reader handle all columns.
-    /// The main reader will evaluate the default expression and fill the virtual column.
+    /// Allow mixing index columns with regular columns when the regular columns are dependencies for evaluating
+    /// default expressions of text index virtual columns (e.g., for partially materialized text indexes).
     if (!index_for_step.empty() && has_non_index_columns)
         return nullptr;
 
-    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
+    if (index_for_step.empty())
+        return nullptr;
+
+    /// The index may be not materialized in this part. There is no index file to read, so let
+    /// the main reader handle the step and evaluate the virtual column's default expression instead.
+    const auto & index_task = index_read_tasks.at(index_for_step);
+    const auto & index = index_task.index.index;
+
+    if (!index->getDeserializedFormat(data_part.checksums, index->getFileName(), &data_part.getDataPartStorage()))
+        return nullptr;
+
+    return &index_task;
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
@@ -178,7 +187,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part))
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),

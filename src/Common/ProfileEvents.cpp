@@ -415,10 +415,6 @@
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
-    M(QueryParseMicroseconds, "Total time spent parsing the query text into an AST.", ValueType::Microseconds) \
-    M(QueryAnalysisMicroseconds, "Total time spent building the query tree and running analyzer passes (resolves identifiers, types, expressions).", ValueType::Microseconds) \
-    M(QueryPlanBuildMicroseconds, "Total time spent building the QueryPlan from the analyzed query tree.", ValueType::Microseconds) \
-    M(QueryPipelineBuildMicroseconds, "Total time spent constructing the QueryPipeline from the optimized QueryPlan.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
@@ -622,6 +618,8 @@ Number of times data after merge is not byte-identical to the data on another re
 The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 )", ValueType::Number) \
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.", ValueType::Number) \
+    M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Number) \
+    M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Bytes) \
     \
     M(NaiveBayesClassifierModelsLoaded, "Number of Naive Bayes Classifier models loaded.", ValueType::Number) \
     M(NaiveBayesClassifierModelsAllocatedBytes, "Number of bytes allocated for Naive Bayes Classifier models.", ValueType::Bytes) \
@@ -860,6 +858,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheOvercommitCandidatesIterationSteps, "Number of outer iterations the overcommit eviction loop ran beyond its first pass to satisfy a reservation's deficit", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time", ValueType::Microseconds) \
+    M(FilesystemCacheLockOriginPoolMicroseconds, "Lock filesystem cache shared origin pool time", ValueType::Microseconds) \
     M(FilesystemCachePriorityWriteLockMicroseconds, "Lock filesystem cache time for write to priority queue", ValueType::Microseconds) \
     M(FilesystemCachePriorityReadLockMicroseconds, "Lock filesystem cache time for read in priority queue", ValueType::Microseconds) \
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
@@ -1102,6 +1101,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1780,6 +1781,26 @@ void Counters::incrementNoTrace(Event event, Count amount)
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
         current = current->parent;
     } while (current != nullptr);
+}
+
+void incrementForLogMessage(Poco::Message::Priority priority)
+{
+    switch (priority)
+    {
+        case Poco::Message::PRIO_TEST: increment(LogTest); break;
+        case Poco::Message::PRIO_TRACE: increment(LogTrace); break;
+        case Poco::Message::PRIO_DEBUG: increment(LogDebug); break;
+        case Poco::Message::PRIO_INFORMATION: increment(LogInfo); break;
+        case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
+        case Poco::Message::PRIO_ERROR: increment(LogError); break;
+        case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
+        default: break;
+    }
+}
+
+void incrementLoggerElapsedNanoseconds(UInt64 ns)
+{
+    increment(LoggerElapsedNanoseconds, ns);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

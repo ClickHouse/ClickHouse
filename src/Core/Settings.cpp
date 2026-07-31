@@ -7270,7 +7270,7 @@ Traverse frozen data (shadow directory) in addition to actual table data when qu
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
 )", 0) \
     DECLARE(Bool, allow_get_client_http_header, false, R"(
-Allow to use the function `getClientHTTPHeader` which lets to obtain a value of an the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*` and `Authentication` headers are always restricted and cannot be obtained with this function.
+Allow to use the function `getClientHTTPHeader` which lets to obtain a value of the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*`, `Authentication` and `Authorization` headers are always restricted and cannot be obtained with this function.
 )", 0) \
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
@@ -7397,9 +7397,12 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
-Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
-)", 0, show_data_lake_catalogs_in_system_tables) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Bool, show_remote_databases_in_system_tables, true, R"(
+Enables showing `MySQL` and `PostgreSQL` databases in system tables.
+)", 0) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7431,7 +7434,7 @@ Enables delta-kernel writes feature.
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
     DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines.
+Default partition strategy for file like engines. Applied only when the path does not contain a `{_partition_id}` placeholder: such a path is compatible only with the `wildcard` strategy, so it always implies `wildcard`.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -7630,9 +7633,20 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
+When enabled, the new analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
+)", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
     )", 0) \
+    DECLARE(Bool, analyzer_compatibility_apply_final_to_all_joined_tables, false, R"(
+Restores the behavior of versions before 26.6, where the `FINAL` modifier specified on the left-most table of a JOIN was incorrectly applied to all other joined tables as well (for engines that support `FINAL`, e.g. `ReplacingMergeTree`). By default `FINAL` applies only to the table it is written on. Enable for compatibility with queries that rely on the old behavior; the recommended fix is to write `FINAL` explicitly on every table that needs it.
+
+Possible values:
+
+- 0 - `FINAL` applies only to the table it is specified on.
+- 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
     )", 0) \
@@ -8335,6 +8349,9 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
+    DECLARE(String, ai_function_credentials, "", R"(
+Name of the named collection that AI functions use for provider credentials and configuration (`provider`, `endpoint`, `model`, optional `api_key`, etc.). When empty, an exception is raised.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", EXPERIMENTAL) \
@@ -8524,14 +8541,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    std::vector<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8639,9 +8656,9 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     }
 }
 
-VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
+std::vector<String> SettingsImpl::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> all_settings;
+    std::vector<String> all_settings;
     for (const auto & setting_field : all())
         all_settings.push_back(setting_field.getName());
     return all_settings;
@@ -8758,16 +8775,6 @@ std::string_view Settings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
-std::string_view Settings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String Settings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
-}
-
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
@@ -8788,7 +8795,7 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
+std::vector<String> Settings::getHints(const String & name) const
 {
     return impl->getHints(name);
 }
@@ -8808,9 +8815,9 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
+std::vector<std::string_view> Settings::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -8818,9 +8825,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() con
     return setting_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
+std::vector<std::string_view> Settings::getAllAliasNames() const
 {
-    VectorWithMemoryTracking<std::string_view> alias_names;
+    std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & [_, aliases] : settings_to_aliases)
     {
@@ -8829,9 +8836,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
     return alias_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
+std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
         if (setting.getTier() == SettingsTierType::OBSOLETE)
@@ -8840,9 +8847,9 @@ VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames(
     return setting_names;
 }
 
-VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
+std::vector<std::string_view> Settings::getUnchangedNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
     {
         setting_names.emplace_back(setting.getName());

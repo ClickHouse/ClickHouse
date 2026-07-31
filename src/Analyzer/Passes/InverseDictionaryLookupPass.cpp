@@ -312,7 +312,7 @@ public:
             return;
 
 
-        NamesAndTypes key_cols;
+        std::vector<NameAndTypePair> key_cols;
 
         const auto & dict_structure = dict->getStructure();
 

@@ -1,8 +1,6 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -47,7 +45,6 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
-extern const Metric PointInPolygonCacheSizeLimit;
 }
 
 namespace DB
@@ -163,7 +160,7 @@ namespace
     )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
-    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 64, R"(The number of threads to commit snapshot.)", 0) \
+    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 16, R"(The number of threads to commit snapshot.)", 0) \
     DECLARE(UInt64, max_snapshot_commit_thread_pool_free_size, 0, R"(If the number of idle threads in the snapshot commit thread pool exceeds `max_snapshot_commit_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
@@ -644,15 +641,6 @@ namespace
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
-    DECLARE(UInt64, point_in_polygon_cache_size, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE, R"(
-    Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
-    Entries above the limit are evicted in least recently used order.
-    Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
-    The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
-    :::note
-    This setting can be modified at runtime and will take effect immediately.
-    :::
-    )", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
     Maximum size of the query condition cache.
@@ -1349,6 +1337,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
+    DECLARE(UInt64, jemalloc_merge_tree_arenas, 1, R"(Number of dedicated jemalloc arenas for long-lived MergeTree per-part and per-table metadata. `0` disables the dedicated arena (metadata uses the default per-CPU arenas). `1` uses a single shared arena. `N > 1` creates a pool of `N` arenas and routes allocations per CPU; on many-core machines this avoids serializing metadata allocation on a single arena's locks. Capped at the number of CPUs the process may run on (its affinity mask), so a large value (or the core count) yields one arena per allowed CPU. Applied at startup.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \
@@ -1673,6 +1662,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+    DECLARE(String, named_collections_storage_type, "local", R"(
+The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
+`keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
+Configured as `named_collections_storage.type` (`<named_collections_storage><type>` in XML).
+)", 0, "named_collections_storage.type") \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
     DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
@@ -1758,7 +1752,7 @@ struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
-    UnorderedSetWithMemoryTracking<std::string> settings_from_profile_allowlist = {
+    std::unordered_set<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
         "background_merges_mutations_concurrency_ratio",
         "background_merges_mutations_scheduling_policy",
@@ -1833,16 +1827,6 @@ std::string_view ServerSettings::getDescription(std::string_view name) const
     return impl->getDescription(name);
 }
 
-std::string_view ServerSettings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String ServerSettings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
-}
-
 SettingsTierType ServerSettings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
@@ -1870,6 +1854,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
+
+            /// Named collections metadata storage is initialized once, so use its effective startup type.
+            {"named_collections_storage_type",
+             {context->getServerSettingsCopy()[ServerSetting::named_collections_storage_type].toString(), ChangeableWithoutRestart::No}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
@@ -1917,7 +1905,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
 

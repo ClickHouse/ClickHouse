@@ -24,6 +24,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
@@ -354,18 +355,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type);
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
+            /// We don't need any conversion UInt64 is under type of DateTime and Time
             return src;
         }
 
-        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        if (which_type.isTime() && src.getType() == Field::Types::Int64)
         {
-            /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
-            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
-            /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
-            return convertNumericType<Int32>(src, type);
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
@@ -821,6 +820,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
+    checkStackSize();
+
     if (from_value.isNull())
         return from_value;
 

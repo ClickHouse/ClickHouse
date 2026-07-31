@@ -147,7 +147,6 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
-static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column);
 
 /// A multi-disjunct (OR) join shares a single data->type across all disjuncts. When the disjuncts
 /// pick different packed fixed-key maps (e.g. keys32 for a (UInt16, UInt16) clause and keys64 for a
@@ -256,16 +255,6 @@ HashJoin::HashJoin(
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
 
-    /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
-    /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
-    std::optional<Type> low_cardinality_method;
-    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
-    {
-        const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
-        if (only_clause_key_names.size() == 1)
-            low_cardinality_method = tryGetLowCardinalityMethod(right_table_keys.getByName(only_clause_key_names[0]).column);
-    }
-
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
@@ -309,11 +298,6 @@ HashJoin::HashJoin(
         {
             /// Choose data structure to use for JOIN.
             auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
-            if (low_cardinality_method)
-            {
-                current_join_method = *low_cardinality_method;
-                LOG_TRACE(log, "Using a dictionary-aware hash map for the single LowCardinality join key");
-            }
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
@@ -476,35 +460,6 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
         default:
             return type;
     }
-}
-
-/// If the column is a single non-nullable LowCardinality key, return the dictionary-aware map type
-/// to use for it. LowCardinality(Nullable(T)) and wide numeric dictionaries fall back to the regular
-/// (materialized) path. Mirrors the single-LowCardinality branch of AggregatedDataVariants::chooseMethod.
-static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column)
-{
-    using Type = HashJoin::Type;
-
-    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get());
-    if (!low_cardinality_column)
-        return {};
-
-    if (low_cardinality_column->getDictionary().nestedColumnIsNullable())
-        return {};
-
-    const auto * nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
-
-    /// Numeric keys are intentionally not routed here. A materialized numeric key uses the key* maps,
-    /// which (with `enable_join_fixed_hash_table_conversion`) convert a dense small range to a
-    /// `range*_key*` FixedHashMap after build and can publish the shared fixed-hash-table runtime
-    /// filter; the dictionary-aware map skips both for no measurable gain. The benefit of the
-    /// dictionary-aware map is concentrated on variable-length string keys.
-    if (typeid_cast<const ColumnString *>(nested))
-        return Type::low_cardinality_key_string;
-    if (typeid_cast<const ColumnFixedString *>(nested))
-        return Type::low_cardinality_key_fixed_string;
-
-    return {};
 }
 
 template <typename KeyGetter, bool is_asof_join>
@@ -797,11 +752,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
-        if (!isLowCardinalityType(data->type))
-            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
+        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());

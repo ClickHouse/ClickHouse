@@ -53,14 +53,22 @@ void ProtobufRowInputFormat::destroyReaderAndSerializer()
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 try
 {
+    bool serializer_recreated = false;
     if (!reader)
+    {
         createReaderAndSerializer();
+        serializer_recreated = true;
+    }
 
     if (reader->eof())
         return false;
 
+    /// Point the serializer at the current columns before reading. Besides the start
+    /// of a block (row_num == 0), this is also needed mid-block when error recovery
+    /// recreated the serializer with a valid row already buffered (row_num > 0) —
+    /// otherwise readRow dereferences its null column.
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num)
+    if (!row_num || serializer_recreated)
         serializer->setColumns(columns.data(), columns.size());
 
     serializer->readRow(row_num);

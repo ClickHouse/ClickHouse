@@ -1,5 +1,5 @@
+
 #include <Storages/System/StorageSystemIcebergHistory.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <mutex>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -136,7 +136,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table
@@ -159,6 +159,3 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 #endif
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemIcebergHistory) }
