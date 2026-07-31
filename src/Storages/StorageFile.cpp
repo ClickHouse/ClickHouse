@@ -195,16 +195,26 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
-    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    /// `canonical_hint` lets a caller that has already resolved the path pass the result in,
+    /// so the resolution is not repeated.
+    auto add_matched_path = [&](const std::string & path, size_t bytes, const std::string * canonical_hint = nullptr)
     {
         /// Deduplicate on the CANONICAL path: the same file can be named by several distinct
         /// lexical paths when a symlink aliases one of its ancestors (`root/file.txt` and
         /// `root/a/back/file.txt` for `root/a/back -> ..`), and a lexical key cannot see that
         /// those are one file. Fall back to the lexical form if the path cannot be resolved.
-        std::error_code canon_ec;
-        auto dedup_key = fs::canonical(path, canon_ec).string();
-        if (canon_ec)
-            dedup_key = fs::path(path).lexically_normal().string();
+        std::string dedup_key;
+        if (canonical_hint)
+        {
+            dedup_key = *canonical_hint;
+        }
+        else
+        {
+            std::error_code canon_ec;
+            dedup_key = fs::canonical(path, canon_ec).string();
+            if (canon_ec)
+                dedup_key = fs::path(path).lexically_normal().string();
+        }
         if (matched_paths.emplace(std::move(dedup_key)).second)
         {
             total_bytes_to_read += bytes;
@@ -221,7 +231,9 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
+            /// Also serves as the existence check; the returned value is reused as the
+            /// deduplication key below so the path is resolved only once.
+            const auto canonical_path = fs::canonical(path_for_ls + for_match).string();
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             /// This exact-match branch is reached for suffixes without globs, including the
@@ -231,7 +243,7 @@ void listFilesWithRegexpMatchingImpl(
             /// directory); in that case keep the byte count at zero but still return the path.
             std::error_code size_ec;
             const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, &canonical_path);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -296,10 +308,12 @@ void listFilesWithRegexpMatchingImpl(
     /// the set of reachable (canonical directory, remaining pattern) pairs is finite and each is
     /// on the stack at most once.
     ///
-    /// Note the deduplication in `add_matched_path` cannot take over this job: it keys on the
-    /// LEXICAL normal form, which does not resolve symlinks, so `root/file.txt` and
-    /// `root/a/back/file.txt` are distinct keys for the same file. Refusing to repeat a frame is
-    /// what stops a symlinked ancestor from yielding the same file twice.
+    /// This prunes TRAVERSAL, which is a different job from the output deduplication in
+    /// `add_matched_path`: that one keeps a repeated visit from emitting a row twice, while this
+    /// one keeps the walk from making the repeated visit at all. Both are needed. Several sibling
+    /// ancestor symlinks under one root let an unpruned walk re-descend every branch each time it
+    /// re-enters the root, so the visited-path count grows exponentially until the kernel symlink
+    /// limit stops it, which deduplication cannot prevent because it filters results.
     std::optional<std::string> active_frame_to_erase;
     if (patternHasGlobstarSegment(for_match))
     {

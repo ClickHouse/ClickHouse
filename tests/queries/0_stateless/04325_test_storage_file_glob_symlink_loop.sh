@@ -136,6 +136,24 @@ mkdir -p "$TEST_DIR_ABS/dedup/root/a"
 printf "row1\n" > "$TEST_DIR_ABS/dedup/root/file.txt"
 ln -s .. "$TEST_DIR_ABS/dedup/root/a/back"
 
+# Several sibling ancestor loops under one root: `branching/root/b1..b3/up -> ../..`.
+# This is the scenario the traversal pruning itself is for, as distinct from output
+# deduplication. Each `up` re-enters the root, where the walk can descend into all
+# three branches again, so without pruning the number of visited paths grows like
+# 3^depth and the walk only stops at the kernel symlink limit around 40 levels. That
+# is far too much work to finish, while deduplication cannot help because it filters
+# results and not traversal. With pruning each (directory, remaining pattern) frame is
+# entered once, so this completes immediately and reports the four real files
+# (`top.txt` plus one per branch). A single-branch loop is not enough here: it stays
+# cheap even unpruned, which is why the scenarios above cannot detect a missing guard.
+mkdir -p "$TEST_DIR_ABS/branching/root"
+printf "row1\n" > "$TEST_DIR_ABS/branching/root/top.txt"
+for b in b1 b2 b3; do
+    mkdir -p "$TEST_DIR_ABS/branching/root/$b"
+    printf "row1\n" > "$TEST_DIR_ABS/branching/root/$b/f.txt"
+    ln -s ../.. "$TEST_DIR_ABS/branching/root/$b/up"
+done
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -226,6 +244,16 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/reenter/roo
 # so only a canonical deduplication key collapses them.
 echo "canonical-dedup-through-ancestor-symlink"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/**/file.txt', 'TSV', 'val String')"
+
+# Traversal pruning under several sibling ancestor loops: must return 4 and must
+# finish. Unpruned, the three `up -> ../..` links let the walk re-descend every
+# branch from the re-entered root, so the visited-path count grows exponentially and
+# the walk runs until the kernel symlink limit. Output deduplication cannot prevent
+# that because it filters results rather than traversal, so this is the assertion
+# that fails if the recursion-stack pruning is removed while every other scenario
+# here still passes.
+echo "branching-ancestor-loops-are-pruned"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/branching/root/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

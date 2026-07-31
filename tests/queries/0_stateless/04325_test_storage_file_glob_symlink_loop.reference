@@ -24,4 +24,6 @@ reenter-same-dir-different-remaining-pattern
 1
 canonical-dedup-through-ancestor-symlink
 1
+branching-ancestor-loops-are-pruned
+4
 alive
