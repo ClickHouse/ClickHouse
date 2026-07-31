@@ -22,6 +22,7 @@
 
 #include <mongoc/mongoc-client.h>
 #include <mongocxx/client.hpp>
+#include <mongocxx/lib/mongocxx/v_noabi/mongocxx/client.hh>
 
 namespace DB
 {
