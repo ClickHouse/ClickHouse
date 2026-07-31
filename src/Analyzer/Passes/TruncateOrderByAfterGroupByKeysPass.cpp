@@ -47,11 +47,11 @@ public:
         if (query->isLimitWithTies())
             return;
 
-        /// The `arrayJoin` function in the projection can multiply rows after GROUP BY,
-        /// so a single GROUP BY key value may correspond to multiple output rows.
-        /// Truncating ORDER BY elements after covering all GROUP BY keys would lose
-        /// tiebreakers among those expanded rows, producing wrong output order.
-        if (hasFunctionNode(query->getProjectionNode(), "arrayJoin"))
+        /// The `arrayJoin` function in the projection or in ORDER BY can multiply rows
+        /// after GROUP BY, so a single GROUP BY key value may correspond to multiple
+        /// output rows. Truncating ORDER BY elements after covering all GROUP BY keys
+        /// would lose tiebreakers among those expanded rows, producing wrong output order.
+        if (hasFunctionNode(query->getProjectionNode(), "arrayJoin") || hasFunctionNode(query->getOrderByNode(), "arrayJoin"))
             return;
 
         /// If any ORDER BY element uses WITH FILL or COLLATE, do not optimize.

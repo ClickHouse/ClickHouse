@@ -20,6 +20,11 @@ FROM t
 GROUP BY a
 ORDER BY a, expanded_b;
 
+-- With arrayJoin only in ORDER BY (not in the projection), rows are still
+-- multiplied, so the arrayJoin sort key must NOT be truncated: each group key
+-- must appear twice.
+SELECT a FROM t GROUP BY a ORDER BY a, arrayJoin([1, 2]);
+
 -- Verify via EXPLAIN QUERY TREE that both SORT nodes are preserved
 -- when arrayJoin is in the projection (should be 2 sort nodes).
 SELECT count()
