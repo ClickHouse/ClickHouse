@@ -39,12 +39,12 @@ void BuffersWriter::write(const Block & block)
     {
         const auto & column = block.safeGetByPosition(i);
 
-        /// Buffers uses the same per-column representation as Native, so the serialization must
-        /// follow the same revision-dependent choice (for example, the size-stream String layout).
-        /// Unlike Native, there is no per-column serialization kind on the wire, so only the
-        /// type-level serialization versions apply — never column-derived kinds such as Sparse.
-        SerializationPtr serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations(
-            format_settings.client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        /// Buffers uses the same per-column representation as Native. The offsets String layout is
+        /// opt-in through a format setting (the format stays portable by default). Unlike Native,
+        /// there is no per-column serialization kind on the wire, so only the type-level
+        /// serialization versions apply — never column-derived kinds such as Sparse.
+        SerializationPtr serialization = column.type->getSerialization(
+            SerializationInfoSettings::enableAllSupportedSerializations(format_settings.native.write_string_with_size_stream));
 
         /// Buffers carries no per-column serialization kind on the wire, so the column must be dense
         /// before it reaches the type-level serializer (NativeWriter::writeData only strips Const and

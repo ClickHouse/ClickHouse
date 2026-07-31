@@ -98,6 +98,14 @@ void NativeWriter::flush()
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
+    /// The size-stream String layout is enabled either by a high enough protocol revision (the
+    /// native TCP protocol) or by an explicit format setting (the Native/Buffers format). It is
+    /// orthogonal to the framing that the revision gates below and needs no per-column wire marker:
+    /// both peers agree through the revision or the setting.
+    const bool with_string_size_stream
+        = client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
+        || (format_settings && format_settings->native.write_string_with_size_stream);
+
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
         ColumnPtr result_column = column.column;
@@ -112,13 +120,22 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         }
 
         auto info = column.type->getSerializationInfo(
-            *result_column,
-            SerializationInfoSettings::enableAllSupportedSerializations(
-                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+            *result_column, SerializationInfoSettings::enableAllSupportedSerializations(with_string_size_stream));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    /// Below the custom-serialization revision there is no per-column kind on the wire, so the column
+    /// must be dense. A format setting can still select the size-stream String layout; the info is
+    /// used only to build the serialization and is not sent (no `has_custom_serialization` byte).
+    ColumnPtr result_column = recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated());
+    if (with_string_size_stream)
+    {
+        auto info = column.type->getSerializationInfo(
+            *result_column, SerializationInfoSettings::enableAllSupportedSerializations(true));
+        return {column.type->getSerialization(*info), nullptr, result_column};
+    }
+
+    return {column.type->getDefaultSerialization(), nullptr, result_column};
 }
 
 size_t NativeWriter::write(const Block & block)

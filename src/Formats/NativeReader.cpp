@@ -208,13 +208,19 @@ Block NativeReader::read()
         SerializationPtr serialization;
         ColumnPtr read_column;
 
+        /// The size-stream String layout is enabled either by a high enough protocol revision (the
+        /// native TCP protocol) or by an explicit format setting (the Native/Buffers format). It is
+        /// orthogonal to the framing gated by the revision and needs no per-column wire marker.
+        const bool with_string_size_stream
+            = server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
+            || (format_settings && format_settings->native.read_string_with_size_stream);
+
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
             auto info = column.type->createSerializationInfo(
-                SerializationInfoSettings::enableAllSupportedSerializations(
-                    server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+                SerializationInfoSettings::enableAllSupportedSerializations(with_string_size_stream));
 
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
@@ -228,7 +234,18 @@ Block NativeReader::read()
         }
         else
         {
-            serialization = column.type->getDefaultSerialization();
+            /// No per-column kind on the wire below the custom-serialization revision, so the column
+            /// is dense; a format setting can still select the size-stream String layout.
+            if (with_string_size_stream)
+            {
+                auto info = column.type->createSerializationInfo(
+                    SerializationInfoSettings::enableAllSupportedSerializations(true));
+                serialization = column.type->getSerialization(*info);
+            }
+            else
+            {
+                serialization = column.type->getDefaultSerialization();
+            }
             auto new_column = column.type->createColumn(*serialization);
             new_column->reserve(rows);
             read_column = std::move(new_column);

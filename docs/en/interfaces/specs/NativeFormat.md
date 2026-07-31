@@ -339,7 +339,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
-| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54489` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout at every revision (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54489` | Applies to the native TCP protocol. Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). In the `Native`/`Buffers` *format* the offsets layout is not gated by the revision but by the `output_format_native_write_string_with_size_stream` / `input_format_native_read_string_with_size_stream` settings (off by default). When in effect the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
@@ -714,7 +714,7 @@ Each value carries its own length on the wire.
 
 #### String {#string-type}
 
-Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)).
+Type string: `String`. A `String` column has two wire layouts. Over the native TCP protocol the layout is selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)); in the `Native`/`Buffers` *format* it is selected by the `output_format_native_write_string_with_size_stream` / `input_format_native_read_string_with_size_stream` settings (off by default, so the format stays portable).
 
 **Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54489`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
@@ -734,7 +734,7 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 01 63                    row 2: length 1, "c"
 ```
 
-**Offsets layout** — at revision `54489` and above: two concatenated streams, the cumulative byte offsets first, then all data:
+**Offsets layout** — at revision `54489` and above over the native protocol, or when `output_format_native_write_string_with_size_stream` is set for the `Native`/`Buffers` format: two concatenated streams, the cumulative byte offsets first, then all data:
 
 ```text
 [UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
@@ -752,7 +752,7 @@ The same 3 strings `["ab", "", "c"]` (27 bytes total):
 61 62 63                 "ab" + "" + "c"
 ```
 
-At or above the threshold the offsets layout applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality`](#lowcardinality) column is always written with the default nested serialization, so its `String` values keep the per-value layout at every revision. This covers `LowCardinality(String)`, `LowCardinality(Nullable(String))`, and any other String-bearing `LowCardinality` dictionary.
+When the offsets layout is in effect it applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality`](#lowcardinality) column is always written with the default nested serialization, so its `String` values keep the per-value layout at every revision. This covers `LowCardinality(String)`, `LowCardinality(Nullable(String))`, and any other String-bearing `LowCardinality` dictionary.
 
 In both layouts ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller.
 

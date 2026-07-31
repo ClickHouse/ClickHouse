@@ -64,12 +64,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 
     const Settings & settings = context->getSettingsRef();
 
-    /// The protocol version of the inserting connection applies to the INSERT body only:
-    /// revision-dependent formats (Native, Buffers) parse the body at the version the client
-    /// wrote it at, while file()/s3()/url() reads inside the same request keep parsing files
-    /// at revision 0 (their format settings do not get this override).
     auto format_settings = getFormatSettings(context);
-    format_settings.native.input_client_protocol_version = format_settings.client_protocol_version;
 
     /// Create a source from input buffer using format from query
     auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,

@@ -48,11 +48,11 @@ TEST(BuffersFormat, SparseStringColumn)
         return block;
     };
 
-    for (UInt64 version : {UInt64(0), UInt64(DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION)})
+    for (bool with_size_stream : {false, true})
     {
         FormatSettings format_settings;
-        format_settings.client_protocol_version = version;
-        format_settings.native.input_client_protocol_version = version;
+        format_settings.native.write_string_with_size_stream = with_size_stream;
+        format_settings.native.read_string_with_size_stream = with_size_stream;
 
         WriteBufferFromOwnString out;
         BuffersWriter writer(out, std::make_shared<const Block>(header), format_settings);
@@ -63,14 +63,14 @@ TEST(BuffersFormat, SparseStringColumn)
         BuffersReader reader(in, header, format_settings);
         Block result = reader.read();
 
-        ASSERT_EQ(result.rows(), n) << "version " << version;
+        ASSERT_EQ(result.rows(), n) << "with_size_stream " << with_size_stream;
         const auto & column = *result.getByPosition(0).column;
         for (size_t i = 0; i < n; ++i)
         {
             Field got;
             column.get(i, got);
             Field expected = Field(String(i == 3 ? "rare1" : i == 7 ? "rare2" : ""));
-            ASSERT_EQ(got, expected) << "version " << version << ", row " << i;
+            ASSERT_EQ(got, expected) << "with_size_stream " << with_size_stream << ", row " << i;
         }
     }
 }

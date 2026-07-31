@@ -20,7 +20,7 @@ public:
         , reader(std::make_unique<NativeReader>(
               buf,
               *header_,
-              settings_.native.input_client_protocol_version,
+              0,
               settings_,
               settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_)
@@ -56,7 +56,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = std::make_unique<NativeReader>(in_, *header, settings.native.input_client_protocol_version, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
         IInputFormat::setReadBuffer(in_);
     }
 
@@ -105,7 +105,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        auto reader = NativeReader(in, settings.native.input_client_protocol_version, settings);
+        auto reader = NativeReader(in, 0, settings);
         auto block = reader.read();
         return block.getNamesAndTypesList();
     }

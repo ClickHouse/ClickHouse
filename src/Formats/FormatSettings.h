@@ -618,11 +618,13 @@ struct FormatSettings
         bool decode_types_in_binary_format = false;
         bool write_json_as_string = false;
         bool use_flattened_dynamic_and_json_serialization = false;
-        /// Protocol version for parsing Native/Buffers input. Unlike `client_protocol_version`
-        /// (which is context-wide and drives the output), this is set only for the body of an
-        /// INSERT query, so that file()/s3()/url() reads inside the same request keep parsing
-        /// files at revision 0.
-        UInt64 input_client_protocol_version = 0;
+        /// Write/read String columns with a separate stream of cumulative byte offsets (the layout
+        /// Array uses for its offsets) instead of a per-value length prefix. Off by default so the
+        /// Native/Buffers format stays portable; both peers must opt in through these settings. The
+        /// native TCP protocol selects the same layout through the negotiated protocol revision,
+        /// independently of these settings.
+        bool write_string_with_size_stream = false;
+        bool read_string_with_size_stream = false;
     } native{};
 
     struct

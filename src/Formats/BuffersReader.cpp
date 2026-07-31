@@ -64,10 +64,10 @@ Block BuffersReader::read()
 
         ColumnPtr & read_column = column.column;
 
-        /// Symmetric with BuffersWriter: the serialization follows the same revision-dependent
-        /// choice as Native (type-level versions only; there are no serialization kinds in Buffers).
-        auto serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations(
-            format_settings.native.input_client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        /// Symmetric with BuffersWriter: the offsets String layout is opt-in through a format setting
+        /// (type-level versions only; there are no serialization kinds in Buffers).
+        auto serialization = column.type->getSerialization(
+            SerializationInfoSettings::enableAllSupportedSerializations(format_settings.native.read_string_with_size_stream));
 
         const size_t before = istr.count();
 
