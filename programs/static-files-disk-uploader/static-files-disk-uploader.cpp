@@ -61,7 +61,7 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
     else
     {
         ReadSettings read_settings{};
-        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
         auto src_buf = createReadBufferFromFileBase(file_path, read_settings, fs::file_size(file_path));
         std::shared_ptr<WriteBuffer> dst_buf;
 
@@ -150,7 +150,6 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
 }
 }
 
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv)
 try
 {

@@ -81,7 +81,6 @@ struct CramersVBiasCorrectedWindowData : CrossTabPhiSquaredWindowData
 
 }
 
-void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

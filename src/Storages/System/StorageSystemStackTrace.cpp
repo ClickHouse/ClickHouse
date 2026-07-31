@@ -1,7 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -49,12 +48,6 @@
 #include <pthread.h>
 #endif
 
-/// `errno` from glibc expands as `#define errno (*__errno_location())` and
-/// triggers `-Wdisabled-macro-expansion`. The macro is referenced in many
-/// places below (signal handler, errno checks after libc calls), so we keep
-/// the suppression file-wide rather than wrapping every single use.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -169,7 +162,7 @@ void signalHandler(int, siginfo_t * info, void * context)
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
 
-    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
+    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -314,7 +307,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
         line = line.substr(strlen("SigBlk:"));
         line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
 
-        UInt64 sig_blk = 0;
+        UInt64 sig_blk;
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
@@ -384,7 +377,7 @@ ThreadIdToName getFilteredThreadNames(
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
-class StackTraceSource final : public ISource
+class StackTraceSource : public ISource
 {
 public:
     StackTraceSource(
@@ -733,7 +726,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
-        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -788,11 +781,5 @@ void StorageSystemStackTrace::readImpl(
 }
 
 }
-
-#pragma clang diagnostic pop
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
 #endif

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesCopyTags(dest_group, src_group, ['tag_name_1', 'tag_name_2', ...])
 /// copies specified tags from the `src` group to the `dest` group, and returns the new tags group.
-class FunctionTimeSeriesCopyTags final : public IFunction
+class FunctionTimeSeriesCopyTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesCopyTags";
@@ -70,7 +70,7 @@ public:
 
         auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
 
-        VectorWithMemoryTracking<Group> new_groups;
+        std::vector<Group> new_groups;
 
         if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups[0], src_groups, tags_to_copy);

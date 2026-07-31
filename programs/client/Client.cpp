@@ -1,11 +1,7 @@
 #include <Client.h>
-#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
-
-/// musl defines stderr as (stderr) which is a self-referential macro
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -17,8 +13,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -125,7 +119,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    chassert(have_error == (client_exception || server_exception));
+    assert(have_error == (client_exception || server_exception));
 }
 
 
@@ -519,13 +513,6 @@ void Client::connect()
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
-    /// Capture the client local time zone before the branch below may switch the process default
-    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
-    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
-    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
-    if (client_local_timezone.empty())
-        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
-
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
@@ -854,7 +841,6 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
         ("structure", po::value<std::string>(), "structure")
-        ("scalar", "Send as Scalar packet (not Data)")
         ("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
@@ -888,9 +874,8 @@ void Client::processOptions(
 
         try
         {
-            auto & external_data = external_options.contains("scalar") ? external_scalars : external_tables;
-            external_data.emplace_back(external_options);
-            if (external_data.back().file == "-")
+            external_tables.emplace_back(external_options);
+            if (external_tables.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
@@ -1063,7 +1048,7 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && !queries_files.empty())
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1074,21 +1059,20 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }
     else
     {
+        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
-
-    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1259,11 +1243,6 @@ void Client::readArguments(
             else
                 break;
         }
-        /// Options with no value
-        else if (in_external_group && (arg == "--scalar"))
-        {
-            external_tables_arguments.back().emplace_back(arg);
-        }
         else
         {
             in_external_group = false;
@@ -1378,7 +1357,8 @@ void Client::readArguments(
 }
 
 
-int mainEntryClickHouseClient(int argc, char ** argv);
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

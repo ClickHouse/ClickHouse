@@ -25,7 +25,7 @@ using namespace GatherUtils;
 namespace
 {
 
-class ConcatImpl final : public IFunction
+class ConcatImpl : public IFunction
 {
 public:
     ConcatImpl(const char * name_, bool is_injective_)
@@ -114,14 +114,14 @@ private:
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
-        chassert(num_arguments >= 2);
+        assert(num_arguments >= 2);
 
         auto col_res = ColumnString::create();
-        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_arguments);
-        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_arguments);
-        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_arguments);
-        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_arguments);
-        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
+        std::vector<const ColumnString::Chars *> data(num_arguments);
+        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
+        std::vector<size_t> fixed_string_sizes(num_arguments);
+        std::vector<std::optional<String>> constant_strings(num_arguments);
+        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 0; i < num_arguments; ++i)
@@ -146,7 +146,12 @@ private:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
+                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
+                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
+                auto full_column = column->convertToFullColumnIfConst()
+                    ->convertToFullColumnIfSparse()
+                    ->convertToFullColumnIfLowCardinality();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
@@ -194,7 +199,7 @@ private:
 
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
-class ConcatOverloadResolver final : public IFunctionOverloadResolver
+class ConcatOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";

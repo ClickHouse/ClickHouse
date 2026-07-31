@@ -11,16 +11,10 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool use_streaming_marks_compression;
-}
 
 namespace ErrorCodes
 {
@@ -61,20 +55,6 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
-
-MergeTreeReaderPtr createMergeTreeReaderWide(
-    const MergeTreeDataPartInfoForReaderPtr & read_info,
-    const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
-    const MarkRanges & mark_ranges,
-    const VirtualFields & virtual_fields,
-    UncompressedCache * uncompressed_cache,
-    MarkCache * mark_cache,
-    DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const MergeTreeReaderSettings & reader_settings,
-    const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
     return std::make_unique<MergeTreeReaderWide>(
@@ -93,21 +73,6 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
         CLOCK_MONOTONIC_COARSE);
 }
 
-MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
-    const String & data_part_name_,
-    const String & logger_name_,
-    const SerializationByName & serializations_,
-    MutableDataPartStoragePtr data_part_storage_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const MergeTreeSettingsPtr & storage_settings_,
-    const NamesAndTypesList & columns_list,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & marks_file_extension_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & writer_settings,
-    MergeTreeIndexGranularityPtr computed_index_granularity,
-    WrittenOffsetSubstreams * written_offset_substreams);
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const String & data_part_name_,
     const String & logger_name_,
@@ -240,8 +205,8 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
         while (!marks_reader->eof())
         {
-            MarkInCompressedFile mark{};
-            size_t granularity = 0;
+            MarkInCompressedFile mark;
+            size_t granularity;
 
             readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_reader);
             readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_reader);
@@ -314,8 +279,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1,
-                context->getSettingsRef()[Setting::use_streaming_marks_compression]));
+                /*num_columns_in_mark=*/ 1));
 
             loaders.back()->startAsyncLoad();
         });
@@ -631,7 +595,7 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    const auto metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

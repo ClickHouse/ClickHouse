@@ -35,7 +35,6 @@ namespace ErrorCodes
     #endif
 }
 
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
@@ -120,14 +119,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source, Documentation{
-        .description = "Reads dictionary data from a collection in a MongoDB server."
-#if !USE_MONGODB
-            " Currently unavailable, because this ClickHouse build does not include MongoDB support."
-#endif
-        ,
-        .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",
-        .related = {}});
+    factory.registerSource("mongodb", create_dictionary_source);
 }
 
 #if USE_MONGODB
