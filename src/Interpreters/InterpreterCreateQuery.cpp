@@ -1668,14 +1668,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    /// The XGBoost integration (the `XGBOOST` dictionary layout) is experimental and exists only in builds with
-    /// XGBoost support. Gate both at `CREATE` time, but still allow `ATTACH` so existing dictionaries can be
-    /// loaded on startup. This is the only create-time validation of the layout: dictionaries are loaded lazily
-    /// by default, so without this check the server would persist metadata for a dictionary that can never be
-    /// queried - in a build without XGBoost support, the `predictXGBoost` function is not even registered.
+    /// Blocks creation of dictionaries with xgboost layout
     if (create.is_dictionary && !create.attach && create.dictionary && create.dictionary->layout
         && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost")
     {
+    /// This layout is experimental and exists only in builds with XGBoost support. Moreover, in builds
+    /// where XGBoost was compiled, it can also be disabled by the flag `allow_experimental_xgboost`.
 #if USE_XGBOOST
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_xgboost])
             throw Exception(
