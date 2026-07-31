@@ -37,7 +37,7 @@ bool tryEstimateWithStatistics(
         if (!index_columns_set.contains(col))
             return false;
 
-    ConditionSelectivityEstimatorBuilder builder(context);
+    ConditionSelectivityEstimatorBuilder builder;
     bool has_any_stats = false;
 
     for (const auto & part : parts)
@@ -66,7 +66,7 @@ bool tryEstimateWithStatistics(
     if (!estimator)
         return false;
 
-    auto profile = estimator->estimateRelationProfile(metadata, filter_node);
+    auto profile = estimator->estimateRelationProfile(metadata, filter_node, context);
     auto unfiltered = estimator->estimateRelationProfile();
     if (unfiltered.rows == 0)
         return false;

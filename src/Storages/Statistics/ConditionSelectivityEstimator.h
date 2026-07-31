@@ -30,7 +30,9 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
-class ConditionSelectivityEstimator : public WithContext
+/// Does not hold a query context; callers pass it to `estimateRelationProfile`
+/// so a cached estimator can be reused across queries.
+class ConditionSelectivityEstimator
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
@@ -54,10 +56,10 @@ class ConditionSelectivityEstimator : public WithContext
 
     friend class ConditionSelectivityEstimatorBuilder;
 public:
-    explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
+    ConditionSelectivityEstimator() = default;
 
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere, ContextPtr context) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node, ContextPtr context) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
@@ -133,7 +135,7 @@ using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEst
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    ConditionSelectivityEstimatorBuilder();
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     void markDataPart(const DataPartPtr & data_part);

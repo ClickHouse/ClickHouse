@@ -23,7 +23,7 @@
 namespace DB
 {
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere, ContextPtr context) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -31,17 +31,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     }
     else if (filter == nullptr)
     {
-        return estimateRelationProfile(metadata, prewhere);
+        return estimateRelationProfile(metadata, prewhere, context);
     }
     else if (prewhere == nullptr)
     {
-        return estimateRelationProfile(metadata, filter);
+        return estimateRelationProfile(metadata, filter, context);
     }
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, context, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
-    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, context, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
@@ -209,18 +209,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node, ContextPtr context) const
 {
-    RPNBuilderTreeContext tree_context(getContext());
+    RPNBuilderTreeContext tree_context(context);
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
 }
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts, const Names & required_columns) const
 {
-    /// The context from a previous query may have expired, making `getContext()` unusable.
-    if (context.expired())
-        return true;
-
     /// Build a name-set of the cached parts for O(1) lookups instead of
     /// requiring exact position match (parts can be reordered by a caller).
     NameSet cached_parts(parts_names.begin(), parts_names.end());
@@ -503,8 +499,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder()
+    : estimator(std::make_shared<ConditionSelectivityEstimator>())
 {
 }
 

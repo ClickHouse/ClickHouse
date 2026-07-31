@@ -16,6 +16,12 @@
 # Related: https://github.com/ClickHouse/ClickHouse/pull/104691
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Suppress the corrupted-statistics warning streaming to the client: the warning
+# is asserted below via `system.text_log` (a server-side log table), so it must
+# not also clutter stderr. Set this before sourcing `shell_config.sh`, otherwise
+# the shell_config default ("warning") is baked into `CLICKHOUSE_CLIENT_OPT0` and
+# passing `--send_logs_level` on the command line would duplicate the option.
+export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -78,17 +84,15 @@ QID1="${CLICKHOUSE_DATABASE}_stats_miss_1"
 QID2="${CLICKHOUSE_DATABASE}_stats_miss_2"
 
 # Both queries prune on `b`, so each one asks the part for `b`'s statistics. The
-# corrupted-statistics warning is asserted below via `system.text_log`; suppress its
-# streaming to the client with `--send_logs_level=error` so it does not reach stderr.
-# `use_statistics_cache` stays at its default (1): the negative cache that records the
-# deterministic miss lives in the per-part `estimates` map, which `use_statistics_cache = 0`
-# now bypasses (mirroring the selectivity-estimator path). The test therefore exercises the
-# default cached configuration, where the second query must hit the nullopt entry and skip
-# the probe.
+# corrupted-statistics warning is asserted below via `system.text_log`.
+# `use_statistics_cache` is pinned to 1: `tests/clickhouse-test` randomizes this
+# setting (5% chance of 0), which would bypass the per-part nullopt cache and make
+# the second query re-read the corrupted blob, emitting an extra warning.
 for QID in "$QID1" "$QID2"; do
-    ${CLICKHOUSE_CLIENT} --send_logs_level=error --query_id="$QID" -q "
+    ${CLICKHOUSE_CLIENT} --query_id="$QID" -q "
     SELECT count() FROM t_stats_miss WHERE b > 500
     SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0,
+             use_statistics_cache = 1,
              enable_analyzer = 1, enable_parallel_replicas = 0
     FORMAT Null"
 done

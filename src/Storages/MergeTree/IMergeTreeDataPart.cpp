@@ -1238,10 +1238,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
             continue;
 
         size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
         try
         {
+            auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
             CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
@@ -1274,9 +1274,9 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!column_desc)
             continue;
 
-        auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         try
         {
+            auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
             CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)

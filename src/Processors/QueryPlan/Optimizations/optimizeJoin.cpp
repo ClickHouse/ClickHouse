@@ -474,7 +474,7 @@ RelationStats estimateReadRowsCount(
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+            auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node, reading->getContext());
             RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
             LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
             return stats;

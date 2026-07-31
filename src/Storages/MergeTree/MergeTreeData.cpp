@@ -925,7 +925,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     }
 
     LOG_DEBUG(log, "Loading statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
@@ -3270,7 +3270,7 @@ try
         }
     }
     LOG_DEBUG(log, "Refreshing statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     for (const DataPartPtr & data_part : data_parts)
     {
         try
