@@ -83,6 +83,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.optimize_prewhere,
+        optimization_settings.remove_unused_columns,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
@@ -184,6 +186,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -202,6 +205,8 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.optimize_prewhere,
+        optimization_settings.remove_unused_columns,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
@@ -298,6 +303,11 @@ void optimizeTreeSecondPass(
                         break;
                 }
             });
+
+        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
+        if (optimization_settings.enable_join_runtime_filters_index_analysis)
+            traverseQueryPlan(stack, root,
+                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly.
@@ -320,20 +330,25 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The
+    /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
+    /// into exchanges again - so run them only on a plan that has no exchanges yet.
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !planContainsLogicalExchange(root);
+
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
     /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
     /// than silently running single-node.
-    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         checkDistributedReadSupported(root);
     /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         validateDistributedPlanBucketCounts(optimization_settings);
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
@@ -501,8 +516,9 @@ void optimizeTreeSecondPass(
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
-    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
-    if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
+    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
+    /// or by filtering rescoring queries to vector-index candidate rows.
+    if (optimization_settings.try_use_vector_search)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
