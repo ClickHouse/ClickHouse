@@ -125,18 +125,8 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
 
 void ParquetV3BlockInputFormat::prepareNeedOnlyCountRowGroups(const parquet::format::FileMetaData & file_metadata)
 {
+    const std::vector<size_t> global_offsets = Parquet::buildRowGroupGlobalOffsets(file_metadata);
     const size_t num_row_groups = file_metadata.row_groups.size();
-    std::vector<size_t> global_offsets(num_row_groups + 1, 0);
-    for (size_t i = 0; i < num_row_groups; ++i)
-    {
-        if (file_metadata.row_groups[i].num_rows < 0)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Parquet row group {} has negative row count: {}",
-                i,
-                file_metadata.row_groups[i].num_rows);
-        global_offsets[i + 1] = global_offsets[i] + static_cast<size_t>(file_metadata.row_groups[i].num_rows);
-    }
 
     need_only_count_row_groups.clear();
     need_only_count_next = 0;
