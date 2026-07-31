@@ -412,11 +412,11 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & table_expression_node)
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
     static const Names no_aliases;
 
-    QueryTreeNodePtr current = table_expression_node;
+    QueryTreeNodePtr current = query_or_union_node;
     while (current)
     {
         if (const auto * query_node = current->as<QueryNode>())
