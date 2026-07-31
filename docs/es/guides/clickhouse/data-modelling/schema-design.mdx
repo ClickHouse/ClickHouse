@@ -239,7 +239,7 @@ A la escala a la que suele usarse ClickHouse, la eficiencia en el uso de memoria
 
 <Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Indexación dispersa en ClickHouse" />
 
-La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en la compresión, lo que a su vez puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban de forma contigua permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de manera más eficaz.
+La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en los niveles de compresión, lo que a su vez puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban de forma contigua permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de manera más eficaz.
 
 > Todas las columnas de una tabla se ordenarán según el valor de la clave de ordenación especificada, independientemente de si están incluidas en la propia clave. Por ejemplo, si `CreationDate` se utiliza como clave, el orden de los valores en todas las demás columnas corresponderá al orden de los valores de la columna `CreationDate`. Se pueden especificar varias claves de ordenación; esto ordenará con la misma semántica que una cláusula `ORDER BY` en una consulta `SELECT`.
 
