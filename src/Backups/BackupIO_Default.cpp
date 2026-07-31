@@ -123,4 +123,12 @@ void BackupWriterDefault::removeEmptyDirectories()
 {
 }
 
+std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & file_name)
+{
+    /// Default implementation: just call writeFile().
+    /// Backends that support conditional writes (e.g., S3 with SetIfNoneMatch: *)
+    /// override this to atomically create a file.
+    return writeFile(file_name);
+}
+
 }
