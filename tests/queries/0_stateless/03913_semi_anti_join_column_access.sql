@@ -303,3 +303,23 @@ SELECT if(false, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l.a, 42) FROM {
 SELECT if(true, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 DROP TABLE semi_anti_qual_l;
 DROP TABLE semi_anti_qual_r;
+
+-- Materialized CTEs must bind as qualifiers here just like they do in normal table-expression
+-- resolution (`TableNode::isMaterializedCTE`). When a materialized CTE sits on the non-preserved
+-- side of a SEMI/ANTI JOIN, an explicit `cte.column` reference must be attributed to it and raise
+-- SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED. Without recognizing the CTE name, a live reference would
+-- degrade to UNKNOWN_IDENTIFIER and a dead-branch `if(false, cte.column, 42)` would silently fold
+-- to 42 instead of raising the access error.
+SET enable_materialized_cte = 1;
+-- Live reference to the non-preserved materialized CTE: denied.
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT cte_r.b FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Dead-branch reference to the non-preserved materialized CTE: still denied, not folded to 42.
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT if(false, cte_r.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Same shape with LEFT ANTI JOIN.
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT if(false, cte_r.b, 42) FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN cte_r ON false; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- A materialized CTE on the preserved (right) side of a RIGHT SEMI JOIN stays accessible.
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT cte_r.b FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN cte_r ON true;

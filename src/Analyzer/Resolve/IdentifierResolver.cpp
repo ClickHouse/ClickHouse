@@ -1181,11 +1181,13 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
 
 /** Check whether the leading table qualifier of `identifier` binds to some table expression
   * inside `join_tree_node`. This mirrors the qualifier binding rules used by normal
-  * table-expression resolution (see `tryBindIdentifierToTableExpression`):
-  * - a single-part qualifier matches a table alias or a table name;
+  * table-expression resolution (see `tryResolveIdentifierFromTableExpression`):
+  * - a single-part qualifier matches a table alias, a table name, or a materialized-CTE name;
   * - a two-part qualifier matches a fully qualified `database.table` reference.
   * Recognizing the two-part form is required so that fully qualified references such as
   * `db.table.column` are correctly attributed to the skipped side of a SEMI/ANTI JOIN.
+  * The materialized-CTE form is required so that references like `cte.column` to a CTE on the
+  * skipped side are attributed to it instead of degrading to `UNKNOWN_IDENTIFIER`.
   */
 static bool qualifierBindsToJoinSubtree(
     const TableExpressionNodePtr & join_tree_node,
@@ -1198,6 +1200,10 @@ static bool qualifierBindsToJoinSubtree(
     const auto & path_start = identifier.front();
 
     if (join_tree_node->hasAlias() && join_tree_node->getAlias() == path_start)
+        return true;
+
+    if (const auto * table_node = join_tree_node->as<TableNode>();
+        table_node && table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
         return true;
 
     switch (join_tree_node->getNodeType())
