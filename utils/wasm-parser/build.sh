@@ -63,6 +63,9 @@ CXXFLAGS=(
 # unreachable or replaced by wasm_runtime.cpp - see the comments in that file.
 mapfile -t SOURCES < <(
   ls "$CH"/src/Parsers/*.cpp "$CH"/src/Parsers/Access/*.cpp "$CH"/src/Access/Common/*.cpp
+  # The AST JSON (de)serialization in src/Parsers reaches Poco::JSON through the `writeJSON` /
+  # `readJSON` virtuals, which every AST vtable references even though nothing here calls them.
+  ls "$CH"/base/poco/JSON/src/*.cpp
   cat <<EOF
 $CH/src/Access/IAccessStorage.cpp
 $CH/src/Common/Allocator.cpp
