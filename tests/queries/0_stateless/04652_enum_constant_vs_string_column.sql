@@ -247,12 +247,16 @@ SELECT 'pk_fixed_string_prunes_something', (SELECT sum(toUInt64OrZero(extract(ex
 
 -- PARTITION BY: this plan emits both Min-Max and Partition sections, and both carry a Granules: line, so
 -- the same total over all sections is used here as everywhere else.
+-- Both cells on this surface pin optimize_trivial_count_query off. Without the pin the old analyzer answers
+-- count() from the partition predicate alone, which the analyzer declines to do, so the plan collapses to
+-- ReadFromPreparedSource and prints no Indexes section at all: the granule cell then compares 0 against 0
+-- and passes vacuously, and the condition cell below reads 0 for lack of any text to match.
 SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0))
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0))
     = (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
-          SETTINGS optimize_use_implicit_projections = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 -- This surface gets a condition text oracle rather than a selected < total companion: a declined index
 -- still lets the Min-Max section prune parts here, so a granule count companion would not cleanly fail.
@@ -262,7 +266,7 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
 SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\', \'7\']%') > 0
     AND countIf(explain LIKE '%[\'3\', \'3\']%') = 0
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
