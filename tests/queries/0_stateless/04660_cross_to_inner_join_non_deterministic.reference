@@ -1,0 +1,28 @@
+-- comma join
+1
+-- explicit CROSS JOIN
+1
+-- non-deterministic on the right side of the equality
+1
+-- three tables, one non-deterministic edge
+1
+-- generateUUIDv4
+1
+-- forced rewrite, non-deterministic and deterministic edge
+1
+-- forced rewrite, only a non-deterministic edge
+-- forced rewrite, no equi condition at all
+-- deterministic predicate is unaffected
+1
+-- deterministic predicate is still rewritten
+1
+-- queryID() is still rewritten
+1
+-- now() is still rewritten
+1
+-- currentUser() is still rewritten
+1
+-- rand() is no longer rewritten
+1
+-- nowInBlock() is no longer rewritten
+1
