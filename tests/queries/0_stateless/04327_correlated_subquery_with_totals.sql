@@ -54,8 +54,13 @@ SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNul
 -- runner never injects query_plan_join_swap_table = true, but the stress runner does, so pin it here.
 -- The order limit is pinned too: at 0 optimizeJoinLogicalImpl returns before the flip can happen, and
 -- the runner draws 0 with 5% probability, which would silently make this row a duplicate of the one above.
+-- join_algorithm is pinned for the same reason: the decorrelation join is ANY OUTER, partial merge
+-- supports only one of its two orientations, and any algorithm list that can still select partial merge
+-- (including 'auto', which the stress runner injects) makes chooseJoinOrder cancel the flip. The join
+-- kind then stays as planned and this row silently stops exercising the reversal.
 SELECT id FROM t_04327 WHERE id >= (SELECT 0 GROUP BY 1 WITH TOTALS HAVING isNull(val) = 0) ORDER BY id FORMAT JSONCompact
-SETTINGS query_plan_join_swap_table = true, query_plan_optimize_join_order_limit = 10, correlated_subqueries_use_in_memory_buffer = 0;
+SETTINGS query_plan_join_swap_table = true, query_plan_optimize_join_order_limit = 10, correlated_subqueries_use_in_memory_buffer = 0,
+         join_algorithm = 'hash';
 
 -- I: a correlated TotalsHaving step is still refused by the pre-existing unsupported-step check.
 SELECT id FROM t_04327 WHERE EXISTS (SELECT val GROUP BY 1 WITH TOTALS); -- { serverError NOT_IMPLEMENTED }
