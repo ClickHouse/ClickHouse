@@ -1,0 +1,400 @@
+---
+slug: /guides/replacing-merge-tree
+title: 'Работа с движком ReplacingMergeTree'
+description: 'Руководство по работе с движком ReplacingMergeTree в ClickHouse'
+keywords: ['replacingmergetree', 'вставки', 'дедупликация']
+doc_type: 'guide'
+sidebarTitle: 'Работа с движком ReplacingMergeTree'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Хотя транзакционные базы данных оптимизированы для нагрузок с транзакционными обновлениями и удалениями, базы данных OLAP предоставляют более слабые гарантии для таких операций. Вместо этого они оптимизированы для неизменяемых данных, вставляемых батчами, что позволяет значительно ускорить аналитические запросы. Хотя ClickHouse поддерживает операции обновления через мутации, а также лёгковесный механизм удаления строк, его столбцово-ориентированная структура означает, что такие операции следует планировать с осторожностью, как описано выше. Эти операции выполняются асинхронно, обрабатываются в одном потоке и требуют (в случае обновлений) перезаписи данных на диске. Поэтому их не следует использовать при большом количестве мелких изменений.
+Чтобы обрабатывать поток строк с обновлениями и удалениями, избегая описанных выше сценариев использования, можно использовать движок таблицы ClickHouse ReplacingMergeTree.
+
+<div id="automatic-upserts-of-inserted-rows">
+  ## Автоматические upsert-операции для вставленных строк
+</div>
+
+[Движок таблицы ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) позволяет применять операции обновления к строкам без использования неэффективных операторов `ALTER` или `DELETE`: для этого можно вставить несколько копий одной и той же строки и пометить одну из них как самую новую версию. Затем фоновый процесс асинхронно удаляет более старые версии одной и той же строки, эффективно имитируя обновление за счет неизменяемых вставок.
+Это основано на способности движка таблицы выявлять дублирующиеся строки. Для определения уникальности используется предложение `ORDER BY`: если две строки имеют одинаковые значения в столбцах, указанных в `ORDER BY`, они считаются дубликатами. Столбец `version`, задаваемый при определении таблицы, позволяет сохранить самую новую версию строки, когда две строки распознаются как дубликаты, то есть сохраняется строка с наибольшим значением версии.
+Мы проиллюстрируем этот процесс на примере ниже. Здесь строки однозначно определяются столбцом A (`ORDER BY` для таблицы). Предположим, что эти строки были вставлены двумя батчами, в результате чего на диске сформировались две части данных. Позже в ходе асинхронного фонового процесса эти части объединяются.
+
+ReplacingMergeTree также позволяет указать столбец deleted. Он может содержать только 0 или 1: значение 1 указывает, что строка (и её дубликаты) была удалена, а 0 используется в остальных случаях. **Примечание: удалённые строки не удаляются во время слияния.**
+
+Во время этого процесса при слиянии частей происходит следующее:
+
+* Для строки, определяемой значением 1 в столбце A, есть как строка обновления с версией 2, так и строка удаления с версией 3 (и значением 1 в столбце deleted). Поэтому сохраняется последняя строка, помеченная как удалённая.
+* Для строки, определяемой значением 2 в столбце A, есть две строки обновления. Сохраняется последняя строка со значением 6 в столбце price.
+* Для строки, определяемой значением 3 в столбце A, есть строка с версией 1 и строка удаления с версией 2. Сохраняется строка удаления.
+
+В результате этого процесса слияния мы получаем четыре строки, представляющие итоговое состояние:
+
+<br />
+
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Процесс ReplacingMergeTree" />
+
+<br />
+
+Обратите внимание, что удалённые строки никогда не удаляются. Их можно принудительно удалить с помощью `OPTIMIZE table FINAL CLEANUP`. Для этого требуется экспериментальная настройка `allow_experimental_replacing_merge_with_cleanup=1`. Это следует делать только при следующих условиях:
+
+1. Вы уверены, что после выполнения операции не будут вставлены строки со старыми версиями (для строк, удаляемых при очистке). Если такие строки будут вставлены, они будут ошибочно сохранены, поскольку удалённые строки к тому моменту уже не будут присутствовать.
+2. Перед выполнением очистки убедитесь, что все реплики синхронизированы. Этого можно добиться с помощью команды:
+
+<br />
+
+```sql
+SYSTEM SYNC REPLICA table
+```
+
+Мы рекомендуем приостановить вставки после того, как (1) будет гарантировано, и не возобновлять их, пока эта команда и последующая очистка не будут завершены.
+
+> Обрабатывать удаления с помощью ReplacingMergeTree рекомендуется только для таблиц с небольшим или умеренным числом удалений (менее 10%), если только не предусмотрены периоды для очистки при соблюдении указанных выше условий.
+
+> Совет: также можно выполнить `OPTIMIZE FINAL CLEANUP` для отдельных партиций, в которые больше не вносятся изменения.
+
+<div id="choosing-a-primarydeduplication-key">
+  ## Выбор первичного ключа / ключа дедупликации
+</div>
+
+Выше мы выделили важное дополнительное ограничение, которое также должно выполняться в случае ReplacingMergeTree: значения столбцов в `ORDER BY` должны однозначно идентифицировать строку при всех изменениях. Поэтому при миграции из транзакционной базы данных, такой как Postgres, исходный primary key Postgres следует включать в выражение `ORDER BY` в ClickHouse.
+
+Пользователи ClickHouse хорошо знают, как выбирать столбцы для `ORDER BY` в своих таблицах, чтобы [оптимизировать производительность запросов](/ru/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key). Как правило, эти столбцы следует выбирать на основе ваших [часто выполняемых запросов и располагать в порядке возрастания мощности](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales). Важно, что ReplacingMergeTree накладывает дополнительное ограничение: эти столбцы должны быть неизменяемыми, то есть при репликации из Postgres добавлять в это выражение следует только те столбцы, которые не меняются в исходных данных Postgres. Хотя другие столбцы могут изменяться, эти должны оставаться постоянными для однозначной идентификации строки.
+Для аналитических рабочих нагрузок primary key Postgres обычно мало полезен, поскольку точечный lookup строк требуется редко. Учитывая, что мы рекомендуем располагать столбцы в порядке возрастания мощности, а также то, что совпадения по [столбцам, указанным раньше в ORDER BY, обычно обрабатываются быстрее](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently), primary key Postgres следует добавлять в конец `ORDER BY` (если только он не представляет аналитической ценности). Если в Postgres primary key состоит из нескольких столбцов, их следует добавить в `ORDER BY` с учетом мощности и вероятной пользы для запросов. Вы также можете создать уникальный primary key, объединив значения в столбце `MATERIALIZED`.
+
+Рассмотрим таблицу Posts из набора данных Stack Overflow.
+
+```sql
+CREATE TABLE stackoverflow.posts_updateable
+(
+       `Version` UInt32,
+       `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(Version, Deleted)
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+```
+
+Мы используем ключ `ORDER BY` `(PostTypeId, toDate(CreationDate), CreationDate, Id)`. Столбец `Id`, уникальный для каждого поста, обеспечивает возможность дедупликации строк. В схему также добавляются столбцы `Version` и `Deleted`, как требуется.
+
+<div id="querying-replacingmergetree">
+  ## Запросы к ReplacingMergeTree
+</div>
+
+Во время слияния ReplacingMergeTree выявляет дублирующиеся строки, используя значения столбцов `ORDER BY` как уникальный идентификатор, и либо сохраняет только версию с наибольшим номером, либо удаляет все дубликаты, если последняя версия помечена как удалённая. Однако это обеспечивает лишь согласованность в конечном счёте — нет гарантии, что строки будут дедуплицированы, поэтому полагаться на это не следует.
+
+<Info>
+  **Используйте FINAL для чтения дедуплицированных данных**
+
+  Поскольку дедупликация происходит только во время фоновых слияний, обычный `SELECT` всё ещё может возвращать дублирующиеся или удалённые строки. Чтобы получать корректные результаты на этапе выполнения запроса, используйте модификатор `FINAL`, который завершает дедупликацию и удаление удалённых строк в ходе выполнения запроса.
+</Info>
+
+Рассмотрим приведённую выше таблицу posts. Мы можем использовать обычный способ загрузки этого набора данных, но дополнительно указать столбцы deleted и version со значением 0. Для примера загрузим только 10000 строк.
+
+```sql
+INSERT INTO stackoverflow.posts_updateable SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet') WHERE AnswerCount > 0 LIMIT 10000
+```
+
+```response
+0 rows in set. Elapsed: 1.980 sec. Processed 8.19 thousand rows, 3.52 MB (4.14 thousand rows/s., 1.78 MB/s.)
+```
+
+Проверим количество строк:
+
+```sql
+SELECT count() FROM stackoverflow.posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Теперь обновим статистику после ответа. Вместо того чтобы обновлять эти значения, мы вставляем новые копии 5000 строк и увеличиваем номер их версии на единицу (это означает, что в таблице окажется 150 строк). Это можно смоделировать с помощью простого `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0
+LIMIT 5000
+```
+
+```response
+0 rows in set. Elapsed: 4.056 sec. Processed 1.42 million rows, 2.20 GB (349.63 thousand rows/s., 543.39 MB/s.)
+```
+
+Кроме того, мы удаляем 1000 случайных постов, повторно вставляя строки, но со значением 1 в столбце deleted. Это также можно смоделировать с помощью простого `INSERT INTO SELECT`.
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        1 AS Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount + 1 AS AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0 AND AnswerCount > 0
+LIMIT 1000
+```
+
+```response
+0 rows in set. Elapsed: 0.166 sec. Processed 135.53 thousand rows, 212.65 MB (816.30 thousand rows/s., 1.28 GB/s.)
+```
+
+Результатом описанных выше операций будет 16 000 строк, то есть 10 000 + 5000 + 1000. В действительности строк должно быть всего на 1000 меньше исходного количества, то есть 10 000 - 1000 = 9000.
+
+```sql
+SELECT count()
+FROM posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Ваши результаты будут различаться в зависимости от того, какие слияния уже произошли. Мы видим, что общее количество отличается из-за дублирующихся строк. Применение `FINAL` к таблице дает правильный результат.
+
+```sql
+SELECT count()
+FROM posts_updateable
+FINAL
+```
+
+```response
+┌─count()─┐
+│    9000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 11.81 thousand rows, 212.54 KB (2.14 million rows/s., 38.61 MB/s.)
+Peak memory usage: 8.14 MiB.
+```
+
+<div id="final-performance">
+  ## Производительность FINAL
+</div>
+
+Оператор `FINAL` действительно вносит небольшие накладные расходы в производительность запросов.
+Это особенно заметно, когда запросы не фильтруются по столбцам первичного ключа,
+из-за чего приходится читать больше данных и возрастают затраты на дедупликацию. Если вы
+фильтруете по столбцам ключа с помощью условия `WHERE`, объем данных, загружаемых и передаваемых для
+дедупликации, уменьшится.
+
+Если в условии `WHERE` не используется столбец ключа, ClickHouse в настоящее время не применяет оптимизацию `PREWHERE` при использовании `FINAL`. Эта оптимизация предназначена для сокращения числа читаемых строк для нефильтруемых столбцов. Примеры того, как эмулировать это поведение `PREWHERE` и тем самым потенциально повысить производительность, можно найти [здесь](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance).
+
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## Использование партиций с ReplacingMergeTree
+</div>
+
+Слияние данных в ClickHouse происходит на уровне партиций. При использовании ReplacingMergeTree мы рекомендуем партиционировать таблицу в соответствии с рекомендациями, если вы можете гарантировать, что этот **ключ партиционирования не меняется для строки**. Это гарантирует, что обновления, относящиеся к одной и той же строке, будут попадать в одну и ту же партицию ClickHouse. Можно использовать тот же ключ партиционирования, что и в Postgres, если соблюдать рекомендации, приведенные здесь.
+
+Если это условие выполняется, можно использовать настройку `do_not_merge_across_partitions_select_final=1`, чтобы повысить производительность запросов с `FINAL`. Эта настройка приводит к тому, что при использовании FINAL партиции сливаются и обрабатываются независимо друг от друга.
+
+Рассмотрим следующую таблицу posts, в которой партиционирование не используется:
+
+```sql
+CREATE TABLE stackoverflow.posts_no_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+INSERT INTO stackoverflow.posts_no_part SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
+```
+
+Чтобы `FINAL` действительно было что обрабатывать, мы обновляем 1 млн строк, увеличивая их `AnswerCount` за счёт вставки дублирующих строк.
+
+```sql
+INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
+FROM posts_no_part
+LIMIT 1000000
+```
+
+Вычисление суммы ответов по годам с `FINAL`:
+
+```sql
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_no_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │        371480 │
+...
+│ 2024 │        127765 │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 2.338 sec. Processed 122.94 million rows, 1.84 GB (52.57 million rows/s., 788.58 MB/s.)
+Peak memory usage: 2.09 GiB.
+```
+
+Повторим те же действия для таблицы с партиционированием по году, а затем повторим приведённый выше запрос с `do_not_merge_across_partitions_select_final=1`.
+
+```sql
+CREATE TABLE stackoverflow.posts_with_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+// populate & update omitted
+
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_with_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │       387832  │
+│ 2009 │       1165506 │
+│ 2010 │       1755437 │
+...
+│ 2023 │       787032  │
+│ 2024 │       127765  │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
+```
+
+Как видно, в этом случае партиционирование значительно повысило производительность запросов, поскольку процесс дедупликации может выполняться параллельно на уровне партиций.
+
+<div id="merge-behavior-considerations">
+  ## Особенности поведения при слиянии
+</div>
+
+Механизм выбора слияний в ClickHouse не сводится к простому слиянию частей. Ниже мы рассмотрим это поведение в контексте ReplacingMergeTree, включая параметры конфигурации для более агрессивного слияния старых данных и особенности работы с более крупными частями.
+
+<div id="merge-selection-logic">
+  ### Логика выбора для слияния
+</div>
+
+Хотя цель слияния — уменьшить количество частей, при этом также учитывается цена усиления записи. Поэтому некоторые диапазоны частей исключаются из слияния, если, согласно внутренним расчетам, это привело бы к чрезмерному усилению записи. Такое поведение помогает избежать лишнего расхода ресурсов и продлевает срок службы компонентов хранилища.
+
+<div id="merging-behavior-on-large-parts">
+  ### Поведение слияния для больших частей
+</div>
+
+Движок ReplacingMergeTree в ClickHouse оптимизирован для работы с дублирующимися строками за счёт слияния частей данных, при котором сохраняется только последняя версия каждой строки на основе заданного уникального ключа. Однако, когда слитая часть достигает порога `max_bytes_to_merge_at_max_space_in_pool`, она больше не выбирается для дальнейших слияний, даже если задан параметр `min_age_to_force_merge_seconds`. В результате автоматические слияния уже не могут надёжно удалять дубликаты, которые накапливаются по мере дальнейшей вставки данных.
+
+Чтобы решить эту проблему, можно вызвать `OPTIMIZE FINAL` и вручную выполнить слияние частей с удалением дубликатов. В отличие от автоматических слияний, `OPTIMIZE FINAL` игнорирует порог `max_bytes_to_merge_at_max_space_in_pool` и выполняет слияние частей, исходя только из доступных ресурсов, прежде всего дискового пространства, пока в каждой партиции не останется по одной части. Однако на больших таблицах такой подход может требовать значительного объёма памяти, и его, возможно, придётся запускать повторно по мере добавления новых данных.
+
+Более устойчивое решение, позволяющее сохранить производительность, — партиционировать таблицу. Это помогает не допускать, чтобы части данных достигали максимального размера для слияния, и снижает необходимость в постоянной ручной оптимизации.
+
+<div id="partitioning-and-merging-across-partitions">
+  ### Партиционирование и слияние между партициями
+</div>
+
+Как обсуждалось в разделе Exploiting Partitions with ReplacingMergeTree, мы рекомендуем партиционировать таблицы в качестве рекомендуемой практики. Партиционирование изолирует данные, что делает слияния эффективнее и позволяет избежать слияния между партициями, особенно при выполнении запросов. Начиная с версии 23.12 это поведение было дополнительно улучшено: если ключ партиционирования является префиксом ключа сортировки, слияние между партициями во время выполнения запроса не выполняется, что ускоряет выполнение запросов.
+
+<div id="tuning-merges-for-better-query-performance">
+  ### Настройка слияний для повышения производительности запросов
+</div>
+
+По умолчанию `min_age_to_force_merge_seconds` и `min_age_to_force_merge_on_partition_only` имеют значения 0 и false соответственно, поэтому эти возможности отключены. В такой конфигурации ClickHouse использует стандартное поведение слияния и не запускает принудительные слияния на основе возраста партиции.
+
+Если задано значение `min_age_to_force_merge_seconds`, ClickHouse будет игнорировать обычные эвристики слияния для частей старше указанного периода. Хотя обычно это имеет смысл только тогда, когда цель — минимизировать общее число частей, в ReplacingMergeTree это может повысить производительность запросов за счёт уменьшения числа частей, которые нужно сливать во время выполнения запроса.
+
+Это поведение можно дополнительно настроить, установив `min_age_to_force_merge_on_partition_only=true`: тогда для агрессивного слияния все части в партиции должны быть старше `min_age_to_force_merge_seconds`. Такая конфигурация позволяет старым партициям со временем сливаться в одну часть, что консолидирует данные и помогает поддерживать производительность запросов.
+
+<div id="recommended-settings">
+  ### Рекомендуемые настройки
+</div>
+
+<Warning>
+  Настройка поведения слияния — это операция продвинутого уровня. Перед включением этих настроек в production-среде рекомендуем проконсультироваться с ClickHouse Support.
+</Warning>
+
+В большинстве случаев рекомендуется задавать для `min_age_to_force_merge_seconds` низкое значение — значительно меньшее, чем период партиции. Это сводит к минимуму количество частей и предотвращает ненужное слияние на этапе выполнения запроса с оператором `FINAL`.
+
+Например, рассмотрим месячную партицию, которая уже была объединена в одну часть. Если небольшая случайная вставка создает новую часть в этой партиции, производительность запросов может снизиться, поскольку ClickHouse должен читать несколько частей, пока не завершится слияние. Параметр `min_age_to_force_merge_seconds` позволяет обеспечить более агрессивное слияние этих частей, предотвращая снижение производительности запросов.

@@ -6,8 +6,6 @@ title: 'Integrating Rust Libraries'
 doc_type: 'guide'
 ---
 
-# Rust Libraries
-
 Rust library integration will be described based on BLAKE3 hash-function integration.
 
 The first step of integration is to add the library to /rust folder. To do this, you need to create an empty Rust project and include the required library in Cargo.toml. It is also necessary to configure new library compilation as static by adding `crate-type = ["staticlib"]` ​​to Cargo.toml.
