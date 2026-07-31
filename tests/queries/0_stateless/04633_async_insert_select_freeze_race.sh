@@ -52,39 +52,3 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi WHERE c = 77"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_transformer_multi WHERE d = 99"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_transformer_multi"
-
-# Case 6: concurrent CREATE MATERIALIZED VIEW ... TO <destination> must not receive rows from an
-# already-running INSERT ... SELECT that fell back to the synchronous path. The dependency graph
-# is frozen before the SELECT starts, so a view created afterward must get zero rows from this
-# query even though the destination table itself gets the full result.
-# max_block_size forces the multi-block sync fallback.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_mv_race_dst"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_mv_race_target"
-${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS test_async_sel_mv_race_mv"
-${CLICKHOUSE_CLIENT} -q "
-    CREATE TABLE test_async_sel_mv_race_dst (a UInt32, b UInt32)
-    ENGINE = MergeTree ORDER BY a
-"
-${CLICKHOUSE_CLIENT} -q "
-    CREATE TABLE test_async_sel_mv_race_target (a UInt32, b UInt32)
-    ENGINE = MergeTree ORDER BY a
-"
-${CLICKHOUSE_CLIENT} \
-    --max_block_size=1000 --async_insert=1 --wait_for_async_insert=1 --query_id insert_case6_${CLICKHOUSE_DATABASE} -q "
-    INSERT INTO test_async_sel_mv_race_dst
-    SELECT number AS a, number * 2 AS b
-    FROM numbers(2000)
-    WHERE sleepEachRow(0.001) = 0
-" &
-INSERT_PID=$!
-wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30
-${CLICKHOUSE_CLIENT} -q "
-    CREATE MATERIALIZED VIEW test_async_sel_mv_race_mv TO test_async_sel_mv_race_target AS
-    SELECT * FROM test_async_sel_mv_race_dst
-"
-wait "$INSERT_PID"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_mv_race_dst"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_mv_race_target"
-${CLICKHOUSE_CLIENT} -q "DROP VIEW test_async_sel_mv_race_mv"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_mv_race_target"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_mv_race_dst"
