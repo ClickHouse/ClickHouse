@@ -56,6 +56,15 @@ static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
             setting_name, bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    validateBucketCount(optimization_settings.distributed_plan_default_shuffle_join_bucket_count,
+        "distributed_plan_default_shuffle_join_bucket_count");
+    validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
+        "distributed_plan_default_reader_bucket_count");
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -66,7 +75,9 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -88,6 +99,23 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
             || typeid_cast<const RollupStep *>(step)
             || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
+/// True if the plan already contains a logical exchange step, i.e. the tryMakeDistributed*
+/// transforms (the only source of exchanges) already ran on it.
+bool planContainsLogicalExchange(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -850,10 +878,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
     /// The cap can be raised once the planner sizes bucket counts from statistics, available nodes
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
-    validateBucketCount(optimization_settings.distributed_plan_default_shuffle_join_bucket_count,
-        "distributed_plan_default_shuffle_join_bucket_count");
-    validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
-        "distributed_plan_default_reader_bucket_count");
+    validateDistributedPlanBucketCounts(optimization_settings);
 
     size_t exchange_id = 0;
 
@@ -871,6 +896,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             std::vector<std::unique_ptr<QueryPlan>> child_plans{};
             std::unordered_map<String, DistributedQueryTask> list_of_shards{};
             std::unordered_map<String, String> depends_on_stages{};
+            /// True if the tasks in list_of_shards produce copies of the same data (the case right
+            /// after a BroadcastExchange) rather than a partition of it.
+            bool shards_are_copies = false;
         };
 
         std::vector<Frame> stack;
@@ -879,6 +907,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
         std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
         std::unordered_map<String, String> current_stage_depends_on;
+        bool current_shards_are_copies = false;
 
         while (!stack.empty())
         {
@@ -899,9 +928,13 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// First child, take its list of shards
                     frame.list_of_shards = std::move(current_list_of_shards);
                     current_list_of_shards = {};
+                    frame.shards_are_copies = current_shards_are_copies;
                 }
                 else
                 {
+                    /// The outputs stay copies only if every input is a copy; one partitioned input
+                    /// (e.g. the probe side of a broadcast join) makes the per-bucket results distinct.
+                    frame.shards_are_copies = frame.shards_are_copies && current_shards_are_copies;
                     /// Check that child plan has the same list of shards
                     if (frame.list_of_shards.size() != current_list_of_shards.size())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Different list of shards in child plans {} and {}, last child plan: \n{}",
@@ -953,6 +986,12 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                 if (exchange_step && !optimization_settings.distributed_plan_single_stage)
                 {
+                    if (frame.shards_are_copies)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Exchange step {} consumes the output buckets of a broadcast exchange; "
+                            "they are copies of the same data and re-distributing them would duplicate rows",
+                            frame.node->step->getName());
+
                     /// Make unique name for the exchange
                     const String stage_name = "stage_" + std::to_string(exchange_id);
                     ExchangeDescription exchange_description;
@@ -1025,6 +1064,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(send_and_receive_steps.second));
                     frame.list_of_shards = std::move(destination_stage_tasks);
+                    frame.shards_are_copies = typeid_cast<const BroadcastExchangeStep *>(exchange_step) != nullptr;
                 }
                 else
                 {
@@ -1092,6 +1132,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
+            current_shards_are_copies = frame.shards_are_copies;
 
             LOG_TEST(logger, "Current plan:\n{}\nshard count: {}\n",
                 dumpQueryPlanShort(*current_plan), current_list_of_shards.size());

@@ -1821,7 +1821,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     {
         this->depth++;
         subtypes.emplace_back(
-            this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter2, tp ? af->add_types() : nullptr));
+            this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter2, tp ? af->add_types() : nullptr));
         this->depth--;
     }
     if (tp)
@@ -1830,6 +1830,41 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
         af->set_aggr(aggr);
     }
     return std::make_unique<AggregateFunctionType>(simple, std::move(aggr), std::move(params), std::move(subtypes));
+}
+
+std::vector<EnumValue> StatementGenerator::setRandomEnumValues(RandomGenerator & rg, const bool bits16, EnumDef * edef)
+{
+    std::vector<EnumValue> evs;
+    const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
+
+    if (edef)
+    {
+        edef->set_bits(bits16);
+    }
+    std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
+    if (bits16)
+    {
+        std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
+    }
+    else
+    {
+        std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
+    }
+    for (uint32_t i = 0; i < nvalues; i++)
+    {
+        const String & nval = enum_values[i];
+        const int32_t num = static_cast<int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
+
+        if (edef)
+        {
+            EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+
+            edf->set_enumv(nval);
+            edf->set_number(num);
+        }
+        evs.emplace_back(EnumValue(nval, num));
+    }
+    return evs;
 }
 
 std::unique_ptr<SQLType>
@@ -1897,7 +1932,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
 
-              res = randomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
+              res = randomDateTimeType(rg, low_card ? (allowed_types & ~allow_datetime64) : allowed_types, dtp);
           }},
          {string_type,
           [&]
@@ -1937,38 +1972,9 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               const bool bits16 = rg.nextBool();
-              std::vector<EnumValue> evs;
-              const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
-              EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+              std::vector<EnumValue> evs = setRandomEnumValues(rg, bits16, tp ? tp->mutable_enum_def() : nullptr);
 
-              if (edef)
-              {
-                  edef->set_bits(bits16);
-              }
-              std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
-              if (bits16)
-              {
-                  std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
-              }
-              else
-              {
-                  std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
-              }
-              for (uint32_t i = 0; i < nvalues; i++)
-              {
-                  const String & nval = enum_values[i];
-                  const int32_t num = static_cast<const int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
-
-                  if (edef)
-                  {
-                      EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
-
-                      edf->set_number(num);
-                      edf->set_enumv(nval);
-                  }
-                  evs.emplace_back(EnumValue(nval, num));
-              }
-              res = std::make_unique<EnumType>(bits16 ? 16 : 8, evs);
+              res = std::make_unique<EnumType>(bits16 ? 16 : 8, std::move(evs));
           }},
          {uuid_type,
           [&]
@@ -2108,15 +2114,15 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               TimeTp * tt = tp ? tp->mutable_times() : nullptr;
 
-              res = randomTimeType(rg, low_card ? (allowed_types & ~(allow_time64)) : allowed_types, tt);
+              res = randomTimeType(rg, low_card ? (allowed_types & ~allow_time64) : allowed_types, tt);
           }},
          {qbit_type,
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
               uint32_t dimension = rg.nextSmallNumber();
               uint32_t stride = dimension;
+              QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
 
               /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
               if (rg.nextSmallNumber() < 3)
@@ -2126,12 +2132,26 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   dimension = stride * num_groups;
               }
 
-              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-              if (tp)
+              if (rg.nextSmallNumber() < 3)
               {
-                  QBit * qbit = tp->mutable_qbit();
+                  sub = std::make_unique<IntType>(8, false);
+                  if (tp)
+                  {
+                      qbit->set_int8(true);
+                  }
+              }
+              else
+              {
+                  FloatingPoints nflo = {};
 
-                  qbit->set_subtype(nflo);
+                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+                  if (tp)
+                  {
+                      qbit->set_floats(nflo);
+                  }
+              }
+              if (qbit)
+              {
                   qbit->set_dimension(dimension);
                   if (stride != dimension)
                       qbit->set_stride(stride);
@@ -2200,7 +2220,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
 
               this->depth++;
-              auto k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+              auto k = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, arr);
               this->depth--;
               result = std::make_unique<ArrayType>(std::move(k));
           }},
@@ -2214,7 +2234,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               auto k = this->randomNextType(
                   rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
               this->width++;
-              auto v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+              auto v = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, mt ? mt->mutable_value() : nullptr);
               this->depth--;
               this->width--;
               result = std::make_unique<MapType>(std::move(k), std::move(v));
@@ -2252,7 +2272,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       opt_cname = std::optional<uint32_t>(ncname);
                   }
                   auto k
-                      = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+                      = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : ttn);
                   subtypes.emplace_back(SubType(opt_cname, std::move(k)));
               }
               this->depth--;
@@ -2299,13 +2319,36 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       tcd->mutable_col()->set_column(cname);
                   }
                   auto k = this->randomNextType(
-                      rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+                      rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : nullptr);
                   subtypes.emplace_back(NestedSubType(cname, std::move(k)));
               }
               this->depth--;
               result = std::make_unique<NestedType>(std::move(subtypes));
           }}});
     return result;
+}
+
+EnumType * getColumnEnumType(SQLType * tp)
+{
+    while (tp)
+    {
+        if (auto * et = dynamic_cast<EnumType *>(tp))
+        {
+            return et;
+        }
+        if (auto * nl = dynamic_cast<Nullable *>(tp))
+        {
+            tp = nl->subtype.get();
+            continue;
+        }
+        if (auto * lc = dynamic_cast<LowCardinality *>(tp))
+        {
+            tp = lc->subtype.get();
+            continue;
+        }
+        break;
+    }
+    return nullptr;
 }
 
 String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)
@@ -2454,12 +2497,30 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
-    const GeoTypes imp
-        = gt == GeoTypes::Geometry ? static_cast<GeoTypes>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::MultiPolygon))) : gt;
+    GeoTypes imp = gt;
+
+    if (gt == GeoTypes::Geometry)
+    {
+        /// Pick any concrete geo type. In the enumeration, `Geometry` sits between `MultiPolygon` and `MultiPoint`,
+        /// so remap a draw of `Geometry` to `MultiPoint` to cover all seven concrete alternatives uniformly.
+        const uint32_t choice = rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::Geometry));
+        imp = choice == static_cast<uint32_t>(GeoTypes::Geometry) ? GeoTypes::MultiPoint : static_cast<GeoTypes>(choice);
+    }
 
     switch (imp)
     {
         case GeoTypes::Point: ret = nextGeoPoint(rg); break;
+        case GeoTypes::MultiPoint:
+            /// Set of points, no closure requirement
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                if (i != 0)
+                    ret += ", ";
+                ret += nextGeoPoint(rg);
+            }
+            ret += "]";
+            break;
         case GeoTypes::Ring:
             /// Closed ring: array of points where first == last
             ret = nextGeoRing(rg, limit);

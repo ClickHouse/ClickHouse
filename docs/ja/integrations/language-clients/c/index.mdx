@@ -1,0 +1,481 @@
+---
+sidebarTitle: 'C'
+keywords: ['c', 'ネイティブプロトコル', 'native format', 'header-only', '埋め込み', 'tcp', 'block decode']
+slug: /integrations/c
+description: '埋め込み向けに設計された、ClickHouse ネイティブプロトコル用のヘッダーオンリー C クライアント。'
+title: 'ClickHouse C クライアント'
+doc_type: 'reference'
+---
+
+`clickhouse-c` は、ClickHouse の [ネイティブプロトコル](/ja/concepts/features/interfaces/tcp) 向けのヘッダーオンリー C クライアントです。
+ソースコードと各ヘッダーのリファレンスは、[GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-c) にあります。
+
+上位レベルのクライアントとは異なり、このクライアントは意図的に多くのことを行いません。中核となるヘッダーは、ユーザーが提供する I/O コールバックを介して [Native](/ja/reference/formats/Native) フォーマットのブロックをデコードおよびエンコードします。ソケット、TLS コンテキスト、アロケータ、再試行、接続プーリングはユーザー側で管理します。そのため埋め込みに適した小ささを実現しており、`clickhouse.h` だけをインクルードしても、リンク時の依存関係は libc を除いて発生しません。
+
+<Note>
+  このライブラリは現在も活発に開発されています。v1 では ClickHouse の主要な型をデコードします。
+  制限事項や不足している機能は、[issue tracker](https://github.com/ClickHouse/clickhouse-c/issues) から報告してください。
+  ただし、このライブラリには設計上あえて備えていない機能があることをご理解ください。
+</Note>
+
+<div id="non-goals">
+  ## ライブラリが行わないこと
+</div>
+
+以下は、意図的に対象外としている項目です。これらはアプリケーション側、または関連するライブラリで対応してください。
+
+* HTTPプロトコル。[HTTP インターフェイス](/ja/concepts/features/interfaces/http) を使用する場合は、libcurl を直接ラップしてください。
+* DNS 名前解決、エンドポイントのフェイルオーバー、接続プーリング、再試行、バックオフ。
+* TLS コンテキストのライフサイクル。OpenSSL バックエンドは、すでに接続済みの `SSL` を使用します。
+* スレッド処理。各 `chc_client` は設計上シングルスレッドです。
+* ライブラリ内部での非同期 I/O。ブロッキングクライアント は `chc_io.read` を同期的に呼び出します。ライブラリ自身では I/O を行わない
+  event-loop client が必要な場合は、[I/O を行わないクライアント](#async-client) を使用してください.
+
+<div id="headers">
+  ## ライブラリの構成
+</div>
+
+`clickhouse-c` は、フラットなヘッダーファイル群として提供されます。各ヘッダーには宣言と実装の両方が含まれており、
+センチネルマクロで保護されています。ビルドに必要なヘッダーを選択してください。
+
+| Header                                                                                                           | Purpose                                                           | Link flags       |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------- |
+| [`clickhouse.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse.md)                         | 型、エラー、アロケータ、I/O `vtable`、型名パーサー、ブロックリーダー、ライターなどの中核機能              | —                |
+| [`clickhouse-client.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-client.md)           | TCP パケットループ: Hello、Query、Data、EndOfStream、Exception、Progress、Pong | —                |
+| [`clickhouse-async.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-async.md)             | I/O を行わないクライアント: 呼び出し元がバイト列を渡して駆動する同じパケットループ。ソケットは不要              | —                |
+| [`clickhouse-compression.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-compression.md) | 圧縮フレームのレイアウト、CityHash128、コーデックのディスパッチ、`LZ4`/`ZSTD` アダプター          | `-llz4 -lzstd`   |
+| [`clickhouse-posix-io.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-posix-io.md)       | ブロッキング `read(2)`/`write(2)` 上の I/O バックエンド                         | —                |
+| [`clickhouse-openssl.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-openssl.md)         | `SSL_read`/`SSL_write` 上の I/O バックエンド                              | `-lssl -lcrypto` |
+
+<div id="server-setting">
+  ## 必須のサーバー設定
+</div>
+
+デコーダはワイヤ形式から可読な型名を読み取るため、これらはテキストとしてエンコードされている必要があります。ClickHouse
+はデフォルトでこれらをテキストとして書き込みますが、サーバーまたはセッションのプロファイル
+でこれがbinaryに設定されていてもデコードできなくならないよう、この設定はクエリで明示的に固定してください:
+
+```plaintext
+output_format_native_encode_types_in_binary_format = 0
+```
+
+<div id="adding-to-project">
+  ## プロジェクトへの追加
+</div>
+
+インストールするパッケージはないため、Git submodule またはコピーでヘッダーファイルをソースツリーに取り込んでください。
+`CHC_IMPLEMENTATION` を定義して実装を取り込む翻訳単位は、必ず1つだけにしてください。
+それ以外のすべての翻訳単位では、宣言だけを得るために同じヘッダーファイルをインクルードします。
+
+```c
+/* clickhouse_impl.c */
+#define CHC_IMPLEMENTATION
+#include "clickhouse.h"
+#include "clickhouse-posix-io.h"
+#include "clickhouse-client.h"
+#include "clickhouse-compression.h"
+```
+
+```c
+/* every other TU */
+#include "clickhouse.h"
+#include "clickhouse-client.h"
+```
+
+`chc_alloc_stdlib` を使用するには、`clickhouse.h` をインクルードする前に `CHC_PROVIDE_STDLIB_ALLOC` を定義してください。
+`clickhouse-compression.h` で lz4/zstd への依存関係をなくすには、`CHC_NO_LZ4` または `CHC_NO_ZSTD` を定義してください。
+
+<div id="connecting-over-tcp">
+  ## TCP 経由で接続する
+</div>
+
+ClickHouse server と通信するには、自分でソケットを用意し、それを `chc_io` でラップして `chc_client_init` に渡します。これにより、Hello ハンドシェイクが同期的に実行されます。DNS、フェイルオーバー、再接続、プーリングはライブラリでは処理しないため、これらは呼び出し側で対応する必要があります。
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+struct sockaddr_in sa = {};
+sa.sin_family      = AF_INET;
+sa.sin_port        = htons(9000);
+sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+connect(fd, (struct sockaddr *) &sa, sizeof sa);
+
+chc_alloc al = chc_alloc_stdlib();
+chc_posix_io state;
+chc_io io;
+chc_posix_io_init(&state, &io, fd, NULL, NULL);
+
+chc_client *client = NULL;
+chc_client_opts opts = {
+    .user     = "default",
+    .password = "",
+    .database = "default",
+};
+chc_err err = {};
+if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+    fprintf(stderr, "connect: %s\n", err.msg);
+    chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
+    return 1;
+}
+
+const chc_server_info *info = chc_client_server_info(client);
+printf("connected to %s %llu.%llu.%llu\n", info->display_name,
+       (unsigned long long) info->version_major,
+       (unsigned long long) info->version_minor,
+       (unsigned long long) info->version_patch);
+```
+
+各 `chc_client` はシングルスレッドで動作し、1 つの接続をラップします。ライブラリは `chc_io`
+コールバックを同期的に呼び出します。これらのコールバックが内部で何を行うか (`epoll`、`io_uring`、
+`WaitLatchOrSocket`) は、使用者に委ねられます。
+
+<div id="running-a-query">
+  ## クエリの実行
+</div>
+
+クエリを送信したら、`CHC_PKT_END_OF_STREAM` に達するまでパケットを読み続けます。必須の[サーバー設定](#server-setting)を
+指定するには `chc_client_send_query_ex` を使用してください。`chc_client_send_query` のみを使用すると空の
+設定リストが送信され、サーバーのデフォルト設定がそのまま適用されます。
+
+```c
+chc_query_setting settings[] = {
+    { .name = "output_format_native_encode_types_in_binary_format", .value = "0" },
+};
+chc_query_opts qopts = { .settings = settings, .n_settings = 1 };
+
+const char *sql = "SELECT number, toString(number * number) FROM numbers(5)";
+if (chc_client_send_query_ex(client, sql, strlen(sql), &qopts, &err) != CHC_OK) {
+    fprintf(stderr, "query: %s\n", err.msg);
+    return 1;
+}
+
+for (;;) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        break;
+    }
+
+    if (pkt.kind == CHC_PKT_DATA) {
+        for (size_t r = 0; r < chc_block_n_rows(pkt.block); r++)
+            for (size_t c = 0; c < chc_block_n_columns(pkt.block); c++)
+                print_value(chc_block_column_type(pkt.block, c),
+                            chc_block_column(pkt.block, c), r);
+    } else if (pkt.kind == CHC_PKT_EXCEPTION) {
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    }
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+```
+
+サーバー例外は `CHC_PKT_EXCEPTION` パケットとして返され、
+`chc_client_recv_packet` の non-OK の戻り値として返されるわけではありません。non-OK が返るのはトランスポート層の障害時だけです。結果の最初の `CHC_PKT_DATA`
+パケットは、スキーマを記述した 0 行のヘッダーブロックで、その後にデータブロックが続きます。
+`chc_packet_clear` はパケット内の block または exception を解放します。代わりに所有権を引き取る場合は、まず
+パケット上のそれらのフィールドを null にしてください。
+
+<div id="reading-column-data">
+  ## カラムデータの読み取り
+</div>
+
+ブロックはカラム指向です。各カラムには `chc_column_layout` が返す物理レイアウトがあり、
+それに応じて処理を分岐します。宣言上の型は `chc_block_column_type` から取得します。複合レイアウトは入れ子になるため、
+`Nullable(Array(String))` を読み取るには、Nullable をアンラップし、配列のオフセットをたどってから、
+文字列データを切り出します。
+
+| Layout                    | Accessors                                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `CHC_COL_FIXED`           | `chc_column_fixed_data(c, &elem_size)` — `n_rows * elem_size` バイトのリトルエンディアンデータ                                                   |
+| `CHC_COL_STRING`          | `chc_column_string_data(c)`, `chc_column_string_offsets(c)` — `offsets[i]` はホストのバイトオーダーにおける行 `i` の終端位置 (含まない) です。行 0 は 0 から始まります |
+| `CHC_COL_NULLABLE`        | `chc_column_null_map(c)` (1行あたり1バイト、1 = `NULL`) 、`chc_column_nullable_inner(c)`                                                  |
+| `CHC_COL_ARRAY`           | `chc_column_array_offsets(c)` (累積終端) 、`chc_column_array_values(c)`; `Map` は `Array(Tuple(K, V))` としてデコードされます                     |
+| `CHC_COL_TUPLE`           | `chc_column_tuple_arity(c)`, `chc_column_tuple_child(c, i)` — 各子要素の行数は同じです                                                       |
+| `CHC_COL_LOW_CARDINALITY` | `chc_column_lc_key_size(c)` (1/2/4/8) 、`chc_column_lc_keys(c)`、`chc_column_lc_dict(c)`; Dictionary のスロット 0 はデフォルト値です             |
+
+プレーンな数値、文字列、Nullable カラム用のリーダー:
+
+```c
+void print_value(const chc_type *t, const chc_column *c, size_t row)
+{
+    if (chc_column_layout(c) == CHC_COL_NULLABLE) {
+        if (chc_column_null_map(c)[row]) { fputs("\\N", stdout); return; }
+        print_value(chc_type_child(t, 0), chc_column_nullable_inner(c), row);
+        return;
+    }
+
+    switch (chc_column_layout(c)) {
+    case CHC_COL_FIXED: {
+        /* fixed_data is a raw little-endian byte slab. memcpy into a typed
+           local to avoid unaligned loads and strict-aliasing UB, then
+           byte-swap on big-endian hosts. */
+        size_t es;
+        const uint8_t *p = chc_column_fixed_data(c, &es) + row * es;
+        switch (chc_type_kind(t)) {
+        case CHC_UINT64: { uint64_t v; memcpy(&v, p, sizeof v); printf("%" PRIu64, v); break; }
+        case CHC_INT32:  { int32_t  v; memcpy(&v, p, sizeof v); printf("%" PRId32, v); break; }
+        case CHC_FLOAT64: { double  v; memcpy(&v, p, sizeof v); printf("%g", v); break; }
+        /* ... remaining numeric kinds ... */
+        default: break;
+        }
+        break;
+    }
+    case CHC_COL_STRING: {
+        const uint8_t  *bytes   = chc_column_string_data(c);
+        const uint64_t *offsets = chc_column_string_offsets(c);
+        uint64_t start = row == 0 ? 0 : offsets[row - 1];
+        fwrite(bytes + start, 1, (size_t) (offsets[row] - start), stdout);
+        break;
+    }
+    default: break;
+    }
+}
+```
+
+`CHC_COL_FIXED` データは、送信時のバイト表現ではリトルエンディアンです。ビッグエンディアンのホストでは、多バイト
+整数のバイト順を自分で入れ替える必要があります。offsets と LowCardinality のキーは、デコード時点で
+すでにホストバイトオーダーに変換されています。UUIDs はリトルエンディアンの `UInt64` を 2 つ並べたもので、IPv4 は 4 バイトのリトルエンディアン整数、IPv6 は
+ネットワークバイトオーダーです。`DateTime64` の ticks は UTC であり、型に含まれる timezone はメタデータにすぎません。
+
+信頼できないピアから取り込む際は、各カラムを走査する前に `chc_column_validate` を呼び出して
+ください。`chc_block_read` は、配列の offsets や
+LowCardinality のキーといったフィールド間の不変条件を検証しないため、
+そうしないと、偽造された block によって内部カラムの境界を超えて読み取られるおそれがあります。
+
+<div id="inserting-data">
+  ## データの挿入
+</div>
+
+`chc_build_*` ヘルパーでカラムを構築し、それらを `chc_block_builder` に追加してから、
+`chc_client_send_data` に渡します。ビルダーは呼び出し元が用意したストレージを使用し、データをコピーするのではなく
+ポインターを保持するため、ストレージ、カラムツリー、型、名前、スラブは送信処理が完了するまで有効である必要があります。INSERT では
+クエリを送信し、サーバーのヘッダーブロックを待ってから、1 つ以上のデータブロックを送信し、最後に
+空のブロックを送信してストリームを終了します。
+
+```c
+const char *sql = "INSERT INTO greetings (id, message) VALUES";
+chc_client_send_query(client, sql, strlen(sql), "", 0, &err);
+
+/* Wait for the server's header block (schema, 0 rows). */
+bool got_header = false;
+while (!got_header) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        return 1;
+    }
+    chc_packet_kind kind = pkt.kind;
+    if (kind == CHC_PKT_DATA) got_header = true;
+    else if (kind == CHC_PKT_EXCEPTION && pkt.exception)
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    chc_packet_clear(client, &pkt);
+    if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
+}
+
+chc_block_col columns[2];
+chc_block_builder bb;
+chc_block_builder_init(&bb, columns);
+
+uint64_t ids[3] = { 1, 2, 3 };
+chc_type *u64 = NULL;
+chc_type_parse("UInt64", 6, &al, &u64, &err);
+chc_column id = chc_build_fixed(ids, sizeof ids[0], 3);
+chc_block_builder_append(&bb, "id", 2, u64, &id);
+
+/* String columns: cumulative exclusive end offsets + a packed byte slab. */
+uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
+const uint8_t bytes[] = "hellobuenasgoedendag";
+chc_type *string = NULL;
+chc_type_parse("String", 6, &al, &string, &err);
+chc_column message = chc_build_string(offsets, bytes, 3);
+chc_block_builder_append(&bb, "message", 7, string, &message);
+
+chc_client_send_data(client, &bb, &err);  /* the populated block */
+chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
+
+/* Drain to EndOfStream. */
+for (;;) {
+    chc_packet pkt = {};
+    chc_client_recv_packet(client, &pkt, &err);
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+
+chc_type_destroy(u64, &al);
+chc_type_destroy(string, &al);
+```
+
+`chc_build_fixed` は `n_rows * elem_size` の リトルエンディアン バイト列を受け取り、`chc_build_string` は packed されたスラブ上の、ホストバイトオーダーで表された
+排他的な終端 offset の累積値を受け取ります。helpers はカラムノードを値として返します。
+型に合わせてそれらをネストしてください。たとえば、fixed または string ノードを
+`chc_build_nullable` に渡し、その結果を `chc_build_array` に渡して、array のルートを append します。Tuple、
+LowCardinality、Map、および Geo カラムは同じツリーを使います。Map は `Array(Tuple(K, V))` です。
+
+block 内のすべてのカラムは、トップレベルの行数が同じでなければなりません。writer はツリーを
+parse 済みの ClickHouse 型と照合しますが、呼び出し側は append のたびに各 `chc_block_col` のストレージサイズを確保する必要があります。
+また、`chc_block_column` から取得したデコード済みのカラムを直接 append して再エンコードすることも、`chc_block_col` 配列を指定して
+`chc_block_write_cols` を呼び出し、builder を省略することもできます。builder を下位レベルの `chc_block_write` ではなく
+`chc_client_send_data` 経由で渡すことで、client はネゴシエートされたリビジョンに基づいて block
+オプションを設定し、圧縮を適用できます。
+
+<div id="compression">
+  ## 圧縮
+</div>
+
+`chc_client_opts` に圧縮モードと使用するコーデックを渡します。クライアントは受信した
+Dataパケットを伸長し、送信するパケットを圧縮します。圧縮ヘッダーには `LZ4` と `ZSTD` のアダプターが用意されています。
+各 init はそれぞれ自身のスロットしか埋めないため、どちらにも対応するには両方を呼び出してください。
+
+```c
+#include "clickhouse-compression.h"
+
+chc_codec codec = {};
+chc_lz4_codec_init(&codec);
+chc_zstd_codec_init(&codec);
+
+chc_client_opts opts = {
+    .user        = "default",
+    .compression = CHC_COMP_LZ4,   /* or CHC_COMP_ZSTD */
+    .codec       = &codec,
+};
+```
+
+このプロジェクトがバインディングを提供していない圧縮ライブラリを使用するには、`chc_codec` を自分で実装してください;
+vtable は `clickhouse-compression.h` で宣言されています。
+
+<div id="tls">
+  ## TLS
+</div>
+
+`clickhouse-openssl.h` は、`SSL_read`/`SSL_write` を介した `chc_io` バックエンドを提供します。OpenSSL の制御は利用者側で行います。
+このライブラリが `SSL_CTX` を作成したり、証明書を検証したり、SNI を設定したり、`SSL_connect` /
+`SSL_shutdown` を呼び出したりすることはありません。`chc_io.read` が発火する時点で、ハンドシェイクは完了している必要があります。
+
+```c
+#include "clickhouse-openssl.h"
+
+SSL *ssl = /* connected, handshake complete */;
+chc_openssl_io state;
+chc_io io;
+chc_openssl_io_init(&state, &io, ssl, NULL, NULL);
+/* hand &io to chc_client_init, same as the POSIX backend */
+```
+
+[ClickHouse Cloud](/ja/products/cloud/getting-started/intro) やその他の TLS 対応デプロイでは、ポート 9440 でネイティブプロトコルを
+使用します。どちらのバックエンドも、読み取りの合間にポーリングされる省略可能な `check_cancel` コールバックと、
+`chc_openssl_io_set_deadline` / `chc_posix_io_set_deadline` による読み取りデッドラインに対応しています。
+
+<div id="async-client">
+  ## Ioless (async) クライアント
+</div>
+
+`clickhouse-async.h` は、イベントループ向け TCP クライアントの ioless バリアントです。ソケットには一切触れません。受信したバイト列を渡し、送信したいバイト列を取り出して、`epoll`、`io_uring`、`WaitLatchOrSocket` は自分で駆動します。オプション、パケットタイプ、ブロックビルダーはブロッキングクライアントと同じです。
+
+`chc_async_client_init` は I/O を行わず、ブロックもできません。その後のハンドシェイクは再開可能なステートマシンとして動作し、送信と受信もすべて同様です。パースが渡したバイト列の範囲を超えると、その呼び出しはブロックする代わりに `CHC_WOULD_BLOCK` を返します。さらに受信バイト列を渡してもう一度呼び出すと、パーサーはブロックの途中から再開します。
+
+```c
+#include "clickhouse-async.h"
+
+chc_async_client *c = NULL;
+chc_client_opts opts = { .user = "default" };
+chc_async_client_init(&c, &opts, &al, &err);
+
+for (;;) {
+    int rc = chc_async_handshake(c, &err);
+    if (rc == CHC_OK) break;
+    if (rc != CHC_WOULD_BLOCK) break;   /* hard error */
+    pump(c);   /* drain pending_out to the socket; feed received bytes to chc_async_submit */
+}
+
+chc_async_send_query(c, sql, strlen(sql), "", 0, &err);
+
+for (;;) {
+    chc_packet pkt = {};
+    int rc = chc_async_recv_packet(c, &pkt, &err);
+    if (rc == CHC_WOULD_BLOCK) { pump(c); continue; }
+    if (rc != CHC_OK) break;
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    if (pkt.kind == CHC_PKT_DATA && pkt.block) { /* read columns as above */ }
+    chc_async_packet_clear(c, &pkt);
+    if (done) break;
+}
+```
+
+`pump` は双方向にバイトをやり取りします。Outbound では、`chc_async_pending_out` がキュー済みのバイトへのポインターと長さを返します。ソケットがその一部を受け付けたら、そのバイト数を指定して `chc_async_consume_out` を呼び出します。部分書き込みでも問題ありません。Inbound では、ソケットから読み取ったデータを `chc_async_submit` に渡します。送信ではブロックもバックプレッシャーの適用も発生しないため、pending-out の長さを監視し、大きくなりすぎたら送信の発行を止めてください。
+
+動作する liburing ドライバーは
+[`test/test_async_uring.c`](https://github.com/ClickHouse/clickhouse-c/blob/main/test/test_async_uring.c)
+にあります。
+
+<div id="allocator">
+  ## メモリとアロケータ
+</div>
+
+すべてのエントリポイントは `chc_alloc` vtable を受け取るため、メモリ割り当てにはホスト側で使われている方式がそのまま使われます。
+
+```c
+typedef struct chc_alloc {
+    void *ud;
+    void *(*alloc)  (void *ud, size_t bytes);
+    void *(*realloc)(void *ud, void *p, size_t old_bytes, size_t new_bytes);
+    void  (*free)   (void *ud, void *p, size_t bytes);
+} chc_alloc;
+```
+
+`clickhouse.h` をインクルードする前に `CHC_PROVIDE_STDLIB_ALLOC` を定義し、標準の `malloc` ベースのアロケータを使用するには `chc_alloc_stdlib()` を呼び出します。
+
+<div id="errors">
+  ## エラーとサーバー例外
+</div>
+
+関数は `CHC_OK` (0) または 0 以外の `CHC_ERR_*` コードを返します。コードが戻り値であり、
+呼び出し元のスタックに確保された `chc_err` に可読なメッセージが格納されます。ライブラリが
+エラーをヒープに割り当てることはありません。
+
+```c
+typedef struct chc_err {
+    int  server_code;           /* set when the return code is CHC_ERR_SERVER */
+    char msg[CHC_ERR_MSG_LEN];  /* NUL-terminated, default 256 bytes */
+    char server_name[64];       /* ClickHouse exception class, if SERVER */
+} chc_err;
+```
+
+サーバー側のクエリエラーは `chc_err` の失敗ではありません。これらはパケットストリーム上で
+`CHC_PKT_EXCEPTION` として届き、サーバーの `code`、`display_text`、`stack_trace` を伴います。`chc_err` の確認は、
+トランスポート、プロトコル、デコードの失敗に対してのみ行ってください。
+
+<div id="supported-types">
+  ## サポートされているデータ型
+</div>
+
+ブロックリーダーは以下をデコードできます。
+
+* `Int8`–`Int256`, `UInt8`–`UInt256`
+* `Float32`, `Float64`, `BFloat16`
+* `Bool`
+* `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`
+* `Date`, `Date32`, `DateTime`, `DateTime64`, `Time`, `Time64`
+* `String`, `FixedString(N)`
+* `UUID`, `IPv4`, `IPv6`
+* `Enum8`, `Enum16`
+* `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`
+* `LowCardinality(T)`
+* `Interval`
+* `QBit(...)`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`
+* `SimpleAggregateFunction(f, T)`。これは内部の `T` としてデコードされます
+* `JSON` と `Object('json')`。文字列シリアライゼーションでは `String` カラムとしてデコードされます (下記を参照)
+
+`JSON` と `Object('json')` は文字列シリアライゼーションでデコードされます。クエリで
+`output_format_native_write_json_as_string=1` を設定してください。サポートされる各行は
+`CHC_COL_STRING` カラム内の 1 つの JSON ドキュメントとして渡されます。同じ構造を `chc_build_string` で構築します。
+writer は、解析された型に必要なプレフィックスを出力します。
+
+`Variant`、`Dynamic`、`AggregateFunction` はまだデコードされず、`CHC_ERR_TYPE` を返します。
+フォールバックとして、これらはサーバー側で `String` にキャストしてください。

@@ -46,6 +46,10 @@ Renvoyer la date et l’heure actuelles au moment de l’analyse de la requête.
 
 Cette fonction donne le même résultat que `now('UTC')`. Elle a été ajoutée uniquement pour la compatibilité avec MySQL. [`now`](#now) est l’usage recommandé.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ Introduit dans : v26.7.0
 
 Renvoie l’heure actuelle dans le fuseau horaire du serveur (ou de la session), au moment de l’analyse de la requête.
 La fonction est une expression constante. Il s’agit du `LOCALTIME` SQL standard / PostgreSQL, et elle est équivalente à `CAST(now() AS Time)`.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -2230,13 +2238,17 @@ Introduit dans : v1.1.0
 
 Renvoie la date et l’heure actuelles au moment de l’analyse de la requête. La fonction est une expression constante.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
 now([timezone])
 ```
 
-**Alias** : `localtimestamp`, `current_timestamp`
+**Alias** : `current_timestamp`, `localtimestamp`
 
 **Arguments**
 
@@ -2292,6 +2304,10 @@ Introduite dans : v20.1.0
 
 Renvoie la date et l’heure actuelles avec une précision inférieure à la seconde au moment de l’analyse de la requête. La fonction est une expression constante.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -2331,6 +2347,10 @@ Renvoie la date et l&#39;heure actuelles au moment du traitement de chaque bloc 
 
 Cette fonction est utile pour générer l&#39;heure actuelle dans les requêtes `INSERT SELECT` de longue durée.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -2339,7 +2359,7 @@ nowInBlock([timezone])
 
 **Arguments**
 
-* `timezone` — Facultatif. Nom du fuseau horaire de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
+* `timezone` — Facultatif. Nom du fuseau horaire pour la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -2376,6 +2396,10 @@ Introduit dans : v25.8.0
 Renvoie la date et l’heure actuelles au moment du traitement de chaque bloc de données, en millisecondes. Contrairement à la fonction [now64](#now64), il ne s’agit pas d’une expression constante, et la valeur renvoyée diffère d’un bloc à l’autre dans le cas de requêtes de longue durée.
 
 Il est judicieux d’utiliser cette fonction pour générer l’heure actuelle dans des requêtes INSERT SELECT de longue durée.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -2422,6 +2446,10 @@ Introduit dans : v23.6.0
 
 Renvoie le fuseau horaire du serveur, c’est-à-dire la valeur du paramètre [`timezone`](/fr/reference/settings/server-settings/settings#timezone).
 Si la fonction est exécutée dans le contexte d’une table distribuée, elle génère une colonne normale avec des valeurs correspondant à chaque shard. Sinon, elle renvoie une valeur constante.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -2969,16 +2997,16 @@ SELECT
 └─────────────────────────────┴──────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
-**Utilisation d&#39;une autre syntaxe INTERVAL**
+**Utilisation d&#39;une syntaxe INTERVAL alternative**
 
 ```sql title=Query
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3403,6 +3431,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 Introduit dans : v21.4.0
 
 Renvoie le nom du fuseau horaire de la session en cours ou convertit un décalage ou un nom de fuseau horaire en nom de fuseau horaire canonique.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -4676,7 +4708,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 
 Introduit dans : v1.1.0
 
-Ramène à l’inférieur une date avec heure au début de la journée.
+Arrondit à l’inférieur une date et heure au début de la journée.
 
 <Note>
   Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4690,11 +4722,11 @@ toStartOfDay(datetime)
 
 **Arguments**
 
-* `datetime` — Une date ou une date avec heure à arrondir. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `datetime` — Une date ou une date et heure à arrondir. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 
 **Valeur renvoyée**
 
-Renvoie la date avec heure arrondie à l’inférieur au début de la journée. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date et heure arrondie à l’inférieur au début de la journée. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -4762,7 +4794,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 Introduit dans : v22.6.0
 
-Arrondit à l&#39;inférieur une date avec heure au début de l&#39;intervalle de cinq minutes le plus proche.
+Arrondit à l&#39;inférieur une date et heure au début de l&#39;intervalle de cinq minutes le plus proche.
 
 <Note>
   Le type de retour peut être configuré à l&#39;aide du paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4810,7 +4842,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Introduit dans : v1.1.0
 
-Arrondit à l’inférieur une date avec heure au début de l’heure.
+Arrondit à l’inférieur une date et heure au début de l’heure.
 
 <Note>
   Le type de retour peut être configuré en définissant [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4828,7 +4860,7 @@ toStartOfHour(datetime)
 
 **Valeur renvoyée**
 
-Renvoie la date et l’heure arrondie à l’inférieur au début de l’heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date et heure arrondie à l’inférieur au début de l’heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -4851,7 +4883,7 @@ SELECT
 
 Introduite dans : v1.1.0
 
-Ramène à l’inférieur une date ou une date avec heure au premier jour de l’année ISO, qui peut différer de l’année civile. Voir [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
+Arrondit à l’inférieur une date ou une date avec heure au premier jour de l’année ISO, qui peut différer de l’année civile. Voir [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
   Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4929,7 +4961,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Alias** : `time_bucket`, `date_bin`
+**Alias** : `date_bin`, `time_bucket`
 
 **Arguments**
 
@@ -5088,11 +5120,11 @@ toStartOfMinute(datetime)
 
 **Arguments**
 
-* `datetime` — Une date et une heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date avec heure à arrondir. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
-Renvoie la date et l&#39;heure arrondies à l’inférieur au début de la minute. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date avec heure arrondie à l’inférieur au début de la minute. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -5118,7 +5150,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 
 Introduit dans : v1.1.0
 
-Ramène à l’inférieur une date ou une date avec heure au premier jour du mois.
+Arrondit à l’inférieur une date ou une date avec heure au premier jour du mois.
 
 <Note>
   Le type de retour peut être configuré avec le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5209,7 +5241,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 Introduit dans : v1.1.0
 
-Ramène à l’inférieur une date ou une date avec heure au premier jour du trimestre. Le premier jour du trimestre est le 1er janvier, le 1er avril, le 1er juillet ou le 1er octobre.
+Arrondit à l’inférieur une date ou une date avec heure au premier jour du trimestre. Le premier jour du trimestre est le 1er janvier, le 1er avril, le 1er juillet ou le 1er octobre.
 
 <Note>
   Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5223,7 +5255,7 @@ toStartOfQuarter(value)
 
 **Arguments**
 
-* `value` — La date ou la date avec heure à ramener à l’inférieur au premier jour du trimestre. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `value` — La date ou la date avec heure à arrondir à l’inférieur au premier jour du trimestre. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
@@ -5231,7 +5263,7 @@ Renvoie le premier jour du trimestre correspondant à la date ou à la date avec
 
 **Exemples**
 
-**Ramener à l’inférieur au premier jour du trimestre**
+**Arrondir à l’inférieur au premier jour du trimestre**
 
 ```sql title=Query
 SELECT toStartOfQuarter(toDateTime('2023-04-21 10:20:30'))
@@ -5314,11 +5346,11 @@ toStartOfTenMinutes(datetime)
 
 **Arguments**
 
-* `datetime` — Une date et heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date avec heure. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
-Renvoie la date et heure arrondie au début de l’intervalle de dix minutes le plus proche. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie la date avec heure arrondie au début de l’intervalle de dix minutes le plus proche. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -5360,7 +5392,7 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 **Arguments**
 
-* `datetime` — Une date, avec ou sans heure, à convertir. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date ou une date avec heure à convertir. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `mode` — Détermine le premier jour de la semaine comme décrit dans la fonction `toWeek()`. Valeur par défaut : `0`. [`UInt8`](/fr/reference/data-types/int-uint)
 * `timezone` — Le fuseau horaire à utiliser pour la conversion. S’il n’est pas spécifié, le fuseau horaire du serveur est utilisé. [`String`](/fr/reference/data-types/string)
 
@@ -5396,7 +5428,7 @@ Row 1:
 
 Introduit dans : v1.1.0
 
-Ramène une date ou une date avec heure au premier jour de l’année. Renvoie la date sous forme d’objet `Date`.
+Arrondit à l’inférieur une date ou une date avec heure au premier jour de l’année. Renvoie la date sous forme d’objet `Date`.
 
 <Note>
   Le type de retour peut être configuré via le paramètre [`enable_extended_results_for_datetime_functions`](/fr/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5410,7 +5442,7 @@ toStartOfYear(value)
 
 **Arguments**
 
-* `value` — La date ou la date avec heure à arrondir vers le bas. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `value` — La date ou la date avec heure à arrondir à l’inférieur. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Valeur renvoyée**
 
@@ -5418,7 +5450,7 @@ Renvoie le premier jour de l&#39;année pour la date/l&#39;heure donnée [`Date`
 
 **Exemples**
 
-**Arrondir vers le bas au premier jour de l&#39;année**
+**Arrondir à l’inférieur au premier jour de l&#39;année**
 
 ```sql title=Query
 SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
@@ -5548,12 +5580,12 @@ toUTCTimestamp(datetime, time_zone)
 
 **Arguments**
 
-* `datetime` — Une valeur constante de type date ou date et heure, ou une expression. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une valeur constante de type date ou date avec heure, ou une expression. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `time_zone` — Une valeur constante de type String ou une expression représentant le fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie une date ou une date et heure dans le fuseau horaire UTC. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie une date ou une date avec heure dans le fuseau horaire UTC. [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -5565,8 +5597,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5928,13 +5960,17 @@ Introduit dans : v1.1.0
 
 Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à `toDate(now())`.
 
+<Note>
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
 today()
 ```
 
-**Alias** : `curdate`, `current_date`
+**Alias** : `current_date`, `curdate`
 
 **Arguments**
 
@@ -5981,6 +6017,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Introduit dans : v1.1.0
 
 N’accepte aucun argument et renvoie la date d’hier à un moment de l’analyse de la requête.
+
+<Note>
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 

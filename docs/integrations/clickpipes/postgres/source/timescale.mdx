@@ -10,7 +10,7 @@ integration:
   - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
 
@@ -96,7 +96,7 @@ If you'd like to only perform a one-time load of your data (`Initial Load Only`)
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
    ```
 
-   The `clickpipes` publication will contain the set of change events generated from the specified tables, and will later be used to ingest the replication stream.
+   The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
 
 <Info>
    Some managed services don't give their admin users the required permissions to create a publication for an entire schema. If this is the case, raise a support ticket with your provider. Alternatively, you can skip this step (and the following steps) and perform a one-time load of your data instead.
@@ -106,6 +106,6 @@ After these steps, you should be able to proceed with [creating a ClickPipe](/in
 
 ## Configure network access {#configure-network-access}
 
-If you want to restrict traffic to your Timescale instance, please allowlist the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips).
+If you want to restrict traffic to your Timescale instance, please allowlist the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips).
 Instructions to do this will vary across providers, please consult the sidebar if your provider is listed or raise a 
 ticket with them.
