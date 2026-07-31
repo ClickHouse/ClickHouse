@@ -181,6 +181,26 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     return {};
 }
 
+/// `MergeTreeTransaction::rollback` stores `Tx::RolledBackCSN` in the transaction *before* it starts
+/// the `killMutation` sweep, and `TransactionLog::rollbackTransaction` erases the transaction from
+/// the running list only after that sweep returns. So a transaction that is still in the running
+/// list can already be cancelled, and its mutations will never be applied. Every consumer that only
+/// wants to know whether the mutation is still going to be executed must use this function instead
+/// of `tryGetTransactionForMutation`: otherwise the mutation looks pending for the whole rollback
+/// window, so `selectPartsToMutate` can still schedule a mutate task for it (which `killMutation`
+/// cannot cancel, because it only cancels tasks that are already in `MergeList`, and
+/// `MutatePlainMergeTreeTask` enters `MergeList` in `prepare`), and the read-only status paths
+/// report a cancelled mutation as unfinished. `killMutation` itself needs the transaction object
+/// even in that state, so it keeps using `tryGetTransactionForMutation`.
+/// Related: https://github.com/ClickHouse/ClickHouse/issues/83252
+static MergeTreeTransactionPtr tryGetLiveTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
+{
+    auto txn = tryGetTransactionForMutation(mutation, log);
+    if (txn && txn->getCSN() == Tx::RolledBackCSN)
+        return {};
+    return txn;
+}
+
 /// Terminal state of the transaction that started a mutation, resolved from the entry's cached CSN,
 /// the running transaction list and the transaction log (the authoritative source).
 enum class MutationTransactionState
@@ -208,10 +228,18 @@ static MutationTransactionState getMutationTransactionState(const MergeTreeMutat
     resolved_csn = mutation.csn;
     if (resolved_csn == Tx::UnknownCSN)
     {
-        if (tryGetTransactionForMutation(mutation))
-            return MutationTransactionState::Pending;
+        if (auto txn = tryGetTransactionForMutation(mutation))
+        {
+            /// The transaction is still in the running list, but it may already be cancelled: see
+            /// `tryGetLiveTransactionForMutation`. A cancelled transaction is terminal, so resolve
+            /// it here instead of waiting for it to leave the running list.
+            if (txn->getCSN() != Tx::RolledBackCSN)
+                return MutationTransactionState::Pending;
 
-        resolved_csn = TransactionLog::getCSN(mutation.tid);
+            resolved_csn = Tx::RolledBackCSN;
+        }
+        else
+            resolved_csn = TransactionLog::getCSN(mutation.tid);
     }
 
     if (resolved_csn == Tx::UnknownCSN)
@@ -1302,7 +1330,10 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// it finished" warning is expected here and must not be streamed to the client
     /// (`--send_logs_level=warning`) as spurious `<Warning>` output. The scheduling
     /// (`selectPartsToMutate`) and `killMutation` paths keep the logger for diagnostics.
-    auto txn = tryGetTransactionForMutation(mutation_entry);
+    /// A transaction that is already being rolled back must not be treated as live here either
+    /// (see `tryGetLiveTransactionForMutation`), otherwise a waiter keeps waiting for a cancelled
+    /// mutation until the transaction leaves the running list.
+    auto txn = tryGetLiveTransactionForMutation(mutation_entry);
     bool committed_without_txn = false;
     if (!txn && !mutation_entry.tid.isNonTransactional())
     {
@@ -1430,7 +1461,10 @@ StorageMergeTree::DataPartsVector StorageMergeTree::getVisibleDataPartsVectorFor
     /// warning per poll would both spam the log and, because these queries run in a client's thread
     /// group, be sent to the client and fail stateless tests that treat any server warning as an
     /// error. The scheduling and `killMutation` paths keep the logger, where the warning is useful.
-    if (auto txn = tryGetTransactionForMutation(entry))
+    /// A transaction that is already being rolled back is terminal even though it is still in the
+    /// running list (see `tryGetLiveTransactionForMutation`): resolve it below, so that a cancelled
+    /// mutation is not reported as unfinished for the whole rollback window.
+    if (auto txn = tryGetLiveTransactionForMutation(entry))
         return getVisibleDataPartsVector(txn);
 
     /// The transaction that started this mutation is no longer in the running list, so it reached a
@@ -2086,10 +2120,14 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 continue;
             }
 
-            txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
+            /// A transaction that is already being rolled back must not be treated as live here:
+            /// scheduling a mutate task for it would waste a full mutate pass and keep the part busy
+            /// until the task fails at commit time, and `killMutation` cannot cancel a task that
+            /// enters `MergeList` after the sweep (see `tryGetLiveTransactionForMutation`).
+            txn = tryGetLiveTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
             {
-                /// The transaction is no longer running. Terminal transactional entries were
+                /// The transaction is no longer running (or is already cancelled). Terminal transactional entries were
                 /// already resolved by the pre-pass at the top of this function: committed
                 /// transactions have their CSN cached (and proceed here), orphaned entries were
                 /// removed, and rolled-back entries are being removed by `killMutation`. A still

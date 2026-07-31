@@ -1,4 +1,5 @@
 import threading
+import time
 
 import pytest
 
@@ -1074,3 +1075,177 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
     assert node.query("SELECT sum(val) FROM mt_kill_txn_on_fly").strip() == "200"
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")
+
+
+def test_kill_transaction_mutation_rollback_window(start_cluster):
+    """
+    Regression test for the rollback-in-progress window of a transactional
+    mutation (https://github.com/ClickHouse/ClickHouse/issues/83252).
+
+    MergeTreeTransaction::rollback stores Tx::RolledBackCSN before it starts the
+    killMutation sweep, and TransactionLog::rollbackTransaction erases the
+    transaction from the running list only after that sweep returns.  So there
+    is a window in which the transaction is already cancelled but still looks
+    running.  Treating "present in the running list" as "the mutation is still
+    pending" is wrong in that window: mutation selection can still schedule a
+    mutate task for the cancelled mutation (killMutation cannot cancel it,
+    because it only cancels tasks already present in MergeList, and
+    MutatePlainMergeTreeTask enters MergeList in prepare), and the read-only
+    status paths report the cancelled mutation as unfinished.
+
+    The pause failpoint transaction_rollback_pause_before_kill_mutations holds
+    KILL TRANSACTION exactly inside that window, so no timing assumptions are
+    needed for the state the test asserts.  Merges are stopped while the
+    mutation entry is created, so that the mutation cannot be executed before
+    the transaction is killed.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_rollback_window SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_rollback_window (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query(
+        "INSERT INTO mt_kill_txn_rollback_window SELECT number, 0 FROM numbers(100)"
+    )
+
+    # The mutation must stay pending until the transaction is killed.
+    node.query("SYSTEM STOP MERGES mt_kill_txn_rollback_window")
+
+    session = 44
+    alter_thread = None
+    kill_thread = None
+    try:
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
+        # A mutation inside a transaction always waits for itself, and it can
+        # never finish while merges are stopped, so run it in a thread.  It is
+        # expected to fail: its transaction gets killed.
+        def run_alter():
+            try:
+                tx(
+                    session,
+                    "ALTER TABLE mt_kill_txn_rollback_window UPDATE value = 1 WHERE 1"
+                    " SETTINGS max_execution_time = 60",
+                )
+            except Exception:
+                pass
+
+        alter_thread = threading.Thread(target=run_alter)
+        alter_thread.start()
+
+        # Wait until the mutation entry is registered in the storage.
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_rollback_window'",
+            "1",
+        )
+
+        node.query(
+            "SYSTEM ENABLE FAILPOINT transaction_rollback_pause_before_kill_mutations"
+        )
+
+        def run_kill():
+            try:
+                node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+            except Exception:
+                pass
+
+        kill_thread = threading.Thread(target=run_kill)
+        kill_thread.start()
+
+        # The transaction is cancelled now, but it is still in the running list
+        # and its mutations are not killed yet: exactly the window under test.
+        node.query(
+            "SYSTEM WAIT FAILPOINT"
+            " transaction_rollback_pause_before_kill_mutations PAUSE"
+        )
+        assert (
+            node.query(
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}"
+            ).strip()
+            == "1"
+        ), "The transaction must still be in the running list inside the window"
+
+        # The cancelled mutation must not be applied on the fly ...
+        assert (
+            node.query(
+                "SELECT sum(value) FROM mt_kill_txn_rollback_window",
+                settings={"apply_mutations_on_fly": 1},
+            ).strip()
+            == "0"
+        )
+        # ... must not be reported as an unfinished mutation ...
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_rollback_window' AND is_done = 0"
+            ).strip()
+            == "0"
+        )
+        # ... and must not be counted by the table-level mutation counters.
+        assert (
+            node.query(
+                "SELECT active_on_fly_data_mutations, active_on_fly_alter_mutations,"
+                " active_on_fly_metadata_mutations FROM system.tables"
+                " WHERE database = currentDatabase()"
+                " AND name = 'mt_kill_txn_rollback_window'"
+            ).strip()
+            == "0\t0\t0"
+        )
+
+        # Background mutation selection must not pick it up either.  Merges are
+        # started while the rollback is still paused, so on an unfixed server
+        # the cancelled mutation is selected and its mutate task is recorded in
+        # system.part_log; with the fix nothing is ever selected for it.
+        node.query("SYSTEM START MERGES mt_kill_txn_rollback_window")
+        for _ in range(20):
+            node.query("SYSTEM FLUSH LOGS part_log")
+            assert (
+                node.query(
+                    "SELECT count() FROM system.part_log"
+                    " WHERE database = currentDatabase()"
+                    " AND table = 'mt_kill_txn_rollback_window'"
+                    " AND event_type = 'MutatePart'"
+                ).strip()
+                == "0"
+            ), "A cancelled transactional mutation must not be scheduled"
+            time.sleep(0.5)
+    finally:
+        # Let the rollback finish: killMutation now removes the mutation entry.
+        node.query(
+            "SYSTEM DISABLE FAILPOINT transaction_rollback_pause_before_kill_mutations"
+        )
+
+        if kill_thread is not None:
+            kill_thread.join()
+        # Join before touching the session again: the ALTER holds the session
+        # lock while it runs.
+        if alter_thread is not None:
+            alter_thread.join()
+
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
+
+        node.query("SYSTEM START MERGES mt_kill_txn_rollback_window")
+
+    # The cancelled mutation is gone and later mutations are not blocked by it.
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+        " AND table='mt_kill_txn_rollback_window' AND is_done = 0",
+        "0",
+    )
+    node.query(
+        "ALTER TABLE mt_kill_txn_rollback_window UPDATE value = 2 WHERE 1",
+        settings={"mutations_sync": 1},
+    )
+    assert (
+        node.query("SELECT sum(value) FROM mt_kill_txn_rollback_window").strip() == "200"
+    )
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_rollback_window SYNC")

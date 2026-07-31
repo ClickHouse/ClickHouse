@@ -29,6 +29,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_rollback_pause_before_kill_mutations[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -332,6 +333,16 @@ bool MergeTreeTransaction::rollback() noexcept
 
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
+
+    /// Test-only pause point. The transaction is already cancelled (`Tx::RolledBackCSN` is stored
+    /// above), but it is still in `TransactionLog`'s running list (it is erased by
+    /// `TransactionLog::rollbackTransaction` only after this function returns) and its mutations are
+    /// not killed yet. A regression test uses this window to verify that a cancelled transactional
+    /// mutation is not treated as pending by mutation selection and by the read-only status paths
+    /// (see `tryGetLiveTransactionForMutation` in `StorageMergeTree`).
+    /// Not wrapped in try/catch, exactly as the pause point in `afterCommit`: `pauseFailPoint` only
+    /// takes a mutex and a condvar.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_pause_before_kill_mutations);
 
     RunningMutationsList mutations_to_kill;
     DataPartsVector parts_to_remove;
