@@ -50,7 +50,7 @@ namespace
         {
             ReadBufferFromString in{str};
             ReplicatedPartNames res;
-            size_t num = 0;
+            size_t num;
             readBinary(num, in);
             res.part_names_and_checksums.resize(num);
             for (size_t i = 0; i != num; ++i)
@@ -85,7 +85,7 @@ namespace
         {
             ReadBufferFromString in{str};
             ReplicatedMutations res;
-            size_t num = 0;
+            size_t num;
             readBinary(num, in);
             res.mutations.resize(num);
             for (size_t i = 0; i != num; ++i)
@@ -125,7 +125,7 @@ namespace
         {
             ReadBufferFromString in{str};
             FileInfos res;
-            size_t num = 0;
+            size_t num;
             readBinary(num, in);
             res.file_infos.resize(num);
             for (size_t i = 0; i != num; ++i)

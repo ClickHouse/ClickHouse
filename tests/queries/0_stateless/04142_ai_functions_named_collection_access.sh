@@ -34,11 +34,11 @@ function check_access_both()
         SET allow_experimental_ai_functions = 1;
         SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('hi', map('credentials', '$collection_name')) FORMAT Null;
+        SELECT aiEmbed('hi', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
         SELECT aiGenerate(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiEmbed(x, 'test-model', map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }

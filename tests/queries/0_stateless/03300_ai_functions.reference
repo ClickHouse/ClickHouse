@@ -9,10 +9,7 @@ aiGenerate
 -- Named collection missing model (and none in map)
 -- Model supplied via the parameter map resolves
 0
--- Named collection without api_key resolves
-0
--- Named collection without api_key reaches HTTP path
-0
+-- Named collection missing api_key
 -- Nonexistent named collection
 -- aiGenerate return type
 result	String
@@ -100,6 +97,13 @@ aiEmbed
 -- aiEmbed: too many arguments
 -- aiEmbed: non-constant parameter map
 -- aiEmbed: wrong type for parameter argument (not a map)
+-- aiEmbed: wrong type for model argument (not a string)
+-- aiEmbed: non-constant model argument
+-- aiEmbed: model is a required positional argument
+-- aiEmbed: model in the parameter map is rejected
+-- aiEmbed: model in the named collection is rejected
+-- aiEmbed: model supplied as a positional argument resolves
+0
 -- aiEmbed: return type
 result	Array(Float32)
 -- aiEmbed: return type with dimensions

@@ -75,7 +75,7 @@ Generates free-form text content from a prompt using an LLM provider.
 
 The function sends the prompt to the configured AI provider and returns the generated text.
 
-Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+Credentials (a named collection specifying the provider, model, endpoint, and API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 

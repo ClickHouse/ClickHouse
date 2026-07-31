@@ -25,12 +25,11 @@ namespace ErrorCodes
     DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0) \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0) \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0) \
-    DECLARE(String, aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
-    DECLARE(String, aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
+    DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0) \
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
     DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
-    DECLARE(String, aws_external_id, "", "External id for the AWS STS AssumeRole trust policy for Glue catalog", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(S3UriStyle, storage_uri_style, S3UriStyle::AUTO, "URL style used when constructing object storage URLs from catalog-provided table locations. Use 'virtual_hosted' when the object storage server requires the bucket in the hostname (e.g. https://bucket.endpoint.com/path/)", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
@@ -47,7 +46,7 @@ namespace ErrorCodes
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
-    DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
+    DECLARE(Bool, force_add_bucket, false, "Add bucket name to the metadata path", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
@@ -65,7 +64,10 @@ DatabaseDataLakeSettings::DatabaseDataLakeSettings(const DatabaseDataLakeSetting
 {
 }
 
-DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept = default;
+DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept
+    : impl(std::make_unique<DatabaseDataLakeSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 DatabaseDataLakeSettings::~DatabaseDataLakeSettings() = default;
 

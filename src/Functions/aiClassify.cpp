@@ -190,7 +190,7 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+Credentials (a named collection specifying the provider, model, endpoint, and API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 )",
