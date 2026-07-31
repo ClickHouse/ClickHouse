@@ -3,11 +3,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -18,6 +20,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
+#include <base/scope_guard.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
@@ -61,9 +64,15 @@ static int thriftEnumToInt(const E & e)
 }
 
 template <typename E>
+static bool isValidThriftEnum(const E & e, const std::map<int, const char *> & valid_values)
+{
+    return valid_values.contains(thriftEnumToInt(e));
+}
+
+template <typename E>
 static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what)
 {
-    if (!valid_values.contains(thriftEnumToInt(e)))
+    if (!isValidThriftEnum(e, valid_values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
 }
 
@@ -443,7 +452,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (row_groups.empty())
         return; // all row groups were skipped
 
-    if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
+    /// prepareBloomFilterCondition computes the query-constant hashes used by both the bloom filter
+    /// and the dictionary filter, so run it if either is enabled.
+    if ((options.format.parquet.bloom_filter_push_down || options.dictionary_filter_limit_bytes != 0)
+        && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
     if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
@@ -467,11 +479,28 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     initializePrefetches();
 }
 
+/// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
+/// duplicate them for some reason. Our parquetTryHashColumn is called from both the
+/// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
+/// Warning: this requires that we use the same thrift-generated types as arrow; if we
+/// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
+/// newer version), this will stop working.
+static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData & file_metadata, const Reader::PrimitiveColumnInfo & column_info)
+{
+    const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
+    auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
+    return parquet::ColumnDescriptor(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+}
+
 void Reader::prepareBloomFilterCondition()
 {
     /// Index in output block -> arrow column info.
     std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
+    /// Index in output block -> whether at least one surviving row group can use the dictionary page
+    /// for this column. Used below to exempt the exact dictionary filter from the bloom filter's
+    /// set-size cap (see hash_many).
+    std::vector<bool> dict_filter_eligible_columns(extended_sample_block.columns(), false);
     bool any_column_eligible_for_bf = false;
     for (size_t primitive_idx = 0; primitive_idx < primitive_columns.size(); ++primitive_idx)
     {
@@ -479,22 +508,36 @@ void Reader::prepareBloomFilterCondition()
         if (!column_info.used_by_key_condition)
             continue;
 
-        /// Check for presence of bloom filter only in first row group, expecting that usually
-        /// either all or none of the row groups have bloom filter for any given column.
-        const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[primitive_idx].meta;
-        if (!column_chunk_meta->meta_data.__isset.bloom_filter_offset)
+        /// We hash query constants for any column that has either a bloom filter or a usable
+        /// dictionary page in at least one surviving row group, so that the same hashes can later be
+        /// looked up in whichever of the two we end up using. The per-row-group decision is made
+        /// again in initializePrefetches (via columnChunkCanUseDictionaryFilter and the bloom filter
+        /// offset); here we only need to know whether hashing the constants can ever be useful for
+        /// this column. Encoding is a per-row-group property - a high-cardinality row group can fall
+        /// back to PLAIN (and, unless bloom filters are written, becomes ineligible) while a
+        /// low-cardinality one stays dictionary-encoded - so we must scan all row groups rather than
+        /// assume the first one is representative, otherwise later row groups silently lose pruning.
+        bool any_row_group_eligible = false;
+        bool any_row_group_dict_eligible = false;
+        for (const RowGroup & row_group : row_groups)
+        {
+            const parq::ColumnChunk * column_chunk_meta = row_group.columns[primitive_idx].meta;
+            bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
+                && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
+            bool dict_eligible = columnChunkCanUseDictionaryFilter(*column_chunk_meta);
+            any_row_group_eligible |= has_bloom_filter || dict_eligible;
+            any_row_group_dict_eligible |= dict_eligible;
+            /// Dictionary eligibility already implies overall eligibility, so once we have seen it
+            /// there is nothing left to learn from the remaining row groups.
+            if (any_row_group_dict_eligible)
+                break;
+        }
+        if (!any_row_group_eligible)
             continue;
 
-        /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
-        /// duplicate them for some reason. Our parquetTryHashColumn is called from both the
-        /// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
-        /// Warning: this requires that we use the same thrift-generated types as arrow; if we
-        /// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
-        /// newer version), this will stop working.
-        const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
-        auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
-        parquet::ColumnDescriptor desc(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
+        dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
     }
 
@@ -524,7 +567,16 @@ void Reader::prepareBloomFilterCondition()
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
                 return std::nullopt;
-            if (column->size() > options.bloom_filter_max_set_size)
+            /// The `bloom_filter_max_set_size` cutoff exists because a large queried set is unlikely to
+            /// be ruled out by a probabilistic bloom filter and would make us read many filter blocks
+            /// for nothing. The dictionary filter is exact and reads no extra data per value, so that
+            /// rationale does not apply: capping here would silently disable dictionary pruning for
+            /// `IN` lists with more than `bloom_filter_max_set_size` elements, which is exactly the
+            /// workload this feature targets. So for a column that can use nothing but the bloom filter
+            /// we keep the cap (skip entirely); for a dictionary-eligible column we still hash the large
+            /// set so the dictionary filter can use it, but must not let the bloom filter probe it.
+            bool exceeds_bloom_filter_cap = column->size() > options.bloom_filter_max_set_size;
+            if (exceeds_bloom_filter_cap && !dict_filter_eligible_columns[column_idx])
                 return std::nullopt;
             const auto & [primitive_idx, descriptor] = *pair;
             auto hashes = parquetTryHashColumn(column.get(), &descriptor);
@@ -533,7 +585,15 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
-            column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
+            if (!exceeds_bloom_filter_cap)
+                /// Register the hashes for bloom-filter prefetching. For an over-cap set we skip this:
+                /// the hashes are still returned (and reach the exact dictionary filter via the
+                /// query-condition RPN, which reads no extra data per value), but the probabilistic
+                /// bloom filter must not read a block per value on row groups that fall back to it.
+                /// `initializePrefetches` keeps the bloom filter enabled for the column as long as some
+                /// other atom registered hashes here, and `BloomFilterLookup::findAnyHash` treats the
+                /// unregistered over-cap hashes as possibly present.
+                column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
             any_column_uses_bf = true;
             return hashes;
         };
@@ -569,25 +629,54 @@ void Reader::initializePrefetches()
                 column.dictionary_page_prefetch = prefetcher.registerRange(
                     start, dict_page_length, /*likely_to_be_used=*/ true);
 
-                /// Dictionary filter.
-                if (primitive_columns[column_idx].used_by_key_condition &&
-                    dict_page_length < options.dictionary_filter_limit_bytes &&
-                    column.meta->meta_data.__isset.encoding_stats)
-                {
-                    bool all_pages_are_dictionary_encoded = true;
-                    for (const parq::PageEncodingStats & s : column.meta->meta_data.encoding_stats)
-                        all_pages_are_dictionary_encoded &=
-                            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
-                            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
-                            s.encoding == parq::Encoding::RLE_DICTIONARY ||
-                            s.count == 0;
-                    column.use_dictionary_filter = all_pages_are_dictionary_encoded;
-                }
+                /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
+                /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
+                /// a hashable type; otherwise the dictionary lookup, which relies on those hashes,
+                /// couldn't filter anything anyway. This also guarantees that `bloom_filter_condition`
+                /// is non-null whenever any column has use_dictionary_filter set.
+                if (primitive_columns[column_idx].use_bloom_filter)
+                    column.use_dictionary_filter = columnChunkCanUseDictionaryFilter(*column.meta);
             }
 
             /// Bloom filter.
-            if (!column.use_dictionary_filter &&
+            /// `PrimitiveColumnInfo::use_bloom_filter` only means "we hashed the query constants for
+            /// this column"; it is also set for dictionary filtering, even when bloom filter push-down
+            /// is disabled. So we must re-check the setting here, otherwise a row group that is not
+            /// dictionary-filter eligible but has a bloom filter would use it despite the user
+            /// disabling `input_format_parquet_bloom_filter_push_down`.
+            /// `bloom_filter_hashes` is empty when the only query constants for this column come from
+            /// `IN` sets larger than `bloom_filter_max_set_size`, which were hashed only for the exact
+            /// dictionary filter; a bloom filter over that many values would read a block per value for
+            /// little benefit, so we keep it disabled on row groups (like this one) that fall back to
+            /// it. If some smaller atom did register hashes, we still enable it for those - the
+            /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
+            /// We prepare the bloom filter even for a dictionary-filter-eligible column that also carries
+            /// one, as a fallback: the exact dictionary path can still decline at runtime when its decoded
+            /// page or value set does not fit the pruning memory budget (see `decodeDictionaryPage` and
+            /// `hashDictionaryValues`), and without this the row group would then be read in full even
+            /// though its bloom filter could have ruled it out - a regression from the pre-existing
+            /// bloom-only behavior. `applyBloomAndDictionaryFilters` still prefers the exact dictionary
+            /// filter and only falls back to the bloom filter for that case; the only extra cost here is
+            /// the small bloom-filter header read, since the filter blocks are prefetched lazily
+            /// (`likely_to_be_used=false`) and read only if the fallback is actually taken.
+            /// The bloom filter is built only from the chunk's non-null values, so on a chunk that may
+            /// contain nulls read into a non-nullable output it cannot be used at all: with
+            /// `input_format_null_as_default` disabled, pruning would suppress the
+            /// `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception the read must raise; with it enabled,
+            /// nulls decode to the type's default value, which the filter does not contain, so a row
+            /// group whose only matches come from nulls would be wrongly skipped. The exact dictionary
+            /// filter models both cases (see `hashDictionaryValues`), the probabilistic bloom filter
+            /// can't, so keep it disabled for such chunks - both standalone and as the dictionary
+            /// filter's fallback.
+            bool nullable = primitive_columns[column_idx].levels.back().def > 0;
+            bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+                || column.meta->meta_data.statistics.null_count != 0;
+            bool bloom_filter_null_safe = !nullable || !can_be_null || primitive_columns[column_idx].output_nullable;
+
+            if (options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
+                !primitive_columns[column_idx].bloom_filter_hashes.empty() &&
+                bloom_filter_null_safe &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
                 /// Have to guess the header size upper bound.
@@ -895,8 +984,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     }
 }
 
-bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::decodeDictionaryPage(
+    ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+    const PruningMemoryReservation & reservation, size_t * held_reserved_bytes)
 {
+    if (held_reserved_bytes)
+        *held_reserved_bytes = 0;
+
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
     const char * data_ptr = data.data();
     const char * data_end = data.data() + data.size();
@@ -911,7 +1005,109 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         return false;
     }
 
-    decodeDictionaryPageImpl(header, page_data, column, column_info);
+    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* it is decoded and
+    /// used, and reserve it live so several row groups pruning in parallel cannot collectively overshoot
+    /// the watermark. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary
+    /// page (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
+    /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary` stage)
+    /// `reservation` is a live handle on the shared stage budget - the reader's memory high watermark
+    /// minus what the stage already holds (the decoded dictionaries and value sets other row groups are
+    /// holding right now, plus this batch's not-yet-flushed pruning memory; see
+    /// `ReadManager::pruningMemoryReservation` and `PruningMemoryReservation`). We reserve the decoded
+    /// footprint against it before decoding, so a dictionary that would push the pruning stage past the
+    /// watermark is rejected before `Dictionary::decode` allocates anything and the caller falls back to
+    /// a full scan (a missed optimization, never a wrong result). The complementary cap on the decoded
+    /// value set built from the dictionary lives in `hashDictionaryValues`. A default (unbounded)
+    /// reservation means the data-read path, where the dictionary is decoded lazily and throttled by the
+    /// normal column-data memory accounting.
+    bool bounded = reservation.stage_memory != nullptr && reservation.watermark != 0;
+    size_t reserved_bytes = 0;
+    if (bounded)
+    {
+        /// Worst-case pre-decode gate. `Dictionary::decode` allocates per-entry state *on top of* the
+        /// decompressed page bytes - a `StringPlain` offsets array, or a fully decoded `col` for types
+        /// that need conversion - so the true footprint can be several times the page payload (e.g. a
+        /// bit-packed dictionary decoded into a wider column). `Dictionary::decodedFootprintUpperBound`
+        /// predicts that footprint from the page header before anything is allocated, so an oversized
+        /// dictionary is rejected *before* `decode` transiently materializes it, and the pruning path
+        /// never overshoots the budget even momentarily. If it does not fit, skip it and let the caller
+        /// fall back to a full scan; the dictionary is re-decoded later, unbounded and throttled, on the
+        /// data-read path if the column is actually read.
+        if (header.compressed_page_size < 0 || header.uncompressed_page_size < 0
+            || header.dictionary_page_header.num_values < 0)
+            return false; /// Malformed header sizes; the data-read path (unbounded) surfaces the error.
+        /// The size of the payload `Dictionary::decode` will see, which is what the bound is about:
+        /// `decodeDictionaryPageImpl` decompresses a compressed chunk into a `decompressed_buf` of
+        /// exactly `uncompressed_page_size` bytes, while for an `UNCOMPRESSED` chunk it points the
+        /// dictionary straight at the first `compressed_page_size` prefetched bytes. Never the larger
+        /// of the two: the compressed frame is held by `dictionary_page_prefetch` and is already
+        /// charged to the pruning stage, so charging it here as well would double-count it and make a
+        /// row group whose decoded dictionary fits the budget fall back to a full scan. A codec is
+        /// free to expand an incompressible page (`compressed_page_size > uncompressed_page_size`),
+        /// and our own writer does not fall back to `UNCOMPRESSED` when it does.
+        size_t page_bytes = column.meta->meta_data.codec == parq::CompressionCodec::UNCOMPRESSED
+            ? size_t(header.compressed_page_size)
+            : size_t(header.uncompressed_page_size);
+        reserved_bytes = Dictionary::decodedFootprintUpperBound(
+            column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+        if (!reservation.tryReserve(reserved_bytes))
+            return false;
+    }
+
+    /// Release the reservation on every early-out below; only the successful path keeps the actual
+    /// decoded footprint reserved (reduced from the predicted upper bound) and hands it to the caller
+    /// via `*held_reserved_bytes`, to be released in `ReadManager::clearColumnChunk`.
+    bool committed = false;
+    SCOPE_EXIT({ if (bounded && !committed) reservation.release(reserved_bytes); });
+
+    try
+    {
+        decodeDictionaryPageImpl(header, page_data, column, column_info);
+    }
+    catch (...)
+    {
+        /// `decodeDictionaryPageImpl` can throw after it has already allocated into
+        /// `column.dictionary` (the decompression buffer, offsets, a partially decoded `col`).
+        /// Free those buffers while the reservation is still held, so the shared pruning budget
+        /// never undercounts live memory: the SCOPE_EXIT above releases `reserved_bytes` during
+        /// unwinding, and other pruning tasks may keep running and reserving until the exception
+        /// is published after the batch unwinds (see `ReadManager::runBatchOfTasks`).
+        column.dictionary.reset();
+        throw;
+    }
+
+    if (bounded)
+    {
+        /// `decodedFootprintUpperBound` is a true upper bound on the memory actually held
+        /// (`Dictionary::allocatedBytes`), because it accounts for the `PODArray` capacity rounding and
+        /// padding on top of the logical sizes (see the helper). Reconcile the live reservation down to
+        /// the real footprint so the amount charged to the shared budget matches what was really
+        /// allocated: normally the dictionary is smaller than predicted and we release the difference.
+        /// The grow branch is a defensive backstop in case the prediction ever drifts below the real
+        /// footprint: reserve the extra and fall back to a full scan if it no longer fits the budget.
+        size_t actual_bytes = column.dictionary.allocatedBytes();
+        if (actual_bytes > reserved_bytes)
+        {
+            if (!reservation.tryReserve(actual_bytes - reserved_bytes))
+            {
+                /// Does not fit the remaining budget: drop the dictionary and let the caller fall back to
+                /// a full scan. The `reserved_bytes` reserved before decoding are freed by the SCOPE_EXIT.
+                column.dictionary.reset();
+                return false;
+            }
+        }
+        else
+        {
+            reservation.release(reserved_bytes - actual_bytes);
+        }
+        /// Now holding exactly `actual_bytes`; hand it to the caller to release in `clearColumnChunk`.
+        reserved_bytes = actual_bytes;
+        if (held_reserved_bytes)
+            *held_reserved_bytes = actual_bytes;
+    }
+
+    committed = true;
     return true;
 }
 
@@ -951,9 +1147,13 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     {
         size_t block_idx = ((h >> 32) * num_blocks) >> 32;
         auto it = std::partition_point(column.bloom_filter_blocks.begin(), column.bloom_filter_blocks.end(), [&](const BloomFilterBlock & block) { return block.block_idx < block_idx; });
-        /// All hashes must've been preregistered in bloom_filter_hashes, and their blocks prefetched.
+        /// This value's block was not prefetched. That happens for values from an `IN` set larger than
+        /// `bloom_filter_max_set_size`: such sets are hashed only for the exact dictionary filter and
+        /// deliberately kept out of `bloom_filter_hashes` (see prepareBloomFilterCondition), so probing
+        /// them here would read one filter block per value for little benefit. A bloom filter can only
+        /// ever rule a value out, so a value we did not probe must be treated as possibly present.
         if (it == column.bloom_filter_blocks.end() || it->block_idx != block_idx)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected hash in bloom filter lookup");
+            return true;
 
         auto data = prefetcher.getRangeData(it->prefetch);
 
@@ -976,21 +1176,337 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     return false;
 }
 
-bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group)
+bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const
 {
-    /// TODO [parquet]: Dictionary filter.
+    if (options.dictionary_filter_limit_bytes == 0)
+        return false;
+    /// We deliberately require a declared `dictionary_page_offset`. Some legacy writers omit it and
+    /// point `data_page_offset` at the dictionary page instead (the "undeclared dictionary page"
+    /// shape handled in `initializeDataPage`); dictionary filtering stays disabled for those files.
+    /// Determining the dictionary page's byte range in that shape needs the offset index (its page
+    /// locations), which is not available at this pruning stage, and such files also typically lack
+    /// the `encoding_stats` that this check requires below. The cost of the limitation is only a
+    /// missed optimization (a full row-group scan), never a wrong result.
+    if (!column_meta.meta_data.__isset.dictionary_page_offset)
+        return false;
+    /// We assume that the dictionary page is immediately followed by the first data page.
+    size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
+    /// The limit is the maximum dictionary page size for which pruning applies, so the boundary is
+    /// inclusive: a dictionary page of exactly `dictionary_filter_limit_bytes` is still eligible.
+    if (dict_page_length > options.dictionary_filter_limit_bytes)
+        return false;
+    /// We can only use the dictionary if it holds the complete set of column values, i.e. all data
+    /// pages are dictionary-encoded. Without encoding stats we can't tell, so we don't risk it.
+    if (!column_meta.meta_data.__isset.encoding_stats)
+        return false;
+    /// Require positive proof, not just the absence of a contradiction: there must be at least one
+    /// non-empty data page and every non-empty data page must use a dictionary encoding. A present
+    /// but incomplete list (empty, or describing only the dictionary page and no data pages) does
+    /// not prove anything - the column chunk could still contain plain data pages whose values are
+    /// not in the dictionary, and pruning from such an incomplete value set would silently drop
+    /// matching rows. Empty data pages (count == 0) carry no values, so their encoding is irrelevant.
+    bool has_dictionary_data_page = false;
+    for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
+    {
+        /// An empty entry (`count == 0`) describes no pages, so nothing about it - neither its
+        /// `page_type` nor its `encoding` - is relevant to eligibility. Skip it before validating those
+        /// Thrift enums, otherwise a garbage enum value on an advisory empty entry would turn a file
+        /// that reads fine (with a full scan) into a hard `INCORRECT_DATA` failure under the default-on
+        /// dictionary filter. A negative count is corrupted metadata, but `encoding_stats` is only
+        /// advisory input to this eligibility check, so it must not fail the whole read either: like
+        /// the unrecognized enum values below, it just makes the chunk ineligible for the optimization.
+        if (s.count < 0)
+            return false;
+        if (s.count == 0)
+            continue;
+        /// The remaining fields come from Thrift metadata, so a malformed file can carry out-of-range
+        /// enum values just like `PageHeader` can. Unlike `PageHeader` (which we must decode to read the
+        /// page itself), `encoding_stats` is only advisory input to this optimization's eligibility
+        /// check - the page stream may still be perfectly readable via a full scan even if this metadata
+        /// is garbage. So an unrecognized value here must not throw and fail the whole read; it should
+        /// just make the chunk ineligible for the optimization, the same way a missing `encoding_stats`
+        /// does. We read the underlying integer via `memcpy` (in `isValidThriftEnum`), avoiding the
+        /// `-fsanitize=enum` undefined behavior of loading an out-of-range enumerator.
+        if (!isValidThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES))
+            return false;
+        if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
+            continue;
+        if (!isValidThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES))
+            return false;
+        if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
+            return false;
+        has_dictionary_data_page = true;
+    }
+    return has_dictionary_data_page;
+}
 
+/// Hash all values of an already-decoded dictionary the same way query constants are hashed for
+/// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
+/// which case the dictionary can't be used for filtering).
+static std::optional<HashSet<UInt64>> hashDictionaryValues(
+    const parq::FileMetaData & file_metadata, const ReadOptions & options,
+    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
+    const PruningMemoryReservation & reservation, size_t & held_pruning_bytes)
+{
+    held_pruning_bytes = 0;
+    chassert(column.dictionary.isInitialized());
+    size_t count = column.dictionary.count;
+
+    /// The eligibility check in `columnChunkCanUseDictionaryFilter` bounds only the *compressed*
+    /// on-disk dictionary page (`dictionary_filter_limit_bytes`, 1 MiB by default), not the decoded
+    /// value set we are about to build here. A highly compressible dictionary can stay under that
+    /// limit yet decode to many times more, and constructing the value set below (a materialized
+    /// column of all values, a vector of hashes, and a `HashSet` of them) then allocates that much
+    /// transient memory - potentially for several row groups in parallel during pruning. Charge it to
+    /// the shared pruning-stage budget (`reservation`): the reader's memory high watermark minus what
+    /// the pruning stage already holds - the decoded dictionaries charged in `ReadManager::runTask`,
+    /// plus the value sets already reserved by other dictionary lookups, whether earlier in this same
+    /// row-group filter evaluation or concurrently on another worker thread. Because the reservation is
+    /// held live in the shared `BloomFilterBlocksOrDictionary` stage counter (see
+    /// `PruningMemoryReservation`), neither a predicate over several dictionary-filtered columns nor
+    /// several row groups pruning in parallel can let each value set use the full budget and
+    /// collectively overshoot the watermark. If the reservation would exceed the budget, skip the
+    /// optimization and fall back to a full scan (reported as "can't rule out a match", the same as an
+    /// unhashable type below). The watermark scales down automatically when the query has little memory
+    /// to spare (see FormatFactory). This is the decoded-value-set cap the compressed-page limit alone
+    /// cannot provide; the decoded dictionary *page* itself is capped against the same budget before it
+    /// is used, in `decodeDictionaryPage` on the pruning path.
+    /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
+    /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
+    /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
+    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built; the
+    /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
+    /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
+    /// hashable type is stored inline in `Field`. When
+    /// the dictionary is not already an `IColumn` (FixedSize / StringPlain modes) the values are first
+    /// materialized into a fresh column of `count` values plus an identity `indexes` vector: a
+    /// `ColumnString` there reserves only its UInt64 offsets (exactly, via `reserve_exact`) and grows
+    /// its `chars` buffer geometrically (up to ~2x the final size) as `insertData` appends, so count
+    /// twice the *exact total* value bytes for the payload plus a UInt64 per-value offset. The total
+    /// must not be derived from `getAverageValueSize`: flooring its fractional mean and multiplying
+    /// back by `count` understates a mixed-length string dictionary by up to `count` bytes. The
+    /// `Mode::Column` path hashes the already-decoded (and already-charged) column in place, so it
+    /// needs none of the materialization terms.
+    ///
+    /// The `HashSet` term cannot be approximated per value: `HashSet::reserve` picks a power-of-two
+    /// buffer with a maximum fill factor of 0.5 (`HashTableGrowerWithPrecalculation::set`), so the
+    /// table holds up to ~4 cells per inserted hash and never fewer than its initial 256 cells.
+    /// Compute the buffer size with the set's own growth rule so the reservation matches what
+    /// `reserve` really allocates, for the full insert cardinality: all `count` dictionary hashes
+    /// plus the one extra default-value hash possibly added under `input_format_null_as_default`
+    /// below (reserving for it up front also guarantees that insert never triggers a rehash past the
+    /// reservation). Add the set's initial constructor-allocated buffer, which can transiently
+    /// coexist with the resized one inside `realloc`.
+    using ValueHashSet = HashSet<UInt64>;
+    ValueHashSet::grower_type value_set_grower;
+    value_set_grower.set(count + 1);
+    size_t value_set_buffer_bytes =
+        (value_set_grower.bufSize() + ValueHashSet::grower_type::initial_count) * sizeof(ValueHashSet::cell_type);
+    size_t per_value_bytes = sizeof(UInt64);    /// `hashes` vector
+    size_t materialized_payload_bytes = 0;
+    if (column.dictionary.mode != Dictionary::Mode::Column)
+    {
+        /// Exact total value bytes of the dictionary: `StringPlain` stores each value with a 4-byte
+        /// length prefix in `data`, fixed-size modes store `value_size` bytes per value.
+        size_t total_value_bytes = column.dictionary.mode == Dictionary::Mode::StringPlain
+            ? column.dictionary.data.size() - 4 * count
+            : count * column.dictionary.value_size;
+        materialized_payload_bytes = 2 * total_value_bytes;    /// materialized column payload, incl. geometric chars growth
+        per_value_bytes +=
+            sizeof(UInt64)      /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
+            + sizeof(UInt32);   /// identity `indexes`
+    }
+    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes + value_set_buffer_bytes;
+    /// Reserve the peak footprint before allocating anything. If it does not fit, skip pruning.
+    if (!reservation.tryReserve(estimated_value_set_bytes))
+        return std::nullopt;
+    /// Release the whole reservation on every early-out below; only the successful path keeps the
+    /// persistent part reserved (reduced to the actual `HashSet` footprint) and hands it to the caller
+    /// via `held_pruning_bytes` (see `DictionaryLookup`, which releases it when the value set is freed).
+    bool committed = false;
+    SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
+
+    /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    std::optional<std::vector<uint64_t>> hashes;
+    if (column.dictionary.mode == Dictionary::Mode::Column)
+    {
+        /// The values already exist as a decoded column (built from `column_info.decoded_type`, same
+        /// as `values` below), so hash it in place instead of materializing an identical second copy.
+        hashes = parquetTryHashColumn(column.dictionary.col.get(), &desc);
+    }
+    else
+    {
+        /// FixedSize / StringPlain dictionaries hold raw bytes rather than an `IColumn`, so we must
+        /// materialize the values into a column of the decoded type before hashing.
+        auto indexes = ColumnUInt32::create();
+        auto & indexes_data = indexes->getData();
+        indexes_data.resize_exact(count);
+        for (size_t i = 0; i < count; ++i)
+            indexes_data[i] = static_cast<UInt32>(i);
+
+        auto values = column_info.decoded_type->createColumn();
+        values->reserve(count);
+        column.dictionary.index(*indexes, *values);
+        hashes = parquetTryHashColumn(values.get(), &desc);
+    }
+    if (!hashes.has_value())
+        return std::nullopt;
+    ValueHashSet value_hashes;
+    /// +1 for the possible extra default-value hash below: when `hashes->size()` lands exactly on the
+    /// table's maximum fill, that late insert would otherwise rehash past the reserved buffer.
+    value_hashes.reserve(hashes->size() + 1);
+    for (UInt64 h : *hashes)
+        value_hashes.insert(h);
+
+    /// The dictionary holds only the non-null values of the column chunk, so we must account for how
+    /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
+    /// `adjustRangeFromIndexIfNeeded`.
+    bool nullable = column_info.levels.back().def > 0;
+    bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+        || column.meta->meta_data.statistics.null_count != 0;
+    if (nullable && can_be_null && !column_info.output_nullable)
+    {
+        if (options.format.null_as_default)
+        {
+            /// Under `input_format_null_as_default`, null values are decoded as the type's default
+            /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
+            /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
+            /// column read as non-nullable `UInt64`). So add the default value's hash.
+            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+            /// If the default value can't be hashed, we can't rule out a match.
+            if (!default_hash.has_value())
+                return std::nullopt;
+            value_hashes.insert(*default_hash);
+        }
+        else
+        {
+            /// Reading a null into a non-nullable column raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
+            /// during decoding. Skipping the row group would suppress that error and change the query
+            /// result, so we must not prune: report that we can't rule out a match.
+            return std::nullopt;
+        }
+    }
+
+    /// Free the transient `hashes` vector (the `indexes`/`values` allocations were already freed by
+    /// leaving their scope above) before releasing the reservation that covers it: otherwise a
+    /// concurrent pruning task could observe the released budget as free while `hashes` is still
+    /// allocated here, transiently exceeding the watermark.
+    hashes.reset();
+
+    /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
+    /// evaluation finishes, so keep its persistent footprint - the real `HashSet` buffer - reserved
+    /// against the shared budget and hand the amount to the caller to release when the value set is
+    /// freed. The transient `indexes`/`values`/`hashes` allocations were already freed above, so
+    /// release that part of the reservation now: a second dictionary-filtered column, or another row
+    /// group pruning in parallel, then sees only the persistent part still held, keeping the combined
+    /// footprint within the watermark without over-reserving for the transients. The estimate above
+    /// follows the set's own growth rule, so it never under-predicts the buffer; the grow branch is a
+    /// defensive backstop (mirroring `decodeDictionaryPage`) in case the two ever drift apart, falling
+    /// back to a full scan if the correction no longer fits the budget.
+    size_t persistent_bytes = value_hashes.getBufferSizeInBytes();
+    if (persistent_bytes > estimated_value_set_bytes)
+    {
+        if (!reservation.tryReserve(persistent_bytes - estimated_value_set_bytes))
+            return std::nullopt;
+    }
+    else
+    {
+        reservation.release(estimated_value_set_bytes - persistent_bytes);
+    }
+    held_pruning_bytes = persistent_bytes;
+    committed = true;
+
+    return value_hashes;
+}
+
+struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
+{
+    Reader & reader;
+    ColumnChunk & column;
+    const PrimitiveColumnInfo & column_info;
+    /// The budget shared by every dictionary lookup in one `applyBloomAndDictionaryFilters` call and,
+    /// through its shared stage counter, by every row group pruning in parallel. Each built value set's
+    /// persistent footprint is charged here (in `hashDictionaryValues`) and released when this lookup is
+    /// destroyed (at the end of the evaluation).
+    PruningMemoryReservation reservation;
+    size_t reserved_bytes = 0;
+
+    bool computed = false;
+    std::optional<HashSet<UInt64>> value_hashes;
+
+    /// Bloom filter of the same column chunk, kept as a fallback for when the exact dictionary value set
+    /// can't be built within the pruning memory budget (see `hashDictionaryValues`). Without it such a
+    /// chunk would be read in full even though its bloom filter could rule it out. Null when the chunk
+    /// has no bloom filter (see `initializePrefetches`).
+    std::unique_ptr<BloomFilterLookup> bloom_fallback;
+
+    DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_, PruningMemoryReservation reservation_)
+        : reader(reader_), column(column_), column_info(column_info_), reservation(reservation_) {}
+
+    ~DictionaryLookup() override
+    {
+        /// Free the value set before releasing the reservation that covers it, so a concurrent pruning
+        /// task never observes this budget as free while `value_hashes` is still allocated (members are
+        /// destroyed only after this body runs, so the release must clear it explicitly first).
+        value_hashes.reset();
+        reservation.release(reserved_bytes);
+    }
+
+    bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+};
+
+bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+{
+    if (!computed)
+    {
+        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, reservation, reserved_bytes);
+        computed = true;
+    }
+    /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
+    /// fall back to the column chunk's bloom filter if it has one; otherwise we can't rule out a match.
+    if (!value_hashes.has_value())
+        return bloom_fallback ? bloom_fallback->findAnyHash(hashes) : true;
+    for (UInt64 h : hashes)
+        if (value_hashes->contains(h))
+            return true;
+    return false;
+}
+
+bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation)
+{
+    /// A single budget shared by every dictionary lookup in this row-group filter evaluation, and -
+    /// because it charges the shared `BloomFilterBlocksOrDictionary` stage counter - by every row group
+    /// pruning in parallel on other worker threads. Each lookup's value set stays alive (in its
+    /// `DictionaryLookup`) until the evaluation finishes, so without shared accounting a predicate over
+    /// several dictionary-filtered columns, or several concurrent row groups, would let each value set
+    /// use the full budget and collectively overshoot the watermark. Copied into each `DictionaryLookup`
+    /// (all copies point at the same atomic stage counter); watermark 0 means unbounded (see
+    /// `ReadManager::pruningMemoryReservation` and `PruningMemoryReservation`).
     KeyCondition::ColumnIndexToBloomFilter filter_map;
     for (size_t i = 0; i < row_group.columns.size(); ++i)
     {
-        if (row_group.columns[i].use_bloom_filter)
+        ColumnChunk & column = row_group.columns[i];
+        /// The exact dictionary filter takes precedence over the bloom filter. Both can be set for the
+        /// same column chunk (see initializePrefetches): the bloom filter is then kept only as a runtime
+        /// fallback for when the dictionary path declines because its value set does not fit the pruning
+        /// memory budget. `decodeDictionaryPage` failing earlier (in `ReadManager::runTask`) clears
+        /// `use_dictionary_filter`, so that case is handled by the `else if` bloom branch below.
+        if (column.use_dictionary_filter)
+        {
+            auto lookup = std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], reservation);
+            if (column.use_bloom_filter && !column.bloom_filter_blocks.empty())
+                lookup->bloom_fallback = std::make_unique<BloomFilterLookup>(prefetcher, column);
+            filter_map.emplace(primitive_columns[i].idx_in_output_block, std::move(lookup));
+        }
+        else if (column.use_bloom_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
-                std::make_unique<BloomFilterLookup>(prefetcher, row_group.columns[i]));
+                std::make_unique<BloomFilterLookup>(prefetcher, column));
     }
-    /// We use both the min/max statistics and bloom filter. For the case where condition has
-    /// something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and `y = 1337`
-    /// is ruled out by bloom filter.
+    /// We use both the min/max statistics and bloom/dictionary filters. For the case where condition
+    /// has something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and
+    /// `y = 1337` is ruled out by the filter.
     /// (I'm guessing this hardly ever comes up in practice, but it was easy enough to support.)
     return bloom_filter_condition->checkInHyperrectangle(
         row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;

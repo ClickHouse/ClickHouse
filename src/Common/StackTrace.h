@@ -8,15 +8,22 @@
 #include <array>
 #include <optional>
 #include <functional>
+/** A standalone build of the parser (see `utils/wasm-parser`) has no signals, no `setjmp` and no
+  * way to walk its own stack, and it does not link `StackTrace.cpp`. Everything below that needs
+  * those is left out rather than making the whole header unavailable, since `Common/Exception.h`
+  * includes it and so does most of the tree.
+  */
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #include <csignal>
 #include <csetjmp>
+#endif
 
 /// Windows has neither `ucontext_t` nor `siginfo_t`: it reports faults through Structured
 /// Exception Handling rather than signals, so the parts of this interface that take a signal
 /// context are declared only where signals exist. Capturing the *current* stack is portable and
 /// stays available - only the "reconstruct the stack of a faulting thread from its signal
 /// context" entry points are gone.
-#if !defined(OS_WINDOWS)
+#if !defined(OS_WINDOWS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
 #   pragma clang diagnostic ignored "-Wreserved-id-macro"
@@ -51,7 +58,7 @@ public:
     /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
     NO_INLINE StackTrace();
 
-#if !defined(OS_WINDOWS)
+#if !defined(OS_WINDOWS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
     explicit StackTrace(const ucontext_t & signal_context);
@@ -95,20 +102,20 @@ protected:
     FramePointers frame_pointers{};
 };
 
-#if !defined(OS_WINDOWS)
+#if !defined(OS_WINDOWS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
 std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
-std::string getSignalCodeDescription(int sig, int si_code);
 #endif
+std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler
 /// The recovery path for a fault taken *while* unwinding: the signal handler
 /// `siglongjmp`s back here. Both halves are POSIX-signal machinery, and their only users -
 /// `QueryProfiler` and `SignalHandlers` - are not built on Windows either.
-#if !defined(OS_WINDOWS)
+#if !defined(OS_WINDOWS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 extern thread_local bool asynchronous_stack_unwinding;
 extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
 #endif
