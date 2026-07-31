@@ -22,9 +22,6 @@ namespace DB
 void encodeHexIntUpper(uint8_t * dst, const void * value, size_t num_bytes);
 void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes);
 
-/// Decode 16 hex chars to a UInt64.
-UInt64 decodeHexInt64(const uint8_t * src);
-
 /// Encode/decode a byte string to/from hex.
 void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size);
 void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size);
@@ -190,38 +187,32 @@ namespace impl
             }
         }
 
-        static TUInt unhex(const char * data)
+        /// Note: unlike the SQL `unhex` function, this decoder is deliberately kept scalar and lookup-based.
+        /// Its callers (`TracingContext::parseTraceparentHeader`, `FileCacheKey::fromKeyString`, `unhexChecksum`, ...)
+        /// parse externally supplied strings of an exact length and validate nothing but that length, so the result
+        /// for a non-hex character must stay deterministic and identical on every architecture: an invalid character
+        /// contributes `0xff` from `unhexDigit`, exactly as it always did.
+        static constexpr TUInt unhex(const char * data)
         {
             constexpr auto num_bytes = sizeof(TUInt);
-            if constexpr (num_bytes <= 4)
+            TUInt res{};
+            if constexpr (num_bytes <= 8 || (num_bytes % 8) != 0)
             {
-                TUInt res{};
-                for (size_t i = 0; i < num_bytes; ++i)
+                for (size_t i = 0; i < num_bytes * 2; ++i, ++data)
                 {
-                    res = static_cast<TUInt>(
-                        (res << 8)
-                        | static_cast<TUInt>((unhexDigit(data[i * 2]) << 4) | unhexDigit(data[i * 2 + 1])));
+                    res = static_cast<TUInt>(res << 4);
+                    res = static_cast<TUInt>(res + unhexDigit(*data));
                 }
-                return res;
             }
-            else if constexpr (num_bytes == 8)
+            else
             {
-                return static_cast<TUInt>(DB::decodeHexInt64(reinterpret_cast<const uint8_t *>(data)));
-            }
-            else if constexpr ((num_bytes % 8) == 0)
-            {
-                TUInt res{};
                 for (size_t i = 0; i < num_bytes / 8; ++i, data += 16)
                 {
                     res <<= 64;
                     res += HexConversionUInt<UInt64>::unhex(data);
                 }
-                return res;
             }
-            else
-            {
-                static_assert(sizeof(TUInt) == 0, "Unsupported sizeof(TUInt) for unhex");
-            }
+            return res;
         }
     };
 

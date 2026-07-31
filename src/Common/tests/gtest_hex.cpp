@@ -121,6 +121,38 @@ TEST(HexTest, UnhexingIntegral)
     }
 }
 
+/// Nibble-by-nibble reference decoder: an invalid character contributes `unhex(c) == 0xff`.
+static UInt64 referenceUnhexUInt64(std::string_view s)
+{
+    UInt64 res = 0;
+    for (char c : s)
+        res = (res << 4) + unhex(c);
+    return res;
+}
+
+/// `unhexUInt` is used by parsers of externally supplied strings (`traceparent` headers, file cache keys,
+/// backup checksums) which validate nothing but the length of their input. Decoding a malformed string
+/// therefore has to stay deterministic and independent of the architecture and of the SIMD backend.
+TEST(HexTest, UnhexingIntegralInvalidInput)
+{
+    /// 'g' and '/' are not hex digits.
+    for (std::string_view s : {"g123456789abcdef"sv, "0123456789abcdeg"sv, "gggggggggggggggg"sv, "0/1/2/3/4/5/6/7/"sv})
+    {
+        SCOPED_TRACE(s);
+        ASSERT_EQ(referenceUnhexUInt64(s), unhexer<UInt64>(s));
+    }
+
+    {
+        constexpr auto high = "102030405060708g"sv;
+        constexpr auto low = "/0a0b0c0d0e0f000"sv;
+        const std::string both = std::string{high} + std::string{low};
+
+        UInt128 expected = UInt128{referenceUnhexUInt64(high)} << 64;
+        expected += referenceUnhexUInt64(low);
+        ASSERT_EQ(expected, unhexer<UInt128>(both));
+    }
+}
+
 TEST(HexTest, UnhexSingleDigit)
 {
     ASSERT_EQ(0, unhex('0'));
@@ -281,11 +313,6 @@ struct DefaultHexTrait
         TargetSpecific::Default::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
     }
 
-    static UInt64 decodeInt64(const uint8_t * src)
-    {
-        return TargetSpecific::Default::decodeHexInt64Impl(src);
-    }
-
     static void encodeHex16LE(uint8_t * dst, const uint8_t * src)
     {
         TargetSpecific::Default::encodeHex16LEImpl(dst, src, heks::lower);
@@ -315,11 +342,6 @@ struct X86V3HexTrait
     static void encodeInt(uint8_t * dst, const void * value, size_t num_bytes)
     {
         TargetSpecific::x86_64_v3::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
-    }
-
-    static UInt64 decodeInt64(const uint8_t * src)
-    {
-        return TargetSpecific::x86_64_v3::decodeHexInt64Impl(src);
     }
 
     static void encodeHex16LE(uint8_t * dst, const uint8_t * src)
@@ -377,8 +399,8 @@ TYPED_TEST(HexMultiArchTest, IntegralUInt64)
     TypeParam::encodeInt(hex_buf, &val, 8);
     ASSERT_EQ("0123456789abcdef", std::string_view(reinterpret_cast<const char *>(hex_buf), 16));
 
-    UInt64 decoded = TypeParam::decodeInt64(hex_buf);
-    ASSERT_EQ(val, decoded);
+    /// `unhexUInt` is architecture-independent by design, so decoding is not part of the per-arch traits.
+    ASSERT_EQ(val, unhexUInt<UInt64>(reinterpret_cast<const char *>(hex_buf)));
 }
 
 TYPED_TEST(HexMultiArchTest, IntegralUInt128)

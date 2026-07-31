@@ -50,11 +50,6 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
     }
 }
 
-static UInt64 decodeHexInt64Impl(const uint8_t * src)
-{
-    return heks::decode_integral_naive<uint64_t>(src);
-}
-
 template <typename Case>
 static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
 {
@@ -133,11 +128,6 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
         default:
             UNREACHABLE();
     }
-}
-
-static UInt64 decodeHexInt64Impl(const uint8_t * src)
-{
-    return heks::decode_integral_naive<uint64_t>(src);
 }
 
 template <typename Case>
@@ -226,11 +216,6 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
     }
 }
 
-static UInt64 decodeHexInt64Impl(const uint8_t * src)
-{
-    return heks::decode_integral8(src);
-}
-
 template <typename Case>
 static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
 {
@@ -307,15 +292,6 @@ void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes)
     }
 #endif
     ::TargetSpecific::Default::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
-}
-
-UInt64 decodeHexInt64(const uint8_t * src)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return ::TargetSpecific::x86_64_v3::decodeHexInt64Impl(src);
-#endif
-    return ::TargetSpecific::Default::decodeHexInt64Impl(src);
 }
 
 void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size)
