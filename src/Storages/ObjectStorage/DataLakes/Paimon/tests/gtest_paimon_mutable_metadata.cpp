@@ -81,6 +81,10 @@ ObjectStoragePtr makeLocalObjectStorage(const std::string & key_prefix)
 struct ProbeFailingObjectStorage : public LocalObjectStorage
 {
     std::atomic<bool> fail_probe{false};
+    /// Fails only the probes whose path ends with this, so a single object can be made
+    /// unprobeable while the rest of the table still answers (a transient error hits one
+    /// request, not every request in the call).
+    std::string fail_probe_for_suffix;
 
     explicit ProbeFailingObjectStorage(const std::string & key_prefix)
         : LocalObjectStorage(
@@ -88,14 +92,31 @@ struct ProbeFailingObjectStorage : public LocalObjectStorage
     {
     }
 
+    bool shouldFail(const std::string & path) const
+    {
+        if (!fail_probe_for_suffix.empty())
+            return path.ends_with(fail_probe_for_suffix);
+        return fail_probe;
+    }
+
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override
     {
         /// Not `LOGICAL_ERROR`: that aborts the process in debug and sanitizer builds
         /// (`Exception::handleErrorCode`), so the test could never observe a throw. A real
         /// unreachable backend reports a transport-level code, which is what this mimics.
-        if (fail_probe)
+        if (shouldFail(path))
             throw Exception(ErrorCodes::NETWORK_ERROR, "Injected backend failure while probing {}", path);
         return LocalObjectStorage::tryGetObjectMetadata(path, with_tags);
+    }
+
+    /// The fail-open half of the same backend failure, and the reason `exists` is unusable for a
+    /// correctness decision: `HDFSObjectStorage::exists` is `0 == wrapErr(hdfsExists, ...)`, so a
+    /// libhdfs error is indistinguishable from a definite absence and reports the object as gone.
+    bool exists(const StoredObject & object) const override
+    {
+        if (shouldFail(object.remote_path))
+            return false;
+        return LocalObjectStorage::exists(object);
     }
 };
 
@@ -331,6 +352,52 @@ TEST(PaimonIncrementalRead, TreatsUnknownExistenceAsNotSkippable)
     /// Once the backend answers again, a genuine absence is still skippable.
     storage->fail_probe = false;
     EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+}
+
+/// The LATEST hint is only trusted when `snapshot-N` is present and `snapshot-N+1` is absent.
+/// The second half is the dangerous one: an unanswerable probe there must not stand in for a
+/// definite absence, otherwise a hint that is no longer the latest is accepted and the read
+/// silently serves an older snapshot. The listing path is authoritative, so an unknown answer
+/// has to fall through to it.
+///
+/// Only `snapshot-2`'s probe is failed, which is what makes this test discriminating: the
+/// hinted snapshot still answers, so the verification reaches its second probe. Failing every
+/// probe instead would make the first one report the hinted snapshot as absent, which already
+/// falls through to the listing and so cannot distinguish the two implementations.
+TEST(PaimonLatestHintVerification, DoesNotTrustHintWhenNextSnapshotProbeCannotAnswer)
+{
+    ScopedTempDir tmp("paimon_hint_probe_error_test");
+    /// snapshot-2 exists, so the hint "1" is stale and 2 is the correct answer.
+    auto table = makePaimonTable(tmp.path, /*snapshot_ids=*/{1, 2}, /*latest_hint=*/"1");
+    auto storage = std::make_shared<ProbeFailingObjectStorage>(tmp.path.string());
+    PaimonTableClient client(storage, table.string(), getContext().context);
+
+    /// Baseline: every probe answers, the hint is detected as stale, listing wins.
+    auto snapshot_info = client.getLatestTableSnapshotInfo();
+    ASSERT_TRUE(snapshot_info.has_value());
+    EXPECT_EQ(snapshot_info->first, 2);
+
+    /// The backend cannot answer for `snapshot-2` only. Its existence is now unknown, not
+    /// refuted, so the stale hint must not be returned: the listing reports the real latest.
+    storage->fail_probe_for_suffix = std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "2";
+    snapshot_info = client.getLatestTableSnapshotInfo();
+    ASSERT_TRUE(snapshot_info.has_value());
+    EXPECT_EQ(snapshot_info->first, 2) << "an unanswerable probe was read as \"no next snapshot\" and accepted a stale hint";
+
+    /// The listing is what supplies the answer above, so it must be the listing and not the hint
+    /// that is trusted: with the hint naming a snapshot that does not exist at all, the same
+    /// failing probe still yields the real latest snapshot.
+    writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT, "7");
+    snapshot_info = client.getLatestTableSnapshotInfo();
+    ASSERT_TRUE(snapshot_info.has_value());
+    EXPECT_EQ(snapshot_info->first, 2);
+
+    /// Once the backend answers again, a correct hint takes the fast path and agrees.
+    storage->fail_probe_for_suffix.clear();
+    writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT, "2");
+    snapshot_info = client.getLatestTableSnapshotInfo();
+    ASSERT_TRUE(snapshot_info.has_value());
+    EXPECT_EQ(snapshot_info->first, 2);
 }
 
 /// A targeted read (`paimon_target_snapshot_id`) loads `snapshot-N` from a path that an external

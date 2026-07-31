@@ -249,13 +249,29 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     if (!latest_snapshot_path.empty())
     {
         Int64 next_snapshot_version = snapshot_version + 1;
-        StoredObject snapshot_object(latest_snapshot_path);
-        StoredObject next_snapshot_object(
-            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
-            / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version)));
-        if (object_storage->exists(snapshot_object) && !object_storage->exists(next_snapshot_object))
+        const String next_snapshot_path
+            = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / (PAIMON_SNAPSHOT_PREFIX + std::to_string(next_snapshot_version));
+        try
         {
-            return std::make_pair(snapshot_version, latest_snapshot_path);
+            /// `tryGetObjectMetadata` answers three states, `exists` only two: it returns an
+            /// empty optional only for a definite absence and throws when the backend could not
+            /// tell. `exists` collapses "could not tell" into `false` on HDFS, which would read
+            /// as "no next snapshot" and accept a hint that is not the latest one.
+            const bool hinted_snapshot_present
+                = object_storage->tryGetObjectMetadata(latest_snapshot_path, /*with_tags=*/false).has_value();
+            const bool next_snapshot_present
+                = object_storage->tryGetObjectMetadata(next_snapshot_path, /*with_tags=*/false).has_value();
+            if (hinted_snapshot_present && !next_snapshot_present)
+                return std::make_pair(snapshot_version, latest_snapshot_path);
+        }
+        catch (...)
+        {
+            /// An unanswerable probe may not shortcut to the hinted snapshot; the listing below
+            /// is authoritative and fails closed on its own errors.
+            LOG_WARNING(
+                log,
+                "Failed to verify the Paimon LATEST hint against the snapshot directory, falling back to snapshot listing: {}",
+                getCurrentExceptionMessage(false));
         }
     }
 
