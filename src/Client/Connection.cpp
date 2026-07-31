@@ -1066,6 +1066,15 @@ void Connection::sendQuery(
             // Also for backwards compatibility
             if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
                 data += external_roles_str;
+            /// Cover current roles in the auth hash too, matching the receiver.
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info->current_roles.has_value())
+            {
+                String current_roles_str;
+                WriteBufferFromString buffer(current_roles_str);
+                writeVectorBinary(*client_info->current_roles, buffer);
+                buffer.finalize();
+                data += current_roles_str;
+            }
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

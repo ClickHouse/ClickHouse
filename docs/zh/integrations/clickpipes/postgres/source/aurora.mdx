@@ -57,7 +57,7 @@ postgres=> SHOW rds.logical_replication ;
   ## 配置数据库用户
 </div>
 
-以管理员身份连接到您的 Aurora PostgreSQL writer 实例，并执行以下命令：
+以管理员身份连接到您的 Aurora PostgreSQL 写入 实例，并执行以下命令：
 
 1. 为 ClickPipes 创建一个专用用户：
 
@@ -97,7 +97,20 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含从指定表生成的一组变更事件，后续将用于摄取复制 stream。
+`clickpipes` publication 定义了哪些表的变更事件会流式传输到 ClickPipes。除非您打算复制所有表，否则不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
+
+<div id="iam-authentication">
+  ### 使用 IAM 身份验证 (可选)
+</div>
+
+您可以不使用密码，改为通过 AWS IAM 基于角色的访问控制来验证 ClickPipes 用户的身份。这要求将 `rds.iam_auth_for_replication` 参数设置为 `1`。按如下方式创建用户，然后授予其与上文所示相同的 schema 和复制特权：
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+有关设置 ClickPipes 通过这种方式进行身份验证所需的 IAM role 和策略的完整步骤，请参阅 [AWS IAM DB 身份验证 (RDS/Aurora)](/zh/integrations/clickpipes/postgres/auth)。
 
 <div id="configure-network-access">
   ## 配置网络访问
@@ -107,7 +120,7 @@ postgres=> SHOW rds.logical_replication ;
   ### 基于 IP 的访问控制
 </div>
 
-如果你想限制对 Aurora 集群的访问流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 Aurora 安全组 (Security Group) 的 `Inbound rules` 中。
+如果你想限制流向 Aurora 集群的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 Aurora 安全组 (Security Group) 的 `Inbound rules` 中。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="在 Aurora PostgreSQL 中在哪里可以找到安全组（Security Group）？" size="lg" border />
 

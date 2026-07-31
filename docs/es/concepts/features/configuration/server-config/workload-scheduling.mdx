@@ -6,216 +6,113 @@ title: 'Planificación de cargas de trabajo'
 doc_type: 'reference'
 ---
 
-Cuando ClickHouse ejecuta varias consultas simultáneamente, estas pueden estar utilizando recursos compartidos (p. ej., discos y núcleos de CPU). Se pueden aplicar restricciones y políticas de planificación para regular cómo se utilizan y comparten los recursos entre distintas cargas de trabajo. Para todos los recursos, se puede configurar una jerarquía de planificación común. La raíz de la jerarquía representa los recursos compartidos, mientras que las hojas corresponden a cargas de trabajo específicas, donde se mantienen las solicitudes que superan la capacidad de los recursos.
+Cuando ClickHouse ejecuta varias consultas simultáneamente, estas utilizan recursos compartidos (CPU, memoria y E/S). Se pueden aplicar restricciones y políticas de planificación para regular cómo se utilizan y comparten los recursos entre distintas cargas de trabajo. Para todos los recursos, se puede configurar una jerarquía de planificación común. La raíz de la jerarquía representa los recursos compartidos, mientras que las hojas corresponden a cargas de trabajo específicas, donde se mantienen las solicitudes y asignaciones de recursos de consultas concretas y actividades en segundo plano.
 
-<Note>
-  Actualmente, la [E/S de disco remota](#disk_config) y la [CPU](#cpu_scheduling) pueden planificarse con el método descrito. Para límites de memoria flexibles, consulte [memory overcommit](/es/concepts/features/configuration/settings/memory-overcommit)
-</Note>
-
-<div id="disk_config">
-  ## Configuración del disco
+<div id="resources">
+  ## Recursos
 </div>
 
-Para habilitar la planificación de cargas de trabajo de E/S para un disco específico, debe crear recursos de lectura y escritura para los accesos WRITE y READ:
+De forma predeterminada, la planificación de cargas de trabajo está desactivada. Para habilitarla, debe crear los recursos que se usarán para la planificación y al menos una carga de trabajo. Todos los recursos son independientes y pueden utilizarse en cualquier combinación.
+
+Para habilitar la planificación de CPU, debe crear un recurso de CPU para los hilos MASTER o WORKER (consulte [planificación de CPU](#cpu_scheduling) para más detalles):
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+```
+
+Para habilitar la reserva de memoria para las cargas de trabajo, debe crear el recurso MEMORY (consulte [Reservas de memoria](#memory-reservations) para obtener más información):
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+```
+
+Para habilitar la planificación de slots de consulta, debe crear el recurso QUERY (consulte [Planificación de slots de consulta](#query_scheduling) para más detalles):
+
+```sql
+CREATE RESOURCE query (QUERY)
+```
+
+Para habilitar la planificación de E/S para un disco específico, debe crear recursos de lectura y escritura para los accesos WRITE y READ:
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
--- o
+-- or
 CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
 CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
 ```
 
-El recurso puede usarse con cualquier número de discos para READ, WRITE o ambos. Existe una sintaxis que permite usar un recurso para todos los discos:
+Un recurso puede utilizarse para cualquier cantidad de discos, ya sea para READ, para WRITE o para ambos, READ y WRITE. Existe una sintaxis que permite usar un recurso para todos los discos:
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-Una forma alternativa de indicar qué discos usa un recurso es el `storage_configuration` del servidor:
+Los recursos se clasifican según el modo de compartición:
 
-<Warning>
-  La planificación de cargas de trabajo mediante la configuración de ClickHouse está en desuso. En su lugar, debe usarse la sintaxis SQL.
-</Warning>
-
-Para habilitar la planificación de E/S para un disco específico, debe especificar `read_resource` y/o `write_resource` en la configuración de almacenamiento. Esto le indica a ClickHouse qué recurso debe usar para cada solicitud de lectura y escritura de ese disco. El recurso de lectura y el de escritura pueden referirse al mismo nombre de recurso, lo que resulta útil para Local SSD o HDD. Varios discos distintos también pueden referirse al mismo recurso, lo que resulta útil para discos remotos si desea permitir un reparto equitativo del ancho de banda de red entre, por ejemplo, las cargas de trabajo de &quot;producción&quot; y &quot;desarrollo&quot;.
-
-Ejemplo:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Tenga en cuenta que las opciones de configuración del servidor prevalecen sobre la forma de definir recursos mediante SQL.
-
-<div id="workload_markup">
-  ## Marcado de carga de trabajo
-</div>
-
-Las consultas pueden marcarse con la configuración `workload` para distinguir distintas cargas de trabajo. Si no se establece `workload`, se usa el valor &quot;default&quot;. Tenga en cuenta que también puede especificar otro valor mediante perfiles de configuración. Las restricciones de configuración pueden usarse para hacer que `workload` sea constante si desea que todas las consultas de un usuario se marquen con un valor fijo para la configuración `workload`.
-
-Es posible asignar una configuración `workload` a las actividades en segundo plano. Las fusiones y mutaciones usan las configuraciones del servidor `merge_workload` y `mutation_workload`, respectivamente. Estos valores también pueden anularse para tablas específicas mediante las configuraciones de MergeTree `merge_workload` y `mutation_workload`
-
-Consideremos un ejemplo de un sistema con dos cargas de trabajo diferentes: &quot;production&quot; y &quot;development&quot;.
-
-```sql
-SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
-SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
-```
-
-<div id="hierarchy">
-  ## Jerarquía de planificación de recursos
-</div>
-
-Desde el punto de vista del subsistema de planificación, un recurso representa una jerarquía de nodos de planificación.
-
-```mermaid
-graph TD
-    subgraph lectura de red
-    nr_root(("/"))
-    -->|100 solicitudes concurrentes| nr_fair("justo")
-    -->|75 % de ancho de banda| nr_prod["prod"]
-    nr_fair
-    -->|25 % de ancho de banda| nr_dev["dev"]
-    end
-
-    subgraph escritura de red
-    nw_root(("/"))
-    -->|100 solicitudes concurrentes| nw_fair("justo")
-    -->|75 % de ancho de banda| nw_prod["prod"]
-    nw_fair
-    -->|25 % de ancho de banda| nw_dev["dev"]
-    end
-```
-
-<Warning>
-  La planificación de cargas de trabajo mediante la configuración de ClickHouse está obsoleta. En su lugar, se debe usar la sintaxis SQL. La sintaxis SQL crea automáticamente todos los nodos de programación necesarios, y la siguiente descripción de los nodos de programación debe considerarse un detalle de implementación de nivel inferior, accesible a través de la tabla [system.scheduler](/es/reference/system-tables/scheduler).
-</Warning>
-
-**Tipos de nodos posibles:**
-
-* `inflight_limit` (restricción) - bloquea si el número de solicitudes simultáneas en curso supera `max_requests` o si su coste total supera `max_cost`; debe tener un único hijo.
-* `bandwidth_limit` (restricción) - bloquea si el ancho de banda actual supera `max_speed` (0 significa ilimitado) o si la ráfaga supera `max_burst` (de forma predeterminada, es igual a `max_speed`); debe tener un único hijo.
-* `fair` (política) - selecciona la siguiente solicitud que se atenderá de uno de sus nodos hijos según la equidad max-min; los nodos hijos pueden especificar `weight` (el valor predeterminado es 1).
-* `priority` (política) - selecciona la siguiente solicitud que se atenderá de uno de sus nodos hijos según prioridades estáticas (un valor menor significa una prioridad más alta); los nodos hijos pueden especificar `priority` (el valor predeterminado es 0).
-* `fifo` (cola) - hoja de la jerarquía capaz de contener solicitudes que superan la capacidad del recurso.
-
-Para poder aprovechar toda la capacidad del recurso subyacente, debe usar `inflight_limit`. Tenga en cuenta que un valor bajo de `max_requests` o `max_cost` podría hacer que el recurso no se utilice por completo, mientras que valores demasiado altos podrían dejar colas vacías dentro del planificador, lo que a su vez hará que se ignoren las políticas (falta de equidad o de prioridad) en el subárbol. Por otro lado, si desea proteger los recursos frente a una utilización excesiva, debe usar `bandwidth_limit`. Este limita el uso cuando la cantidad de recurso consumido en `duration` segundos supera `max_burst + max_speed * duration` bytes. Se pueden usar dos nodos `bandwidth_limit` sobre el mismo recurso para limitar el ancho de banda pico durante intervalos cortos y el ancho de banda medio durante intervalos más largos.
-
-El siguiente ejemplo muestra cómo definir las jerarquías de programación de E/S que se muestran en la imagen:
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-<div id="workload_classifiers">
-  ## Clasificadores de cargas de trabajo
-</div>
-
-<Warning>
-  La planificación de cargas de trabajo mediante la configuración de ClickHouse está obsoleta. En su lugar, debe usarse la sintaxis SQL. Los clasificadores se crean automáticamente al usar la sintaxis SQL.
-</Warning>
-
-Los clasificadores de cargas de trabajo se usan para definir cómo se asigna la `workload` especificada por una consulta a las colas hoja que deben usarse para recursos específicos. Por el momento, la clasificación de cargas de trabajo es sencilla: solo está disponible la asignación estática.
-
-Ejemplo:
-
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
+* **Recursos de tiempo compartido** (CPU, E/S, slots de consulta): gestionan las solicitudes de recursos que se encolan en los nodos hoja de la jerarquía de planificación. Las solicitudes se planifican de acuerdo con las políticas y restricciones definidas por la jerarquía. Las solicitudes de recursos se crean cuando una consulta accede al recurso correspondiente. Por ejemplo, cuando una consulta lee datos del disco o usa la CPU para el procesamiento, se crean solicitudes de recursos por cada cuanto de trabajo realizado o por la cantidad de bytes enviados o recibidos a través de un socket.
+* **Recursos de espacio compartido** (Memoria): gestionan las asignaciones de recursos en los nodos hoja de la jerarquía de planificación. Las asignaciones pueden estar en ejecución o pendientes. Las asignaciones pendientes se bloquean hasta que se libere suficiente espacio o se desaloje (se termine) otra asignación. Las decisiones se basan en los límites y políticas definidos por la jerarquía. Existe una correspondencia uno a uno entre las asignaciones y las consultas (o actividades en segundo plano). Se crea una asignación cuando una consulta empieza a ejecutarse y se libera cuando finaliza. Las asignaciones en ejecución pueden aumentar o reducir su tamaño de forma dinámica.
 
 <div id="workloads">
   ## Jerarquía de cargas de trabajo
 </div>
 
-ClickHouse proporciona una sintaxis SQL práctica para definir la jerarquía de planificación. Todos los recursos creados con `CREATE RESOURCE` comparten la misma estructura jerárquica, aunque pueden diferir en algunos aspectos. Cada carga de trabajo creada con `CREATE WORKLOAD` mantiene varios nodos de planificación creados automáticamente para cada recurso. Se puede crear una carga de trabajo hija dentro de otra carga de trabajo padre. A continuación se muestra el ejemplo que define exactamente la misma jerarquía que la configuración XML anterior:
+ClickHouse proporciona una sintaxis SQL práctica para definir la jerarquía de planificación. Todos los recursos se distribuyen en una jerarquía común de WORKLOAD. Las reglas de distribución pueden modificarse en algunos aspectos para recursos concretos, pero la jerarquía es la misma. Cada WORKLOAD mantiene los nodos de planificación necesarios para cada recurso. Se puede crear una carga de trabajo hija dentro de cualquier carga de trabajo para formar la jerarquía. ClickHouse no impone ninguna estructura específica ni predefinida para la jerarquía de cargas de trabajo.
+
+A continuación se muestra un ejemplo de una jerarquía que divide todos los recursos entre las cargas de trabajo &quot;user&quot; y &quot;system&quot; con una garantía del 90 % y del 10 %, respectivamente. Ten en cuenta que los pesos definidos para las cargas de trabajo se usan para la equidad max-min y, por lo tanto, solo proporcionan una garantía de mejor esfuerzo como mínimo (no un límite ni una cuota como máximo). Toda la planificación se realiza en cada host de forma independiente y, por lo tanto, los límites definidos por la configuración `max_*` son por host. La carga de trabajo &quot;user&quot; subdivide sus recursos entre las cargas de trabajo &quot;development&quot; y &quot;production&quot;, donde &quot;production&quot; tiene 3 veces más recursos que &quot;development&quot;:
 
 ```sql
-CREATE RESOURCE network_write (WRITE DISK s3)
-CREATE RESOURCE network_read (READ DISK s3)
-CREATE WORKLOAD all SETTINGS max_io_requests = 100
-CREATE WORKLOAD development IN all
-CREATE WORKLOAD production IN all SETTINGS weight = 3
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE RESOURCE s3_read (READ DISK s3)
+CREATE RESOURCE s3_write (WRITE DISK s3)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2, max_memory_ratio = 0.8, max_bytes_per_second = '2Gi'
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD system IN all
+CREATE WORKLOAD development IN user
+CREATE WORKLOAD production IN user SETTINGS weight = 3
 ```
 
-El nombre de una carga de trabajo hoja sin cargas hijas se puede usar en la configuración de la consulta `SETTINGS workload = 'name'`.
+```mermaid
+graph LR
+  subgraph Resources
+    cpu["cpu"]
+    mem["memory"]
+    nr["s3_read"]
+    nw["s3_write"]
+    mem["memory"]
+    oth["..."]
+  end
+
+  subgraph Workloads
+    all["all"]
+    usr["user"]
+    sys["system"]
+    wl1["..."]
+    dev["development"]
+    prd["production"]
+    wl2["..."]
+    all --> |≥90%| usr
+    all --> |≥10%| sys
+    all --> wl1
+    usr --> |≥25%| dev
+    usr --> |≥75%| prd
+    usr --> wl2
+  end
+
+  cpu --> |2xCores| all
+  mem --> |0.8xRAM| all
+  nr --> |2GBps| all
+  nw --> |2GBps| all
+  oth --> all
+```
+
+El nombre de una carga de trabajo hoja sin cargas hijas se puede usar en la configuración de la consulta `SETTINGS workload = 'name'`. Consulta [Workload markup](#workload-markup) para obtener más detalles.
 
 Para personalizar la carga de trabajo, se pueden usar las siguientes opciones de configuración:
 
-* `priority` - las cargas de trabajo hermanas se atienden según valores de prioridad estáticos (un valor menor significa una prioridad más alta).
-* `weight` - las cargas de trabajo hermanas con la misma prioridad estática comparten los recursos según sus pesos.
+* `priority` - (solo de tiempo compartido) las cargas de trabajo hermanas se atienden según valores de prioridad estáticos (un valor menor significa una prioridad más alta). Determina la apropiación.
+* `precedence` - (solo de espacio compartido) las cargas de trabajo hermanas se admiten según valores estáticos de precedencia (un valor menor significa una precedencia más alta). Determina la expulsión y la admisión.
+* `weight` - las cargas de trabajo hermanas con la misma prioridad o precedencia estática comparten los recursos según sus pesos de manera justa. Afecta a la apropiación, la expulsión y la admisión.
 * `max_io_requests` - el límite del número de solicitudes de E/S concurrentes en esta carga de trabajo.
 * `max_bytes_inflight` - el límite del total de bytes en curso para las solicitudes concurrentes en esta carga de trabajo.
 * `max_bytes_per_second` - el límite de la tasa de lectura o escritura de bytes de esta carga de trabajo.
@@ -225,13 +122,14 @@ Para personalizar la carga de trabajo, se pueden usar las siguientes opciones de
 * `max_cpus` - el límite del número de núcleos de CPU para atender consultas en esta carga de trabajo.
 * `max_cpu_share` - lo mismo que `max_cpus`, pero normalizado según el número de núcleos de CPU disponibles.
 * `max_burst_cpu_seconds` - el número máximo de segundos de CPU que la carga de trabajo puede consumir sin que se limite su tasa debido a `max_cpus`.
+* `max_memory` - el límite de la memoria total reservada para esta carga de trabajo.
 
-Todos los límites especificados mediante la configuración de la carga de trabajo son independientes para cada recurso. Por ejemplo, una carga de trabajo con `max_bytes_per_second = 10485760` tendrá un límite de ancho de banda de 10 MB/s para cada recurso de lectura y escritura, de forma independiente. Si se requiere un límite común para lectura y escritura, considere usar el mismo recurso para el acceso READ y WRITE.
+Todos los límites especificados mediante la configuración de la carga de trabajo son independientes para cada recurso. Por ejemplo, una carga de trabajo con `max_bytes_per_second = '10Mi'` tendrá un límite de ancho de banda de 10 MB/s para cada recurso de lectura y escritura, de forma independiente. Si se requiere un límite común para lectura y escritura, considere usar el mismo recurso para el acceso READ y WRITE.
 
 No hay forma de especificar distintas jerarquías de cargas de trabajo para diferentes recursos. Pero sí hay una manera de especificar un valor distinto de configuración de la carga de trabajo para un recurso específico:
 
 ```sql
-CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = 1000000 FOR network_read, max_bytes_per_second = 2000000 FOR network_write
+CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
 Ten en cuenta también que una carga de trabajo o recurso no puede eliminarse si otra carga de trabajo hace referencia a él. Para actualizar la definición de una carga de trabajo, usa la consulta `CREATE OR REPLACE WORKLOAD`.
@@ -240,8 +138,25 @@ Ten en cuenta también que una carga de trabajo o recurso no puede eliminarse si
   La configuración de la carga de trabajo se convierte en un conjunto adecuado de nodos de planificación. Para obtener más detalles, consulta la descripción de los [tipos y opciones](#hierarchy) de los nodos de planificación.
 </Note>
 
+<div id="workload-markup">
+  ## Marcado de carga de trabajo
+</div>
+
+Las consultas pueden marcarse con la configuración `workload` para distinguir distintas cargas de trabajo. Si no se establece `workload`, se usa el valor &quot;default&quot;. Tenga en cuenta que también puede especificar otro valor mediante perfiles de configuración. Las restricciones de configuración pueden usarse para hacer que `workload` sea constante si desea que todas las consultas de un usuario se marquen con un valor fijo para la configuración `workload`.
+
+<Warning>
+  La configuración de consulta `workload` solo puede hacer referencia a cargas de trabajo hoja (es decir, cargas de trabajo sin hijos).
+</Warning>
+
+```sql
+SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
+SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
+```
+
+Es posible asignar una configuración `workload` a las actividades en segundo plano. Las fusiones y mutaciones usan las configuraciones del servidor `merge_workload` y `mutation_workload`, respectivamente. Estos valores también pueden anularse para tablas específicas mediante las configuraciones de MergeTree `merge_workload` y `mutation_workload`.
+
 <div id="cpu_scheduling">
-  ## Planificación de la CPU
+  ## planificación de CPU
 </div>
 
 Para habilitar la planificación de la CPU para las cargas de trabajo, cree un recurso de CPU y establezca un límite para la cantidad de hilos concurrentes:
@@ -251,14 +166,14 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-Cuando el servidor ClickHouse ejecuta muchas consultas concurrentes con [varios hilos](/es/reference/settings/session-settings#max_threads) y todos los slots de CPU están en uso, se alcanza el estado de sobrecarga. En ese estado, cada slot de CPU que se libera se reasigna a la carga de trabajo correspondiente según las políticas de planificación. En las consultas que comparten la misma carga de trabajo, los slots se asignan mediante round robin. En las consultas de cargas de trabajo distintas, los slots se asignan según los pesos, las prioridades y los límites especificados para cada carga de trabajo.
+Cuando el servidor ClickHouse ejecuta muchas consultas concurrentes con [varios hilos](/es/reference/settings/session-settings#max_threads) y todos los slots de CPU están en uso, se alcanza el estado de sobrecarga. En ese estado, cada slot de CPU que se libera se reasigna a la carga de trabajo correspondiente según las políticas de planificación. En las consultas que comparten la misma carga de trabajo, los slots se asignan mediante round-robin. En las consultas de cargas de trabajo distintas, los slots se asignan según los pesos, las prioridades y los límites especificados para cada carga de trabajo.
 
 Los hilos consumen tiempo de CPU cuando no están bloqueados y ejecutan tareas intensivas en CPU. A efectos de planificación, se distinguen dos tipos de hilos:
 
 * Hilo maestro — el primer hilo que empieza a trabajar en una consulta o en una actividad en segundo plano, como una fusión o una mutación.
 * Hilo de trabajo — los hilos adicionales que el maestro puede generar para trabajar en tareas intensivas en CPU.
 
-Puede ser conveniente usar recursos separados para los hilos maestro y de trabajo a fin de lograr una mejor capacidad de respuesta. Un número elevado de hilos de trabajo puede monopolizar fácilmente los recursos de CPU cuando se usan valores altos del ajuste de consulta `max_threads`. En ese caso, las consultas entrantes tendrán que bloquearse y esperar a que haya un slot de CPU para que su hilo maestro pueda empezar a ejecutarse. Para evitarlo, podría usarse la siguiente configuración:
+Puede ser conveniente usar recursos separados para los hilos maestro y de trabajo a fin de lograr una mejor capacidad de respuesta. Un número elevado de hilos de trabajo puede monopolizar fácilmente los recursos de CPU cuando se usan valores altos del ajuste de consulta `max_threads`. En ese caso, las consultas entrantes tendrán que bloquearse y esperar a que haya un slot de CPU para que sus hilos maestro puedan empezar a ejecutarse. Para evitarlo, podría usarse la siguiente configuración:
 
 ```sql
 CREATE RESOURCE worker_cpu (WORKER THREAD)
@@ -306,13 +221,13 @@ Hay dos formas de controlar el consumo de CPU de una carga de trabajo:
 * Límite del número de hilos: `max_concurrent_threads` y `max_concurrent_threads_ratio_to_cores`
 * Limitación de CPU: `max_cpus`, `max_cpu_share` y `max_burst_cpu_seconds`
 
-La primera permite controlar dinámicamente cuántos hilos se crean para una consulta, en función de la carga actual del servidor. En la práctica, reduce lo que establece la configuración de consulta `max_threads`. La segunda limita el consumo de CPU de la carga de trabajo mediante el algoritmo de cubo de tokens. No afecta directamente al número de hilos, pero sí limita el consumo total de CPU de todos los hilos de la carga de trabajo.
-
-La limitación mediante cubo de tokens con `max_cpus` y `max_burst_cpu_seconds` significa lo siguiente. Durante cualquier intervalo de `delta` segundos, no se permite que el consumo total de CPU de todas las consultas de la carga de trabajo supere `max_cpus * delta + max_burst_cpu_seconds` segundos de CPU. Limita el consumo medio a `max_cpus` a largo plazo, pero este límite puede superarse a corto plazo. Por ejemplo, dado `max_burst_cpu_seconds = 60` y `max_cpus=0.001`, se permite ejecutar 1 hilo durante 60 segundos, o 2 hilos durante 30 segundos, o 60 hilos durante 1 segundo, sin que se aplique limitación. El valor predeterminado de `max_burst_cpu_seconds` es 1 segundo. Valores más bajos pueden provocar un infraaprovechamiento de los núcleos permitidos por `max_cpus` cuando hay muchos hilos concurrentes.
-
 <Warning>
   La configuración de limitación de CPU solo está activa si la configuración del servidor `cpu_slot_preemption` está habilitada; de lo contrario, se ignora.
 </Warning>
+
+La primera permite controlar dinámicamente cuántos hilos se crean para una consulta, en función de la carga actual del servidor. En la práctica, reduce lo que establece la configuración de consulta `max_threads`. La segunda limita el consumo de CPU de la carga de trabajo mediante el algoritmo de cubo de tokens. No afecta directamente al número de hilos, pero sí limita el consumo total de CPU de todos los hilos de la carga de trabajo.
+
+La limitación mediante cubo de tokens con `max_cpus` y `max_burst_cpu_seconds` significa lo siguiente. Durante cualquier intervalo de `delta` segundos, no se permite que el consumo total de CPU de todas las consultas de la carga de trabajo supere `max_cpus * delta + max_burst_cpu_seconds` segundos de CPU. Limita el consumo medio a `max_cpus` a largo plazo, pero este límite puede superarse a corto plazo. Por ejemplo, dado `max_burst_cpu_seconds = 60` y `max_cpus=0.001`, se permite ejecutar 1 hilo durante 60 segundos, o 2 hilos durante 30 segundos, o 60 hilos durante 1 segundo, sin que se aplique limitación. El valor predeterminado de `max_burst_cpu_seconds` es 1 segundo. Valores más bajos pueden provocar un infraaprovechamiento de los núcleos permitidos por `max_cpus` cuando hay muchos hilos concurrentes.
 
 Mientras mantiene un slot de CPU, un hilo puede estar en uno de estos tres estados principales:
 
@@ -338,6 +253,87 @@ Aquí limitamos el número total de hilos para todas las consultas a 2 veces el 
   Si desea maximizar el uso de CPU en su servidor ClickHouse, evite usar `max_cpus` y `max_cpu_share` para la carga de trabajo raíz `all`. En su lugar, establezca un valor más alto para `max_concurrent_threads`. Por ejemplo, en un sistema con 8 CPU, establezca `max_concurrent_threads = 16`. Esto permite que 8 hilos ejecuten tareas de CPU mientras otros 8 pueden encargarse de operaciones de E/S. Los hilos adicionales generarán presión sobre la CPU, lo que garantiza que se apliquen las reglas de planificación. En cambio, establecer `max_cpus = 8` nunca generará presión sobre la CPU porque el servidor no puede superar las 8 CPU disponibles.
 </Note>
 
+<div id="memory-reservations">
+  ## Reservas de memoria
+</div>
+
+<Note>
+  La planificación de las reservas de memoria es experimental. Solo tiene efecto cuando existe un recurso `MEMORY RESERVATION`, y su sintaxis SQL y su comportamiento pueden cambiar en futuras versiones. Aún no es compatible con fusiones ni mutaciones, y la expulsión de una consulta en ejecución se aplica por mejor esfuerzo: surte efecto en el siguiente punto de sincronización de memoria de la consulta, no de forma instantánea.
+</Note>
+
+Para habilitar las reservas de memoria para las cargas de trabajo, cree un recurso MEMORY RESERVATION y establezca al menos un límite para la memoria total reservada mediante la configuración de la carga de trabajo:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '2Gi'
+```
+
+ClickHouse realiza un seguimiento de las asignaciones de memoria de todas las consultas y actividades en segundo plano. La cantidad de bytes asignados se agrega a través de la jerarquía de planificación hasta la raíz. Cada consulta tiene una asignación asociada en la carga de trabajo de hoja al que pertenece. Si una consulta tiene la configuración `reserve_memory` mayor que cero, la asignación se crea en estado pendiente. Una asignación pendiente reserva la cantidad de memoria solicitada en la jerarquía de cargas de trabajo. Si no hay suficiente memoria disponible, la asignación permanece pendiente hasta que se libere suficiente memoria o se expulsen (terminen) otras asignaciones. Cuando una asignación es admitida, pasa a estar en ejecución. Una asignación en ejecución puede aumentar o disminuir su tamaño dinámicamente según el consumo de memoria de la consulta. El ciclo de vida de una asignación puede representarse con el siguiente diagrama de estados:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: init [reserve_memory > 0]
+    [*] --> Running: init [reserve_memory == 0]
+
+    Pending --> Running: admit
+
+    state Running {
+        %% Region 1: increase flow
+        NotIncreasing --> Increasing: request
+        Increasing --> NotIncreasing: approve
+
+        --
+
+        %% Region 2: decrease flow
+        NotDecreasing --> Decreasing: request
+        Decreasing --> NotDecreasing: approve
+    }
+
+    Running --> Killed: evict
+    Running --> Released: finish
+```
+
+Las asignaciones pendientes de una carga de trabajo hoja se admiten según el orden FIFO. Cuando varias cargas de trabajo tienen asignaciones pendientes, se admiten según la configuración de precedencia y pesos. Las cargas de trabajo con mayor precedencia se atienden primero. Las cargas de trabajo hermanas con la misma precedencia comparten la memoria según los pesos de forma equitativa max-min, lo que significa que la carga de trabajo con menor uso de memoria normalizado (uso actual más el incremento solicitado, dividido por el peso) se atiende primero. La lógica inversa se aplica durante el desalojo. Cuando es necesario liberar memoria, las cargas de trabajo con menor precedencia y mayor uso de memoria normalizado se desalojan primero.
+
+Tenga en cuenta que los recursos compartidos en el tiempo usan prioridad, mientras que los recursos compartidos en el espacio usan precedencia. Son configuraciones independientes y pueden establecerse con valores distintos. Una prioridad más alta implica apropiación preferente no destructiva (retraso o throttling), mientras que una precedencia más alta puede implicar desalojo destructivo (se detiene con un error). Una carga de trabajo podría tener alta prioridad para la planificación de CPU, pero la misma precedencia para la reserva de memoria, para evitar desalojar otras cargas de trabajo y perder trabajo que estas ya habían realizado.
+
+Toda carga de trabajo con un límite `max_memory` garantiza que la memoria total asignada en su subárbol no supere ese límite. Si una asignación pendiente o en aumento supera el límite, se inicia el procedimiento de desalojo para liberar memoria. El procedimiento de desalojo selecciona una víctima que se va a terminar. La carga de trabajo ancestro común más bajo del killer y la víctima evita el desalojo en las siguientes situaciones:
+
+* Una asignación pendiente no puede desalojar asignaciones en ejecución dentro de la misma carga de trabajo. (Las cargas de trabajo killer y víctima coinciden).
+* Una asignación pendiente de menor precedencia nunca termina una carga de trabajo de mayor precedencia.
+* Una asignación pendiente no puede terminar una asignación de la misma precedencia. Tenga en cuenta que las asignaciones en ejecución con la misma precedencia pueden desalojarse entre sí según el uso de memoria normalizado.
+  Si se impide el desalojo o no se libera suficiente memoria, la nueva asignación se bloquea hasta que se libere suficiente memoria. Estas reglas permiten el encolado de consultas excesivas en función de la presión de memoria y proporcionan una forma práctica de evitar errores MEMORY&#95;LIMIT&#95;EXCEEDED.
+
+<Note>
+  Los límites de la carga de trabajo son independientes de otras formas de limitar el consumo de memoria, como la configuración de la consulta [max&#95;memory&#95;usage](/es/reference/settings/session-settings#max_memory_usage). Pueden usarse conjuntamente para lograr un mejor control del consumo de memoria. Es posible establecer límites de memoria independientes por usuario (no por carga de trabajo). Esto es menos flexible y no proporciona funciones como la reserva de memoria y el encolado de consultas pendientes. Consulte [sobreasignación de memoria](/es/concepts/features/configuration/settings/memory-overcommit)
+</Note>
+
+La configuración de carga de trabajo `max_waiting_queries` limita el número de asignaciones pendientes para la carga de trabajo. Cuando se alcanza el límite, el servidor devuelve un error `SERVER_OVERLOADED`. Tenga en cuenta que `max_waiting_queries` no se hereda en las cargas de trabajo hijas y solo tiene sentido para las cargas de trabajo hoja.
+
+La planificación de la reserva de memoria todavía no es compatible con las fusiones ni las mutaciones.
+
+Solo las consultas con la configuración `reserve_memory` superior a cero pueden quedar bloqueadas mientras esperan la reserva de memoria. Sin embargo, las consultas con `reserve_memory` igual a cero también se contabilizan en la huella de memoria de su carga de trabajo, y pueden ser desalojadas si es necesario para liberar memoria para otras asignaciones pendientes o en crecimiento. Las consultas sin la anotación de carga de trabajo adecuada no están sujetas a la planificación de la reserva de memoria y el planificador no puede desalojarlas.
+
+Para proporcionar una reserva de memoria no elástica para una consulta, establezca las configuraciones de consulta `reserve_memory` y `max_memory_usage` en el mismo valor. En este caso, la consulta reservará una cantidad fija de memoria y no podrá aumentar su asignación de forma dinámica. Tenga en cuenta que la reserva de memoria elástica puede aumentarse por encima de `reserve_memory` hasta `max_memory_usage` sin que la consulta se termine, salvo que haya presión de memoria. Pero no puede reducirse por debajo de `reserve_memory` incluso cuando el consumo real sea menor.
+
+Veamos un ejemplo de configuración:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi'
+CREATE WORKLOAD system IN all SETTINGS weight = 1
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD production IN user SETTINGS precedence = 1, weight = 3
+CREATE WORKLOAD staging IN user SETTINGS precedence = 1, weight = 1
+CREATE WORKLOAD testing IN user SETTINGS precedence = 2
+```
+
+En este ejemplo, la memoria total reservada por todas las consultas y actividades en segundo plano no puede superar los 10 GiB. La carga de trabajo del sistema tiene una garantía de al menos 1 GiB (el 10 % de 10 GiB), mientras que la carga de trabajo del usuario tiene una garantía de al menos 9 GiB (el 90 % de 10 GiB). Dentro de la carga de trabajo del usuario, las cargas de trabajo de production y staging comparten memoria según sus weights (3 a 1), con la misma precedencia: 1. La carga de trabajo de testing tiene precedencia 2, inferior a la de production y staging. Por lo tanto, la carga de trabajo de testing solo puede usar la memoria que no estén utilizando production y staging.
+
+Si se produce presión de memoria, las asignaciones de la carga de trabajo de testing serán las primeras en expulsarse. Después, si hace falta liberar más memoria, las asignaciones de la carga de trabajo de staging se expulsarán antes que las de production si superan sus garantías. Tenga en cuenta que las queries pendientes en production y staging pueden expulsar asignaciones en ejecución en la carga de trabajo de testing para liberar memoria, pero no pueden expulsarse entre sí porque tienen la misma precedencia. En caso de presión de memoria, esperarán en queues, lo que permite al sistema evitar errores MEMORY&#95;LIMIT&#95;EXCEEDED debidos a un número excesivo de queries ejecutándose de forma concurrente.
+
+Tenga en cuenta que la carga de trabajo del sistema tiene precedencia 0 (default), que es superior a la de las cargas de trabajo de production, staging y testing, pero no son cargas de trabajo hermanas. El ancestro común más cercano es la carga de trabajo all, cuyos dos children tienen la misma precedencia. Por lo tanto, la carga de trabajo del sistema pendiente no puede expulsar a ninguna de ellas, ni viceversa. Esto garantiza que las actividades del sistema no puedan expulsarse fácilmente.
+
 <div id="query_scheduling">
   ## Planificación de slots de consulta
 </div>
@@ -353,7 +349,7 @@ La configuración de carga de trabajo `max_concurrent_queries` limita la cantida
 
 Las configuraciones de carga de trabajo `max_queries_per_second` y `max_burst_queries` limitan la cantidad de consultas de la carga de trabajo mediante un limitador de tasa de tipo token bucket. Esto garantiza que, durante cualquier intervalo de tiempo `T`, no se iniciará la ejecución de más de `max_queries_per_second * T + max_burst_queries` consultas nuevas.
 
-La configuración de carga de trabajo `max_waiting_queries` limita la cantidad de consultas en espera para la carga de trabajo. Cuando se alcanza el límite, el servidor devuelve un error `SERVER_OVERLOADED`.
+La configuración de carga de trabajo `max_waiting_queries` limita la cantidad de consultas en espera para la carga de trabajo. Cuando se alcanza el límite, el servidor devuelve un error `SERVER_OVERLOADED`. Tenga en cuenta que `max_waiting_queries` no se hereda en las cargas de trabajo hijas y solo tiene sentido para las cargas de trabajo hoja.
 
 <Note>
   Las consultas bloqueadas esperarán indefinidamente y no aparecerán en `SHOW PROCESSLIST` hasta que se cumplan todas las restricciones.
@@ -378,9 +374,10 @@ Además de las definiciones basadas en SQL, las cargas de trabajo y los recursos
 ```xml
 <clickhouse>
     <resources_and_workloads>
+        CREATE RESOURCE memory (MEMORY RESERVATION);
         CREATE RESOURCE s3disk_read (READ DISK s3);
         CREATE RESOURCE s3disk_write (WRITE DISK s3);
-        CREATE WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
+        CREATE WORKLOAD all SETTINGS max_memory = '2Gi', max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = '1280Mi' FOR s3disk_read, max_bytes_per_second = '3200Mi' FOR s3disk_write;
         CREATE WORKLOAD production IN all SETTINGS weight = 3;
     </resources_and_workloads>
 </clickhouse>
@@ -412,6 +409,97 @@ Para garantizar que todas las consultas cumplan las políticas de planificación
 <Note>
   No establezca `throw_on_unknown_workload` en `true` a menos que se haya ejecutado `CREATE WORKLOAD default`. Esto podría causar problemas durante el inicio del servidor si, en ese momento, se ejecuta una consulta sin la configuración explícita `workload`.
 </Note>
+
+<div id="hierarchy">
+  ### Jerarquía de nodos de planificación
+</div>
+
+Desde la perspectiva del subsistema de planificación, cada recurso representa una jerarquía de nodos de planificación. ClickHouse crea automáticamente todos los nodos de planificación necesarios a partir de las definiciones de WORKLOAD y RESOURCE. Los nodos de planificación son detalles de implementación de bajo nivel, accesibles a través de la tabla [system.scheduler](/es/reference/system-tables/scheduler).
+
+```sql
+CREATE RESOURCE network_write (WRITE DISK s3)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_io_requests = 100, max_memory = '2Gi'
+CREATE WORKLOAD development IN all
+CREATE WORKLOAD production IN all SETTINGS weight = 3
+```
+
+```mermaid
+graph TD
+    nw_root(["network_write"])
+    -->nw_all{{"all"}}
+    -->nw_semp[\"semaphore"/]
+    -->|100 concurrent requests| nw_fair("p0_fair")
+    -->|75% bandwidth| nw_prod{{"production"}}
+    -->nw_prod_q["fifo"]
+    nw_fair
+    -->|25% bandwidth| nw_dev{{"development"}}
+    -->nw_dev_q["fifo"]
+
+    mem_root(["memory"])
+    -->mem_all{{"all"}}
+    -->mem_semp[\"limit"/]
+    -->|2Gi RAM| mem_fair("p0_fair")
+    -->|75% RAM| mem_prod{{"production"}}
+    -->mem_prod_q["queue"]
+    mem_fair
+    -->|25% RAM| mem_dev{{"development"}}
+    -->mem_dev_q["queue"]
+```
+
+**Tipos de nodos de tiempo compartido:**
+
+* `inflight_limit` (restricción) - bloquea si el número de solicitudes simultáneas en curso supera `max_requests` o si su coste total supera `max_cost`; debe tener un único hijo.
+* `bandwidth_limit` (restricción) - bloquea si el ancho de banda actual supera `max_speed` (0 significa ilimitado) o si la ráfaga supera `max_burst` (por defecto equivale a `max_speed`); debe tener un único hijo.
+* `fair` (política) - selecciona la siguiente solicitud que se atenderá de uno de sus nodos hijos según la equidad max-min; los nodos hijos pueden especificar `weight` (el valor por defecto es 1).
+* `priority` (política) - selecciona la siguiente solicitud que se atenderá de uno de sus nodos hijos según prioridades estáticas (un valor más bajo significa una prioridad más alta); los nodos hijos deben especificar `priority` (el valor por defecto es 0).
+* `fifo` (cola) - hoja de la jerarquía capaz de contener solicitudes que superan la capacidad del recurso.
+
+**Tipos de nodos de espacio compartido:**
+
+* `limit` - garantiza que la asignación total del hijo nunca supere un límite; inicia el procedimiento de desalojo en un subárbol si es necesario; debe tener un único hijo.
+* `fair_allocation` - aplica el desalojo según la equidad max-min; una asignación pendiente nunca desaloja una asignación en ejecución; los nodos hijos pueden especificar `weight` (el valor por defecto es 1).
+* `precedence_allocation` - aplica el desalojo según la precedencia estática (un valor más bajo significa una precedencia más alta); la asignación pendiente de mayor precedencia desaloja las asignaciones de menor precedencia; los nodos hijos deben especificar `precedence` (el valor por defecto es 0).
+* `queue` - hoja de la jerarquía capaz de contener asignaciones en ejecución y pendientes.
+
+<div id="deprecated-configuration">
+  ## Configuración XML en desuso
+</div>
+
+Una forma alternativa de indicar qué discos usa un recurso es el `storage_configuration` del servidor:
+
+Para habilitar la planificación de E/S para un disco específico, debe especificar `read_resource` y/o `write_resource` en la configuración de almacenamiento. Esto le indica a ClickHouse qué recurso debe usar para cada solicitud de lectura y escritura de ese disco. El recurso de lectura y el de escritura pueden referirse al mismo nombre de recurso, lo que resulta útil para Local SSD o HDD. Varios discos distintos también pueden referirse al mismo recurso, lo que resulta útil para discos remotos si desea permitir un reparto equitativo del ancho de banda de red entre, por ejemplo, las cargas de trabajo de &quot;producción&quot; y &quot;desarrollo&quot;.
+
+Ejemplo:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+            </s3>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Tenga en cuenta que las opciones de configuración del servidor prevalecen sobre la forma de definir recursos mediante SQL.
 
 <div id="see-also">
   ## Véase también
