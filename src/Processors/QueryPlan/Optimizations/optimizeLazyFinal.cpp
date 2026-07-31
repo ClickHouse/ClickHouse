@@ -506,8 +506,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
     /// This set selects FINAL winners by key identity, so a NULL key must equal itself here.
-    /// Without transform_null_in the Set drops NULL keys at insertion and a NULL-keyed winner
-    /// is pruned away. Note isNullable() is false for LowCardinality(Nullable(T)).
+    /// Without `transform_null_in` the `Set` drops NULL keys at insertion and a NULL-keyed
+    /// winner is pruned away. Note `isNullable` is false for `LowCardinality(Nullable(T))`.
     const bool pk_has_nullable_column = std::any_of(
         primary_key.data_types.begin(),
         primary_key.data_types.end(),
