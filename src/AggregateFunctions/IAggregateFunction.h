@@ -982,8 +982,21 @@ struct AggregateFunctionProperties
       * When this is false, `AggregateFunctionFactory::get()` sends a `Variant` argument straight to the
       * adapter (which aggregates over the least common supertype of the variants) instead of first attempting
       * native resolution and catching its failure. See `AggregateFunctionVariantAdapter`.
+      *
+      * Accepting the `Variant` natively does not exempt the function from the standard NULL-skipping contract:
+      * the factory wraps the natively-resolved function in `AggregateFunctionVariantNull`, which skips the rows
+      * where a `Variant` argument is NULL, exactly as the `Null` combinator does for `Nullable` arguments (see
+      * `skips_variant_nulls` below for the functions that implement the contract themselves).
       */
     bool support_variant_argument = false;
+
+    /** The function's native implementation itself skips the NULL values of a `Variant` argument, i.e. it
+      * implements the standard NULL-skipping contract on its own, so `AggregateFunctionFactory::getImpl` must
+      * not wrap it in `AggregateFunctionVariantNull`. `count` is such a function: its creator returns a
+      * dedicated implementation for a `Variant` argument that counts only the not-NULL values (and keeps the
+      * plain `count` state representation).
+      */
+    bool skips_variant_nulls = false;
 
     /** The function's result is a floating-point value computed by arithmetic or statistics over its numeric
       * arguments, so it reads every numeric input as `Float64`: `sum` / `avg` accumulate arithmetically, the
@@ -1017,7 +1030,9 @@ struct AggregateFunctionProperties
       * propagates this flag from the stripped combinator suffixes
       * (`IAggregateFunctionCombinator::isDistinctnessSensitive`). The Variant-native aggregates that
       * key on distinctness (`uniq`, `uniqExact`, `topK`, `groupUniqArray`, ...) are unaffected: they declare
-      * `support_variant_argument` and hash the genuine `Variant` values, discriminator included.
+      * `support_variant_argument` and hash the genuine `Variant` values of the not-NULL rows, discriminator
+      * included (the NULL rows are skipped by `AggregateFunctionVariantNull`, as they are for `Nullable`
+      * arguments).
       */
     bool is_distinctness_sensitive = false;
 };

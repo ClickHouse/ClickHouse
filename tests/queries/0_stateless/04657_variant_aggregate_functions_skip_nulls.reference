@@ -1,0 +1,17 @@
+any	1	2	2
+groupArray	[1,'a',2]
+groupUniqArray	[1,2,'a']
+topK	[1,2,'a']
+groupConcat	1,a,2	Nullable(String)
+groupConcat all-NULL	\N
+uniq	3	3	3	3
+argMin/argMax	1	2
+all-NULL	\N	[]	0
+anyIf	2	[1,'a']
+merge	1	1a2
+declared state	1
+partial merge	2
+0	\N	[]
+1	\N	[]
+respect nulls	\N	2
+count	3

@@ -22,9 +22,10 @@ SELECT 'topK', toTypeName(topK(v)) FROM t_variant_native_prop;
 SELECT 'argMin arg keeps Variant', toTypeName(argMin(v, k)) FROM t_variant_native_prop;
 SELECT 'argMax arg keeps Variant', toTypeName(argMax(v, k)) FROM t_variant_native_prop;
 
--- count / the uniq family return their own numeric result type (native). count(expr) counts the not-NULL values
--- of its argument, so the NULL of the Variant is not counted (see 04652), while the uniq family counts it as a
--- distinct value, as it does for any other value of a Variant.
+-- count / the uniq family return their own numeric result type (native). Native resolution preserves the
+-- standard NULL-skipping contract (AggregateFunctionVariantNull): count(expr) counts the not-NULL values of
+-- its argument (see 04652), and the uniq family does not count the NULL of the Variant as a distinct value,
+-- exactly as it skips the NULL values of a Nullable argument.
 SELECT 'count', count(v) FROM t_variant_native_prop;
 SELECT 'uniq', uniq(v) FROM t_variant_native_prop;
 SELECT 'uniqExact', uniqExact(v) FROM t_variant_native_prop;

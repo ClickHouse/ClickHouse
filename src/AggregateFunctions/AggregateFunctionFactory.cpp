@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
+#include <AggregateFunctions/AggregateFunctionVariantNull.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -155,6 +156,9 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                 /// as the outermost wrapper via tryGetVariantAdapter below; do not let combinators apply it again
                 /// inside. tryResolveNatively returns nullptr when the function rejects the given Variant
                 /// positions (e.g. argMin with a Variant comparison key), so we fall through to the adapter.
+                /// The native resolution preserves the standard NULL-skipping contract: getImpl wraps the
+                /// resolved function in AggregateFunctionVariantNull (see there), so the NULL rows of the
+                /// Variant are skipped exactly as the adapter's cast to Nullable(supertype) would skip them.
                 if (auto native = tryResolveNatively(
                         name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
                     return native;
@@ -607,6 +611,34 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             function = found.window_creator(name, argument_types, parameters, settings);
         else
             function = found.creator(name, argument_types, parameters, settings);
+
+        /// Preserve the standard NULL-skipping contract over Variant arguments. A Variant is not Nullable, so
+        /// the "Null" combinator is never applied to it, and a natively-resolved function would otherwise
+        /// process the NULL rows of a Variant argument as ordinary values (`any` would return NULL from a group
+        /// that has non-NULL values, `groupArray` would store the NULLs its documentation promises to remove,
+        /// `uniq` would count NULL as a distinct value, ...). Window functions must handle their argument types
+        /// themselves (the "Null" combinator is not applied to them either), and a function whose native
+        /// implementation already skips the Variant NULLs itself declares
+        /// AggregateFunctionProperties::skips_variant_nulls (`count`) and stays unwrapped.
+        /// This is the resolution point every path funnels through -- the top-level native resolution as well as
+        /// a combinator's nested function reconstructed from a declared AggregateFunction(f, Variant(...)) state
+        /// type -- so the wrapper is applied consistently and the state layouts always match.
+        if (!out_properties.is_window_function && !out_properties.skips_variant_nulls
+            && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
+        {
+            /// The same result-type rule as the "Null" combinator: NULL for an all-NULL group when the function
+            /// does not return its default value for an empty set and the result type can hold a NULL. A result
+            /// type that is the Variant itself (`any`, `argMin`, ...) cannot be inside Nullable and needs no
+            /// wrapping: an all-NULL group produces the empty nested state, whose result is the default value of
+            /// the Variant, i.e. NULL. Without the flag the wrapper's state representation is exactly the nested
+            /// function's.
+            bool return_type_is_nullable = !out_properties.returns_default_when_only_null
+                && function->getResultType()->canBeInsideNullable();
+            if (return_type_is_nullable)
+                function = std::make_shared<AggregateFunctionVariantNull<true>>(function, argument_types, parameters);
+            else
+                function = std::make_shared<AggregateFunctionVariantNull<false>>(function, argument_types, parameters);
+        }
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
         /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change

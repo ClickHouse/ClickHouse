@@ -339,7 +339,10 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one argument", name);
 
     /// A `Variant` argument is accepted natively (`support_variant_argument`), without the supertype adapter, but
-    /// its NULL values still must not be counted.
+    /// its NULL values still must not be counted. This dedicated implementation skips them itself while keeping
+    /// the plain `count` state representation, so `count` declares `skips_variant_nulls` and the factory does not
+    /// wrap it in `AggregateFunctionVariantNull` (which would be equivalent, but would lose the interchangeability
+    /// of the state with plain `count()` provided by `getNormalizedStateType`).
     if (argument_types.size() == 1 && isVariant(argument_types[0]))
         return std::make_shared<AggregateFunctionCountNotNullVariant>(argument_types[0], parameters);
 
@@ -416,7 +419,7 @@ SELECT count(DISTINCT num) FROM t
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false, .support_variant_argument = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false, .support_variant_argument = true, .skips_variant_nulls = true };
 
     factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }

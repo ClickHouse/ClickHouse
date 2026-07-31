@@ -3,7 +3,7 @@ count all rows	5
 count is not null	3
 countIf	2
 countIf all false	0
-countDistinct	4
+countDistinct	3
 count over Nullable	3
 countState	3
 countState type	AggregateFunction(count, Variant(Float64, Int64))

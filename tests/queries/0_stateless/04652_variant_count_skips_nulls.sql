@@ -15,8 +15,8 @@ SELECT 'count all rows', count() FROM t_variant_count;
 SELECT 'count is not null', countIf(NOT isNull(v)) FROM t_variant_count;
 SELECT 'countIf', countIf(v, k > 15) FROM t_variant_count;
 SELECT 'countIf all false', countIf(v, k > 1000) FROM t_variant_count;
--- countDistinct is the uniqExact function, which counts the NULL of a Variant as a distinct value, as it does for
--- any other value of a Variant.
+-- countDistinct is the uniqExact function, which skips the NULL rows of a Variant like every other
+-- NULL-skipping aggregate (AggregateFunctionVariantNull), so the NULL is not counted as a distinct value.
 SELECT 'countDistinct', countDistinct(v) FROM t_variant_count;
 
 -- The same over the Nullable(supertype) form of the same values.

@@ -74,7 +74,9 @@ SELECT max(v) FROM t_variant_null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT argMax(v, v) FROM t_variant_null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_variant_null;
 
--- Functions that already support Variant natively are unaffected (no adapter, result type is kept).
+-- Functions that already support Variant natively are not adapted (the result type keeps the Variant), and the
+-- native resolution preserves the standard NULL-skipping contract (AggregateFunctionVariantNull): the NULL row
+-- is not counted by uniqExact, exactly as a NULL of a Nullable argument would not be.
 DROP TABLE IF EXISTS t_variant_native;
 CREATE TABLE t_variant_native (v Variant(UInt64, String)) ENGINE = Memory;
 INSERT INTO t_variant_native VALUES (1), ('a'), (2), (NULL);
