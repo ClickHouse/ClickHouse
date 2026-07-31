@@ -670,8 +670,8 @@ class S3:
 
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
-                if error_code == "PreconditionFailed":
-                    print("Precondition failed (concurrent write detected)")
+                if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                    print(f"{error_code} (concurrent write detected)")
                     return False
                 print(f"ERROR: Failed to upload file using boto3: {error_code}")
                 if not no_strict:
