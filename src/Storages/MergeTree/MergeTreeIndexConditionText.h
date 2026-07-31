@@ -96,7 +96,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        bool has_coarse_postings_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -168,6 +169,7 @@ private:
         RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
+    TextIndexDirectReadMode getPatternDirectReadMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
@@ -217,6 +219,8 @@ private:
     bool has_postprocessor;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
+    /// Whether the index may store coarse posting lists. Such an index can be used only as a hint.
+    bool has_coarse_postings = false;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

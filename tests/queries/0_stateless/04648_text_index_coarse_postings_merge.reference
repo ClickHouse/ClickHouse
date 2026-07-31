@@ -1,0 +1,25 @@
+Before merge	3
+common	8192
+rare	25	99575
+clustered	100	302950
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+After merge	1
+common	8192
+rare	25	99575
+clustered	100	302950
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+clustered	2	25
+common	8	32
+rare	0	25
+After small merge	1
+common	8202
+extra	10	81965
+rare	25	99575
+clustered	100	302950
+common	8	33
+extra	0	10
+Coarse index is smaller	1

@@ -40,8 +40,11 @@ public:
     /// Appends a per-block Index Section after each segment for lazy cursor support.
     virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
-    /// Reads an encoded posting list, decodes it, and returns a posting list.
-    virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
+    /// Reads one encoded posting list and decodes it into `postings`, which must be empty.
+    ///
+    /// If `coarse_level` is not zero, the encoded values are bucket ids of a coarse posting list
+    /// They are expanded into the ranges of row ids, so that the caller always gets a row-level posting list
+    virtual void decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level) const = 0;
 private:
     Type type{};
 };

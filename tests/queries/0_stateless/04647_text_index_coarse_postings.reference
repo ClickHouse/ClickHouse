@@ -1,0 +1,64 @@
+Ground truth (no index)
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+Direct read, materialize, skip indexes on data read
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+Direct read, lazy, skip indexes on data read
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+Direct read, materialize, no skip indexes on data read
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+Granule pruning only (no direct read)
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+Multi-block coarse posting lists (compressed, small block size)
+common	8192
+rare	25	99575
+clustered	100	302950
+all common+rare	25
+all rare+clustered	1	2990
+any rare+clustered	124
+rare AND w0	8	30540
+like clustered	100
+missing	0
+common	8192
+rare	25	99575
+clustered	100	302950
+any rare+clustered	124

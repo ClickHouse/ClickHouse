@@ -99,7 +99,13 @@ protected:
                 {
                     auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
                     for (size_t i = 0; i < block_size; ++i)
-                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].cardinality));
+                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].postings_cardinality));
+                }
+                else if (column_name == "coarse_level")
+                {
+                    auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
+                    for (size_t i = 0; i < block_size; ++i)
+                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].coarse_level));
                 }
                 else if (column_name == "part_name")
                 {

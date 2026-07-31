@@ -348,7 +348,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 if (hasReadPostings(token))
                     continue;
 
-                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
+                log_cardinality += std::log(static_cast<double>(it->second->rows_cardinality));
                 ++num_unread;
             }
 
@@ -373,7 +373,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 /// all rows, which makes the union saturate at n.
                 double token_cardinality = (it == query_builder.tokens.end())
                     ? n
-                    : static_cast<double>(it->second->cardinality);
+                    : static_cast<double>(it->second->rows_cardinality);
 
                 not_in_any *= (1.0 - token_cardinality / n);
             }

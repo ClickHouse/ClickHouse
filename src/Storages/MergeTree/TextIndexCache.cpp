@@ -17,7 +17,7 @@ void TokensCardinalitiesCache::update(const TokenToPostingsInfosMap & token_info
     for (const auto & [token, token_info] : token_infos)
     {
         auto & cardinality_agg = cardinalities[token];
-        cardinality_agg.cardinality += token_info->cardinality;
+        cardinality_agg.cardinality += token_info->rows_cardinality;
         cardinality_agg.checked_rows += total_rows;
     }
 

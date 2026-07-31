@@ -141,7 +141,10 @@ public:
     ///
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
-    void decode(ReadBuffer & in, PostingList & postings);
+    ///
+    /// A non-zero `coarse_level` means that the decoded values are bucket ids
+    /// of a coarse posting list: they are expanded into row ranges on the fly.
+    void decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level);
 
 private:
     void reset()
@@ -234,10 +237,11 @@ public:
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level) const override;
 };
 
-/// A posting list codec that doesn't compress (no-op).
+/// A posting list codec that doesn't compress: every posting list segment
+/// is stored as a portable Roaring bitmap prefixed by its size in bytes.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -246,7 +250,7 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
+    void decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level) const override;
 };
 
 }

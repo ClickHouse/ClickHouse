@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCoarsePostings.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
@@ -142,6 +143,8 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
     PostingList output_postings;
+    /// Coarsening budget for the resulting part.
+    CoarseSerializationParams coarse_params;
     /// Positions accumulated for the current token (phrase query support).
     PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.

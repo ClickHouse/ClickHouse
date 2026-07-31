@@ -53,8 +53,9 @@ double computeDensity(const TokenPostingsInfo & info)
     if (info.ranges.empty())
         return 0.0;
 
+    double effective_cardinality = static_cast<double>(info.postings_cardinality) * static_cast<double>(1ULL << info.coarse_level);
     double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
-    return span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
+    return span > 0.0 ? std::min(1.0, effective_cardinality / span) : 0.0;
 }
 
 /// Narrow an on-disk UInt64 field to UInt32, throwing CORRUPTED_DATA if the value exceeds
@@ -81,7 +82,9 @@ PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const Toke
     , index_id_for_cache(index_id_for_cache_)
     , total_segments(info_.offsets.size())
     , density_val(computeDensity(info_))
+    , coarse_level(info_.coarse_level)
 {
+    chassert(coarse_level < 32);
 }
 
 PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
@@ -105,7 +108,12 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
 
 UInt32 PostingListCursor::cardinality() const
 {
-    return is_embedded ? static_cast<UInt32>(decoded_count) : info->cardinality;
+    if (is_embedded)
+        return static_cast<UInt32>(decoded_count);
+
+    /// The number of rows a coarse posting list expands to.
+    UInt64 effective_cardinality = static_cast<UInt64>(info->postings_cardinality) << coarse_level;
+    return static_cast<UInt32>(std::min<UInt64>(effective_cardinality, std::numeric_limits<UInt32>::max()));
 }
 
 PostingListCursor::~PostingListCursor()
@@ -159,6 +167,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     current_block = 0;
     decoded_count = 0;
     index = 0;
+    row_within_bucket = 0;
 }
 
 PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
@@ -366,6 +375,7 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     decoded_count = count;
     index = 0;
+    row_within_bucket = 0;
 }
 
 void PostingListCursor::advance(uint32_t target)
@@ -389,13 +399,28 @@ void PostingListCursor::advance(uint32_t target)
         return;
     }
 
-    /// Try current segment first.
+    uint32_t value_target = target;
+
+    /// A coarse cursor iterates over the row ids, while the decoded values are bucket ids.
+    /// Search for the bucket of the target row and position within the bucket afterwards.
+    if (coarse_level)
+    {
+        if (decoded_count > 0 && index < decoded_count && value() >= target)
+            return;
+
+        value_target = target >> coarse_level;
+    }
+
+    /// Try current segment first. Segment ranges are always in the row domain.
     if (has_prepared_first_segment)
     {
         if (target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
         {
-            if (advanceImpl(target))
+            if (advanceImpl(value_target))
+            {
+                advanceWithinBucket(target);
                 return;
+            }
         }
     }
 
@@ -408,11 +433,27 @@ void PostingListCursor::advance(uint32_t target)
     for (size_t i = static_cast<size_t>(it - info->ranges.begin()); i < total_segments; ++i)
     {
         prepareSegment(i);
-        if (advanceImpl(target))
+        if (advanceImpl(value_target))
+        {
+            advanceWithinBucket(target);
             return;
+        }
     }
 
     is_valid = false;
+}
+
+void PostingListCursor::advanceWithinBucket(uint32_t target)
+{
+    if (!coarse_level)
+        return;
+
+    /// If the cursor landed exactly on the target's bucket, start from the target row,
+    /// otherwise from the first row of the bucket (which is greater than the target).
+    if (decoded_values_ptr[index] == (target >> coarse_level))
+        row_within_bucket = target & ((1u << coarse_level) - 1);
+    else
+        row_within_bucket = 0;
 }
 
 bool PostingListCursor::advanceImpl(uint32_t target)
@@ -454,6 +495,15 @@ void PostingListCursor::next()
 {
     if (!is_valid)
         return;
+
+    /// A coarse cursor iterates over the rows of the current bucket first.
+    if (coarse_level)
+    {
+        if (++row_within_bucket < (1u << coarse_level))
+            return;
+
+        row_within_bucket = 0;
+    }
 
     ++index;
 
@@ -525,6 +575,26 @@ inline void padDenseRange(UInt8 * __restrict out, size_t count)
     else
         for (size_t i = 0; i < count; ++i)
             ++out[i];
+}
+
+/// Pad the output with a decoded block of a coarse posting list: every bucket id expands
+/// into its row range, clipped to the output window [row_offset, row_offset + num_rows).
+template <PadOp op>
+inline void padCoarseColumn(UInt8 * __restrict out, const uint32_t * buckets, size_t count, UInt32 level, size_t row_offset, size_t num_rows)
+{
+    UInt64 window_end = row_offset + num_rows;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        UInt64 range_begin = static_cast<UInt64>(buckets[i]) << level;
+        UInt64 range_end = range_begin + (UInt64(1) << level);
+
+        range_begin = std::max<UInt64>(range_begin, row_offset);
+        range_end = std::min(range_end, window_end);
+
+        if (range_begin < range_end)
+            padDenseRange<op>(out + (range_begin - row_offset), range_end - range_begin);
+    }
 }
 
 #if USE_MULTITARGET_CODE
@@ -652,10 +722,13 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
             prepareSegment(i);
 
         /// Level 1: dense segment shortcut.
-        /// If every row in the segment range has a posting, pad the whole clipped range at once
-        /// instead of decoding blocks.
+        /// If every row (or every bucket for a coarse posting list) in the segment range has
+        /// a posting, pad the whole clipped range at once instead of decoding blocks.
         {
-            size_t range_span = seg_end - seg_begin + 1;
+            size_t range_span = coarse_level
+                ? (seg_end >> coarse_level) - (seg_begin >> coarse_level) + 1
+                : seg_end - seg_begin + 1;
+
             if (current_segment->doc_count == range_span)
             {
                 size_t clip_begin = std::max(seg_begin, row_offset);
@@ -683,19 +756,30 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
             }
 
             uint32_t block_first = (block_idx == 0)
-                ? static_cast<uint32_t>(seg_begin)
+                ? static_cast<uint32_t>(coarse_level ? seg_begin >> coarse_level : seg_begin)
                 : (current_segment->block_last_row_ids[block_idx - 1] + 1);
 
-            if (block_last < row_offset)
+            UInt64 block_first_row = block_first;
+            UInt64 block_last_row = block_last;
+
+            /// For a coarse posting list, block bounds are bucket ids. Convert them to rows ids.
+            if (coarse_level)
+            {
+                static constexpr UInt64 max_row_end = static_cast<UInt64>(std::numeric_limits<uint32_t>::max()) + 1;
+                block_first_row = static_cast<UInt64>(block_first) << coarse_level;
+                block_last_row = std::min((static_cast<UInt64>(block_last) + 1) << coarse_level, max_row_end) - 1;
+            }
+
+            if (block_last_row < row_offset)
                 continue;
 
-            if (block_first >= row_offset + num_rows)
+            if (block_first_row >= row_offset + num_rows)
                 break;
 
             /// Level 2b: block-level skip (same resolved-region test as Level 2a, per block).
             {
-                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
-                size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first_row), row_offset);
+                size_t blk_clip_end = std::min(static_cast<size_t>(block_last_row) + 1, row_offset + num_rows);
 
                 if (blk_clip_begin < blk_clip_end)
                 {
@@ -711,6 +795,12 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
             }
 
             decodeBlock(block_idx);
+
+            if (coarse_level)
+            {
+                padCoarseColumn<op>(data, decoded_values_ptr, decoded_count, coarse_level, row_offset, num_rows);
+                continue;
+            }
 
             const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
             const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);

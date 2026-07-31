@@ -85,6 +85,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
         {"token", std::make_shared<DataTypeString>()},
         {"dictionary_compression", getDictionaryCompressionType()},
         {"cardinality", std::make_shared<DataTypeUInt64>()},
+        {"coarse_level", std::make_shared<DataTypeUInt64>()},
         {"num_posting_blocks", std::make_shared<DataTypeUInt64>()},
         {"has_embedded_postings", std::make_shared<DataTypeUInt8>()},
         {"has_raw_postings", std::make_shared<DataTypeUInt8>()},

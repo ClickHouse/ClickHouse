@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/TextIndexCoarsePostings.h>
 #include <Columns/IColumn.h>
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
@@ -64,8 +65,10 @@ namespace DB
   * - A binary serialized ColumnString with tokens.
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
-  *    2. Cardinality of token (VarUInt).
-  *    3. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *    2. Cardinality of token (VarUInt). For coarse posting lists it is the number of stored buckets.
+  *    3. If HasPositions flag is set, offset of position data in the .pos file (VarUInt) and number of position entries (VarUInt).
+  *    4. If CoarsePostings flag is set, coarse level (VarUInt) and exact row cardinality (VarUInt).
+  *    5. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
@@ -83,6 +86,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
+    UInt64 coarse_granularity = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
 };
@@ -181,21 +185,23 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
         /// If set, the token has positional data in the .pos file.
         HasPositions = 1ULL << 5,
+        /// If set, the posting list is a lossy superset of the exact posting list:
+        /// the stored values are bucket ids (row >> coarse_level). The index result
+        /// can be used only as a hint and must be verified by the original predicate.
+        CoarsePostings = 1ULL << 6,
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
-    PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    PostingListPtr deserialize(ReadBuffer & istr, const TokenPostingsInfo & info);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
-
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -216,7 +222,7 @@ struct RowsRange
 struct TokenPostingsInfo
 {
     UInt64 header = 0;
-    UInt32 cardinality = 0;
+    UInt32 postings_cardinality = 0;
 
     /// The majority of tokens have only one block,
     /// so use inlined vector to avoid heap allocations.
@@ -227,7 +233,16 @@ struct TokenPostingsInfo
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
     /// Number of Roaringish UInt64 entries in position data.
-    UInt32 position_cardinality = 0;
+    UInt32 positions_cardinality = 0;
+
+    /// Bucket resolution of a coarse posting list: stored values are (row >> coarse_level).
+    /// Meaningful only if the CoarsePostings flag is set.
+    UInt32 coarse_level = 0;
+    /// Exact document frequency in rows. Equals `postings_cardinality` for non-coarse tokens.
+    /// For coarse tokens `postings_cardinality` is the number of stored buckets.
+    UInt32 rows_cardinality = 0;
+
+    bool isCoarse() const { return header & PostingsSerialization::Flags::CoarsePostings; }
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
@@ -290,6 +305,7 @@ struct TextIndexHeader
         Initial = 0,
         WithCodec = 1,
         WithPositions = 2,
+        WithCoarsePostings = 3,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
@@ -298,6 +314,9 @@ struct TextIndexHeader
     bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
+
+/// Chooses the on-disk format version of the text index for the given parameters.
+MergeTreeIndexVersion chooseTextIndexSerializationVersion(const MergeTreeIndexTextParams & params);
 
 struct TextIndexSerialization
 {
@@ -311,7 +330,8 @@ struct TextIndexSerialization
         PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization);
+        PostingsSerialization & postings_serialization,
+        const CoarseSerializationParams & coarse_params);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
@@ -418,7 +438,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_,
         std::unique_ptr<TokenToPositionListMap> && position_map_,
-        SortedTokens && sorted_tokens_);
+        SortedTokens && sorted_tokens_,
+        UInt64 num_rows_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -439,6 +460,10 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     std::unique_ptr<TokenToPositionListMap> position_map;
     /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
     SortedTokens sorted_tokens;
+    /// Number of rows covered by this granule. Used to compute the coarsening budget.
+    UInt64 num_rows = 0;
+    /// Whether to apply coarsening to the posting lists. May be disabled even if coarse_granularity parameter is set.
+    bool apply_coarsening = true;
     LoggerPtr logger;
 };
 
@@ -473,6 +498,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     bool is_empty = true;
     UInt64 current_row = 0;
+    UInt64 num_processed_rows = 0;
     UInt64 num_processed_tokens = 0;
     /// Pointers to posting lists for each token.
     TokenToPostingsBuilderMap tokens_map;

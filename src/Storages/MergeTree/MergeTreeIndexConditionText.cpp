@@ -130,7 +130,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    bool has_coarse_postings_)
     : WithContext(context_)
     , header(index_sample_block)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
@@ -140,6 +141,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
+    , has_coarse_postings(has_coarse_postings_)
 {
     if (!predicate)
     {
@@ -267,14 +269,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
     {
-        return TextIndexDirectReadMode::Exact;
+        return has_coarse_postings ? getHintOrNoneMode() : TextIndexDirectReadMode::Exact;
     }
 
     if (function_name == "hasPhrase")
         return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
-    /// Exact mode requires array tokenizer with neither pre- nor postprocessor.
-    const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor;
+    /// Exact mode requires array tokenizer with neither pre- nor postprocessor, and no coarse posting lists.
+    const bool can_be_exact_read_mode = is_array_tokenizer && !has_preprocessor && !has_postprocessor && !has_coarse_postings;
 
     if (function_name == "equals"
         || function_name == "has"
@@ -305,6 +307,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     return TextIndexDirectReadMode::None;
+}
+
+TextIndexDirectReadMode MergeTreeIndexConditionText::getPatternDirectReadMode() const
+{
+    return has_coarse_postings ? getHintOrNoneMode() : TextIndexDirectReadMode::Exact;
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
@@ -1267,7 +1274,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, getPatternDirectReadMode(), VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -1296,7 +1303,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, getPatternDirectReadMode(), VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;

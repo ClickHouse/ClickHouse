@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Storages/MergeTree/TextIndexCoarsePostings.h>
 
 #include <roaring/roaring.hh>
 
@@ -80,7 +81,7 @@ void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings)
+void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level)
 {
     Header header;
     header.read(in);
@@ -91,23 +92,24 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
     const size_t tail_size = header.cardinality % BLOCK_SIZE;
 
     current_segment.reserve(BLOCK_SIZE);
-    if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
-        compressed_data.reserve(compressed_data.size() + header.payload_bytes);
     compressed_data.resize(header.payload_bytes);
 
     in.readStrict(compressed_data.data(), header.payload_bytes);
-
+    PostingsAppender appender(postings, coarse_level);
     std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
+
     for (size_t i = 0; i < num_blocks; i++)
     {
         decodeBlock(compressed_data_span, BLOCK_SIZE, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        appender.addMany(current_segment);
     }
     if (tail_size)
     {
         decodeBlock(compressed_data_span, tail_size, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        appender.addMany(current_segment);
     }
+
+    appender.finalize();
 }
 
 void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
@@ -233,10 +235,38 @@ void PostingListCodecBitpackingImpl::decodeBlock(
     prev_row_id = current_segment.empty() ? prev_row_id : current_segment.back();
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level) const
 {
     PostingListCodecBitpackingImpl impl;
-    impl.decode(in, postings);
+    impl.decode(in, postings, coarse_level);
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings, UInt32 coarse_level) const
+{
+    chassert(postings.isEmpty());
+
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, in);
+
+    const auto read_bitmap = [&]
+    {
+        /// If the posting list is completely in the buffer, avoid copying.
+        if (in.position() && in.position() + num_bytes <= in.buffer().end())
+        {
+            auto bitmap = PostingList::read(in.position());
+            in.position() += num_bytes;
+            return bitmap;
+        }
+
+        std::vector<char> buffer(num_bytes);
+        in.readStrict(buffer.data(), num_bytes);
+        return PostingList::read(buffer.data());
+    };
+
+    if (coarse_level)
+        postings = expandCoarsePostings(read_bitmap(), coarse_level);
+    else
+        postings = read_bitmap();
 }
 
 void PostingListCodecBitpacking::encode(

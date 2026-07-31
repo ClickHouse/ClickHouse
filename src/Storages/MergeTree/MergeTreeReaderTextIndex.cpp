@@ -337,7 +337,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
             {
                 double log_cardinality = 0.0;
                 for (const auto & token : search_query->getTokens())
-                    log_cardinality += std::log(static_cast<double>(all_token_infos.find(token)->second->cardinality));
+                    log_cardinality += std::log(static_cast<double>(all_token_infos.find(token)->second->rows_cardinality));
 
                 log_cardinality -= static_cast<double>(search_query->getTokens().size() - 1) * std::log(static_cast<double>(num_rows_in_part));
                 if (std::exp(log_cardinality) > static_cast<double>(num_rows_in_part) * selectivity_threshold)

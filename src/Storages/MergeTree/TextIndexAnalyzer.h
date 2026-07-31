@@ -80,7 +80,7 @@ public:
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
-    /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
+    /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `rows_cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
     size_t memoryUsageBytes() const;
@@ -93,7 +93,7 @@ private:
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
 
-    /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
+    /// Estimates the cardinality of a query from already-read postings and `rows_cardinality` hints for unread tokens.
     double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */

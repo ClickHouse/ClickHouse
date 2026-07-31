@@ -2395,6 +2395,10 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         }
         else
         {
+            /// Coarse (lossy) posting lists cannot be remapped through merged part offsets,
+            /// so the index is rebuilt from the merged data (see addBuildTextIndexesStep).
+            bool has_coarse_postings = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams().coarse_granularity > 0;
+
             for (size_t part_idx = 0; part_idx < global_ctx->future_part->parts.size(); ++part_idx)
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
@@ -2403,7 +2407,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (!has_coarse_postings && index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -2980,8 +2984,11 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
+        /// Rebuild index if it may contain coarse (lossy) posting lists: they store bucket ids that cannot be remapped through merged part offsets.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        bool has_coarse_postings = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams().coarse_granularity > 0;
+
+        if (global_ctx->merge_may_reduce_rows || has_coarse_postings || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));

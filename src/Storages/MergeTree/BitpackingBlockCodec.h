@@ -307,8 +307,8 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (groups == 0) return in;
 
-        /// Bits==0: no payload in the stream, so every decoded value is zero. The zeros must still be
-        /// written: callers may decode into a reused buffer, and SIMDComp's SIMD_nullunpacker32 writes them too.
+        /// Bits==0: no payload in the stream, all decoded values are zeros.
+        /// The output must be filled: callers reuse their buffers across blocks.
         if constexpr (Bits == 0)
         {
             std::memset(out, 0, groups * 4 * sizeof(uint32_t));
@@ -528,8 +528,8 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (tail == 0) return in;
 
-        /// Bits==0: no stored bits, so every decoded value is zero. The zeros must still be written:
-        /// callers may decode into a reused buffer, and SIMDComp's simdunpack_shortlength writes them too.
+        /// Bits==0: no stored bits, all decoded values are zeros.
+        /// The output must be filled: callers reuse their buffers across blocks.
         if constexpr (Bits == 0)
         {
             std::memset(out, 0, tail * sizeof(uint32_t));

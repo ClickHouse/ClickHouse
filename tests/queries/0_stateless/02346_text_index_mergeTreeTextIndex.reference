@@ -1,8 +1,8 @@
 -- 1. All selected fields
-all_1_1_0	apple	front_coded	500	1	0	0	0
-all_1_1_0	banana	front_coded	500	1	0	0	0
-all_2_2_0	cherry	front_coded	500	1	0	0	0
-all_2_2_0	date	front_coded	500	1	0	0	0
+all_1_1_0	apple	front_coded	500	0	1	0	0	0
+all_1_1_0	banana	front_coded	500	0	1	0	0	0
+all_2_2_0	cherry	front_coded	500	0	1	0	0	0
+all_2_2_0	date	front_coded	500	0	1	0	0	0
 -- 2. Aggregation over token: count distinct tokens per part
 all_1_1_0	2
 all_2_2_0	2

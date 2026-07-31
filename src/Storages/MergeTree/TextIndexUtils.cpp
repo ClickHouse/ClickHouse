@@ -218,6 +218,10 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
     estimated_allocated_bytes[i] = 0;
     aggregator_text.setCurrentRow(num_processed_rows);
 
+    /// Temporary segments are re-serialized by MergeTextIndexesTask, which coarsens heavy
+    /// tokens once at the final flush. Coarsening them here would stack lossiness.
+    typeid_cast<MergeTreeIndexGranuleTextWritable &>(*granule).apply_coarsening = false;
+
     auto [streams, streams_holders] = makeOutputStreams(
         index_substreams,
         index_file_name,
@@ -237,12 +241,12 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
 static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
 {
-    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(index);
+    const auto * codec = text_index.getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
-    /// The merged part is written in the current on-disk format.
-    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    return PostingsSerialization(std::move(codec_copy), chooseTextIndexSerializationVersion(text_index.getParams()));
 }
 
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
@@ -278,6 +282,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+    coarse_params = makeCoarseSerializationParams(params, num_rows);
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -367,7 +372,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info.header, token_info.cardinality));
+        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info));
     }
 
     return postings;
@@ -399,9 +404,10 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization, coarse_params);
 
-    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+    /// For a coarsened token embedded postings are already set by serializePostings.
+    if ((token_info.header & PostingsSerialization::Flags::EmbeddedPostings) && !token_info.embedded_postings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
     /// Serialize position data if positions are enabled.
@@ -424,7 +430,7 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+        token_info.positions_cardinality = static_cast<UInt32>(output_positions.size());
 
         TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
     }
@@ -529,6 +535,11 @@ bool MergeTextIndexesTask::executeStep()
             output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
         }
 
+        /// Coarse posting lists store bucket ids that cannot be remapped through merged part offsets.
+        /// An index with coarsening must have been rebuilt, and merged result is coarsened once here.
+        if (inputs[current->order].token_infos[current->getRow()].isCoarse())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge a coarse posting list of a text index, the index must be rebuilt on merge");
+
         auto read_postings = readPostingLists(current->order);
 
         for (auto & posting : read_postings)
@@ -594,8 +605,7 @@ void MergeTextIndexesTask::finalize()
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 
-    auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
+    auto serialization_version = chooseTextIndexSerializationVersion(params);
     TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)

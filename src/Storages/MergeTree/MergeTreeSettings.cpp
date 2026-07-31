@@ -706,6 +706,13 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_text_index_coarse_granularity, false, R"(
+Allow creating text indexes with the experimental `coarse_granularity` argument which
+stores posting lists of frequent tokens at a coarser than row-level resolution
+(the argument is the maximum number of rows in one bucket of a coarse posting list).
+Such an index returns a superset of the matching rows, so it is used only as a hint
+and the original predicate re-filters the result.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
 parts were selected. A lower setting will trigger selecting tasks in
