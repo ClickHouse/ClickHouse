@@ -29,7 +29,7 @@ ReadFromMergeTree (default.t1)
 Output: a, b, y
 
 Join (JOIN FillRightFirst)
-│  t1[100] ⋈ t2[100]
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
 │  Join conditions: a = x
@@ -48,7 +48,7 @@ Join (JOIN FillRightFirst)
 Output: a, b, c, x, y
 
 Join (JOIN FillRightFirst)
-│  t1[100] ⋈ t2[100]
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
 │  Join conditions: a = x
@@ -67,7 +67,7 @@ Join (JOIN FillRightFirst)
 Output: a, b
 
 Join (JOIN FillRightFirst)
-│  t1[100] ⋈ t2[100]
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
 │  Join conditions: a = x
@@ -86,7 +86,7 @@ Join (JOIN FillRightFirst)
 Output: x, y
 
 Join (JOIN FillRightFirst)
-│  t1[100] ⋈ t2[100]
+│  t1[no_stats~100] ⋈ t2[no_stats~100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
 │  Join conditions: a = x
