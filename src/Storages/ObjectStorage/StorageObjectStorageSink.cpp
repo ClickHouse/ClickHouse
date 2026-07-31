@@ -1,7 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Common/isValidUTF8.H>
+#include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
@@ -29,12 +29,12 @@ namespace
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-        /// - https://cloud.ibm.com/apidocs/cos/co-compatibility#basicoperations#putobject
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
 
         if (str.empty() || str.size() > 1024)
-            throw Exception(ErrorCodes:BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: { }", str.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
 
-        if (!UTF8(isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size())))
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
 
         PartitionedSink::validatePartitionKey(str, true);
@@ -44,7 +44,7 @@ namespace
     {
         configuration->validateNamespace(str);
 
-        if (!UTF8(isValidUTF8(reinterpret_cast<const UInt8 >*(str.data()), str.size())))
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
 
         PartitionedSink::validatePartitionKey(str, false);
