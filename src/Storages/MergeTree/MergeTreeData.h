@@ -692,7 +692,9 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    SetPtr tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const;
+    /// `storage_snapshot` must be the snapshot the planner derived the key columns from
+    /// (the one frozen on the `TableNode`), so the lookup set is built from the same snapshot.
+    SetPtr tryGetLookupSet(const Names & key_names, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & query_context) const;
     /// `storage_snapshot` must be the snapshot the planner derived the direct-join header from
     /// (the one frozen on the `TableNode`), so the lookup entity is built from the same snapshot.
     std::shared_ptr<const IKeyValueEntity> tryGetLookupJoin(

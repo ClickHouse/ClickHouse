@@ -119,7 +119,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
 
-        auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+        auto set = storage->tryGetLookupSet(key_names, table_node->getStorageSnapshot(), planner_context.getQueryContext());
         if (!set)
             return std::nullopt;
 
@@ -145,7 +145,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         return std::nullopt;
     }
 
-    auto inner_table_expression = query_node->getJoinTree();
+    const auto & inner_table_expression = query_node->getJoinTreeNode();
     auto * inner_table_node = inner_table_expression->as<TableNode>();
     if (!inner_table_node)
         return std::nullopt;
@@ -205,7 +205,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, key_names);
 
-    auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+    auto set = storage->tryGetLookupSet(key_names, inner_table_node->getStorageSnapshot(), planner_context.getQueryContext());
     if (!set)
         return std::nullopt;
 

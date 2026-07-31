@@ -12283,18 +12283,24 @@ bool MergeTreeData::hasLookupJoinIndex() const
     return hasLookupIndexType(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE);
 }
 
-SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const
+SetPtr MergeTreeData::tryGetLookupSet(
+    const Names & key_names, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & query_context) const
 {
     if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
         return {};
 
-    const auto & metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-    if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_SET_INDEX_TYPE, key_names))
+    /// Build the lookup set from the storage snapshot the analyzer froze on the `TableNode`
+    /// (passed by the caller), not from a freshly resolved one. The planner has already derived
+    /// the key column set from that snapshot; with `enable_shared_storage_snapshot_in_query = 0`
+    /// a fresh snapshot could observe a concurrent `ALTER ... ADD/DROP COLUMN` and diverge from
+    /// the regular preserved subquery plan, which uses the frozen snapshot consistently — e.g.
+    /// `IN table` could answer membership for the old column set where the non-optimized path
+    /// would fail with `NUMBER_OF_COLUMNS_DOESNT_MATCH` on the new table shape.
+    if (!findLookupIndex(storage_snapshot->metadata->getLookupIndices(), TABLE_SET_INDEX_TYPE, key_names))
         return {};
 
     const bool transform_null_in = query_context->getSettingsRef()[Setting::transform_null_in];
     const auto cache_key = serializeLookupKey(transform_null_in ? "table_set_1" : "table_set_0", key_names);
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, query_context);
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, key_names);
 
     if (lookup_table_state.cacheable)
