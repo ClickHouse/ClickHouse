@@ -742,11 +742,6 @@ std::optional<String> optimizeUseNormalProjections(
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
 
-    /// `reading` is detached below without running initializePipeline(), so announce its empty read
-    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
-    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
-        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
-
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -792,6 +787,14 @@ std::optional<String> optimizeUseNormalProjections(
                 best_candidate->projection->name);
         return {};
     }
+
+    /// `reading` is detached below without running initializePipeline(), so announce its empty read
+    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518). This must stay
+    /// below the structure check: the announcement reaches the coordinator, which rejects a second one
+    /// for the same replica and stream, so announcing before a possible skip would leave the surviving
+    /// regular read unable to announce its own ranges.
+    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
