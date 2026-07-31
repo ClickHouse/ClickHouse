@@ -123,11 +123,11 @@ TEST(AsyncInsertKey, ClientProtocolVersion)
              {native, Kind::Parsed}, {values, Kind::Parsed}, {native, Kind::Preprocessed}, {values, Kind::Preprocessed}})
     {
         auto old_rev = make_key(query, 0, kind);
-        auto new_rev = make_key(query, 54488, kind);
+        auto new_rev = make_key(query, 54489, kind);
         EXPECT_NE(old_rev.hash, new_rev.hash);
         EXPECT_NE(old_rev, new_rev);
-        EXPECT_EQ(new_rev, make_key(query, 54488, kind));
+        EXPECT_EQ(new_rev, make_key(query, 54489, kind));
         /// The real version is stored on the key and restored on the flush context.
-        EXPECT_EQ(new_rev.client_protocol_version, 54488u);
+        EXPECT_EQ(new_rev.client_protocol_version, 54489u);
     }
 }

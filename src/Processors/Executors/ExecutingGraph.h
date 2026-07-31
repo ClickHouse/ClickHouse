@@ -69,6 +69,11 @@ public:
     /// Graph node. Represents single Processor.
     struct Node
     {
+        struct StepWallClockCache
+        {
+            uint64_t group = 0;
+            StepWallClock * wall_clock_ptr = nullptr;
+        };
         /// Iterator into the graph's processors list.
         Processors::iterator processor_iter{};
 
@@ -111,6 +116,8 @@ public:
         uint64_t num_executed_jobs = 0;
         uint64_t execution_time_ns = 0;
         uint64_t preparation_time_ns = 0;
+        /// Cached clock for EXPLAIN ANALYZE
+        StepWallClockCache cached_clock{};
 
         Node(Processors::iterator processor_iter_, uint64_t processors_id_)
             : processor_iter(processor_iter_), processors_id(processors_id_)

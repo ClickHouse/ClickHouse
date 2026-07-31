@@ -64,7 +64,7 @@ The Native format builds on four primitive encodings.
 |-----------------|----------|-------------|
 | VarUInt         | 1–10 B   | LEB-128 variable-length unsigned integer |
 | Fixed-width int | 1, 2, 4, 8, 16, 32 B | Little-endian, two's complement for signed |
-| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54488`+ |
+| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54489`+ |
 | Bool            | 1 B      | `0x00` = false, non-zero = true |
 
 ### VarUInt {#varuint}
@@ -339,7 +339,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
-| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54488` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of `LowCardinality(String)`, which keeps the per-value layout. |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54489` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of `LowCardinality(String)`, which keeps the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
@@ -716,7 +716,7 @@ Each value carries its own length on the wire.
 
 Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)).
 
-**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54488`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
+**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54489`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
 ```text
 [VarUInt: byte_length] [byte_length bytes: raw value]
@@ -734,7 +734,7 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 01 63                    row 2: length 1, "c"
 ```
 
-**Offsets layout** — at revision `54488` and above: two concatenated streams, the cumulative byte offsets first, then all data:
+**Offsets layout** — at revision `54489` and above: two concatenated streams, the cumulative byte offsets first, then all data:
 
 ```text
 [UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
@@ -773,7 +773,7 @@ The two string types compared:
 
 | Property               | `String`              | `FixedString(N)`            |
 |------------------------|-----------------------|-----------------------------|
-| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54488`+ | No |
+| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54489`+ | No |
 | Row size               | Variable              | Exactly `N` bytes           |
 | Total column bytes     | Variable              | `N × num_rows`              |
 | NUL-byte padding       | n/a                   | Right-padded by server      |
@@ -1086,13 +1086,13 @@ The geographic types alias to nested arrays and tuples:
 | Type string              | Underlying wire type        |
 |--------------------------|-----------------------------|
 | `Point`                  | `Tuple(Float64, Float64)`   |
-| `Ring`, `LineString`     | `Array(Point)`              |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`    |
 | `Polygon`, `MultiLineString` | `Array(Ring)`           |
 | `MultiPolygon`           | `Array(Polygon)`            |
 
 So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
 
-`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the six geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. As with any `Variant`, the discriminators follow the canonical name-sorted order of the geo aliases: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
+`Geometry` is also an alias, but to a [`Variant`](#variant) rather than a nested array: its payload is the variant of the seven geo types above. The column header carries just the type string `Geometry` — it does **not** spell out the variant — so a decoder must expand it itself. Unlike a user-spelled `Variant`, the discriminators of `Geometry` do **not** follow the name-sorted order: they are fixed for compatibility, and new geo types are only ever appended. The mapping is `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (added in 26.7 — streams from older servers simply never contain discriminator `6`). Each selected value is then decoded through its geo alias above (`NULL` uses the `Variant` `NULL` discriminator `255`).
 
 `SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
 
@@ -1364,6 +1364,12 @@ The discriminator width is the smallest unsigned integer that can index `num_typ
 
 The state prefix (version + type list) is read at the start of every block with rows > 0; header and empty blocks emit nothing.
 
+:::note Malformed counts
+`num_types` is read from the stream before any type names. A decoder must treat it as untrusted and must not use it to size an allocation directly — neither a count close to `SIZE_MAX` (which can overflow intermediate arithmetic or throw a non-`DB::Exception`) nor a large-but-representable count such as `100000000` (which is far below a vector's `max_size()` yet would allocate gigabytes before a single type name is read). ClickHouse reads the type list one entry at a time with only a capped pre-allocation hint, so a corrupted `num_types` is rejected either as `INCORRECT_DATA` ("`Dynamic` column has too many types", when the count exceeds what the container can hold) or as an ordinary read error once the stream runs out of type entries — never as an out-of-memory failure.
+
+Do **not**, however, bound the **flattened** `num_types` by `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse): the flattened type list carries *every* distinct runtime type, including those that had overflowed into the shared variant, so a valid flattened block can legitimately list far more than that. The `MAX_DYNAMIC_TYPES_LIMIT` bound applies only to the `num_dynamic_types` count in the non-flat `V1`/`V2`/`V3` prefixes, which counts regular-variant slots and is capped by the limit (ClickHouse validates it there before the `+ 1` for the shared variant).
+:::
+
 :::note
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 :::
@@ -1407,6 +1413,12 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
 ```
 
 Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
+
+:::note Malformed counts
+`num_dynamic_paths` in the FLATTENED layout documented here — and the dynamic-paths count in the non-flat `V1`/`V2`/`V3` encodings — is read from the stream before the path names. (There is no separate flattened-paths field in the non-flat prefixes: `V1`/`V2`/`V3` carry only the dynamic-paths count, plus a `max_dynamic_paths` value in `V1` that is read and discarded, and the `V3` shared-data metadata below.) As with [`Dynamic`](#dynamic), a decoder must treat these counts as untrusted and must not size an allocation on them directly — neither a `SIZE_MAX`-family count nor a large-but-representable one. ClickHouse reads the path names one entry at a time with only a capped pre-allocation hint, so a corrupted count is rejected either as `INCORRECT_DATA` ("JSON/Object column has too many paths", when it exceeds what the container can hold) or as an ordinary read error once the stream runs out of path names.
+
+The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (present when the shared-data serialization version is `MAP_WITH_BUCKETS` or `ADVANCED`). It sizes the per-bucket reader state and column vectors directly (not via a grow-on-demand loop), so a decoder must reject an implausible bucket count up front. Unlike the path and type counts, this count has a tight writer-side invariant: the number of buckets is chosen from small MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) that are non-zero and capped at `256`, so the only valid on-wire range is `1 … 256`. ClickHouse rejects any value outside that range — including a large-but-representable count such as `100000`, which is far below the container's `max_size()` — with `INCORRECT_DATA` ("JSON/Object column has an invalid number of shared data buckets").
+:::
 
 `JSON` value `{"a": 42, "b": "hi"}` (one row, both paths dynamic). A JSON integer is inferred as `Int64`:
 
@@ -1485,8 +1497,12 @@ The method byte also encodes the [column-level codecs](/sql-reference/statements
 | `0x9a` | `GCD`             |
 | `0x9c` | `ALP`             |
 | `0x9d` | `SZ3`             |
+| `0x9e` | `Quantized`       |
+| `0x9f` | `ZXC`             |
 
-`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+
+`0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
 
 ### Checksum {#checksum}
 

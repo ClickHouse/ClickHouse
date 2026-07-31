@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_04512_sparse"
 # version is recent enough. For a single value the offset equals its size, so the bytes match here.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n'
 echo
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54488&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n'
 echo
 
 # Native bytes produced with an explicit client_protocol_version can be inserted back through the
@@ -43,7 +43,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_04512_rt SELECT concat('v', toString(number
 # Both the synchronous and the asynchronous insert paths parse the data at the protocol version
 # of the inserting connection (the async-insert queue keys batches by it and restores it on the
 # flush context).
-for version in "" "&client_protocol_version=54488"; do
+for version in "" "&client_protocol_version=54489"; do
     for insert_mode in "async_insert=0" "async_insert=1&wait_for_async_insert=1"; do
         $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
@@ -56,10 +56,10 @@ done
 # raised protocol version (framing: num_columns, num_rows, per-column byte size, column bytes).
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n'
 echo
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54488&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n'
 echo
 
-for version in "" "&client_protocol_version=54488"; do
+for version in "" "&client_protocol_version=54489"; do
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&query=SELECT+*+FROM+t_04512_rt+ORDER+BY+s+FORMAT+Buffers" > "${CLICKHOUSE_TMP}/04512_rt.buffers"
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}${version}&async_insert=0&query=INSERT+INTO+t_04512_rt2+FORMAT+Buffers" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.buffers"
@@ -70,17 +70,17 @@ rm -f "${CLICKHOUSE_TMP}/04512_rt.buffers"
 # A raised protocol version on the request applies to the INSERT body only: a file written at
 # revision 0 still parses at revision 0 inside such a request (file(), s3(), url() reads).
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('04512_${CLICKHOUSE_DATABASE}.native', 'Native', 's String') SELECT 'rev0 file' SETTINGS engine_file_truncate_on_insert = 1"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54488&query=SELECT+*+FROM+file('04512_${CLICKHOUSE_DATABASE}.native',+'Native',+'s+String')"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+*+FROM+file('04512_${CLICKHOUSE_DATABASE}.native',+'Native',+'s+String')"
 
 # A corrupted offsets stream is reported as a regular error (INCORRECT_DATA), not as a logical error
 # that aborts debug and sanitizer builds.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54488&query=SELECT+'abcdefgh'+AS+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+'abcdefgh'+AS+s+FORMAT+Native" > "${CLICKHOUSE_TMP}/04512_rt.native"
 python3 -c "
 data = bytearray(open('${CLICKHOUSE_TMP}/04512_rt.native', 'rb').read())
 data[-9] = 0x80  # the most significant byte of the UInt64 offset of the only value
 open('${CLICKHOUSE_TMP}/04512_rt.native', 'wb').write(bytes(data))
 "
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54488&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native" | grep -oF "INCORRECT_DATA" | head -1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+t_04512_rt2+FORMAT+Native" --data-binary @"${CLICKHOUSE_TMP}/04512_rt.native" | grep -oF "INCORRECT_DATA" | head -1
 
 rm -f "${CLICKHOUSE_TMP}/04512_rt.native"
 

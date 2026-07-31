@@ -1,0 +1,20 @@
+--- single setting is accepted and shown in SHOW CREATE ---
+CREATE TABLE default.t_pg_settings\n(\n    `x` Int32\n)\nENGINE = PostgreSQL(\'127.0.0.1:5432\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\')\nSETTINGS postgresql_connection_pool_size = 50
+--- all pool settings are accepted ---
+CREATE TABLE default.t_pg_settings\n(\n    `x` Int32\n)\nENGINE = PostgreSQL(\'127.0.0.1:5432\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\')\nSETTINGS postgresql_connection_pool_size = 8, postgresql_connection_pool_wait_timeout = 1000, postgresql_connection_pool_retries = 4, postgresql_connection_pool_auto_close_connection = 1, postgresql_connection_attempt_timeout = 3
+--- unknown engine setting is rejected ---
+--- zero pool size is rejected ---
+--- engine settings and query settings can be mixed ---
+CREATE TABLE default.t_pg_settings\n(\n    `x` Int32\n)\nENGINE = PostgreSQL(\'127.0.0.1:5432\', \'db\', \'tbl\', \'user\', \'[HIDDEN]\')\nSETTINGS postgresql_connection_pool_size = 3
+--- the postgresql table function validates its settings too ---
+--- named collection option is accepted ---
+CREATE TABLE default.t_pg_settings\n(\n    `x` Int32\n)\nENGINE = PostgreSQL(pg_settings_nc, postgresql_connection_pool_size = 50)
+--- unknown named collection option is rejected ---
+--- zero pool size is rejected when passed through a named collection ---
+--- the SETTINGS clause of the table function wins over the named collection ---
+--- the SETTINGS clause of the table engine wins over the named collection ---
+--- the PostgreSQL database engine honors pool settings from a named collection ---
+CREATE DATABASE db_04546_pg_settings\nENGINE = PostgreSQL(pg_settings_nc_db, postgresql_connection_pool_size = 50)
+--- the PostgreSQL database engine rejects a zero pool size ---
+--- the MaterializedPostgreSQL database engine rejects pool settings ---
+--- the MaterializedPostgreSQL table engine rejects pool settings ---
