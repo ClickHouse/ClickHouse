@@ -60,6 +60,13 @@ struct IndexDescription
     /// (if using the `escape_index_filenames`).
     bool escape_filenames{};
 
+    /// Alternate names for index columns after applying the same expression rewrites that
+    /// the query optimizer applies (e.g. `optimize_empty_string_comparisons` rewrites `x = ''` to `empty(x)`).
+    /// Skip index conditions match the query expression to the index expression by column name, so after the
+    /// query-side rewrite the two names no longer compare equal and the index is silently skipped.
+    /// This field stores the rewritten names so that each index condition can also match against them.
+    Names normalized_column_names;
+
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(
         const ASTPtr & definition_ast,
