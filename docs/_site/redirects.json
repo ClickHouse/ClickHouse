@@ -1,11 +1,15 @@
 [
   {
     "source": "/docs/products/bring-your-own-cloud",
-    "destination": "/products/bring-your-own-cloud/overview/overview"
+    "destination": "/products/bring-your-own-cloud/overview"
   },
   {
     "source": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
-    "destination": "/products/bring-your-own-cloud/overview/overview"
+    "destination": "/products/bring-your-own-cloud/overview"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/bring-your-own-cloud/overview"
   },
   {
     "source": "/products/managed-postgres/migrations/clickhouse-cloud",
@@ -2016,7 +2020,7 @@
     "source": "/cloud/reference/billing/clickpipes/streaming-and-object-storage"
   },
   {
-    "destination": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/bring-your-own-cloud/overview",
     "source": "/cloud/reference/byoc"
   },
   {
@@ -2088,7 +2092,7 @@
     "source": "/cloud/reference/byoc/operations"
   },
   {
-    "destination": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/bring-your-own-cloud/overview",
     "source": "/cloud/reference/byoc/overview"
   },
   {

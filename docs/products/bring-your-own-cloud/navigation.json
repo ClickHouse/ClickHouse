@@ -4,7 +4,7 @@
     {
       "group": "Overview",
       "pages": [
-        "products/bring-your-own-cloud/overview/overview",
+        "products/bring-your-own-cloud/overview",
         "products/bring-your-own-cloud/overview/architecture"
       ]
     },
