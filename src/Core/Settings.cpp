@@ -111,7 +111,15 @@ namespace ErrorCodes
 #else
 #define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(Dialect, dialect, Dialect::clickhouse, R"(
-Which dialect will be used to parse query
+Which dialect will be used to parse query.
+
+Supported values:
+- `clickhouse` (default) — standard ClickHouse SQL.
+- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
+- `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `allow_experimental_json_ast_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -1305,9 +1313,13 @@ Enabling this setting gives the wrong impression that different values within a 
 Therefore, please do not enable this setting.
 )", 0) \
     DECLARE(Bool, use_legacy_to_time, false, R"(
-When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
-Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+When enabled, the name `toTime` refers to the legacy [`toTime`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate) function,
+which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, the name refers to the new [`toTime`](/sql-reference/functions/type-conversion-functions#toTime) function,
+which converts values of different types into the [`Time`](/sql-reference/data-types/time) type.
+
+The legacy function is also unconditionally accessible as `toTimeWithFixedDate`, regardless of this setting.
+While this setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to the `Time` type.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
 Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) data types.
@@ -2844,12 +2856,8 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
-Allow the MergeTree primary key and skip indexes to prune granules for `WHERE`/`PREWHERE` predicates that involve `coalesce` or `ifNull`. Without this setting, such predicates are opaque to index analysis and do not prune, so granules that cannot match are still read. This affects only which granules are read; query results are unchanged, because rows are still filtered by the original predicate.
-
-Two predicate shapes are rewritten before index analysis:
-
-- A comparison against a `coalesce`/`ifNull`, such as `coalesce(a, b) = 5`, becomes a disjunction so an index on each argument can prune: `a = 5 OR (a IS NULL AND b = 5)`, extended for more arguments.
-- A `coalesce`/`ifNull` with a falsy (zero) constant default used directly as a condition, such as `ifNull(a = 5, 0)` or `coalesce(a = 5, 0)`, is unwrapped to its inner predicate `a = 5`. Such wrappers collapse the inner predicate's three-valued result into a definite boolean (mapping `NULL` to `false`).
+Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
+Additionally, exact equality predicates of the form `nullIf(key, sentinel) = const` (where `sentinel != const` and types match exactly) are rewritten to `key = const` so primary key, partition, and skip indexes on `key` can prune granules directly. Range and disjunctive nullIf pruning is not supported.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -4371,7 +4379,7 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \
     DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
-Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial`, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it.
+Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial` with a probability strictly between 0 and 1, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it. The probabilities 0 and 1 are exempt from that hard cap, because a sample costs constant time for them.
 )", 0) \
     DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
 Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values. `0` disables the limit; values for which the sampler does not terminate at all are still rejected.
@@ -8429,6 +8437,22 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_json_ast_dialect, false, R"(
+Enable the `clickhouse_json` value of the `dialect` setting.
+
+When `dialect` is set to `clickhouse_json`, queries are interpreted as JSON ASTs
+(the output of `parseQueryToJSON`) instead of SQL text. The `SET` query is still
+parsed as plain SQL so that the dialect can be switched back.
+
+Example:
+```sql
+SET allow_experimental_json_ast_dialect = 1;
+SET dialect = 'clickhouse_json';
+
+-- Subsequent queries are parsed as JSON ASTs:
+{"type":"SelectWithUnionQuery", ...}
+```
+)", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL) \
@@ -8469,6 +8493,14 @@ Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
+
+Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
+- `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
+- `rewrite_in_to_join = 1` — rewrites `IN (subquery)` to a `JOIN` so that it can be distributed (only when `allow_experimental_correlated_subqueries` is enabled);
+- `correlated_subqueries_use_in_memory_buffer = 0`;
+- `use_skip_indexes_on_data_read = 0`;
+- `compile_expressions = 0`;
+- `query_plan_direct_read_from_text_index = 0`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.

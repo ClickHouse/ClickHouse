@@ -76,6 +76,7 @@ static struct InitFiu
     ONCE(object_storage_queue_fail_commit_after_success) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
+    ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -266,6 +267,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
