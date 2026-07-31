@@ -22,6 +22,12 @@ SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL
 -- stale rows must never survive FINAL because of pre-merge filtering
 SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE (k + rand()) % 2 = 0;
 
+-- FunctionCapture must report the determinism of the lambda body, not the default flags
+SELECT '= non-deterministic condition inside a lambda is not moved =';
+SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL WHERE arrayExists(x -> (x + rand()) % 2 = 0, [k])) WHERE explain LIKE '%Prewhere filter%';
+
+SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE arrayExists(x -> (x + rand()) % 2 = 0, [k]);
+
 DROP TABLE t_prewhere_final_rand;
 
 -- query-scoped constants like now are folded before the optimizer runs, so such filters keep moving

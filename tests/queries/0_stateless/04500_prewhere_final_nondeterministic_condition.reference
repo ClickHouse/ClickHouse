@@ -5,6 +5,9 @@
 = non-deterministic condition is not moved =
 0
 0
+= non-deterministic condition inside a lambda is not moved =
+0
+0
 = filter with now is still moved =
 1
 = join runtime filter on the sorting key is still moved =

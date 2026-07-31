@@ -280,6 +280,24 @@ public:
         return true;
     }
 
+    /// Same reasoning as in isSuitableForConstantFolding: the default flags cannot see the lambda body,
+    /// e.g. `x -> x + rand()` must not report itself as deterministic
+    bool isDeterministic() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministic())
+                return false;
+        return true;
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministicInScopeOfQuery())
+                return false;
+        return true;
+    }
+
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
