@@ -21,6 +21,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
+#include <span>
 #include <string_view>
 #include <gtest/gtest.h>
 #include <Parsers/tests/gtest_common.h>
@@ -1114,6 +1115,24 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
     }
 }
 
+/// `Bugfix validation (unit tests)` compiles the merge-base sources with only this PR's test files
+/// overlaid, so the test below must compile without the fix (which introduces
+/// `removeSettingsFromQueryTopLevel`). Resolve the function through ADL when it exists; without the fix,
+/// fall back to the whole-AST `removeSettingsFromQuery`, which also strips the timeouts the user wrote
+/// inside nested subqueries and thereby fails the expectations below - demonstrating the regression.
+template <typename Ast>
+auto stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, int)
+    -> decltype(removeSettingsFromQueryTopLevel(ast, names))
+{
+    return removeSettingsFromQueryTopLevel(ast, names);
+}
+
+template <typename Ast>
+void stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, Int64)
+{
+    removeSettingsFromQuery(ast, names);
+}
+
 /// `removeSettingsFromQueryTopLevel` strips only the top-level SETTINGS carriers of the query itself
 /// and must not descend into subqueries or table expressions. Parallel-replica INSERT SELECT uses it to
 /// drop the outer `max_execution_time` / `timeout_overflow_mode` (which would override the leaf values
@@ -1148,7 +1167,7 @@ TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
         ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
         ASSERT_NE(nullptr, ast) << "query: " << query;
 
-        removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
 
         EXPECT_EQ(expected_nested_survivors, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
         EXPECT_EQ(0u, countSettingOccurrences(ast, "timeout_overflow_mode")) << "query: " << query;
@@ -1168,7 +1187,7 @@ TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
         ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
         ASSERT_NE(nullptr, ast) << "query: " << query;
 
-        removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
 
         EXPECT_EQ(0u, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
         /// ParserInsertQuery parks the trailing SETTINGS on both the INSERT clause and the SELECT,
