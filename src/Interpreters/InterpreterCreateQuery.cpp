@@ -108,6 +108,8 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -1666,14 +1668,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    /// The XGBoost integration (the `XGBOOST` dictionary layout) is experimental. Gate it at `CREATE` time using
-    /// the query context settings, but still allow `ATTACH` so existing dictionaries can be loaded on startup.
+    /// The XGBoost integration (the `XGBOOST` dictionary layout) is experimental and exists only in builds with
+    /// XGBoost support. Gate both at `CREATE` time, but still allow `ATTACH` so existing dictionaries can be
+    /// loaded on startup. This is the only create-time validation of the layout: dictionaries are loaded lazily
+    /// by default, so without this check the server would persist metadata for a dictionary that can never be
+    /// queried - in a build without XGBoost support, the `predictXGBoost` function is not even registered.
     if (create.is_dictionary && !create.attach && create.dictionary && create.dictionary->layout
-        && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"
-        && !getContext()->getSettingsRef()[Setting::allow_experimental_xgboost])
+        && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost")
+    {
+#if USE_XGBOOST
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_xgboost])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
+#else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
+            "The XGBOOST dictionary layout is unavailable, because ClickHouse was built without XGBoost support");
+#endif
+    }
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
