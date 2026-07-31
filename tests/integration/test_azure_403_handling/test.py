@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests: Azure 403 is retried and never misreported as POTENTIALLY_BROKEN_DATA_PART."""
 import os
+import time
 
 import pytest
 
@@ -38,6 +39,7 @@ FAILPOINTS = (
     "azure_inject_forbidden_response",
     "azure_inject_auth_failure",
     "azure_inject_timeout",
+    "azure_inject_forbidden_on_upload",
 )
 
 
@@ -210,3 +212,46 @@ def test_batch_delete_failure_is_logged(started_cluster):
     assert int(logged) > 0, f"expected failed Delete events to be logged, got {logged}"
 
     node.query("DROP TABLE IF EXISTS t_del SYNC")  # cleanup (failpoint disabled)
+
+
+def test_azure_403_on_upload_read_write_copy_is_retried(started_cluster):
+    # Blocker 1: the read+write copy fallback (UploadHelper) must retry a transient destination
+    # error on its write ops, the same way the read side already does. Force the read+write path
+    # with allow_azure_native_copy = 0 and inject one transient 403 on the upload; the backup must
+    # still succeed. Before the fix the first upload write threw on the first try and failed the copy.
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+
+    node.query("DROP TABLE IF EXISTS t_upload SYNC")
+    node.query("DROP TABLE IF EXISTS t_upload_restored SYNC")
+    node.query(
+        """
+        CREATE TABLE t_upload (k UInt64, v String)
+        ENGINE = MergeTree() ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("INSERT INTO t_upload SELECT number, toString(number) FROM numbers(100)")
+
+    cont = "backupcont" + str(time.time_ns())
+    backup_dest = f"AzureBlobStorage('{connection_string}', '{cont}', 't_upload_backup')"
+
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_on_upload")
+    try:
+        node.query(
+            f"BACKUP TABLE t_upload TO {backup_dest} SETTINGS allow_azure_native_copy = 0"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_on_upload")
+
+    # Guard against a false pass: the copy must have gone through the read+write (UploadHelper) path,
+    # not a server-side native copy (which would never reach the injected write failpoint).
+    assert node.contains_in_log("Reading and writing Blob")
+
+    node.query(
+        f"RESTORE TABLE t_upload AS t_upload_restored FROM {backup_dest} "
+        f"SETTINGS allow_azure_native_copy = 0"
+    )
+    assert node.query("SELECT count() FROM t_upload_restored").strip() == "100"
+
+    node.query("DROP TABLE IF EXISTS t_upload SYNC")
+    node.query("DROP TABLE IF EXISTS t_upload_restored SYNC")

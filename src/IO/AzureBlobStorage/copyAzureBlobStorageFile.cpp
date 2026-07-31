@@ -16,10 +16,13 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/retryAzureOperation.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/FailPoint.h>
 
 
 #include <azure/core/credentials/credentials.hpp>
+#include <azure/core/http/http.hpp>
 #include <azure/storage/common/storage_credential.hpp>
+#include <azure/storage/common/storage_exception.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
@@ -45,8 +48,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char azure_inject_forbidden_on_upload[];
+}
+
 namespace
 {
+    /// Test-only: make an UploadHelper write fail once with a retryable 403, so the
+    /// azure_inject_forbidden_on_upload failpoint exercises the write-side retry (retryAzureOperation).
+    [[noreturn, maybe_unused]] void injectForbiddenOnUpload()
+    {
+        throw Azure::Storage::StorageException::CreateFromResponse(
+            std::make_unique<Azure::Core::Http::RawResponse>(
+                1, 0,
+                Azure::Core::Http::HttpStatusCode::Forbidden,
+                "Forbidden (injected by failpoint)"));
+    }
+
     class UploadHelper
     {
     public:
@@ -177,14 +196,21 @@ namespace
                 copyData(*read_buffer, wb, total_size);
             }
 
-            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
-
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
             try
             {
-                block_blob_client.Upload(stream);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        /// Rebuild the body stream on each attempt so a retry re-sends from the start.
+                        Azure::Core::IO::MemoryBodyStream stream(
+                            reinterpret_cast<const uint8_t *>(memory.data()), total_size);
+                        block_blob_client.Upload(stream);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -216,7 +242,13 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.CommitBlockList(block_ids);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        block_blob_client.CommitBlockList(block_ids);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -312,8 +344,6 @@ namespace
                 copyData(*read_buffer, wb, size_to_stage);
             }
 
-            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
-
             auto block_id = getRandomASCIIString(64);
             block_ids[part_index] = block_id;
 
@@ -322,7 +352,16 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.StageBlock(block_id, stream);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        /// Rebuild the body stream on each attempt so a retry re-sends from the start.
+                        Azure::Core::IO::MemoryBodyStream stream(
+                            reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
+                        block_blob_client.StageBlock(block_id, stream);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
