@@ -634,7 +634,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         Float64 num_streams_multiplier = std::min(
             static_cast<Float64>(tables_count),
             static_cast<Float64>(
-                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+                std::max(1uz, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
         size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
 
         pipeline.narrow(num_streams);

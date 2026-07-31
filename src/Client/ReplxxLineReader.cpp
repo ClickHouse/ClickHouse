@@ -1,3 +1,4 @@
+#include <IO/PlatformFileIO.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
@@ -161,7 +162,7 @@ void writeRetry(int fd, const std::string & data)
 
     while (bytes_written != offset)
     {
-        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
+        Int64 res = DB::platformWrite(fd, begin + bytes_written, offset - bytes_written);
         if ((-1 == res || 0 == res) && errno != EINTR)
             throw std::runtime_error(fmt::format("Cannot write to {}: {}", fd, errnoToString()));
         bytes_written += res;

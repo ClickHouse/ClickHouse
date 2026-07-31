@@ -141,7 +141,7 @@ size_t computeIndexGranularity(
         }
         else
         {
-            size_t size_of_row_in_bytes = std::max(bytes_uncompressed / rows, 1UL);
+            size_t size_of_row_in_bytes = std::max(bytes_uncompressed / rows, 1uz);
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }

@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <base/sleep.h>
@@ -379,7 +380,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     if (new_log == toString(max_log_ptr))
         return true;
 
-    return event_ptr->tryWait(timeout_ms);
+    return event_ptr->tryWait(toPocoMilliseconds(timeout_ms));
 }
 
 

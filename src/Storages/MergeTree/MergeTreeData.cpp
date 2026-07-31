@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskType.h>
@@ -7042,7 +7043,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size), dead_blobs_count);
 
     if (until)
-        until->tryWait(delay_milliseconds);
+        until->tryWait(toPocoMilliseconds(delay_milliseconds));
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
@@ -7085,7 +7086,7 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
         ProfileEvents::increment(ProfileEvents::DelayedMutationsMilliseconds, delay_milliseconds);
 
         if (until)
-            until->tryWait(delay_milliseconds);
+            until->tryWait(toPocoMilliseconds(delay_milliseconds));
         else
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_milliseconds));
     }

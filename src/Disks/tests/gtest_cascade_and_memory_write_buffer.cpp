@@ -109,7 +109,7 @@ try
 
         testCascadeBufferRedability(makeTestArray(s),
             {
-                std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/2), std::max(2ul, s/4), 0.5),
+                std::make_shared<MemoryWriteBuffer>(std::max(1uz, s/2), std::max(2uz, s/4), 0.5),
                 std::make_shared<MemoryWriteBuffer>(0, 4, 1.0),
             },
             {});
@@ -282,7 +282,7 @@ try
 
         testCascadeBufferRedability(makeTestArray(s),
             {
-                std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/3ul), 2, 1.5),
+                std::make_shared<MemoryWriteBuffer>(std::max(1uz, s/3uz), 2, 1.5),
             },
             {
                 [=, this] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(std::make_unique<TemporaryFileOnDisk>(disk)); }

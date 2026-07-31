@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <filesystem>
 #include <Core/Settings.h>
@@ -255,7 +256,7 @@ public:
             return true;
         }
 
-        if (wait_event->tryWait(timeout))
+        if (wait_event->tryWait(toPocoMilliseconds(timeout)))
         {
             /// Children changed before timeout.
             return true;

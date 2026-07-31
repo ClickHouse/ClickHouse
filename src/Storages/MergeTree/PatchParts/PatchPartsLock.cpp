@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Interpreters/Context.h>
@@ -73,7 +74,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
             throw zkutil::KeeperException::fromPath(code, pathToGenericString(lock_path));
 
         if (zookeeper->exists(pathToGenericString(lock_path), nullptr, lock_event))
-            lock_event->tryWait(lock_acquire_timeout);
+            lock_event->tryWait(toPocoMilliseconds(lock_acquire_timeout));
     }
 
     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightwegiht update in sync mode", max_tries);

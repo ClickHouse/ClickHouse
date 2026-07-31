@@ -2,10 +2,23 @@
 
 #include <Poco/Timespan.h>
 
+#include <base/types.h>
+
+#include <algorithm>
 #include <cstddef>
+#include <limits>
 
 namespace DB
 {
+
+/// A millisecond count for the Poco APIs that take a `long` - `Event::tryWait`, `Semaphore::wait`
+/// and so on. `long` is 32 bits on Windows, so a `UInt64` has to be narrowed; a value past what it
+/// can hold saturates, which for a timeout means "about 24 days" rather than a wrapped-around
+/// short wait.
+inline long toPocoMilliseconds(UInt64 milliseconds)
+{
+    return static_cast<long>(std::min<UInt64>(milliseconds, std::numeric_limits<long>::max()));
+}
 
 /// A `Poco::Timespan` of `seconds`.
 ///
