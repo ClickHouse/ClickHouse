@@ -427,10 +427,11 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
     /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
     size_t url_slot = is_cluster_function ? 1 : 0;
 
-    if (!is_cluster_function && isNamedCollectionName(0))
+    if (isNamedCollectionName(url_slot))
     {
         /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
-        findSecretNamedArgument("secret_access_key", 1);
+        /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
+        findS3NamedCollectionSecretArguments(url_slot + 1);
         return;
     }
 
@@ -455,6 +456,14 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
         }
     }
     maskS3PositionalSecrets(positional, url_slot, with_structure);
+}
+
+void FunctionSecretArgumentsFinder::findS3NamedCollectionSecretArguments(size_t start)
+{
+    /// After the collection name every argument must be a named `option = value` override or a nested
+    /// map; a positional argument is invalid but logged before validation rejects it, so fail closed
+    /// and hide every positional the classification returns.
+    maskS3PositionalsFrom(classifyS3Arguments(start), 0);
 }
 
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
@@ -805,7 +814,7 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
     if (isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
-        findSecretNamedArgument("secret_access_key", 1);
+        findS3NamedCollectionSecretArguments(1);
         return;
     }
 
@@ -904,7 +913,7 @@ void FunctionSecretArgumentsFinder::findS3DatabaseSecretArguments()
     if (isNamedCollectionName(0))
     {
         /// S3(named_collection, ..., secret_access_key = 'password', ...)
-        findSecretNamedArgument("secret_access_key", 1);
+        findS3NamedCollectionSecretArguments(1);
     }
     else
     {

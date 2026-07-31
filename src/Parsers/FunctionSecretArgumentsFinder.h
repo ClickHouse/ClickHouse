@@ -153,6 +153,10 @@ protected:
     void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
 
     void findS3FunctionSecretArguments(bool is_cluster_function);
+    /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+    /// s3Cluster('cluster_name', named_collection, ..., secret_access_key = 'secret_access_key', ...)
+    /// `start` is the index right after the named collection name.
+    void findS3NamedCollectionSecretArguments(size_t start);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
