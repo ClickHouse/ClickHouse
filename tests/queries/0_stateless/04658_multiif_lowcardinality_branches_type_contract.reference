@@ -1,0 +1,22 @@
+-- optimize_if_transform_const_strings_to_lowcardinality = 1
+String	b
+String	a
+String	b
+String	a
+UInt64	2
+UInt64	1
+LowCardinality(String)	b
+LowCardinality(String)	a
+Variant(String, UInt8)	42
+Variant(String, UInt8)	a
+-- optimize_if_transform_const_strings_to_lowcardinality = 0
+String	b
+String	a
+String	b
+String	a
+UInt64	2
+UInt64	1
+String	b
+String	a
+Variant(String, UInt8)	42
+Variant(String, UInt8)	a
