@@ -10,6 +10,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -90,6 +91,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
+namespace FailPoints
+{
+    extern const char storage_merge_pause_before_reading[];
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -97,6 +103,7 @@ extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
+extern const int SUPPORT_IS_DISABLED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
@@ -725,7 +732,43 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     if (child_plans)
         return;
 
+    FailPointInjection::pauseFailPoint(FailPoints::storage_merge_pause_before_reading);
+
     selected_tables = getSelectedTables(context);
+
+    /// The planner decided that reading can be coordinated with parallel replicas from a separate,
+    /// unlocked catalog walk (`StorageMerge::supportsParallelReplicasReading`). Revalidate the
+    /// selected tables under the table locks that reading will actually use: the set of tables
+    /// matched by the Merge table may have changed since the query was planned, and may differ
+    /// between the replicas. Reading is coordinated at the level of MergeTree parts and mark
+    /// ranges, so gaining or losing a whole MergeTree table stays correct (every underlying table
+    /// forms its own data stream, and its parts are distributed only across the replicas that
+    /// announced them), but a child that cannot be coordinated would be read in full by every
+    /// replica and duplicate its rows in the result — fail closed instead.
+    if (parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower())
+    {
+        const auto & settings = context->getSettingsRef();
+        for (const auto & [database_name, table, _, table_name] : selected_tables)
+        {
+            if (!table->isMergeTree())
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot coordinate reading from table {} with parallel replicas because it is not a MergeTree table: "
+                    "the set of tables matched by the table {} changed after the query was planned, or differs on this replica",
+                    table->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
+
+            if (!table->supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot coordinate reading from table {} with parallel replicas because it is not replicated "
+                    "and the setting `parallel_replicas_for_non_replicated_merge_tree` is disabled: "
+                    "the set of tables matched by the table {} changed after the query was planned, or differs on this replica",
+                    table->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
+        }
+    }
+
     child_plans = createChildrenPlans(query_info);
 }
 

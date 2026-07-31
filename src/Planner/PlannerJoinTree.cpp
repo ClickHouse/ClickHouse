@@ -171,6 +171,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -1839,6 +1840,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (disable_parallel_replicas_for_storage)
                         {
+                            /// Fail closed instead of falling back to a plain uncoordinated read: this replica
+                            /// collaborates with an initiator that designated some leaf for coordinated reading,
+                            /// but re-planning the same query on this replica designated no table at all. For a
+                            /// `Merge` leaf that means the set of its underlying tables no longer passes the
+                            /// eligibility check here — it changed after the initiator planned the query, or
+                            /// differs on this replica. A plain read would return the whole result from this
+                            /// replica on top of the coordinated result of the other replicas, duplicating rows.
+                            if (!planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                                && !planner_context->getGlobalPlannerContext()->parallel_replicas_table_union
+                                && settings[Setting::parallel_replicas_allow_merge_tables]
+                                && typeid_cast<const StorageMerge *>(storage.get()))
+                                throw Exception(
+                                    ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "Cannot coordinate reading from table {} with parallel replicas: "
+                                    "the set of its underlying tables changed after the query was planned, or differs on this replica",
+                                    storage->getStorageID().getNameForLogs());
+
                             auto mutable_context = Context::createCopy(query_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;

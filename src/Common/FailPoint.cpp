@@ -138,6 +138,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE(storage_merge_pause_before_reading) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
