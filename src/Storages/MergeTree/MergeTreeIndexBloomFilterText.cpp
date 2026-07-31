@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -383,7 +384,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
+            if (tryPrepareSetBloomFilter(function_name, left_argument, right_argument, out))
             {
                 if (function_name == "notIn")
                 {
@@ -461,14 +462,49 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    auto value_data_type = WhichDataType(value_type);
-    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
-        return false;
-
+    DataTypePtr serialized_value_type = value_type;
     Field const_value = value_field;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
+
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllValues"))
+    {
+        if (function_name == "equals")
+        {
+            auto key_type = key_node.getDAGNode()->result_type;
+            if (!isJSONPathFilterSafe(key_type, value_field))
+                return false;
+        }
+
+        key_index = json_info->header_position;
+
+        if (function_name == "hasAny" || function_name == "hasAll")
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(serialized_value_type.get());
+            if (!array_type)
+                return false;
+
+            Array serialized_values;
+            const auto & values = const_value.safeGet<Array>();
+            serialized_values.reserve(values.size());
+            for (const auto & value : values)
+                serialized_values.emplace_back(serializeJSONValueAsText(value, array_type->getNestedType()));
+
+            const_value = std::move(serialized_values);
+            serialized_value_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        }
+        else if (function_name != "multiSearchAny" && !WhichDataType(serialized_value_type).isStringOrFixedString())
+        {
+            const_value = serializeJSONValueAsText(const_value, serialized_value_type);
+            serialized_value_type = std::make_shared<DataTypeString>();
+        }
+    }
+
+    auto value_data_type = WhichDataType(serialized_value_type);
+    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
+        return false;
+
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
 
@@ -763,6 +799,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 }
 
 bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
+    const String & function_name,
     const RPNBuilderTreeNode & left_argument,
     const RPNBuilderTreeNode & right_argument,
     RPNElement & out)
@@ -779,10 +816,16 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
+            auto argument = left_argument_function_node.getArgumentAt(i);
+            if (const auto key = getKeyIndex(argument.getColumnName()))
             {
                 key_tuple_mapping.emplace_back(i, *key);
                 data_types.push_back(index_data_types[*key]);
+            }
+            else if (auto json_info = tryMatchNodeToJSONIndex(argument, index_columns, "JSONAllValues");
+                (function_name == "in" || function_name == "globalIn") && json_info)
+            {
+                key_tuple_mapping.emplace_back(i, json_info->header_position, true, argument.getDAGNode()->result_type);
             }
         }
     }
@@ -791,11 +834,17 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_tuple_mapping.emplace_back(0, *key);
         data_types.push_back(index_data_types[*key]);
     }
+    else if (auto json_info = tryMatchNodeToJSONIndex(left_argument, index_columns, "JSONAllValues");
+        (function_name == "in" || function_name == "globalIn") && json_info)
+    {
+        key_tuple_mapping.emplace_back(0, json_info->header_position, true, left_argument.getDAGNode()->result_type);
+    }
 
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    bool has_json_value = std::ranges::any_of(key_tuple_mapping, [](const auto & mapping) { return mapping.serialize_json_value; });
+    auto future_set = has_json_value ? right_argument.tryGetPreparedSet() : right_argument.tryGetPreparedSet(data_types);
     if (!future_set)
         return false;
 
@@ -803,17 +852,21 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
-    for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
+    if (!has_json_value)
     {
-        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
-        if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
-            return false;
+        for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
+        {
+            auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+            if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
+                return false;
+        }
     }
 
     std::vector<std::vector<BloomFilter>> bloom_filters;
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
+    const auto & prepared_set_data_types = prepared_set->getDataTypes();
     size_t prepared_set_total_row_count = prepared_set->getTotalRowCount();
 
     for (const auto & elem : key_tuple_mapping)
@@ -822,13 +875,37 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_position.push_back(elem.key_index);
 
         size_t tuple_idx = elem.tuple_index;
+        if (tuple_idx >= columns.size() || tuple_idx >= prepared_set_data_types.size())
+            return false;
+
         const auto & column = columns[tuple_idx];
+        const auto & prepared_set_data_type = prepared_set_data_types[tuple_idx];
+
+        if (has_json_value && !elem.serialize_json_value)
+        {
+            auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+            if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
+                return false;
+        }
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
-            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
+            if (elem.serialize_json_value)
+            {
+                Field value = (*column)[row];
+                if (!isJSONPathFilterSafe(elem.key_type, value))
+                    return false;
+
+                String serialized_value = serializeJSONValueAsText(value, prepared_set_data_type);
+                forEachTokenToBloomFilter(
+                    *tokenizer, serialized_value.data(), serialized_value.size(), bloom_filters.back().back());
+            }
+            else
+            {
+                auto ref = column->getDataAt(row);
+                forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
+            }
         }
     }
 

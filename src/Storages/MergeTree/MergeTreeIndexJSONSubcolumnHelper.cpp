@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
@@ -115,6 +117,15 @@ bool isJSONPathFilterSafe(
         return false;
 
     return true;
+}
+
+String serializeJSONValueAsText(const Field & value, const DataTypePtr & type)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buf;
+    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    return buf.str();
 }
 
 }

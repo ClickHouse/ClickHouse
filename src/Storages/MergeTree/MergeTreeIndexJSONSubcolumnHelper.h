@@ -67,4 +67,7 @@ bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field);
 
+/// Convert a value to the text representation stored by `JSONAllValues`.
+String serializeJSONValueAsText(const Field & value, const DataTypePtr & type);
+
 }
