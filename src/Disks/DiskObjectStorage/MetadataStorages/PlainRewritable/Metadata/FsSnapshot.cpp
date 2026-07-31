@@ -346,15 +346,15 @@ std::optional<DirectoryRemoteInfo> FsSnapshot::getDirectoryRemoteInfo(const std:
 std::optional<FileRemoteInfo> FsSnapshot::getFileRemoteInfo(const std::string & path) const
 {
     const auto normalized_path = normalizePath(path);
-    const auto directory_remote_info = getDirectoryRemoteInfo(normalized_path.parent_path());
+    const auto directory_remote_info = getDirectoryRemoteInfo(pathToGenericString(normalized_path.parent_path()));
 
     if (!directory_remote_info)
         return std::nullopt;
 
-    if (!directory_remote_info->files.contains(normalized_path.filename()))
+    if (!directory_remote_info->files.contains(pathToGenericString(normalized_path.filename())))
         return std::nullopt;
 
-    return directory_remote_info->files.at(normalized_path.filename());
+    return directory_remote_info->files.at(pathToGenericString(normalized_path.filename()));
 }
 
 bool FsSnapshot::existsFile(const std::string & path) const

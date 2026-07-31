@@ -383,8 +383,8 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     }
 
     const auto normalized_path_from = normalizePath(pathToGenericString(path));
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
     copy_started = true;
@@ -446,12 +446,12 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
 
     const auto normalized_path_from = normalizePath(pathToGenericString(path_from));
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
 
     const auto normalized_path_to = normalizePath(pathToGenericString(path_to));
-    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
-    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))->remote_path;
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, pathToGenericString(normalized_path_to.filename()));
 
     copy_attempted = true;
     object_storage->copyObject(StoredObject(pathToGenericString(remote_path_from)), StoredObject(pathToGenericString(remote_path_to)), getReadSettings(), getWriteSettings());
@@ -511,11 +511,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     const auto normalized_path_from = normalizePath(pathToGenericString(path_from));
     const auto normalized_path_to = normalizePath(pathToGenericString(path_to));
-    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
+    const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()))->remote_path;
+    const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))->remote_path;
 
-    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, pathToGenericString(normalized_path_from.filename()));
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, pathToGenericString(normalized_path_to.filename()));
     tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
     tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
     file_from_remote_info = fs_tree->getFileRemoteInfo(pathToGenericString(path_from)).value();

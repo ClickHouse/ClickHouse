@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <base/defines.h>
@@ -43,7 +44,7 @@ public:
     void recordCreate(const NormalizedPath & directory)
     {
         if (const auto snapshot_path = resolveToSnapshotPath(directory))
-            created_directories.insert(*snapshot_path);
+            created_directories.insert(pathToGenericString(*snapshot_path));
     }
 
     std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
@@ -54,13 +55,13 @@ public:
         {
             if (const Remove * remove = std::get_if<Remove>(&event))
             {
-                if (resolved == remove->path || resolved.starts_with(remove->path.native() + '/'))
+                if (resolved == remove->path || resolved.starts_with(pathToGenericString(remove->path) + '/'))
                     return std::nullopt;
             }
             else if (const Move * move = std::get_if<Move>(&event))
             {
                 if (resolved == move->to)
-                    resolved = move->from;
+                    resolved = pathToGenericString(move->from);
                 else if (resolved.starts_with(move->to.native() + '/'))
                     resolved = move->from.native() + resolved.substr(move->to.native().size());
                 else if (resolved == move->from.native() || resolved.starts_with(move->from.native() + '/'))
@@ -77,7 +78,7 @@ public:
 
     bool isCreatedByTransaction(const NormalizedPath & path) const
     {
-        return created_directories.contains(path);
+        return created_directories.contains(pathToGenericString(path));
     }
 
 private:

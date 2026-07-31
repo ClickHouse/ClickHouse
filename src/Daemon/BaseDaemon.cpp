@@ -84,7 +84,7 @@ namespace DB
 using namespace DB;
 
 
-static bool getenvBool(const char * name)
+[[maybe_unused]] static bool getenvBool(const char * name)
 {
     bool res = false;
     const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
