@@ -100,6 +100,8 @@ public:
         FunctionArgumentDescriptors mandatory_args{
             {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
+            {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
             {"dimensions", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), &isColumnConst, "const UInt"},
@@ -111,12 +113,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
+        /// `aiEmbed` takes `model` as a required positional argument; a named collection that
+        /// defines `model` is rejected rather than silently ignored.
+        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column, /*model_in_collection=*/ false);
+
+        String model(arguments[model_arg_index].column->getDataAt(0));
 
         UInt64 dimensions = 0;
-        if (arguments.size() > 2)
+        if (arguments.size() > 3)
         {
-            const auto * dim_const = typeid_cast<const ColumnConst *>(arguments[2].column.get());
+            const auto * dim_const = typeid_cast<const ColumnConst *>(arguments[3].column.get());
             chassert(dim_const, "dimensions must be a constant UInt (validated by getReturnTypeImpl)");
             dimensions = dim_const->getUInt(0);
 
@@ -206,7 +212,7 @@ public:
             size_t batch_end = std::min(batch_start + max_batch_size, live_rows.size());
 
             AIEmbeddingRequest ai_embedding_request;
-            ai_embedding_request.model = nc.model;
+            ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
@@ -289,6 +295,7 @@ public:
 
 private:
     static constexpr size_t text_arg_index = 1;
+    static constexpr size_t model_arg_index = 2;
 
     ContextPtr context;
     ContextPtr getContext() const { return context; }
@@ -307,20 +314,26 @@ Within a single block of rows, inputs are grouped into batches of up to
 [`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, endpoint, and API key.
+
+The `model` is a required positional argument (a constant `String`). Unlike the text functions,
+`aiEmbed` does not read `model` from the named collection. A named collection that defines `model`
+is rejected rather than silently ignored.
+
 The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 )",
-        .syntax = "aiEmbed(collection, text[, dimensions])",
+        .syntax = "aiEmbed(collection, text, model[, dimensions])",
         .arguments
-        = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
+        = {{"collection", "Name of a named collection containing provider credentials and configuration. It must not define `model`.", {"String"}},
            {"text", "Text to embed.", {"String"}},
+           {"model", "Embedding model name.", {"const String"}},
            {"dimensions", "Optional target dimensionality for the output vector. `0` or omitted means the model's native size.", {"UInt64"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
-           {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
-           {"Embed a column of texts", "SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
+        = {{"Embed a single string", "SELECT aiEmbed('ai_embedding_credentials', 'Hello world', 'text-embedding-3-small')", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('ai_embedding_credentials', 'Hello world', 'text-embedding-3-small', 256)", ""},
+           {"Embed a column of texts", "SELECT aiEmbed('ai_embedding_credentials', title, 'text-embedding-3-small', 256) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::AI});
 }

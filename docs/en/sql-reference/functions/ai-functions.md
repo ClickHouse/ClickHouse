@@ -28,6 +28,13 @@ CREATE NAMED COLLECTION ai_credentials AS
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
+
+-- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
+-- Defining `model` in an `aiEmbed` collection is an error, not silently ignored.
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    api_key = 'sk-...';
 ```
 
 ### Named collection parameters {#named-collection-parameters}
@@ -36,7 +43,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 |-----------|------|---------|-------------|
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
-| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
+| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; `aiEmbed` requires `model` as a positional argument and errors if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |

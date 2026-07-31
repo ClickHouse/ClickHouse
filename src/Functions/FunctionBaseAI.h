@@ -61,8 +61,11 @@ public:
 
     /// Resolve the named-collection argument: cast the first argument to a `ColumnConst`, run the
     /// `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`, and validate that the
-    /// required fields (`provider`, `endpoint`, `model`, `api_key`) are non-empty.
-    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
+    /// required fields (`provider`, `endpoint`, `api_key`) are non-empty. `model` is required when
+    /// `model_in_collection` is true (the text functions); when it is false (`aiEmbed`, which takes
+    /// `model` as a required positional argument), a collection that defines `model` is rejected
+    /// rather than silently ignored.
+    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg, bool model_in_collection = true);
 
     /// Exponential backoff delay capped at one minute, so adversarial values of
     /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour

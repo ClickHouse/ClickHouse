@@ -93,6 +93,12 @@ aiEmbed
 -- aiEmbed: wrong type for dimensions (signed integer)
 -- aiEmbed: wrong type for dimensions (string)
 -- aiEmbed: non-constant collection
+-- aiEmbed: wrong type for model argument (not a string)
+-- aiEmbed: non-constant model argument
+-- aiEmbed: model is a required positional argument
+-- aiEmbed: model in the named collection is rejected
+-- aiEmbed: model supplied as a positional argument resolves
+0
 -- aiEmbed: return type
 result	Array(Float32)
 -- aiEmbed: return type with dimensions

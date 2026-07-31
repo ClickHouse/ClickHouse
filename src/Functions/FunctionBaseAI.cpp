@@ -75,7 +75,7 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg)
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg, bool model_in_collection)
 {
     const auto * col_const = typeid_cast<const ColumnConst *>(first_arg.get());
     if (!col_const)
@@ -98,8 +98,19 @@ FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", config.collection_name);
     if (config.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", config.collection_name);
-    if (config.model.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", config.collection_name);
+    if (model_in_collection)
+    {
+        if (config.model.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", config.collection_name);
+    }
+    else if (named_collection->has("model"))
+    {
+        /// A function that does not read `model` from the collection (i.e. `aiEmbed`, which takes it
+        /// as an argument) must not silently ignore a `model` defined there: reject it instead.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI named collection '{}' defines 'model', which this function does not read from the named collection; "
+            "remove it from the collection and pass 'model' to the function directly", config.collection_name);
+    }
     if (config.api_key.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", config.collection_name);
 
