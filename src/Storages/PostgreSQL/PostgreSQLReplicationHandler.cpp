@@ -691,6 +691,28 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
+PostgreSQLReplicationHandler::~PostgreSQLReplicationHandler()
+{
+    /// Stop the background tasks before the members they use are destroyed. The task holders are declared
+    /// before those members, so their own destructors (which deactivate the tasks) would run too late: a task
+    /// still executing at that point would read, for example, an already-destroyed `materialized_storages`.
+    /// `deactivate` waits for an in-flight execution to finish and is idempotent, so this is safe for a handler
+    /// that was already shut down.
+    try
+    {
+        startup_task->deactivate();
+        consumer_task->deactivate();
+        cleanup_task->deactivate();
+        if (coordination_task)
+            coordination_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
+
 void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage)
 {
     materialized_storages[table_name] = storage;
@@ -2215,7 +2237,16 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
         /// The startup task matters exactly when replication has not started yet (it keeps retrying, e.g.
         /// while the configured coordination identity mismatches the persisted one); once replication runs,
         /// rescheduling it is a harmless idempotent no-op.
-        if (!stop_synchronization)
+        ///
+        /// Only restore it in the modes in which it is the retrying recovery path (`is_attach` /
+        /// `retry_startup_on_error`), i.e. in which `checkConnectionAndStart` catches every error and
+        /// reschedules itself. Arming it outside of them would let that function rethrow out of the
+        /// background task, which aborts the server ("Tasks in BackgroundSchedulePool cannot throw") - and
+        /// would leave a task running on a handler the caller is about to discard. The database engine, which
+        /// starts synchronously and never arms this task, recovers a refused drop through its own startup task
+        /// instead (DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop), and the single-table engine
+        /// through `restartCoordinatedReplicationAfterFailedTeardown`, which enables the retrying mode first.
+        if (!stop_synchronization && (is_attach || retry_startup_on_error))
             startup_task->activateAndSchedule();
         throw;
     }

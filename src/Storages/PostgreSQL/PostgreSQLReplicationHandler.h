@@ -82,6 +82,15 @@ public:
             const MaterializedPostgreSQLSettings & replication_settings,
             bool is_materialized_postgresql_database_);
 
+    /// Quiesces the background tasks before any other member is destroyed. The task functions capture `this`
+    /// and use members that are declared after the task holders (and are therefore destroyed before them), so
+    /// relying on the holders' own destructors would let a still-running task read freed memory. This matters
+    /// because a handler can be discarded without a preceding `shutdown`: the retrying background startup path
+    /// of the database engine replaces a handler that never managed to start
+    /// (DatabaseMaterializedPostgreSQL::startSynchronization), and a refused drop discards a stopped one
+    /// (DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop).
+    ~PostgreSQLReplicationHandler();
+
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
     void startup(bool delayed);
 
