@@ -339,6 +339,43 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
+        if (open_mode == OpenMode::WRITE)
+        {
+            /// Verify the base backup is actually usable — check that data files
+            /// exist on the storage. The .backup metadata file was already verified
+            /// to exist (readBackupMetadata would have thrown otherwise), but the
+            /// data files might have been removed (e.g., by an S3 lifecycle rule,
+            /// partial cleanup, or operator rm).
+            /// Without this check, an incremental backup would report BACKUP_CREATED
+            /// against a base that is already unrestorable, and the failure would
+            /// only surface at restore time.
+            auto * base_impl = dynamic_cast<const BackupImpl *>(base_backup.get());
+            if (base_impl && base_impl->reader)
+            {
+                bool has_data_files = false;
+                for (const auto & [name, _] : base_impl->file_names)
+                {
+                    if (name != ".backup")
+                    {
+                        if (base_impl->reader->fileExists(name))
+                        {
+                            has_data_files = true;
+                            break;
+                        }
+                    }
+                }
+                if (!has_data_files)
+                {
+                    throw Exception(
+                        ErrorCodes::NO_BASE_BACKUP,
+                        "Backup {}: The base backup {} has no data files on the storage. "
+                        "The backup is unusable as a base backup.",
+                        backup_name_for_logging,
+                        base_backup->getNameForLogging());
+                }
+            }
+        }
+
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
         {
             throw Exception(
