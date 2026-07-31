@@ -225,7 +225,7 @@ def test_refreshable_mv_workload() -> None:
         """
     )
 
-    assert "SETTINGS workload = \'all\'" in node.query("show create table rmv_workload")
+    assert "SETTINGS workload = 'all'" in node.query("show create table rmv_workload")
 
     blocker = QueryPool(1, "all")
     blocker.start()

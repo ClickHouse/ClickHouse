@@ -470,7 +470,8 @@ public:
       * If too many running queries - wait for not more than specified (see settings) amount of time.
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries.
-      * If force_workload is true, acquire workload query-slot and memory-reservation resources even for an internal or otherwise unlimited query.
+      * If force_workload is true, acquire workload query-slot and memory-reservation resources
+      * even for an internal or otherwise unlimited query.
       */
     EntryPtr insert(
         const String & query_,
