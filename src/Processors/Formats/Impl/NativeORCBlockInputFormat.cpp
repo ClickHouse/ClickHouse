@@ -1855,7 +1855,10 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 }
 
 static ColumnWithTypeAndName readColumnWithDateData(
-    const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
+    const orc::ColumnVectorBatch * orc_column,
+    const String & column_name,
+    const DataTypePtr & type_hint,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
     DataTypePtr internal_type;
     bool check_date32_range = false;
@@ -1889,25 +1892,37 @@ static ColumnWithTypeAndName readColumnWithDateData(
     {
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
-            Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
+            /// Range-check the original Int64 day count before narrowing to Int32,
+            /// otherwise a malformed value could wrap into an apparently valid date.
+            Int64 days_num = orc_int_column->data[i];
             if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
-                    days_num,
-                    column_name,
-                    DATE_LUT_MIN_EXTEND_DAY_NUM,
-                    DATE_LUT_MAX_EXTEND_DAY_NUM);
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MIN_EXTEND_DAY_NUM,
+                        DATE_LUT_MAX_EXTEND_DAY_NUM);
+            }
 
             if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
-                    days_num,
-                    column_name,
-                    DATE_LUT_MAX_DAY_NUM);
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MAX_DAY_NUM);
+            }
 
-            column_data.push_back(days_num);
+            column_data.push_back(static_cast<Int32>(days_num));
         }
         else
         {
@@ -2602,7 +2617,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case orc::DOUBLE:
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DATE:
-            return readColumnWithDateData(orc_column, column_name, type_hint);
+            return readColumnWithDateData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
