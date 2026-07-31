@@ -117,7 +117,7 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     {
         return {};
     }
-    ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// Objects in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
     /// to the data object form a subsegment in a deletes_objects vector.
     /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
@@ -447,6 +447,11 @@ void IcebergIterator::decodeDeleteManifests()
                 position_deletes_files.emplace_back(std::move(delete_file));
         }
     }
+    chassert(in_flight.empty());
+    chassert(next_to_decode == delete_manifests.size());
+
+    /// Sort objects by common_partition_specification, partition_key_value and added_sequence_number.
+    /// This is needed to efficiently match delete and data manifests in defineDeletesSpan().
     LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
