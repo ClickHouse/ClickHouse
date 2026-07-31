@@ -1767,6 +1767,9 @@
 
     function clearCommandOutput() {
         document.querySelector("#command-output").innerHTML = "";
+        /// Cancel any in-flight "Display all N possibilities? (y/n)" so Clear /
+        /// Ctrl+L cannot leave the prompt hidden via .pending-completion.
+        setPendingCompletionDisplay(null);
         last_listed_completion_signature = null;
     }
 
@@ -1796,6 +1799,10 @@
             cli_history.push(command);
         }
         cli_history_index = cli_history.length;
+        /// Mouse-triggered actions (quick-command buttons) bypass the keydown
+        /// handler that dismisses y/n; clear pending state so the prompt is not
+        /// left invisible under .pending-completion while the command runs.
+        setPendingCompletionDisplay(null);
         last_listed_completion_signature = null;
 
         appendToOutput(`➜ ${cli_cwd} ${command}\n`);
@@ -1882,6 +1889,14 @@
                 if (event.code === "Enter") {
                     event.preventDefault();
                     appendToOutput("\n");
+                    last_listed_completion_signature = null;
+                    setPendingCompletionDisplay(null);
+                    command_container.scrollTop = command_container.scrollHeight;
+                    return;
+                }
+                if (event.code === "KeyC" && event.ctrlKey) {
+                    event.preventDefault();
+                    appendToOutput("^C\n");
                     last_listed_completion_signature = null;
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
