@@ -1793,3 +1793,83 @@ def test_detached_ddl_rejected_on_stale_epoch(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_ATTACH_FROM_BATCH = "12345678-abcd-abcd-abcd-12345678ab18"
+
+
+def test_attach_partition_from_undone_when_lease_goes_stale_mid_rename(started_cluster):
+    """
+    Regression for the per-rename fence in `ATTACH`/`REPLACE PARTITION FROM`
+    (`StorageMergeTree::replacePartitionFrom`): unlike the other partition commands, it used to
+    publish every cloned part with `rename_in_transaction = false`, i.e. rename it to its
+    persistent name immediately inside the loop, with the epoch fence checked only once before
+    the loop. A lease lost after the first rename therefore left already published parts under
+    persistent names, and the rollback of the rejected command could not take them back: it only
+    sets `creation_csn = RolledBackCSN` in memory, which is deliberately not persisted, while
+    `cloneAndLoadDataPart` had already written the non-transactional creation metadata on disk.
+    The next leader would then load parts of a command that returned an exception to the client.
+
+    The command now publishes through `Transaction::renameParts` with the fence armed, so the
+    `merge_tree_leader_election_stale_lease_mid_batch_rename` failpoint (which rejects the batch
+    right after its first part was published) must leave nothing behind — even after the part set
+    is reloaded from shared storage.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_batch_rename"
+    table = "test_attach_from_batch_fence"
+    plain = "test_attach_from_batch_fence_src"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_ATTACH_FROM_BATCH}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+
+        # The source is a plain table on another disk; two inserts into the same partition give
+        # the batch of two parts that the fence has to publish one rename at a time.
+        node1.query(
+            f"CREATE TABLE {plain} (x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+            " SETTINGS index_granularity = 8192"
+        )
+        node1.query(f"INSERT INTO {plain} VALUES (11)")
+        node1.query(f"INSERT INTO {plain} VALUES (13)")
+        assert int(node1.query(f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                               f" AND table = '{plain}' AND active").strip()) == 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of publishing a batch"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1 FROM {plain}")
+            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+                "ATTACH PARTITION FROM was rejected but part of the batch still took effect"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload the part set from shared storage. A part of the aborted
+        # command left under its persistent name would be picked up here.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+            "A part of the aborted ATTACH PARTITION FROM was left on shared storage"
+        )
+
+        # With the failpoint cleared the same command succeeds and publishes the whole batch.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1 FROM {plain}")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        for name in (table, plain):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+            except Exception:
+                pass

@@ -3837,14 +3837,15 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             ///  and we should be able to rollback already added (Precomitted) parts
             Transaction transaction(*this, local_context->getCurrentTransaction().get());
 
+            /// The cloned parts are published one rename at a time; arm the fence so that every
+            /// individual rename is checked against the epoch captured at admission and a lease
+            /// lost in the middle of the batch undoes the renames already done (see
+            /// `Transaction::renameParts`).
+            if (leader_election_ptr)
+                transaction.setPublishFenceEpoch(admission_epoch);
+
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
-
-            /// Under `leader_election`, re-fence at the epoch captured at admission BEFORE the
-            /// renames below publish the cloned parts on shared storage. `transaction.commit`
-            /// re-checks leadership, but by then the renames have already happened, and it cannot
-            /// detect a lease lost and reacquired while the parts were being cloned.
-            assertWritableLeaderAtEpoch(admission_epoch);
 
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
@@ -3852,8 +3853,43 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             for (auto part : dst_parts)
             {
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
-                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
+                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ true);
             }
+
+            /// Under `leader_election`, re-fence at the epoch captured at admission BEFORE
+            /// `renameParts` publishes the cloned parts on shared storage. `transaction.commit`
+            /// re-checks leadership, but by then the renames have already happened, and it cannot
+            /// detect a lease lost and reacquired while the parts were being cloned.
+            try
+            {
+                assertWritableLeaderAtEpoch(admission_epoch);
+                /// Inside the batch the fence is re-checked before each rename, and the renames
+                /// already done are undone if the lease goes stale in the middle, so on a failure
+                /// here nothing of this DDL is left under a persistent name either.
+                transaction.renameParts();
+            }
+            catch (...)
+            {
+                /// None of the cloned parts were renamed to their persistent names, and their
+                /// names are deterministic. A regular rollback would leave them in the working set
+                /// as Outdated with storage still pointing at the temporary directory; a later
+                /// retry of the same `ATTACH`/`REPLACE PARTITION` re-creates that exact directory,
+                /// and the lazy cleanup of the zombie would then destroy the retry's live part
+                /// storage. Remove them from the working set entirely: they were never visible to
+                /// anyone. Skipped for `MergeTreeTransaction` to keep its CSN bookkeeping on the
+                /// regular rollback path.
+                if (!local_context->getCurrentTransaction())
+                {
+                    transaction.rollbackPartsToTemporaryState(&data_parts_lock);
+                    /// Restore temporary ownership (cleared by `preparePartForCommit`) so the
+                    /// destructors remove the never-published directories instead of leaving
+                    /// stale leftovers.
+                    for (auto & part : dst_parts)
+                        part->is_temp = true;
+                }
+                throw;
+            }
+
             /// Populate transaction
             transaction.commit(data_parts_lock);
 
