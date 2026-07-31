@@ -5,3 +5,6 @@ DirectKeyValueJoin
 1	5	1	5
 -- joining on the primary key alone is unaffected
 DirectKeyValueJoin
+-- a join on no primary key falls back to a hash join
+inner
+1	5	1	5

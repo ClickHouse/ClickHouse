@@ -27,3 +27,9 @@ SELECT * FROM lk ALL INNER JOIN kv ON lk.k = kv.k WHERE lk.payload = kv.payload 
 SELECT '-- joining on the primary key alone is unaffected';
 SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Algorithm: ([^\n]*)') AS algorithm
 FROM (EXPLAIN SELECT * FROM lk ALL INNER JOIN kv ON lk.k = kv.k);
+
+SELECT '-- a join on no primary key falls back to a hash join';
+SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Type: (\\w+)') AS join_kind
+FROM (EXPLAIN SELECT * FROM lk ALL INNER JOIN kv ON lk.payload = kv.payload SETTINGS join_algorithm = 'direct,hash');
+
+SELECT * FROM lk ALL INNER JOIN kv ON lk.payload = kv.payload ORDER BY ALL SETTINGS join_algorithm = 'direct,hash';

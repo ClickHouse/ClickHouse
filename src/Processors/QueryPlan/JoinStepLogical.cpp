@@ -782,6 +782,20 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
 
+    auto is_equality_on_prepared_storage_key = [&planning_context](const JoinActionRef & predicate)
+    {
+        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            return false;
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            return false;
+        return planning_context.prepared_storage_keys.contains(rhs.getColumnName());
+    };
+
+    const bool has_equality_on_prepared_storage_key = std::ranges::any_of(predicates, is_equality_on_prepared_storage_key);
+
     for (auto & pred : predicates)
     {
         auto & predicate = new_predicates.emplace_back(std::move(pred));
@@ -795,8 +809,10 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             continue;
 
         /// For prepared join storage keep predicates over non join keys as filters after the join when possible.
-        /// Otherwise the query will be rejeted.
-        if (planning_context.is_storage_join
+        /// Otherwise the query will be rejected.
+        /// This should only be done when there is at least one equality over prepared storage keys to avoid
+        /// degenerating into a CROSS JOIN.
+        if (has_equality_on_prepared_storage_key
             && planning_context.can_keep_predicate_as_filter
             && !planning_context.prepared_storage_keys.contains(rhs.getColumnName()))
             continue;
