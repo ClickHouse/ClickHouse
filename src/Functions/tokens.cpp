@@ -112,13 +112,11 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+        /// Stateful tokenizers cannot be shared across threads; use a per-execution clone.
+        if (tokenizer->isStateful())
         {
-            /// The sparse gram tokenizer stores an internal state which modified during the execution.
-            /// This leads to an error while executing this function multi-threaded because that state is not protected.
-            /// To avoid this case, a clone of the sparse gram tokenizer will be used.
-            auto sparse_grams_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*sparse_grams_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            auto stateful_tokenizer = tokenizer->clone();
+            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
         else
         {
@@ -301,6 +299,7 @@ Available tokenizers:
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)). The separators can be specified using an optional parameter, for example, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly, is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
+- `japanese` splits Japanese text into words using the MeCab morphological analyzer. Requires a dictionary configured in the server configuration (see the [text index](/engines/table-engines/mergetree-family/textindexes) documentation).
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)). The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokens(value, 'ngrams', 3)`. The default ngram size, if not specified explicitly, is 3.
 - `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)). Unless specified explicitly, `min_length` and `max_length` default to 3 and 100. If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned. Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text. For example, `tokens(value, 'sparseGrams', 3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
@@ -314,19 +313,26 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
 tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
 tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
         {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
         {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
         {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
         {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},
     };
+
+    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (e.g. `japanese`), so its
+    /// tokenizer list omits `japanese`.
+    FunctionDocumentation::Arguments arguments_like = arguments;
+    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -377,7 +383,7 @@ and is used internally to analyze tokenization behavior for LIKE patterns.
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in_like = {26, 3};
-        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments, {}, returned_value, examples_like, introduced_in_like, category};
+        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
 
         factory.registerFunction<FunctionTokensOverloadResolver<LikePatternTokensTraits>>(documentation_like);
     }
