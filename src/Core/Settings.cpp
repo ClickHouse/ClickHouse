@@ -1163,6 +1163,11 @@ index serialization path cannot handle heterogeneous Field values that JSON colu
     DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
 )", 0) \
+    DECLARE(Bool, allow_suspicious_row_policies_with_blending_engines, false, R"(
+Allow `CREATE ROW POLICY` and `ALTER ROW POLICY` for a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table.
+
+A merge on these engines produces one row out of all the rows with the same sorting key, taking column values from all of them. A row policy cannot hide a row from that merge, only from its result, which by then holds the values of the hidden rows as well - so the policy is not a security boundary. Define the policy on the table which stores the raw rows instead.
+)", 0) \
     DECLARE(Bool, allow_suspicious_variant_types, false, R"(
 In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
 )", 0) \
@@ -1685,6 +1690,10 @@ filters out rows that should be used for deduplication in ReplacingMergeTree or 
 
 If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
 since such filtering cannot affect the deduplication result.
+
+On `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `GraphiteMergeTree` the row policy is always applied
+before FINAL, regardless of this setting: FINAL takes the values of the merged row from all the rows with the same sorting key,
+so a policy applied afterwards would show values of the rows it is supposed to hide.
 
 Possible values:
 

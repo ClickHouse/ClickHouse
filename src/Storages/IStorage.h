@@ -124,6 +124,10 @@ public:
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
 
+    /// Returns true if a merge builds one row out of several, mixing their values
+    /// (SummingMergeTree, AggregatingMergeTree, CoalescingMergeTree, GraphiteMergeTree)
+    virtual bool isBlendingEngine() const { return false; }
+
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const;
 

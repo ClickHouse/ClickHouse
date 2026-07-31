@@ -561,6 +561,15 @@ public:
 
     bool isMergeTree() const override { return true; }
 
+    /// Modes where the merged row takes values from several rows instead of one winner
+    bool isBlendingEngine() const override
+    {
+        return merging_params.mode == MergingParams::Summing
+            || merging_params.mode == MergingParams::Aggregating
+            || merging_params.mode == MergingParams::Coalescing
+            || merging_params.mode == MergingParams::Graphite;
+    }
+
     bool supportsPrewhere() const override { return true; }
 
     /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,
