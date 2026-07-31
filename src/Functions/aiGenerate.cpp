@@ -61,8 +61,6 @@ public:
 private:
     static constexpr float default_temp = 0.7f;
 
-    String functionName() const override { return name; }
-
     AIParamSpecs functionParams() const override
     {
         return {

@@ -76,6 +76,7 @@ static struct InitFiu
     ONCE(object_storage_queue_fail_commit_after_success) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
+    ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -86,6 +87,9 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_cancel_query_in_response_wait) \
+    REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
+    REGULAR(distributed_cache_simulate_undrained_leftovers) \
+    REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
@@ -100,6 +104,7 @@ static struct InitFiu
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
+    REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
@@ -127,6 +132,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
@@ -190,6 +196,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_fail_before_writing_metadata) \
@@ -241,6 +248,7 @@ static struct InitFiu
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
+    REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
