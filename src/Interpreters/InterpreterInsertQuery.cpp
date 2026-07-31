@@ -76,6 +76,8 @@ namespace Setting
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -887,8 +889,19 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             || forwarded_dependent_mv_dedup_hazard
             || forwards_to_separate_context
             || hidden_views_forward_to_separate_context);
+
+    /// A non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with `insert_quorum_parallel = 0`)
+    /// permits a single in-flight quorum part per table: every `ReplicatedMergeTreeSink` checks in
+    /// `onStart` that the quorum of all previous writes is already satisfied (`checkQuorumPrecondition`)
+    /// and throws `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` otherwise. With a write fan-out every branch
+    /// runs its own sink - including branches that receive no data - so sibling sinks of the same
+    /// `INSERT` race against the not-yet-satisfied quorum node of the part committed by the branch that
+    /// got the data. Keep such inserts single-stream.
+    const bool sequential_quorum_insert = !settings[Setting::insert_quorum_parallel]
+        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
+
     const size_t insert_threads
-        = (async_insert || dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads;
+        = (async_insert || dedup_single_stream || serial_hidden_views || sequential_quorum_insert) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,
