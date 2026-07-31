@@ -1,0 +1,48 @@
+---
+title: 'What SQL syntax does ClickHouse support?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/sql
+description: 'ClickHouse supports 100% of SQL syntax'
+doc_type: 'reference'
+keywords: ['SQL syntax', 'ANSI SQL']
+---
+
+ClickHouse has complete support for SQL syntax, including features such as:
+- SQL/JSON and JSON data type (SQL-2023)
+- Window functions (SQL-2003)
+- Common table expressions and recursive queries (SQL-1999)
+- ROLLUP, CUBE, and GROUPING SETS (SQL-1999)
+- Full support for RBAC (SQL-1999)
+- Correlated subqueries (SQL-1992);
+
+The support is validated by TPC-H and TPC-DS benchmarks, as well as by SQLTest.
+
+ClickHouse introduced many features before they were subsequently standardised by ISO/IEC, such as:
+- conditional aggregate functions
+- `any` aggregate functions
+- `least` and `greatest`
+- `GROUP BY ALL`
+- extended use of aliases
+- underscores in numeric literals
+
+ClickHouse extend the SQL by introducing major quality-of-life improvements:
+- unrestricted use of aliases
+- aliases inside the WITH clause
+- aggregate function combinators
+- parameterized aggregate functions
+- approximate aggregate functions
+- native and big integer numeric data types, extended precision decimal
+- higher order functions for arrays manipulation
+- ARRAY JOIN clause and arrayJoin function
+- array aggregation
+- LIMIT BY clause
+- GROUP BY WITH TOTALS
+- AS OF JOIN
+- ANY/ALL JOIN
+- natural syntax for JSON
+- trailing comma in the column list
+- FROM ... SELECT clause order
+- type-safe query parameters and parameterized views
+
+Some of them have a chance to be included in the upcoming SQL standards, while already being available for ClickHouse users.

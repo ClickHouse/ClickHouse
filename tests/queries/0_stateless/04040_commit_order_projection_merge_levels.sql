@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-parallel-replicas
 
 set enable_analyzer = 1;
 
@@ -13,19 +13,21 @@ CREATE TABLE mt_merge_levels(
 )
 ENGINE = MergeTree
 ORDER BY a
-settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, max_parts_to_merge_at_once=2;
+settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, merge_selector_algorithm = 'Manual';
 
 -- Create 2 level-1 parts by inserting pairs and merging
 insert into mt_merge_levels(a) values (4) (1);
 insert into mt_merge_levels(a) values (3) (6);
-optimize table mt_merge_levels;
-
 insert into mt_merge_levels(a) values (8) (5);
 insert into mt_merge_levels(a) values (2) (7);
-optimize table mt_merge_levels;
+
+SYSTEM SCHEDULE MERGE mt_merge_levels PARTS 'all_1_1_0', 'all_2_2_0';
+SYSTEM SCHEDULE MERGE mt_merge_levels PARTS 'all_3_3_0', 'all_4_4_0';
+SYSTEM SYNC MERGES mt_merge_levels;
 
 -- Now merge level-1 + level-1 -> level-2 (projection MERGED, not rebuilt)
-optimize table mt_merge_levels;
+SYSTEM SCHEDULE MERGE mt_merge_levels PARTS 'all_1_2_1', 'all_3_4_1';
+SYSTEM SYNC MERGES mt_merge_levels;
 
 -- Check part_log ProfileEvents to verify rebuild vs merge behavior
 system flush logs part_log;

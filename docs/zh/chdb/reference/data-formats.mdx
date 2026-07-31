@@ -1,0 +1,108 @@
+---
+title: '数据格式'
+sidebarTitle: '数据格式'
+slug: /chdb/reference/data-formats
+description: 'chDB 的数据格式'
+keywords: ['chdb', '数据格式']
+doc_type: 'reference'
+---
+
+在数据格式方面，chDB 与 ClickHouse 的功能 100% 兼容。
+
+输入格式用于解析提供给 `INSERT` 的数据，以及从 `File`、`URL` 或 `S3` 等基于文件的表中执行 `SELECT` 时的数据。
+输出格式用于组织 `SELECT` 的结果，也用于向基于文件的表执行 `INSERT`。
+除了 ClickHouse 支持的数据格式外，chDB 还支持：
+
+* `ArrowTable` 作为输出格式，其类型为 Python `pyarrow.Table`
+* `DataFrame` 作为输入和输出格式，其类型为 Python `pandas.DataFrame`。示例请参见 [`test_joindf.py`](https://github.com/chdb-io/chdb-core/blob/main/tests/test_joindf.py)
+* `Debug` 作为输出格式 (`CSV` 的别名) ，同时启用来自 ClickHouse 的详细调试输出。
+
+ClickHouse 支持的数据格式如下：
+
+| 格式                                         | 输入 | 输出 |
+| ------------------------------------------ | -- | -- |
+| TabSeparated                               | ✔  | ✔  |
+| TabSeparatedRaw                            | ✔  | ✔  |
+| TabSeparatedWithNames                      | ✔  | ✔  |
+| TabSeparatedWithNamesAndTypes              | ✔  | ✔  |
+| TabSeparatedRawWithNames                   | ✔  | ✔  |
+| TabSeparatedRawWithNamesAndTypes           | ✔  | ✔  |
+| Template                                   | ✔  | ✔  |
+| TemplateIgnoreSpaces                       | ✔  | ✗  |
+| CSV                                        | ✔  | ✔  |
+| CSVWithNames                               | ✔  | ✔  |
+| CSVWithNamesAndTypes                       | ✔  | ✔  |
+| CustomSeparated                            | ✔  | ✔  |
+| CustomSeparatedWithNames                   | ✔  | ✔  |
+| CustomSeparatedWithNamesAndTypes           | ✔  | ✔  |
+| SQLInsert                                  | ✗  | ✔  |
+| Values                                     | ✔  | ✔  |
+| Vertical                                   | ✗  | ✔  |
+| JSON                                       | ✔  | ✔  |
+| JSONAsString                               | ✔  | ✗  |
+| JSONAsObject                               | ✔  | ✗  |
+| JSONStrings                                | ✔  | ✔  |
+| JSONColumns                                | ✔  | ✔  |
+| JSONColumnsWithMetadata                    | ✔  | ✔  |
+| JSONCompact                                | ✔  | ✔  |
+| JSONCompactStrings                         | ✗  | ✔  |
+| JSONCompactColumns                         | ✔  | ✔  |
+| JSONEachRow                                | ✔  | ✔  |
+| PrettyJSONEachRow                          | ✗  | ✔  |
+| JSONEachRowWithProgress                    | ✗  | ✔  |
+| JSONStringsEachRow                         | ✔  | ✔  |
+| JSONStringsEachRowWithProgress             | ✗  | ✔  |
+| JSONCompactEachRow                         | ✔  | ✔  |
+| JSONCompactEachRowWithNames                | ✔  | ✔  |
+| JSONCompactEachRowWithNamesAndTypes        | ✔  | ✔  |
+| JSONCompactEachRowWithProgress             | ✗  | ✔  |
+| JSONCompactStringsEachRow                  | ✔  | ✔  |
+| JSONCompactStringsEachRowWithNames         | ✔  | ✔  |
+| JSONCompactStringsEachRowWithNamesAndTypes | ✔  | ✔  |
+| JSONCompactStringsEachRowWithProgress      | ✗  | ✔  |
+| JSONObjectEachRow                          | ✔  | ✔  |
+| BSONEachRow                                | ✔  | ✔  |
+| TSKV                                       | ✔  | ✔  |
+| Pretty                                     | ✗  | ✔  |
+| PrettyNoEscapes                            | ✗  | ✔  |
+| PrettyMonoBlock                            | ✗  | ✔  |
+| PrettyNoEscapesMonoBlock                   | ✗  | ✔  |
+| PrettyCompact                              | ✗  | ✔  |
+| PrettyCompactNoEscapes                     | ✗  | ✔  |
+| PrettyCompactMonoBlock                     | ✗  | ✔  |
+| PrettyCompactNoEscapesMonoBlock            | ✗  | ✔  |
+| PrettySpace                                | ✗  | ✔  |
+| PrettySpaceNoEscapes                       | ✗  | ✔  |
+| PrettySpaceMonoBlock                       | ✗  | ✔  |
+| PrettySpaceNoEscapesMonoBlock              | ✗  | ✔  |
+| Prometheus                                 | ✗  | ✔  |
+| Protobuf                                   | ✔  | ✔  |
+| ProtobufSingle                             | ✔  | ✔  |
+| ProtobufList                               | ✔  | ✔  |
+| Avro                                       | ✔  | ✔  |
+| AvroConfluent                              | ✔  | ✗  |
+| Parquet                                    | ✔  | ✔  |
+| ParquetMetadata                            | ✔  | ✗  |
+| Arrow                                      | ✔  | ✔  |
+| ArrowStream                                | ✔  | ✔  |
+| ORC                                        | ✔  | ✔  |
+| One                                        | ✔  | ✗  |
+| Npy                                        | ✔  | ✔  |
+| RowBinary                                  | ✔  | ✔  |
+| RowBinaryWithNames                         | ✔  | ✔  |
+| RowBinaryWithNamesAndTypes                 | ✔  | ✔  |
+| RowBinaryWithDefaults                      | ✔  | ✗  |
+| Native                                     | ✔  | ✔  |
+| Null                                       | ✗  | ✔  |
+| XML                                        | ✗  | ✔  |
+| CapnProto                                  | ✔  | ✔  |
+| LineAsString                               | ✔  | ✔  |
+| Regexp                                     | ✔  | ✗  |
+| RawBLOB                                    | ✔  | ✔  |
+| MsgPack                                    | ✔  | ✔  |
+| MySQLDump                                  | ✔  | ✗  |
+| DWARF                                      | ✔  | ✗  |
+| Markdown                                   | ✗  | ✔  |
+| Form                                       | ✔  | ✗  |
+
+有关更多信息和示例，请参阅 [ClickHouse 输入和输出数据格式](/zh/reference/formats/index)。

@@ -10,6 +10,29 @@ profiles:
         # Avoid polluting caches
         enable_filesystem_cache_on_write_operations: 0
         write_through_distributed_cache: 0
+        # Override local default limit of 32G
+        max_memory_usage_for_user: 0
+        # Force INSERT in background
+        distributed_foreground_insert: 0
+        # Without the readonly constraints the settings of the query that
+        # triggers the DEFINER = ci_logs_sender views (e.g. 32G for
+        # max_memory_usage_for_user from the CI default profile) override the
+        # profile values and are sent to the ci-logs cluster with the INSERTs.
+        constraints:
+            send_timeout:
+                readonly: true
+            receive_timeout:
+                readonly: true
+            async_insert:
+                readonly: true
+            enable_filesystem_cache_on_write_operations:
+                readonly: true
+            write_through_distributed_cache:
+                readonly: true
+            max_memory_usage_for_user:
+                readonly: true
+            distributed_foreground_insert:
+                readonly: true
 users:
     ci_logs_sender:
         profile: ci_logs_sender

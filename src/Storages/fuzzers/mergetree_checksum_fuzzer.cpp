@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {

@@ -1,0 +1,22 @@
+---
+title: 'Compatibilidad con la propagación de cambios en el esquema'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: 'Página que describe los tipos de cambios de esquema que ClickPipes puede detectar en las tablas de origen'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres puede detectar cambios de esquema en las tablas de origen y, en algunos casos, propagar automáticamente esos cambios a las tablas de destino. A continuación se documenta cómo se gestiona cada operación DDL:
+
+[//]: # "TODO Ampliar esta página con el comportamiento para renombrado, cambios de tipo de datos y truncate, además de orientación sobre cómo manejar cambios de esquema incompatibles."
+
+| Tipo de cambio de esquema                                                                       | Comportamiento                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Añadir una nueva columna (`ALTER TABLE ADD COLUMN ...`)                                         | Se propaga automáticamente una vez que la tabla recibe un insert/update/delete. Las nuevas columnas se rellenarán en todas las filas replicadas después del cambio de esquema                                                                                                            |
+| Añadir una nueva columna con un valor predeterminado (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Se propaga automáticamente una vez que la tabla recibe un insert/update/delete. Las nuevas columnas se rellenarán en todas las filas replicadas después del cambio de esquema, pero las filas existentes no mostrarán el valor predeterminado sin una actualización completa de la tabla |
+| Eliminar una columna existente (`ALTER TABLE DROP COLUMN ...`)                                  | Se detecta, pero **no** se propaga. Las columnas eliminadas se rellenarán con `NULL` en todas las filas replicadas después del cambio de esquema                                                                                                                                         |
+
+Ten en cuenta que la adición de columnas se propagará al final de la sincronización de un batch, lo que puede ocurrir una vez alcanzado el intervalo de sincronización o el tamaño del pull batch. Más información sobre cómo controlar las sincronizaciones [aquí](/es/integrations/clickpipes/postgres/controlling-sync)
