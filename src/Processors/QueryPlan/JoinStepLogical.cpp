@@ -55,6 +55,7 @@
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Interpreters/IKeyValueEntity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageJoin.h>
 
@@ -701,6 +702,13 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
+
+    /// Names of the right stream columns that are keys of the prepared join storage.
+    NameSet prepared_storage_keys;
+
+    /// Whether an equality that is not promoted to a join key can be applied as a filter after
+    /// the join or must become a mixed join expression instead.
+    bool can_keep_predicate_as_filter{};
 };
 
 static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
@@ -778,6 +786,13 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
+            continue;
+
+        /// For prepared join storage keep predicates over non join keys as filters after the join when possible.
+        /// Otherwise the query will be rejeted.
+        if (planning_context.is_storage_join
+            && planning_context.can_keep_predicate_as_filter
+            && !planning_context.prepared_storage_keys.contains(rhs.getColumnName()))
             continue;
 
         predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
@@ -1135,6 +1150,25 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
+
+    planning_context.can_keep_predicate_as_filter = canPushDownFromOn(join_operator);
+
+    if (planning_context.is_storage_join)
+    {
+        Names storage_keys;
+        if (prepared_join_storage.storage_join)
+            storage_keys = prepared_join_storage.storage_join->getKeyNames();
+        else if (prepared_join_storage.storage_key_value)
+            storage_keys = prepared_join_storage.storage_key_value->getPrimaryKey();
+
+        NameSet storage_key_names(storage_keys.begin(), storage_keys.end());
+        for (const auto & [column_identifier, column_name] : prepared_join_storage.column_mapping)
+        {
+            if (storage_key_names.contains(column_name))
+                planning_context.prepared_storage_keys.insert(column_identifier);
+        }
+    }
+
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)

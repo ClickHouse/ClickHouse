@@ -1,10 +1,11 @@
-#include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
+
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>

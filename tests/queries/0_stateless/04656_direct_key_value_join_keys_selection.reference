@@ -1,0 +1,7 @@
+-- the lookup algorithm is kept
+DirectKeyValueJoin
+DirectKeyValueJoin
+-- the non-key equality is still applied
+1	5	1	5
+-- joining on the primary key alone is unaffected
+DirectKeyValueJoin
