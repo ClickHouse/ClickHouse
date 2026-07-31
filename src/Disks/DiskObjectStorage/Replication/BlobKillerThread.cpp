@@ -283,7 +283,7 @@ void BlobKillerThread::run()
     const int64_t dead_queue_estimate = metadata_storage->getDeadBlobsQueueEstimate();
     const auto [round_request_batch, round_blobs_in_task, round_threads_count] = calculateBlobKillerEffectiveParams(
         dead_queue_estimate, metadata_request_batch, max_metadata_request_batch, blobs_in_task, max_blobs_in_task, threads_count, max_threads_count);
-    LOG_TRACE(log, "Dead blobs queue estimate: {}, cleanup round parameters: batch {}, blobs in task {}, threads {}",
+    LOG_TEST(log, "Dead blobs queue estimate: {}, cleanup round parameters: batch {}, blobs in task {}, threads {}",
         dead_queue_estimate, round_request_batch, round_blobs_in_task, round_threads_count);
 
     remove_tasks_pool.setMaxThreads(round_threads_count);

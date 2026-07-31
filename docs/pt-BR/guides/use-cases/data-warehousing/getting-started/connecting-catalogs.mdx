@@ -8,7 +8,7 @@ keywords: ['lago de dados', 'lakehouse', 'catálogo', 'glue', 'unity', 'rest', '
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Na [seção anterior](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly), você consultou formatos de tabela abertos informando diretamente os caminhos de armazenamento. Na prática, a maioria das organizações gerencia os metadados das tabelas por meio de um **catálogo de dados** — um registro central que rastreia os locais das tabelas, esquemas e partições. Quando você conecta o ClickHouse a um catálogo usando o motor de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake), todo o catálogo é exposto como um banco de dados no ClickHouse. Cada tabela no catálogo aparece automaticamente e pode ser consultada com todos os recursos do ClickHouse SQL — sem precisar conhecer os caminhos individuais das tabelas nem gerenciar credenciais para cada tabela.
 
