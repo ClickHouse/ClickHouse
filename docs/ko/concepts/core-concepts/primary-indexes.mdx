@@ -198,9 +198,9 @@ SELECT count() FROM uk.uk_price_paid_simple;
 * `mergeTreeIndex` 테이블 함수를 사용해 **인덱스 내용을 확인**하고, `EXPLAIN` 절을 사용해 인덱스 사용 현황을 모니터링할 수 있습니다.
 
 <div id="where-to-find-more-information">
-  ## 추가 정보를 확인할 수 있는 곳
+  ## 추가 정보
 </div>
 
-ClickHouse에서 희소 프라이머리 인덱스가 어떻게 동작하는지, 기존 데이터베이스 인덱스와 어떤 차이가 있는지, 그리고 이를 효과적으로 활용하기 위한 모범 사례까지 더 자세히 알아보려면 인덱싱 [심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 확인하세요.
+ClickHouse에서 희소 프라이머리 인덱스가 어떻게 작동하는지, 기존 데이터베이스 인덱스와 어떤 차이가 있는지, 그리고 효과적으로 활용하기 위한 모범 사례까지 자세히 알아보려면 인덱싱에 대한 [심층 분석](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 확인하세요.
 
-프라이머리 인덱스 스캔으로 선택된 데이터를 ClickHouse가 높은 쿼리 병렬성으로 처리하는 방식에 관심이 있다면 [여기](/ko/concepts/core-concepts/query-parallelism)의 쿼리 병렬성 가이드를 참조하세요.
+프라이머리 인덱스 스캔으로 선택된 데이터를 ClickHouse가 높은 쿼리 병렬성으로 처리하는 방식에 관심이 있다면 [여기](/ko/concepts/core-concepts/query-parallelism)에서 쿼리 병렬성 가이드를 참조하세요.

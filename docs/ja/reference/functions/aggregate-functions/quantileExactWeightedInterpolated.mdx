@@ -39,12 +39,12 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 
 **引数**
 
-* `expr` — カラム値に対する式。結果の型は数値データ型、Date、または DateTime です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式。結果の型は数値データ型、`Date`、`DateTime`、または `DateTime64` です。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `weight` — 数列の要素の重みを持つカラム。重みは値の出現回数です。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-指定したレベルの分位点。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの分位点。数値引数は `Float64` を返し、`Decimal`、`Date`、`DateTime`、`DateTime64` 型の引数は入力フォーマットを維持します。[`Float64`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 
