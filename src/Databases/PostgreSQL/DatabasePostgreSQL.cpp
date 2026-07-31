@@ -528,9 +528,20 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.context);
 
+        /// An internal metadata replay (server startup / restore, the same distinction
+        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
+        /// startup rebuilds every database from persisted metadata with an ATTACH query and
+        /// `loadMetadata` aborts on the first exception, so a validation added or a server path
+        /// changed after the database was created must not turn its stored definition into a
+        /// server that cannot boot. A user-issued `ATTACH DATABASE` is not a replay and stays
+        /// fail-closed, otherwise it would be a direct bypass of the checks below.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, &postgresql_settings, args.context, /*require_table=*/ false,
+                /*validate_ssl_certificate_paths=*/ !is_internal_metadata_replay);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -574,13 +585,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
         /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay (server startup / restore, the same
-        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
-        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
-        /// enforcing the policy there would turn one database created before the whitelist was
-        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
-        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// Skipped only for an internal metadata replay, so that a database created before the
+        /// whitelist was tightened does not turn into a server that cannot boot.
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)

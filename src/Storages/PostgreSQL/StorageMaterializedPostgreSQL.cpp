@@ -644,7 +644,11 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+        /// The certificate paths are not validated here: the `materialized_postgresql_ssl_*`
+        /// settings are merged in below, and the merged result is validated once, with the
+        /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr, /*table_id=*/ nullptr, /*validate_ssl_certificate_paths=*/ false);
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string

@@ -36,6 +36,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/getInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -52,6 +53,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <base/range.h>
@@ -634,7 +636,7 @@ void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuratio
     validate_path(configuration.ssl_key, "sslkey");
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, bool validate_ssl_certificate_paths)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -688,7 +690,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
     configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
 
-    validateSSLCertificatePaths(configuration, context_);
+    if (validate_ssl_certificate_paths)
+        validateSSLCertificatePaths(configuration, context_);
 
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);
@@ -696,12 +699,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, bool validate_ssl_certificate_paths)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, validate_ssl_certificate_paths);
     }
     else
     {
@@ -765,7 +768,14 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+        /// Skip the certificate-path validation when replaying previously persisted metadata
+        /// (server startup, and DETACH / ATTACH with the short syntax, which re-reads the stored
+        /// definition): a definition that was valid at CREATE time must keep loading even if
+        /// `user_files_path` changed since it was created. A user ATTACH with a full table
+        /// definition is a fresh definition, not a replay, and stays fail-closed. This mirrors
+        /// the `MaterializedPostgreSQL` engine registration below in this repository.
+        const bool validate_ssl_certificate_paths = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, validate_ssl_certificate_paths);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);

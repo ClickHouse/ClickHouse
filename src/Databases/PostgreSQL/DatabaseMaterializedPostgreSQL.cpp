@@ -623,7 +623,11 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
+            /// The certificate paths are not validated here: the `materialized_postgresql_ssl_*`
+            /// settings are merged in below, and the merged result is validated once, with the
+            /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false, /*validate_ssl_certificate_paths=*/ false);
         }
         else
         {
