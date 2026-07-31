@@ -45,7 +45,6 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 
 struct OvercommitRatio;
 struct OvercommitTracker;
-struct MemoryTrackerTestAccess;
 
 namespace DB
 {
@@ -148,7 +147,6 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    friend struct MemoryTrackerTestAccess;
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:

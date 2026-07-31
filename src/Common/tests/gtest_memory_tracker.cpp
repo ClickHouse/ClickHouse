@@ -1,12 +1,19 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <functional>
 #include <future>
+#include <thread>
+#include <tuple>
 #include <vector>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB::ErrorCodes
 {
@@ -18,110 +25,110 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
 }
 
-struct MemoryTrackerTestAccess
-{
-    static AllocationTrace alloc(MemoryTracker & tracker, Int64 size, bool enforce_memory_limit = true)
-    {
-        return tracker.allocImpl(size, enforce_memory_limit);
-    }
-
-    static AllocationTrace free(MemoryTracker & tracker, Int64 size)
-    {
-        return tracker.free(size);
-    }
-
-    static void setMetric(MemoryTracker & tracker, CurrentMetrics::Metric metric)
-    {
-        tracker.setMetric(metric);
-    }
-
-    static void setProfilerLimit(MemoryTracker & tracker, Int64 value)
-    {
-        tracker.profiler_limit.store(value, std::memory_order_relaxed);
-    }
-
-    static void setFaultProbability(MemoryTracker & tracker, double value)
-    {
-        /// The public `setFaultProbability` caps the probability at 0.5, but the tests
-        /// need a deterministic fault, so write the raw value directly.
-        tracker.fault_probability.store(value, std::memory_order_relaxed);
-    }
-
-    static Int64 getProfilerLimit(const MemoryTracker & tracker)
-    {
-        return tracker.profiler_limit.load(std::memory_order_relaxed);
-    }
-
-    static Int64 rollback(MemoryTracker & tracker, Int64 size)
-    {
-        return tracker.rollbackAllocation(size);
-    }
-};
-
 namespace
 {
 
+/// The tests drive allocations only through the public `CurrentMemoryTracker` interface
+/// (no friend access to `MemoryTracker` internals), so that this file also compiles
+/// against sources without the fix and reproduces the accounting leak at runtime there.
+/// This is what the "Bugfix validation (unit tests)" CI job requires of a regression test.
+///
+/// The hierarchy is rooted at `total_memory_tracker`: in debug and sanitizer builds
+/// `setParent` requires every tracker chain to terminate there. The throwing ancestor in
+/// the tests is the user-level tracker, which rejects the allocation before recursing to
+/// the total tracker, so the total tracker is never charged by a failing allocation.
+///
+/// Library code running in the attached thread (`ThreadStatus` bookkeeping, exception
+/// construction) also charges the trackers with a few KB of incidental allocations, so
+/// the tests allocate tens of megabytes and compare with a 1 MiB tolerance instead of
+/// asserting exact equality.
+constexpr Int64 MB = 1024 * 1024;
+constexpr Int64 TOLERANCE = MB;
+constexpr Int64 LIMIT = 50 * MB;
+constexpr Int64 OVER_LIMIT = 60 * MB;
+
 struct MemoryTrackerHierarchy
 {
-    MemoryTracker global{nullptr, VariableContext::Global, false};
-    MemoryTracker user{&global, VariableContext::User, false};
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
     MemoryTracker process{&user, VariableContext::Process, false};
-    MemoryTracker thread{&process, VariableContext::Thread, false};
 };
+
+void expectNear(Int64 value, Int64 expected)
+{
+    EXPECT_LE(std::abs(value - expected), TOLERANCE);
+}
 
 void expectUsage(const MemoryTrackerHierarchy & hierarchy, Int64 expected)
 {
-    EXPECT_EQ(hierarchy.thread.get(), expected);
-    EXPECT_EQ(hierarchy.process.get(), expected);
-    EXPECT_EQ(hierarchy.user.get(), expected);
-    EXPECT_EQ(hierarchy.global.get(), expected);
+    expectNear(hierarchy.process.get(), expected);
+    expectNear(hierarchy.user.get(), expected);
 }
 
 void expectPeaks(const MemoryTrackerHierarchy & hierarchy, Int64 expected)
 {
-    EXPECT_EQ(hierarchy.thread.getPeak(), expected);
-    EXPECT_EQ(hierarchy.process.getPeak(), expected);
-    EXPECT_EQ(hierarchy.user.getPeak(), expected);
-    EXPECT_EQ(hierarchy.global.getPeak(), expected);
+    expectNear(hierarchy.process.getPeak(), expected);
+    expectNear(hierarchy.user.getPeak(), expected);
 }
 
-TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
+/// Run `body` in a fresh thread whose thread-level memory tracker is attached to the
+/// custom hierarchy, with untracked-memory batching disabled so that every
+/// `CurrentMemoryTracker` call reaches the trackers immediately.
+void runInThread(MemoryTrackerHierarchy & hierarchy, const std::function<void(MemoryTracker &)> & body)
 {
-    MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&hierarchy.process);
+        thread_status.untracked_memory_limit = 0;
 
+        body(thread_status.memory_tracker);
+
+        /// Detach from the test hierarchy before `ThreadStatus` is destroyed, so that
+        /// destruction-time bookkeeping cannot touch trackers that die with the test.
+        thread_status.memory_tracker.setParent(&total_memory_tracker);
+    }).join();
+}
+
+void expectMemoryLimitExceeded(Int64 size)
+{
     try
     {
-        std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101);
-        FAIL() << "Expected the global memory limit to reject the allocation";
+        std::ignore = CurrentMemoryTracker::alloc(size);
+        FAIL() << "Expected the memory tracker to reject the allocation of " << size;
     }
     catch (const DB::Exception & exception)
     {
         EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
+}
+
+TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.user.setHardLimit(LIMIT);
+
+    runInThread(hierarchy, [&](MemoryTracker & thread_tracker)
+    {
+        const Int64 thread_before = thread_tracker.get();
+        expectMemoryLimitExceeded(OVER_LIMIT);
+        expectNear(thread_tracker.get(), thread_before);
+    });
 
     expectUsage(hierarchy, 0);
-    EXPECT_EQ(hierarchy.global.getRSS(), 0);
 }
 
 TEST(MemoryTracker, ParentLimitFailureDoesNotUpdatePeaks)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    hierarchy.user.setHardLimit(LIMIT);
 
-    EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        expectMemoryLimitExceeded(OVER_LIMIT);
+    });
+
     expectUsage(hierarchy, 0);
     expectPeaks(hierarchy, 0);
-}
-
-TEST(MemoryTracker, ParentLimitFailureDoesNotAdvanceProfilerLimit)
-{
-    MemoryTrackerHierarchy hierarchy;
-    MemoryTrackerTestAccess::setProfilerLimit(hierarchy.user, 50);
-    hierarchy.global.setHardLimit(100);
-
-    EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
-    EXPECT_EQ(MemoryTrackerTestAccess::getProfilerLimit(hierarchy.user), 50);
 }
 
 TEST(MemoryTracker, ParentLimitFailureDoesNotUpdateMetrics)
@@ -129,43 +136,52 @@ TEST(MemoryTracker, ParentLimitFailureDoesNotUpdateMetrics)
     MemoryTrackerHierarchy hierarchy;
     const auto metric = CurrentMetrics::MergesMutationsMemoryTracking;
     const auto metric_before = CurrentMetrics::get(metric);
-    MemoryTrackerTestAccess::setMetric(hierarchy.user, metric);
-    hierarchy.global.setHardLimit(100);
+    hierarchy.process.setMetric(metric);
+    hierarchy.user.setHardLimit(LIMIT);
 
-    EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
-    EXPECT_EQ(CurrentMetrics::get(metric), metric_before);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        expectMemoryLimitExceeded(OVER_LIMIT);
+        expectNear(CurrentMetrics::get(metric), metric_before);
 
-    /// Prove the metric is actually wired up: a successful allocation must move it.
-    std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 32);
-    EXPECT_EQ(CurrentMetrics::get(metric), metric_before + 32);
+        /// Prove the metric is actually wired up: a successful allocation must move it.
+        std::ignore = CurrentMemoryTracker::alloc(32 * MB);
+        expectNear(CurrentMetrics::get(metric), metric_before + 32 * MB);
 
-    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 32);
-    EXPECT_EQ(CurrentMetrics::get(metric), metric_before);
+        std::ignore = CurrentMemoryTracker::free(32 * MB);
+        expectNear(CurrentMetrics::get(metric), metric_before);
+    });
 }
 
 TEST(MemoryTracker, RepeatedParentLimitFailuresDoNotAccumulate)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    hierarchy.user.setHardLimit(LIMIT);
 
-    for (size_t attempt = 0; attempt < 100; ++attempt)
+    runInThread(hierarchy, [&](MemoryTracker &)
     {
-        EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
-        expectUsage(hierarchy, 0);
-    }
+        for (size_t attempt = 0; attempt < 100; ++attempt)
+        {
+            expectMemoryLimitExceeded(OVER_LIMIT);
+            expectUsage(hierarchy, 0);
+        }
+    });
 }
 
 TEST(MemoryTracker, ConcurrentParentLimitFailuresDoNotAccumulate)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    hierarchy.user.setHardLimit(LIMIT);
 
     std::vector<std::future<void>> attempts;
     for (size_t attempt = 0; attempt < 16; ++attempt)
     {
         attempts.emplace_back(std::async(std::launch::async, [&hierarchy]
         {
-            EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
+            runInThread(hierarchy, [&](MemoryTracker &)
+            {
+                expectMemoryLimitExceeded(OVER_LIMIT);
+            });
         }));
     }
 
@@ -179,26 +195,32 @@ TEST(MemoryTracker, ParentLimitFailurePreservesExistingUsage)
 {
     MemoryTrackerHierarchy hierarchy;
 
-    std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 40);
-    expectUsage(hierarchy, 40);
-    EXPECT_EQ(hierarchy.global.getRSS(), 40);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(40 * MB);
+        expectUsage(hierarchy, 40 * MB);
 
-    hierarchy.global.setHardLimit(100);
-    EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 61), DB::Exception);
-    expectUsage(hierarchy, 40);
-    EXPECT_EQ(hierarchy.global.getRSS(), 40);
+        hierarchy.user.setHardLimit(LIMIT);
+        expectMemoryLimitExceeded(OVER_LIMIT);
+        expectUsage(hierarchy, 40 * MB);
 
-    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 40);
-    expectUsage(hierarchy, 0);
-    EXPECT_EQ(hierarchy.global.getRSS(), 0);
+        std::ignore = CurrentMemoryTracker::free(40 * MB);
+        expectUsage(hierarchy, 0);
+    });
 }
 
-TEST(MemoryTracker, UserLimitFailureRollsBackDescendants)
+TEST(MemoryTracker, ProcessLimitFailureRollsBackDescendants)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.user.setHardLimit(100);
+    hierarchy.process.setHardLimit(LIMIT);
 
-    EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
+    runInThread(hierarchy, [&](MemoryTracker & thread_tracker)
+    {
+        const Int64 thread_before = thread_tracker.get();
+        expectMemoryLimitExceeded(OVER_LIMIT);
+        expectNear(thread_tracker.get(), thread_before);
+    });
+
     expectUsage(hierarchy, 0);
 }
 
@@ -206,75 +228,79 @@ TEST(MemoryTracker, SuccessfulAllocationChargesAndFreesHierarchy)
 {
     MemoryTrackerHierarchy hierarchy;
 
-    std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 64);
-    expectUsage(hierarchy, 64);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(64 * MB);
+        expectUsage(hierarchy, 64 * MB);
 
-    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 64);
-    expectUsage(hierarchy, 0);
+        std::ignore = CurrentMemoryTracker::free(64 * MB);
+        expectUsage(hierarchy, 0);
+    });
 }
 
 TEST(MemoryTracker, FaultInjectionFailureRollsBackHierarchy)
 {
     MemoryTrackerHierarchy hierarchy;
-    MemoryTrackerTestAccess::setFaultProbability(hierarchy.user, 1.0);
+    /// The public setter caps the probability at 0.5, so the fault is not guaranteed on
+    /// the first attempt; the chance that 64 attempts all miss is 2^-64.
+    hierarchy.user.setFaultProbability(1.0);
 
-    try
+    runInThread(hierarchy, [&](MemoryTracker &)
     {
-        std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 64);
-        FAIL() << "Expected the injected fault to reject the allocation";
-    }
-    catch (const DB::Exception & exception)
-    {
-        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-    }
+        bool fault_triggered = false;
+        for (size_t attempt = 0; attempt < 64 && !fault_triggered; ++attempt)
+        {
+            try
+            {
+                std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT);
+                std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+            }
+            catch (const DB::Exception & exception)
+            {
+                EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+                fault_triggered = true;
+            }
+        }
+        EXPECT_TRUE(fault_triggered);
+    });
 
     expectUsage(hierarchy, 0);
-    EXPECT_EQ(hierarchy.global.getRSS(), 0);
 }
 
 TEST(MemoryTracker, IgnoredLimitFailureKeepsAllocation)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    hierarchy.user.setHardLimit(LIMIT);
 
+    runInThread(hierarchy, [&](MemoryTracker &)
     {
-        /// In no-throw scopes (e.g. destructors) the limit must be ignored and the
-        /// allocation must be accounted, not rolled back.
-        LockMemoryExceptionInThread lock(VariableContext::Global);
-        EXPECT_NO_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101));
-    }
+        {
+            /// In no-throw scopes (e.g. destructors) the limit must be ignored and the
+            /// allocation must be accounted, not rolled back.
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            EXPECT_NO_THROW(std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT));
+        }
 
-    expectUsage(hierarchy, 101);
+        expectUsage(hierarchy, OVER_LIMIT);
 
-    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 101);
-    expectUsage(hierarchy, 0);
-}
-
-TEST(MemoryTracker, RollbackSaturatesAtZero)
-{
-    MemoryTracker global{nullptr, VariableContext::Global, false};
-    MemoryTracker user{&global, VariableContext::User, false};
-
-    std::ignore = MemoryTrackerTestAccess::alloc(user, 40);
-    EXPECT_EQ(user.get(), 40);
-
-    EXPECT_EQ(MemoryTrackerTestAccess::rollback(user, 100), 40);
-    EXPECT_EQ(user.get(), 0);
-
-    EXPECT_EQ(MemoryTrackerTestAccess::rollback(global, 40), 40);
-    EXPECT_EQ(global.get(), 0);
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+        expectUsage(hierarchy, 0);
+    });
 }
 
 TEST(MemoryTracker, LimitEnforcementCanBeDisabled)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.global.setHardLimit(100);
+    hierarchy.user.setHardLimit(LIMIT);
 
-    EXPECT_NO_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101, false));
-    expectUsage(hierarchy, 101);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        EXPECT_NO_THROW(std::ignore = CurrentMemoryTracker::allocNoThrow(OVER_LIMIT));
+        expectUsage(hierarchy, OVER_LIMIT);
 
-    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 101);
-    expectUsage(hierarchy, 0);
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+        expectUsage(hierarchy, 0);
+    });
 }
 
 }
