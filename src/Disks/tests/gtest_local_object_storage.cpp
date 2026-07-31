@@ -790,6 +790,50 @@ TEST(LocalObjectStorage, EtagFromGetObjectMetadataSatisfiesIfMatch)
     EXPECT_EQ(readObject(storage, path).data, "second");
 }
 
+/// A key of this storage is either absolute inside `key_prefix` or relative to it, and
+/// every method has to resolve it the same way - otherwise a relative key names a
+/// different file depending on which method received it, and a write can land outside
+/// the configured root, next to the server's working directory. The conditional-write
+/// path, `tryGetObjectMetadata` and `readSmallObjectAndGetObjectMetadata` used to take
+/// the key verbatim, so this test drives all of them through a relative key.
+TEST(LocalObjectStorage, KeysAreResolvedRelativelyToKeyPrefixOnEveryPath)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_relative_key");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const fs::path key = "metadata/version-hint.text";
+
+    writeObject(storage, key, "1", ifNoneMatchAll());
+
+    ASSERT_TRUE(fs::exists(root / key)) << "a relative key must be published under the key prefix";
+    EXPECT_EQ(listDirectory(root / "metadata"), std::vector<std::string>{"version-hint.text"})
+        << "the staging file must be created next to the target, inside the key prefix";
+
+    /// Every metadata producer must report the same file and the same etag for the
+    /// relative key and for its absolute form.
+    const auto absolute_etag = storage->getObjectMetadata((root / key).string(), /*with_tags=*/ false).etag;
+    ASSERT_FALSE(absolute_etag.empty());
+
+    const auto small_read = readObject(storage, key);
+    EXPECT_EQ(small_read.data, "1");
+    EXPECT_EQ(small_read.metadata.etag, absolute_etag);
+
+    auto relative_metadata = storage->tryGetObjectMetadata(key.string(), /*with_tags=*/ false);
+    ASSERT_TRUE(relative_metadata.has_value());
+    EXPECT_EQ(relative_metadata->etag, absolute_etag);
+
+    /// And the etag read through the relative key satisfies `If-Match` on it.
+    writeObject(storage, key, "2", ifMatch(absolute_etag));
+    EXPECT_EQ(readObject(storage, key).data, "2");
+    EXPECT_EQ(listDirectory(root / "metadata"), std::vector<std::string>{"version-hint.text"});
+
+    /// A key that resolves outside the prefix stays rejected on the conditional path.
+    EXPECT_THROW(writeObject(storage, "../escape.text", "x", ifNoneMatchAll()), DB::Exception);
+    EXPECT_THROW(writeObject(storage, "../escape.text", "x", ifMatch(absolute_etag)), DB::Exception);
+    EXPECT_FALSE(fs::exists(root.parent_path() / "escape.text"));
+}
+
 TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
 {
     ScopedTempDir tmp("ch_gtest_local_object_storage_cas");

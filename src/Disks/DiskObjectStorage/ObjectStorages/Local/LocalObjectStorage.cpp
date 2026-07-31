@@ -602,11 +602,16 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         if (!if_match.empty())
             if_match_etag = if_match;
 
-        auto target_path = fs::path(object.remote_path);
+        /// Both filenames have to come out of `resolved_path`, exactly like the
+        /// unconditional write below: a key relative to `settings.key_prefix` would
+        /// otherwise be staged and published under the server's working directory,
+        /// giving conditional writes a different notion of a key than every other
+        /// method of this storage.
+        auto target_path = fs::path(resolved_path);
         auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8));
 
         return std::make_unique<WriteBufferToConditionallyPublishedFile>(
-            object.remote_path,
+            resolved_path,
             temp_path,
             buf_size,
             std::move(if_match_etag),
@@ -713,35 +718,55 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
-    LOG_TEST(log, "Getting metadata for path: {}", path);
+    /// The same path resolution and the same metadata builder as `getObjectMetadata`:
+    /// this method only differs from it in tolerating an object that does not exist,
+    /// so a caller must not be able to observe a different file or a differently
+    /// shaped etag depending on which of the two it called.
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
-    struct stat file_stat{};
-    if (0 != ::stat(path.c_str(), &file_stat))
-    {
-        std::error_code error(errno, std::generic_category());
-        if (isVanishedEntryError(error))
-            return {};
-        throw fs::filesystem_error("Got unexpected error while getting file metadata", path, error);
-    }
-
-    return makeObjectMetadata(file_stat);
+    return tryStatResolvedPath(resolved_path);
 }
 
 SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
     const StoredObject & object,
-    const ReadSettings &,
+    const ReadSettings & read_settings,
     size_t max_size_bytes,
     std::optional<size_t>) const
 {
-    ReadBufferFromFile in(object.remote_path, std::clamp<size_t>(max_size_bytes, 1, DBMS_DEFAULT_BUFFER_SIZE));
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    LOG_TEST(log, "Read small object: {}", resolved_path);
+
+    /// Opening the file here instead of delegating to `readObject`: the etag must come
+    /// from an `fstat` of the very descriptor the data is read from, so that the data
+    /// and the etag returned together describe one and the same version of the object.
+    /// A separate `stat` could observe a newer version and hand the caller the etag of
+    /// a version whose content it never saw, which would let the following `If-Match`
+    /// write pass its check and lose that version - the very update the compare-and-swap
+    /// exists to protect. The read-side wrappers `readObject` attaches are applied below.
+    auto patched_settings = patchSettings(read_settings);
+    auto file_in = std::make_unique<ReadBufferFromFile>(resolved_path, std::clamp<size_t>(max_size_bytes, 1, DBMS_DEFAULT_BUFFER_SIZE));
 
     struct stat file_stat{};
-    if (0 != ::fstat(in.getFD(), &file_stat))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, object.remote_path, "Cannot stat file {}", object.remote_path);
+    if (0 != ::fstat(file_in->getFD(), &file_stat))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, resolved_path, "Cannot stat file {}", resolved_path);
+
+    std::unique_ptr<ReadBufferFromFileBase> in = std::move(file_in);
+
+    if (patched_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
+        if (blob_storage_log)
+        {
+            blob_storage_log->local_path = object.local_path;
+            in = std::make_unique<ReadBufferFromFileWithLogging>(
+                std::move(in), resolved_path, settings.key_prefix, std::move(blob_storage_log));
+        }
+    }
 
     SmallObjectDataWithMetadata result;
     WriteBufferFromString out(result.data);
-    copyDataMaxBytes(in, out, max_size_bytes);
+    copyDataMaxBytes(*in, out, max_size_bytes);
     out.finalize();
 
     result.metadata = makeObjectMetadata(file_stat);
