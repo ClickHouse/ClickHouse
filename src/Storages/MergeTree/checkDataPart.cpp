@@ -551,12 +551,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
-                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+                    "Got retriable error {} checking data part {}, will rethrow", data_part->name, getCurrentExceptionMessage(false));
 
-                /// We were unable to check data part because of some temporary exception
-                /// like Memory limit exceeded. If part is actually broken we will retry check
-                /// with the next read attempt of this data part.
-                return IMergeTreeDataPart::Checksums{};
+                /// We were unable to check the data part because of a transient error (e.g. a memory
+                /// limit, or a retryable Azure 403/timeout). Rethrow it so the caller retries later
+                /// instead of treating the part as verified; a real broken part surfaces on retry.
+                throw;
             }
             throw;
         }
@@ -584,12 +584,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             LOG_DEBUG(
                 getLogger("checkDataPart"),
-                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+                "Got retriable error {} checking data part {}, will rethrow", data_part->name, getCurrentExceptionMessage(false));
 
-            /// We were unable to check data part because of some temporary exception
-            /// like Memory limit exceeded. If part is actually broken we will retry check
-            /// with the next read attempt of this data part.
-            return {};
+            /// We were unable to check the data part because of a transient error (e.g. a memory
+            /// limit, or a retryable Azure 403/timeout). Rethrow it so the caller retries later
+            /// instead of treating the part as verified; a real broken part surfaces on retry.
+            throw;
         }
         return drop_cache_and_check();
     }
