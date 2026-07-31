@@ -64,7 +64,7 @@ namespace HistogramMetrics
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
 }
 
 namespace DB
@@ -231,7 +231,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
         const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
-        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorDeliveredBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -242,7 +242,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
                 "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
                 " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
-                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorDeliveredBytes."
                 " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
                 " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
         }

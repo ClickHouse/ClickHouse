@@ -259,10 +259,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     /// queries the front first, so reverse it.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
-        if (it->cache)
-            cache_chain.push_back(std::make_shared<DiskCacheProvider>(
-                it->cache, it->cache_settings, query_id, settings.local_throttler,
-                it->custom_cache_key, it->custom_origin));
+        chassert(it->cache);
+        cache_chain.push_back(std::make_shared<DiskCacheProvider>(
+            it->cache, it->cache_settings, query_id, settings.local_throttler,
+            it->custom_cache_key, it->custom_origin));
     }
 
     auto executor = std::make_unique<ReaderExecutor>(

@@ -99,7 +99,7 @@ private:
         {
             SourceRequests,         /// chunks opened and read from the source
             BytesFromSource,        /// physical bytes read from the source
-            RequestedBytes,         /// useful bytes delivered to the caller (KPI denominator)
+            DeliveredBytes,         /// useful bytes delivered to the caller (KPI denominator)
             IncompleteConnections,
             CacheGetRequests,
             CachePopulateRequests,

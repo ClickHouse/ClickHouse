@@ -13,7 +13,7 @@ namespace ProfileEvents
 {
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorIncompleteConnections;
@@ -76,8 +76,8 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
             break;
-        case RequestedBytes:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, value);
+        case DeliveredBytes:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorDeliveredBytes, value);
             break;
         case IncompleteConnections:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, value);
@@ -159,7 +159,7 @@ ReaderExecutor::~ReaderExecutor()
     LOG_DEBUG(log,
         "Destroyed: file={} src_reqs={} from_source={} requested={} work_us={}",
         log_file_path, stats.get(Stats::SourceRequests), stats.get(Stats::BytesFromSource),
-        stats.get(Stats::RequestedBytes), stats.get(Stats::WorkMicroseconds));
+        stats.get(Stats::DeliveredBytes), stats.get(Stats::WorkMicroseconds));
 }
 
 size_t ReaderExecutor::LongConnection::readInto(char * dst, size_t want)
@@ -301,9 +301,9 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     };
     auto from_long_conn = [&](char * dst, size_t n)
     {
-        const size_t g = long_conn->readInto(dst, n);
-        stats.add(Stats::LongConnectionBytes, g);
-        return g;
+        const size_t read_bytes = long_conn->readInto(dst, n);
+        stats.add(Stats::LongConnectionBytes, read_bytes);
+        return read_bytes;
     };
 
     if (long_conn && long_conn->servesObject(object.remote_path)
@@ -353,14 +353,15 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
 {
     ChainedBuffers chain;
     size_t file_pos = file_offset;
-    for (const auto & pr : offset_map.map(ByteRange{file_offset, want}))
+    for (const auto & object_range : offset_map.map(ByteRange{file_offset, want}))
     {
-        ChainedBuffers piece = readObjectSlice(pr.object, pr.object_offset, pr.size, file_pos);
+        ChainedBuffers piece = readObjectSlice(
+            object_range.object, object_range.object_offset, object_range.size, file_pos);
         const size_t got = piece.empty() ? 0 : piece.range().size;
         chain.append(std::move(piece));
         file_pos += got;
         /// A short read leaves a hole; stop and let the caller advance and re-call.
-        if (got < pr.size)
+        if (got < object_range.size)
             break;
     }
     return chain;
@@ -626,10 +627,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
                 position, totalSize(), getFileName());
         return {};
     }
-    stats.add(Stats::RequestedBytes, got);
+    stats.add(Stats::DeliveredBytes, got);
 
-    /// The one raw physical->logical rebase (`shift` takes a signed delta, not a coordinate).
-    chain.shift(-static_cast<ssize_t>(data_start_offset));
     chain = decryptWindow(std::move(chain));
     position += got;
     return chain;
@@ -639,6 +638,10 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
 {
     if (!needsDecryption() || cipher.empty())
         return std::move(cipher);
+
+    /// Rebase physical->logical: source reads span the `data_start_offset` encryption header,
+    /// the plaintext the caller and decryptor see starts at 0.
+    cipher.shift(-static_cast<ssize_t>(data_start_offset));
 
     /// Nodes may alias shared cache buffers, so decrypt into fresh copies, not through them.
     StatTimer decrypt_timer(stats, Stats::DecryptMicroseconds);
