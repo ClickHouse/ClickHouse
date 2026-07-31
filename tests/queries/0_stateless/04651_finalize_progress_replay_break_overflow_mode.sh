@@ -20,6 +20,12 @@
 # window deterministic: the remote servers send their data blocks, then sleep before
 # the trailing `Progress`, so the crossing of `max_rows_to_read` on the initiator can
 # only be observed by the finalize-time replay.
+#
+# This test guards the end-to-end behavior (no failure, no hang, no lost statistics).
+# The stop contract itself - the replay cancelling the processor when `onProgress`
+# returns false - is asserted directly by the unit test
+# `src/Processors/tests/gtest_finalize_progress_replay_break_overflow_mode.cpp`,
+# whose outcome depends on the `cancel` call in `PipelineExecutor::finalizeExecution`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
