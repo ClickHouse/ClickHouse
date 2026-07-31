@@ -35,7 +35,8 @@ NativeWriter::NativeWriter(
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
-    size_t initial_size_of_file_)
+    size_t initial_size_of_file_,
+    std::optional<bool> string_with_size_stream_)
     : ostr(ostr_)
     , client_revision(client_revision_)
     , header(header_)
@@ -43,6 +44,7 @@ NativeWriter::NativeWriter(
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
     , format_settings(std::move(format_settings_))
+    , string_with_size_stream(string_with_size_stream_)
 {
     if (index)
     {
@@ -97,17 +99,11 @@ void NativeWriter::flush()
 }
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(
-    UInt64 client_revision, const ColumnWithTypeAndName & column, const std::optional<FormatSettings> & format_settings)
+    UInt64 client_revision, const ColumnWithTypeAndName & column, bool with_string_size_stream)
 {
-    /// The size-stream String layout is enabled either by a high enough protocol revision (the
-    /// native TCP protocol) or by an explicit format setting. The setting only applies to the
-    /// version-0 Native/Buffers *format* path, never to the negotiated protocol wire (otherwise a
-    /// server whose profile has the setting on would corrupt the stream for an older peer). It is
-    /// orthogonal to the framing that the revision gates below and needs no per-column wire marker.
-    const bool with_string_size_stream
-        = client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
-        || (client_revision == 0 && format_settings && format_settings->native.write_string_with_size_stream);
-
+    /// `with_string_size_stream` is decided by the caller: the native protocol derives it from the
+    /// negotiated revision, the Native/Buffers format from its own setting. It is orthogonal to the
+    /// framing that the revision gates below and needs no per-column wire marker.
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
         ColumnPtr result_column = column.column;
@@ -222,7 +218,9 @@ size_t NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         {
             SerializationInfoPtr info;
-            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column, format_settings);
+            const bool with_string_size_stream
+                = string_with_size_stream.value_or(client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column, with_string_size_stream);
             if (info)
             {
                 writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);

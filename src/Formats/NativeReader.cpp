@@ -36,8 +36,9 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
+NativeReader::NativeReader(
+    ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_, std::optional<bool> string_with_size_stream_)
+    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), string_with_size_stream(string_with_size_stream_)
 {
 }
 
@@ -46,11 +47,13 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    std::optional<bool> string_with_size_stream_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
+    , string_with_size_stream(string_with_size_stream_)
     , block_missing_values(block_missing_values_)
 {
 }
@@ -208,14 +211,11 @@ Block NativeReader::read()
         SerializationPtr serialization;
         ColumnPtr read_column;
 
-        /// The size-stream String layout is enabled either by a high enough protocol revision (the
-        /// native TCP protocol) or by an explicit format setting. The setting only applies to the
-        /// version-0 Native/Buffers *format* path, never to the negotiated protocol wire (otherwise a
-        /// server whose profile has the setting on would misparse blocks from an older peer). It is
-        /// orthogonal to the framing gated by the revision and needs no per-column wire marker.
+        /// The size-stream String layout is decided by the caller: the native protocol derives it from
+        /// the negotiated revision, the Native/Buffers format from its own setting. It is orthogonal to
+        /// the framing gated by the revision and needs no per-column wire marker.
         const bool with_string_size_stream
-            = server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
-            || (server_revision == 0 && format_settings && format_settings->native.read_string_with_size_stream);
+            = string_with_size_stream.value_or(server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
 
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {

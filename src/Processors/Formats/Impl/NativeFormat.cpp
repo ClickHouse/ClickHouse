@@ -22,7 +22,8 @@ public:
               *header_,
               0,
               settings_,
-              settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr))
+              settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr,
+              settings_.native.read_string_with_size_stream))
         , header(header_)
         , block_missing_values(header->columns())
         , settings(settings_)
@@ -56,7 +57,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr, settings.native.read_string_with_size_stream);
         IInputFormat::setReadBuffer(in_);
     }
 
@@ -77,7 +78,9 @@ class NativeOutputFormat final : public IOutputFormat
 public:
     NativeOutputFormat(WriteBuffer & buf, SharedHeader header, const FormatSettings & settings, UInt64 client_protocol_version = 0)
         : IOutputFormat(header, buf)
-        , writer(buf, client_protocol_version, header, settings)
+        /// The format's String size-stream layout follows its own setting, not client_protocol_version
+        /// (which still controls framing), so FORMAT Native matches FORMAT Buffers.
+        , writer(buf, client_protocol_version, header, settings, false, nullptr, 0, settings.native.write_string_with_size_stream)
     {
     }
 
@@ -105,7 +108,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        auto reader = NativeReader(in, 0, settings);
+        auto reader = NativeReader(in, 0, settings, settings.native.read_string_with_size_stream);
         auto block = reader.read();
         return block.getNamesAndTypesList();
     }
