@@ -72,18 +72,23 @@ mkdir -p "$TEST_DIR_ABS/preast/root/a" "$TEST_DIR_ABS/preast/root/b/sub"
 printf "row1\n" > "$TEST_DIR_ABS/preast/root/b/sub/file.txt"
 ln -s .. "$TEST_DIR_ABS/preast/root/a/back"
 
-# Finite glob with adjacent asterisks: `adj/root/file.txt`, `adj/root/a/back -> ..`.
-# Pattern `adj/root/a**/back/*.txt` has NO recursive `**` path segment: `a**` is a
-# finite component (it matches the literal directory `a` here, since `*` and `*`
-# both expand to empty). The cycle guard must NOT activate for this expansion,
-# otherwise the walk through `a/back` resolves canonical to the seeded `adj/root`
-# and the legitimate match through `back/file.txt` is silently dropped. A naive
-# substring `find("**") != npos` over the expanded pattern would falsely classify
-# this as recursive; the correct detector mirrors the per-segment recursion test
-# in `listFilesWithRegexpMatchingImpl` (a path component must equal exactly `**`).
-mkdir -p "$TEST_DIR_ABS/adj/root/a"
+# Finite glob with adjacent asterisks: `adj/root/file.txt` reachable through two
+# directories, `adj/root/a1/back -> ..` and `adj/root/a2/back -> ..`. Pattern
+# `adj/root/a**/back/*.txt` has NO recursive `**` path segment: `a**` is a finite
+# component (it matches `a1` and `a2` here, since one `*` can expand to empty). The
+# cycle guard must NOT activate for this expansion, otherwise the walk through the first
+# `back` seeds `adj/root` and the second match is silently dropped. A naive substring
+# `find("**") != npos` over the expanded pattern would falsely classify this as
+# recursive; the correct detector mirrors the per-segment recursion test in
+# `listFilesWithRegexpMatchingImpl` (a path component must equal exactly `**`).
+# TWO such directories are what makes the assertion observable: one file reached under
+# two names must be reported twice, as it is without this change, so the expected answer
+# distinguishes the finite scoping from both substring detection and unconditional
+# canonical deduplication, which would each report one.
+mkdir -p "$TEST_DIR_ABS/adj/root/a1" "$TEST_DIR_ABS/adj/root/a2"
 printf "row1\n" > "$TEST_DIR_ABS/adj/root/file.txt"
-ln -s .. "$TEST_DIR_ABS/adj/root/a/back"
+ln -s .. "$TEST_DIR_ABS/adj/root/a1/back"
+ln -s .. "$TEST_DIR_ABS/adj/root/a2/back"
 
 # Bounded finite tail after the last `**`: `overprune/root/deep/mid/back -> ../..`
 # (canonical == `overprune/root`), real file `overprune/root/f.txt`. Pattern
@@ -268,6 +273,7 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/preast/root
 # `a**` as recursive, activate the guard, and drop the match.
 echo "finite-glob-with-adjacent-asterisks"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT splitByChar('/', _path)[-3] AS via FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String') ORDER BY via"
 
 # Bounded finite tail after the last `**`: must return 1. The `**` matches `deep`, then
 # the bounded suffix `mid/*/*.txt` reaches `f.txt` via the `back -> ../..` symlink. No

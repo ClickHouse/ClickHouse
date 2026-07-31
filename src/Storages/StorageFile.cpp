@@ -179,7 +179,8 @@ void listFilesWithRegexpMatchingImpl(
     bool recursive,
     size_t depth,
     std::unordered_set<std::string> & visited_frames,
-    bool deduplicate_by_canonical_path)
+    bool deduplicate_by_canonical_path,
+    bool & collapsed_a_match)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -224,6 +225,13 @@ void listFilesWithRegexpMatchingImpl(
         {
             total_bytes_to_read += bytes;
             result.push_back(path);
+        }
+        else
+        {
+            /// Two matching paths named one file. The caller has to know, because the
+            /// number of returned paths then no longer says how many paths the pattern
+            /// selected, and the read-only guard on writes reads that number.
+            collapsed_a_match = true;
         }
     };
 
@@ -345,7 +353,7 @@ void listFilesWithRegexpMatchingImpl(
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
                                         total_bytes_to_read, result, matched_paths, false, depth + 1,
-                                        visited_frames, deduplicate_by_canonical_path);
+                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -406,19 +414,20 @@ void listFilesWithRegexpMatchingImpl(
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
                                                 total_bytes_to_read, result, matched_paths, recursive, depth + 1, visited_frames,
-                                                deduplicate_by_canonical_path);
+                                                deduplicate_by_canonical_path, collapsed_a_match);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, matched_paths, false, depth + 1, visited_frames,
-                                                deduplicate_by_canonical_path);
+                                                deduplicate_by_canonical_path, collapsed_a_match);
         }
     }
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
-    size_t & total_bytes_to_read)
+    size_t & total_bytes_to_read,
+    bool & collapsed_a_match)
 {
     std::vector<std::string> result;
 
@@ -441,14 +450,17 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
         std::unordered_set<std::string> visited_frames;
 
-        /// Only a `**` expansion can name one file through more than one path, because only it
-        /// can walk into a directory that a symlink aliases. Everywhere else the lexical key must
-        /// stay: a plain `*` legitimately matches a symlink and its target as two separate
-        /// entries, and collapsing them would drop a `_file` value that a user asked for.
+        /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
+        /// can re-enter one directory under many aliases and would otherwise report a file once
+        /// per alias. A finite glob can also reach one file through two symlinked directories
+        /// (`root/a*/back/*.txt` with two `back` links to the same place), but there it reports
+        /// both paths today and must keep doing so: the lexical key is what a finite pattern
+        /// selected, and collapsing it would drop a `_file` value a user asked for, exactly as it
+        /// would for a plain `*` matching a symlink beside its target.
         const bool deduplicate_by_canonical_path = patternHasGlobstarSegment(for_match_expanded);
 
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0,
-                                        visited_frames, deduplicate_by_canonical_path);
+                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match);
     }
 
     return result;
@@ -511,7 +523,7 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read, bool & collapsed_a_match)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
@@ -545,14 +557,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, collapsed_a_match);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, collapsed_a_match);
         can_be_directory = false;
     }
 
@@ -589,7 +601,8 @@ StorageFile::ArchiveInfo getArchiveInfo(
         };
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    bool archive_collapsed_a_match = false;
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read, archive_collapsed_a_match);
 
     return archive_info;
 }
@@ -1214,17 +1227,20 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     FileSource res;
     String user_files_path = context->getUserFilesPath();
 
+    /// Set when deduplication collapsed two matching paths into one, see below.
+    bool collapsed_a_match = false;
+
     if (!path_to_archive.empty())
         res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, collapsed_a_match);
 
-    /// A single returned path does not mean the source named a single file. Deduplicating matches
-    /// by canonical path can collapse several matching paths into one, and the read-only guard on
-    /// writes must not be unlocked by that, because the source still selected files by pattern
-    /// rather than naming one. Treat a source containing glob syntax as globbed regardless of how
-    /// many paths it matched, and keep the count test so a directory expansion is still caught.
-    res.with_globs = res.paths.size() > 1 || filename.find_first_of("*?{") != String::npos;
+    /// A single returned path usually does mean the source named a single file, which is why a
+    /// finite glob matching exactly one file stays writable. The exception is deduplication by
+    /// canonical path: it can collapse several matching paths into one, and the read-only guard on
+    /// writes must not be unlocked by that, because the source still selected files by pattern.
+    /// So ask whether a collapse actually happened rather than whether the source looks globbed.
+    res.with_globs = res.paths.size() > 1 || collapsed_a_match;
 
     if (res.archive_info)
     {

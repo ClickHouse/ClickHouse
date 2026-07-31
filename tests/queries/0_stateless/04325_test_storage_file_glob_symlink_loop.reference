@@ -14,7 +14,9 @@ mutual-symlink-cycle
 pre-asterisk-ancestor-seed
 1
 finite-glob-with-adjacent-asterisks
-1
+2
+a1
+a2
 bounded-finite-tail-after-last-globstar
 1
 adjacent-globstars-through-symlink-loop
