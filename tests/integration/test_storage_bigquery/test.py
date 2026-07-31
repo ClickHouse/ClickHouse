@@ -1196,6 +1196,104 @@ def test_secret_masking_constant_expression():
     assert BASE_URL in logged
 
 
+def query_from_log(query_id, event_type="QueryFinish"):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return node.query(
+        f"SELECT query FROM system.query_log WHERE query_id = '{query_id}' AND type = '{event_type}'"
+    )
+
+
+def test_secret_masking_constant_key():
+    # The *key* of a `key = value` argument does not have to be a literal either:
+    # `BigQueryConfiguration::fromArguments` evaluates it as a constant expression, so
+    # `concat('access', '_token') = '...'` can carry a credential. The masker cannot evaluate
+    # the key, so it hides such an argument whole - neither the key expression nor the token
+    # may reach `system.query_log`.
+    #
+    # In the table function form the analyzer folds the whole equality into a `UInt64` literal
+    # before the arguments are parsed, so the query is rejected - but it is still logged, and
+    # the original argument must be hidden in the log entry of the failed query.
+    key_expr = "concat('access', '_token')"
+    query_id = "bigquery-masking-concat-key-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"{key_expr} = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "concat" not in logged
+    assert "[HIDDEN]" in logged
+    assert BASE_URL in logged
+
+    # The engine form passes the raw argument ASTs to the configuration parser, so there the
+    # constant-expression key authenticates - and must be masked in both the CREATE query log
+    # entry and SHOW CREATE TABLE.
+    node.query("DROP TABLE IF EXISTS bq_engine_concat_key")
+    create_query_id = "bigquery-masking-concat-key-create"
+    node.query(
+        f"CREATE TABLE bq_engine_concat_key ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"{key_expr} = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=create_query_id,
+    )
+    create = node.query("SHOW CREATE TABLE bq_engine_concat_key")
+    assert ACCESS_TOKEN not in create
+    assert "concat" not in create
+    assert "[HIDDEN]" in create
+    assert node.query("SELECT count() FROM bq_engine_concat_key") == "10\n"
+    logged = query_from_log(create_query_id)
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "concat" not in logged
+    assert "[HIDDEN]" in logged
+    node.query("DROP TABLE bq_engine_concat_key")
+
+
+def test_secret_masking_fails_closed_on_invalid_arguments():
+    # An invalid query is logged (`ExceptionBeforeStart`) before validation rejects it, so the
+    # masker must fail closed on argument forms the parser would not accept.
+
+    # A positional argument after a named collection is invalid, but could carry a credential
+    # (e.g. a misplaced token) - it must be hidden in the log of the failed query.
+    query_id = "bigquery-masking-collection-positional-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery(bq_mock, '{ACCESS_TOKEN}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "[HIDDEN]" in logged
+
+    # An unknown key is rejected, but its value may be a credential under a mistyped key name -
+    # only the values of the known non-secret keys stay visible.
+    query_id = "bigquery-masking-unknown-key-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"acess_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "acess_token = '[HIDDEN]'" in logged
+    assert BASE_URL in logged
+
+    # A 5th positional argument is also invalid and hidden.
+    query_id = "bigquery-masking-extra-positional-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"'{ACCESS_TOKEN}', 'stray-secret', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "stray-secret" not in logged
+    assert "[HIDDEN]" in logged
+
+
 def test_unsupported_table_types():
     # Only native tables can be read; views, materialized views and external tables are rejected
     # up front with a clear error, matching the documented contract.

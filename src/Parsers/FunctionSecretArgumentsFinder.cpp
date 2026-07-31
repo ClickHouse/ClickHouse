@@ -926,40 +926,54 @@ void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArgument
 
 void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
 {
-    size_t start = 0;
-    if (isNamedCollectionName(0))
+    /// bigquery('project', 'dataset', 'table'[, 'access_token'][, key = value, ...])
+    /// bigquery(named_collection[, key = value, ...])
+    /// `BigQueryConfiguration::fromArguments` folds arbitrary constant expressions for the
+    /// positional arguments and for both sides of the `key = value` arguments (via
+    /// `getKeyValueFromAST`), so none of them has to be a plain literal, and `key = value`
+    /// arguments can be interleaved with positional ones. The finder cannot evaluate
+    /// expressions, so every argument whose meaning is not evident from the AST alone
+    /// fails closed and is hidden whole.
+
+    /// The keys whose values never carry credentials; the values of the other known keys
+    /// (`access_token`, `service_account_key`, `client_secret`, `refresh_token`), of unknown
+    /// keys (rejected, but logged before validation), and of keys that are constant
+    /// expressions rather than literals are hidden.
+    static constexpr std::string_view plain_keys[]
+        = {"project", "dataset", "table", "client_id", "billing_project", "base_url", "token_url"};
+
+    const size_t start = isNamedCollectionName(0) ? 1 : 0;
+    size_t num_positional = 0;
+    for (size_t i = start; i < function->arguments->size(); ++i)
     {
-        /// bigquery(named_collection, ..., access_token = '...', ...)
-        start = 1;
-    }
-    else
-    {
-        /// bigquery('project', 'dataset', 'table', 'access_token', ...)
-        /// The 4th positional argument is always the access token. It does not have to be a string
-        /// literal: `BigQueryConfiguration::fromArguments` folds arbitrary constant expressions
-        /// (e.g. `concat(...)`), so mask it unconditionally. The `key = value` arguments can be
-        /// interleaved with positional ones, so count positional arguments the same way the
-        /// configuration parser does instead of relying on the argument index.
-        size_t num_positional = 0;
-        for (size_t i = 0; i < function->arguments->size(); ++i)
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (equals_func && equals_func->name() == "equals")
         {
-            const auto equals_func = function->arguments->at(i)->getFunction();
-            if (equals_func && equals_func->name() == "equals")
-                continue;
-            ++num_positional;
-            if (num_positional == 4)
+            String key;
+            if (equals_func->arguments && equals_func->arguments->size() == 2
+                && tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
             {
+                if (std::find(std::begin(plain_keys), std::end(plain_keys), key) == std::end(plain_keys))
+                    markSecretArgument(i, /* argument_is_named= */ true);
+            }
+            else
+            {
+                /// A key we cannot read (e.g. `concat('access', '_token') = '...'`) may name a
+                /// credential, and echoing the key expression is not safe either.
                 markSecretArgument(i);
-                break;
             }
         }
+        else
+        {
+            ++num_positional;
+            /// Only the first three positional arguments ('project', 'dataset', 'table') are
+            /// not secret: the 4th one is the access token, and anything past it - a positional
+            /// argument after a named collection, or a 5th positional - is invalid, but the
+            /// query is logged before validation rejects it.
+            if (start == 1 || num_positional >= 4)
+                markSecretArgument(i);
+        }
     }
-
-    /// The key = value form of the credential arguments.
-    findSecretNamedArgument("access_token", start);
-    findSecretNamedArgument("service_account_key", start);
-    findSecretNamedArgument("client_secret", start);
-    findSecretNamedArgument("refresh_token", start);
 }
 
 void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
