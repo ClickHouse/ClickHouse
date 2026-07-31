@@ -536,9 +536,10 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         read_task_callback_,
         replica_number);
 
-    /// `prefer_multiple_streams`, `virtual_row_conversion` and `output_each_partition_through_separate_port`
-    /// are plan-local state that lives outside `SelectQueryInfo`, so the constructor does not carry
-    /// them — propagate them explicitly, like `clone` does. `virtual_row_conversion` matters because
+    /// `prefer_multiple_streams`, `virtual_row_conversion`, `output_each_partition_through_separate_port`
+    /// and `index_read_tasks` are plan-local state that lives outside `SelectQueryInfo`, so the
+    /// constructor does not carry them — propagate them explicitly, like `clone` does.
+    /// `virtual_row_conversion` matters because
     /// `optimizeReadInOrder` keeps the read-in-order-through-join plan only when the virtual-row
     /// markers are available (see the `joins_to_keep_in_order` check there); executing a rebuilt
     /// read without them would make the sort after the join unable to tell which stream to pull.
@@ -546,9 +547,14 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// / `AggregatingStep` in the cloned fragment already committed to skipping the stream merge;
     /// a rebuilt read that forgets the flag could split one partition across several streams and
     /// silently emit duplicate `LIMIT BY` groups or partially aggregated results.
+    /// `index_read_tasks` matters because `processAndOptimizeTextIndexFunctions` rewrites the filter to
+    /// synthetic `__text_index_*` columns and only these tasks tell `MergeTreeSelectProcessor` how to
+    /// materialize them, so a rebuilt read without them keeps the rewritten filter but cannot produce
+    /// its inputs (`optimizeLazyFinal` copies them for the same reason).
     step->prefer_multiple_streams = prefer_multiple_streams;
     step->virtual_row_conversion = virtual_row_conversion;
     step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
+    step->index_read_tasks = index_read_tasks;
 
     return step;
 }
@@ -3685,6 +3691,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->prefer_multiple_streams = prefer_multiple_streams;
     cloned_step->virtual_row_conversion = virtual_row_conversion;
     cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
+    /// See the comment in `createLocalParallelReplicasReadingStep`: the direct text-index read tasks are
+    /// plan-local state, and the clone keeps the filter rewritten to `__text_index_*` columns, so it must
+    /// keep the tasks producing them as well.
+    cloned_step->index_read_tasks = index_read_tasks;
     return cloned_step;
 }
 
