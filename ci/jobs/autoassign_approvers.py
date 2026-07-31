@@ -100,6 +100,11 @@ def get_approved_prs(prs: List[dict], org_contributors: set = None) -> List[dict
     """
     Filter PRs that have at least one approval from an org contributor.
 
+    This is only a cheap candidacy pre-filter: the nested `reviews` list from
+    `gh pr list` is capped at the first 100 review events, so the approver map it
+    yields can be stale on long-lived PRs. The authoritative approver list for the
+    actual assignment decision is fetched per candidate PR by `fetch_approvers`.
+
     Args:
         prs: List of PR dictionaries
         org_contributors: Set of org contributor usernames (if None, no filtering)
@@ -143,6 +148,48 @@ def get_approved_prs(prs: List[dict], org_contributors: set = None) -> List[dict
     return approved_prs
 
 
+def fetch_approvers(
+    pr_number: int, org_contributors: set = None
+) -> Dict[str, Optional[datetime]]:
+    """
+    Fetch the full, paginated review history of a PR and return its approvers from
+    org contributors, in chronological order of the first approval, mapped to the
+    time of their latest approval.
+
+    The nested `reviews` field from `gh pr list` is capped at the first 100 review
+    events, so on a long-lived PR a re-approval made after an unassignment, or an
+    approver who joined later, would be invisible there - and the job would skip or
+    miss them forever. This paginated per-PR fetch sees the complete history.
+
+    Raises on failure: assigning is the consequential action, so a PR whose review
+    history cannot be read is left alone instead of being assigned blindly.
+    """
+    cmd = (
+        "gh api repos/{owner}/{repo}/pulls/"
+        f"{pr_number}"
+        "/reviews --paginate --jq '.[] | select(.state == \"APPROVED\") "
+        "| {login: .user.login, at: .submitted_at}'"
+    )
+    output = Shell.get_output_or_raise(cmd, verbose=True)
+
+    # Reviews come in chronological order, so the first key is the first approver,
+    # and the stored value ends up being the latest approval of each approver.
+    approvers: Dict[str, Optional[datetime]] = {}
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        review = json.loads(line)
+        login = review.get("login")
+        if not login:
+            continue
+        if org_contributors is not None and login not in org_contributors:
+            continue
+        approvers[login] = parse_timestamp(review.get("at"))
+
+    return approvers
+
+
 def fetch_removed_assignees(pr_number: int) -> Dict[str, datetime]:
     """
     Fetch the users that were removed from the PR assignees, with the time of the
@@ -180,19 +227,21 @@ def fetch_removed_assignees(pr_number: int) -> Dict[str, datetime]:
     return removed
 
 
-def select_approver_to_assign(pr: dict) -> Optional[str]:
+def select_approver_to_assign(pr: dict, org_contributors: set = None) -> Optional[str]:
     """
     Pick the first approver who was not unassigned from the PR after their approval.
 
     Args:
-        pr: PR dictionary with the `approvers` map filled in by `get_approved_prs`
+        pr: PR dictionary of a candidate selected by `get_approved_prs`
+        org_contributors: Set of org contributor usernames (if None, no filtering)
 
     Returns:
         The login to assign, or None if every approver was unassigned deliberately
     """
+    approvers = fetch_approvers(pr.get("number"), org_contributors)
     removed_assignees = fetch_removed_assignees(pr.get("number"))
 
-    for approver, approved_at in pr.get("approvers", {}).items():
+    for approver, approved_at in approvers.items():
         removed_at = removed_assignees.get(approver)
         if removed_at is None:
             return approver
@@ -228,12 +277,15 @@ def assign_approver_to_pr(pr_number: int, approver: str) -> bool:
         return False
 
 
-def process_and_assign_prs(prs: List[dict]) -> tuple[int, int, int]:
+def process_and_assign_prs(
+    prs: List[dict], org_contributors: set = None
+) -> tuple[int, int, int]:
     """
     Process PRs and assign approvers.
 
     Args:
         prs: List of PR dictionaries with approvals
+        org_contributors: Set of org contributor usernames (if None, no filtering)
 
     Returns:
         Tuple of (successful_assignments, failed_assignments, skipped_prs)
@@ -255,9 +307,9 @@ def process_and_assign_prs(prs: List[dict]) -> tuple[int, int, int]:
         print(f"\nPR #{pr_number}: {title}")
 
         try:
-            approver = select_approver_to_assign(pr)
+            approver = select_approver_to_assign(pr, org_contributors)
         except Exception as e:
-            print(f"  ✗ Failed to read the assignees history of PR #{pr_number}: {e}")
+            print(f"  ✗ Failed to read the history of PR #{pr_number}: {e}")
             failed += 1
             continue
 
@@ -330,14 +382,10 @@ if __name__ == "__main__":
                 successful_assignments,
                 failed_assignments,
                 skipped_prs,
-            ) = process_and_assign_prs(prs_to_assign)
+            ) = process_and_assign_prs(prs_to_assign, org_contributors)
             return failed_assignments == 0  # Success if no failures
 
-        results.append(
-            Result.from_commands_run(
-                name="Assign approvers to PRs", command=assign_approvers
-            )
-        )
+        results.append(Result.from_commands_run(name="Assign approvers to PRs", command=assign_approvers))
 
         # Print summary
         print("\n=== Assignment Summary ===")
