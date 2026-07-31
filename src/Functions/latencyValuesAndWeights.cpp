@@ -125,7 +125,7 @@ REGISTER_FUNCTION(LatencyValuesAndWeights)
         .description = R"(
 Extracts values and weights from a serialized Quantiles sketch.
 
-Returns a JSON string of the form {"values":[...],"weights":[...]} with parallel arrays
+Returns a JSON string of the form `{"values":[...],"weights":[...]}` with parallel arrays
 of retained values and their weights. Parallel arrays are used because a Quantiles sketch
 can retain the same value multiple times.
 )",

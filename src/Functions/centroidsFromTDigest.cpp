@@ -124,7 +124,7 @@ REGISTER_FUNCTION(CentroidsFromTDigest)
         .description = R"(
 Extracts centroids from a serialized TDigest sketch.
 
-Returns a JSON string of the form {"means":[...],"weights":[...]} with parallel arrays
+Returns a JSON string of the form `{"means":[...],"weights":[...]}` with parallel arrays
 of centroid means and weights. Parallel arrays are used because a TDigest can contain
 multiple centroids with the same mean.
 )",
