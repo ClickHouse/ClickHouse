@@ -5241,17 +5241,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (stream.cursor && fuzz_rand() % 2 == 0)
                     stream.cursor.reset();
                 else
-                    stream.cursor = buildCursorTree(make_random_cursor());
+                    stream.setCursor(buildCursorTree(make_random_cursor()));
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
         {
             /// Add STREAM [CURSOR {...}]. A bare STREAM read tails new data until
             /// max_execution_time, so keep the probability low.
-            ASTStreamSettings new_stream_settings;
+            auto stream_node = make_intrusive<ASTStreamSettings>();
             if (fuzz_rand() % 2 == 0)
-                new_stream_settings.cursor = buildCursorTree(make_random_cursor());
-            auto stream_node = make_intrusive<ASTStreamSettings>(std::move(new_stream_settings));
+                stream_node->setCursor(buildCursorTree(make_random_cursor()));
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
         }
