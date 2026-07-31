@@ -470,6 +470,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -478,8 +480,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -1920,23 +1924,36 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true when the first separator was a comma
+    bool second_separator_was_comma = false; /// true when the second separator was a comma
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: Parse further commas, but only when every separator so far was a
+        ///    comma, i.e. in the purely functional form (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1972,8 +1989,17 @@ public:
 
         if (state == 1)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                second_separator_was_comma = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1981,6 +2007,26 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the purely functional form, accept further arguments so that a too-long call is
+        /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
+        /// Both flags are required: a further comma is accepted only when EVERY separator so
+        /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
+        /// keeps its fixed shape and stays a syntax error, exactly as before this change.
+        else if (comma_mode && second_separator_was_comma && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
@@ -2987,6 +3033,61 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function `eval`, which accepts either a usual expression argument
+/// or a bare `SELECT` query argument. The query argument is wrapped into a subquery,
+/// so `eval(SELECT ...)` is just syntactic sugar for `eval((SELECT ...))`.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {make_intrusive<ASTSubquery>(std::move(query))};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -3033,6 +3134,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
     }
 
     if (function_name == "tuple")
@@ -3244,6 +3347,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3284,6 +3388,11 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::Cast)
                 return;
             if (op.function_name == "match")
+                return;
+            /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
+            /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
+            /// written directly by the user, not via AT TIME ZONE.
+            if (op.function_name == "toTimeZone")
                 return;
 
             result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
@@ -3762,6 +3871,40 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         /// Not a LIKE operator on top, push the popped operator back and fall through
         if (popped)
             layers.back()->pushOperator(top_op);
+    }
+
+    /// 'expr AT LOCAL' → toTimeZone(expr, timeZone()). Must be checked before the
+    /// operators_table loop so it takes precedence over any 'AT ...' entry there.
+    if (ParserKeyword(Keyword::AT).checkWithoutMoving(pos, stub))
+    {
+        auto at_local_pos = pos;
+        ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
+        if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
+        {
+            /// Fold pending operators with priority >= 13 (AT TIME ZONE priority) so that
+            /// e.g. 'a * ts AT LOCAL' gives a * toTimeZone(ts, ...), matching PostgreSQL.
+            constexpr int at_local_priority = 13;
+            while (layers.back()->previousPriority() >= at_local_priority)
+            {
+                Operator prev_op;
+                layers.back()->popOperator(prev_op);
+                ASTPtr function = makeASTFunction(prev_op);
+                if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                    return Action::NONE;
+                layers.back()->pushOperand(std::move(function));
+            }
+
+            ASTPtr operand;
+            if (layers.back()->popOperand(operand))
+            {
+                pos = at_local_pos;
+                auto tz_func = makeASTFunction("timeZone");
+                auto function = makeASTFunction("toTimeZone", std::move(operand), std::move(tz_func));
+                function->setIsOperator(true);
+                layers.back()->pushOperand(std::move(function));
+                return Action::OPERATOR;
+            }
+        }
     }
 
     /// Try to find operators from 'operators_table'

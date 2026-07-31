@@ -1,0 +1,223 @@
+---
+sidebarTitle: 'コマンドを使用したバックアップまたは復元'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: コマンドを使用したバックアップの作成または復元
+description: 'コマンドを使用して独自のバケットでバックアップを作成または復元する方法を説明するページ'
+doc_type: 'guide'
+keywords: ['バックアップ', '災害復旧', 'データ保護', '復元', 'Cloud 機能']
+---
+
+`BACKUP` および `RESTORE` コマンドを使用すると、[UI 経由](/ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui)でのバックアップや復元に加えて、バックアップを各ストレージバケットにエクスポートできます。
+このガイドでは、3 つの CSP すべてに対応するコマンドを紹介します。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+独自の CSP ストレージバケットにバックアップをエクスポートまたは復元するには、以下の情報が必要です。
+
+<Tabs>
+  <Tab title="AWS">
+    1. AWS S3 エンドポイント (形式: `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`)
+       例: `s3://testchbackups.s3.amazonaws.com/`
+       内訳:
+       * `testchbackups` は、バックアップのエクスポート先となる S3 バケット名です。
+       * `backups` は省略可能なサブディレクトリです。
+    2. AWS アクセスキーとシークレット。AWS ロールベース認証もサポートされており、上記セクションで説明したとおり、AWS アクセスキーとシークレットの代わりに使用できます。
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. GCS エンドポイント (形式: `https://storage.googleapis.com/<bucket_name>/`)
+    2. Access HMAC キーと HMAC シークレット。
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. Azure ストレージ接続文字列。
+    2. ストレージアカウント内の Azure コンテナー名。
+    3. コンテナー内の Azure ブロブ。
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## 特定のDBのバックアップ / 復元
+</div>
+
+ここでは、*1つ*のデータベースのバックアップと復元について説明します。
+フルバックアップおよび復元コマンドについては、[バックアップコマンドの概要](/ja/concepts/features/backup-restore/overview#command-summary)を参照してください。
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="バックアップ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    ここで `uuid` は、一連のバックアップを区別するために使用される一意の識別子です。
+
+    <Note>
+      このサブディレクトリで新しいバックアップを作成するたびに、毎回異なる uuid を使用する必要があります。そうしないと、`BACKUP_ALREADY_EXISTS` エラーが発生します。
+      たとえば、毎日バックアップを作成する場合は、日ごとに新しい uuid を使用する必要があります。
+    </Note>
+  </Tab>
+
+  <Tab title="復元">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="バックアップ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    ここで、`uuid` はバックアップを識別するための一意の識別子です。
+
+    <Note>
+      このサブディレクトリに新しいバックアップを作成するたびに、毎回異なる uuid を使用する必要があります。そうしないと、`BACKUP_ALREADY_EXISTS` エラーが発生します。
+      たとえば、毎日バックアップを取得する場合は、日ごとに新しい uuid を使用する必要があります。
+    </Note>
+  </Tab>
+
+  <Tab title="復元">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="バックアップ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    ここで、`uuid` はバックアップを識別するための一意の識別子です。
+
+    <Note>
+      このサブディレクトリで新しいバックアップを作成するたびに、異なる `uuid` を使用する必要があります。そうしないと、`BACKUP_ALREADY_EXISTS` エラーが発生します。
+      たとえば、毎日バックアップを作成する場合は、日ごとに新しい `uuid` を使用する必要があります。
+    </Note>
+  </Tab>
+
+  <Tab title="復元">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## サービス全体のバックアップ / 復元
+</div>
+
+サービス全体をバックアップするには、以下のコマンドを使用します。
+このバックアップには、作成済みのエンティティ、設定プロファイル、ロールポリシー、クォータ、関数に関するすべてのユーザーデータとシステムデータが含まれます。
+ここでは AWS S3 の例を示します。
+GCS および Azure Blob Storage のバックアップを取得する場合も、上記で説明した構文でこれらのコマンドを使用できます。
+
+<Tabs>
+  <Tab title="バックアップ">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    ここで、`uuid` はバックアップを識別するための一意の識別子です。
+  </Tab>
+
+  <Tab title="復元">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## よくある質問
+</div>
+
+<Accordion title="自分のクラウドオブジェクトストレージ内のバックアップはどうなりますか？ ClickHouse が後でクリーンアップしてくれますか？">
+  バックアップをお使いのバケットにエクスポートすることはできますが、一度書き込まれたバックアップを ClickHouse がクリーンアップまたは削除することはありません。バケット内のバックアップのライフサイクル管理 (必要に応じた削除やアーカイブ、あるいは全体のコストを最適化するためのより低コストなストレージへの移動を含む) は、お客様の責任となります。
+</Accordion>
+
+<Accordion title="既存のバックアップの一部を別の場所に移動した場合、復元プロセスはどうなりますか？">
+  バックアップの一部を別の場所に移動した場合は、バックアップの保存先である新しい場所を参照するように restore コマンドを更新する必要があります。
+</Accordion>
+
+<Accordion title="オブジェクトストレージへのアクセスに必要な認証情報を変更した場合はどうなりますか？">
+  バックアップを再び正常に実行できるようにするには、変更後の認証情報を UI で更新する必要があります。
+</Accordion>
+
+<Accordion title="外部バックアップのエクスポート先を変更した場合はどうなりますか？">
+  新しい保存先を UI で更新する必要があります。以後のバックアップは新しい保存先に作成され、既存のバックアップは元の場所に残ります。
+</Accordion>
+
+<Accordion title="有効にしたサービスで外部バックアップを無効にするにはどうすればよいですか？">
+  サービスの外部バックアップを無効にするには、サービスの設定画面に移動し、[Change external backup] をクリックします。次の画面で [Remove setup] をクリックすると、そのサービスの外部バックアップを無効にできます。
+</Accordion>

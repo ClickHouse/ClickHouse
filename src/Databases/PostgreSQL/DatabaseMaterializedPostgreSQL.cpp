@@ -13,7 +13,9 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
+#include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -55,6 +57,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -301,6 +304,16 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     if (!local_context->hasQueryContext())
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
 
+    /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
+    /// call to this method returns a slightly different definition, which breaks operations that
+    /// read the table metadata several times and expect it to stay consistent - most notably
+    /// BACKUP, which kept retrying with "Table ... was created or changed its definition during
+    /// scanning" and never finished. Fall back to a generated UUID only if the table does not exist
+    /// yet. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
+    UUID table_uuid = UUIDHelpers::generateV4();
+    if (auto existing_table = DatabaseAtomic::tryGetTable(table_name, getContext()))
+        table_uuid = existing_table->getStorageID().uuid;
+
     std::lock_guard lock(handler_mutex);
 
     ASTPtr ast_storage;
@@ -308,7 +321,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     {
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;
     }
     catch (...)
     {
@@ -524,6 +537,58 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
 }
 
+
+std::vector<std::pair<ASTPtr, StoragePtr>>
+DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
+{
+    /// Fail closed instead of silently producing a partial backup. The base implementation enumerates tables
+    /// through `getTablesIterator`, which (in the nested context) only sees the already-created nested
+    /// ReplacingMergeTree tables. A table that this database is configured to replicate but whose nested table
+    /// has not been created yet - its initial snapshot from PostgreSQL is still in progress or failed, e.g. the
+    /// PostgreSQL table has no primary key and no replica identity index - would therefore be omitted from the
+    /// backup without any error. Refuse the whole backup in that case, mirroring the fail-closed check in
+    /// `StorageMaterializedPostgreSQL::backupData`, which the database backup path bypasses because it backs up
+    /// the nested tables directly rather than the `StorageMaterializedPostgreSQL` wrappers.
+    {
+        std::lock_guard lock(tables_mutex);
+
+        /// `startupDatabaseAsync` only *schedules* the background synchronization task, and `waitDatabaseStarted`
+        /// returns as soon as that scheduling job has run - not once `startSynchronization` has actually populated
+        /// `materialized_tables`. So right after `CREATE DATABASE` or a server restart - in particular for the
+        /// whole time the initial `fetchRequiredTables` call to PostgreSQL is in flight, or while synchronization
+        /// is failing and retrying - this method can run with an empty map, before any wrapper (and possibly any
+        /// nested table) exists. Backing up in that window would fall through to `DatabaseAtomic::getTablesForBackup`
+        /// and silently produce an empty or partial database backup. A database that finished starting up always
+        /// has at least one table (`startSynchronization` refuses an empty tables list), so an empty map here means
+        /// synchronization has not populated it yet: fail closed.
+        if (materialized_tables.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot back up database {}: it has not finished its initial synchronization from PostgreSQL yet "
+                "(the list of replicated tables has not been populated - the database may have just been created, "
+                "the server may have just restarted, or synchronization may be failing and retrying). Failing "
+                "closed instead of producing an empty or partial database backup. Retry the backup once "
+                "synchronization has populated the tables.",
+                getDatabaseName());
+
+        for (const auto & [table_name, storage] : materialized_tables)
+        {
+            if (filter && !filter(table_name))
+                continue;
+
+            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not "
+                    "have finished its initial synchronization from PostgreSQL yet). Failing closed instead of "
+                    "producing a partial database backup that silently omits this table.",
+                    storage->getStorageID().getNameForLogs());
+        }
+    }
+
+    return DatabaseAtomic::getTablesForBackup(filter, local_context);
+}
+
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 {
@@ -545,7 +610,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
+            /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
         }
         else
         {
@@ -560,9 +627,53 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+        }
+
+        /// An internal metadata replay (server startup / restore, the same distinction
+        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
+        /// startup rebuilds every database from persisted metadata with an ATTACH query and
+        /// `loadMetadata` aborts on the first exception, so a validation added after the database
+        /// was created must not turn its stored definition into a server that cannot boot.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!is_internal_metadata_replay)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `{}` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                engine_name, configuration.addresses.size());
+            }
+            /// On a replay a legacy multi-address definition keeps its historical behavior: it could
+            /// be created before this validation existed (replication starts asynchronously, so the
+            /// broken connection string never aborted the CREATE), and the database must keep loading
+            /// with replication failing and retrying in the background rather than abort startup.
+        }
+
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
+        /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// database created before the whitelist was tightened into a server that cannot boot.
+        /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
+        /// would be a direct bypass of the policy.
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
         auto connection_info = postgres::formatConnectionString(
@@ -748,55 +859,55 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-    Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine.
 
-    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
+Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
-    ```sql
-    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
-    ```
+```sql
+materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
 
-    Default value: empty list — means whole PostgreSQL database will be replicated.
+Default value: empty list — means whole PostgreSQL database will be replicated.
 
 ### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
-    Default value: empty string. (Default schema is used)
+Default value: empty string. (Default schema is used)
 
 ### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
-    Default value: empty list. (Default schema is used)
+Default value: empty list. (Default schema is used)
 
 ### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
-    Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
+Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
+- Positive integer.
 
-    Default value: `65536`.
+Default value: `65536`.
 
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
-    A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-    A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](/reference/engines/database-engines/materialized-postgresql) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
-    ```sql
-    CREATE DATABASE database1
-    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-    SELECT * FROM database1.table1;
-    ```
+SELECT * FROM database1.table1;
+```
 
-    The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
+The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-    ```sql
-    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-    ```
+```sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
 
 ### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
@@ -868,13 +979,13 @@ Please note that this should be used only if it is actually needed. If there is 
 
 ### Required permissions {#required-permissions}
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2. [CREATE_REPLICATION_SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
 
-3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
+3. [pg_drop_replication_slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- replication privilege or superuser.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
 
 It is possible to avoid executing `2` and `3` commands and having those permissions. Use settings `materialized_postgresql_replication_slot` and `materialized_postgresql_snapshot`. But with much care.
 
@@ -885,6 +996,32 @@ Access to tables:
 2. pg_replication_slots
 
 3. pg_publication_tables
+
+### Backup and restore {#backup-and-restore}
+
+A `MaterializedPostgreSQL` database can be backed up. The data of every replicated table lives in a nested `ReplacingMergeTree` table, so `BACKUP DATABASE` captures that data by delegating to the nested table.
+
+```sql
+BACKUP DATABASE postgres_db TO Disk('backups', 'postgres_db.zip');
+```
+
+Restoring a `MaterializedPostgreSQL` database or table **in place is not supported**. A restored `MaterializedPostgreSQL` object immediately starts replicating from the live PostgreSQL source, so restoring the backup snapshot on top of it would mix the snapshot with the current remote state. RESTORE therefore fails closed in this case. Restore the captured data into plain `ReplacingMergeTree` tables instead:
+
+- In a database backup, each table's stored definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine), so each table can be restored straight into a new, not-yet-existing table:
+
+    ```sql
+    RESTORE TABLE postgres_db.table1 AS restored_db.table1
+    FROM Disk('backups', 'postgres_db.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
+
+- For a standalone `MaterializedPostgreSQL` table backup, the stored definition is the `MaterializedPostgreSQL` engine itself. Create a `ReplacingMergeTree` table beforehand with the same structure as the nested table (including the `_sign` and `_version` columns) and restore into it:
+
+    ```sql
+    RESTORE TABLE src AS existing_replacing_mergetree
+    FROM Disk('backups', 'table.zip')
+    SETTINGS allow_different_table_def = 1;
+    ```
 )DOCS_MD",
         .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password')",
         .related = {"PostgreSQL"}});

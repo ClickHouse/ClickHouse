@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'ClickStack 的语言 SDK - ClickHouse 可观测性技术栈'
+title: '语言 SDK'
+doc_type: 'guide'
+keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelemetry SDKs', '应用程序插桩 SDKs
+', '遥测采集 SDKs']
+---
+
+数据通常通过 **OpenTelemetry (OTel) Collector** 发送到 ClickStack，既可以直接来自语言 SDK，也可以先经过作为 agent 运行的中间 OpenTelemetry Collector，例如用于采集基础设施指标和日志。
+
+语言 SDK 负责从应用内部采集遥测数据，最主要的是 **链路追踪** 和 **日志**，并通过 OTLP 端点将这些数据导出到 OpenTelemetry Collector，由其负责将数据摄取到 ClickHouse。
+
+在基于浏览器的环境中，SDK 还可能负责收集 **会话数据**，包括 UI 事件、点击和导航，从而支持用户会话回放。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+1. 您的应用程序使用 ClickStack SDK (例如 Node.js、Python、Go) 。这些 SDK 基于 OpenTelemetry SDK，并提供了额外功能和更好的易用性。
+2. SDK 通过 OTLP (HTTP 或 gRPC) 收集并导出链路追踪和日志。
+3. OpenTelemetry Collector 接收遥测数据，并通过已配置的导出器将其写入 ClickHouse。
+
+<div id="supported-languages">
+  ## 支持的语言
+</div>
+
+<Info>
+  **OpenTelemetry 兼容性**
+
+  虽然 ClickStack 提供了自有语言 SDK，具备增强的遥测能力和更多功能，但你也可以无缝使用现有的 OpenTelemetry SDK。
+</Info>
+
+<br />
+
+| 语言           | 描述                       | 链接                                                 |
+| ------------ | ------------------------ | -------------------------------------------------- |
+| AWS Lambda   | 为 AWS Lambda 函数添加遥测采集    | [文档](/zh/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | 用于浏览器应用的 JavaScript SDK  | [文档](/zh/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Elixir 应用                | [文档](/zh/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Go 应用和微服务                | [文档](/zh/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Java 应用                  | [文档](/zh/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | NestJS 应用                | [文档](/zh/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Next.js 应用               | [文档](/zh/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | 用于服务端应用的 JavaScript 运行时  | [文档](/zh/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Deno 应用                  | [文档](/zh/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Python 应用和 Web 服务        | [文档](/zh/clickstack/ingesting-data/sdks/python)       |
+| React Native | React Native 移动应用        | [文档](/zh/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Ruby on Rails 应用和 Web 服务 | [文档](/zh/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## 使用 API key 进行安全防护
+</div>
+
+<Info>
+  **托管 ClickStack 不需要 API key**
+
+  托管 ClickStack 不需要 API key。
+</Info>
+
+为了通过 OpenTelemetry Collector 将数据发送到 ClickStack，SDKs 需要指定摄取 API key。可以通过 SDK 中的 `init` 函数或 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量进行设置：
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+此 API 密钥由 ClickStack UI (HyperDX) 应用生成，可在应用的 `Team Settings → API Keys` 中找到。
+
+对于大多数支持 OpenTelemetry 的[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)和遥测库，你只需在应用中设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量，或在 SDK 初始化时指定该端点：
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## Kubernetes 集成
+</div>
+
+所有 SDK 都支持在 Kubernetes 环境中自动关联 Kubernetes 元数据 (pod 名称、命名空间等) 。这样您就可以：
+
+* 查看与您的服务相关的 Pod (容器组) 和节点的 Kubernetes 指标
+* 将应用日志和链路追踪与基础设施指标关联
+* 跟踪整个 Kubernetes 集群中的资源使用情况和性能表现
+
+要启用此功能，请配置 OpenTelemetry Collector，将资源标签转发到 pod (容器组) 。有关详细设置说明，请参阅 [Kubernetes 集成指南](/zh/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)。
